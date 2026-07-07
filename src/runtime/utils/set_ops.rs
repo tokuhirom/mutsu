@@ -7,8 +7,8 @@ use super::*;
 /// immutable result even when a later operand is a SetHash/BagHash/MixHash.
 pub(crate) fn set_result_mutability(v: &Value) -> bool {
     matches!(
-        v,
-        Value::Set(_, true) | Value::Bag(_, true) | Value::Mix(_, true)
+        v.view(),
+        ValueView::Set(_, true) | ValueView::Bag(_, true) | ValueView::Mix(_, true)
     )
 }
 
@@ -17,7 +17,10 @@ pub(crate) fn set_result_mutability(v: &Value) -> bool {
 /// difference, whose result stays mutable only when BOTH operands are
 /// QuantHashes (`SetHash (^) Set` -> SetHash, but `SetHash (^) <a b>` -> Set).
 pub(crate) fn is_quanthash_instance(v: &Value) -> bool {
-    matches!(v, Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _))
+    matches!(
+        v.view(),
+        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
+    )
 }
 
 /// Result mutability for symmetric difference (`(^)`). Like the other set
@@ -27,17 +30,18 @@ pub(crate) fn is_quanthash_instance(v: &Value) -> bool {
 /// promoted to Bag/Mix level (`BagHash (^) <a b>` -> BagHash).
 pub(crate) fn set_sym_diff_mutability(left: &Value, right: &Value) -> bool {
     set_result_mutability(left)
-        && (is_quanthash_instance(right) || matches!(left, Value::Bag(_, _) | Value::Mix(_, _)))
+        && (is_quanthash_instance(right)
+            || matches!(left.view(), ValueView::Bag(_, _) | ValueView::Mix(_, _)))
 }
 
 /// Overlay the given mutability onto a freshly-built set-operator result.
-pub(crate) fn with_set_mutability(result: Value, mutable: bool) -> Value {
-    match result {
-        Value::Set(d, _) => Value::Set(d, mutable),
-        Value::Bag(d, _) => Value::Bag(d, mutable),
-        Value::Mix(d, _) => Value::Mix(d, mutable),
-        other => other,
+pub(crate) fn with_set_mutability(mut result: Value, mutable: bool) -> Value {
+    if result.with_set_mut(|_, m| *m = mutable).is_none()
+        && result.with_bag_mut(|_, m| *m = mutable).is_none()
+    {
+        result.with_mix_mut(|_, m| *m = mutable);
     }
+    result
 }
 
 /// Standalone set difference: left (-) right
@@ -49,7 +53,7 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
     // When the RHS is a Hash, coerce it to a Set for subtraction.
     // The Hash's truthy keys each count as weight 1.
     let right_as_set;
-    let effective_right = if matches!(right, Value::Hash(_)) {
+    let effective_right = if matches!(right.view(), ValueView::Hash(_)) {
         right_as_set = Value::set(coerce_to_set(right));
         &right_as_set
     } else {
@@ -103,9 +107,9 @@ pub(crate) fn set_diff_values(left: &Value, right: &Value) -> Value {
 pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
     // Determine result type level: 0=Set, 1=Bag, 2=Mix
     let type_level = |v: &Value| -> u8 {
-        match v {
-            Value::Mix(_, _) => 2,
-            Value::Bag(_, _) => 1,
+        match v.view() {
+            ValueView::Mix(_, _) => 2,
+            ValueView::Bag(_, _) => 1,
             _ => 0,
         }
     };
@@ -143,10 +147,10 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
 
 /// Coerce a value to a Bag (HashMap<String, i64>)
 fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
-    match val {
-        Value::Bag(b, _) => resolve_bag_tab_keys(b),
-        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
-        Value::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
+    match val.view() {
+        ValueView::Bag(b, _) => resolve_bag_tab_keys(b),
+        ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
+        ValueView::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
         _ => {
             // Count occurrences for list-like values
             let items = value_to_list(val);
@@ -161,13 +165,13 @@ fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
 
 /// Coerce a value to a Mix (HashMap<String, f64>)
 fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
-    match val {
-        Value::Mix(m, _) => m.weights.clone(),
-        Value::Bag(b, _) => {
+    match val.view() {
+        ValueView::Mix(m, _) => m.weights.clone(),
+        ValueView::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
-        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
         _ => {
             // Count occurrences for list-like values
             let items = value_to_list(val);

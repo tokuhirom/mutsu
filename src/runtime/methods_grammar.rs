@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     fn first_goal_name(pattern: &RegexPattern) -> Option<String> {
@@ -62,7 +63,7 @@ impl Interpreter {
 
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(true));
+        failure_attrs.insert("handled".to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
@@ -77,27 +78,27 @@ impl Interpreter {
         let mut rule_args: Vec<Value> = Vec::new();
         let mut actions_obj: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 if key == "rule" || key == "token" {
                     start_rule = value.to_string_value();
                 } else if key == "args" {
                     // :args(\(42)) passes a Capture; :args(42,) passes an Array
-                    match value.as_ref() {
-                        Value::Capture {
+                    match value.view() {
+                        ValueView::Capture {
                             positional,
                             named: _,
                         } => {
-                            rule_args = (**positional).clone();
+                            rule_args = positional.clone();
                         }
-                        Value::Array(arr, _) => {
+                        ValueView::Array(arr, _) => {
                             rule_args = arr.as_ref().clone().items;
                         }
-                        other => {
-                            rule_args = vec![other.clone()];
+                        _ => {
+                            rule_args = vec![value.clone()];
                         }
                     }
                 } else if key == "actions" {
-                    actions_obj = Some(value.as_ref().clone());
+                    actions_obj = Some(value.clone());
                 }
                 continue;
             }
@@ -168,7 +169,7 @@ impl Interpreter {
                     if let Some(err) = Self::take_pending_regex_error() {
                         return Err(err);
                     }
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.env.insert("/".to_string(), Value::NIL);
                     return Ok(self.parse_failure_for_pattern(&text, None));
                 }
                 Err(err)
@@ -176,7 +177,7 @@ impl Interpreter {
                         .message
                         .contains("No matching candidates for proto token") =>
                 {
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.env.insert("/".to_string(), Value::NIL);
                     return Ok(self.parse_failure_for_pattern(&text, None));
                 }
                 Err(err) => return Err(err),
@@ -213,30 +214,30 @@ impl Interpreter {
                 });
                 if let Some((goal, pos)) = goal {
                     match self.call_method_with_values(
-                        Value::Package(Symbol::intern(package_name)),
+                        Value::package(Symbol::intern(package_name)),
                         "FAILGOAL",
                         vec![Value::str(goal.clone())],
                     ) {
                         Ok(_) => {
-                            self.env.insert("/".to_string(), Value::Nil);
+                            self.env.insert("/".to_string(), Value::NIL);
                             return Ok(self.make_goal_failure_value(&goal, pos));
                         }
                         Err(err) if err.is_method_not_found() => {}
                         Err(err) => return Err(err),
                     }
-                    self.env.insert("/".to_string(), Value::Nil);
+                    self.env.insert("/".to_string(), Value::NIL);
                     return Ok(self.make_goal_failure_value(&goal, pos));
                 }
-                self.env.insert("/".to_string(), Value::Nil);
+                self.env.insert("/".to_string(), Value::NIL);
                 return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             };
             self.execute_regex_code_blocks(&captures.code_blocks);
             if captures.from != 0 {
-                self.env.insert("/".to_string(), Value::Nil);
+                self.env.insert("/".to_string(), Value::NIL);
                 return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
             }
             if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
-                self.env.insert("/".to_string(), Value::Nil);
+                self.env.insert("/".to_string(), Value::NIL);
                 return Ok(self.make_parse_failure_value(&text, captures.to));
             }
             for (i, v) in captures.positional.iter().enumerate() {
@@ -256,11 +257,11 @@ impl Interpreter {
                 Some(&text),
                 &captures.named_quantified,
             );
-            let match_obj = if let Value::Instance {
+            let match_obj = if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &match_obj
+            } = match_obj.view()
             {
                 let attrs = attributes.as_ref().clone();
                 if let Some(ast) = self.env.get("made").cloned() {
@@ -276,13 +277,14 @@ impl Interpreter {
                         .collect();
                     attrs.insert("capture_alias_map".to_string(), Value::hash(alias_hash));
                 }
-                Value::make_instance(*class_name, (attrs).to_map())
+                Value::make_instance(class_name, (attrs).to_map())
             } else {
                 match_obj
             };
             // Set named capture env vars from match object
-            if let Value::Instance { attributes, .. } = &match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
+            if let ValueView::Instance { attributes, .. } = match_obj.view()
+                && let Some(ValueView::Hash(named_hash)) =
+                    attributes.as_map().get("named").map(Value::view)
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
@@ -310,16 +312,16 @@ impl Interpreter {
                 let result = result?;
                 // Update the actions attribute on the final Match to reflect
                 // any mutations that occurred during action method dispatch.
-                if let Value::Instance {
+                if let ValueView::Instance {
                     class_name,
                     attributes,
                     id,
                     ..
-                } = &result
+                } = result.view()
                 {
                     let mut attrs = attributes.to_map();
                     attrs.insert("actions".to_string(), actions.clone());
-                    Value::write_back_sharing(attributes, *class_name, attrs, *id)
+                    Value::write_back_sharing(attributes, class_name, attrs, id)
                 } else {
                     result
                 }
@@ -353,24 +355,27 @@ impl Interpreter {
             .type_metadata
             .get(package_name)
             .and_then(|meta| meta.get("language-revision"))
+            .map(Value::view)
         {
-            Some(Value::Str(rev)) => rev.as_str() >= "e",
+            Some(ValueView::Str(rev)) => rev.as_str() >= "e",
             _ => crate::parser::current_language_version().starts_with("6.e"),
         };
         if is_full_parse
             && !grammar_is_6e
-            && let Ok(Value::Instance { class_name, .. }) = &result
+            && let Ok(v) = &result
+            && let ValueView::Instance { class_name, .. } = v.view()
             && class_name == "Failure"
         {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         result
     }
 
     /// Extract `action_name` from a Match object (set for aliased captures).
     pub(crate) fn get_action_name(match_obj: &Value) -> Option<String> {
-        if let Value::Instance { attributes, .. } = match_obj
-            && let Some(Value::Str(action_name)) = attributes.as_map().get("action_name")
+        if let ValueView::Instance { attributes, .. } = match_obj.view()
+            && let Some(ValueView::Str(action_name)) =
+                attributes.as_map().get("action_name").map(Value::view)
         {
             return Some(action_name.to_string());
         }
@@ -389,13 +394,14 @@ impl Interpreter {
         attrs: &crate::value::AttrReadGuard<'_>,
         actions: &mut Value,
     ) -> Result<(), RuntimeError> {
-        if let Some(Value::Array(silent_arr, _)) = attrs.get("silent_caps") {
+        if let Some(ValueView::Array(silent_arr, _)) = attrs.get("silent_caps").map(Value::view) {
             let mut items: Vec<Value> = silent_arr.iter().cloned().collect();
             items.sort_by_key(|m| {
-                if let Value::Instance { attributes, .. } = m
-                    && let Some(Value::Int(from)) = attributes.as_map().get("from")
+                if let ValueView::Instance { attributes, .. } = m.view()
+                    && let Some(ValueView::Int(from)) =
+                        attributes.as_map().get("from").map(Value::view)
                 {
-                    *from
+                    from
                 } else {
                     0
                 }
@@ -405,12 +411,12 @@ impl Interpreter {
                 self.invoke_grammar_actions(item, actions, &dispatch_name)?;
             }
         }
-        let positionals: Vec<Value> = match attrs.get("list") {
-            Some(Value::Array(pos_arr, _)) => pos_arr.iter().cloned().collect(),
+        let positionals: Vec<Value> = match attrs.get("list").map(Value::view) {
+            Some(ValueView::Array(pos_arr, _)) => pos_arr.iter().cloned().collect(),
             _ => Vec::new(),
         };
         for p in &positionals {
-            if let Value::Instance { attributes, .. } = p {
+            if let ValueView::Instance { attributes, .. } = p.view() {
                 self.dispatch_silent_action_caps(&attributes.as_map(), actions)?;
             }
         }
@@ -424,35 +430,37 @@ impl Interpreter {
         actions: &mut Value,
         rule_name: &str,
     ) -> Result<Value, RuntimeError> {
-        let (class_name, attributes) = if let Value::Instance {
+        let (class_name, attributes) = if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &match_obj
+        } = match_obj.view()
         {
-            (*class_name, attributes.as_ref().clone())
+            (class_name, attributes.as_ref().clone())
         } else {
             return Ok(match_obj);
         };
 
         // First, recursively process child named captures (bottom-up order)
         let updated_attrs = attributes.clone();
-        if let Some(Value::Hash(named_hash)) = attributes.as_map().get("named") {
+        if let Some(ValueView::Hash(named_hash)) = attributes.as_map().get("named").map(Value::view)
+        {
             let mut updated_named = named_hash.as_ref().clone();
             let mut children: Vec<(String, Value)> = named_hash
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             children.sort_by_key(|(_, v)| {
-                if let Value::Instance { attributes, .. } = v
-                    && let Some(Value::Int(from)) = attributes.as_map().get("from")
+                if let ValueView::Instance { attributes, .. } = v.view()
+                    && let Some(ValueView::Int(from)) =
+                        attributes.as_map().get("from").map(Value::view)
                 {
-                    return *from;
+                    return from;
                 }
                 0
             });
             for (child_name, child_match) in children {
-                if let Value::Array(items, meta) = &child_match {
+                if let ValueView::Array(items, meta) = child_match.view() {
                     let mut updated_items = Vec::with_capacity(items.len());
                     for item in items.as_ref() {
                         let dispatch_name =
@@ -463,9 +471,9 @@ impl Interpreter {
                     }
                     updated_named.insert(
                         child_name,
-                        Value::Array(
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
-                            *meta,
+                            meta,
                         ),
                     );
                 } else {
@@ -510,7 +518,9 @@ impl Interpreter {
             self.env.remove_sym(*k);
         }
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
-        if let Some(Value::Hash(named_hash)) = updated_attrs.as_map().get("named") {
+        if let Some(ValueView::Hash(named_hash)) =
+            updated_attrs.as_map().get("named").map(Value::view)
+        {
             for (k, v) in named_hash.iter() {
                 self.env.insert(format!("<{}>", k), v.clone());
             }
@@ -523,7 +533,9 @@ impl Interpreter {
             let key = i.to_string();
             saved_positional.push((i, self.env.remove(&key)));
         }
-        if let Some(Value::Array(pos_arr, _)) = updated_attrs.as_map().get("list") {
+        if let Some(ValueView::Array(pos_arr, _)) =
+            updated_attrs.as_map().get("list").map(Value::view)
+        {
             for (i, v) in pos_arr.iter().enumerate() {
                 self.env.insert(i.to_string(), v.clone());
             }
@@ -534,18 +546,19 @@ impl Interpreter {
 
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
-        let sym_method_name =
-            if let Some(Value::Str(sym_val)) = updated_attrs.as_map().get("sym_variant") {
-                // Use «» delimiters when the sym value contains '<' or '>'
-                // to match method names stored with French-quote delimiters
-                if sym_val.contains('<') || sym_val.contains('>') {
-                    Some(format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}"))
-                } else {
-                    Some(format!("{rule_name}:sym<{sym_val}>"))
-                }
+        let sym_method_name = if let Some(ValueView::Str(sym_val)) =
+            updated_attrs.as_map().get("sym_variant").map(Value::view)
+        {
+            // Use «» delimiters when the sym value contains '<' or '>'
+            // to match method names stored with French-quote delimiters
+            if sym_val.contains('<') || sym_val.contains('>') {
+                Some(format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}"))
             } else {
-                None
-            };
+                Some(format!("{rule_name}:sym<{sym_val}>"))
+            }
+        } else {
+            None
+        };
         let method_result = if let Some(ref sym_name) = sym_method_name {
             let result =
                 self.call_method_with_values(actions.clone(), sym_name, vec![match_obj.clone()]);
@@ -567,27 +580,23 @@ impl Interpreter {
         // After the method call, if actions is an Instance, its attributes
         // may have been mutated.  Retrieve the updated version from env so
         // subsequent child/rule calls see the latest state.
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name: act_cn,
             id: act_id,
             ..
-        } = actions
+        } = actions.view()
         {
             for v in self.env.values() {
-                if let Value::Instance {
+                if let ValueView::Instance {
                     class_name: cn,
                     id,
                     attributes,
                     ..
-                } = v
+                } = v.view()
                     && cn == act_cn
-                    && *id == *act_id
+                    && id == act_id
                 {
-                    *actions = Value::Instance {
-                        class_name: *cn,
-                        attributes: attributes.clone(),
-                        id: *id,
-                    };
+                    *actions = Value::instance_parts(cn, attributes.clone(), id);
                     break;
                 }
             }
@@ -698,8 +707,8 @@ impl Interpreter {
         let mut ex_attrs = HashMap::new();
         ex_attrs.insert("reason".to_string(), Value::str_from("unknown"));
         ex_attrs.insert("filename".to_string(), Value::str_from("<anon>"));
-        ex_attrs.insert("pos".to_string(), Value::Int(pos as i64));
-        ex_attrs.insert("line".to_string(), Value::Int(line));
+        ex_attrs.insert("pos".to_string(), Value::int(pos as i64));
+        ex_attrs.insert("line".to_string(), Value::int(line));
         ex_attrs.insert("pre".to_string(), Value::str(pre));
         ex_attrs.insert("post".to_string(), Value::str(post));
         ex_attrs.insert("highexpect".to_string(), Value::array(Vec::new()));
@@ -709,7 +718,7 @@ impl Interpreter {
         failure_attrs.insert("exception".to_string(), exception);
         // TODO: Grammar.parse/subparse should return a failed Match, not a Failure.
         // Mark as handled so that stringifying doesn't throw prematurely.
-        failure_attrs.insert("handled".to_string(), Value::Bool(true));
+        failure_attrs.insert("handled".to_string(), Value::TRUE);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 }

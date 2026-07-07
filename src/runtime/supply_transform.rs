@@ -18,21 +18,21 @@ impl Interpreter {
         let mut process_block: Option<Value> = None;
         let mut seconds: f64 = 0.0;
         if let Some(second_arg) = positionals.get(1) {
-            if matches!(second_arg, Value::Sub(_) | Value::WeakSub(_)) {
+            if matches!(second_arg.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
                 process_block = Some((*second_arg).clone());
             } else {
                 seconds = second_arg.to_f64();
             }
         }
         let control_supplier_id = Self::named_value(&args, "control").and_then(|v| {
-            if let Value::Instance { attributes, .. } = &v {
+            if let ValueView::Instance { attributes, .. } = v.view() {
                 supplier_id_from_attrs(&(attributes).as_map())
             } else {
                 None
             }
         });
         let status_supplier_id = Self::named_value(&args, "status").and_then(|v| {
-            if let Value::Instance { attributes, .. } = &v {
+            if let ValueView::Instance { attributes, .. } = v.view() {
                 supplier_id_from_attrs(&(attributes).as_map())
             } else {
                 None
@@ -81,7 +81,7 @@ impl Interpreter {
                             thread_interp.call_sub_value(blk.clone(), vec![val.clone()], false)
                         {
                             let promise = SharedPromise::new_kept(result);
-                            let pval = Value::Promise(promise);
+                            let pval = Value::promise(promise);
                             supplier_emit(out_supplier_id, pval.clone());
                             let actions = supplier_emit_callbacks(out_supplier_id, &pval);
                             for action in actions {
@@ -95,13 +95,13 @@ impl Interpreter {
                     }
                     if let Some(status_id) = status_sid {
                         let mut status_hash = HashMap::new();
-                        status_hash.insert("allowed".to_string(), Value::Int(effective_limit));
-                        status_hash.insert("bled".to_string(), Value::Int(0));
-                        status_hash.insert("buffered".to_string(), Value::Int(0));
-                        status_hash.insert("emitted".to_string(), Value::Int(emitted_count));
+                        status_hash.insert("allowed".to_string(), Value::int(effective_limit));
+                        status_hash.insert("bled".to_string(), Value::int(0));
+                        status_hash.insert("buffered".to_string(), Value::int(0));
+                        status_hash.insert("emitted".to_string(), Value::int(emitted_count));
                         status_hash.insert("id".to_string(), Value::str("done".to_string()));
-                        status_hash.insert("limit".to_string(), Value::Int(effective_limit));
-                        status_hash.insert("running".to_string(), Value::Int(0));
+                        status_hash.insert("limit".to_string(), Value::int(effective_limit));
+                        status_hash.insert("running".to_string(), Value::int(0));
                         let status_value = Value::hash(status_hash);
                         supplier_emit(status_id, status_value.clone());
                         let actions = supplier_emit_callbacks(status_id, &status_value);
@@ -120,10 +120,10 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(true));
+                new_attrs.insert("live".to_string(), Value::TRUE);
                 new_attrs.insert(
                     "supplier_id".to_string(),
-                    Value::Int(out_supplier_id as i64),
+                    Value::int(out_supplier_id as i64),
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             } else {
@@ -131,15 +131,15 @@ impl Interpreter {
                 for val in &source_values {
                     let result = self.call_sub_value(block.clone(), vec![val.clone()], false)?;
                     let promise = SharedPromise::new_kept(result);
-                    promises.push(Value::Promise(promise));
+                    promises.push(Value::promise(promise));
                 }
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(promises));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 if seconds > 0.0 {
-                    new_attrs.insert("delay_seconds".to_string(), Value::Num(seconds));
-                    new_attrs.insert("throttle_limit".to_string(), Value::Int(limit));
+                    new_attrs.insert("delay_seconds".to_string(), Value::num(seconds));
+                    new_attrs.insert("throttle_limit".to_string(), Value::int(limit));
                 }
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
@@ -197,20 +197,20 @@ impl Interpreter {
             let mut new_attrs = HashMap::new();
             new_attrs.insert("values".to_string(), Value::array(Vec::new()));
             new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            new_attrs.insert("live".to_string(), Value::Bool(true));
+            new_attrs.insert("live".to_string(), Value::TRUE);
             new_attrs.insert(
                 "supplier_id".to_string(),
-                Value::Int(out_supplier_id as i64),
+                Value::int(out_supplier_id as i64),
             );
             Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
         } else {
             let mut new_attrs = HashMap::new();
             new_attrs.insert("values".to_string(), Value::array(source_values));
             new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            new_attrs.insert("live".to_string(), Value::Bool(false));
+            new_attrs.insert("live".to_string(), Value::FALSE);
             if seconds > 0.0 {
-                new_attrs.insert("delay_seconds".to_string(), Value::Num(seconds));
-                new_attrs.insert("throttle_limit".to_string(), Value::Int(limit));
+                new_attrs.insert("delay_seconds".to_string(), Value::num(seconds));
+                new_attrs.insert("throttle_limit".to_string(), Value::int(limit));
             }
             Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
         }
@@ -225,7 +225,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(values));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("live".to_string(), Value::Bool(false));
+        attrs.insert("live".to_string(), Value::FALSE);
         Value::make_instance(Symbol::intern("Supply"), attrs)
     }
 
@@ -238,11 +238,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name == "Supply"
         {
             if method == "stable" {
@@ -314,9 +314,9 @@ impl Interpreter {
         inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         inner_attrs.insert(
             "supplier_id".to_string(),
-            Value::Int(inner_supplier_id as i64),
+            Value::int(inner_supplier_id as i64),
         );
-        inner_attrs.insert("live".to_string(), Value::Bool(true));
+        inner_attrs.insert("live".to_string(), Value::TRUE);
         let supply_val = Value::make_instance(Symbol::intern("Supply"), inner_attrs);
 
         // Emit the inner Supply to the output supplier synchronously
@@ -334,7 +334,7 @@ impl Interpreter {
         crate::runtime::builtins_system::spawn_user_thread(move || {
             let result_val = thread_interp
                 .call_sub_value(callable, vec![value], true)
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             // Emit the result into the inner Supply
             supplier_emit(inner_supplier_id, result_val.clone());
             let inner_actions = supplier_emit_callbacks(inner_supplier_id, &result_val);

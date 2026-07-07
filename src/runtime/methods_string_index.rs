@@ -8,7 +8,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // Type objects (Package) as needle are not allowed
-        if let Some(Value::Package(type_name)) = args.first() {
+        if let Some(ValueView::Package(type_name)) = args.first().map(Value::view) {
             return Err(RuntimeError::new(format!(
                 "Cannot resolve caller index({}:U)",
                 type_name
@@ -18,7 +18,7 @@ impl Interpreter {
         let mut ignore_case = false;
         let mut ignore_mark = false;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "i" | "ignorecase" => ignore_case = value.truthy(),
                     "m" | "ignoremark" => ignore_mark = value.truthy(),
@@ -29,16 +29,17 @@ impl Interpreter {
             }
         }
         // Handle list of needles: \(<a o>) passes an Array as first arg
-        let needles: Vec<String> = if let Some(Value::Array(items, ..)) = positional.first() {
-            items.iter().map(|v| v.to_string_value()).collect()
-        } else {
-            vec![
-                positional
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default(),
-            ]
-        };
+        let needles: Vec<String> =
+            if let Some(ValueView::Array(items, ..)) = positional.first().map(Value::view) {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                vec![
+                    positional
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default(),
+                ]
+            };
         let start = if let Some(pos) = positional.get(1) {
             match self.value_to_position(pos) {
                 Ok(v) => v,
@@ -55,12 +56,12 @@ impl Interpreter {
         if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
-                Value::Int(start),
+                Value::int(start),
                 &format!("0..{}", len),
             ));
         }
         if start > len {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         let hay: String = text.chars().skip(start as usize).collect();
         let mut best: Option<usize> = None;
@@ -82,8 +83,8 @@ impl Interpreter {
             }
         }
         match best {
-            Some(char_pos) => Ok(Value::Int(char_pos as i64 + start)),
-            None => Ok(Value::Nil),
+            Some(char_pos) => Ok(Value::int(char_pos as i64 + start)),
+            None => Ok(Value::NIL),
         }
     }
 
@@ -93,7 +94,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        if let Some(Value::Package(type_name)) = args.first() {
+        if let Some(ValueView::Package(type_name)) = args.first().map(Value::view) {
             return Err(RuntimeError::new(format!(
                 "Cannot resolve caller indices({}:U)",
                 type_name
@@ -104,7 +105,7 @@ impl Interpreter {
         let mut ignore_mark = false;
         let mut overlap = false;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "i" | "ignorecase" => ignore_case = value.truthy(),
                     "m" | "ignoremark" => ignore_mark = value.truthy(),
@@ -134,7 +135,7 @@ impl Interpreter {
         if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
-                Value::Int(start),
+                Value::int(start),
                 &format!("0..{}", len),
             ));
         }
@@ -142,7 +143,7 @@ impl Interpreter {
         let mut results: Vec<Value> = Vec::new();
         if needle.is_empty() {
             for i in (start as usize)..=text_chars.len() {
-                results.push(Value::Int(i as i64));
+                results.push(Value::int(i as i64));
             }
         } else {
             let needle_len = needle.chars().count();
@@ -161,7 +162,7 @@ impl Interpreter {
                 match found {
                     Some(char_pos) => {
                         let absolute_pos = pos + char_pos;
-                        results.push(Value::Int(absolute_pos as i64));
+                        results.push(Value::int(absolute_pos as i64));
                         if overlap {
                             pos = absolute_pos + 1;
                         } else {
@@ -172,7 +173,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Value::Array(
+        Ok(Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(results)),
             crate::value::ArrayKind::List,
         ))
@@ -183,7 +184,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        if let Some(Value::Package(type_name)) = args.first() {
+        if let Some(ValueView::Package(type_name)) = args.first().map(Value::view) {
             return Err(RuntimeError::new(format!(
                 "Cannot resolve caller rindex({}:U)",
                 type_name
@@ -191,29 +192,30 @@ impl Interpreter {
         }
         let mut positional: Vec<Value> = Vec::new();
         for arg in args {
-            if !matches!(arg, Value::Pair(..)) {
+            if !matches!(arg.view(), ValueView::Pair(..)) {
                 positional.push(arg.clone());
             }
         }
         // Handle list of needles
-        let needles: Vec<String> = if let Some(Value::Array(items, ..)) = positional.first() {
-            items.iter().map(|v| v.to_string_value()).collect()
-        } else {
-            vec![
-                positional
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default(),
-            ]
-        };
+        let needles: Vec<String> =
+            if let Some(ValueView::Array(items, ..)) = positional.first().map(Value::view) {
+                items.iter().map(|v| v.to_string_value()).collect()
+            } else {
+                vec![
+                    positional
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_default(),
+                ]
+            };
         let text = target.to_string_value();
         let char_len = text.chars().count() as i64;
         // Optional position argument (maximum char index to consider)
         let max_pos = if let Some(pos_val) = positional.get(1) {
             // Check for negative values first (returns Failure, not exception)
-            let is_negative = match pos_val {
-                Value::Int(i) => *i < 0,
-                Value::Num(f) => *f < 0.0,
+            let is_negative = match pos_val.view() {
+                ValueView::Int(i) => i < 0,
+                ValueView::Num(f) => f < 0.0,
                 _ => false,
             };
             if is_negative {
@@ -227,7 +229,7 @@ impl Interpreter {
                 let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
                 let mut failure_attrs = std::collections::HashMap::new();
                 failure_attrs.insert("exception".to_string(), exception);
-                failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                failure_attrs.insert("handled".to_string(), Value::FALSE);
                 return Ok(Value::make_instance(
                     Symbol::intern("Failure"),
                     failure_attrs,
@@ -247,7 +249,7 @@ impl Interpreter {
                     let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
                     let mut failure_attrs = std::collections::HashMap::new();
                     failure_attrs.insert("exception".to_string(), exception);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    failure_attrs.insert("handled".to_string(), Value::FALSE);
                     return Ok(Value::make_instance(
                         Symbol::intern("Failure"),
                         failure_attrs,
@@ -255,7 +257,7 @@ impl Interpreter {
                 }
             };
             if pos > char_len {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             Some(pos as usize)
         } else {
@@ -264,8 +266,8 @@ impl Interpreter {
         // For empty needle, return max_pos or char_len
         if needles.len() == 1 && needles[0].is_empty() {
             return match max_pos {
-                Some(p) => Ok(Value::Int(p as i64)),
-                None => Ok(Value::Int(char_len)),
+                Some(p) => Ok(Value::int(p as i64)),
+                None => Ok(Value::int(char_len)),
             };
         }
         let mut best: Option<usize> = None;
@@ -305,8 +307,8 @@ impl Interpreter {
             }
         }
         match best {
-            Some(char_pos) => Ok(Value::Int(char_pos as i64)),
-            None => Ok(Value::Nil),
+            Some(char_pos) => Ok(Value::int(char_pos as i64)),
+            None => Ok(Value::NIL),
         }
     }
 
@@ -366,24 +368,24 @@ impl Interpreter {
     }
 
     pub(super) fn value_to_position(&self, pos: &Value) -> Result<i64, RuntimeError> {
-        match pos {
-            Value::Int(i) => Ok(*i),
-            Value::Num(f) => {
+        match pos.view() {
+            ValueView::Int(i) => Ok(i),
+            ValueView::Num(f) => {
                 if f.abs() > i64::MAX as f64 {
-                    Err(self.out_of_range_error(Value::Num(*f)))
+                    Err(self.out_of_range_error(Value::num(f)))
                 } else {
-                    Ok(*f as i64)
+                    Ok(f as i64)
                 }
             }
-            Value::Rat(n, d) => {
-                if *d == 0 {
-                    Err(self.out_of_range_error(Value::Rat(*n, *d)))
+            ValueView::Rat(n, d) => {
+                if d == 0 {
+                    Err(self.out_of_range_error(Value::rat_raw(n, d)))
                 } else {
-                    Ok(*n / *d)
+                    Ok(n / d)
                 }
             }
-            Value::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
-            Value::BigInt(b) => {
+            ValueView::Str(s) => Ok(s.parse::<i64>().unwrap_or(0)),
+            ValueView::BigInt(b) => {
                 if b.as_ref() > &num_bigint::BigInt::from(i64::MAX)
                     || b.as_ref() < &num_bigint::BigInt::from(i64::MIN)
                 {

@@ -697,7 +697,7 @@ impl Interpreter {
         let parsed = crate::parse_dispatch::parse_source(code);
         let (stmts, _) = match parsed {
             Ok(v) => v,
-            Err(_) => return Value::Nil,
+            Err(_) => return Value::NIL,
         };
         let mut interp = Interpreter {
             env: self.env.clone(),
@@ -707,7 +707,7 @@ impl Interpreter {
         self.copy_decl_registry_into(&mut interp);
         match interp.eval_block_value(&stmts) {
             Ok(v) => v,
-            Err(e) => e.return_value.unwrap_or(Value::Nil),
+            Err(e) => e.return_value.unwrap_or(Value::NIL),
         }
     }
 }

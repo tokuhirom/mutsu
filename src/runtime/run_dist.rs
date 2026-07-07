@@ -32,26 +32,26 @@ impl Interpreter {
         if let Some(dist) = self.package_distributions.get(&self.current_package()) {
             return Self::build_resources_from_dist(dist);
         }
-        Value::Hash(Value::hash_arc(HashMap::new()))
+        Value::hash_with_data(Value::hash_arc(HashMap::new()))
     }
 
     fn build_resources_from_dist(dist: &Value) -> Value {
         use std::collections::HashMap;
 
-        let meta = match dist {
-            Value::Instance { attributes, .. } => {
+        let meta = match dist.view() {
+            ValueView::Instance { attributes, .. } => {
                 // Try "meta" first (Distribution::Installation from detect_inst_distribution),
                 // then fall back to "$!meta" (plain Distribution from detect_distribution).
                 let map = attributes.as_map();
                 map.get("meta")
                     .or_else(|| map.get("$!meta"))
                     .cloned()
-                    .unwrap_or(Value::Nil)
+                    .unwrap_or(Value::NIL)
             }
-            _ => Value::Nil,
+            _ => Value::NIL,
         };
-        let prefix = match &meta {
-            Value::Hash(map) => map
+        let prefix = match meta.view() {
+            ValueView::Hash(map) => map
                 .get("prefix")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default(),
@@ -59,17 +59,17 @@ impl Interpreter {
         };
         // If the dist has a "files" hash (installation repo), use it to resolve resource paths.
         // The files hash maps "resources/config.txt" -> "/inst-prefix/resources/HASH.txt"
-        let files_val = match &meta {
-            Value::Hash(map) => map.get("files").cloned(),
+        let files_val = match meta.view() {
+            ValueView::Hash(map) => map.get("files").cloned(),
             _ => None,
         };
-        let resources_val = match &meta {
-            Value::Hash(map) => map.get("resources").cloned().unwrap_or(Value::Nil),
-            _ => Value::Nil,
+        let resources_val = match meta.view() {
+            ValueView::Hash(map) => map.get("resources").cloned().unwrap_or(Value::NIL),
+            _ => Value::NIL,
         };
         let mut result: HashMap<String, Value> = HashMap::new();
-        match &resources_val {
-            Value::Array(arr, _) => {
+        match resources_val.view() {
+            ValueView::Array(arr, _) => {
                 for item in arr.iter() {
                     let key = item.to_string_value();
                     // Check files hash first (installation repo)
@@ -102,14 +102,14 @@ impl Interpreter {
                     result.insert(key, Value::str(actual_path));
                 }
             }
-            Value::Hash(map) => {
+            ValueView::Hash(map) => {
                 for (k, v) in map.iter() {
                     result.insert(k.clone(), v.clone());
                 }
             }
             _ => {}
         }
-        Value::Hash(Value::hash_arc(result))
+        Value::hash_with_data(Value::hash_arc(result))
     }
 
     /// Detect a distribution (META6.json) for the given module source path.
@@ -139,7 +139,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "$!meta".to_string(),
-            Value::Hash(Value::hash_arc(meta_hash)),
+            Value::hash_with_data(Value::hash_arc(meta_hash)),
         );
         Some(Value::make_instance_without_destroy(
             crate::symbol::Symbol::intern("Distribution"),
@@ -162,11 +162,14 @@ impl Interpreter {
         {
             Self::scan_resources(rd)
         } else {
-            Value::Hash(Value::hash_arc(HashMap::new()))
+            Value::hash_with_data(Value::hash_arc(HashMap::new()))
         };
         meta.insert("resources".to_string(), resources);
         let mut attrs = HashMap::new();
-        attrs.insert("$!meta".to_string(), Value::Hash(Value::hash_arc(meta)));
+        attrs.insert(
+            "$!meta".to_string(),
+            Value::hash_with_data(Value::hash_arc(meta)),
+        );
         Value::make_instance_without_destroy(crate::symbol::Symbol::intern("Distribution"), attrs)
     }
 
@@ -189,7 +192,7 @@ impl Interpreter {
                 }
             }
         }
-        Value::Hash(Value::hash_arc(provides))
+        Value::hash_with_data(Value::hash_arc(provides))
     }
 
     fn scan_resources(resources_dir: &Path) -> Value {
@@ -205,7 +208,7 @@ impl Interpreter {
                 }
             }
         }
-        Value::Hash(Value::hash_arc(files))
+        Value::hash_with_data(Value::hash_arc(files))
     }
 
     fn parse_meta6_json(content: &str) -> Option<HashMap<String, Value>> {
@@ -219,28 +222,27 @@ impl Interpreter {
     }
 
     fn json_to_value(val: &serde_json::Value) -> Value {
+        use serde_json::Value as Json;
         match val {
-            serde_json::Value::Null => Value::Nil,
-            serde_json::Value::Bool(b) => Value::Bool(*b),
-            serde_json::Value::Number(n) => {
+            Json::Null => Value::NIL,
+            Json::Bool(b) => Value::truth(*b),
+            Json::Number(n) => {
                 if let Some(i) = n.as_i64() {
-                    Value::Int(i)
+                    Value::int(i)
                 } else if let Some(f) = n.as_f64() {
-                    Value::Num(f)
+                    Value::num(f)
                 } else {
                     Value::str(n.to_string())
                 }
             }
-            serde_json::Value::String(s) => Value::str(s.clone()),
-            serde_json::Value::Array(arr) => {
-                Value::array(arr.iter().map(Self::json_to_value).collect())
-            }
-            serde_json::Value::Object(obj) => {
+            Json::String(s) => Value::str(s.clone()),
+            Json::Array(arr) => Value::array(arr.iter().map(Self::json_to_value).collect()),
+            Json::Object(obj) => {
                 let mut map = HashMap::new();
                 for (k, v) in obj {
                     map.insert(k.clone(), Self::json_to_value(v));
                 }
-                Value::Hash(Value::hash_arc(map))
+                Value::hash_with_data(Value::hash_arc(map))
             }
         }
     }

@@ -9,8 +9,8 @@ impl Interpreter {
 
     pub fn new() -> Self {
         let mut env = HashMap::new();
-        env.insert("*PID".to_string(), Value::Int(current_process_id()));
-        env.insert("*TZ".to_string(), Value::Int(local_timezone_offset_secs()));
+        env.insert("*PID".to_string(), Value::int(current_process_id()));
+        env.insert("*TZ".to_string(), Value::int(local_timezone_offset_secs()));
         env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         // Populate %*ENV with all OS environment variables so that
@@ -21,7 +21,10 @@ impl Interpreter {
             for (key, value) in std::env::vars() {
                 env_hash.insert(key, builtins_collection::builtin_val(&[Value::str(value)]));
             }
-            env.insert("%*ENV".to_string(), Value::Hash(Value::hash_arc(env_hash)));
+            env.insert(
+                "%*ENV".to_string(),
+                Value::hash_with_data(Value::hash_arc(env_hash)),
+            );
         }
         env.insert(
             "*SCHEDULER".to_string(),
@@ -2203,7 +2206,7 @@ impl Interpreter {
             }
         }
         crate::env::set_global_base(enum_base);
-        interpreter.env.insert("Any".to_string(), Value::Nil);
+        interpreter.env.insert("Any".to_string(), Value::NIL);
         // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
         // (attrs mirror explicit `.new()` construction, see
         // methods_object_dispatch_new.rs's "CompUnit::Repository::FileSystem" arm,
@@ -2212,7 +2215,7 @@ impl Interpreter {
             let mut attrs = HashMap::new();
             attrs.insert("prefix".to_string(), interpreter.make_io_path_instance("."));
             attrs.insert("short-id".to_string(), Value::str_from("file"));
-            attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(true));
+            attrs.insert("__mutsu_precomp_enabled".to_string(), Value::TRUE);
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);

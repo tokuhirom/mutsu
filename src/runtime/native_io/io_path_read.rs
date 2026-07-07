@@ -48,7 +48,7 @@ impl Interpreter {
                     })?;
                     let byte_vals: Vec<Value> = bytes
                         .into_iter()
-                        .map(|b| Value::Int(i64::from(b)))
+                        .map(|b| Value::int(i64::from(b)))
                         .collect();
                     let mut attrs = HashMap::new();
                     attrs.insert("bytes".to_string(), Value::array(byte_vals));
@@ -82,7 +82,7 @@ impl Interpreter {
                 if let Some(n) = args.iter().find_map(numeric_limit_arg) {
                     parts.truncate(n);
                 }
-                Ok(Value::Seq(std::sync::Arc::new(parts)))
+                Ok(Value::seq(parts))
             }
             "words" => {
                 let content = fs::read_to_string(&path_buf)
@@ -95,7 +95,7 @@ impl Interpreter {
                 if let Some(n) = args.iter().find_map(numeric_limit_arg) {
                     parts.truncate(n);
                 }
-                Ok(Value::Seq(std::sync::Arc::new(parts)))
+                Ok(Value::seq(parts))
             }
             _ => unreachable!("io_path_content_read called with non-content method"),
         }
@@ -161,8 +161,8 @@ impl Interpreter {
                     let class_name = err
                         .exception
                         .as_deref()
-                        .and_then(|ex| match ex {
-                            Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                        .and_then(|ex| match ex.view() {
+                            ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
                             _ => None,
                         })
                         .unwrap_or_else(|| "X::AdHoc".to_string());
@@ -207,7 +207,7 @@ impl Interpreter {
         // Filter out :close (irrelevant for IO::Path) before delegating.
         let comb_args: Vec<Value> = args
             .iter()
-            .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+            .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "close"))
             .cloned()
             .collect();
         Some(
@@ -220,7 +220,7 @@ impl Interpreter {
                         .graphemes(true)
                         .map(|g| Value::str(g.to_string()))
                         .collect();
-                    Ok(Value::Seq(std::sync::Arc::new(parts)))
+                    Ok(Value::seq(parts))
                 }
             },
         )

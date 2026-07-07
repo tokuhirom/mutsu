@@ -19,9 +19,9 @@ impl Interpreter {
     }
 
     fn callable_return_type_inner(callable: &Value) -> Option<String> {
-        match callable {
-            Value::Sub(data) => match data.env.get("__mutsu_return_type") {
-                Some(Value::Str(rt)) => Some(rt.to_string()),
+        match callable.view() {
+            ValueView::Sub(data) => match data.env.get("__mutsu_return_type").map(Value::view) {
+                Some(ValueView::Str(rt)) => Some(rt.to_string()),
                 _ => None,
             },
             _ => None,
@@ -35,8 +35,9 @@ impl Interpreter {
     pub(crate) fn routine_return_spec_by_name(&self, name: &str) -> Option<String> {
         let code_key = format!("&{}", name);
         for key in [code_key.as_str(), name] {
-            if let Some(Value::Sub(data)) = self.env.get(key)
-                && let Some(Value::Str(spec)) = data.env.get("__mutsu_return_type")
+            if let Some(ValueView::Sub(data)) = self.env.get(key).map(Value::view)
+                && let Some(ValueView::Str(spec)) =
+                    data.env.get("__mutsu_return_type").map(Value::view)
             {
                 return Some(spec.to_string());
             }
@@ -108,7 +109,7 @@ impl Interpreter {
     }
 
     fn failure_value_to_error(exception: &Value) -> RuntimeError {
-        let message = if let Value::Instance { attributes, .. } = exception {
+        let message = if let ValueView::Instance { attributes, .. } = exception.view() {
             attributes
                 .as_map()
                 .get("message")
@@ -126,11 +127,11 @@ impl Interpreter {
         &self,
         value: &Value,
     ) -> Option<RuntimeError> {
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
         else {
             return None;
         };
@@ -157,11 +158,11 @@ impl Interpreter {
         &self,
         value: &Value,
     ) -> Option<RuntimeError> {
-        let items: &[Value] = match value {
-            Value::Seq(items)
-            | Value::Slip(items)
-            | Value::HyperSeq(items)
-            | Value::RaceSeq(items) => items,
+        let items: &[Value] = match value.view() {
+            ValueView::Seq(items)
+            | ValueView::Slip(items)
+            | ValueView::HyperSeq(items)
+            | ValueView::RaceSeq(items) => items,
             _ => return None,
         };
         items
@@ -179,21 +180,21 @@ impl Interpreter {
         failure_attrs.insert("exception".to_string(), exception);
         // When UNDO phasers ran for this fail, the Failure is marked as handled
         // (Raku semantics: UNDO acts as a handler, so sinking the Failure won't throw).
-        failure_attrs.insert("handled".to_string(), Value::Bool(err.fail_handled));
+        failure_attrs.insert("handled".to_string(), Value::truth(err.fail_handled));
         let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
         // Register in the pending failure registry for $!.pending support
-        if let Value::Instance { id, .. } = &failure {
-            crate::value::register_pending_failure(*id, failure.clone());
+        if let ValueView::Instance { id, .. } = failure.view() {
+            crate::value::register_pending_failure(id, failure.clone());
         }
         failure
     }
 
     fn malformed_return_value_error(&self, value: &Value) -> RuntimeError {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
             && class_name == "Failure"
             && let Some(ex) = attributes.as_map().get("exception")
         {
@@ -204,14 +205,14 @@ impl Interpreter {
 
     fn evaluate_definite_return_value(&mut self, spec: &str) -> Result<Value, RuntimeError> {
         if let Some(name) = Self::return_spec_scalar_name(spec) {
-            return Ok(self.env.get(&name).cloned().unwrap_or(Value::Nil));
+            return Ok(self.env.get(&name).cloned().unwrap_or(Value::NIL));
         }
         self.eval_eval_string(spec.trim())
     }
 
     fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
-        match value {
-            Value::LazyList(list) => {
+        match value.view() {
+            ValueView::LazyList(list) => {
                 let items = self.force_lazy_list(list)?;
                 for item in &items {
                     self.sink_for_definite_return(item)?;
@@ -236,7 +237,7 @@ impl Interpreter {
             return;
         }
         if let Some(name) = Self::return_spec_scalar_name(spec) {
-            self.env.insert(name, Value::Nil);
+            self.env.insert(name, Value::NIL);
         }
     }
 
@@ -268,7 +269,7 @@ impl Interpreter {
             }
             Err(e) if e.return_value.is_some() => {
                 let explicit = e.return_value.unwrap();
-                if !matches!(explicit, Value::Nil) {
+                if !explicit.is_nil() {
                     return Err(self.malformed_return_value_error(&explicit));
                 }
                 self.evaluate_definite_return_value(spec)
@@ -290,7 +291,7 @@ impl Interpreter {
         attrs.insert("got".to_string(), got.clone());
         attrs.insert(
             "expected".to_string(),
-            Value::Package(Symbol::intern(expected)),
+            Value::package(Symbol::intern(expected)),
         );
         let exception = Value::make_instance(Symbol::intern("X::TypeCheck::Return"), attrs);
         let mut err = RuntimeError::new(msg);
@@ -300,23 +301,23 @@ impl Interpreter {
 
     /// Get the display type name for error messages (Package shows its name)
     fn display_type_name(value: &Value) -> String {
-        match value {
-            Value::Package(name) => name.resolve().to_string(),
+        match value.view() {
+            ValueView::Package(name) => name.resolve().to_string(),
             _ => super::utils::value_type_name(value).to_string(),
         }
     }
 
     /// Get a gist-like representation for error messages
     fn display_gist(value: &Value) -> String {
-        match value {
-            Value::Package(name) => name.resolve().to_string(),
-            Value::Str(s) => format!("\"{}\"", s),
-            Value::Int(i) => i.to_string(),
-            Value::BigInt(n) => n.to_string(),
-            Value::Num(n) => format!("{}", n),
-            Value::Bool(b) => if *b { "True" } else { "False" }.to_string(),
-            Value::Rat(n, d) => format!("{}", *n as f64 / *d as f64),
-            Value::Nil => "Nil".to_string(),
+        match value.view() {
+            ValueView::Package(name) => name.resolve().to_string(),
+            ValueView::Str(s) => format!("\"{}\"", s),
+            ValueView::Int(i) => i.to_string(),
+            ValueView::BigInt(n) => n.to_string(),
+            ValueView::Num(n) => format!("{}", n),
+            ValueView::Bool(b) => if b { "True" } else { "False" }.to_string(),
+            ValueView::Rat(n, d) => format!("{}", n as f64 / d as f64),
+            ValueView::Nil => "Nil".to_string(),
             _ => value.to_string_value(),
         }
     }
@@ -346,7 +347,7 @@ impl Interpreter {
         let resolved_spec = self.resolved_type_capture_name(spec);
         let spec = resolved_spec.as_str();
         // Nil and Failure pass through unconditionally
-        if matches!(value, Value::Nil) || Self::is_failure_value(&value) {
+        if value.is_nil() || Self::is_failure_value(&value) {
             return Ok(value);
         }
 
@@ -385,7 +386,7 @@ impl Interpreter {
         if let Some(open) = spec.find('[')
             && spec.ends_with(']')
             && matches!(&spec[..open], "Positional" | "Array" | "List")
-            && matches!(&value, Value::Array(..))
+            && matches!(value.view(), ValueView::Array(..))
         {
             let inner = &spec[open + 1..spec.len() - 1];
             let (inner_base, _) = super::types::strip_type_smiley(inner);

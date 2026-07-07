@@ -6,7 +6,7 @@ impl Interpreter {
         let mut before = String::new();
         let mut after = String::new();
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "before" => before = value.to_string_value(),
                     "after" => after = value.to_string_value(),
@@ -28,30 +28,25 @@ impl Interpreter {
         let sched_id = super::native_methods::next_fake_scheduler_id();
         super::native_methods::fake_scheduler_init(sched_id, 0.0);
         let mut attrs = HashMap::new();
-        attrs.insert("scheduler_id".to_string(), Value::Int(sched_id as i64));
+        attrs.insert("scheduler_id".to_string(), Value::int(sched_id as i64));
         Value::make_instance(Symbol::intern("FakeScheduler"), attrs)
     }
 
     /// VM-native construction for `Proxy.new(:FETCH(...), :STORE(...))` — pure data
     /// assembly that wraps the (already-evaluated) FETCH/STORE callables.
     pub(crate) fn build_native_proxy_value(args: &[Value]) -> Value {
-        let mut fetcher = Value::Nil;
-        let mut storer = Value::Nil;
+        let mut fetcher = Value::NIL;
+        let mut storer = Value::NIL;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
-                    "FETCH" => fetcher = (**value).clone(),
-                    "STORE" => storer = (**value).clone(),
+                    "FETCH" => fetcher = value.clone(),
+                    "STORE" => storer = value.clone(),
                     _ => {}
                 }
             }
         }
-        Value::Proxy {
-            fetcher: Box::new(fetcher),
-            storer: Box::new(storer),
-            subclass: None,
-            decontainerized: false,
-        }
+        Value::proxy_parts(fetcher, storer, None, false)
     }
 
     /// VM-native construction for `Match.new(:orig, :from, :pos|:to, :list, :hash)` —
@@ -64,13 +59,13 @@ impl Interpreter {
         let mut list = Value::array(Vec::new());
         let mut hash = Value::hash(HashMap::new());
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "orig" => orig = value.to_string_value(),
                     "from" => from = to_int(value),
                     "pos" | "to" => to = to_int(value),
-                    "list" => list = (**value).clone(),
-                    "hash" => hash = (**value).clone(),
+                    "list" => list = value.clone(),
+                    "hash" => hash = value.clone(),
                     _ => {}
                 }
             }
@@ -83,17 +78,17 @@ impl Interpreter {
             .collect();
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::str(matched));
-        attrs.insert("from".to_string(), Value::Int(from));
-        attrs.insert("to".to_string(), Value::Int(to));
+        attrs.insert("from".to_string(), Value::int(from));
+        attrs.insert("to".to_string(), Value::int(to));
         attrs.insert("orig".to_string(), Value::str(orig));
         // Convert list to positional captures
-        if let Value::Array(items, ..) = &list {
+        if let ValueView::Array(items, ..) = list.view() {
             attrs.insert("list".to_string(), Value::array(items.to_vec()));
         } else {
             attrs.insert("list".to_string(), Value::array(Vec::new()));
         }
         // Convert hash (Map) to named captures
-        if let Value::Hash(map, ..) = &hash {
+        if let ValueView::Hash(map) = hash.view() {
             attrs.insert("named".to_string(), Value::hash(map.as_ref().clone()));
         } else {
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
@@ -118,9 +113,9 @@ impl Interpreter {
             )));
         }
         // Unwrap allomorphic (Mixin) arguments to get the inner numeric value.
-        let numeric = match &args[0] {
-            Value::Mixin(inner, _) => (**inner).clone(),
-            other => other.clone(),
+        let numeric = match args[0].view() {
+            ValueView::Mixin(inner, _) => (**inner).clone(),
+            _ => args[0].clone(),
         };
         let string = args[1].to_string_value();
         let mut mixins = HashMap::new();
@@ -139,7 +134,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let positional = args
             .iter()
-            .find(|a| !matches!(a, Value::Pair(_, _) | Value::ValuePair(_, _)));
+            .find(|a| !matches!(a.view(), ValueView::Pair(_, _) | ValueView::ValuePair(_, _)));
         match positional {
             Some(val) => {
                 let mut attrs = HashMap::new();
@@ -173,11 +168,11 @@ impl Interpreter {
     pub(crate) fn try_native_seq_construct(&mut self, args: &[Value]) -> Value {
         // Seq.new(iterator)
         if let Some(iterator) = args.first() {
-            if matches!(iterator, Value::Instance { .. })
+            if matches!(iterator.view(), ValueView::Instance { .. })
                 && self.type_matches_value("PredictiveIterator", iterator)
             {
-                let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
-                if let Value::Seq(items) = &seq {
+                let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
+                if let ValueView::Seq(items) = seq.view() {
                     let seq_id = std::sync::Arc::as_ptr(items) as usize;
                     // Store off the scoped env so the association
                     // survives sub/block returns (see field docs).
@@ -189,18 +184,21 @@ impl Interpreter {
                 }
                 return seq;
             }
-            if let Value::Instance { attributes, .. } = iterator {
+            if let ValueView::Instance { attributes, .. } = iterator.view() {
                 let map = attributes.as_map();
-                if let Some(Value::Array(items, ..)) = map.get("items").or_else(|| map.get("stuff"))
+                if let Some(ValueView::Array(items, ..)) = map
+                    .get("items")
+                    .or_else(|| map.get("stuff"))
+                    .map(Value::view)
                 {
-                    return Value::Seq(std::sync::Arc::new(items.to_vec()));
+                    return Value::seq_arc(std::sync::Arc::new(items.to_vec()));
                 }
             }
             // Register deferred iterator: don't pull eagerly.
             // Raku's Seq.new(iterator) creates a lazy Seq; pulling
             // happens only when the Seq is actually consumed/iterated.
-            let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
-            if let Value::Seq(items) = &seq {
+            let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
+            if let ValueView::Seq(items) = seq.view() {
                 crate::value::seq_register_deferred_iter(items, iterator.clone());
             }
             return seq;
@@ -209,8 +207,8 @@ impl Interpreter {
         // This matches Raku: Seq.new() has no iterator, so it's
         // immediately consumed. This is what .raku returns for
         // consumed Seqs ("Seq.new()") so the EVAL roundtrip works.
-        let seq = Value::Seq(std::sync::Arc::new(Vec::new()));
-        if let Value::Seq(items) = &seq {
+        let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
+        if let ValueView::Seq(items) = seq.view() {
             let _ = crate::value::seq_consume(items);
         }
         seq
@@ -227,13 +225,8 @@ impl Interpreter {
         let raw_exception = args
             .first()
             .cloned()
-            .filter(|v| !matches!(v, Value::Nil))
-            .or_else(|| {
-                self.env
-                    .get("!")
-                    .cloned()
-                    .filter(|v| !matches!(v, Value::Nil))
-            })
+            .filter(|v| !v.is_nil())
+            .or_else(|| self.env.get("!").cloned().filter(|v| !v.is_nil()))
             .unwrap_or_else(default_exception);
         // Wrap non-Exception values in X::AdHoc (Raku behavior).
         let wrap_adhoc = |raw: Value| {
@@ -242,26 +235,26 @@ impl Interpreter {
             attrs.insert("message".to_string(), Value::str(raw.to_string_value()));
             Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
         };
-        let exception = if let Value::Instance { class_name, .. } = &raw_exception {
+        let is_exception = if let ValueView::Instance { class_name, .. } = raw_exception.view() {
             let cn = class_name.resolve();
-            if cn == "Exception"
+            cn == "Exception"
                 || cn.starts_with("X::")
                 || cn.starts_with("CX::")
                 || self
                     .mro_readonly(&cn)
                     .iter()
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"))
-            {
-                raw_exception
-            } else {
-                wrap_adhoc(raw_exception)
-            }
+        } else {
+            false
+        };
+        let exception = if is_exception {
+            raw_exception
         } else {
             wrap_adhoc(raw_exception)
         };
         let mut attrs = HashMap::new();
         attrs.insert("exception".to_string(), exception);
-        attrs.insert("handled".to_string(), Value::Bool(false));
+        attrs.insert("handled".to_string(), Value::FALSE);
         Value::make_instance(Symbol::intern("Failure"), attrs)
     }
 }

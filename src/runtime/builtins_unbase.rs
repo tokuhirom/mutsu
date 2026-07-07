@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn builtin_unbase(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -10,12 +11,12 @@ impl Interpreter {
         }
         if args.len() < 2 {
             // :N() with no value -> X::Numeric::Confused
-            let radix = match args[0] {
-                Value::Int(n) => n,
+            let radix = match args[0].view() {
+                ValueView::Int(n) => n,
                 _ => 0,
             };
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("base".to_string(), Value::Int(radix));
+            attrs.insert("base".to_string(), Value::int(radix));
             attrs.insert(
                 "message".to_string(),
                 Value::str(format!("No value supplied for base-{} conversion", radix)),
@@ -26,8 +27,8 @@ impl Interpreter {
             err.exception = Some(Box::new(exception));
             return Err(err);
         }
-        let radix = match args[0] {
-            Value::Int(n) if (2..=36).contains(&n) => n as u32,
+        let radix = match args[0].view() {
+            ValueView::Int(n) if (2..=36).contains(&n) => n as u32,
             _ => {
                 return Err(RuntimeError::new(
                     "UNBASE radix must be an integer in 2..36",
@@ -38,19 +39,19 @@ impl Interpreter {
         let mut out = Vec::with_capacity(args.len() - 1);
         for arg in args.iter().skip(1) {
             // :N() requires string arguments; non-string throws X::Numeric::Confused
-            if !matches!(arg, Value::Str(_)) {
-                let type_name = match arg {
-                    Value::Int(_) => "Int",
-                    Value::Num(_) => "Num",
-                    Value::Rat(_, _) | Value::BigRat(..) => "Rat",
-                    Value::Array(..) => "Array",
-                    Value::Hash(..) => "Hash",
-                    Value::Bool(_) => "Bool",
+            if !matches!(arg.view(), ValueView::Str(_)) {
+                let type_name = match arg.view() {
+                    ValueView::Int(_) => "Int",
+                    ValueView::Num(_) => "Num",
+                    ValueView::Rat(_, _) | ValueView::BigRat(..) => "Rat",
+                    ValueView::Array(..) => "Array",
+                    ValueView::Hash(..) => "Hash",
+                    ValueView::Bool(_) => "Bool",
                     _ => "value",
                 };
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("num".to_string(), arg.clone());
-                attrs.insert("base".to_string(), Value::Int(radix as i64));
+                attrs.insert("base".to_string(), Value::int(radix as i64));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
@@ -125,7 +126,7 @@ impl Interpreter {
             }
             // Try to fit in i64
             if let Ok(n) = i64::try_from(&result) {
-                Ok(Value::Int(n))
+                Ok(Value::int(n))
             } else {
                 Ok(Value::bigint(result))
             }

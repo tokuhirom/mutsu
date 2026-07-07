@@ -311,7 +311,7 @@ impl Interpreter {
                 if !phaser_stmts.is_empty() {
                     self.eval_block_value(&phaser_stmts)?;
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             Err(parse_err) => {
                 let (partial_stmts, _) = crate::parser::parse_program_partial_with_operators(
@@ -333,8 +333,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let trimmed = code.trim();
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
-        self.env
-            .insert("__mutsu_in_eval".to_string(), Value::Bool(true));
+        self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
         let op_names = self.collect_operator_sub_names();
         let op_assoc = self.collect_operator_assoc_map();
         let imported_names = self.collect_eval_imported_function_names();

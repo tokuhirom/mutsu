@@ -68,6 +68,7 @@ pub(in crate::runtime) use state_supplier::{
 };
 
 use super::*;
+use crate::value::ValueView;
 use std::time::Duration;
 
 impl Interpreter {
@@ -112,23 +113,23 @@ impl Interpreter {
         let Some(value) = arg else {
             return Ok(1);
         };
-        let parsed = match value {
-            Value::Int(i) => *i,
-            Value::BigInt(i) => {
+        let parsed = match value.view() {
+            ValueView::Int(i) => i,
+            ValueView::BigInt(i) => {
                 let text = i.to_string();
                 if text.starts_with('-') || text == "0" {
                     return Ok(0);
                 }
                 return Ok(total_len);
             }
-            Value::Whatever => return Ok(total_len),
-            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => return Ok(total_len),
-            Value::Num(f) if f.is_infinite() && f.is_sign_negative() => return Ok(0),
-            Value::Num(f) if f.is_nan() => {
+            ValueView::Whatever => return Ok(total_len),
+            ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => return Ok(total_len),
+            ValueView::Num(f) if f.is_infinite() && f.is_sign_negative() => return Ok(0),
+            ValueView::Num(f) if f.is_nan() => {
                 return Err(RuntimeError::new("Cannot use NaN as a tail count"));
             }
-            Value::Num(f) => *f as i64,
-            Value::Str(s) => {
+            ValueView::Num(f) => f as i64,
+            ValueView::Str(s) => {
                 let trimmed = s.trim();
                 if trimmed.eq_ignore_ascii_case("inf") {
                     return Ok(total_len);
@@ -151,9 +152,9 @@ impl Interpreter {
                     }
                 }
             }
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                 let computed =
-                    self.eval_call_on_value(value.clone(), vec![Value::Int(total_len as i64)])?;
+                    self.eval_call_on_value(value.clone(), vec![Value::int(total_len as i64)])?;
                 return self.resolve_supply_tail_count(Some(&computed), total_len);
             }
             _ => {
@@ -189,8 +190,8 @@ impl Interpreter {
             .map(|e| e.name.as_str())
             .unwrap_or(encoding_name)
             .to_lowercase();
-        match chunk {
-            Value::Instance {
+        match chunk.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -205,28 +206,32 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                if let Some(bytes_v) = attributes.as_map().get("bytes")
+                    && let ValueView::Array(items, ..) = bytes_v.view()
+                {
                     return items
                         .iter()
-                        .map(|v| match v {
-                            Value::Int(i) => *i as u8,
+                        .map(|v| match v.view() {
+                            ValueView::Int(i) => i as u8,
                             _ => 0,
                         })
                         .collect();
                 }
                 Vec::new()
             }
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             } if class_name == "utf16" => {
-                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                if let Some(bytes_v) = attributes.as_map().get("bytes")
+                    && let ValueView::Array(items, ..) = bytes_v.view()
+                {
                     let use_be = normalized == "utf-16be";
                     let mut bytes = Vec::with_capacity(items.len() * 2);
                     for item in items.iter() {
-                        let unit = match item {
-                            Value::Int(i) => *i as u16,
+                        let unit = match item.view() {
+                            ValueView::Int(i) => i as u16,
                             _ => 0u16,
                         };
                         let pair = if use_be {
@@ -240,16 +245,16 @@ impl Interpreter {
                 }
                 Vec::new()
             }
-            Value::Array(items, ..) => items
+            ValueView::Array(items, ..) => items
                 .iter()
-                .map(|v| match v {
-                    Value::Int(i) => *i as u8,
+                .map(|v| match v.view() {
+                    ValueView::Int(i) => i as u8,
                     _ => 0,
                 })
                 .collect(),
-            Value::Int(i) => vec![*i as u8],
-            Value::Str(s) => s.as_bytes().to_vec(),
-            other => other.to_string_value().into_bytes(),
+            ValueView::Int(i) => vec![i as u8],
+            ValueView::Str(s) => s.as_bytes().to_vec(),
+            _ => chunk.to_string_value().into_bytes(),
         }
     }
 

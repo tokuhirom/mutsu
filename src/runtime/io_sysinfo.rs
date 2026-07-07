@@ -43,7 +43,7 @@ impl Interpreter {
 
     pub(super) fn make_handle_instance_with_bin(&self, handle_id: usize, bin: bool) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("handle".to_string(), Value::Int(handle_id as i64));
+        attrs.insert("handle".to_string(), Value::int(handle_id as i64));
         if let Some(state) = self.io_handles().map.get(&handle_id) {
             if let Some(path) = &state.path {
                 attrs.insert("path".to_string(), Value::str(path.clone()));
@@ -53,7 +53,7 @@ impl Interpreter {
                 Value::str(Self::mode_name(state.mode).to_string()),
             );
             // Store handle state attributes so IO::Handle.open can inherit them
-            attrs.insert("chomp".to_string(), Value::Bool(state.line_chomp));
+            attrs.insert("chomp".to_string(), Value::truth(state.line_chomp));
             attrs.insert("nl-out".to_string(), Value::str(state.nl_out.clone()));
             // A text handle exposes its decoder name via `.encoding`; a binary
             // handle reports no encoding (handled by the `bin` branch below).
@@ -82,7 +82,7 @@ impl Interpreter {
             }
         }
         if bin {
-            attrs.insert("bin".to_string(), Value::Bool(true));
+            attrs.insert("bin".to_string(), Value::TRUE);
         }
         Value::make_instance(Symbol::intern("IO::Handle"), attrs)
     }
@@ -106,7 +106,7 @@ impl Interpreter {
         } else {
             "IO::Spec::Unix"
         };
-        Value::Package(Symbol::intern(class_name))
+        Value::package(Symbol::intern(class_name))
     }
 
     pub(super) fn make_distro_instance() -> Value {
@@ -217,7 +217,7 @@ impl Interpreter {
             }
         };
 
-        // Parse version string into Value::Version
+        // Parse version string into a Version value
         let version = Self::parse_version_string(&version_str);
 
         let path_sep = if cfg!(windows) {
@@ -239,7 +239,7 @@ impl Interpreter {
         attrs.insert("desc".to_string(), Value::str(desc));
         attrs.insert("release".to_string(), Value::str(release));
         attrs.insert("path-sep".to_string(), Value::str(path_sep));
-        attrs.insert("is-win".to_string(), Value::Bool(is_win));
+        attrs.insert("is-win".to_string(), Value::truth(is_win));
 
         Value::make_instance(Symbol::intern("Distro"), attrs)
     }
@@ -251,17 +251,9 @@ impl Interpreter {
             .filter_map(|p| p.parse::<i64>().ok().map(VersionPart::Num))
             .collect();
         if parts.is_empty() {
-            Value::Version {
-                parts: vec![VersionPart::Num(0)],
-                plus: false,
-                minus: false,
-            }
+            Value::version(vec![VersionPart::Num(0)], false, false)
         } else {
-            Value::Version {
-                parts,
-                plus: false,
-                minus: false,
-            }
+            Value::version(parts, false, false)
         }
     }
 
@@ -271,17 +263,13 @@ impl Interpreter {
         attrs.insert("auth".to_string(), Value::str_from("The Perl Foundation"));
         attrs.insert(
             "version".to_string(),
-            Value::Version {
-                parts: vec![crate::value::VersionPart::Num(6)],
-                plus: false,
-                minus: false,
-            },
+            Value::version(vec![crate::value::VersionPart::Num(6)], false, false),
         );
         attrs.insert(
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Blob"), {
                 let mut a = HashMap::new();
-                a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
+                a.insert("values".to_string(), Value::array(vec![Value::int(0)]));
                 a
             }),
         );
@@ -344,21 +332,18 @@ impl Interpreter {
                 }
             })
             .collect();
-        let new_version = Value::Version {
-            parts,
-            plus: false,
-            minus: false,
-        };
+        let new_version = Value::version(parts, false, false);
         for key in ["*RAKU", "?RAKU", "*PERL", "?PERL"] {
-            if let Some(Value::Instance {
-                class_name,
-                attributes,
-                id,
-            }) = self.env.get(key).cloned()
+            if let Some(v) = self.env.get(key).cloned()
+                && let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    id,
+                } = v.view()
             {
                 let mut new_attrs = attributes.to_map();
                 new_attrs.insert("version".to_string(), new_version.clone());
-                let new_val = Value::write_back_sharing(&attributes, class_name, new_attrs, id);
+                let new_val = Value::write_back_sharing(attributes, class_name, new_attrs, id);
                 self.env.insert(key.to_string(), new_val);
             }
         }
@@ -370,21 +355,21 @@ impl Interpreter {
         attrs.insert("auth".to_string(), Value::str_from("github.com/tokuhirom"));
         attrs.insert(
             "version".to_string(),
-            Value::Version {
-                parts: vec![
+            Value::version(
+                vec![
                     crate::value::VersionPart::Num(0),
                     crate::value::VersionPart::Num(1),
                     crate::value::VersionPart::Num(0),
                 ],
-                plus: false,
-                minus: false,
-            },
+                false,
+                false,
+            ),
         );
         attrs.insert(
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Blob"), {
                 let mut a = HashMap::new();
-                a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
+                a.insert("values".to_string(), Value::array(vec![Value::int(0)]));
                 a
             }),
         );
@@ -492,7 +477,7 @@ impl Interpreter {
                 if i < signal_names.len() && !signal_names[i].is_empty() {
                     Value::str(format!("SIG{}", signal_names[i]))
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             })
             .collect();
@@ -505,29 +490,29 @@ impl Interpreter {
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
         );
-        attrs.insert("desc".to_string(), Value::Str(String::new().into()));
+        attrs.insert("desc".to_string(), Value::str_arc(String::new().into()));
         attrs.insert("release".to_string(), Value::str(release));
         attrs.insert("hardware".to_string(), Value::str(hardware));
         attrs.insert("arch".to_string(), Value::str(arch_str));
-        attrs.insert("bits".to_string(), Value::Int(bits));
+        attrs.insert("bits".to_string(), Value::int(bits));
         attrs.insert("hostname".to_string(), Value::str(hostname));
         attrs.insert("signals".to_string(), Value::array(signals));
 
         // endian: Endian enum value matching the host system
         let endian_val = if cfg!(target_endian = "little") {
-            Value::Enum {
-                enum_type: crate::symbol::Symbol::intern("Endian"),
-                key: crate::symbol::Symbol::intern("LittleEndian"),
-                value: crate::value::EnumValue::Int(1),
-                index: 1,
-            }
+            Value::enum_parts(
+                crate::symbol::Symbol::intern("Endian"),
+                crate::symbol::Symbol::intern("LittleEndian"),
+                crate::value::EnumValue::Int(1),
+                1,
+            )
         } else {
-            Value::Enum {
-                enum_type: crate::symbol::Symbol::intern("Endian"),
-                key: crate::symbol::Symbol::intern("BigEndian"),
-                value: crate::value::EnumValue::Int(2),
-                index: 2,
-            }
+            Value::enum_parts(
+                crate::symbol::Symbol::intern("Endian"),
+                crate::symbol::Symbol::intern("BigEndian"),
+                crate::value::EnumValue::Int(2),
+                2,
+            )
         };
         attrs.insert("endian".to_string(), endian_val);
 

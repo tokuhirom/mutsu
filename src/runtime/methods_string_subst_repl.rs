@@ -31,9 +31,9 @@ impl Interpreter {
             }
             return Ok(cased(replacement_str.to_string()));
         }
-        let sub_data = match replacement_val {
-            Some(Value::Sub(data)) => data.clone(),
-            Some(Value::WeakSub(weak)) => weak
+        let sub_data = match replacement_val.as_ref().map(Value::view) {
+            Some(ValueView::Sub(data)) => data.clone(),
+            Some(ValueView::WeakSub(weak)) => weak
                 .upgrade()
                 .ok_or_else(|| RuntimeError::new("subst closure has been garbage collected"))?,
             _ => return Ok(replacement_str.to_string()),
@@ -82,15 +82,16 @@ impl Interpreter {
                 } else if let Some(capture) = captures.positional.get(i) {
                     Value::str(capture.clone())
                 } else {
-                    Value::Nil
+                    Value::NIL
                 };
                 self.env.insert(i.to_string(), value);
             }
             if positional_len == 0 {
-                self.env.insert("0".to_string(), Value::Nil);
+                self.env.insert("0".to_string(), Value::NIL);
             }
-            if let Value::Instance { ref attributes, .. } = match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
+            if let ValueView::Instance { attributes, .. } = match_obj.view()
+                && let Some(ValueView::Hash(named_hash)) =
+                    attributes.as_map().get("named").map(Value::view)
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
@@ -114,7 +115,7 @@ impl Interpreter {
                 self.env.insert(pname.to_string(), topic);
             }
         }
-        let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::Nil);
+        let result = self.eval_block_value(&sub_data.body).unwrap_or(Value::NIL);
         // Propagate the block's writes to its closed-over lexicals back to the
         // caller before restoring the outer env, skipping the injected
         // match-context names (`$/`, `$_`, positional `$0`.., `<name>`).

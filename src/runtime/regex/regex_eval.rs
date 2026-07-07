@@ -72,10 +72,10 @@ impl Interpreter {
             Ok(v) => v,
             Err(e) => e.return_value?,
         };
-        match val {
-            Value::Regex(pat) => Some(pat.to_string()),
-            Value::RegexWithAdverbs(a) => Some(a.pattern.to_string()),
-            Value::Routine {
+        match val.view() {
+            ValueView::Regex(pat) => Some(pat.to_string()),
+            ValueView::RegexWithAdverbs(a) => Some(a.pattern.to_string()),
+            ValueView::Routine {
                 is_regex: true,
                 name,
                 package,
@@ -87,15 +87,15 @@ impl Interpreter {
                 };
                 Some(format!("<{}>", full_name))
             }
-            Value::Array(ref elems, ..) => {
+            ValueView::Array(elems, ..) => {
                 // Array/List -> alternation of escaped literals
                 let alts: Vec<String> = elems
                     .iter()
-                    .map(|v| match v {
-                        Value::Regex(pat) => pat.to_string(),
-                        Value::RegexWithAdverbs(a) => a.pattern.to_string(),
-                        other => {
-                            let s = other.to_string_value();
+                    .map(|v| match v.view() {
+                        ValueView::Regex(pat) => pat.to_string(),
+                        ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                        _ => {
+                            let s = v.to_string_value();
                             // Quote as regex literal using single quotes
                             format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
                         }
@@ -106,15 +106,15 @@ impl Interpreter {
                 }
                 Some(format!("[ {} ]", alts.join(" | ")))
             }
-            Value::Seq(ref elems) => {
+            ValueView::Seq(elems) => {
                 // Array/List -> alternation of escaped literals
                 let alts: Vec<String> = elems
                     .iter()
-                    .map(|v| match v {
-                        Value::Regex(pat) => pat.to_string(),
-                        Value::RegexWithAdverbs(a) => a.pattern.to_string(),
-                        other => {
-                            let s = other.to_string_value();
+                    .map(|v| match v.view() {
+                        ValueView::Regex(pat) => pat.to_string(),
+                        ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                        _ => {
+                            let s = v.to_string_value();
                             // Quote as regex literal using single quotes
                             format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
                         }
@@ -125,8 +125,8 @@ impl Interpreter {
                 }
                 Some(format!("[ {} ]", alts.join(" | ")))
             }
-            other => {
-                let s = other.to_string_value();
+            _ => {
+                let s = val.to_string_value();
                 Some(s)
             }
         }
@@ -237,11 +237,11 @@ impl Interpreter {
             None,
             &caps.named_quantified,
         );
-        let Value::Instance { attributes, .. } = &full else {
+        let ValueView::Instance { attributes, .. } = full.view() else {
             return out;
         };
         let attr_map = attributes.as_map();
-        let Some(Value::Hash(named)) = attr_map.get("named") else {
+        let Some(ValueView::Hash(named)) = attr_map.get("named").map(Value::view) else {
             return out;
         };
         let mut scratch = Interpreter {
@@ -251,8 +251,8 @@ impl Interpreter {
         };
         self.copy_full_registry_into(&mut scratch);
         for (k, child) in named.iter() {
-            let ran = match child {
-                Value::Array(items, meta) => {
+            let ran = match child.view() {
+                ValueView::Array(items, meta) => {
                     let mut acc = Vec::with_capacity(items.len());
                     for it in items.as_ref() {
                         let dn = Interpreter::get_action_name(it).unwrap_or_else(|| k.clone());
@@ -261,7 +261,10 @@ impl Interpreter {
                             .unwrap_or_else(|_| it.clone());
                         acc.push(m);
                     }
-                    Value::Array(crate::gc::Gc::new(crate::value::ArrayData::new(acc)), *meta)
+                    Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(acc)),
+                        meta,
+                    )
                 }
                 _ => {
                     let dn = Interpreter::get_action_name(child).unwrap_or_else(|| k.clone());
@@ -325,17 +328,13 @@ impl Interpreter {
         // ONLY to extract `$*` dynamic-var writes (which flow through the scratch
         // env into the overlay, not through actions state). `InstanceAttrs::clone`
         // is a deep, fresh-cell copy.
-        let mut actions = match &actions {
-            Value::Instance {
+        let mut actions = match actions.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 id,
-            } => Value::Instance {
-                class_name: *class_name,
-                attributes: crate::gc::Gc::new((**attributes).clone()),
-                id: *id,
-            },
-            other => other.clone(),
+            } => Value::instance_parts(class_name, crate::gc::Gc::new((**attributes).clone()), id),
+            _ => actions.clone(),
         };
         let match_obj = Value::make_match_object_full_q(
             sub.matched.clone(),
@@ -390,7 +389,7 @@ impl Interpreter {
     pub(super) fn make_quantifier_value_error(flag: &str, message: &str) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("message".to_string(), Value::str(message.to_string()));
-        attrs.insert(flag.to_string(), Value::Bool(true));
+        attrs.insert(flag.to_string(), Value::TRUE);
         let ex = Value::make_instance(
             crate::symbol::Symbol::intern("X::Syntax::Regex::QuantifierValue"),
             attrs,

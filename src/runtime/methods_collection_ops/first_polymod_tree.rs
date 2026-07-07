@@ -14,24 +14,24 @@ impl Interpreter {
         let mut has_kv = false;
         let mut has_p = false;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "v" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "v" => {
                     if !value.truthy() {
                         has_neg_v = true;
                     }
                 }
-                Value::Pair(key, value) if key == "end" => {
+                ValueView::Pair(key, value) if key == "end" => {
                     if value.truthy() {
                         has_end = true;
                     }
                 }
-                Value::Pair(key, value) if key == "k" => {
+                ValueView::Pair(key, value) if key == "k" => {
                     has_k = value.truthy();
                 }
-                Value::Pair(key, value) if key == "kv" => {
+                ValueView::Pair(key, value) if key == "kv" => {
                     has_kv = value.truthy();
                 }
-                Value::Pair(key, value) if key == "p" => {
+                ValueView::Pair(key, value) if key == "p" => {
                     has_p = value.truthy();
                 }
                 _ => positional.push(arg.clone()),
@@ -73,7 +73,10 @@ impl Interpreter {
             }
         }
         // Check for Bool matcher (X::Match::Bool)
-        if matches!(positional.first(), Some(Value::Bool(_))) {
+        if matches!(
+            positional.first().map(Value::view),
+            Some(ValueView::Bool(_))
+        ) {
             let mut err = RuntimeError::new("Cannot use Bool as a matcher");
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Match::Bool"),
@@ -84,11 +87,11 @@ impl Interpreter {
         let func = positional.first().cloned();
 
         // Supply.first returns a new Supply containing the matched value
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name == "Supply"
         {
             return self.dispatch_supply_first(&(attributes).as_map(), func, has_end);
@@ -103,7 +106,7 @@ impl Interpreter {
                 idx, value, has_k, has_kv, has_p,
             ));
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     fn dispatch_supply_first(
@@ -116,7 +119,7 @@ impl Interpreter {
             let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                 let mut a = HashMap::new();
                 a.insert("emitted".to_string(), Value::array(Vec::new()));
-                a.insert("done".to_string(), Value::Bool(false));
+                a.insert("done".to_string(), Value::FALSE);
                 a
             });
             self.supply_emit_buffer.push(Vec::new());
@@ -126,7 +129,7 @@ impl Interpreter {
             attributes
                 .get("values")
                 .and_then(|v| {
-                    if let Value::Array(items, ..) = v {
+                    if let ValueView::Array(items, ..) = v.view() {
                         Some(items.to_vec())
                     } else {
                         None
@@ -148,10 +151,7 @@ impl Interpreter {
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert(
             "live".to_string(),
-            attributes
-                .get("live")
-                .cloned()
-                .unwrap_or(Value::Bool(false)),
+            attributes.get("live").cloned().unwrap_or(Value::FALSE),
         );
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
@@ -163,33 +163,33 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         fn val_to_f64(v: &Value) -> f64 {
-            match v {
-                Value::Int(n) => *n as f64,
-                Value::Num(n) => *n,
-                Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                Value::Bool(b) => {
-                    if *b {
+            match v.view() {
+                ValueView::Int(n) => n as f64,
+                ValueView::Num(n) => n,
+                ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+                ValueView::Bool(b) => {
+                    if b {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
                 _ => 0.0,
             }
         }
         fn f64_to_val(n: f64) -> Value {
             if n.is_finite() && n == n.trunc() && n.abs() < i64::MAX as f64 {
-                Value::Int(n as i64)
+                Value::int(n as i64)
             } else {
-                Value::Num(n)
+                Value::num(n)
             }
         }
         fn flatten_to_list(v: &Value) -> Vec<Value> {
-            match v {
-                Value::Array(items, ..) => items.as_ref().clone().items,
-                Value::Seq(items) | Value::Slip(items) => items.as_ref().clone(),
-                Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+            match v.view() {
+                ValueView::Array(items, ..) => items.as_ref().clone().items,
+                ValueView::Seq(items) | ValueView::Slip(items) => items.as_ref().clone(),
+                ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
                 _ => vec![v.clone()],
             }
         }
@@ -198,12 +198,12 @@ impl Interpreter {
         let mut divisors = Vec::new();
         let mut has_infinite = false;
         for arg in args {
-            match arg {
-                Value::LazyList(_) => {
+            match arg.view() {
+                ValueView::LazyList(_) => {
                     has_infinite = true;
                     divisors.extend(flatten_to_list(arg));
                 }
-                Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
                     divisors.extend(flatten_to_list(arg));
                 }
                 _ => divisors.push(arg.clone()),
@@ -238,7 +238,7 @@ impl Interpreter {
         if !stopped {
             result.push(f64_to_val(n));
         }
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::seq(result))
     }
 
     pub(in crate::runtime) fn dispatch_tree(
@@ -247,24 +247,24 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // Non-iterable: .tree(anything) returns self
-        let items = match &target {
-            Value::Array(items, ..) => items.clone(),
+        let items = match target.view() {
+            ValueView::Array(items, ..) => items.clone(),
             _ => return Ok(target),
         };
 
         let arg = &args[0];
-        match arg {
+        match arg.view() {
             // .tree(0) — identity
-            Value::Int(0) => Ok(target),
+            ValueView::Int(0) => Ok(target),
             // .tree(n) — tree to n levels
-            Value::Int(n) if *n > 0 => Ok(Value::array(self.tree_depth(&items, *n as usize)?)),
+            ValueView::Int(n) if n > 0 => Ok(Value::array(self.tree_depth(&items, n as usize)?)),
             // .tree(*) or .tree(Inf) — full depth (same as .tree())
-            Value::Whatever => Ok(Value::array(self.tree_depth(&items, usize::MAX)?)),
-            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+            ValueView::Whatever => Ok(Value::array(self.tree_depth(&items, usize::MAX)?)),
+            ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                 Ok(Value::array(self.tree_depth(&items, usize::MAX)?))
             }
             // .tree([&first, *@rest]) — array of closures form
-            Value::Array(closure_list, ..) => {
+            ValueView::Array(closure_list, ..) => {
                 if closure_list.is_empty() {
                     return Ok(target);
                 }
@@ -272,7 +272,7 @@ impl Interpreter {
                 self.call_sub_value(first.clone(), vec![target], false)
             }
             // .tree(&closure, ...) — apply closures at depth levels
-            Value::Sub(_) => {
+            ValueView::Sub(_) => {
                 let closures: Vec<Value> = args.to_vec();
                 self.tree_with_closures(&items, &closures, 0)
             }
@@ -287,11 +287,11 @@ impl Interpreter {
     ) -> Result<Vec<Value>, RuntimeError> {
         let mut result = Vec::new();
         for item in items {
-            match item {
-                Value::Array(inner, ..) if depth > 0 => {
+            match item.view() {
+                ValueView::Array(inner, ..) if depth > 0 => {
                     result.push(Value::array(self.tree_depth(inner, depth - 1)?));
                 }
-                other => result.push(other.clone()),
+                _ => result.push(item.clone()),
             }
         }
         Ok(result)
@@ -305,26 +305,26 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut processed = Vec::new();
         for item in items {
-            match item {
-                Value::Array(inner, ..) if closures.len() > depth + 1 => {
+            match item.view() {
+                ValueView::Array(inner, ..) if closures.len() > depth + 1 => {
                     let sub_result = self.tree_with_closures(inner, closures, depth + 1)?;
                     processed.push(sub_result);
                 }
-                Value::Array(inner, ..) => {
+                ValueView::Array(inner, ..) => {
                     // Apply the last closure to leaf arrays
                     if let Some(closure) = closures.last()
                         && closures.len() > 1
                     {
                         processed.push(self.call_sub_value(
                             closure.clone(),
-                            vec![Value::Array(inner.clone(), ArrayKind::List)],
+                            vec![Value::array_with_kind(inner.clone(), ArrayKind::List)],
                             false,
                         )?);
                     } else {
-                        processed.push(Value::Array(inner.clone(), ArrayKind::List)); // already Arc-wrapped
+                        processed.push(Value::array_with_kind(inner.clone(), ArrayKind::List)); // already Arc-wrapped
                     }
                 }
-                other => processed.push(other.clone()),
+                _ => processed.push(item.clone()),
             }
         }
         // Apply the closure at this depth level

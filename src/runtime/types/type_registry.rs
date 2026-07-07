@@ -12,12 +12,12 @@ impl Interpreter {
             .insert("Endian".to_string(), variants.clone());
         base.insert(Symbol::intern("Endian"), Value::str_from("Endian"));
         for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::Enum {
-                enum_type: Symbol::intern("Endian"),
-                key: Symbol::intern(key),
-                value: val.clone(),
+            let enum_val = Value::enum_parts(
+                Symbol::intern("Endian"),
+                Symbol::intern(key),
+                val.clone(),
                 index,
-            };
+            );
             // Register as both Endian::NativeEndian and bare NativeEndian
             base.insert(
                 Symbol::intern(&format!("Endian::{}", key)),
@@ -44,15 +44,15 @@ impl Interpreter {
             .insert("ProtocolFamily".to_string(), variants.clone());
         base.insert(
             Symbol::intern("ProtocolFamily"),
-            Value::Package(Symbol::intern("ProtocolFamily")),
+            Value::package(Symbol::intern("ProtocolFamily")),
         );
         for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::Enum {
-                enum_type: Symbol::intern("ProtocolFamily"),
-                key: Symbol::intern(key),
-                value: val.clone(),
+            let enum_val = Value::enum_parts(
+                Symbol::intern("ProtocolFamily"),
+                Symbol::intern(key),
+                val.clone(),
                 index,
-            };
+            );
             base.insert(
                 Symbol::intern(&format!("ProtocolFamily::{}", key)),
                 enum_val.clone(),
@@ -72,12 +72,12 @@ impl Interpreter {
             .insert("Order".to_string(), variants.clone());
         base.insert(Symbol::intern("Order"), Value::str_from("Order"));
         for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::Enum {
-                enum_type: Symbol::intern("Order"),
-                key: Symbol::intern(key),
-                value: val.clone(),
+            let enum_val = Value::enum_parts(
+                Symbol::intern("Order"),
+                Symbol::intern(key),
+                val.clone(),
                 index,
-            };
+            );
             base.insert(Symbol::intern(&format!("Order::{}", key)), enum_val.clone());
             base.insert(Symbol::intern(key), enum_val);
         }
@@ -98,12 +98,12 @@ impl Interpreter {
             .insert("SeekType".to_string(), variants.clone());
         base.insert(Symbol::intern("SeekType"), Value::str_from("SeekType"));
         for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::Enum {
-                enum_type: Symbol::intern("SeekType"),
-                key: Symbol::intern(key),
-                value: val.clone(),
+            let enum_val = Value::enum_parts(
+                Symbol::intern("SeekType"),
+                Symbol::intern(key),
+                val.clone(),
                 index,
-            };
+            );
             base.insert(
                 Symbol::intern(&format!("SeekType::{}", key)),
                 enum_val.clone(),
@@ -140,12 +140,12 @@ impl Interpreter {
             .insert("Signal".to_string(), variants.clone());
         base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
         for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::Enum {
-                enum_type: Symbol::intern("Signal"),
-                key: Symbol::intern(key),
-                value: val.clone(),
+            let enum_val = Value::enum_parts(
+                Symbol::intern("Signal"),
+                Symbol::intern(key),
+                val.clone(),
                 index,
-            };
+            );
             base.insert(
                 Symbol::intern(&format!("Signal::{}", key)),
                 enum_val.clone(),
@@ -161,24 +161,18 @@ impl Interpreter {
 
     pub(in crate::runtime) fn version_from_value(arg: Value) -> Value {
         use crate::value::VersionPart;
-        match arg {
-            Value::Str(s) => {
+        match arg.view() {
+            ValueView::Str(s) => {
                 if s.is_empty() {
-                    return Value::Version {
-                        parts: Vec::new(),
-                        plus: false,
-                        minus: false,
-                    };
+                    return Value::version(Vec::new(), false, false);
                 }
-                let (parts, plus, minus) = Value::parse_version_string(&s);
-                Value::Version { parts, plus, minus }
+                let (parts, plus, minus) = Value::parse_version_string(s);
+                Value::version(parts, plus, minus)
             }
             // Version.new(*) - Whatever argument (bare * evaluates to Num(Inf))
-            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => Value::Version {
-                parts: vec![VersionPart::Whatever],
-                plus: false,
-                minus: false,
-            },
+            ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                Value::version(vec![VersionPart::Whatever], false, false)
+            }
             _ => {
                 let s = arg.to_string_value();
                 Self::version_from_value(Value::str(s))
@@ -193,9 +187,9 @@ impl Interpreter {
         right_minus: bool,
     ) -> bool {
         use crate::value::VersionPart;
-        if let Value::Version {
+        if let ValueView::Version {
             parts: left_parts, ..
-        } = left
+        } = left.view()
         {
             if right_plus {
                 // LHS >= RHS (base version without +)
@@ -244,10 +238,10 @@ impl Interpreter {
     }
 
     pub(crate) fn value_is_nan(value: &Value) -> bool {
-        match value {
-            Value::Num(f) => f.is_nan(),
-            Value::Complex(r, i) => r.is_nan() || i.is_nan(),
-            Value::Str(s) => s.trim().eq_ignore_ascii_case("nan"),
+        match value.view() {
+            ValueView::Num(f) => f.is_nan(),
+            ValueView::Complex(r, i) => r.is_nan() || i.is_nan(),
+            ValueView::Str(s) => s.trim().eq_ignore_ascii_case("nan"),
             _ => false,
         }
     }
@@ -266,14 +260,14 @@ impl Interpreter {
             return true;
         }
         // A short-name import alias (`use Foo; my Bar:D $x` where `Bar` is
-        // `Foo::Bar`) is recorded in `env` as a `Value::Package` pointing at the
+        // `Foo::Bar`) is recorded in `env` as a `Package` pointing at the
         // fully-qualified class. Resolve that alias so the short name counts as a
         // type — otherwise `my Bar:D $x` is wrongly rejected as a bare package
         // ("insufficiently type-like") inside a method OTF-compiled in the
         // importing module's scope. Humming-Bird's `Route.CALL-ME` does
         // `my Response:D $res = ...` with `Response` imported from
         // `Humming-Bird::Glue`.
-        if let Some(Value::Package(target)) = self.env.get(name) {
+        if let Some(ValueView::Package(target)) = self.env.get(name).map(Value::view) {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
                 return true;

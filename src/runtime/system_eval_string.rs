@@ -104,7 +104,7 @@ impl Interpreter {
         let [Stmt::Expr(Expr::BareWord(name))] = stmts else {
             return false;
         };
-        matches!(result, Value::Str(s) if s.as_str() == name)
+        matches!(result.view(), ValueView::Str(s) if s.as_str() == name)
             && !self.env().contains_key(name)
             && !self.has_class(name)
             && !self.has_function(name)
@@ -284,8 +284,7 @@ impl Interpreter {
                 .map(|k| k.resolve().to_string())
                 .filter(|k| k.starts_with('&')),
         );
-        self.env
-            .insert("__mutsu_in_eval".to_string(), Value::Bool(true));
+        self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
         self.collect_pod_blocks(trimmed);
         // Collect operator sub names so the parser recognizes them in EVAL context
         let op_names = self.collect_operator_sub_names();
@@ -348,7 +347,7 @@ impl Interpreter {
             let wrapped = format!("{{ {}; }}", trimmed);
             let saved_wrapped_eval = self.env.get("__mutsu_eval_wrapped_decls").cloned();
             self.env
-                .insert("__mutsu_eval_wrapped_decls".to_string(), Value::Bool(true));
+                .insert("__mutsu_eval_wrapped_decls".to_string(), Value::TRUE);
             result =
                 self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc, &imported_names);
             if let Some(saved) = saved_wrapped_eval {

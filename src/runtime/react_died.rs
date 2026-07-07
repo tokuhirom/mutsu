@@ -36,7 +36,7 @@ impl Interpreter {
     /// Wrap a `RuntimeError` in `X::React::Died` if not already wrapped.
     pub(crate) fn wrap_react_died_if_needed(err: RuntimeError) -> RuntimeError {
         if let Some(ref ex) = err.exception
-            && let Value::Instance { class_name, .. } = ex.as_ref()
+            && let ValueView::Instance { class_name, .. } = ex.as_ref().view()
             && class_name.resolve() == "X::React::Died"
         {
             return err;
@@ -46,16 +46,19 @@ impl Interpreter {
 
     /// Check if a value is a subscription registration from `whenever` inside `supply`.
     pub(crate) fn is_supply_subscription_registration(value: &Value) -> bool {
-        if let Value::Array(items, ..) = value
+        if let ValueView::Array(items, ..) = value.view()
             && items.len() >= 2
         {
             matches!(
-                &items[0],
-                Value::Instance { class_name, .. }
+                items[0].view(),
+                ValueView::Instance { class_name, .. }
                     if class_name == "Supply"
                         || class_name == "Supplier"
                         || class_name == "Supplier::Preserving"
-            ) || matches!(&items[0], Value::Promise(_) | Value::Channel(_))
+            ) || matches!(
+                items[0].view(),
+                ValueView::Promise(_) | ValueView::Channel(_)
+            )
         } else {
             false
         }
@@ -68,7 +71,7 @@ impl Interpreter {
         &mut self,
         sub_val: &Value,
     ) -> Option<ReactSubscription> {
-        let Value::Array(items, ..) = sub_val else {
+        let ValueView::Array(items, ..) = sub_val.view() else {
             return None;
         };
         if items.len() < 2 {
@@ -76,17 +79,20 @@ impl Interpreter {
         }
         let source = &items[0];
         let callback = items[1].clone();
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = source
+        } = source.view()
         {
             if class_name != "Supply" {
                 return None;
             }
             let supply_id = self.resolve_supply_channel_id_for_react(&(attributes).as_map());
-            let is_lines = matches!(attributes.as_map().get("is_lines"), Some(Value::Bool(true)));
+            let is_lines = matches!(
+                attributes.as_map().get("is_lines").map(Value::view),
+                Some(ValueView::Bool(true))
+            );
             let head_limit = Self::extract_supply_head_limit(&(attributes).as_map());
             if let Some(sid) = supply_id
                 && let Some(rx) = take_supply_channel(sid)
@@ -109,7 +115,9 @@ impl Interpreter {
                     ..ReactSubscription::new(callback)
                 });
             }
-            if let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id") {
+            if let Some(ValueView::Int(sid)) =
+                attributes.as_map().get("supplier_id").map(Value::view)
+            {
                 let last_cbs = items
                     .get(2)
                     .and_then(Self::react_value_array_items)
@@ -119,7 +127,7 @@ impl Interpreter {
                     .and_then(Self::react_value_array_items)
                     .unwrap_or_default();
                 return Some(ReactSubscription {
-                    supplier_id: Some(*sid as u64),
+                    supplier_id: Some(sid as u64),
                     close_callbacks: Self::extract_supply_on_close_cbs(&(attributes).as_map()),
                     last_callbacks: last_cbs,
                     quit_callbacks: quit_cbs,
@@ -136,15 +144,17 @@ impl Interpreter {
     // visibility issues).
 
     fn extract_supply_head_limit(attributes: &HashMap<String, Value>) -> Option<usize> {
-        if let Some(Value::Int(n)) = attributes.get("head_limit") {
-            Some(*n as usize)
+        if let Some(ValueView::Int(n)) = attributes.get("head_limit").map(Value::view) {
+            Some(n as usize)
         } else {
             None
         }
     }
 
     fn extract_supply_on_close_cbs(attributes: &HashMap<String, Value>) -> Vec<Value> {
-        if let Some(Value::Array(callbacks, ..)) = attributes.get("on_close_callbacks") {
+        if let Some(ValueView::Array(callbacks, ..)) =
+            attributes.get("on_close_callbacks").map(Value::view)
+        {
             callbacks.to_vec()
         } else {
             Vec::new()
@@ -152,7 +162,7 @@ impl Interpreter {
     }
 
     fn react_value_array_items(value: &Value) -> Option<Vec<Value>> {
-        if let Value::Array(items, ..) = value {
+        if let ValueView::Array(items, ..) = value.view() {
             Some(items.to_vec())
         } else {
             None
@@ -163,11 +173,12 @@ impl Interpreter {
         &self,
         attributes: &HashMap<String, Value>,
     ) -> Option<u64> {
-        if let Some(Value::Int(parent_id)) = attributes.get("parent_supply_id") {
-            return Some(*parent_id as u64);
+        if let Some(ValueView::Int(parent_id)) = attributes.get("parent_supply_id").map(Value::view)
+        {
+            return Some(parent_id as u64);
         }
-        if let Some(Value::Int(id)) = attributes.get("supply_id") {
-            return Some(*id as u64);
+        if let Some(ValueView::Int(id)) = attributes.get("supply_id").map(Value::view) {
+            return Some(id as u64);
         }
         None
     }

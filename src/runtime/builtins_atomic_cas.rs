@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::token_kind::TokenKind;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Implements cas (compare-and-swap).
@@ -72,7 +73,7 @@ impl Interpreter {
             let code = args[1].clone();
             // Skip leading SetLine statements (inserted by pointy block parsing)
             // to find the effective body for the optimization check.
-            let effective_body: Vec<&Stmt> = if let Value::Sub(sub) = &code {
+            let effective_body: Vec<&Stmt> = if let ValueView::Sub(sub) = code.view() {
                 sub.body
                     .iter()
                     .filter(|s| !matches!(s, Stmt::SetLine(_)))
@@ -80,7 +81,7 @@ impl Interpreter {
             } else {
                 Vec::new()
             };
-            if let Value::Sub(sub) = &code
+            if let ValueView::Sub(sub) = code.view()
                 && sub.params.len() == 1
                 && effective_body.len() == 1
                 && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
@@ -95,7 +96,7 @@ impl Interpreter {
                 if let Some(delta_expr) = delta_expr {
                     let delta = match delta_expr {
                         Expr::Var(var_name) => {
-                            self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                            self.env.get(&var_name).cloned().unwrap_or(Value::NIL)
                         }
                         Expr::Literal(v) => v,
                         other => self.eval_block_value(&[Stmt::Expr(other)])?,
@@ -104,7 +105,7 @@ impl Interpreter {
                 }
             }
             // Optimization: {.succ} or {.pred} on $_ -> atomic add +/-1
-            if let Value::Sub(sub) = &code
+            if let ValueView::Sub(sub) = code.view()
                 && sub.params.is_empty()
                 && effective_body.len() == 1
                 && let Stmt::Expr(Expr::MethodCall {
@@ -118,14 +119,14 @@ impl Interpreter {
             {
                 let method_str = method_name.resolve();
                 if method_str == "succ" {
-                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), Value::Int(1)]);
+                    return self.builtin_atomic_add_var(&[Value::str(name.clone()), Value::int(1)]);
                 } else if method_str == "pred" {
                     return self
-                        .builtin_atomic_add_var(&[Value::str(name.clone()), Value::Int(-1)]);
+                        .builtin_atomic_add_var(&[Value::str(name.clone()), Value::int(-1)]);
                 }
             }
             // Optimization: { $_ + N } with zero params -> atomic add N
-            if let Value::Sub(sub) = &code
+            if let ValueView::Sub(sub) = code.view()
                 && sub.params.is_empty()
                 && effective_body.len() == 1
                 && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
@@ -139,7 +140,7 @@ impl Interpreter {
                 if let Some(delta_expr) = delta_expr {
                     let delta = match delta_expr {
                         Expr::Var(var_name) => {
-                            self.env.get(&var_name).cloned().unwrap_or(Value::Nil)
+                            self.env.get(&var_name).cloned().unwrap_or(Value::NIL)
                         }
                         Expr::Literal(v) => v,
                         other => self.eval_block_value(&[Stmt::Expr(other)])?,
@@ -153,7 +154,7 @@ impl Interpreter {
                         .as_map()
                         .get(key.as_str())
                         .cloned()
-                        .unwrap_or(Value::Nil)
+                        .unwrap_or(Value::NIL)
                 } else {
                     let shared = self.shared_vars.read().unwrap();
                     self.atomic_current_value(&shared, &name, &value_key)
@@ -161,7 +162,7 @@ impl Interpreter {
                 self.env.insert(name.clone(), current.clone());
                 let new_val = {
                     let bind_dollar_topic =
-                        matches!(&code, Value::Sub(sub) if sub.params.is_empty());
+                        matches!(code.view(), ValueView::Sub(sub) if sub.params.is_empty());
                     let saved_topic = self.env.get("_").cloned();
                     let saved_dollar_topic = if bind_dollar_topic {
                         self.env.get("$_").cloned()
@@ -172,7 +173,7 @@ impl Interpreter {
                     if bind_dollar_topic {
                         self.env.insert("$_".to_string(), current.clone());
                     }
-                    let call_args = if let Value::Sub(sub) = &code {
+                    let call_args = if let ValueView::Sub(sub) = code.view() {
                         if sub.params.is_empty() {
                             Vec::new()
                         } else {
@@ -241,7 +242,7 @@ impl Interpreter {
                 // but the variable itself was modified (e.g., `{ $x = expr }`),
                 // use the variable's current value from the env. This handles
                 // blocks that modify the variable as a side effect.
-                let effective_new = if new_val == current || matches!(new_val, Value::Nil) {
+                let effective_new = if new_val == current || new_val.is_nil() {
                     self.env.get(&name).cloned().unwrap_or(new_val)
                 } else {
                     new_val
@@ -303,9 +304,9 @@ impl Interpreter {
             ));
         }
         let arr_name = args[0].to_string_value();
-        let index = match &args[1] {
-            Value::Int(i) => *i,
-            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+        let index = match args[1].view() {
+            ValueView::Int(i) => i,
+            _ => args[1].to_string_value().parse::<i64>().unwrap_or(0),
         };
         let expected = &args[2];
         let new_val = args[3].clone();

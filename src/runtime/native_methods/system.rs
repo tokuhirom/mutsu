@@ -1,5 +1,6 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     // --- Distro ---
@@ -11,7 +12,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "name" | "auth" | "desc" | "release" | "path-sep" | "is-win" | "version"
-            | "signature" => Ok(attributes.get(method).cloned().unwrap_or(Value::Nil)),
+            | "signature" => Ok(attributes.get(method).cloned().unwrap_or(Value::NIL)),
             "gist" => {
                 let n = attributes
                     .get("name")
@@ -20,7 +21,7 @@ impl Interpreter {
                 let v = attributes
                     .get("version")
                     .map(|v| {
-                        if let Value::Version { parts, .. } = v {
+                        if let ValueView::Version { parts, .. } = v.view() {
                             Value::version_parts_to_string(parts)
                         } else {
                             v.to_string_value()
@@ -56,7 +57,7 @@ impl Interpreter {
                 let ver = attributes
                     .get("version")
                     .map(|v| {
-                        if let Value::Version { parts, .. } = v {
+                        if let ValueView::Version { parts, .. } = v.view() {
                             format!("v{}", Value::version_parts_to_string(parts))
                         } else {
                             v.to_string_value()
@@ -90,48 +91,48 @@ impl Interpreter {
         match method {
             "name" | "auth" | "desc" | "release" | "hardware" | "arch" | "bits" | "hostname"
             | "version" | "signature" | "signals" | "endian" => {
-                Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+                Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
             }
             "cpu-cores" => {
                 let n = std::thread::available_parallelism()
                     .map(|n| n.get() as i64)
                     .unwrap_or(1);
-                Ok(Value::Int(n))
+                Ok(Value::int(n))
             }
             "signal" => {
                 // .signal(SIGHUP), .signal("SIGHUP"), .signal("HUP"), .signal(Int)
-                let arg = args.first().cloned().unwrap_or(Value::Nil);
+                let arg = args.first().cloned().unwrap_or(Value::NIL);
                 let signal_names = [
                     "", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1",
                     "SEGV", "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP",
                     "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO",
                     "PWR", "SYS",
                 ];
-                match &arg {
-                    Value::Int(n) => Ok(Value::Int(*n)),
-                    Value::Str(s) => {
+                match arg.view() {
+                    ValueView::Int(n) => Ok(Value::int(n)),
+                    ValueView::Str(s) => {
                         let name = s
                             .strip_prefix("SIG")
                             .map(|s| s.to_string())
                             .unwrap_or_else(|| s.to_string());
                         for (i, sn) in signal_names.iter().enumerate() {
                             if *sn == name {
-                                return Ok(Value::Int(i as i64));
+                                return Ok(Value::int(i as i64));
                             }
                         }
-                        Ok(Value::Int(0))
+                        Ok(Value::int(0))
                     }
-                    Value::Enum { key, .. } => {
+                    ValueView::Enum { key, .. } => {
                         let key_str = key.resolve();
                         let name = key_str.strip_prefix("SIG").unwrap_or(&key_str);
                         for (i, sn) in signal_names.iter().enumerate() {
                             if *sn == name {
-                                return Ok(Value::Int(i as i64));
+                                return Ok(Value::int(i as i64));
                             }
                         }
-                        Ok(Value::Int(0))
+                        Ok(Value::int(0))
                     }
-                    _ => Ok(Value::Int(0)),
+                    _ => Ok(Value::int(0)),
                 }
             }
             "gist" | "Str" => {
@@ -173,7 +174,7 @@ impl Interpreter {
         match method {
             "name" | "auth" | "version" | "precomp-ext" | "precomp-target" | "prefix" | "desc"
             | "signature" | "config" | "properties" => {
-                Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+                Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
             }
             "raku" => {
                 let name = attributes
@@ -191,7 +192,7 @@ impl Interpreter {
                 // Process pending DESTROY submethods for objects whose refcount
                 // dropped to 0 (possibly including items freed by the clear above).
                 self.run_pending_instance_destroys()?;
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "platform-library-name" => {
                 // Convert a library short-name to the OS-specific shared library filename.
@@ -237,21 +238,21 @@ impl Interpreter {
                 compiler_attrs.insert("auth".to_string(), Value::str_from("github.com/tokuhirom"));
                 compiler_attrs.insert(
                     "version".to_string(),
-                    Value::Version {
-                        parts: vec![
+                    Value::version(
+                        vec![
                             crate::value::VersionPart::Num(0),
                             crate::value::VersionPart::Num(1),
                             crate::value::VersionPart::Num(0),
                         ],
-                        plus: false,
-                        minus: false,
-                    },
+                        false,
+                        false,
+                    ),
                 );
                 compiler_attrs.insert(
                     "signature".to_string(),
                     Value::make_instance(Symbol::intern("Blob"), {
                         let mut a = HashMap::new();
-                        a.insert("values".to_string(), Value::array(vec![Value::Int(0)]));
+                        a.insert("values".to_string(), Value::array(vec![Value::int(0)]));
                         a
                     }),
                 );
@@ -290,7 +291,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 Value::str(format!("{}.new(...)", name))
             }
-            _ => attributes.get(method).cloned().unwrap_or(Value::Nil),
+            _ => attributes.get(method).cloned().unwrap_or(Value::NIL),
         }
     }
 }

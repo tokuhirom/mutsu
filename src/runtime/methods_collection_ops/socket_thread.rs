@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(in crate::runtime) fn dispatch_socket_connect(
@@ -11,10 +12,10 @@ impl Interpreter {
             .unwrap_or_default();
         let port = args
             .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            .map(|v| match v.view() {
+                ValueView::Int(i) => i as u16,
+                ValueView::Num(f) => f as u16,
+                _ => v.to_string_value().parse::<u16>().unwrap_or(0),
             })
             .unwrap_or(0);
         let addr = format!("{}:{}", host, port);
@@ -54,9 +55,9 @@ impl Interpreter {
         };
         let id = self.insert_handle_state(state);
         let mut attrs = HashMap::new();
-        attrs.insert("handle".to_string(), Value::Int(id as i64));
+        attrs.insert("handle".to_string(), Value::int(id as i64));
         attrs.insert("host".to_string(), Value::str(host));
-        attrs.insert("port".to_string(), Value::Int(port as i64));
+        attrs.insert("port".to_string(), Value::int(port as i64));
         Ok(Value::make_instance(
             Symbol::intern("IO::Socket::INET"),
             attrs,
@@ -72,12 +73,12 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut family: Option<i64> = None;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key.as_str() == "family" => {
-                    family = Some(match value.as_ref() {
-                        Value::Int(i) => *i,
-                        Value::Enum { value: v, .. } => v.as_i64(),
-                        other => other.to_string_value().parse::<i64>().unwrap_or(0),
+            match arg.view() {
+                ValueView::Pair(key, value) if key.as_str() == "family" => {
+                    family = Some(match value.view() {
+                        ValueView::Int(i) => i,
+                        ValueView::Enum { value: v, .. } => v.as_i64(),
+                        _ => value.to_string_value().parse::<i64>().unwrap_or(0),
                     });
                 }
                 _ => positional.push(arg.clone()),
@@ -89,21 +90,21 @@ impl Interpreter {
             .unwrap_or_default();
         let port = positional
             .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            .map(|v| match v.view() {
+                ValueView::Int(i) => i as u16,
+                ValueView::Num(f) => f as u16,
+                _ => v.to_string_value().parse::<u16>().unwrap_or(0),
             })
             .unwrap_or(0);
 
         // Build args for dispatch_socket_inet_new in listen mode
         let mut new_args = vec![
-            Value::Pair("listen".to_string(), Box::new(Value::Bool(true))),
-            Value::Pair("localhost".to_string(), Box::new(Value::str(host))),
-            Value::Pair("localport".to_string(), Box::new(Value::Int(port as i64))),
+            Value::pair("listen".to_string(), Value::TRUE),
+            Value::pair("localhost".to_string(), Value::str(host)),
+            Value::pair("localport".to_string(), Value::int(port as i64)),
         ];
         if let Some(f) = family {
-            new_args.push(Value::Pair("family".to_string(), Box::new(Value::Int(f))));
+            new_args.push(Value::pair("family".to_string(), Value::int(f)));
         }
         self.dispatch_socket_inet_new(&new_args)
     }
@@ -117,12 +118,12 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut family: Option<i64> = None;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key.as_str() == "family" => {
-                    family = Some(match value.as_ref() {
-                        Value::Int(i) => *i,
-                        Value::Enum { value: v, .. } => v.as_i64(),
-                        other => other.to_string_value().parse::<i64>().unwrap_or(0),
+            match arg.view() {
+                ValueView::Pair(key, value) if key.as_str() == "family" => {
+                    family = Some(match value.view() {
+                        ValueView::Int(i) => i,
+                        ValueView::Enum { value: v, .. } => v.as_i64(),
+                        _ => value.to_string_value().parse::<i64>().unwrap_or(0),
                     });
                 }
                 _ => positional.push(arg.clone()),
@@ -137,16 +138,16 @@ impl Interpreter {
                 .unwrap_or_default();
             let port = positional
                 .get(1)
-                .map(|v| match v {
-                    Value::Int(i) => *i as u16,
-                    Value::Num(f) => *f as u16,
-                    other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                .map(|v| match v.view() {
+                    ValueView::Int(i) => i as u16,
+                    ValueView::Num(f) => f as u16,
+                    _ => v.to_string_value().parse::<u16>().unwrap_or(0),
                 })
                 .unwrap_or(0);
             let new_args = vec![
-                Value::Pair("host".to_string(), Box::new(Value::str(host))),
-                Value::Pair("port".to_string(), Box::new(Value::Int(port as i64))),
-                Value::Pair("family".to_string(), Box::new(Value::Int(3))),
+                Value::pair("host".to_string(), Value::str(host)),
+                Value::pair("port".to_string(), Value::int(port as i64)),
+                Value::pair("family".to_string(), Value::int(3)),
             ];
             return self.dispatch_socket_inet_new(&new_args);
         }
@@ -165,10 +166,10 @@ impl Interpreter {
             .unwrap_or_else(|| "0.0.0.0".to_string());
         let port = args
             .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            .map(|v| match v.view() {
+                ValueView::Int(i) => i as u16,
+                ValueView::Num(f) => f as u16,
+                _ => v.to_string_value().parse::<u16>().unwrap_or(0),
             })
             .unwrap_or(0);
         let enc = Self::named_value(args, "enc")
@@ -176,7 +177,7 @@ impl Interpreter {
             .unwrap_or_else(|| "utf-8".to_string());
         let mut attrs = HashMap::new();
         attrs.insert("host".to_string(), Value::str(host));
-        attrs.insert("port".to_string(), Value::Int(port as i64));
+        attrs.insert("port".to_string(), Value::int(port as i64));
         attrs.insert("enc".to_string(), Value::str(enc));
         Ok(Value::make_instance(
             Symbol::intern("IO::Socket::Async::Listener"),
@@ -194,10 +195,10 @@ impl Interpreter {
             .unwrap_or_else(|| "127.0.0.1".to_string());
         let port = args
             .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            .map(|v| match v.view() {
+                ValueView::Int(i) => i as u16,
+                ValueView::Num(f) => f as u16,
+                _ => v.to_string_value().parse::<u16>().unwrap_or(0),
             })
             .unwrap_or(0);
         let enc = Self::named_value(args, "enc")
@@ -246,26 +247,26 @@ impl Interpreter {
             );
 
             let mut client_attrs = HashMap::new();
-            client_attrs.insert("conn-id".to_string(), Value::Int(client_id as i64));
+            client_attrs.insert("conn-id".to_string(), Value::int(client_id as i64));
             client_attrs.insert("socket-host".to_string(), Value::str(host.clone()));
             client_attrs.insert(
                 "socket-port".to_string(),
-                Value::Int(client_local_port as i64),
+                Value::int(client_local_port as i64),
             );
             client_attrs.insert("peer-host".to_string(), Value::str(server_host.clone()));
-            client_attrs.insert("peer-port".to_string(), Value::Int(port as i64));
+            client_attrs.insert("peer-port".to_string(), Value::int(port as i64));
             client_attrs.insert("enc".to_string(), Value::str(enc));
             let client_socket =
                 Value::make_instance(Symbol::intern("IO::Socket::Async"), client_attrs);
 
             let mut server_attrs = HashMap::new();
-            server_attrs.insert("conn-id".to_string(), Value::Int(server_id as i64));
+            server_attrs.insert("conn-id".to_string(), Value::int(server_id as i64));
             server_attrs.insert("socket-host".to_string(), Value::str(server_host.clone()));
-            server_attrs.insert("socket-port".to_string(), Value::Int(port as i64));
+            server_attrs.insert("socket-port".to_string(), Value::int(port as i64));
             server_attrs.insert("peer-host".to_string(), Value::str(host.clone()));
             server_attrs.insert(
                 "peer-port".to_string(),
-                Value::Int(client_local_port as i64),
+                Value::int(client_local_port as i64),
             );
             server_attrs.insert("enc".to_string(), Value::str(listener.encoding));
             let server_socket =
@@ -288,7 +289,7 @@ impl Interpreter {
             let _ = promise.try_break(Value::str(err_msg));
         };
 
-        Ok(Value::Promise(promise))
+        Ok(Value::promise(promise))
     }
 
     /// IO::Socket::Async.bind-udp($host, $port)
@@ -302,10 +303,10 @@ impl Interpreter {
             .unwrap_or_else(|| "0.0.0.0".to_string());
         let port = args
             .get(1)
-            .map(|v| match v {
-                Value::Int(i) => *i as u16,
-                Value::Num(f) => *f as u16,
-                other => other.to_string_value().parse::<u16>().unwrap_or(0),
+            .map(|v| match v.view() {
+                ValueView::Int(i) => i as u16,
+                ValueView::Num(f) => f as u16,
+                _ => v.to_string_value().parse::<u16>().unwrap_or(0),
             })
             .unwrap_or(0);
 
@@ -328,10 +329,10 @@ impl Interpreter {
         );
 
         let mut attrs = HashMap::new();
-        attrs.insert("udp-socket-id".to_string(), Value::Int(socket_id as i64));
+        attrs.insert("udp-socket-id".to_string(), Value::int(socket_id as i64));
         attrs.insert("socket-host".to_string(), Value::str(host));
-        attrs.insert("socket-port".to_string(), Value::Int(port as i64));
-        attrs.insert("is-udp".to_string(), Value::Bool(true));
+        attrs.insert("socket-port".to_string(), Value::int(port as i64));
+        attrs.insert("is-udp".to_string(), Value::TRUE);
         Ok(Value::make_instance(
             Symbol::intern("IO::Socket::Async"),
             attrs,
@@ -345,9 +346,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let socket_id = super::super::native_methods::next_async_socket_id();
         let mut attrs = HashMap::new();
-        attrs.insert("udp-socket-id".to_string(), Value::Int(socket_id as i64));
-        attrs.insert("is-udp".to_string(), Value::Bool(true));
-        attrs.insert("is-udp-sender".to_string(), Value::Bool(true));
+        attrs.insert("udp-socket-id".to_string(), Value::int(socket_id as i64));
+        attrs.insert("is-udp".to_string(), Value::TRUE);
+        attrs.insert("is-udp-sender".to_string(), Value::TRUE);
         Ok(Value::make_instance(
             Symbol::intern("IO::Socket::Async"),
             attrs,
@@ -361,16 +362,16 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // Extract the block and named parameters from args
-        let mut block = Value::Nil;
+        let mut block = Value::NIL;
         let mut thread_name = "<anon>".to_string();
         let mut app_lifetime = false;
 
         for arg in args {
-            match arg {
-                Value::Pair(k, v) if k.as_str() == "name" => {
+            match arg.view() {
+                ValueView::Pair(k, v) if k.as_str() == "name" => {
                     thread_name = v.to_string_value();
                 }
-                Value::Pair(k, v) if k.as_str() == "app_lifetime" => {
+                ValueView::Pair(k, v) if k.as_str() == "app_lifetime" => {
                     app_lifetime = v.truthy();
                 }
                 _ => {
@@ -433,9 +434,9 @@ impl Interpreter {
         }
 
         let mut attrs = HashMap::new();
-        attrs.insert("id".to_string(), Value::Int(thread_id as i64));
+        attrs.insert("id".to_string(), Value::int(thread_id as i64));
         attrs.insert("name".to_string(), Value::str(thread_name));
-        attrs.insert("app_lifetime".to_string(), Value::Bool(app_lifetime));
+        attrs.insert("app_lifetime".to_string(), Value::truth(app_lifetime));
         Ok(Value::make_instance(Symbol::intern("Thread"), attrs))
     }
 
@@ -448,8 +449,8 @@ impl Interpreter {
             .get("id")
             .or_else(|| attributes.get("thread_id"))
             .and_then(|v| {
-                if let Value::Int(i) = v {
-                    Some(*i as u64)
+                if let ValueView::Int(i) = v.view() {
+                    Some(i as u64)
                 } else {
                     None
                 }
@@ -472,6 +473,6 @@ impl Interpreter {
         // see `dispatch_thread_start`) so it lands in real chronological order
         // now, rather than at some later, possibly out-of-order sync point.
         self.drain_shared_thread_output();
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 }

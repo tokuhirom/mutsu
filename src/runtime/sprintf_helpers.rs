@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use num_bigint::BigInt;
 
 /// Format a float value for %f/%F specifiers.
@@ -42,22 +42,22 @@ fn f64_to_rational(f: f64) -> (BigInt, BigInt) {
 /// rounds to zero). Returns None for non-numeric arguments. Shared by the `%f`
 /// and `%e` exact-rounding paths.
 fn extract_rational(arg: Option<&Value>) -> Option<(BigInt, BigInt, bool)> {
-    let (numer, denom) = match arg {
-        Some(Value::Rat(n, d)) if *d != 0 => (BigInt::from(*n), BigInt::from(*d)),
-        Some(Value::FatRat(n, d)) if *d != 0 => (BigInt::from(*n), BigInt::from(*d)),
-        Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
-            ((**n).clone(), (**d).clone())
+    let (numer, denom) = match arg.map(Value::view) {
+        Some(ValueView::Rat(n, d)) if d != 0 => (BigInt::from(n), BigInt::from(d)),
+        Some(ValueView::FatRat(n, d)) if d != 0 => (BigInt::from(n), BigInt::from(d)),
+        Some(ValueView::BigRat(n, d)) if d != &num_bigint::BigInt::from(0) => {
+            (n.clone(), d.clone())
         }
-        Some(Value::Int(i)) => (BigInt::from(*i), BigInt::from(1)),
-        Some(Value::Num(f)) if f.is_finite() => f64_to_rational(*f),
-        Some(Value::Str(s)) => match s.trim().parse::<f64>() {
+        Some(ValueView::Int(i)) => (BigInt::from(i), BigInt::from(1)),
+        Some(ValueView::Num(f)) if f.is_finite() => f64_to_rational(f),
+        Some(ValueView::Str(s)) => match s.trim().parse::<f64>() {
             Ok(f) if f.is_finite() => f64_to_rational(f),
             _ => return None,
         },
         _ => return None,
     };
-    let neg_zero = matches!(arg, Some(Value::Num(f)) if f.is_sign_negative())
-        || matches!(arg, Some(Value::Str(s)) if s.trim().starts_with('-'));
+    let neg_zero = matches!(arg.map(Value::view), Some(ValueView::Num(f)) if f.is_sign_negative())
+        || matches!(arg.map(Value::view), Some(ValueView::Str(s)) if s.trim().starts_with('-'));
     Some((numer, denom, neg_zero))
 }
 

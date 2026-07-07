@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 /// The `:samecase`/`:samemark`/`:samespace` substitution adverbs, applied to a
 /// computed replacement against the matched text (shared with the `s///`
@@ -63,23 +64,23 @@ impl Interpreter {
     /// `__mutsu_callable_type` marker in their captured environment.
     fn is_whatever_code_value(value: &Value) -> bool {
         matches!(
-            value,
-            Value::Sub(data)
+            value.view(),
+            ValueView::Sub(data)
                 if matches!(
-                    data.env.get("__mutsu_callable_type"),
-                    Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                    data.env.get("__mutsu_callable_type").map(Value::view),
+                    Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
                 )
         )
     }
 
     fn subst_nth_indices(value: &Value) -> Vec<i64> {
-        match value {
-            Value::Int(n) => vec![*n],
-            Value::Array(items, _) => items.iter().map(|v: &Value| v.to_f64() as i64).collect(),
-            Value::Range(lo, hi) => (*lo..=*hi).collect(),
-            Value::RangeExcl(lo, hi) => (*lo..*hi).collect(),
-            Value::RangeExclStart(lo, hi) => ((*lo + 1)..=*hi).collect(),
-            Value::RangeExclBoth(lo, hi) => ((*lo + 1)..*hi).collect(),
+        match value.view() {
+            ValueView::Int(n) => vec![n],
+            ValueView::Array(items, _) => items.iter().map(|v: &Value| v.to_f64() as i64).collect(),
+            ValueView::Range(lo, hi) => (lo..=hi).collect(),
+            ValueView::RangeExcl(lo, hi) => (lo..hi).collect(),
+            ValueView::RangeExclStart(lo, hi) => ((lo + 1)..=hi).collect(),
+            ValueView::RangeExclBoth(lo, hi) => ((lo + 1)..hi).collect(),
             _ => vec![value.to_f64() as i64],
         }
     }
@@ -108,7 +109,7 @@ impl Interpreter {
         } else if let Some(c) = selected.first() {
             to_match(c)
         } else {
-            Value::Nil
+            Value::NIL
         }
     }
 
@@ -123,10 +124,10 @@ impl Interpreter {
         let mut filter: Option<Value> = None;
         let mut where_matcher: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
-                    "filter" => filter = Some((**value).clone()),
-                    "where" => where_matcher = Some((**value).clone()),
+                    "filter" => filter = Some(value.clone()),
+                    "where" => where_matcher = Some(value.clone()),
                     _ => {}
                 }
             }
@@ -177,19 +178,19 @@ impl Interpreter {
         let mut continue_from: Option<usize> = None;
         let mut transforms = SubstCaseTransforms::default();
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "g" | "global" => global = value.truthy(),
-                    "x" => x_count = Some(*value.clone()),
+                    "x" => x_count = Some(value.clone()),
                     // `:nth`, plus the ordinal aliases `:st`/`:nd`/`:rd`/`:th`, all
                     // select 1-based match indices. The argument may be an Int, a
                     // list of Ints, or a Range (`:nth(1..3)`).
                     "nth" | "st" | "nd" | "rd" | "th" => {
-                        if matches!(value.as_ref(), Value::Whatever)
+                        if matches!(value.view(), ValueView::Whatever)
                             || Self::is_whatever_code_value(value)
                         {
                             // Resolved later against the match count.
-                            nth_deferred.push((**value).clone());
+                            nth_deferred.push(value.clone());
                             nth.get_or_insert_with(Vec::new);
                         } else {
                             let idxs = Self::subst_nth_indices(value);
@@ -224,8 +225,8 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("subst requires a pattern argument"))?;
         let replacement_val = positional.get(1).cloned();
         let is_closure = matches!(
-            replacement_val,
-            Some(Value::Sub(_)) | Some(Value::WeakSub(_))
+            replacement_val.as_ref().map(Value::view),
+            Some(ValueView::Sub(_)) | Some(ValueView::WeakSub(_))
         );
         let replacement_str = if is_closure {
             String::new()
@@ -238,48 +239,48 @@ impl Interpreter {
 
         // Helper to determine how many matches to use based on :x
         let resolve_x_count = |x: &Option<Value>| -> Option<(usize, usize)> {
-            match x {
-                None => None,
-                Some(Value::Int(n)) => Some((*n as usize, *n as usize)),
-                Some(Value::Str(s)) if s.as_str() == "Inf" || s.as_str() == "*" => {
+            let inner = x.as_ref()?;
+            match inner.view() {
+                ValueView::Int(n) => Some((n as usize, n as usize)),
+                ValueView::Str(s) if s.as_str() == "Inf" || s.as_str() == "*" => {
                     Some((0, usize::MAX))
                 }
-                Some(Value::Whatever) | Some(Value::Sub(_)) | Some(Value::WeakSub(_)) => {
+                ValueView::Whatever | ValueView::Sub(_) | ValueView::WeakSub(_) => {
                     Some((0, usize::MAX))
                 }
-                Some(Value::Range(lo, hi)) => {
-                    if *lo > *hi {
+                ValueView::Range(lo, hi) => {
+                    if lo > hi {
                         Some((usize::MAX, 0)) // Empty range: always fail
                     } else {
-                        Some((*lo as usize, *hi as usize))
+                        Some((lo as usize, hi as usize))
                     }
                 }
-                Some(Value::RangeExcl(lo, hi)) => {
-                    Some((*lo as usize, (*hi as usize).saturating_sub(1)))
+                ValueView::RangeExcl(lo, hi) => {
+                    Some((lo as usize, (hi as usize).saturating_sub(1)))
                 }
-                Some(Value::RangeExclStart(lo, hi)) => Some(((*lo as usize) + 1, *hi as usize)),
-                Some(Value::RangeExclBoth(lo, hi)) => {
-                    Some(((*lo as usize) + 1, (*hi as usize).saturating_sub(1)))
+                ValueView::RangeExclStart(lo, hi) => Some(((lo as usize) + 1, hi as usize)),
+                ValueView::RangeExclBoth(lo, hi) => {
+                    Some(((lo as usize) + 1, (hi as usize).saturating_sub(1)))
                 }
-                Some(v) => Some((v.to_f64() as usize, v.to_f64() as usize)),
+                _ => Some((inner.to_f64() as usize, inner.to_f64() as usize)),
             }
         };
 
-        match pattern {
-            Value::Regex(_) | Value::RegexWithAdverbs(_) => {
-                let pat: &str = match pattern {
-                    Value::Regex(p) => p,
-                    Value::RegexWithAdverbs(a) => &a.pattern,
+        match pattern.view() {
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
+                let pat: &str = match pattern.view() {
+                    ValueView::Regex(p) => p,
+                    ValueView::RegexWithAdverbs(a) => &a.pattern,
                     _ => unreachable!(),
                 };
-                let is_p5 = matches!(pattern, Value::RegexWithAdverbs(a) if a.perl5);
+                let is_p5 = matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.perl5);
                 let pat = if is_p5 {
                     self.interpolate_regex_pattern(pat)
                 } else {
                     pat.to_string()
                 };
                 let pat_global =
-                    matches!(pattern, Value::RegexWithAdverbs(a) if a.global) || global;
+                    matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.global) || global;
                 let all_captures = if is_p5 {
                     #[cfg(feature = "pcre2")]
                     {
@@ -304,7 +305,7 @@ impl Interpreter {
                     let v = if result_is_list {
                         Value::array(Vec::new())
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     me.env.insert("/".to_string(), v);
                 };
@@ -458,7 +459,7 @@ impl Interpreter {
                     Ok(Value::str(text))
                 }
             }
-            Value::Str(pat) => {
+            ValueView::Str(pat) => {
                 let has_adverbs = nth.is_some()
                     || x_count.is_some()
                     || pos_start.is_some()

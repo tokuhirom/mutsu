@@ -134,7 +134,7 @@ impl Interpreter {
         use crate::value::SharedPromise;
 
         let promise = SharedPromise::new_with_class(class_name);
-        let ret = Value::Promise(promise.clone());
+        let ret = Value::promise(promise.clone());
         let thread_interp = self.clone_for_thread();
         let parent_handles_snapshot: std::collections::HashSet<usize> =
             self.io_handles().map.keys().copied().collect();
@@ -142,16 +142,17 @@ impl Interpreter {
         // Raku gives each start block fresh $/ and $!.
         // Strip these from the closure's captured env so they don't override
         // the fresh Nil values set in clone_for_thread.
-        let block = if let Value::Sub(ref data) = block {
+        let stripped = if let ValueView::Sub(data) = block.view() {
             let mut new_data = (**data).clone();
             new_data.env.remove("/");
             new_data.env.remove("!");
             new_data.env.remove("$/");
             new_data.env.remove("$!");
-            Value::Sub(crate::gc::Gc::new(new_data))
+            Some(Value::sub_value(crate::gc::Gc::new(new_data)))
         } else {
-            block
+            None
         };
+        let block = stripped.unwrap_or(block);
 
         spawn_user_thread(move || {
             // CP-3 collapse: the thread's cloned Interpreter *is* the VM — run the

@@ -1,5 +1,5 @@
 use crate::builtins::methods_0arg::temporal;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
     attributes.contains_key("year")
@@ -23,12 +23,11 @@ fn rebless_datetime_result(
     if target_class_name == "DateTime" {
         return result;
     }
-    let Value::Instance {
+    let ValueView::Instance {
         class_name,
         attributes,
         id,
-        ..
-    } = &result
+    } = result.view()
     else {
         return result;
     };
@@ -43,16 +42,16 @@ fn rebless_datetime_result(
             merged.insert(key.to_string(), value.clone());
         }
     }
-    Value::Instance {
-        class_name: target_class_name,
-        attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+    Value::instance_parts(
+        target_class_name,
+        crate::gc::Gc::new(crate::value::InstanceAttrs::new(
             target_class_name,
             (merged).to_map(),
-            *id,
+            id,
             true,
         )),
-        id: *id,
-    }
+        id,
+    )
 }
 
 fn rebless_date_result(
@@ -63,12 +62,11 @@ fn rebless_date_result(
     if target_class_name == "Date" {
         return result;
     }
-    let Value::Instance {
+    let ValueView::Instance {
         class_name,
         attributes,
         id,
-        ..
-    } = &result
+    } = result.view()
     else {
         return result;
     };
@@ -81,16 +79,16 @@ fn rebless_date_result(
             merged.insert(key.to_string(), value.clone());
         }
     }
-    Value::Instance {
-        class_name: target_class_name,
-        attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+    Value::instance_parts(
+        target_class_name,
+        crate::gc::Gc::new(crate::value::InstanceAttrs::new(
             target_class_name,
             (merged).to_map(),
-            *id,
+            id,
             true,
         )),
-        id: *id,
-    }
+        id,
+    )
 }
 
 /// Dispatch temporal n-arg methods for Date/DateTime instances.
@@ -100,8 +98,8 @@ pub(super) fn dispatch_temporal_method(
     method: &str,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    match target {
-        Value::Instance {
+    match target.view() {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -110,7 +108,7 @@ pub(super) fn dispatch_temporal_method(
             match method {
                 "later" | "earlier" => Some(
                     date_later_earlier(year, month, day, args, method)
-                        .map(|v| rebless_date_result(v, *class_name, attributes)),
+                        .map(|v| rebless_date_result(v, class_name, attributes)),
                 ),
                 // `.yyyy-mm-dd($sep)` / `.mm-dd-yyyy($sep)` / `.dd-mm-yyyy($sep)`
                 // with an optional separator string (default `-`).
@@ -127,12 +125,12 @@ pub(super) fn dispatch_temporal_method(
                     let existing_formatter = attributes.as_map().get("formatter").cloned();
                     Some(
                         date_clone(year, month, day, existing_formatter, args)
-                            .map(|v| rebless_date_result(v, *class_name, attributes)),
+                            .map(|v| rebless_date_result(v, class_name, attributes)),
                     )
                 }
                 "truncated-to" => Some(
                     date_truncated_to(year, month, day, args)
-                        .map(|v| rebless_date_result(v, *class_name, attributes)),
+                        .map(|v| rebless_date_result(v, class_name, attributes)),
                 ),
                 "in-timezone" => {
                     // Date.in-timezone returns a DateTime
@@ -159,7 +157,7 @@ pub(super) fn dispatch_temporal_method(
                 _ => None,
             }
         }
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -171,15 +169,15 @@ pub(super) fn dispatch_temporal_method(
                     datetime_later_earlier(
                         year, month, day, hour, minute, second, timezone, args, method,
                     )
-                    .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                    .map(|v| rebless_datetime_result(v, class_name, attributes)),
                 ),
                 "clone" => Some(
                     datetime_clone(year, month, day, hour, minute, second, timezone, args)
-                        .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                        .map(|v| rebless_datetime_result(v, class_name, attributes)),
                 ),
                 "truncated-to" => Some(
                     datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
-                        .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                        .map(|v| rebless_datetime_result(v, class_name, attributes)),
                 ),
                 "in-timezone" => {
                     if let Some(arg) = args.first() {
@@ -188,14 +186,14 @@ pub(super) fn dispatch_temporal_method(
                             datetime_in_timezone(
                                 year, month, day, hour, minute, second, timezone, new_tz,
                             )
-                            .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                            .map(|v| rebless_datetime_result(v, class_name, attributes)),
                         )
                     } else {
                         Some(
                             Ok(temporal::make_datetime(
                                 year, month, day, hour, minute, second, timezone,
                             ))
-                            .map(|v| rebless_datetime_result(v, *class_name, attributes)),
+                            .map(|v| rebless_datetime_result(v, class_name, attributes)),
                         )
                     }
                 }
@@ -205,16 +203,16 @@ pub(super) fn dispatch_temporal_method(
                     let posix = temporal::datetime_to_posix(
                         year, month, day, hour, minute, second, timezone,
                     );
-                    let real = match &args[0] {
-                        Value::Pair(key, value) if key == "real" => value.truthy(),
-                        other => other.truthy(),
+                    let real = match args[0].view() {
+                        ValueView::Pair(key, value) if key == "real" => value.truthy(),
+                        _ => args[0].truthy(),
                     };
                     if !real {
-                        Some(Ok(Value::Int(posix.floor() as i64)))
+                        Some(Ok(Value::int(posix.floor() as i64)))
                     } else if posix == posix.floor() {
-                        Some(Ok(Value::Int(posix as i64)))
+                        Some(Ok(Value::int(posix as i64)))
                     } else {
-                        Some(Ok(Value::Num(posix)))
+                        Some(Ok(Value::num(posix)))
                     }
                 }
                 _ => None,
@@ -282,13 +280,13 @@ fn date_later_earlier(
     };
 
     for arg in args {
-        if let Value::Pair(key, value) = arg {
+        if let ValueView::Pair(key, value) = arg.view() {
             apply_pair(key, value)?;
             continue;
         }
         if let Some(items) = arg.as_list_items() {
             for item in items.iter() {
-                if let Value::Pair(key, value) = item {
+                if let ValueView::Pair(key, value) = item.view() {
                     apply_pair(key, value)?;
                 }
             }
@@ -418,13 +416,13 @@ fn datetime_later_earlier(
     };
 
     for arg in args {
-        if let Value::Pair(key, value) = arg {
+        if let ValueView::Pair(key, value) = arg.view() {
             apply_pair(key, value)?;
             continue;
         }
         if let Some(items) = arg.as_list_items() {
             for item in items.iter() {
-                if let Value::Pair(key, value) = item {
+                if let ValueView::Pair(key, value) = item.view() {
                     apply_pair(key, value)?;
                 }
             }
@@ -444,12 +442,12 @@ fn date_clone(
 ) -> Result<Value, RuntimeError> {
     let mut formatter = existing_formatter;
     for arg in args {
-        if let Value::Pair(key, value) = arg {
+        if let ValueView::Pair(key, value) = arg.view() {
             match key.as_str() {
                 "year" => year = value.to_f64() as i64,
                 "month" => month = value.to_f64() as i64,
                 "day" => day = value.to_f64() as i64,
-                "formatter" => formatter = Some(*value.clone()),
+                "formatter" => formatter = Some(value.clone()),
                 _ => {}
             }
         }
@@ -473,7 +471,7 @@ fn datetime_clone(
     args: &[Value],
 ) -> Result<Value, RuntimeError> {
     for arg in args {
-        if let Value::Pair(key, value) = arg {
+        if let ValueView::Pair(key, value) = arg.view() {
             match key.as_str() {
                 "year" => year = value.to_f64() as i64,
                 "month" => month = value.to_f64() as i64,

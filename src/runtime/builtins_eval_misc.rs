@@ -1,11 +1,12 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = if args.len() > 1 {
-            Value::Slip(std::sync::Arc::new(args.to_vec()))
+            Value::slip_arc(std::sync::Arc::new(args.to_vec()))
         } else {
-            args.first().cloned().unwrap_or(Value::Nil)
+            args.first().cloned().unwrap_or(Value::NIL)
         };
         self.env.insert("made".to_string(), value.clone());
         self.action_made = Some(value.clone());
@@ -13,7 +14,7 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_made(&self) -> Result<Value, RuntimeError> {
-        Ok(self.env.get("made").cloned().unwrap_or(Value::Nil))
+        Ok(self.env.get("made").cloned().unwrap_or(Value::NIL))
     }
 
     pub(crate) fn builtin_callframe(
@@ -24,12 +25,12 @@ impl Interpreter {
         let mut depth = default_depth;
         let mut callsite_line: Option<i64> = None;
         for arg in args {
-            match arg {
-                Value::Int(i) if *i >= 0 => depth = *i as usize,
-                Value::Num(f) if *f >= 0.0 => depth = *f as usize,
-                Value::Pair(k, v) if k == "__callframe_line" => {
-                    if let Value::Int(line) = v.as_ref() {
-                        callsite_line = Some(*line);
+            match arg.view() {
+                ValueView::Int(i) if i >= 0 => depth = i as usize,
+                ValueView::Num(f) if f >= 0.0 => depth = f as usize,
+                ValueView::Pair(k, v) if k == "__callframe_line" => {
+                    if let ValueView::Int(line) = v.view() {
+                        callsite_line = Some(line);
                     }
                 }
                 _ => {}
@@ -38,7 +39,7 @@ impl Interpreter {
         if let Some(frame) = self.callframe_value(depth, callsite_line) {
             return Ok(frame);
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     /// Implementation of `caller()` function.
@@ -47,25 +48,25 @@ impl Interpreter {
         let mut skip: usize = 0;
         let mut callsite_line: Option<i64> = None;
         for arg in args {
-            match arg {
-                Value::Pair(k, v) if k == "__callframe_line" => {
-                    if let Value::Int(line) = v.as_ref() {
-                        callsite_line = Some(*line);
+            match arg.view() {
+                ValueView::Pair(k, v) if k == "__callframe_line" => {
+                    if let ValueView::Int(line) = v.view() {
+                        callsite_line = Some(line);
                     }
                 }
-                Value::Pair(k, v) if k == "skip" => {
-                    skip = match v.as_ref() {
-                        Value::Int(i) => *i as usize,
-                        other => other.to_string_value().parse::<usize>().unwrap_or(0),
+                ValueView::Pair(k, v) if k == "skip" => {
+                    skip = match v.view() {
+                        ValueView::Int(i) => i as usize,
+                        _ => v.to_string_value().parse::<usize>().unwrap_or(0),
                     };
                 }
-                Value::Package(name) => {
+                ValueView::Package(name) => {
                     type_filter = Some(name.resolve());
                 }
-                Value::Str(s) => {
+                ValueView::Str(s) => {
                     type_filter = Some(s.to_string());
                 }
-                Value::Mixin(inner, _) => {
+                ValueView::Mixin(inner, _) => {
                     type_filter = Some(inner.to_string_value());
                 }
                 _ => {}
@@ -97,12 +98,12 @@ impl Interpreter {
             if let Some(frame) = self.callframe_value(1, callsite_line) {
                 return Ok(frame);
             }
-            return Ok(Value::Package(Symbol::intern("Mu")));
+            return Ok(Value::package(Symbol::intern("Mu")));
         }
 
         let start_idx = match caller_start_idx {
             Some(idx) => idx,
-            None => return Ok(Value::Package(Symbol::intern("Mu"))),
+            None => return Ok(Value::package(Symbol::intern("Mu"))),
         };
 
         if let Some(ref filter) = type_filter {
@@ -131,7 +132,7 @@ impl Interpreter {
                     found += 1;
                 }
             }
-            return Ok(Value::Package(Symbol::intern("Mu")));
+            return Ok(Value::package(Symbol::intern("Mu")));
         }
 
         // No type filter: skip N non-block frames from the caller position
@@ -147,7 +148,7 @@ impl Interpreter {
             }
             skipped += 1;
         }
-        Ok(Value::Package(Symbol::intern("Mu")))
+        Ok(Value::package(Symbol::intern("Mu")))
     }
 
     /// Get the call-site line for a routine frame at the given index.
@@ -189,7 +190,7 @@ impl Interpreter {
         let line = callsite_line
             .or_else(|| frame.line.map(|l| l as i64))
             .unwrap_or(0);
-        attrs.insert("line".to_string(), Value::Int(line));
+        attrs.insert("line".to_string(), Value::int(line));
 
         let subtype = if frame.is_method {
             "Method"
@@ -204,7 +205,7 @@ impl Interpreter {
             .iter()
             .rev()
             .find(|v| {
-                if let Value::Sub(sd) = v {
+                if let ValueView::Sub(sd) = v.view() {
                     sd.name.resolve() == frame.name
                         && (sd.package.resolve() == frame.package
                             || (frame.package == "GLOBAL" && sd.package.resolve().is_empty())
@@ -216,9 +217,9 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.env.get(&format!("&{}", frame.name)).cloned())
             .or_else(|| self.env.get(&frame.name).cloned())
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         attrs.insert("sub".to_string(), sub_val);
-        attrs.insert("inline".to_string(), Value::Bool(false));
+        attrs.insert("inline".to_string(), Value::FALSE);
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         // caller() returns Control::Caller type per spec
         Value::make_instance(Symbol::intern("Control::Caller"), attrs)
@@ -245,23 +246,25 @@ impl Interpreter {
     pub(super) fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // EVAL only accepts strings (and Buf), not blocks
         if let Some(first_arg) = Self::positional_value(args, 0) {
-            match first_arg {
-                Value::Sub(_) | Value::Routine { .. } | Value::WeakSub(_) => {
+            match first_arg.view() {
+                ValueView::Sub(_) | ValueView::Routine { .. } | ValueView::WeakSub(_) => {
                     return Err(RuntimeError::new(
                         "EVAL() requires a string or Buf argument, not a Block",
                     ));
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
                     // Buf argument: decode as UTF-8
-                    if let Some(Value::Array(items, _)) = attributes.as_map().get("bytes") {
+                    if let Some(bytes_val) = attributes.as_map().get("bytes")
+                        && let ValueView::Array(items, _) = bytes_val.view()
+                    {
                         let bytes: Vec<u8> = items
                             .iter()
-                            .map(|v| match v {
-                                Value::Int(n) => *n as u8,
+                            .map(|v| match v.view() {
+                                ValueView::Int(n) => n as u8,
                                 _ => v.to_string_value().parse::<u8>().unwrap_or(0),
                             })
                             .collect();
@@ -312,7 +315,7 @@ impl Interpreter {
             // A user-class instance's `.raku` needs the class registry to collect
             // its public attributes, which the static `raku_value` cannot reach
             // (it would render `F()`); dispatch the instance method instead.
-            let value_repr = if matches!(val, Value::Instance { .. }) {
+            let value_repr = if matches!(val.view(), ValueView::Instance { .. }) {
                 self.call_method_with_values(val.clone(), "raku", vec![])
                     .map(|v| v.to_string_value())
                     .unwrap_or_else(|_| crate::builtins::methods_0arg::raku_repr::raku_value(val))
@@ -322,7 +325,7 @@ impl Interpreter {
             let repr = Self::dd_format_with_repr(val, source_name, value_repr);
             self.emit_stderr(&format!("{}\n", repr));
         }
-        Ok(args.first().cloned().unwrap_or(Value::Nil))
+        Ok(args.first().cloned().unwrap_or(Value::NIL))
     }
 
     /// Format a value for `dd` output (Raku-style debug representation).

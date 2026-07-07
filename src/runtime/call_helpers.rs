@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 const BACKEND_TODO_PREFIX: &str = "__mutsu_backend_todo__:";
@@ -181,10 +182,10 @@ impl Interpreter {
     /// call argument lists (for deprecation / test diagnostics). NativeCall (and
     /// any raw-args consumer) must drop it before treating the list as real args.
     pub(crate) fn is_callsite_line_marker(arg: &Value) -> bool {
-        match arg {
-            Value::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
-            Value::ValuePair(key, _) => {
-                matches!(key.as_ref(), Value::Str(name) if name.as_str() == TEST_CALLSITE_LINE_KEY)
+        match arg.view() {
+            ValueView::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
+            ValueView::ValuePair(key, _) => {
+                matches!(key.view(), ValueView::Str(name) if name.as_str() == TEST_CALLSITE_LINE_KEY)
             }
             _ => false,
         }
@@ -192,25 +193,25 @@ impl Interpreter {
 
     pub(crate) fn peek_callsite_line(args: &[Value]) -> Option<i64> {
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == TEST_CALLSITE_LINE_KEY => {
-                    return match value.as_ref() {
-                        Value::Int(i) => Some(*i),
-                        Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                        Value::Num(n) => Some(*n as i64),
-                        Value::Str(s) => s.parse::<i64>().ok(),
+            match arg.view() {
+                ValueView::Pair(key, value) if key == TEST_CALLSITE_LINE_KEY => {
+                    return match value.view() {
+                        ValueView::Int(i) => Some(i),
+                        ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                        ValueView::Num(n) => Some(n as i64),
+                        ValueView::Str(s) => s.parse::<i64>().ok(),
                         _ => None,
                     };
                 }
-                Value::ValuePair(key, value) => {
-                    if let Value::Str(name) = key.as_ref()
+                ValueView::ValuePair(key, value) => {
+                    if let ValueView::Str(name) = key.view()
                         && name.as_str() == TEST_CALLSITE_LINE_KEY
                     {
-                        return match value.as_ref() {
-                            Value::Int(i) => Some(*i),
-                            Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                            Value::Num(n) => Some(*n as i64),
-                            Value::Str(s) => s.parse::<i64>().ok(),
+                        return match value.view() {
+                            ValueView::Int(i) => Some(i),
+                            ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                            ValueView::Num(n) => Some(n as i64),
+                            ValueView::Str(s) => s.parse::<i64>().ok(),
                             _ => None,
                         };
                     }
@@ -225,29 +226,29 @@ impl Interpreter {
         let mut out = Vec::with_capacity(args.len());
         let mut callsite_line = None;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) => {
+            match arg.view() {
+                ValueView::Pair(key, value) => {
                     if key == TEST_CALLSITE_LINE_KEY {
-                        callsite_line = match value.as_ref() {
-                            Value::Int(i) => Some(*i),
-                            Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                            Value::Num(n) => Some(*n as i64),
-                            Value::Str(s) => s.parse::<i64>().ok(),
+                        callsite_line = match value.view() {
+                            ValueView::Int(i) => Some(i),
+                            ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                            ValueView::Num(n) => Some(n as i64),
+                            ValueView::Str(s) => s.parse::<i64>().ok(),
                             _ => None,
                         };
                         continue;
                     }
                     out.push(arg.clone());
                 }
-                Value::ValuePair(key, value) => {
-                    if let Value::Str(name) = key.as_ref()
+                ValueView::ValuePair(key, value) => {
+                    if let ValueView::Str(name) = key.view()
                         && name.as_str() == TEST_CALLSITE_LINE_KEY
                     {
-                        callsite_line = match value.as_ref() {
-                            Value::Int(i) => Some(*i),
-                            Value::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                            Value::Num(n) => Some(*n as i64),
-                            Value::Str(s) => s.parse::<i64>().ok(),
+                        callsite_line = match value.view() {
+                            ValueView::Int(i) => Some(i),
+                            ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
+                            ValueView::Num(n) => Some(n as i64),
+                            ValueView::Str(s) => s.parse::<i64>().ok(),
                             _ => None,
                         };
                         continue;
@@ -276,9 +277,9 @@ impl Interpreter {
             let needs_update = self
                 .env
                 .get("?LINE")
-                .is_none_or(|v| !matches!(v, Value::Int(l) if *l == line));
+                .is_none_or(|v| !matches!(v.view(), ValueView::Int(l) if l == line));
             if needs_update {
-                self.env.insert("?LINE".to_string(), Value::Int(line));
+                self.env.insert("?LINE".to_string(), Value::int(line));
             }
         }
     }
@@ -318,7 +319,8 @@ impl Interpreter {
     }
 
     fn env_value(&self, key: &str) -> Option<Value> {
-        if let Some(Value::Hash(env_hash)) = self.env.get("%*ENV")
+        if let Some(env) = self.env.get("%*ENV")
+            && let ValueView::Hash(env_hash) = env.view()
             && let Some(val) = env_hash.get(key)
         {
             return Some(val.clone());
@@ -330,28 +332,28 @@ impl Interpreter {
         let Some(val) = self.env_value("RAKU_TEST_DIE_ON_FAIL") else {
             return false;
         };
-        match val {
-            Value::Nil => false,
-            Value::Bool(b) => b,
-            Value::Int(i) => i != 0,
-            Value::BigInt(i) => *i.as_ref() != 0.into(),
-            Value::Num(n) => n != 0.0,
-            Value::Rat(n, d) | Value::FatRat(n, d) => d != 0 && n != 0,
-            Value::Str(s) => !s.is_empty() && s.as_str() != "0",
+        match val.view() {
+            ValueView::Nil => false,
+            ValueView::Bool(b) => b,
+            ValueView::Int(i) => i != 0,
+            ValueView::BigInt(i) => *i.as_ref() != 0.into(),
+            ValueView::Num(n) => n != 0.0,
+            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => d != 0 && n != 0,
+            ValueView::Str(s) => !s.is_empty() && s.as_str() != "0",
             _ => val.truthy(),
         }
     }
 
     pub(super) fn positional_values(args: &[Value]) -> Vec<&Value> {
         args.iter()
-            .filter(|v| !matches!(v, Value::Pair(_, _)))
+            .filter(|v| !matches!(v.view(), ValueView::Pair(_, _)))
             .collect()
     }
 
     pub(super) fn positional_value(args: &[Value], index: usize) -> Option<&Value> {
         let mut count = 0;
         for arg in args {
-            if !matches!(arg, Value::Pair(_, _)) {
+            if !matches!(arg.view(), ValueView::Pair(_, _)) {
                 if count == index {
                     return Some(arg);
                 }
@@ -377,7 +379,7 @@ impl Interpreter {
 
     pub(super) fn named_bool(args: &[Value], name: &str) -> bool {
         for arg in args {
-            if let Value::Pair(key, value) = arg
+            if let ValueView::Pair(key, value) = arg.view()
                 && key == name
             {
                 return value.truthy();
@@ -388,10 +390,10 @@ impl Interpreter {
 
     pub(super) fn named_value(args: &[Value], name: &str) -> Option<Value> {
         for arg in args {
-            if let Value::Pair(key, value) = arg
+            if let ValueView::Pair(key, value) = arg.view()
                 && key == name
             {
-                return Some(value.as_ref().clone());
+                return Some(value.clone());
             }
         }
         None
@@ -401,18 +403,18 @@ impl Interpreter {
     /// In Raku, a Failure in sink context throws its wrapped exception.
     /// This is used by throws-like to detect Failures returned by code blocks.
     pub(super) fn sink_failure_to_error(val: Value) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &val
+        } = val.view()
             && class_name == "Failure"
             && let Some(exception) = attributes.as_map().get("exception")
         {
-            let message = if let Value::Instance {
+            let message = if let ValueView::Instance {
                 attributes: ex_attrs,
                 ..
-            } = exception
+            } = exception.view()
             {
                 ex_attrs
                     .as_map()
@@ -431,25 +433,27 @@ impl Interpreter {
 
     /// Sink a Proc with non-zero exitcode: throw X::Proc::Unsuccessful.
     pub(super) fn sink_proc_to_error(val: Value) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &val
+        } = val.view()
             && class_name.resolve() == "Proc"
         {
-            let exitcode = match attributes.as_map().get("exitcode") {
-                Some(Value::Int(i)) => *i,
-                _ => 0,
-            };
+            let exitcode = attributes
+                .as_map()
+                .get("exitcode")
+                .and_then(|v| v.as_int())
+                .unwrap_or(0);
             // A still-"live" Proc (from `run(:in, ...)`) carries a placeholder
             // exitcode of -1 until it is finalized; sinking it must not throw.
-            let is_live = matches!(attributes.as_map().get("live"), Some(Value::Bool(true)));
+            let is_live = attributes.as_map().get("live").and_then(|v| v.as_bool()) == Some(true);
             if exitcode != 0 && !is_live {
-                let signal = match attributes.as_map().get("signal") {
-                    Some(Value::Int(i)) => *i,
-                    _ => 0,
-                };
+                let signal = attributes
+                    .as_map()
+                    .get("signal")
+                    .and_then(|v| v.as_int())
+                    .unwrap_or(0);
                 let command = attributes
                     .as_map()
                     .get("command")

@@ -22,10 +22,10 @@ impl Interpreter {
                 supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 supply_attrs.insert(
                     "live".to_string(),
-                    Value::Bool(!done && quit_reason.is_none()),
+                    Value::truth(!done && quit_reason.is_none()),
                 );
-                supply_attrs.insert("supplier_id".to_string(), Value::Int(supplier_id as i64));
-                supply_attrs.insert("supplier_done".to_string(), Value::Bool(done));
+                supply_attrs.insert("supplier_id".to_string(), Value::int(supplier_id as i64));
+                supply_attrs.insert("supplier_done".to_string(), Value::truth(done));
                 if let Some(reason) = quit_reason {
                     supply_attrs.insert("quit_reason".to_string(), reason);
                 }
@@ -40,19 +40,19 @@ impl Interpreter {
                 {
                     register_supplier_close_callback(supplier_id, cb);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "emit" => {
                 // Push to supply_emit_buffer (works for on-demand callbacks)
-                let value = args.first().cloned().unwrap_or(Value::Nil);
+                let value = args.first().cloned().unwrap_or(Value::NIL);
                 if Self::supply_is_terminated(attributes) {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 }
                 // Streaming on-demand react path (see native_supplier_mut emit).
                 if let Some(sid) = supplier_id_from_attrs(attributes)
                     && let Some(res) = self.try_stream_emit(sid, &value)
                 {
-                    return res.map(|_| Value::Nil);
+                    return res.map(|_| Value::NIL);
                 }
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
                     buf.push(value.clone());
@@ -135,7 +135,7 @@ impl Interpreter {
                             } => {
                                 let new_acc = if let Some(acc) = accumulator {
                                     self.call_sub_value(callable, vec![acc, val], false)
-                                        .unwrap_or(Value::Nil)
+                                        .unwrap_or(Value::NIL)
                                 } else {
                                     val
                                 };
@@ -201,7 +201,7 @@ impl Interpreter {
                                 if let ZipAction::Emit(tuple_val) = result {
                                     let (output_sid, wf) = zip_state_info(zid);
                                     let emit_val = if let Some(wfn) = wf {
-                                        if let Value::Array(items, ..) = &tuple_val {
+                                        if let ValueView::Array(items, ..) = tuple_val.view() {
                                             self.call_sub_value(wfn, items.to_vec(), false)
                                                 .unwrap_or(tuple_val)
                                         } else {
@@ -234,7 +234,7 @@ impl Interpreter {
                                 if let ZipAction::Emit(tuple_val) = result {
                                     let (output_sid, wf) = zip_latest_state_info(zid);
                                     let emit_val = if let Some(wfn) = wf {
-                                        if let Value::Array(items, ..) = &tuple_val {
+                                        if let ValueView::Array(items, ..) = tuple_val.view() {
                                             self.call_sub_value(wfn, items.to_vec(), false)
                                                 .unwrap_or(tuple_val)
                                         } else {
@@ -280,7 +280,7 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "done" => {
                 // Bumped so the on-demand tap handler can tell (by comparing
@@ -347,7 +347,7 @@ impl Interpreter {
                     close_all_supplier_taps(supplier_id);
                     supplier_reset(supplier_id);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "quit" => {
                 let reason = args
@@ -403,7 +403,7 @@ impl Interpreter {
                     close_all_supplier_taps(supplier_id);
                     supplier_reset_keep_quit(supplier_id);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Supplier",
@@ -422,9 +422,9 @@ impl Interpreter {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         match method {
             "emit" => {
-                let value = args.first().cloned().unwrap_or(Value::Nil);
+                let value = args.first().cloned().unwrap_or(Value::NIL);
                 if Self::supply_is_terminated(&attrs) {
-                    return Ok((Value::Nil, attrs));
+                    return Ok((Value::NIL, attrs));
                 }
                 // Streaming on-demand react path: deliver synchronously to the
                 // consumer instead of buffering, so an infinite synchronous body
@@ -432,7 +432,7 @@ impl Interpreter {
                 if let Some(sid) = supplier_id_from_attrs(&attrs)
                     && let Some(res) = self.try_stream_emit(sid, &value)
                 {
-                    return res.map(|_| (Value::Nil, attrs));
+                    return res.map(|_| (Value::NIL, attrs));
                 }
                 // Push to supply_emit_buffer if active
                 if let Some(buf) = self.supply_emit_buffer.last_mut() {
@@ -444,17 +444,21 @@ impl Interpreter {
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_emit(supplier_id, value.clone());
                 }
-                if let Some(Value::Array(items, ..)) = attrs.get_mut("emitted") {
-                    crate::gc::Gc::make_mut(items)
-                        .push(args.first().cloned().unwrap_or(Value::Nil));
-                } else {
+                let pushed = attrs.get_mut("emitted").and_then(|emitted| {
+                    emitted.with_array_mut(|items, _kind| {
+                        crate::gc::Gc::make_mut(items)
+                            .push(args.first().cloned().unwrap_or(Value::NIL));
+                    })
+                });
+                if pushed.is_none() {
                     attrs.insert(
                         "emitted".to_string(),
-                        Value::array(vec![args.first().cloned().unwrap_or(Value::Nil)]),
+                        Value::array(vec![args.first().cloned().unwrap_or(Value::NIL)]),
                     );
                 }
-                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    let sid = *supplier_id as u64;
+                if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
+                {
+                    let sid = supplier_id as u64;
                     let actions = supplier_emit_callbacks(sid, &value);
                     for action in actions {
                         match action {
@@ -525,7 +529,7 @@ impl Interpreter {
                             } => {
                                 let new_acc = if let Some(acc) = accumulator {
                                     self.call_sub_value(callable, vec![acc, val], false)
-                                        .unwrap_or(Value::Nil)
+                                        .unwrap_or(Value::NIL)
                                 } else {
                                     val
                                 };
@@ -587,7 +591,7 @@ impl Interpreter {
                                 if let ZipAction::Emit(tuple_val) = result {
                                     let (output_sid, wf) = zip_state_info(zid);
                                     let emit_val = if let Some(wfn) = wf {
-                                        if let Value::Array(items, ..) = &tuple_val {
+                                        if let ValueView::Array(items, ..) = tuple_val.view() {
                                             self.call_sub_value(wfn, items.to_vec(), false)
                                                 .unwrap_or(tuple_val)
                                         } else {
@@ -620,7 +624,7 @@ impl Interpreter {
                                 if let ZipAction::Emit(tuple_val) = result {
                                     let (output_sid, wf) = zip_latest_state_info(zid);
                                     let emit_val = if let Some(wfn) = wf {
-                                        if let Value::Array(items, ..) = &tuple_val {
+                                        if let ValueView::Array(items, ..) = tuple_val.view() {
                                             self.call_sub_value(wfn, items.to_vec(), false)
                                                 .unwrap_or(tuple_val)
                                         } else {
@@ -666,16 +670,17 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             "done" => {
                 bump_supplier_done_count();
-                attrs.insert("done".to_string(), Value::Bool(true));
+                attrs.insert("done".to_string(), Value::TRUE);
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_done(supplier_id);
                 }
-                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    let sid = *supplier_id as u64;
+                if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
+                {
+                    let sid = supplier_id as u64;
                     close_supplier_channel_taps(sid, None);
                     // Flush batch buffers before done
                     for (dsid, batch) in flush_supplier_batch_taps(sid) {
@@ -742,22 +747,23 @@ impl Interpreter {
                     close_all_supplier_taps(sid);
                     supplier_reset(sid);
                 }
-                attrs.insert("done".to_string(), Value::Bool(false));
+                attrs.insert("done".to_string(), Value::FALSE);
                 attrs.remove("emitted");
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             "quit" => {
                 let reason = args
                     .first()
                     .cloned()
                     .unwrap_or_else(|| Value::str_from("Died"));
-                attrs.insert("done".to_string(), Value::Bool(true));
+                attrs.insert("done".to_string(), Value::TRUE);
                 attrs.insert("quit_reason".to_string(), reason.clone());
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
                     supplier_quit(supplier_id, reason.clone());
                 }
-                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    let sid = *supplier_id as u64;
+                if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
+                {
+                    let sid = supplier_id as u64;
                     close_supplier_channel_taps(sid, Some(reason.clone()));
                     for (tap, emitted) in flush_supplier_line_taps(sid) {
                         self.call_sub_value(tap, vec![emitted], true)?;
@@ -801,9 +807,9 @@ impl Interpreter {
                     close_all_supplier_taps(sid);
                     supplier_reset_keep_quit(sid);
                 }
-                attrs.insert("done".to_string(), Value::Bool(false));
+                attrs.insert("done".to_string(), Value::FALSE);
                 attrs.remove("emitted");
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Supplier",

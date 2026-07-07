@@ -10,144 +10,145 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if let Some(info) = self.container_type_metadata(target) {
             if let Some(declared) = info.declared_type {
-                return Ok(Value::Package(Symbol::intern(&declared)));
+                return Ok(Value::package(Symbol::intern(&declared)));
             }
-            match target {
-                Value::Array(_, _) => {
-                    return Ok(Value::Package(Symbol::intern(&format!(
+            match target.view() {
+                ValueView::Array(_, _) => {
+                    return Ok(Value::package(Symbol::intern(&format!(
                         "Array[{}]",
                         info.value_type
                     ))));
                 }
-                Value::Hash(_) => {
+                ValueView::Hash(_) => {
                     let name = if let Some(key_type) = info.key_type {
                         format!("Hash[{},{}]", info.value_type, key_type)
                     } else {
                         format!("Hash[{}]", info.value_type)
                     };
-                    return Ok(Value::Package(Symbol::intern(&name)));
+                    return Ok(Value::package(Symbol::intern(&name)));
                 }
                 _ => {}
             }
         }
-        let type_name: &str = match target {
-            Value::Int(_) => "Int",
-            Value::BigInt(_) => "Int",
-            Value::Num(_) => "Num",
-            Value::Str(_) => "Str",
-            Value::Bool(_) => "Bool",
-            Value::Range(_, _) => "Range",
-            Value::RangeExcl(_, _)
-            | Value::RangeExclStart(_, _)
-            | Value::RangeExclBoth(_, _)
-            | Value::GenericRange { .. } => "Range",
-            Value::Array(_, kind) if kind.is_real_array() => "Array",
-            Value::Array(_, _) => "List",
+        let type_name: &str = match target.view() {
+            ValueView::Int(_) => "Int",
+            ValueView::BigInt(_) => "Int",
+            ValueView::Num(_) => "Num",
+            ValueView::Str(_) => "Str",
+            ValueView::Bool(_) => "Bool",
+            ValueView::Range(_, _) => "Range",
+            ValueView::RangeExcl(_, _)
+            | ValueView::RangeExclStart(_, _)
+            | ValueView::RangeExclBoth(_, _)
+            | ValueView::GenericRange { .. } => "Range",
+            ValueView::Array(_, kind) if kind.is_real_array() => "Array",
+            ValueView::Array(_, _) => "List",
             // A lazy list assigned into an `@` array reports `Array`; one coerced
             // via `.List` reports `List`; a bare Seq (scalar-held) reports `Seq`.
-            Value::LazyList(ll) if ll.in_array_context() => "Array",
-            Value::LazyList(ll) if ll.in_list_context() => "List",
-            Value::LazyList(_) => "Seq",
-            Value::Hash(_) => "Hash",
-            Value::Rat(_, _) => "Rat",
-            Value::FatRat(_, _) => "FatRat",
-            Value::BigRat(_, _) => "Rat",
-            Value::Complex(_, _) => "Complex",
-            Value::Set(_, false) => "Set",
-            Value::Set(_, true) => "SetHash",
-            Value::Bag(_, false) => "Bag",
-            Value::Bag(_, true) => "BagHash",
-            Value::Mix(_, false) => "Mix",
-            Value::Mix(_, true) => "MixHash",
-            Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
-            Value::Enum { enum_type, .. } => {
-                return Ok(Value::Package(Symbol::intern(&enum_type.resolve())));
+            ValueView::LazyList(ll) if ll.in_array_context() => "Array",
+            ValueView::LazyList(ll) if ll.in_list_context() => "List",
+            ValueView::LazyList(_) => "Seq",
+            ValueView::Hash(_) => "Hash",
+            ValueView::Rat(_, _) => "Rat",
+            ValueView::FatRat(_, _) => "FatRat",
+            ValueView::BigRat(_, _) => "Rat",
+            ValueView::Complex(_, _) => "Complex",
+            ValueView::Set(_, false) => "Set",
+            ValueView::Set(_, true) => "SetHash",
+            ValueView::Bag(_, false) => "Bag",
+            ValueView::Bag(_, true) => "BagHash",
+            ValueView::Mix(_, false) => "Mix",
+            ValueView::Mix(_, true) => "MixHash",
+            ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => "Pair",
+            ValueView::Enum { enum_type, .. } => {
+                return Ok(Value::package(Symbol::intern(&enum_type.resolve())));
             }
-            Value::Nil => "Any",
-            Value::Package(name) => {
+            ValueView::Nil => "Any",
+            ValueView::Package(name) => {
                 let resolved = name.resolve();
                 let visible = if crate::value::is_internal_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
                 };
-                return Ok(Value::Package(Symbol::intern(visible)));
+                return Ok(Value::package(Symbol::intern(visible)));
             }
-            Value::Routine { is_regex: true, .. } => "Regex",
-            Value::Routine { .. } => "Sub",
+            ValueView::Routine { is_regex: true, .. } => "Regex",
+            ValueView::Routine { .. } => "Sub",
             // Keep in sync with `runtime::utils::value_type_name`: a bare/pointy
             // block (`{...}`, `-> {...}`) is a `Block`, not a `Sub`. `.WHAT`/`.^name`
             // previously reported `Sub` for these even though smartmatch already
             // treated them as `Block` (via `value_type_name`).
-            Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
-                Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
-                Some(Value::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
-                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
-                Some(Value::Str(kind)) if kind.as_str() == "Block" => "Block",
+            ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
+                Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",
+                Some(ValueView::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
+                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
+                Some(ValueView::Str(kind)) if kind.as_str() == "Block" => "Block",
                 _ if data.is_bare_block => "Block",
                 _ => "Sub",
             },
-            Value::WeakSub(_) => "Sub",
-            Value::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
-            Value::Instance { class_name, .. } => {
+            ValueView::WeakSub(_) => "Sub",
+            ValueView::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
+            ValueView::Instance { class_name, .. } => {
                 let resolved = class_name.resolve();
                 let visible = if crate::value::is_internal_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
                 };
-                return Ok(Value::Package(Symbol::intern(visible)));
+                return Ok(Value::package(Symbol::intern(visible)));
             }
-            Value::Junction { .. } => "Junction",
-            Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
-            Value::Version { .. } => "Version",
-            Value::Slip(_) => "Slip",
-            Value::Seq(_) => "Seq",
-            Value::HyperSeq(_) => "HyperSeq",
-            Value::RaceSeq(_) => "RaceSeq",
-            Value::Promise(_) => "Promise",
-            Value::Channel(_) => "Channel",
-            Value::Whatever => "Whatever",
-            Value::HyperWhatever => "HyperWhatever",
-            Value::Capture { .. } => "Capture",
-            Value::Uni(u) => {
+            ValueView::Junction { .. } => "Junction",
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs { .. } => "Regex",
+            ValueView::Version { .. } => "Version",
+            ValueView::Slip(_) => "Slip",
+            ValueView::Seq(_) => "Seq",
+            ValueView::HyperSeq(_) => "HyperSeq",
+            ValueView::RaceSeq(_) => "RaceSeq",
+            ValueView::Promise(_) => "Promise",
+            ValueView::Channel(_) => "Channel",
+            ValueView::Whatever => "Whatever",
+            ValueView::HyperWhatever => "HyperWhatever",
+            ValueView::Capture { .. } => "Capture",
+            ValueView::Uni(u) => {
                 if u.form.is_empty() {
                     "Uni"
                 } else {
                     u.form.as_str()
                 }
             }
-            Value::Mixin(inner, mixins) => {
+            ValueView::Mixin(inner, mixins) => {
                 if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins) {
-                    return Ok(Value::Package(Symbol::intern(&allo)));
+                    return Ok(Value::package(Symbol::intern(&allo)));
                 }
                 return self.call_method_with_values(inner.as_ref().clone(), "WHAT", args.clone());
             }
-            Value::Proxy {
+            ValueView::Proxy {
                 subclass: Some((name, _)),
                 ..
             } => {
-                return Ok(Value::Package(*name));
+                return Ok(Value::package(*name));
             }
-            Value::Proxy { .. } => "Proxy",
-            Value::CustomType(c) => {
-                return Ok(Value::Package(c.name));
+            ValueView::Proxy { .. } => "Proxy",
+            ValueView::CustomType(c) => {
+                return Ok(Value::package(c.name));
             }
-            Value::CustomTypeInstance(d) => {
-                return Ok(Value::Package(d.type_name));
+            ValueView::CustomTypeInstance(d) => {
+                return Ok(Value::package(d.type_name));
             }
-            Value::ParametricRole {
+            ValueView::ParametricRole {
                 base_name,
                 type_args,
             } => {
                 let args_str: Vec<String> = type_args
                     .iter()
-                    .map(|a| match a {
-                        Value::Package(n) => n.resolve(),
-                        Value::ParametricRole { .. } => {
+                    .map(|a| match a.view() {
+                        ValueView::Package(n) => n.resolve(),
+                        ValueView::ParametricRole { .. } => {
                             // Recursively get the WHAT name for nested parametric roles
-                            if let Ok(Value::Package(n)) =
+                            if let Ok(what) =
                                 self.call_method_with_values(a.clone(), "WHAT", Vec::new())
+                                && let ValueView::Package(n) = what.view()
                             {
                                 // Strip surrounding parens from (Name)
                                 n.resolve()
@@ -162,23 +163,23 @@ impl Interpreter {
                     })
                     .collect();
                 let name = format!("{}[{}]", base_name, args_str.join(","));
-                return Ok(Value::Package(Symbol::intern(&name)));
+                return Ok(Value::package(Symbol::intern(&name)));
             }
-            Value::Scalar(inner) => {
-                return self.call_method_with_values(*inner.clone(), "WHAT", args.clone());
+            ValueView::Scalar(inner) => {
+                return self.call_method_with_values(inner.clone(), "WHAT", args.clone());
             }
-            Value::LazyThunk(thunk_data) => {
+            ValueView::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
                     return self.call_method_with_values(cached.clone(), "WHAT", args.clone());
                 }
                 "Scalar"
             }
-            Value::LazyIoLines { .. } => "Seq",
-            Value::HashEntryRef { .. } => {
+            ValueView::LazyIoLines { .. } => "Seq",
+            ValueView::HashEntryRef { .. } => {
                 return self.dispatch_what(&target.hash_entry_read(), args);
             }
-            Value::ContainerRef(_) => {
+            ValueView::ContainerRef(_) => {
                 return target.with_deref(|inner| self.dispatch_what(inner, args));
             }
         };
@@ -187,7 +188,7 @@ impl Interpreter {
         } else {
             type_name
         };
-        Ok(Value::Package(Symbol::intern(visible_type_name)))
+        Ok(Value::package(Symbol::intern(visible_type_name)))
     }
 
     /// Dispatch .HOW method
@@ -203,7 +204,7 @@ impl Interpreter {
         }
         // Return custom HOW for CustomType/CustomTypeInstance
         // Check rebless map first for reblessed instances
-        if let Value::CustomTypeInstance(d) = target
+        if let ValueView::CustomTypeInstance(d) = target.view()
             && let Some(new_how) = self.rebless_map.get(&d.id).cloned()
         {
             return Ok(new_how);
@@ -212,16 +213,16 @@ impl Interpreter {
             return Ok(how.clone());
         }
         // Return CurriedRoleHOW for parameterized roles
-        if let Value::ParametricRole {
+        if let ValueView::ParametricRole {
             base_name,
             type_args,
-        } = target
+        } = target.view()
         {
             let args_str = type_args
                 .iter()
-                .map(|v| match v {
-                    Value::Package(n) => n.resolve(),
-                    other => other.to_string_value(),
+                .map(|v| match v.view() {
+                    ValueView::Package(n) => n.resolve(),
+                    _ => v.to_string_value(),
                 })
                 .collect::<Vec<_>>()
                 .join(",");
@@ -234,9 +235,9 @@ impl Interpreter {
             ));
         }
         // Check for persistent HOW values (set by `$c.HOW does Role`)
-        let how_lookup_name = match target {
-            Value::Package(name) => Some(name.resolve()),
-            Value::Instance { class_name, .. } => Some(class_name.resolve()),
+        let how_lookup_name = match target.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
             _ => None,
         };
         if let Some(ref name) = how_lookup_name
@@ -245,27 +246,27 @@ impl Interpreter {
             return Ok(how_val.clone());
         }
         // Return a meta-object (ClassHOW) for any value
-        let type_name = match target {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            Value::Mixin(inner, _) => match inner.as_ref() {
-                Value::Instance { class_name, .. } => class_name.resolve(),
+        let type_name = match target.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => value_type_name(target).to_string(),
             },
             _ => {
                 // Get type name via WHAT logic
-                let tn = match target {
-                    Value::Int(_) | Value::BigInt(_) => "Int",
-                    Value::Num(_) => "Num",
-                    Value::Str(_) => "Str",
-                    Value::Bool(_) => "Bool",
-                    Value::Rat(_, _) | Value::BigRat(_, _) => "Rat",
-                    Value::FatRat(_, _) => "FatRat",
-                    Value::Complex(_, _) => "Complex",
-                    Value::Hash(_) => "Hash",
-                    Value::Array(_, kind) if kind.is_real_array() => "Array",
-                    Value::Array(_, _) => "List",
-                    Value::Nil => "Any",
+                let tn = match target.view() {
+                    ValueView::Int(_) | ValueView::BigInt(_) => "Int",
+                    ValueView::Num(_) => "Num",
+                    ValueView::Str(_) => "Str",
+                    ValueView::Bool(_) => "Bool",
+                    ValueView::Rat(_, _) | ValueView::BigRat(_, _) => "Rat",
+                    ValueView::FatRat(_, _) => "FatRat",
+                    ValueView::Complex(_, _) => "Complex",
+                    ValueView::Hash(_) => "Hash",
+                    ValueView::Array(_, kind) if kind.is_real_array() => "Array",
+                    ValueView::Array(_, _) => "List",
+                    ValueView::Nil => "Any",
                     _ => "Mu",
                 };
                 tn.to_string()
@@ -310,42 +311,45 @@ impl Interpreter {
 
     /// Dispatch .WHO method
     pub(super) fn dispatch_who(&self, target: &Value) -> Result<Value, RuntimeError> {
-        if let Value::Package(name) = target {
+        if let ValueView::Package(name) = target.view() {
             return Ok(self.package_stash_value(&name.resolve()));
         }
         // For instances, WHO returns the stash of their class
-        if let Value::Instance { class_name, .. } = target {
+        if let ValueView::Instance { class_name, .. } = target.view() {
             return Ok(self.package_stash_value(&class_name.resolve()));
         }
-        if let Value::CustomType(c) = target {
+        if let ValueView::CustomType(c) = target.view() {
             return Ok(self.package_stash_value(&c.name.resolve()));
         }
-        Ok(Value::Hash(Value::hash_arc(HashMap::new())))
+        Ok(Value::hash_with_data(Value::hash_arc(HashMap::new())))
     }
 
     /// Dispatch .WHY method — returns a Pod::Block::Declarator instance
     pub(super) fn dispatch_why(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         // Return declarator doc comment attached to this type/package/sub
-        let keys: Vec<String> = match target {
-            Value::Package(name) => vec![name.resolve()],
-            Value::Instance {
+        let keys: Vec<String> = match target.view() {
+            ValueView::Package(name) => vec![name.resolve()],
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             } => {
                 // Role candidate with index metadata
-                if let Some(Value::Int(idx)) = attributes.as_map().get("__mutsu_role_candidate_idx")
+                if let Some(ValueView::Int(idx)) = attributes
+                    .as_map()
+                    .get("__mutsu_role_candidate_idx")
+                    .map(Value::view)
                 {
                     let base_name = attributes
                         .as_map()
                         .get("__mutsu_role_base_name")
-                        .and_then(|v| match v {
-                            Value::Str(s) => Some(s.to_string()),
+                        .and_then(|v| match v.view() {
+                            ValueView::Str(s) => Some(s.to_string()),
                             _ => None,
                         })
                         .unwrap_or_else(|| class_name.resolve());
                     let mut k = Vec::new();
-                    if *idx > 0 {
+                    if idx > 0 {
                         k.push(format!("{}/role.{}", base_name, idx));
                     }
                     k.push(base_name);
@@ -353,21 +357,26 @@ impl Interpreter {
                 } else if class_name == "Attribute" {
                     // Attribute objects: look up by "ClassName::$!attrname"
                     let mut k = Vec::new();
-                    if let Some(Value::Str(attr_name)) = attributes.as_map().get("name") {
+                    if let Some(ValueView::Str(attr_name)) =
+                        attributes.as_map().get("name").map(Value::view)
+                    {
                         // Try __mutsu_attr_owner first, then package
                         let owner = attributes
                             .as_map()
                             .get("__mutsu_attr_owner")
-                            .and_then(|v| match v {
-                                Value::Str(s) => Some(s.to_string()),
+                            .and_then(|v| match v.view() {
+                                ValueView::Str(s) => Some(s.to_string()),
                                 _ => None,
                             })
                             .or_else(|| {
-                                attributes.as_map().get("package").and_then(|v| match v {
-                                    Value::Package(p) => Some(p.resolve()),
-                                    Value::Str(s) => Some(s.to_string()),
-                                    _ => None,
-                                })
+                                attributes
+                                    .as_map()
+                                    .get("package")
+                                    .and_then(|v| match v.view() {
+                                        ValueView::Package(p) => Some(p.resolve()),
+                                        ValueView::Str(s) => Some(s.to_string()),
+                                        _ => None,
+                                    })
                             });
                         if let Some(owner) = owner {
                             k.push(format!("{}::{}", owner, attr_name));
@@ -381,20 +390,24 @@ impl Interpreter {
                     let param_name = attributes
                         .as_map()
                         .get("name")
-                        .and_then(|v| match v {
-                            Value::Str(s) => Some(s.to_string()),
+                        .and_then(|v| match v.view() {
+                            ValueView::Str(s) => Some(s.to_string()),
                             _ => None,
                         })
                         .unwrap_or_default();
                     let sigil = attributes
                         .as_map()
                         .get("sigil")
-                        .and_then(|v| match v {
-                            Value::Str(s) => Some(s.to_string()),
+                        .and_then(|v| match v.view() {
+                            ValueView::Str(s) => Some(s.to_string()),
                             _ => None,
                         })
                         .unwrap_or_default();
-                    if let Some(Value::Str(owner)) = attributes.as_map().get("__mutsu_owner_sub") {
+                    if let Some(ValueView::Str(owner)) = attributes
+                        .as_map()
+                        .get("__mutsu_owner_sub")
+                        .map(Value::view)
+                    {
                         // Try scoped key with param name
                         if !param_name.is_empty() {
                             k.push(format!("{}::{}", owner, param_name));
@@ -413,15 +426,15 @@ impl Interpreter {
                     vec![class_name.resolve()]
                 }
             }
-            Value::Sub(sub_data) => {
+            ValueView::Sub(sub_data) => {
                 let mut k = Vec::new();
                 // Check for multi candidate index (from .candidates or routine_candidate_subs)
                 let multi_idx = sub_data
                     .env
                     .get("__mutsu_multi_index")
                     .or_else(|| sub_data.env.get("__mutsu_lookup_candidate_idx"))
-                    .and_then(|v| match v {
-                        Value::Int(i) => Some(*i),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i),
                         _ => None,
                     });
                 if let Some(idx) = multi_idx {
@@ -448,7 +461,7 @@ impl Interpreter {
                 }
                 k
             }
-            Value::Routine { package, name, .. } => {
+            ValueView::Routine { package, name, .. } => {
                 let mut k = Vec::new();
                 if !package.is_empty() && !name.is_empty() {
                     k.push(format!("{}::{}", package.resolve(), name.resolve()));
@@ -473,7 +486,7 @@ impl Interpreter {
             }
         }
         // For anonymous subs/bare blocks, try to find a doc comment by source line proximity
-        if let Value::Sub(sub_data) = target
+        if let ValueView::Sub(sub_data) = target.view()
             && sub_data.name.is_empty()
             && let Some(src_line) = sub_data.source_line
         {
@@ -509,7 +522,7 @@ impl Interpreter {
                 return Ok(Self::make_pod_declarator(dc, target.clone()));
             }
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     /// Create a Pod::Block::Declarator instance from a DocComment
@@ -520,7 +533,7 @@ impl Interpreter {
             if let Some(ref leading) = doc.leading {
                 Value::str(leading.clone())
             } else {
-                Value::Nil
+                Value::NIL
             },
         );
         attrs.insert(
@@ -528,7 +541,7 @@ impl Interpreter {
             if let Some(ref trailing) = doc.trailing {
                 Value::str(trailing.clone())
             } else {
-                Value::Nil
+                Value::NIL
             },
         );
         attrs.insert("WHEREFORE".to_string(), wherefore);
@@ -540,53 +553,55 @@ impl Interpreter {
 
     /// Dispatch .^name method
     pub(super) fn dispatch_caret_name(&self, target: &Value) -> Result<Value, RuntimeError> {
-        Ok(Value::str(match target {
-            Value::Package(name) => {
+        Ok(Value::str(match target.view() {
+            ValueView::Package(name) => {
                 crate::value::user_facing_type_name(&name.resolve()).to_string()
             }
-            Value::Instance { class_name, .. } => {
+            ValueView::Instance { class_name, .. } => {
                 crate::value::user_facing_type_name(&class_name.resolve()).to_string()
             }
-            Value::Mixin(inner, _) => match inner.as_ref() {
-                Value::Instance { class_name, .. } => {
+            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                ValueView::Instance { class_name, .. } => {
                     crate::value::user_facing_type_name(&class_name.resolve()).to_string()
                 }
                 _ => value_type_name(target).to_string(),
             },
-            Value::Promise(p) => p.class_name().resolve(),
-            Value::ParametricRole {
+            ValueView::Promise(p) => p.class_name().resolve(),
+            ValueView::ParametricRole {
                 base_name,
                 type_args,
             } => {
                 let args_str = type_args
                     .iter()
-                    .map(|v| match v {
-                        Value::Package(n) => n.resolve(),
-                        other => other.to_string_value(),
+                    .map(|v| match v.view() {
+                        ValueView::Package(n) => n.resolve(),
+                        _ => v.to_string_value(),
                     })
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("{}[{}]", base_name, args_str)
             }
-            Value::Sub(data) => {
+            ValueView::Sub(data) => {
                 let base = value_type_name(target);
                 // Check for return type to produce Sub+{Callable[Type]} format
-                if let Some(Value::Str(ret)) = data.env.get("__mutsu_return_type") {
+                if let Some(ValueView::Str(ret)) =
+                    data.env.get("__mutsu_return_type").map(Value::view)
+                {
                     format!("{}+{{Callable[{}]}}", base, ret)
                 } else {
                     base.to_string()
                 }
             }
-            other => {
+            _ => {
                 // Check container type metadata for typed Hash/Array
-                if let Some(info) = self.container_type_metadata(other) {
+                if let Some(info) = self.container_type_metadata(target) {
                     // A declared type (e.g. an immutable `Map`) names the value
                     // directly, mirroring `.WHAT`.
                     if let Some(ref declared) = info.declared_type {
                         return Ok(Value::str(declared.clone()));
                     }
-                    match other {
-                        Value::Hash(_) => {
+                    match target.view() {
+                        ValueView::Hash(_) => {
                             if let Some(ref key_type) = info.key_type {
                                 return Ok(Value::str(format!(
                                     "Hash[{},{}]",
@@ -596,7 +611,7 @@ impl Interpreter {
                                 return Ok(Value::str(format!("Hash[{}]", info.value_type)));
                             }
                         }
-                        Value::Array(_, kind)
+                        ValueView::Array(_, kind)
                             if kind.is_real_array()
                                 && info.value_type != "Any"
                                 && info.value_type != "Mu" =>
@@ -606,7 +621,7 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                value_type_name(other).to_string()
+                value_type_name(target).to_string()
             }
         }))
     }
@@ -616,9 +631,9 @@ impl Interpreter {
         &self,
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
-        let type_name_owned = match target {
-            Value::Package(name) => Some(name.resolve()),
-            Value::Str(name) => Some(name.to_string()),
+        let type_name_owned = match target.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Str(name) => Some(name.to_string()),
             _ => None,
         };
         let type_name = type_name_owned.as_deref();
@@ -628,11 +643,13 @@ impl Interpreter {
             let values: Vec<Value> = variants
                 .iter()
                 .enumerate()
-                .map(|(index, (key, val))| Value::Enum {
-                    enum_type: Symbol::intern(type_name),
-                    key: Symbol::intern(key),
-                    value: val.clone(),
-                    index,
+                .map(|(index, (key, val))| {
+                    Value::enum_parts(
+                        Symbol::intern(type_name),
+                        Symbol::intern(key),
+                        val.clone(),
+                        index,
+                    )
                 })
                 .collect();
             return Some(Ok(Value::array(values)));
@@ -643,9 +660,9 @@ impl Interpreter {
     /// Dispatch .enums method.
     /// Returns a Map (immutable Hash) of variant-name => value pairs.
     pub(super) fn dispatch_enums(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
-        let type_name_owned = match target {
-            Value::Package(name) => Some(name.resolve()),
-            Value::Str(name) => Some(name.to_string()),
+        let type_name_owned = match target.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Str(name) => Some(name.to_string()),
             _ => None,
         };
         let type_name = type_name_owned.as_deref();
@@ -692,15 +709,12 @@ impl Interpreter {
         &self,
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Value::Str(type_name) = target
+        if let ValueView::Str(type_name) = target.view()
             && let Some(variants) = self.registry().enum_types.get(type_name.as_str())
         {
             let mut result = Vec::new();
             for (k, v) in variants {
-                result.push(Value::Pair(
-                    v.to_str_value(),
-                    Box::new(Value::str(k.clone())),
-                ));
+                result.push(Value::pair(v.to_str_value(), Value::str(k.clone())));
             }
             return Some(Ok(Value::array(result)));
         }

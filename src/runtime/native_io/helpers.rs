@@ -7,14 +7,14 @@ use num_traits::ToPrimitive;
 /// numeric. Returns `None` for non-numeric args, `*`/`Whatever`, and `+Inf`
 /// (all meaning "no limit").
 pub(crate) fn numeric_limit_arg(arg: &Value) -> Option<usize> {
-    match arg {
-        Value::Int(i) => Some((*i).max(0) as usize),
-        Value::BigInt(bi) => Some(bi.to_usize().unwrap_or(usize::MAX)),
-        Value::Num(f) if f.is_infinite() => None,
-        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
-        Value::Rat(n, d) if *d != 0 => Some(((*n as f64 / *d as f64) as i64).max(0) as usize),
-        Value::Complex(re, im) if *im == 0.0 && *re >= 0.0 => Some(*re as usize),
-        Value::Mixin(inner, _) => numeric_limit_arg(inner),
+    match arg.view() {
+        ValueView::Int(i) => Some(i.max(0) as usize),
+        ValueView::BigInt(bi) => Some(bi.to_usize().unwrap_or(usize::MAX)),
+        ValueView::Num(f) if f.is_infinite() => None,
+        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
+        ValueView::Rat(n, d) if d != 0 => Some(((n as f64 / d as f64) as i64).max(0) as usize),
+        ValueView::Complex(re, im) if im == 0.0 && re >= 0.0 => Some(re as usize),
+        ValueView::Mixin(inner, _) => numeric_limit_arg(inner),
         _ => None,
     }
 }

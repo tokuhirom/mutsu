@@ -10,12 +10,12 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Enum {
+        let ValueView::Enum {
             enum_type,
             key,
             value,
             index,
-        } = target
+        } = target.view()
         else {
             return None;
         };
@@ -23,7 +23,7 @@ impl Interpreter {
         match method {
             "key" => Some(Ok(Value::str(key.resolve()))),
             "value" | "Int" | "Numeric" => match value {
-                EnumValue::Int(i) => Some(Ok(Value::Int(*i))),
+                EnumValue::Int(i) => Some(Ok(Value::int(*i))),
                 EnumValue::Str(s) => {
                     if method == "value" {
                         Some(Ok(Value::str(s.clone())))
@@ -40,7 +40,7 @@ impl Interpreter {
                     }
                 }
             },
-            "WHAT" => Some(Ok(Value::Package(*enum_type))),
+            "WHAT" => Some(Ok(Value::package(enum_type))),
             "raku" | "perl" => {
                 let k = key.resolve();
                 let is_ident = k
@@ -67,15 +67,15 @@ impl Interpreter {
             }
             "pair" => {
                 let val = value.to_value();
-                Some(Ok(Value::Pair(key.resolve(), Box::new(val))))
+                Some(Ok(Value::pair(key.resolve(), val)))
             }
             "ACCEPTS" => {
                 if args.is_empty() {
                     return Some(Err(RuntimeError::new("ACCEPTS requires an argument")));
                 }
                 let other = &args[0];
-                Some(Ok(Value::Bool(match other {
-                    Value::Enum {
+                Some(Ok(Value::truth(match other.view() {
+                    ValueView::Enum {
                         enum_type: other_type,
                         key: other_key,
                         ..
@@ -84,19 +84,19 @@ impl Interpreter {
                 })))
             }
             "pred" => {
-                if *index == 0 {
+                if index == 0 {
                     // .pred on first element returns itself
                     return Some(Ok(target.clone()));
                 }
                 if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve())
                     && let Some((prev_key, prev_val)) = variants.get(index - 1)
                 {
-                    return Some(Ok(Value::Enum {
-                        enum_type: *enum_type,
-                        key: Symbol::intern(prev_key),
-                        value: prev_val.clone(),
-                        index: index - 1,
-                    }));
+                    return Some(Ok(Value::enum_parts(
+                        enum_type,
+                        Symbol::intern(prev_key),
+                        prev_val.clone(),
+                        index - 1,
+                    )));
                 }
                 // Fallback: return self if variants not found
                 Some(Ok(target.clone()))
@@ -104,12 +104,12 @@ impl Interpreter {
             "succ" => {
                 if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve()) {
                     if let Some((next_key, next_val)) = variants.get(index + 1) {
-                        return Some(Ok(Value::Enum {
-                            enum_type: *enum_type,
-                            key: Symbol::intern(next_key),
-                            value: next_val.clone(),
-                            index: index + 1,
-                        }));
+                        return Some(Ok(Value::enum_parts(
+                            enum_type,
+                            Symbol::intern(next_key),
+                            next_val.clone(),
+                            index + 1,
+                        )));
                     }
                     // .succ on last element returns itself
                     return Some(Ok(target.clone()));
@@ -132,7 +132,7 @@ impl Interpreter {
             "pairs" => {
                 let pairs: Vec<Value> = variants
                     .iter()
-                    .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.to_value())))
+                    .map(|(k, v)| Value::pair(k.clone(), v.to_value()))
                     .collect();
                 Ok(Value::array(pairs))
             }
@@ -158,9 +158,7 @@ impl Interpreter {
             "antipairs" => {
                 let pairs: Vec<Value> = variants
                     .iter()
-                    .map(|(k, v)| {
-                        Value::ValuePair(Box::new(v.to_value()), Box::new(Value::str(k.clone())))
-                    })
+                    .map(|(k, v)| Value::value_pair(v.to_value(), Value::str(k.clone())))
                     .collect();
                 Ok(Value::array(pairs))
             }
@@ -168,20 +166,14 @@ impl Interpreter {
                 let mut pairs = Vec::new();
                 for (k, v) in variants {
                     let val = v.to_value();
-                    match &val {
-                        Value::Array(items, _) => {
+                    match val.view() {
+                        ValueView::Array(items, _) => {
                             for item in items.as_ref() {
-                                pairs.push(Value::ValuePair(
-                                    Box::new(item.clone()),
-                                    Box::new(Value::str(k.clone())),
-                                ));
+                                pairs.push(Value::value_pair(item.clone(), Value::str(k.clone())));
                             }
                         }
                         _ => {
-                            pairs.push(Value::ValuePair(
-                                Box::new(val),
-                                Box::new(Value::str(k.clone())),
-                            ));
+                            pairs.push(Value::value_pair(val.clone(), Value::str(k.clone())));
                         }
                     }
                 }

@@ -12,15 +12,15 @@ impl Interpreter {
         if !matches!(method, "pick" | "roll") || args.len() > 1 {
             return None;
         }
-        let enum_type_name: Option<String> = match target {
-            Value::Package(type_name) => Some(type_name.resolve()),
-            Value::Str(type_name)
+        let enum_type_name: Option<String> = match target.view() {
+            ValueView::Package(type_name) => Some(type_name.resolve()),
+            ValueView::Str(type_name)
                 if self.registry().enum_types.contains_key(type_name.as_str()) =>
             {
                 Some(type_name.to_string())
             }
-            Value::Mixin(_, mixins) => mixins.values().find_map(|v| match v {
-                Value::Enum { enum_type, .. }
+            ValueView::Mixin(_, mixins) => mixins.values().find_map(|v| match v.view() {
+                ValueView::Enum { enum_type, .. }
                     if self
                         .registry()
                         .enum_types
@@ -34,17 +34,19 @@ impl Interpreter {
         };
         let type_name = enum_type_name?;
         let pool: Option<Vec<Value>> = if type_name == "Bool" {
-            Some(vec![Value::Bool(false), Value::Bool(true)])
+            Some(vec![Value::FALSE, Value::TRUE])
         } else {
             self.registry().enum_types.get(&type_name).map(|variants| {
                 variants
                     .iter()
                     .enumerate()
-                    .map(|(index, (key, value))| Value::Enum {
-                        enum_type: Symbol::intern(&type_name),
-                        key: Symbol::intern(key),
-                        value: value.clone(),
-                        index,
+                    .map(|(index, (key, value))| {
+                        Value::enum_parts(
+                            Symbol::intern(&type_name),
+                            Symbol::intern(key),
+                            value.clone(),
+                            index,
+                        )
                     })
                     .collect()
             })
@@ -60,7 +62,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Str(s) = target else {
+        let ValueView::Str(s) = target.view() else {
             return None;
         };
         if !matches!(method, "pick" | "roll") || args.len() > 1 {
@@ -69,7 +71,7 @@ impl Interpreter {
         let chars: Vec<Value> = s.chars().map(|c| Value::str(c.to_string())).collect();
         if chars.is_empty() {
             return Some(Ok(if args.is_empty() {
-                Value::Nil
+                Value::NIL
             } else {
                 Value::array(Vec::new())
             }));
@@ -84,24 +86,24 @@ impl Interpreter {
         pool: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if pool.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         if args.is_empty() {
             let idx =
                 (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize % pool.len();
             return Ok(pool[idx].clone());
         }
-        let count = match &args[0] {
-            Value::Int(i) if *i > 0 => Some(*i as usize),
-            Value::Int(_) => Some(0),
-            Value::Num(f) if f.is_nan() => {
+        let count = match args[0].view() {
+            ValueView::Int(i) if i > 0 => Some(i as usize),
+            ValueView::Int(_) => Some(0),
+            ValueView::Num(f) if f.is_nan() => {
                 return Err(RuntimeError::new("Cannot convert NaN to Int"));
             }
-            Value::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
-            Value::Num(f) if *f < 0.0 => Some(0),
-            Value::Num(f) => Some(*f as usize),
-            Value::Whatever => None,
-            Value::Str(s) => s.trim().parse::<i64>().ok().map(|n| n.max(0) as usize),
+            ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => None,
+            ValueView::Num(f) if f < 0.0 => Some(0),
+            ValueView::Num(f) => Some(f as usize),
+            ValueView::Whatever => None,
+            ValueView::Str(s) => s.trim().parse::<i64>().ok().map(|n| n.max(0) as usize),
             _ => None,
         };
         let Some(count) = count else {
@@ -120,7 +122,7 @@ impl Interpreter {
             // sequence-spec lazy list (like `1...*`) instead of eagerly
             // generating a fixed-size prefix, so it renders Rakudo's `(...)`
             // gist placeholder and can be pulled indefinitely.
-            return Ok(Value::LazyList(crate::gc::Gc::new(
+            return Ok(Value::lazy_list(crate::gc::Gc::new(
                 crate::value::LazyList::new_sequence(
                     Vec::new(),
                     crate::value::SequenceSpec::RollPool(pool),

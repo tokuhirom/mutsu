@@ -295,7 +295,7 @@ fn extract_phasers_from_stmts(
             if let Stmt::Phaser { kind, body } = old {
                 let var_decl = Stmt::VarDecl {
                     name: temp_name.clone(),
-                    expr: Expr::Literal(crate::value::Value::Nil),
+                    expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -355,7 +355,7 @@ fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
             {
                 let var_decl = Stmt::VarDecl {
                     name: temp_name.clone(),
-                    expr: Expr::Literal(crate::value::Value::Nil),
+                    expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -397,7 +397,7 @@ fn lift_phasers_from_expr(
         if let Expr::PhaserExpr { kind, body } = old {
             let var_decl = Stmt::VarDecl {
                 name: temp_name.clone(),
-                expr: Expr::Literal(crate::value::Value::Nil),
+                expr: Expr::Literal(crate::value::Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -782,10 +782,10 @@ fn reorder_at_level(
             where_constraint,
         } = &stmt
         {
-            let has_init = !matches!(init_expr, Expr::Literal(crate::value::Value::Nil));
+            let has_init = !matches!(init_expr, Expr::Literal(v) if v.is_nil());
             var_decls.push(Stmt::VarDecl {
                 name: name.clone(),
-                expr: Expr::Literal(crate::value::Value::Nil),
+                expr: Expr::Literal(crate::value::Value::NIL),
                 type_constraint: type_constraint.clone(),
                 is_state: *is_state,
                 is_our: *is_our,

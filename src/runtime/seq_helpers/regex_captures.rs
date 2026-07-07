@@ -5,7 +5,7 @@ use std::collections::HashMap;
 impl Interpreter {
     /// Clear `$/` and all numeric capture variables (`$0`, `$1`, ...) after a failed match.
     pub(in crate::runtime) fn clear_match_state(&mut self) {
-        self.env.insert("/".to_string(), Value::Nil);
+        self.env.insert("/".to_string(), Value::NIL);
         let numeric_keys: Vec<Symbol> = self
             .env
             .keys()
@@ -13,7 +13,7 @@ impl Interpreter {
             .copied()
             .collect();
         for key in numeric_keys {
-            self.env.insert_sym(key, Value::Nil);
+            self.env.insert_sym(key, Value::NIL);
         }
     }
 
@@ -21,8 +21,8 @@ impl Interpreter {
         let make_capture_match = |capture: &str, from: usize, to: usize| {
             let mut attrs = HashMap::new();
             attrs.insert("str".to_string(), Value::str(capture.to_string()));
-            attrs.insert("from".to_string(), Value::Int(from as i64));
-            attrs.insert("to".to_string(), Value::Int(to as i64));
+            attrs.insert("from".to_string(), Value::int(from as i64));
+            attrs.insert("to".to_string(), Value::int(to as i64));
             attrs.insert("list".to_string(), Value::array(Vec::new()));
             attrs.insert("named".to_string(), Value::hash(HashMap::new()));
             Value::make_instance(Symbol::intern("Match"), attrs)
@@ -30,15 +30,15 @@ impl Interpreter {
 
         let mut attrs = HashMap::new();
         attrs.insert("str".to_string(), Value::str(captures.matched.clone()));
-        attrs.insert("from".to_string(), Value::Int(captures.from as i64));
-        attrs.insert("to".to_string(), Value::Int(captures.to as i64));
+        attrs.insert("from".to_string(), Value::int(captures.from as i64));
+        attrs.insert("to".to_string(), Value::int(captures.to as i64));
         let positional: Vec<Value> = if !captures.positional_slots.is_empty() {
             captures
                 .positional_slots
                 .iter()
                 .map(|slot| match slot {
                     Some((s, from, to)) => make_capture_match(s, *from, *to),
-                    None => Value::Nil,
+                    None => Value::NIL,
                 })
                 .collect()
         } else {
@@ -75,7 +75,7 @@ impl Interpreter {
             for (key, value) in entries {
                 let val: Value = match value {
                     Some(v) => Value::str(v.clone()),
-                    None => Value::Nil,
+                    None => Value::NIL,
                 };
                 hash_map.insert(key.clone(), val);
             }
@@ -93,22 +93,23 @@ impl Interpreter {
             .copied()
             .collect();
         for key in numeric_keys {
-            self.env.insert_sym(key, Value::Nil);
+            self.env.insert_sym(key, Value::NIL);
         }
 
         for (i, slot) in captures.positional_slots.iter().enumerate() {
             let value = match slot {
                 Some((capture, from, to)) => make_capture_match(capture, *from, *to),
-                None => Value::Nil,
+                None => Value::NIL,
             };
             self.env.insert(i.to_string(), value);
         }
         if captures.positional_slots.is_empty() {
-            self.env.insert("0".to_string(), Value::Nil);
+            self.env.insert("0".to_string(), Value::NIL);
         }
         // Set named capture env vars from the match object's named hash
-        if let Value::Instance { ref attributes, .. } = match_obj
-            && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
+        if let ValueView::Instance { attributes, .. } = match_obj.view()
+            && let Some(ValueView::Hash(named_hash)) =
+                attributes.as_map().get("named").map(Value::view)
         {
             for (k, v) in named_hash.iter() {
                 self.env.insert(format!("<{}>", k), v.clone());
@@ -156,16 +157,16 @@ impl Interpreter {
     /// else (e.g. an Array) is an X::Str::Match::x error.
     pub(in crate::runtime) fn is_valid_match_x_arg(value: &Value) -> bool {
         matches!(
-            value,
-            Value::Int(_)
-                | Value::Num(_)
-                | Value::Str(_)
-                | Value::Whatever
-                | Value::Range(_, _)
-                | Value::RangeExcl(_, _)
-                | Value::RangeExclStart(_, _)
-                | Value::RangeExclBoth(_, _)
-                | Value::GenericRange { .. }
+            value.view(),
+            ValueView::Int(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Whatever
+                | ValueView::Range(_, _)
+                | ValueView::RangeExcl(_, _)
+                | ValueView::RangeExclStart(_, _)
+                | ValueView::RangeExclBoth(_, _)
+                | ValueView::GenericRange { .. }
         )
     }
 
@@ -187,11 +188,11 @@ impl Interpreter {
         value: &Value,
     ) -> Option<(usize, Option<usize>)> {
         fn parse_non_negative_int(v: &Value) -> Option<i64> {
-            match v {
-                Value::Int(i) => Some((*i).max(0)),
-                Value::Num(n) if n.is_finite() && n.fract() == 0.0 => Some((*n as i64).max(0)),
-                Value::Str(s) => s.trim().parse::<i64>().ok().map(|i| i.max(0)),
-                Value::Whatever => Some(i64::MAX),
+            match v.view() {
+                ValueView::Int(i) => Some(i.max(0)),
+                ValueView::Num(n) if n.is_finite() && n.fract() == 0.0 => Some((n as i64).max(0)),
+                ValueView::Str(s) => s.trim().parse::<i64>().ok().map(|i| i.max(0)),
+                ValueView::Whatever => Some(i64::MAX),
                 _ => None,
             }
         }
@@ -222,12 +223,12 @@ impl Interpreter {
             }
         }
 
-        match value {
-            Value::Range(start, end) => adjust_range_bounds(*start, *end, false, false),
-            Value::RangeExcl(start, end) => adjust_range_bounds(*start, *end, false, true),
-            Value::RangeExclStart(start, end) => adjust_range_bounds(*start, *end, true, false),
-            Value::RangeExclBoth(start, end) => adjust_range_bounds(*start, *end, true, true),
-            Value::GenericRange {
+        match value.view() {
+            ValueView::Range(start, end) => adjust_range_bounds(start, end, false, false),
+            ValueView::RangeExcl(start, end) => adjust_range_bounds(start, end, false, true),
+            ValueView::RangeExclStart(start, end) => adjust_range_bounds(start, end, true, false),
+            ValueView::RangeExclBoth(start, end) => adjust_range_bounds(start, end, true, true),
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -235,7 +236,7 @@ impl Interpreter {
             } => {
                 let min = parse_non_negative_int(start.as_ref())?;
                 let max = parse_non_negative_int(end.as_ref())?;
-                adjust_range_bounds(min, max, *excl_start, *excl_end)
+                adjust_range_bounds(min, max, excl_start, excl_end)
             }
             _ => {
                 let n = parse_non_negative_int(value)?;
@@ -347,26 +348,26 @@ impl Interpreter {
         total: usize,
         out: &mut Vec<usize>,
     ) -> Result<(), String> {
-        match value {
-            Value::Int(i) => out.push(Self::parse_nth_token(&i.to_string(), total)?),
-            Value::Num(n) => {
+        match value.view() {
+            ValueView::Int(i) => out.push(Self::parse_nth_token(&i.to_string(), total)?),
+            ValueView::Num(n) => {
                 if n.fract() != 0.0 {
                     return Err(format!("Invalid :nth index ({n})"));
                 }
-                out.push(Self::parse_nth_token(&format!("{}", *n as i64), total)?);
+                out.push(Self::parse_nth_token(&format!("{}", n as i64), total)?);
             }
-            Value::Str(s) => {
+            ValueView::Str(s) => {
                 for piece in s.split(',') {
                     out.push(Self::parse_nth_token(piece, total)?);
                 }
             }
-            Value::Whatever => out.push(Self::parse_nth_token("*", total)?),
-            Value::Array(items, ..) => {
+            ValueView::Whatever => out.push(Self::parse_nth_token("*", total)?),
+            ValueView::Array(items, ..) => {
                 for item in items.iter() {
                     self.collect_nth_indices_from_value(item, total, out)?;
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 for item in items.iter() {
                     self.collect_nth_indices_from_value(item, total, out)?;
                 }
@@ -386,7 +387,7 @@ impl Interpreter {
         let raw = raw.trim();
         if raw.starts_with('$') {
             let var_name = raw.trim_start_matches('$');
-            let value = self.env.get(var_name).cloned().unwrap_or(Value::Nil);
+            let value = self.env.get(var_name).cloned().unwrap_or(Value::NIL);
             let mut out = Vec::new();
             self.collect_nth_indices_from_value(&value, total, &mut out)?;
             return Ok(out);
@@ -400,10 +401,10 @@ impl Interpreter {
 
     /// Get the match continuation position from `$/.to`, defaulting to 0.
     pub(in crate::runtime) fn get_match_to_position(&self) -> usize {
-        if let Some(Value::Instance { attributes, .. }) = self.env.get("/")
-            && let Some(Value::Int(to)) = attributes.as_map().get("to")
+        if let Some(ValueView::Instance { attributes, .. }) = self.env.get("/").map(Value::view)
+            && let Some(ValueView::Int(to)) = attributes.as_map().get("to").map(Value::view)
         {
-            return *to as usize;
+            return to as usize;
         }
         0
     }
@@ -580,7 +581,8 @@ impl Interpreter {
             .filter(|s| !matches!(s, Stmt::SetLine(_)))
             .collect();
         if effective.len() == 1
-            && let Stmt::Expr(Expr::Literal(Value::Regex(pat))) = effective[0]
+            && let Stmt::Expr(Expr::Literal(lit)) = effective[0]
+            && let ValueView::Regex(pat) = lit.view()
         {
             return Some(pat.to_string());
         }

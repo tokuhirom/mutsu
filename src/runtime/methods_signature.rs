@@ -33,7 +33,8 @@ impl Interpreter {
                 op: TokenKind::FatArrow,
                 right,
             } = arg
-                && let Expr::Literal(Value::Str(key)) = left.as_ref()
+                && let Expr::Literal(lit) = left.as_ref()
+                && let ValueView::Str(key) = lit.view()
                 && key.as_str() == "shape"
             {
                 return Self::extract_dims_from_shape_expr(right);
@@ -45,13 +46,18 @@ impl Interpreter {
     fn extract_dims_from_shape_expr(expr: &crate::ast::Expr) -> Option<Vec<usize>> {
         use crate::ast::Expr;
         match expr {
-            Expr::Literal(Value::Int(n)) if *n >= 0 => Some(vec![*n as usize]),
+            Expr::Literal(lit) => match lit.view() {
+                ValueView::Int(n) if n >= 0 => Some(vec![n as usize]),
+                _ => None,
+            },
             Expr::ArrayLiteral(items) => {
                 let mut dims = Vec::new();
                 for item in items {
-                    if let Expr::Literal(Value::Int(n)) = item {
-                        if *n >= 0 {
-                            dims.push(*n as usize);
+                    if let Expr::Literal(lit) = item
+                        && let ValueView::Int(n) = lit.view()
+                    {
+                        if n >= 0 {
+                            dims.push(n as usize);
                         } else {
                             return None;
                         }
@@ -68,54 +74,58 @@ impl Interpreter {
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {
-            '@' => match val {
+            '@' => match val.view() {
                 // @-sigiled attributes always produce Array (not List)
                 // Preserve Shaped kind for shaped array attributes
-                Value::Array(items, ArrayKind::Shaped) => Value::Array(items, ArrayKind::Shaped),
+                ValueView::Array(items, ArrayKind::Shaped) => {
+                    Value::array_with_kind(items.clone(), ArrayKind::Shaped)
+                }
                 // Itemized arrays/lists ($[...] or $(...)) follow the one-arg rule:
                 // they are treated as a single item when assigned to an @-sigiled attribute.
-                Value::Array(items, kind) if kind.is_itemized() => {
-                    Value::real_array(vec![Value::Array(items, kind)])
+                ValueView::Array(items, kind) if kind.is_itemized() => {
+                    Value::real_array(vec![Value::array_with_kind(items.clone(), kind)])
                 }
-                Value::Array(items, kind) if kind.is_real_array() => {
-                    Value::Array(items, ArrayKind::Array)
+                ValueView::Array(items, kind) if kind.is_real_array() => {
+                    Value::array_with_kind(items.clone(), ArrayKind::Array)
                 }
-                Value::Array(items, _) => Value::Array(items, ArrayKind::Array),
-                Value::Range(start, end) => {
-                    let items: Vec<Value> = (start..=end).map(Value::Int).collect();
+                ValueView::Array(items, _) => {
+                    Value::array_with_kind(items.clone(), ArrayKind::Array)
+                }
+                ValueView::Range(start, end) => {
+                    let items: Vec<Value> = (start..=end).map(Value::int).collect();
                     Value::real_array(items)
                 }
-                Value::RangeExcl(start, end) => {
-                    let items: Vec<Value> = (start..end).map(Value::Int).collect();
+                ValueView::RangeExcl(start, end) => {
+                    let items: Vec<Value> = (start..end).map(Value::int).collect();
                     Value::real_array(items)
                 }
-                other => other,
+                _ => val.clone(),
             },
-            '%' => match &val {
-                Value::Hash(_) => val,
-                Value::Pair(k, v) => {
+            '%' => match val.view() {
+                ValueView::Hash(_) => val.clone(),
+                ValueView::Pair(k, v) => {
                     // A single Pair coerces to a one-element hash
                     let mut map = HashMap::new();
-                    map.insert(k.clone(), *v.clone());
-                    Value::Hash(Value::hash_arc(map))
+                    map.insert(k.clone(), v.clone());
+                    Value::hash(map)
                 }
-                Value::Array(arr, _) => {
+                ValueView::Array(arr, _) => {
                     // Convert array of pairs to hash
                     let mut map = HashMap::new();
                     let mut has_pairs = false;
                     for item in arr.iter() {
-                        if let Value::Pair(k, v) = item {
-                            map.insert(k.clone(), *v.clone());
+                        if let ValueView::Pair(k, v) = item.view() {
+                            map.insert(k.clone(), v.clone());
                             has_pairs = true;
                         }
                     }
                     if has_pairs {
-                        Value::Hash(Value::hash_arc(map))
+                        Value::hash(map)
                     } else {
-                        val
+                        val.clone()
                     }
                 }
-                _ => val,
+                _ => val.clone(),
             },
             _ => val,
         }
@@ -382,9 +392,9 @@ impl Interpreter {
             std::collections::HashMap::new();
         // Helper to check if an assumed value is a Whatever placeholder
         let is_placeholder = |v: &Value| {
-            matches!(v, Value::Whatever)
-                || matches!(v, Value::Num(f) if f.is_infinite())
-                || matches!(v, Value::Rat(_, 0))
+            matches!(v.view(), ValueView::Whatever)
+                || matches!(v.view(), ValueView::Num(f) if f.is_infinite())
+                || matches!(v.view(), ValueView::Rat(_, 0))
         };
         {
             let mut pos_idx = 0usize;

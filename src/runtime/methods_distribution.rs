@@ -5,13 +5,13 @@
 //! `methods_distribution_helpers`.
 
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 use super::methods_distribution_helpers::{hash_strings, parse_json_value};
 
 impl Interpreter {
-    /// Parse a JSON string into a Value::Hash.
+    /// Parse a JSON string into a Hash.
     pub(crate) fn parse_json_to_value(&self, json_str: &str) -> Result<Value, RuntimeError> {
         let trimmed = json_str.trim();
         let (val, _) = parse_json_value(trimmed)
@@ -29,7 +29,7 @@ impl Interpreter {
         // Only the Installation repository carries `globalish-symbols` (kept
         // hidden until `merge-symbols`), which needs the dedicated Stash object.
         let Some(symbols) = symbols else {
-            return Value::Package(crate::symbol::Symbol::intern("GLOBAL"));
+            return Value::package(crate::symbol::Symbol::intern("GLOBAL"));
         };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str_from("GLOBALish"));
@@ -40,13 +40,13 @@ impl Interpreter {
     /// Publish symbols carried by a globalish-package into GLOBAL, making them
     /// resolvable through `::('Name')`. Used by `GLOBALish.WHO.merge-symbols`.
     pub(crate) fn merge_global_symbols(&mut self, pkg: &Value) -> Value {
-        let symbols = match pkg {
-            Value::Instance { attributes, .. } => {
+        let symbols = match pkg.view() {
+            ValueView::Instance { attributes, .. } => {
                 attributes.as_map().get("globalish-symbols").cloned()
             }
             _ => pkg.hash_get_str("globalish-symbols"),
         };
-        if let Some(Value::Array(syms, _)) = symbols {
+        if let Some(ValueView::Array(syms, _)) = symbols.as_ref().map(Value::view) {
             for sym in syms.iter() {
                 let name = sym.to_string_value();
                 self.cur_repo.pending_global_symbols.remove(&name);
@@ -55,7 +55,7 @@ impl Interpreter {
                 }
             }
         }
-        Value::Nil
+        Value::NIL
     }
 
     /// Distribution method dispatch.
@@ -67,8 +67,8 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
-            "prefix" => Some(Ok(attributes.get("prefix").cloned().unwrap_or(Value::Nil))),
-            "meta" => Some(Ok(attributes.get("meta").cloned().unwrap_or(Value::Nil))),
+            "prefix" => Some(Ok(attributes.get("prefix").cloned().unwrap_or(Value::NIL))),
+            "meta" => Some(Ok(attributes.get("meta").cloned().unwrap_or(Value::NIL))),
             "content" => {
                 let path_arg = args
                     .first()
@@ -129,15 +129,15 @@ impl Interpreter {
             .unwrap_or_default();
         match method {
             "candidates" => {
-                let depspec = args.first().cloned().unwrap_or(Value::Nil);
+                let depspec = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.cur_inst_candidates(&prefix, &depspec))
             }
             "install" => {
-                let dist = args.first().cloned().unwrap_or(Value::Nil);
+                let dist = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.cur_inst_install(&prefix, &dist))
             }
             "uninstall" => {
-                let dist = args.first().cloned().unwrap_or(Value::Nil);
+                let dist = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.cur_inst_uninstall(&prefix, &dist))
             }
             "installed" => Some(self.cur_inst_installed(&prefix)),
@@ -159,20 +159,22 @@ impl Interpreter {
             "next-repo" => Some(Ok(attributes
                 .get("next-repo")
                 .cloned()
-                .unwrap_or(Value::Nil))),
+                .unwrap_or(Value::NIL))),
             "prefix" => Some(Ok(self.make_io_path_instance(&prefix))),
             "need" => Some(self.cur_inst_need(&prefix, args.first().cloned())),
             "resolve" => {
-                let depspec = args.first().cloned().unwrap_or(Value::Nil);
+                let depspec = args.first().cloned().unwrap_or(Value::NIL);
                 match self.cur_inst_candidates(&prefix, &depspec) {
-                    Ok(Value::Array(arr, _)) => {
-                        if arr.is_empty() {
-                            Some(Ok(Value::Nil))
-                        } else {
-                            Some(Ok(Value::Bool(true)))
+                    Ok(v) => match v.view() {
+                        ValueView::Array(arr, _) => {
+                            if arr.is_empty() {
+                                Some(Ok(Value::NIL))
+                            } else {
+                                Some(Ok(Value::TRUE))
+                            }
                         }
-                    }
-                    Ok(_) => Some(Ok(Value::Nil)),
+                        _ => Some(Ok(Value::NIL)),
+                    },
                     Err(e) => Some(Err(e)),
                 }
             }
@@ -338,6 +340,6 @@ impl Interpreter {
         // Restore the function registry to prevent MAIN from leaking into parent scope
         self.restore_routine_registry_eval(registry_snapshot);
         dispatch_result.map_err(|e| RuntimeError::new(e.message))?;
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 }

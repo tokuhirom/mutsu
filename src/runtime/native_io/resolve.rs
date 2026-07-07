@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 use num_traits::ToPrimitive;
 use std::path::Component;
 
@@ -109,16 +110,16 @@ impl Interpreter {
     }
 
     fn io_path_extension_normalize_count(v: &Value) -> Result<i64, RuntimeError> {
-        let n = match v {
-            Value::Int(i) => *i,
-            Value::BigInt(i) => i.to_i64().unwrap_or_else(|| {
+        let n = match v.view() {
+            ValueView::Int(i) => i,
+            ValueView::BigInt(i) => i.to_i64().unwrap_or_else(|| {
                 if i.sign() == num_bigint::Sign::Minus {
                     i64::MIN
                 } else {
                     i64::MAX
                 }
             }),
-            Value::Num(f) => {
+            ValueView::Num(f) => {
                 if f.is_nan() {
                     return Err(RuntimeError::new(
                         "Exception: IO::Path.extension: :parts endpoint must be numeric",
@@ -131,17 +132,17 @@ impl Interpreter {
                         i64::MIN
                     }
                 } else {
-                    *f as i64
+                    f as i64
                 }
             }
-            Value::Whatever | Value::HyperWhatever => i64::MAX,
-            Value::Str(_) => {
+            ValueView::Whatever | ValueView::HyperWhatever => i64::MAX,
+            ValueView::Str(_) => {
                 return Err(RuntimeError::new(
                     "Exception: IO::Path.extension: :parts endpoint must be numeric",
                 ));
             }
-            other => {
-                let f = other.to_f64();
+            _ => {
+                let f = v.to_f64();
                 if f.is_nan() {
                     return Err(RuntimeError::new(
                         "Exception: IO::Path.extension: :parts endpoint must be numeric",
@@ -162,13 +163,13 @@ impl Interpreter {
     }
 
     fn io_path_extension_endpoint(v: &Value) -> Result<(Option<i64>, bool), RuntimeError> {
-        match v {
-            Value::Whatever | Value::HyperWhatever => Ok((None, false)),
-            Value::Num(f) if f.is_infinite() => Ok((None, false)),
-            Value::Num(f) if f.is_nan() => Err(RuntimeError::new(
+        match v.view() {
+            ValueView::Whatever | ValueView::HyperWhatever => Ok((None, false)),
+            ValueView::Num(f) if f.is_infinite() => Ok((None, false)),
+            ValueView::Num(f) if f.is_nan() => Err(RuntimeError::new(
                 "Exception: IO::Path.extension: :parts endpoint must be numeric",
             )),
-            Value::Str(_) => Err(RuntimeError::new(
+            ValueView::Str(_) => Err(RuntimeError::new(
                 "Exception: IO::Path.extension: :parts endpoint must be numeric",
             )),
             _ => Ok((Some(Self::io_path_extension_normalize_count(v)?), true)),
@@ -203,44 +204,44 @@ impl Interpreter {
             return Ok(IoPathExtensionPartsSpec::Exact(1));
         };
 
-        match parts_val {
-            Value::Range(start, end) => {
+        match parts_val.view() {
+            ValueView::Range(start, end) => {
                 let (low, high) = Self::io_path_extension_range_bounds(
-                    &Value::Int(start),
-                    &Value::Int(end),
+                    &Value::int(start),
+                    &Value::int(end),
                     false,
                     false,
                 )?;
                 Ok(IoPathExtensionPartsSpec::Range { low, high })
             }
-            Value::RangeExcl(start, end) => {
+            ValueView::RangeExcl(start, end) => {
                 let (low, high) = Self::io_path_extension_range_bounds(
-                    &Value::Int(start),
-                    &Value::Int(end),
+                    &Value::int(start),
+                    &Value::int(end),
                     false,
                     true,
                 )?;
                 Ok(IoPathExtensionPartsSpec::Range { low, high })
             }
-            Value::RangeExclStart(start, end) => {
+            ValueView::RangeExclStart(start, end) => {
                 let (low, high) = Self::io_path_extension_range_bounds(
-                    &Value::Int(start),
-                    &Value::Int(end),
+                    &Value::int(start),
+                    &Value::int(end),
                     true,
                     false,
                 )?;
                 Ok(IoPathExtensionPartsSpec::Range { low, high })
             }
-            Value::RangeExclBoth(start, end) => {
+            ValueView::RangeExclBoth(start, end) => {
                 let (low, high) = Self::io_path_extension_range_bounds(
-                    &Value::Int(start),
-                    &Value::Int(end),
+                    &Value::int(start),
+                    &Value::int(end),
                     true,
                     true,
                 )?;
                 Ok(IoPathExtensionPartsSpec::Range { low, high })
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -254,8 +255,8 @@ impl Interpreter {
                 )?;
                 Ok(IoPathExtensionPartsSpec::Range { low, high })
             }
-            other => Ok(IoPathExtensionPartsSpec::Exact(
-                Self::io_path_extension_normalize_count(&other)?,
+            _ => Ok(IoPathExtensionPartsSpec::Exact(
+                Self::io_path_extension_normalize_count(&parts_val)?,
             )),
         }
     }

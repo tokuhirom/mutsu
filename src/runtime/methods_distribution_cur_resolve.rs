@@ -4,7 +4,7 @@
 //! (install/uninstall/need) and `methods_distribution` (dispatch entry points).
 
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 use super::methods_distribution_helpers::platform_library_name;
@@ -15,7 +15,7 @@ impl Interpreter {
         let mut files = HashMap::new();
         let prefix_path = std::path::Path::new(prefix);
         if let Some(resources) = meta.hash_get_str("resources")
-            && let Value::Array(arr, _) = resources
+            && let ValueView::Array(arr, _) = resources.view()
         {
             for resource in arr.iter() {
                 let resource_str = resource.to_string_value();
@@ -40,7 +40,7 @@ impl Interpreter {
             }
         }
         if let Some(provides) = meta.hash_get_str("provides")
-            && let Value::Hash(map) = provides
+            && let ValueView::Hash(map) = provides.view()
         {
             for (_, v) in map.iter() {
                 let path_str = v.to_string_value();
@@ -60,7 +60,7 @@ impl Interpreter {
                 files.insert(format!("bin/{name}"), Value::str(path));
             }
         }
-        Value::Hash(Value::hash_arc(files))
+        Value::hash_with_data(Value::hash_arc(files))
     }
 
     /// Extract short-name and matcher fields from a depspec value.
@@ -68,9 +68,9 @@ impl Interpreter {
         &self,
         depspec: &Value,
     ) -> (String, Option<String>, Option<String>, Option<String>) {
-        match depspec {
-            Value::CompUnitDepSpec { short_name } => (short_name.resolve(), None, None, None),
-            Value::Instance {
+        match depspec.view() {
+            ValueView::CompUnitDepSpec { short_name } => (short_name.resolve(), None, None, None),
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -94,7 +94,7 @@ impl Interpreter {
                     .map(|v| v.to_string_value());
                 (sn, auth, ver, api)
             }
-            Value::Str(s) => (s.to_string(), None, None, None),
+            ValueView::Str(s) => (s.to_string(), None, None, None),
             _ => (String::new(), None, None, None),
         }
     }
@@ -115,8 +115,8 @@ impl Interpreter {
         let name_matches = meta_name == short_name || {
             meta.hash_get_str("provides")
                 .and_then(|p| {
-                    if let Value::Hash(map) = p {
-                        Some(map)
+                    if let ValueView::Hash(map) = p.view() {
+                        Some(map.clone())
                     } else {
                         None
                     }
@@ -200,13 +200,14 @@ impl Interpreter {
             }
             // Build files hash using parent prefix (where resources/ lives)
             let files_hash = self.build_dist_files_hash(&parent_prefix, &meta);
-            let meta = if let Value::Hash(map) = &meta {
+            let rebuilt = if let ValueView::Hash(map) = meta.view() {
                 let mut m = (**map).clone();
                 m.insert("files".to_string(), files_hash.clone());
-                Value::Hash(Value::hash_arc(m))
+                Some(Value::hash_with_data(Value::hash_arc(m)))
             } else {
-                meta
+                None
             };
+            let meta = rebuilt.unwrap_or(meta);
             let mut attrs = HashMap::new();
             // Use parent_prefix as the dist prefix so install can find bin/ and resources/
             // relative to the distribution root (not the lib/ subdir).
@@ -231,17 +232,18 @@ impl Interpreter {
                     provides_map.insert(short_name.clone(), Value::str(format!("{relative}{ext}")));
                     meta_map.insert(
                         "provides".to_string(),
-                        Value::Hash(Value::hash_arc(provides_map)),
+                        Value::hash_with_data(Value::hash_arc(provides_map)),
                     );
-                    let meta = Value::Hash(Value::hash_arc(meta_map));
+                    let meta = Value::hash_with_data(Value::hash_arc(meta_map));
                     let files_hash = self.build_dist_files_hash(prefix, &meta);
-                    let meta = if let Value::Hash(map) = &meta {
+                    let rebuilt = if let ValueView::Hash(map) = meta.view() {
                         let mut m = (**map).clone();
                         m.insert("files".to_string(), files_hash.clone());
-                        Value::Hash(Value::hash_arc(m))
+                        Some(Value::hash_with_data(Value::hash_arc(m)))
                     } else {
-                        meta
+                        None
                     };
+                    let meta = rebuilt.unwrap_or(meta);
                     let mut attrs = HashMap::new();
                     attrs.insert("prefix".to_string(), self.make_io_path_instance(prefix));
                     attrs.insert("meta".to_string(), meta);
@@ -266,13 +268,14 @@ impl Interpreter {
         }
         let files_hash = self.build_dist_files_hash(prefix, &meta);
         // Insert the files hash into the meta value so that $dist.meta<files> works.
-        let meta = if let Value::Hash(map) = &meta {
+        let rebuilt = if let ValueView::Hash(map) = meta.view() {
             let mut m = (**map).clone();
             m.insert("files".to_string(), files_hash.clone());
-            Value::Hash(Value::hash_arc(m))
+            Some(Value::hash_with_data(Value::hash_arc(m)))
         } else {
-            meta
+            None
         };
+        let meta = rebuilt.unwrap_or(meta);
         let mut attrs = HashMap::new();
         attrs.insert("prefix".to_string(), self.make_io_path_instance(prefix));
         attrs.insert("meta".to_string(), meta);

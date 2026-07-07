@@ -411,8 +411,11 @@ impl Interpreter {
                 return None;
             }
             let is_default = match expr {
-                Expr::Literal(Value::Nil) => true,
-                Expr::Literal(Value::Array(d, _)) => d.items.is_empty(),
+                Expr::Literal(v) => match v.view() {
+                    ValueView::Nil => true,
+                    ValueView::Array(d, _) => d.items.is_empty(),
+                    _ => false,
+                },
                 Expr::Hash(items) => items.is_empty(),
                 _ => false,
             };

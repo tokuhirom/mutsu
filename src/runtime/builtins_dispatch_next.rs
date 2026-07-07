@@ -61,20 +61,20 @@ impl Interpreter {
         // Try wrap dispatch stack first.
         if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
             frame.remaining.clear();
-            return Ok(Value::Bool(true));
+            return Ok(Value::TRUE);
         }
         // Try method dispatch stack.
         if let Some(frame) = self.method_dispatch_stack.last_mut() {
             frame.remaining.clear();
-            return Ok(Value::Bool(true));
+            return Ok(Value::TRUE);
         }
         // Try multi dispatch stack.
         if let Some(top) = self.multi_dispatch_stack.last_mut() {
             top.1.clear();
-            return Ok(Value::Bool(true));
+            return Ok(Value::TRUE);
         }
         // Outside a dispatch context: no-op (return False).
-        Ok(Value::Bool(false))
+        Ok(Value::FALSE)
     }
 
     /// Call next method/multi candidate with the original args; returns the result.
@@ -130,7 +130,7 @@ impl Interpreter {
                 let call_args = override_args.unwrap_or_else(|| frame.args.clone());
                 // If this is a method wrap original, separate the invocant
                 // from the args and dispatch as a method call.
-                let result = if let Value::Sub(ref data) = next
+                let result = if let ValueView::Sub(data) = next.view()
                     && data.env.get("__mutsu_method_wrap_original").is_some()
                     && !call_args.is_empty()
                 {
@@ -154,11 +154,11 @@ impl Interpreter {
                 // Non-method wrap: exhausted — return Nil
                 if tail_call {
                     return Err(RuntimeError {
-                        return_value: Some(Value::Nil),
+                        return_value: Some(Value::NIL),
                         ..RuntimeError::new("")
                     });
                 }
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             // Method wraps (sub_id == 0): fall through to method dispatch stack
             // so callsame inside the original method can continue the MRO chain.
@@ -237,11 +237,11 @@ impl Interpreter {
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
                     if tail_call {
                         return Err(RuntimeError {
-                            return_value: Some(Value::Nil),
+                            return_value: Some(Value::NIL),
                             ..RuntimeError::new("")
                         });
                     }
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 };
                 frame.remaining.remove(0);
                 let rw_params = frame.rw_params.clone();
@@ -320,8 +320,8 @@ impl Interpreter {
                 .map(|(n, _)| n.clone())
                 .unwrap_or_default();
             let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
-            let dispatch_result = match &invocant {
-                Value::Instance {
+            let dispatch_result = match invocant.view() {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     id: target_id,
@@ -346,10 +346,7 @@ impl Interpreter {
                             // `callsame` candidate's `self.x ~= ...`).
                             let new_inv = if adjusted {
                                 Value::write_back_sharing(
-                                    attributes,
-                                    *class_name,
-                                    updated,
-                                    *target_id,
+                                    attributes, class_name, updated, target_id,
                                 )
                             } else {
                                 invocant.clone()
@@ -369,10 +366,7 @@ impl Interpreter {
                             (
                                 result,
                                 Some(Value::write_back_sharing(
-                                    attributes,
-                                    *class_name,
-                                    updated,
-                                    *target_id,
+                                    attributes, class_name, updated, target_id,
                                 )),
                             )
                         })
@@ -494,11 +488,11 @@ impl Interpreter {
                 // No candidate matches — return Nil (nowhere to defer to)
                 if tail_call {
                     return Err(RuntimeError {
-                        return_value: Some(Value::Nil),
+                        return_value: Some(Value::NIL),
                         ..RuntimeError::new("")
                     });
                 }
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             };
             let next_def = candidates[idx].clone();
             let remaining = candidates[idx + 1..].to_vec();
@@ -579,11 +573,11 @@ impl Interpreter {
         if !self.method_class_stack.is_empty() {
             if tail_call {
                 return Err(RuntimeError {
-                    return_value: Some(Value::Nil),
+                    return_value: Some(Value::NIL),
                     ..RuntimeError::new("")
                 });
             }
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // Not in any dispatch context
         Err(Self::no_dispatcher_error(func_name))
@@ -596,7 +590,7 @@ impl Interpreter {
                 frame.remaining.remove(0);
                 return Ok(next);
             }
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // Check method dispatch stack
         // (not yet implemented for methods — return Nil)
@@ -604,7 +598,7 @@ impl Interpreter {
         let Some((_name, candidates, orig_args, rw_params)) =
             self.multi_dispatch_stack.last().cloned()
         else {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         };
         // Find the first candidate that matches the original arguments,
         // mirroring the behavior of dispatch_next_candidate/callsame.
@@ -618,7 +612,7 @@ impl Interpreter {
             }
         }
         let Some(idx) = matched_idx else {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         };
         let next_def = candidates[idx].clone();
         // Remove this candidate and all before it from the remaining list

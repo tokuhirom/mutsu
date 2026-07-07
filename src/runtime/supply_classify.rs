@@ -16,8 +16,8 @@ impl Interpreter {
         let with_fn = Self::named_value(args, "with");
         let expires = Self::named_value(args, "expires");
 
-        let values = match attributes.get("values") {
-            Some(Value::Array(items, ..)) => items.to_vec(),
+        let values = match attributes.get("values").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.to_vec(),
             _ => Vec::new(),
         };
 
@@ -35,8 +35,8 @@ impl Interpreter {
                 new_attrs.insert("supplier_done".to_string(), d.clone());
             }
             new_attrs.insert("values".to_string(), Value::array(Vec::new()));
-            new_attrs.insert("live".to_string(), Value::Bool(false));
-            new_attrs.insert("unique_filter".to_string(), Value::Bool(true));
+            new_attrs.insert("live".to_string(), Value::FALSE);
+            new_attrs.insert("unique_filter".to_string(), Value::TRUE);
             if let Some(ref f) = as_fn {
                 new_attrs.insert("unique_as".to_string(), f.clone());
             }
@@ -85,10 +85,7 @@ impl Interpreter {
         new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         new_attrs.insert(
             "live".to_string(),
-            attributes
-                .get("live")
-                .cloned()
-                .unwrap_or(Value::Bool(false)),
+            attributes.get("live").cloned().unwrap_or(Value::FALSE),
         );
         Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
     }
@@ -101,10 +98,12 @@ impl Interpreter {
         args: &[Value],
         categorize: bool,
     ) -> Result<Value, RuntimeError> {
-        let mapper = args.first().cloned().unwrap_or(Value::Nil);
+        let mapper = args.first().cloned().unwrap_or(Value::NIL);
 
-        if let Some(Value::Int(source_supplier_id)) = attributes.get("supplier_id") {
-            let source_sid = *source_supplier_id as u64;
+        if let Some(ValueView::Int(source_supplier_id)) =
+            attributes.get("supplier_id").map(Value::view)
+        {
+            let source_sid = source_supplier_id as u64;
             // Create a new supplier for the classify output
             let classify_supplier_id = next_supplier_id();
             // Register a classify tap on the source supplier
@@ -113,17 +112,17 @@ impl Interpreter {
             let mut supply_attrs = HashMap::new();
             supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
             supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            supply_attrs.insert("live".to_string(), Value::Bool(true));
+            supply_attrs.insert("live".to_string(), Value::TRUE);
             supply_attrs.insert(
                 "supplier_id".to_string(),
-                Value::Int(classify_supplier_id as i64),
+                Value::int(classify_supplier_id as i64),
             );
             return Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs));
         }
 
         // Non-live supply: process all values upfront
-        let values = match attributes.get("values") {
-            Some(Value::Array(items, ..)) => items.to_vec(),
+        let values = match attributes.get("values").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.to_vec(),
             _ => Vec::new(),
         };
         let mut keys_order: Vec<Value> = Vec::new();
@@ -151,14 +150,14 @@ impl Interpreter {
             let mut sub_attrs = HashMap::new();
             sub_attrs.insert("values".to_string(), Value::array(items));
             sub_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            sub_attrs.insert("live".to_string(), Value::Bool(false));
+            sub_attrs.insert("live".to_string(), Value::FALSE);
             let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_attrs);
-            result_values.push(Value::ValuePair(Box::new(key), Box::new(sub_supply)));
+            result_values.push(Value::value_pair(key, sub_supply));
         }
         let mut new_attrs = HashMap::new();
         new_attrs.insert("values".to_string(), Value::array(result_values));
         new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        new_attrs.insert("live".to_string(), Value::Bool(false));
+        new_attrs.insert("live".to_string(), Value::FALSE);
         Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
     }
 
@@ -168,8 +167,8 @@ impl Interpreter {
         mapper: &Value,
         value: &Value,
     ) -> Result<Value, RuntimeError> {
-        match mapper {
-            Value::Hash(map) => {
+        match mapper.view() {
+            ValueView::Hash(map) => {
                 let key = value.to_string_value();
                 if let Some(v) = map.get(&key) {
                     Ok(v.clone())
@@ -178,15 +177,15 @@ impl Interpreter {
                     // (e.g. `is default(())` makes a categorize value uncategorized).
                     Ok((**def).clone())
                 } else {
-                    Ok(Value::Int(0))
+                    Ok(Value::int(0))
                 }
             }
-            Value::Array(items, ..) => {
+            ValueView::Array(items, ..) => {
                 let idx = value.to_f64() as usize;
                 if idx < items.len() {
                     Ok(items[idx].clone())
                 } else {
-                    Ok(Value::Nil)
+                    Ok(Value::NIL)
                 }
             }
             _ => {
@@ -245,12 +244,12 @@ impl Interpreter {
                 let mut sub_supply_attrs = HashMap::new();
                 sub_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                 sub_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                sub_supply_attrs.insert("live".to_string(), Value::Bool(true));
-                sub_supply_attrs.insert("supplier_id".to_string(), Value::Int(sub_sid as i64));
+                sub_supply_attrs.insert("live".to_string(), Value::TRUE);
+                sub_supply_attrs.insert("supplier_id".to_string(), Value::int(sub_sid as i64));
                 let sub_supply = Value::make_instance(Symbol::intern("Supply"), sub_supply_attrs);
 
                 // Emit Pair(key, supply) to the classify supplier's taps
-                let pair = Value::ValuePair(Box::new(key), Box::new(sub_supply));
+                let pair = Value::value_pair(key, sub_supply);
                 supplier_emit(classify_supplier_id, pair.clone());
                 let actions = supplier_emit_callbacks(classify_supplier_id, &pair);
                 self.run_supplier_emit_actions(actions);
@@ -293,12 +292,15 @@ impl Interpreter {
     /// Lists/Arrays/Seqs/Slips contribute their elements; an empty list
     /// contributes no keys (the value is dropped); anything else is a single key.
     fn flatten_categorize_keys(mapped: Value) -> Vec<Value> {
-        match mapped {
-            Value::Array(items, ..) => items.iter().cloned().collect(),
-            Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+        match mapped.view() {
+            ValueView::Array(items, ..) => return items.iter().cloned().collect(),
+            ValueView::Seq(items) | ValueView::Slip(items) => {
+                return items.iter().cloned().collect();
+            }
             // An empty/undefined mapper result contributes no keys.
-            Value::Nil => Vec::new(),
-            other => vec![other],
+            ValueView::Nil => return Vec::new(),
+            _ => {}
         }
+        vec![mapped]
     }
 }

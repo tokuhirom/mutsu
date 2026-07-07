@@ -67,7 +67,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
+        attrs.insert("supply_id".to_string(), Value::int(sid as i64));
         Value::make_instance(Symbol::intern("Supply"), attrs)
     }
 
@@ -78,14 +78,14 @@ impl Interpreter {
         merge_all: bool,
     ) -> Result<Value, RuntimeError> {
         // Upgrade WeakSub to Sub transparently
-        let func = match func {
-            Value::WeakSub(ref weak) => match weak.upgrade() {
-                Some(strong) => Value::Sub(strong),
+        let func = match func.view() {
+            ValueView::WeakSub(weak) => match weak.upgrade() {
+                Some(strong) => Value::sub_value(strong),
                 None => return Err(RuntimeError::new("Callable has been freed")),
             },
-            other => other,
+            _ => func,
         };
-        if let Value::Routine { package, name, .. } = &func {
+        if let ValueView::Routine { package, name, .. } = func.view() {
             if !package.is_empty() && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {
@@ -109,14 +109,14 @@ impl Interpreter {
             }
             return self.call_function(&name_str, args);
         }
-        if let Value::Junction { kind, values } = func {
+        if let ValueView::Junction { kind, values } = func.view() {
             let mut results = Vec::with_capacity(values.len());
             for callable in values.iter() {
                 results.push(self.call_sub_value(callable.clone(), args.clone(), merge_all)?);
             }
-            return Ok(Value::junction(kind, results));
+            return Ok(Value::junction(kind.clone(), results));
         }
-        if let Value::Sub(data) = func {
+        if let ValueView::Sub(data) = func.view() {
             // Check for wrap chain — if wrappers exist, dispatch through them
             // Skip if we're already inside a wrap dispatch for this sub
             let already_dispatching = self.wrap_dispatch_stack.iter().any(|f| f.sub_id == data.id);
@@ -136,13 +136,13 @@ impl Interpreter {
                     remaining.push(chain[i].1.clone());
                 }
                 // Add the original sub at the end
-                remaining.push(Value::Sub(data.clone()));
+                remaining.push(Value::sub_value(data.clone()));
                 let frame = super::WrapDispatchFrame {
                     sub_id: data.id,
                     remaining,
                     args: sanitized_args.clone(),
                 };
-                let (wrapper_id, wrapper_base_env) = if let Value::Sub(ref wd) = outermost {
+                let (wrapper_id, wrapper_base_env) = if let ValueView::Sub(wd) = outermost.view() {
                     (Some(wd.id), Some(wd.env.clone()))
                 } else {
                     (None, None)
@@ -183,8 +183,8 @@ impl Interpreter {
                 let mut named = data.assumed_named.clone();
                 let mut incoming_positional = Vec::new();
                 for arg in &sanitized_args {
-                    if let Value::Pair(key, boxed) = arg {
-                        named.insert(key.clone(), *boxed.clone());
+                    if let ValueView::Pair(key, boxed) = arg.view() {
+                        named.insert(key.clone(), boxed.clone());
                     } else {
                         incoming_positional.push(arg.clone());
                     }
@@ -193,9 +193,9 @@ impl Interpreter {
                 // Remaining positional args are appended after all fixed primers.
                 let mut incoming_idx = 0usize;
                 for assumed in &data.assumed_positional {
-                    let is_placeholder = matches!(assumed, Value::Whatever)
-                        || matches!(assumed, Value::Num(f) if f.is_infinite())
-                        || matches!(assumed, Value::Rat(_, 0));
+                    let is_placeholder = matches!(assumed.view(), ValueView::Whatever)
+                        || matches!(assumed.view(), ValueView::Num(f) if f.is_infinite())
+                        || matches!(assumed.view(), ValueView::Rat(_, 0));
                     if is_placeholder {
                         if incoming_idx < incoming_positional.len() {
                             positional.push(incoming_positional[incoming_idx].clone());
@@ -208,29 +208,35 @@ impl Interpreter {
                 positional.extend(incoming_positional.into_iter().skip(incoming_idx));
                 call_args = positional;
                 for (key, value) in named {
-                    call_args.push(Value::Pair(key, Box::new(value)));
+                    call_args.push(Value::pair(key, value));
                 }
             }
             // Routine wrapper from .assuming() on a multi-dispatch sub
-            if let Some(Value::Str(routine_name)) = data.env.get("__mutsu_routine_name").cloned() {
-                return self.call_function(&routine_name, call_args);
+            if let Some(ValueView::Str(routine_name)) =
+                data.env.get("__mutsu_routine_name").map(Value::view)
+            {
+                return self.call_function(routine_name, call_args);
             }
             // Multi-dispatch dispatcher: captured multi candidates from resolve_code_var
-            if let Some(Value::Array(candidates_arc, _)) =
-                data.env.get("__mutsu_multi_dispatch_candidates").cloned()
+            if let Some((candidates_arc, _)) = data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .cloned()
+                .and_then(Value::into_array)
             {
                 let candidates = (*candidates_arc).clone();
                 // First try to dispatch via the function table (if still in scope)
-                if let Some(Value::Str(name)) = data.env.get("__mutsu_multi_dispatch_name").cloned()
-                    && (self.resolve_function(&name).is_some()
-                        || self.has_proto(&name)
-                        || self.has_multi_candidates(&name))
+                if let Some(ValueView::Str(name)) =
+                    data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+                    && (self.resolve_function(name).is_some()
+                        || self.has_proto(name)
+                        || self.has_multi_candidates(name))
                 {
-                    return self.call_function(&name, call_args);
+                    return self.call_function(name, call_args);
                 }
                 // Candidates are out of scope -- dispatch through captured Subs
                 for candidate in &candidates {
-                    if let Value::Sub(cand_data) = candidate
+                    if let ValueView::Sub(cand_data) = candidate.view()
                         && self
                             .bind_function_args_values(
                                 &cand_data.param_defs,
@@ -244,7 +250,7 @@ impl Interpreter {
                 }
                 // Slurpy catch-all
                 for candidate in &candidates {
-                    if let Value::Sub(cand_data) = candidate
+                    if let ValueView::Sub(cand_data) = candidate.view()
                         && cand_data.param_defs.iter().any(|pd| pd.slurpy)
                     {
                         return self.call_sub_value(candidate.clone(), call_args, false);
@@ -261,8 +267,8 @@ impl Interpreter {
                 let right_result = self.call_sub_value(right, call_args, false)?;
                 let (left_params, left_param_defs) = self.callable_signature(&left);
                 let left_variadic = left_param_defs.iter().any(|pd| pd.slurpy && !pd.named);
-                let left_expects_single = match &left {
-                    Value::Sub(left_data) if left_params.is_empty() => {
+                let left_expects_single = match left.view() {
+                    ValueView::Sub(left_data) if left_params.is_empty() => {
                         let (uses_positional, _) = Self::auto_signature_uses(&left_data.body);
                         !uses_positional
                     }
@@ -279,7 +285,7 @@ impl Interpreter {
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             if let Some(line) = self.test_pending_callsite_line {
-                self.env.insert("?LINE".to_string(), Value::Int(line));
+                self.env.insert("?LINE".to_string(), Value::int(line));
             }
             self.push_caller_env();
             let persist_closure_env =
@@ -302,7 +308,7 @@ impl Interpreter {
                 // live cell and make a *second* bareword `f()` call read a stale
                 // value (`my &f; { my $a=3; &f=sub{$a++} }; f(); f()` returned 3
                 // then 0). Mirrors the VM closure dispatch (`call_compiled_closure`).
-                if matches!(v, Value::ContainerRef(_)) {
+                if matches!(v.view(), ValueView::ContainerRef(_)) {
                     new_env.insert_sym(*k, v.clone());
                     continue;
                 }
@@ -310,8 +316,10 @@ impl Interpreter {
                     new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
                 }
-                if matches!(new_env.get_sym(*k), Some(Value::Array(..)))
-                    && matches!(v, Value::Array(..))
+                if matches!(
+                    new_env.get_sym(*k).map(Value::view),
+                    Some(ValueView::Array(..))
+                ) && matches!(v.view(), ValueView::Array(..))
                 {
                     continue;
                 }
@@ -322,7 +330,7 @@ impl Interpreter {
             // params that doesn't use @_/%_ must reject positional arguments.
             let positional_call_args: Vec<&Value> = call_args
                 .iter()
-                .filter(|v| !matches!(v, Value::Pair(_, _)))
+                .filter(|v| !matches!(v.view(), ValueView::Pair(_, _)))
                 .collect();
             if data.empty_sig && !positional_call_args.is_empty() {
                 self.pop_caller_env();
@@ -343,8 +351,8 @@ impl Interpreter {
             new_env = self.env.clone();
             if data.params.is_empty() {
                 for arg in &sanitized_args {
-                    if let Value::Pair(name, value) = arg {
-                        new_env.insert(format!(":{}", name), *value.clone());
+                    if let ValueView::Pair(name, value) = arg.view() {
+                        new_env.insert(format!(":{}", name), value.clone());
                     }
                 }
             }
@@ -355,7 +363,7 @@ impl Interpreter {
                 && !sanitized_args.is_empty()
                 && let Some(first_positional) = sanitized_args
                     .iter()
-                    .find(|v| !matches!(v, Value::Pair(_, _)))
+                    .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
             {
                 new_env.insert("_".to_string(), first_positional.clone());
                 new_env.insert("$_".to_string(), first_positional.clone());
@@ -391,7 +399,7 @@ impl Interpreter {
             });
             new_env.insert(
                 "&?BLOCK".to_string(),
-                Value::WeakSub(crate::gc::Gc::downgrade(&block_arc)),
+                Value::weak_sub(crate::gc::Gc::downgrade(&block_arc)),
             );
             let block_sub = Value::make_sub_with_id(
                 data.package,
@@ -406,7 +414,7 @@ impl Interpreter {
             self.env = new_env;
             self.env.insert(
                 "__mutsu_callable_id".to_string(),
-                Value::Int(data.id as i64),
+                Value::int(data.id as i64),
             );
             self.routine_stack.push(RoutineFrame {
                 package: data.package.resolve(),
@@ -417,10 +425,13 @@ impl Interpreter {
                 is_block: true,
             });
             self.block_stack.push(block_sub);
-            let return_spec = data.env.get("__mutsu_return_type").and_then(|v| match v {
-                Value::Str(s) => Some(s.to_string()),
-                _ => None,
-            });
+            let return_spec = data
+                .env
+                .get("__mutsu_return_type")
+                .and_then(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.to_string()),
+                    _ => None,
+                });
             self.prepare_definite_return_slot(return_spec.as_deref());
             let let_mark = self.let_saves.len();
             // Snapshot the body-entry env so the exit writeback can tell which
@@ -445,7 +456,7 @@ impl Interpreter {
                         e.is_leave = false;
                         e.control = None;
                         if e.return_value.is_none() {
-                            e.return_value = Some(Value::Nil);
+                            e.return_value = Some(Value::NIL);
                         }
                         Err(e)
                     } else {
@@ -535,18 +546,18 @@ impl Interpreter {
                     if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
                         continue;
                     }
-                    if matches!(v, Value::Array(..)) {
+                    if matches!(v.view(), ValueView::Array(..)) {
                         // Arrays are Arc-shared; in-place mutations are already
                         // visible to the caller, and reassignment should propagate.
                         merged.insert_sym(*k, v.clone());
                     } else if merged.contains_key_sym(*k)
                         && matches!(
-                            v,
-                            Value::Bool(_)
-                                | Value::Int(_)
-                                | Value::Num(_)
-                                | Value::Str(_)
-                                | Value::Rat(_, _)
+                            v.view(),
+                            ValueView::Bool(_)
+                                | ValueView::Int(_)
+                                | ValueView::Num(_)
+                                | ValueView::Str(_)
+                                | ValueView::Rat(_, _)
                         )
                         // Only write a captured scalar back to the caller when the
                         // body actually changed it from its body-entry value. A
@@ -594,9 +605,10 @@ impl Interpreter {
                 if has_target {
                     let mut e = result.unwrap_err();
                     if e.return_target_callable_id().is_none()
-                        && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                        && let Some(ValueView::Int(id)) =
+                            data.env.get("__mutsu_callable_id").map(Value::view)
                     {
-                        e.set_return_target_callable_id(Some(*id as u64));
+                        e.set_return_target_callable_id(Some(id as u64));
                     }
                     return Err(e);
                 }
@@ -609,13 +621,13 @@ impl Interpreter {
                 self.finalize_return_with_spec(result, effective_return_spec.as_deref());
             let fetch_rw = data.is_rw && !data.is_raw;
             return finalized.and_then(|v| {
-                let v = if let Value::LazyList(list) = v {
+                let v = if let ValueView::LazyList(list) = v.view() {
                     let mut env = list.env.clone();
                     env.insert(
                         "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                        Value::Bool(true),
+                        Value::TRUE,
                     );
-                    Value::LazyList(crate::gc::Gc::new(crate::value::LazyList {
+                    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList {
                         body: list.body.clone(),
                         env,
                         cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),

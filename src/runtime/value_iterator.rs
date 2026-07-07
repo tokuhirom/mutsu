@@ -4,7 +4,7 @@
 //! Raku's iteration is pull-based (`Iterator.pull-one` returns the next value or
 //! the `IterationEnd` sentinel). mutsu historically grew ~7 ad-hoc iteration
 //! mechanisms with inconsistent guards, so an infinite `Range` (`1..Inf`, stored
-//! as `Value::Range(1, i64::MAX)`) reaching an unguarded `(a..=b).collect()`
+//! as a `Range(1, i64::MAX)`) reaching an unguarded `(a..=b).collect()`
 //! panics the whole process with `capacity overflow` (ANALYSIS §8.2).
 //!
 //! `ValueIterator` is the single place where a `Value` is turned into a stream of
@@ -16,7 +16,7 @@
 //! falls back to the existing `value_to_list`. Later PRs add VM-driven variants
 //! that pull those lazily via the VM's `force_lazy_list_vm_n`.
 
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::sync::Arc;
 
 /// A pull source over `Value` elements.
@@ -42,36 +42,38 @@ impl ValueIterator {
     /// Range-family and already-materialized sequences become pure iterators;
     /// `LazyList`, `GenericRange`, `Hash` and scalars return `None`.
     pub(crate) fn from_value(val: &Value) -> Option<ValueIterator> {
-        match val {
+        match val.view() {
             // Already-materialized sequences: share the backing Arc, no copy.
-            Value::Array(items, kind) if !kind.is_itemized() => Some(ValueIterator::ArraySlice {
-                items: items.clone(),
-                idx: 0,
-            }),
-            Value::Seq(items) | Value::Slip(items) => Some(ValueIterator::Slice {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
+                Some(ValueIterator::ArraySlice {
+                    items: items.clone(),
+                    idx: 0,
+                })
+            }
+            ValueView::Seq(items) | ValueView::Slip(items) => Some(ValueIterator::Slice {
                 items: items.clone(),
                 idx: 0,
             }),
             // Integer ranges: lazy counters. The only sources that can be
             // infinite via `i64::MAX` and thus the crash vector we must guard.
-            Value::Range(a, b) => Some(ValueIterator::IntRange {
-                cur: *a,
-                end: *b,
+            ValueView::Range(a, b) => Some(ValueIterator::IntRange {
+                cur: a,
+                end: b,
                 inclusive: true,
             }),
-            Value::RangeExcl(a, b) => Some(ValueIterator::IntRange {
-                cur: *a,
-                end: *b,
+            ValueView::RangeExcl(a, b) => Some(ValueIterator::IntRange {
+                cur: a,
+                end: b,
                 inclusive: false,
             }),
-            Value::RangeExclStart(a, b) => Some(ValueIterator::IntRange {
-                cur: *a + 1,
-                end: *b,
+            ValueView::RangeExclStart(a, b) => Some(ValueIterator::IntRange {
+                cur: a + 1,
+                end: b,
                 inclusive: true,
             }),
-            Value::RangeExclBoth(a, b) => Some(ValueIterator::IntRange {
-                cur: *a + 1,
-                end: *b,
+            ValueView::RangeExclBoth(a, b) => Some(ValueIterator::IntRange {
+                cur: a + 1,
+                end: b,
                 inclusive: false,
             }),
             // LazyList, GenericRange, Hash, scalars, ...: need the interpreter/VM
@@ -106,7 +108,7 @@ impl ValueIterator {
                 if !in_bounds {
                     return None;
                 }
-                let v = Value::Int(*cur);
+                let v = Value::int(*cur);
                 match cur.checked_add(1) {
                     Some(next) => *cur = next,
                     // Reached i64::MAX: make the next pull terminate.

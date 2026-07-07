@@ -1,5 +1,6 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 use super::state::SupplyEvent;
 
@@ -12,22 +13,22 @@ fn decoder_buffer(attrs: &HashMap<String, Value>) -> Vec<u8> {
 }
 
 fn extend_buffer_from_value(out: &mut Vec<u8>, v: &Value) {
-    match v {
-        Value::Array(items, ..) => {
+    match v.view() {
+        ValueView::Array(items, ..) => {
             for item in items.iter() {
                 if let Some(b) = value_to_byte(item) {
                     out.push(b);
                 }
             }
         }
-        Value::Slip(items) => {
+        ValueView::Slip(items) => {
             for item in items.iter() {
                 if let Some(b) = value_to_byte(item) {
                     out.push(b);
                 }
             }
         }
-        Value::Instance { attributes, .. } => {
+        ValueView::Instance { attributes, .. } => {
             if let Some(bytes_val) = attributes.as_map().get("bytes") {
                 extend_buffer_from_value(out, bytes_val);
             }
@@ -37,8 +38,8 @@ fn extend_buffer_from_value(out: &mut Vec<u8>, v: &Value) {
 }
 
 fn value_to_byte(v: &Value) -> Option<u8> {
-    match v {
-        Value::Int(n) => Some((*n & 0xff) as u8),
+    match v.view() {
+        ValueView::Int(n) => Some((n & 0xff) as u8),
         _ => None,
     }
 }
@@ -102,10 +103,10 @@ impl Interpreter {
                 attrs.insert("encoding".to_string(), Value::str(enc_name));
                 // Extract :replacement named arg from args
                 for arg in args {
-                    if let Value::Pair(key, value) = arg
+                    if let ValueView::Pair(key, value) = arg.view()
                         && key == "replacement"
                     {
-                        attrs.insert("replacement".to_string(), *value.clone());
+                        attrs.insert("replacement".to_string(), value.clone());
                     }
                 }
                 Value::make_instance(Symbol::intern("Encoding::Encoder"), attrs)
@@ -120,13 +121,13 @@ impl Interpreter {
                 attrs.insert("buffer".to_string(), Value::array(Vec::new()));
                 let mut translate_nl = false;
                 for arg in args {
-                    if let Value::Pair(key, value) = arg
+                    if let ValueView::Pair(key, value) = arg.view()
                         && key == "translate-nl"
                     {
                         translate_nl = value.truthy();
                     }
                 }
-                attrs.insert("translate-nl".to_string(), Value::Bool(translate_nl));
+                attrs.insert("translate-nl".to_string(), Value::truth(translate_nl));
                 Value::make_instance(Symbol::intern("Encoding::Decoder"), attrs)
             }
             "gist" | "Str" => {
@@ -136,8 +137,8 @@ impl Interpreter {
                     .unwrap_or_default();
                 Value::str(format!("Encoding::Builtin<{}>", name))
             }
-            "WHAT" => Value::Package(Symbol::intern("Encoding::Builtin")),
-            _ => Value::Nil,
+            "WHAT" => Value::package(Symbol::intern("Encoding::Builtin")),
+            _ => Value::NIL,
         }
     }
 
@@ -164,20 +165,20 @@ impl Interpreter {
                 let mut bytes: Vec<Value> = Vec::new();
                 if is_utf8_c8 {
                     for b in crate::runtime::utf8_c8::encode_utf8_c8(&input) {
-                        bytes.push(Value::Int(b as i64));
+                        bytes.push(Value::int(b as i64));
                     }
                 } else if is_ascii {
                     for ch in input.chars() {
                         if ch as u32 > 127 {
                             if let Some(repl) = replacement {
-                                let repl_str = if matches!(repl, Value::Bool(true)) {
+                                let repl_str = if matches!(repl.view(), ValueView::Bool(true)) {
                                     // :replacement (Bool True) -> default replacement char '?'
                                     "?".to_string()
                                 } else {
                                     repl.to_string_value()
                                 };
                                 for b in repl_str.bytes() {
-                                    bytes.push(Value::Int(b as i64));
+                                    bytes.push(Value::int(b as i64));
                                 }
                             } else {
                                 return Err(RuntimeError::new(format!(
@@ -186,13 +187,13 @@ impl Interpreter {
                                 )));
                             }
                         } else {
-                            bytes.push(Value::Int(ch as u32 as i64));
+                            bytes.push(Value::int(ch as u32 as i64));
                         }
                     }
                 } else {
                     // UTF-8 encoding
                     for b in input.as_bytes() {
-                        bytes.push(Value::Int(*b as i64));
+                        bytes.push(Value::int(*b as i64));
                     }
                 }
 
@@ -200,8 +201,8 @@ impl Interpreter {
                 attrs.insert("bytes".to_string(), Value::array(bytes));
                 Ok(Value::make_instance(Symbol::intern("Blob[uint8]"), attrs))
             }
-            "WHAT" => Ok(Value::Package(Symbol::intern("Encoding::Encoder"))),
-            _ => Ok(Value::Nil),
+            "WHAT" => Ok(Value::package(Symbol::intern("Encoding::Encoder"))),
+            _ => Ok(Value::NIL),
         }
     }
 
@@ -220,14 +221,14 @@ impl Interpreter {
             }
             "bytes-available" => {
                 let buf = decoder_buffer(attributes);
-                Value::Int(buf.len() as i64)
+                Value::int(buf.len() as i64)
             }
             "is-empty" => {
                 let buf = decoder_buffer(attributes);
-                Value::Bool(buf.is_empty())
+                Value::truth(buf.is_empty())
             }
-            "WHAT" => Value::Package(Symbol::intern("Encoding::Decoder")),
-            _ => Value::Nil,
+            "WHAT" => Value::package(Symbol::intern("Encoding::Decoder")),
+            _ => Value::NIL,
         }
     }
 
@@ -244,9 +245,9 @@ impl Interpreter {
                 }
                 attributes.insert(
                     "buffer".to_string(),
-                    Value::array(buf.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                    Value::array(buf.into_iter().map(|b| Value::int(b as i64)).collect()),
                 );
-                Ok((Value::Nil, attributes))
+                Ok((Value::NIL, attributes))
             }
             "consume-all-chars" => {
                 let buf = decoder_buffer(&attributes);
@@ -283,20 +284,20 @@ impl Interpreter {
                     Value::array(
                         remaining
                             .into_iter()
-                            .map(|b| Value::Int(b as i64))
+                            .map(|b| Value::int(b as i64))
                             .collect(),
                     ),
                 );
                 Ok((Value::str(final_s), attributes))
             }
-            "set-line-separators" => Ok((Value::Nil, attributes)),
+            "set-line-separators" => Ok((Value::NIL, attributes)),
             "bytes-available" => {
                 let buf = decoder_buffer(&attributes);
-                Ok((Value::Int(buf.len() as i64), attributes))
+                Ok((Value::int(buf.len() as i64), attributes))
             }
             "is-empty" => {
                 let buf = decoder_buffer(&attributes);
-                Ok((Value::Bool(buf.is_empty()), attributes))
+                Ok((Value::truth(buf.is_empty()), attributes))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on 'Encoding::Decoder'",

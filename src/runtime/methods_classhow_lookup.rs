@@ -3,11 +3,11 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
-        let (class_name, class_name_str) = match invocant {
-            Value::Package(name) => (*name, name.resolve()),
-            other => {
+        let (class_name, class_name_str) = match invocant.view() {
+            ValueView::Package(name) => (name, name.resolve()),
+            _ => {
                 // For concrete values, derive the type name
-                let type_name = crate::runtime::utils::value_type_name(other).to_string();
+                let type_name = crate::runtime::utils::value_type_name(invocant).to_string();
                 (Symbol::intern(&type_name), type_name)
             }
         };
@@ -55,7 +55,7 @@ impl Interpreter {
             // MRO `nextsame` dispatch (S06-advanced/wrap.t GH#2178). Multi methods
             // are wrapped via the `.candidates[N]` path, which carries its own idx.
             if !has_multi {
-                env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::Int(0));
+                env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
             }
             return Some(Value::make_sub(
                 class_name,
@@ -146,20 +146,20 @@ impl Interpreter {
         if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
             && !defs.is_empty()
         {
-            return Some(Value::Routine {
-                package: class_name,
-                name: Symbol::intern(method_name),
-                is_regex: true,
-            });
+            return Some(Value::routine_parts(
+                class_name,
+                Symbol::intern(method_name),
+                true,
+            ));
         }
         // Check built-in type methods — return a Routine marker that the
         // runtime can dispatch when called.
         if self.is_builtin_type_method(&class_name_str, method_name) {
-            return Some(Value::Routine {
-                package: class_name,
-                name: Symbol::intern(method_name),
-                is_regex: false,
-            });
+            return Some(Value::routine_parts(
+                class_name,
+                Symbol::intern(method_name),
+                false,
+            ));
         }
         None
     }
@@ -272,7 +272,7 @@ impl Interpreter {
                 );
                 env.insert(
                     "__mutsu_lookup_candidate_idx".to_string(),
-                    Value::Int(idx as i64),
+                    Value::int(idx as i64),
                 );
                 out.push(Value::make_sub(
                     crate::symbol::Symbol::intern(owner),
@@ -342,13 +342,13 @@ impl Interpreter {
         }
         // CREATE is a built-in method on all types
         if method_name == "CREATE" {
-            return Some(Value::Routine {
-                package: Symbol::intern("Mu"),
-                name: Symbol::intern("CREATE"),
-                is_regex: false,
-            });
+            return Some(Value::routine_parts(
+                Symbol::intern("Mu"),
+                Symbol::intern("CREATE"),
+                false,
+            ));
         }
-        if let Value::Package(class_name) = invocant
+        if let ValueView::Package(class_name) = invocant.view()
             && let Some(class_def) = self.registry().classes.get(&class_name.resolve())
             && class_def.native_methods.contains(method_name)
         {

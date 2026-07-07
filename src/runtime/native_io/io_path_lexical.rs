@@ -65,15 +65,15 @@ impl Interpreter {
             "SPEC" => {
                 let spec_name = attributes
                     .get("SPEC")
-                    .and_then(|s| match s {
-                        Value::Package(n) => Some(n.resolve().to_string()),
-                        Value::Instance { class_name, .. } => {
+                    .and_then(|s| match s.view() {
+                        ValueView::Package(n) => Some(n.resolve().to_string()),
+                        ValueView::Instance { class_name, .. } => {
                             Some(class_name.resolve().to_string())
                         }
                         _ => None,
                     })
                     .unwrap_or_else(|| "IO::Spec::Unix".to_string());
-                Ok(Value::Package(Symbol::intern(&spec_name)))
+                Ok(Value::package(Symbol::intern(&spec_name)))
             }
             "basename" => {
                 let (_, _, bname) = Self::io_path_parts_spec(&p, attributes);
@@ -109,13 +109,13 @@ impl Interpreter {
             }
             "parent" => {
                 let mut levels = 1i64;
-                if let Some(Value::Int(i)) = args.first() {
-                    if *i < 0 {
+                if let Some(ValueView::Int(i)) = args.first().map(Value::view) {
+                    if i < 0 {
                         return Some(Err(RuntimeError::new(
                             "X::IO::ParentOutOfRange: Cannot go to a negative parent",
                         )));
                     }
-                    levels = *i;
+                    levels = i;
                 }
                 if levels == 0 {
                     return Some(Ok(Value::make_instance(io_path_class, attributes.clone())));
@@ -243,12 +243,12 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                Ok(Value::Bool(p.starts_with(&prefix)))
+                Ok(Value::truth(p.starts_with(&prefix)))
             }
-            "is-absolute" => Ok(Value::Bool(Self::io_path_is_absolute_spec(
+            "is-absolute" => Ok(Value::truth(Self::io_path_is_absolute_spec(
                 attributes, &p, original,
             ))),
-            "is-relative" => Ok(Value::Bool(!Self::io_path_is_absolute_spec(
+            "is-relative" => Ok(Value::truth(!Self::io_path_is_absolute_spec(
                 attributes, &p, original,
             ))),
             "succ" => {

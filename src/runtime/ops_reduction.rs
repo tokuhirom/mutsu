@@ -14,14 +14,14 @@ impl Interpreter {
 
     fn reduction_parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
         let mut current = value;
-        while let Value::Mixin(inner, _) = current {
+        while let ValueView::Mixin(inner, _) = current.view() {
             current = inner;
         }
-        match current {
-            Value::Whatever => Ok(None),
-            Value::Int(i) => Ok(Some(*i)),
-            Value::BigInt(n) => Ok(Some(n.to_i64().unwrap_or(i64::MAX))),
-            Value::Num(f) => {
+        match current.view() {
+            ValueView::Whatever => Ok(None),
+            ValueView::Int(i) => Ok(Some(i)),
+            ValueView::BigInt(n) => Ok(Some(n.to_i64().unwrap_or(i64::MAX))),
+            ValueView::Num(f) => {
                 if f.is_nan() {
                     return Err(Self::reduction_repeat_error(
                         "X::Numeric::CannotConvert",
@@ -39,14 +39,14 @@ impl Interpreter {
                 }
                 Ok(Some(f.trunc() as i64))
             }
-            Value::Rat(n, d) => {
-                if *d == 0 {
-                    if *n > 0 {
+            ValueView::Rat(n, d) => {
+                if d == 0 {
+                    if n > 0 {
                         return Ok(None);
                     }
                     return Err(Self::reduction_repeat_error(
                         "X::Numeric::CannotConvert",
-                        if *n < 0 {
+                        if n < 0 {
                             "Cannot convert -Inf to Int"
                         } else {
                             "Cannot convert NaN to Int"
@@ -55,7 +55,7 @@ impl Interpreter {
                 }
                 Ok(Some(n / d))
             }
-            Value::FatRat(n, d) => {
+            ValueView::FatRat(n, d) => {
                 if d.is_zero() {
                     if n.is_positive() {
                         return Ok(None);
@@ -71,7 +71,7 @@ impl Interpreter {
                 }
                 Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
             }
-            Value::BigRat(n, d) => {
+            ValueView::BigRat(n, d) => {
                 if d.is_zero() {
                     if n.is_positive() {
                         return Ok(None);
@@ -85,27 +85,27 @@ impl Interpreter {
                         },
                     ));
                 }
-                Ok(Some((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX)))
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
             }
-            Value::Str(s) => {
+            ValueView::Str(s) => {
                 let parsed = s.trim().parse::<f64>().map_err(|_| {
                     Self::reduction_repeat_error(
                         "X::Str::Numeric",
                         &format!("Cannot convert string '{}' to a number", s),
                     )
                 })?;
-                Self::reduction_parse_repeat_count(&Value::Num(parsed))
+                Self::reduction_parse_repeat_count(&Value::num(parsed))
             }
-            Value::Array(items, ..) => Ok(Some(items.len() as i64)),
-            Value::Seq(items) => Ok(Some(items.len() as i64)),
-            Value::LazyList(ll) => Ok(Some(
+            ValueView::Array(items, ..) => Ok(Some(items.len() as i64)),
+            ValueView::Seq(items) => Ok(Some(items.len() as i64)),
+            ValueView::LazyList(ll) => Ok(Some(
                 ll.cache
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .as_ref()
                     .map_or(0usize, |v| v.len()) as i64,
             )),
-            Value::Package(_) => Ok(Some(0)),
+            ValueView::Package(_) => Ok(Some(0)),
             _ => Ok(Some(0)),
         }
     }
@@ -116,20 +116,20 @@ impl Interpreter {
         right: &Value,
     ) -> Result<Value, RuntimeError> {
         let to_bag_counts = |value: &Value| -> Option<std::collections::HashMap<String, i64>> {
-            match value {
-                Value::Bag(items, _) => {
+            match value.view() {
+                ValueView::Bag(items, _) => {
                     Some(crate::runtime::utils::bag_counts_as_i64(&items.counts))
                 }
-                Value::Set(items, _) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
-                Value::Hash(items) => Some({
+                ValueView::Set(items, _) => Some(items.iter().map(|k| (k.clone(), 1)).collect()),
+                ValueView::Hash(items) => Some({
                     let mut counts = std::collections::HashMap::new();
                     for (k, v) in items.iter() {
-                        let count = match v {
-                            Value::Int(i) => *i,
-                            Value::Num(n) => *n as i64,
-                            Value::Rat(n, d) if *d != 0 => n / d,
-                            Value::FatRat(n, d) if *d != 0 => n / d,
-                            Value::Bool(b) => i64::from(*b),
+                        let count = match v.view() {
+                            ValueView::Int(i) => i,
+                            ValueView::Num(n) => n as i64,
+                            ValueView::Rat(n, d) if d != 0 => n / d,
+                            ValueView::FatRat(n, d) if d != 0 => n / d,
+                            ValueView::Bool(b) => i64::from(b),
                             _ => return None,
                         };
                         counts.insert(k.clone(), count);
@@ -141,46 +141,46 @@ impl Interpreter {
         };
         let to_complex = |v: &Value| -> Option<(f64, f64)> {
             let mut cur = v;
-            while let Value::Mixin(inner, _) = cur {
+            while let ValueView::Mixin(inner, _) = cur.view() {
                 cur = inner;
             }
-            match cur {
-                Value::Complex(r, i) => Some((*r, *i)),
+            match cur.view() {
+                ValueView::Complex(r, i) => Some((r, i)),
                 _ => None,
             }
         };
         let to_num = |v: &Value| -> f64 {
             let mut cur = v;
-            while let Value::Mixin(inner, _) = cur {
+            while let ValueView::Mixin(inner, _) = cur.view() {
                 cur = inner;
             }
-            match cur {
-                Value::Int(i) => *i as f64,
-                Value::Num(f) => *f,
-                Value::Rat(n, d) => {
-                    if *d == 0 {
+            match cur.view() {
+                ValueView::Int(i) => i as f64,
+                ValueView::Num(f) => f,
+                ValueView::Rat(n, d) => {
+                    if d == 0 {
                         f64::NAN
                     } else {
-                        *n as f64 / *d as f64
+                        n as f64 / d as f64
                     }
                 }
-                Value::FatRat(n, d) => {
-                    if *d == 0 {
+                ValueView::FatRat(n, d) => {
+                    if d == 0 {
                         f64::NAN
                     } else {
-                        *n as f64 / *d as f64
+                        n as f64 / d as f64
                     }
                 }
-                Value::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                Value::Bool(b) => {
-                    if *b {
+                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                ValueView::Bool(b) => {
+                    if b {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                Value::Enum { value, .. } => value.as_i64() as f64,
-                Value::Array(items, kind) => {
+                ValueView::Enum { value, .. } => value.as_i64() as f64,
+                ValueView::Array(items, kind) => {
                     if kind.is_itemized() {
                         0.0
                     } else {
@@ -192,38 +192,38 @@ impl Interpreter {
         };
         let to_int = |v: &Value| -> i64 {
             let mut cur = v;
-            while let Value::Mixin(inner, _) = cur {
+            while let ValueView::Mixin(inner, _) = cur.view() {
                 cur = inner;
             }
-            match cur {
-                Value::Int(i) => *i,
-                Value::BigInt(n) => n
+            match cur.view() {
+                ValueView::Int(i) => i,
+                ValueView::BigInt(n) => n
                     .to_i64()
                     .unwrap_or_else(|| if n.is_negative() { i64::MIN } else { i64::MAX }),
-                Value::Num(f) => *f as i64,
-                Value::Rat(n, d) => {
-                    if *d == 0 {
+                ValueView::Num(f) => f as i64,
+                ValueView::Rat(n, d) => {
+                    if d == 0 {
                         0
                     } else {
                         n / d
                     }
                 }
-                Value::FatRat(n, d) => {
-                    if *d == 0 {
+                ValueView::FatRat(n, d) => {
+                    if d == 0 {
                         0
                     } else {
                         n / d
                     }
                 }
-                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
-                Value::Bool(b) => {
-                    if *b {
+                ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+                ValueView::Bool(b) => {
+                    if b {
                         1
                     } else {
                         0
                     }
                 }
-                Value::Array(items, kind) => {
+                ValueView::Array(items, kind) => {
                     if kind.is_itemized() {
                         0
                     } else {
@@ -250,7 +250,7 @@ impl Interpreter {
                     out.push(Self::apply_reduction_op(inner_op, l, r)?);
                 }
             }
-            return Ok(Value::Seq(std::sync::Arc::new(out)));
+            return Ok(Value::seq(out));
         }
         if let Some(inner_op) = op.strip_prefix('Z')
             && !inner_op.is_empty()
@@ -266,7 +266,7 @@ impl Interpreter {
                     &right_list[i],
                 )?);
             }
-            return Ok(Value::Seq(std::sync::Arc::new(out)));
+            return Ok(Value::seq(out));
         }
         match op {
             "+" => {
@@ -287,11 +287,11 @@ impl Interpreter {
                 let divisor = to_int(right);
                 if divisor == 0 {
                     return Ok(RuntimeError::divide_by_zero_failure(
-                        Some(Value::Int(to_int(left))),
+                        Some(Value::int(to_int(left))),
                         Some("div"),
                     ));
                 }
-                Ok(Value::Int(to_int(left).div_euclid(divisor)))
+                Ok(Value::int(to_int(left).div_euclid(divisor)))
             }
             "%" | "mod" => crate::builtins::arith_mod(left.clone(), right.clone()),
             "**" => Ok(crate::builtins::arith_pow(left.clone(), right.clone())),
@@ -332,7 +332,7 @@ impl Interpreter {
                     Ok(right.clone())
                 } else {
                     // Return Empty (empty Slip) when left is undefined
-                    Ok(Value::Slip(std::sync::Arc::new(vec![])))
+                    Ok(Value::slip(vec![]))
                 }
             }
             "xor" => {
@@ -343,7 +343,7 @@ impl Interpreter {
                 } else if !lt && rt {
                     Ok(right.clone())
                 } else {
-                    Ok(Value::Nil)
+                    Ok(Value::NIL)
                 }
             }
             "minmax" => {
@@ -365,14 +365,9 @@ impl Interpreter {
                 // Return Range(lo,hi) when both bounds are integers (matches
                 // Raku's behavior where `1..3 eqv 1..3` uses the integer Range
                 // type), otherwise use GenericRange for non-integer bounds.
-                Ok(match (&lo, &hi) {
-                    (Value::Int(l), Value::Int(h)) => Value::Range(*l, *h),
-                    _ => Value::GenericRange {
-                        start: std::sync::Arc::new(lo),
-                        end: std::sync::Arc::new(hi),
-                        excl_start: false,
-                        excl_end: false,
-                    },
+                Ok(match (lo.view(), hi.view()) {
+                    (ValueView::Int(l), ValueView::Int(h)) => Value::range(l, h),
+                    _ => Value::generic_range(lo, hi, false, false),
                 })
             }
             "min" => {
@@ -380,7 +375,7 @@ impl Interpreter {
                 let left_undef = !crate::runtime::types::value_is_defined(left);
                 let right_undef = !crate::runtime::types::value_is_defined(right);
                 if left_undef && right_undef {
-                    Ok(Value::Num(f64::INFINITY))
+                    Ok(Value::num(f64::INFINITY))
                 } else if left_undef {
                     Ok(right.clone())
                 } else if right_undef || crate::runtime::compare_values(left, right) <= 0 {
@@ -394,7 +389,7 @@ impl Interpreter {
                 let left_undef = !crate::runtime::types::value_is_defined(left);
                 let right_undef = !crate::runtime::types::value_is_defined(right);
                 if left_undef && right_undef {
-                    Ok(Value::Num(f64::NEG_INFINITY))
+                    Ok(Value::num(f64::NEG_INFINITY))
                 } else if left_undef {
                     Ok(right.clone())
                 } else if right_undef || crate::runtime::compare_values(left, right) >= 0 {
@@ -423,11 +418,11 @@ impl Interpreter {
                     super::to_big_rat_parts(left),
                     super::to_big_rat_parts(right),
                 ) {
-                    Ok(Value::Bool(super::big_rat_parts_equal(a, b)))
+                    Ok(Value::truth(super::big_rat_parts_equal(a, b)))
                 } else if let (Some(l), Some(r)) = (to_complex(left), to_complex(right)) {
-                    Ok(Value::Bool(l.0 == r.0 && l.1 == r.1))
+                    Ok(Value::truth(l.0 == r.0 && l.1 == r.1))
                 } else {
-                    Ok(Value::Bool(to_num(left) == to_num(right)))
+                    Ok(Value::truth(to_num(left) == to_num(right)))
                 }
             }
             "=" => Ok(right.clone()),
@@ -436,39 +431,39 @@ impl Interpreter {
                     super::to_big_rat_parts(left),
                     super::to_big_rat_parts(right),
                 ) {
-                    Ok(Value::Bool(!super::big_rat_parts_equal(a, b)))
+                    Ok(Value::truth(!super::big_rat_parts_equal(a, b)))
                 } else if let (Some(l), Some(r)) = (to_complex(left), to_complex(right)) {
-                    Ok(Value::Bool(l.0 != r.0 || l.1 != r.1))
+                    Ok(Value::truth(l.0 != r.0 || l.1 != r.1))
                 } else {
-                    Ok(Value::Bool(to_num(left) != to_num(right)))
+                    Ok(Value::truth(to_num(left) != to_num(right)))
                 }
             }
-            "<" => Ok(Value::Bool(to_num(left) < to_num(right))),
-            ">" => Ok(Value::Bool(to_num(left) > to_num(right))),
-            "<=" => Ok(Value::Bool(to_num(left) <= to_num(right))),
-            ">=" => Ok(Value::Bool(to_num(left) >= to_num(right))),
-            "eq" => Ok(Value::Bool(
+            "<" => Ok(Value::truth(to_num(left) < to_num(right))),
+            ">" => Ok(Value::truth(to_num(left) > to_num(right))),
+            "<=" => Ok(Value::truth(to_num(left) <= to_num(right))),
+            ">=" => Ok(Value::truth(to_num(left) >= to_num(right))),
+            "eq" => Ok(Value::truth(
                 left.to_string_value() == right.to_string_value(),
             )),
-            "ne" => Ok(Value::Bool(
+            "ne" => Ok(Value::truth(
                 left.to_string_value() != right.to_string_value(),
             )),
-            "lt" => Ok(Value::Bool(
+            "lt" => Ok(Value::truth(
                 left.to_string_value() < right.to_string_value(),
             )),
-            "gt" => Ok(Value::Bool(
+            "gt" => Ok(Value::truth(
                 left.to_string_value() > right.to_string_value(),
             )),
-            "le" => Ok(Value::Bool(
+            "le" => Ok(Value::truth(
                 left.to_string_value() <= right.to_string_value(),
             )),
-            "ge" => Ok(Value::Bool(
+            "ge" => Ok(Value::truth(
                 left.to_string_value() >= right.to_string_value(),
             )),
-            "after" => Ok(Value::Bool(
+            "after" => Ok(Value::truth(
                 left.to_string_value() > right.to_string_value(),
             )),
-            "before" => Ok(Value::Bool(
+            "before" => Ok(Value::truth(
                 left.to_string_value() < right.to_string_value(),
             )),
             "leg" => {
@@ -476,30 +471,30 @@ impl Interpreter {
                 Ok(super::make_order(ord))
             }
             "cmp" => {
-                let ord = match (left, right) {
-                    (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                let ord = match (left.view(), right.view()) {
+                    (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b),
                     (
-                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
-                        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _),
+                        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _),
+                        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _),
                     ) => super::to_big_rat_parts(left)
                         .zip(super::to_big_rat_parts(right))
                         .and_then(|(a, b)| super::compare_big_rat_parts(a, b))
                         .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Num(b)) => {
-                        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    (ValueView::Num(a), ValueView::Num(b)) => {
+                        a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
                     }
-                    (Value::Int(a), Value::Num(b)) => (*a as f64)
-                        .partial_cmp(b)
+                    (ValueView::Int(a), ValueView::Num(b)) => (a as f64)
+                        .partial_cmp(&b)
                         .unwrap_or(std::cmp::Ordering::Equal),
-                    (Value::Num(a), Value::Int(b)) => a
-                        .partial_cmp(&(*b as f64))
+                    (ValueView::Num(a), ValueView::Int(b)) => a
+                        .partial_cmp(&(b as f64))
                         .unwrap_or(std::cmp::Ordering::Equal),
                     (
-                        Value::Instance {
+                        ValueView::Instance {
                             attributes: left_attrs,
                             ..
                         },
-                        Value::Instance {
+                        ValueView::Instance {
                             attributes: right_attrs,
                             ..
                         },
@@ -538,32 +533,33 @@ impl Interpreter {
                             .partial_cmp(&right_instant)
                             .unwrap_or(std::cmp::Ordering::Equal)
                     }
-                    (l, r)
+                    (_, _)
                         if matches!(
-                            l,
-                            Value::Int(_)
-                                | Value::BigInt(_)
-                                | Value::Num(_)
-                                | Value::Rat(_, _)
-                                | Value::FatRat(_, _)
-                                | Value::BigRat(_, _)
+                            left.view(),
+                            ValueView::Int(_)
+                                | ValueView::BigInt(_)
+                                | ValueView::Num(_)
+                                | ValueView::Rat(_, _)
+                                | ValueView::FatRat(_, _)
+                                | ValueView::BigRat(_, _)
                         ) && matches!(
-                            r,
-                            Value::Int(_)
-                                | Value::BigInt(_)
-                                | Value::Num(_)
-                                | Value::Rat(_, _)
-                                | Value::FatRat(_, _)
-                                | Value::BigRat(_, _)
+                            right.view(),
+                            ValueView::Int(_)
+                                | ValueView::BigInt(_)
+                                | ValueView::Num(_)
+                                | ValueView::Rat(_, _)
+                                | ValueView::FatRat(_, _)
+                                | ValueView::BigRat(_, _)
                         ) =>
                     {
-                        let lf = super::to_float_value(l).unwrap_or(0.0);
-                        let rf = super::to_float_value(r).unwrap_or(0.0);
+                        let lf = super::to_float_value(left).unwrap_or(0.0);
+                        let rf = super::to_float_value(right).unwrap_or(0.0);
                         lf.partial_cmp(&rf).unwrap_or(std::cmp::Ordering::Equal)
                     }
-                    (Value::Version { parts: ap, .. }, Value::Version { parts: bp, .. }) => {
-                        super::version_cmp_parts(ap, bp)
-                    }
+                    (
+                        ValueView::Version { parts: ap, .. },
+                        ValueView::Version { parts: bp, .. },
+                    ) => super::version_cmp_parts(ap, bp),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 Ok(super::make_order(ord))
@@ -586,7 +582,7 @@ impl Interpreter {
                 let a: BigInt = left.to_bigint().abs();
                 let b: BigInt = right.to_bigint().abs();
                 if a.is_zero() && b.is_zero() {
-                    Ok(Value::Int(0))
+                    Ok(Value::int(0))
                 } else {
                     let mut ga = a.clone();
                     let mut gb = b.clone();
@@ -606,7 +602,7 @@ impl Interpreter {
                 } else if !lt && rt {
                     Ok(right.clone())
                 } else if lt && rt {
-                    Ok(Value::Nil)
+                    Ok(Value::NIL)
                 } else {
                     // both falsy: return the last falsy value
                     Ok(right.clone())
@@ -614,17 +610,17 @@ impl Interpreter {
             }
             "~~" => {
                 if let (
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name: dt_class,
                         attributes: dt_attrs,
                         ..
                     },
-                    Value::Instance {
+                    ValueView::Instance {
                         class_name: d_class,
                         attributes: d_attrs,
                         ..
                     },
-                ) = (left, right)
+                ) = (left.view(), right.view())
                     && dt_class == "DateTime"
                     && d_class == "Date"
                 {
@@ -634,78 +630,66 @@ impl Interpreter {
                         );
                     let (dy, dm, dd) =
                         crate::builtins::methods_0arg::temporal::date_attrs(&(d_attrs).as_map());
-                    return Ok(Value::Bool(y == dy && m == dm && d == dd));
+                    return Ok(Value::truth(y == dy && m == dm && d == dd));
                 }
                 // Basic smartmatch fallback: value equality
-                Ok(Value::Bool(left == right))
+                Ok(Value::truth(left == right))
             }
-            "eqv" => Ok(Value::Bool(left.eqv(right))),
-            "=:=" => Ok(Value::Bool(super::values_identical(left, right))),
-            "!=:=" => Ok(Value::Bool(!super::values_identical(left, right))),
-            "===" => Ok(Value::Bool(super::values_identical(left, right))),
-            "!===" => Ok(Value::Bool(!super::values_identical(left, right))),
-            "=>" => match left {
-                Value::Str(_) => Ok(Value::Pair(left.to_string_value(), Box::new(right.clone()))),
-                _ => Ok(Value::ValuePair(
-                    Box::new(left.clone()),
-                    Box::new(right.clone()),
-                )),
+            "eqv" => Ok(Value::truth(left.eqv(right))),
+            "=:=" => Ok(Value::truth(super::values_identical(left, right))),
+            "!=:=" => Ok(Value::truth(!super::values_identical(left, right))),
+            "===" => Ok(Value::truth(super::values_identical(left, right))),
+            "!===" => Ok(Value::truth(!super::values_identical(left, right))),
+            "=>" => match left.view() {
+                ValueView::Str(_) => Ok(Value::pair(left.to_string_value(), right.clone())),
+                _ => Ok(Value::value_pair(left.clone(), right.clone())),
             },
             "&" => {
-                let mut vals = match left {
-                    Value::Junction {
+                let mut vals = match left.view() {
+                    ValueView::Junction {
                         kind: crate::value::JunctionKind::All,
                         values,
                     } => values.as_ref().clone(),
                     _ => vec![left.clone()],
                 };
                 vals.push(right.clone());
-                Ok(Value::Junction {
-                    kind: crate::value::JunctionKind::All,
-                    values: std::sync::Arc::new(vals),
-                })
+                Ok(Value::junction(crate::value::JunctionKind::All, vals))
             }
             "|" => {
-                let mut vals = match left {
-                    Value::Junction {
+                let mut vals = match left.view() {
+                    ValueView::Junction {
                         kind: crate::value::JunctionKind::Any,
                         values,
                     } => values.as_ref().clone(),
                     _ => vec![left.clone()],
                 };
                 vals.push(right.clone());
-                Ok(Value::Junction {
-                    kind: crate::value::JunctionKind::Any,
-                    values: std::sync::Arc::new(vals),
-                })
+                Ok(Value::junction(crate::value::JunctionKind::Any, vals))
             }
             "^" => {
-                let mut vals = match left {
-                    Value::Junction {
+                let mut vals = match left.view() {
+                    ValueView::Junction {
                         kind: crate::value::JunctionKind::One,
                         values,
                     } => values.as_ref().clone(),
                     _ => vec![left.clone()],
                 };
                 vals.push(right.clone());
-                Ok(Value::Junction {
-                    kind: crate::value::JunctionKind::One,
-                    values: std::sync::Arc::new(vals),
-                })
+                Ok(Value::junction(crate::value::JunctionKind::One, vals))
             }
             "~|" => Self::str_bitwise_op(left, right, |a, b| a | b, true),
             "~^" => Self::str_bitwise_op(left, right, |a, b| a ^ b, true),
             "~&" => Self::str_bitwise_op(left, right, |a, b| a & b, false),
-            "+<" => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => Ok(Self::shift_left_i64(*a, *b)),
+            "+<" => match (left.view(), right.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => Ok(Self::shift_left_i64(a, b)),
                 _ => Ok(Self::shift_left_bigint(&left.to_bigint(), to_int(right))),
             },
-            "+>" => match (left, right) {
-                (Value::Int(a), Value::Int(b)) => Ok(Self::shift_right_i64(*a, *b)),
+            "+>" => match (left.view(), right.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => Ok(Self::shift_right_i64(a, b)),
                 _ => Ok(Self::shift_right_bigint(&left.to_bigint(), to_int(right))),
             },
             "x" => {
-                if matches!(right, Value::Whatever) {
+                if matches!(right.view(), ValueView::Whatever) {
                     let mut env = crate::env::Env::new();
                     env.insert(
                         "__mutsu_callable_type".to_string(),
@@ -746,8 +730,8 @@ impl Interpreter {
                 let mut results = Vec::new();
                 for l in &left_list {
                     for r in &right_list {
-                        let mut tuple = match l {
-                            Value::Array(items, ..) => items.to_vec(),
+                        let mut tuple = match l.view() {
+                            ValueView::Array(items, ..) => items.to_vec(),
                             _ => vec![l.clone()],
                         };
                         tuple.push(r.clone());
@@ -767,27 +751,27 @@ impl Interpreter {
                 };
                 let items: Vec<Value> = std::iter::repeat_n(left.clone(), repeat).collect();
                 if lazy {
-                    Ok(Value::LazyList(crate::gc::Gc::new(
+                    Ok(Value::lazy_list(crate::gc::Gc::new(
                         crate::value::LazyList::new_cached(items),
                     )))
                 } else {
-                    Ok(Value::Seq(std::sync::Arc::new(items)))
+                    Ok(Value::seq(items))
                 }
             }
             "," => {
-                let mut items = match left {
-                    Value::Array(values, kind) if !kind.is_itemized() => values.to_vec(),
-                    Value::Seq(values) | Value::Slip(values) => values.to_vec(),
-                    other => vec![other.clone()],
+                let mut items = match left.view() {
+                    ValueView::Array(values, kind) if !kind.is_itemized() => values.to_vec(),
+                    ValueView::Seq(values) | ValueView::Slip(values) => values.to_vec(),
+                    _ => vec![left.clone()],
                 };
-                match right {
-                    Value::Array(values, kind) if !kind.is_itemized() => {
+                match right.view() {
+                    ValueView::Array(values, kind) if !kind.is_itemized() => {
                         items.extend(values.iter().cloned());
                     }
-                    Value::Seq(values) | Value::Slip(values) => {
+                    ValueView::Seq(values) | ValueView::Slip(values) => {
                         items.extend(values.iter().cloned());
                     }
-                    other => items.push(other.clone()),
+                    _ => items.push(right.clone()),
                 }
                 Ok(Value::array(items))
             }
@@ -812,8 +796,8 @@ impl Interpreter {
                 set_sym_diff_values(left, right),
                 set_sym_diff_mutability(left, right),
             )),
-            "(==)" | "≡" => Ok(Value::Bool(Self::apply_set_equality(left, right)?)),
-            "≢" => Ok(Value::Bool(!Self::apply_set_equality(left, right)?)),
+            "(==)" | "≡" => Ok(Value::truth(Self::apply_set_equality(left, right)?)),
+            "≢" => Ok(Value::truth(!Self::apply_set_equality(left, right)?)),
             _ if op.ends_with('=') && op.len() > 1 => {
                 // Compound assignment operator (e.g., "~=", "+=", "-=", "*=")
                 // Apply the base operator and return the result.

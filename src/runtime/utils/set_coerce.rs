@@ -2,28 +2,28 @@ use super::*;
 
 pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     fn insert_set_elem(elems: &mut HashSet<String>, value: &Value) {
-        let pair_selected = |weight: &Value| weight.truthy() || matches!(weight, Value::Nil);
-        match value {
-            Value::Set(items, _) => {
+        let pair_selected = |weight: &Value| weight.truthy() || weight.is_nil();
+        match value.view() {
+            ValueView::Set(items, _) => {
                 elems.extend(items.iter().cloned());
             }
-            Value::Bag(items, _) => {
+            ValueView::Bag(items, _) => {
                 for (k, v) in items.iter() {
                     if v.is_positive() {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Mix(items, _) => {
+            ValueView::Mix(items, _) => {
                 for (k, v) in items.iter() {
                     if *v != 0.0 {
                         elems.insert(k.clone());
                     }
                 }
             }
-            Value::Hash(items) => {
+            ValueView::Hash(items) => {
                 for (k, v) in items.iter() {
-                    if v.truthy() || matches!(v, Value::Nil) {
+                    if v.truthy() || v.is_nil() {
                         elems.insert(k.clone());
                     }
                 }
@@ -33,23 +33,23 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
                     insert_set_elem(elems, item);
                 }
             }
-            range if range.is_range() => {
-                for item in value_to_list(range) {
+            _ if value.is_range() => {
+                for item in value_to_list(value) {
                     insert_set_elem(elems, &item);
                 }
             }
-            Value::Pair(key, weight) => {
+            ValueView::Pair(key, weight) => {
                 if pair_selected(weight) {
                     elems.insert(key.clone());
                 }
             }
-            Value::ValuePair(key, weight) => {
+            ValueView::ValuePair(key, weight) => {
                 if pair_selected(weight) {
                     elems.insert(key.to_string_value());
                 }
             }
-            other => {
-                let sv = other.to_string_value();
+            _ => {
+                let sv = value.to_string_value();
                 if !sv.is_empty() {
                     elems.insert(sv);
                 }
@@ -58,17 +58,17 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     }
 
     let val = val.descalarize();
-    match val {
-        Value::Set(s, _) => s.elements.clone(),
-        Value::Bag(b, _) => {
+    match val.view() {
+        ValueView::Set(s, _) => s.elements.clone(),
+        ValueView::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.keys().cloned().collect()
         }
-        Value::Mix(m, _) => m.keys().cloned().collect(),
-        Value::Hash(items) => items
+        ValueView::Mix(m, _) => m.keys().cloned().collect(),
+        ValueView::Hash(items) => items
             .iter()
             .filter_map(|(k, v)| {
-                if v.truthy() || matches!(v, Value::Nil) {
+                if v.truthy() || v.is_nil() {
                     Some(k.clone())
                 } else {
                     None
@@ -82,14 +82,14 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
             }
             elems
         }
-        Value::Pair(_, _) | Value::ValuePair(_, _) => {
+        ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
             let mut elems = HashSet::new();
             insert_set_elem(&mut elems, val);
             elems
         }
-        range if range.is_range() => {
+        _ if val.is_range() => {
             let mut elems = HashSet::new();
-            for item in value_to_list(range) {
+            for item in value_to_list(val) {
                 insert_set_elem(&mut elems, &item);
             }
             elems
@@ -113,9 +113,9 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
 /// - Other scalars → Set with one element
 pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
     let val = val.descalarize();
-    match val {
-        Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => val.clone(),
-        Value::Hash(h) => {
+    match val.view() {
+        ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => val.clone(),
+        ValueView::Hash(h) => {
             let mut set = HashSet::new();
             for (k, v) in h.iter() {
                 if v.truthy() {
@@ -127,27 +127,27 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
         _ if val.as_list_items().is_some() => {
             let mut set = HashSet::new();
             for item in val.as_list_items().unwrap().iter() {
-                match item {
-                    Value::Pair(k, v) => {
+                match item.view() {
+                    ValueView::Pair(k, v) => {
                         if v.truthy() {
                             set.insert(k.clone());
                         }
                     }
-                    Value::Hash(h) => {
+                    ValueView::Hash(h) => {
                         for (k, v) in h.iter() {
                             if v.truthy() {
                                 set.insert(k.clone());
                             }
                         }
                     }
-                    other => {
-                        set.insert(other.to_string_value());
+                    _ => {
+                        set.insert(item.to_string_value());
                     }
                 }
             }
             Value::set(set)
         }
-        Value::Pair(k, v) => {
+        ValueView::Pair(k, v) => {
             let mut set = HashSet::new();
             if v.truthy() {
                 set.insert(k.clone());
@@ -167,31 +167,31 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
 
 /// Determine the promotion level for set operations: 0=Set, 1=Bag, 2=Mix
 pub(crate) fn set_type_level(v: &Value) -> u8 {
-    match v {
-        Value::Mix(_, _) => 2,
-        Value::Bag(_, _) => 1,
+    match v.view() {
+        ValueView::Mix(_, _) => 2,
+        ValueView::Bag(_, _) => 1,
         _ => 0,
     }
 }
 
 /// Convert a value to a Mix-level HashMap (key → f64 count)
 pub(crate) fn to_mix_map(v: &Value) -> HashMap<String, f64> {
-    match v {
-        Value::Mix(m, _) => m.weights.clone(),
-        Value::Bag(b, _) => {
+    match v.view() {
+        ValueView::Mix(m, _) => m.weights.clone(),
+        ValueView::Bag(b, _) => {
             let resolved = resolve_bag_tab_keys(b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
-        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
-        Value::Hash(h) => {
+        ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
+        ValueView::Hash(h) => {
             let mut result = HashMap::new();
             for (k, v) in h.iter() {
-                let w = match v {
-                    Value::Int(i) => *i as f64,
-                    Value::Num(n) => *n,
-                    Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-                    Value::Bool(b) => {
-                        if *b {
+                let w = match v.view() {
+                    ValueView::Int(i) => i as f64,
+                    ValueView::Num(n) => n,
+                    ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+                    ValueView::Bool(b) => {
+                        if b {
                             1.0
                         } else {
                             0.0
@@ -247,16 +247,16 @@ pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<Str
 
 /// Convert a value to a Bag-level HashMap (key → i64 count)
 pub(crate) fn to_bag_map(v: &Value) -> HashMap<String, i64> {
-    match v {
-        Value::Bag(b, _) => resolve_bag_tab_keys(b),
-        Value::Set(s, _) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
-        Value::Hash(h) => {
+    match v.view() {
+        ValueView::Bag(b, _) => resolve_bag_tab_keys(b),
+        ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
+        ValueView::Hash(h) => {
             let mut result = HashMap::new();
             for (k, v) in h.iter() {
-                let count = match v {
-                    Value::Int(i) => *i,
-                    Value::Num(n) => *n as i64,
-                    Value::Bool(b) => i64::from(*b),
+                let count = match v.view() {
+                    ValueView::Int(i) => i,
+                    ValueView::Num(n) => n as i64,
+                    ValueView::Bool(b) => i64::from(b),
                     _ => i64::from(v.truthy()),
                 };
                 if count > 0 {

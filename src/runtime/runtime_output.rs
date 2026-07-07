@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub fn output(&self) -> String {
@@ -98,7 +99,7 @@ impl Interpreter {
     /// This selects the format used to print uncaught exceptions (e.g. "JSON").
     pub fn exceptions_handler(&self) -> Option<String> {
         let env_hash = self.env.get("%*ENV")?;
-        if let Value::Hash(map) = env_hash
+        if let ValueView::Hash(map) = env_hash.view()
             && let Some(v) = map.get("RAKU_EXCEPTIONS_HANDLER")
         {
             let s = v.to_string_value();

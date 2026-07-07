@@ -33,7 +33,7 @@ impl Interpreter {
                 if let Some(captured_name) = constraint.strip_prefix("::") {
                     self.bind_type_capture(
                         captured_name,
-                        &Value::Package(Symbol::intern(class_name)),
+                        &Value::package(Symbol::intern(class_name)),
                     );
                 }
                 // Check type constraint on the invocant (including :U/:D smileys).
@@ -302,7 +302,7 @@ impl Interpreter {
         if constraint == value_type {
             return 0;
         }
-        if let Value::Instance { class_name, .. } = value
+        if let ValueView::Instance { class_name, .. } = value.view()
             && constraint == class_name.resolve().as_str()
         {
             return 0;

@@ -1,6 +1,7 @@
 use super::super::*;
 use super::regex_helpers::{NamedRegexLookupSpec, PENDING_REGEX_GOAL_FAILURE};
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(in crate::runtime) fn clear_pending_goal_failure() {
@@ -127,19 +128,16 @@ impl Interpreter {
     }
 
     pub(super) fn token_pattern_from_def(def: &FunctionDef) -> Option<String> {
-        match def.body.last() {
-            Some(Stmt::Expr(Expr::Literal(Value::Regex(p)))) => {
-                Some(Self::instantiate_token_pattern(def, p))
-            }
-            Some(Stmt::Expr(Expr::Literal(Value::Str(s)))) => {
-                Some(Self::instantiate_token_pattern(def, s))
-            }
-            Some(Stmt::Return(Expr::Literal(Value::Regex(p)))) => {
-                Some(Self::instantiate_token_pattern(def, p))
-            }
-            Some(Stmt::Return(Expr::Literal(Value::Str(s)))) => {
-                Some(Self::instantiate_token_pattern(def, s))
-            }
+        let expr = match def.body.last() {
+            Some(Stmt::Expr(e)) | Some(Stmt::Return(e)) => e,
+            _ => return None,
+        };
+        let Expr::Literal(v) = expr else {
+            return None;
+        };
+        match v.view() {
+            ValueView::Regex(p) => Some(Self::instantiate_token_pattern(def, p)),
+            ValueView::Str(s) => Some(Self::instantiate_token_pattern(def, s)),
             _ => None,
         }
     }
@@ -433,23 +431,22 @@ impl Interpreter {
         let mut out = Vec::new();
         for arg in exprs {
             let v = self.eval_regex_expr_value(arg, caps)?;
-            match v {
-                Value::Slip(items) => {
-                    for item in items.iter() {
-                        out.push(Self::normalize_pair_for_binding(item.clone()));
-                    }
+            if let ValueView::Slip(items) = v.view() {
+                for item in items.iter() {
+                    out.push(Self::normalize_pair_for_binding(item.clone()));
                 }
-                other => out.push(Self::normalize_pair_for_binding(other)),
+            } else {
+                out.push(Self::normalize_pair_for_binding(v));
             }
         }
         Some(out)
     }
 
     fn normalize_pair_for_binding(v: Value) -> Value {
-        if let Value::ValuePair(key, val) = &v
-            && let Value::Str(name) = key.as_ref()
+        if let ValueView::ValuePair(key, val) = v.view()
+            && let ValueView::Str(name) = key.view()
         {
-            return Value::Pair(name.to_string(), val.clone());
+            return Value::pair(name.to_string(), val.clone());
         }
         v
     }
@@ -471,7 +468,7 @@ impl Interpreter {
                 .get(name)
                 .cloned()
                 .or_else(|| env.get(trimmed).cloned())
-                .or(Some(Value::Nil));
+                .or(Some(Value::NIL));
         }
         let source = format!("({expr_src});");
         let (stmts, _) = crate::parse_dispatch::parse_source(&source).ok()?;

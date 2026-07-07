@@ -13,27 +13,26 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // Dispatch to UDP handler if this is a UDP socket
-        if matches!(attributes.get("is-udp"), Some(Value::Bool(true))) {
+        if attributes.get("is-udp").and_then(Value::as_bool) == Some(true) {
             return self.native_socket_async_udp(attributes, method, args);
         }
 
         // Check if this is a real TCP connection (from listener accept)
-        let is_real_tcp = matches!(attributes.get("tcp-real"), Some(Value::Bool(true)));
+        let is_real_tcp = attributes.get("tcp-real").and_then(Value::as_bool) == Some(true);
 
-        let conn_id = attributes.get("conn-id").and_then(|v| match v {
-            Value::Int(i) => Some(*i as u64),
-            _ => None,
-        });
+        let conn_id = attributes
+            .get("conn-id")
+            .and_then(|v| v.as_int().map(|i| i as u64));
 
         match method {
             "socket-port" => Ok(attributes
                 .get("socket-port")
                 .cloned()
-                .unwrap_or(Value::Int(0))),
+                .unwrap_or(Value::int(0))),
             "peer-port" => Ok(attributes
                 .get("peer-port")
                 .cloned()
-                .unwrap_or(Value::Int(0))),
+                .unwrap_or(Value::int(0))),
             "socket-host" => Ok(attributes
                 .get("socket-host")
                 .cloned()
@@ -51,11 +50,11 @@ impl Interpreter {
                     }
                     remove_tcp_stream(id);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "close" => {
                 self.async_socket_close_in_memory(conn_id)?;
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "Supply" if is_real_tcp => self.async_socket_supply_real_tcp(conn_id, &args),
             "Supply" => self.async_socket_supply_in_memory(conn_id, &args, attributes),
@@ -157,8 +156,8 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("live".to_string(), Value::Bool(true));
-        attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+        attrs.insert("live".to_string(), Value::TRUE);
+        attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
@@ -191,8 +190,8 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("live".to_string(), Value::Bool(true));
-        attrs.insert("supplier_id".to_string(), Value::Int(supply_id as i64));
+        attrs.insert("live".to_string(), Value::TRUE);
+        attrs.insert("supplier_id".to_string(), Value::int(supply_id as i64));
         if let Some(conn_state) = get_async_connection(id) {
             is_supplier_done = conn_state.closed || conn_state.peer_closed;
             if !conn_state.pending_bytes.is_empty() {
@@ -216,8 +215,8 @@ impl Interpreter {
         attrs.insert("values".to_string(), Value::array(initial_values));
         if is_supplier_done {
             supplier_done(supply_id);
-            attrs.insert("supplier_done".to_string(), Value::Bool(true));
-            attrs.insert("live".to_string(), Value::Bool(false));
+            attrs.insert("supplier_done".to_string(), Value::TRUE);
+            attrs.insert("live".to_string(), Value::FALSE);
         }
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
@@ -287,7 +286,7 @@ impl Interpreter {
                 text.into_bytes()
             };
             if bytes.is_empty() {
-                return Ok(Self::async_socket_kept(Value::Bool(true)));
+                return Ok(Self::async_socket_kept(Value::TRUE));
             }
             let mut stream = stream_arc
                 .lock()
@@ -299,7 +298,7 @@ impl Interpreter {
             stream
                 .flush()
                 .map_err(|e| RuntimeError::new(format!("flush failed: {}", e)))?;
-            Ok(Self::async_socket_kept(Value::Bool(true)))
+            Ok(Self::async_socket_kept(Value::TRUE))
         })();
         match result {
             Ok(v) => promise.keep(v, String::new(), String::new()),
@@ -309,7 +308,7 @@ impl Interpreter {
                 String::new(),
             ),
         }
-        Ok(Value::Promise(promise))
+        Ok(Value::promise(promise))
     }
 
     fn async_socket_write_in_memory(
@@ -351,7 +350,7 @@ impl Interpreter {
                 self.encode_with_encoding(&text, &state.encoding)?
             };
             if bytes.is_empty() {
-                return Ok(Self::async_socket_kept(Value::Bool(true)));
+                return Ok(Self::async_socket_kept(Value::TRUE));
             }
             if peer.closed {
                 return Ok(Self::async_socket_broken(Value::str_from(
@@ -363,11 +362,11 @@ impl Interpreter {
                 update_async_connection(peer_id, |conn| {
                     conn.pending_bytes.extend_from_slice(&bytes);
                 });
-                return Ok(Self::async_socket_kept(Value::Bool(true)));
+                return Ok(Self::async_socket_kept(Value::TRUE));
             }
 
             self.deliver_bytes_to_peer_supplies(&peer.supply_ids, &bytes);
-            Ok(Self::async_socket_kept(Value::Bool(true)))
+            Ok(Self::async_socket_kept(Value::TRUE))
         })();
 
         match result {
@@ -378,7 +377,7 @@ impl Interpreter {
                 String::new(),
             ),
         }
-        Ok(Value::Promise(promise))
+        Ok(Value::promise(promise))
     }
 
     fn deliver_bytes_to_peer_supplies(&mut self, supply_ids: &[u64], bytes: &[u8]) {

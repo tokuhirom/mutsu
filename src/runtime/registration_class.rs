@@ -18,9 +18,9 @@ pub(super) fn is_non_composable_builtin(name: &str) -> bool {
 }
 
 pub(super) fn type_value_name(value: &Value) -> String {
-    match value {
-        Value::Package(name) => name.resolve(),
-        Value::ParametricRole {
+    match value.view() {
+        ValueView::Package(name) => name.resolve(),
+        ValueView::ParametricRole {
             base_name,
             type_args,
         } => format!(
@@ -32,7 +32,7 @@ pub(super) fn type_value_name(value: &Value) -> String {
                 .collect::<Vec<_>>()
                 .join(",")
         ),
-        other => other
+        _ => value
             .to_string_value()
             .trim_start_matches('(')
             .trim_end_matches(')')
@@ -450,10 +450,10 @@ impl Interpreter {
         {
             return format!("{}{}", lookup, suffix);
         }
-        if let Value::Package(pkg) = self.resolve_indirect_type_name(lookup) {
+        if let ValueView::Package(pkg) = self.resolve_indirect_type_name(lookup).view() {
             return format!("{}{}", pkg.resolve(), suffix);
         }
-        if let Some(Value::Package(pkg)) = self.env.get(lookup) {
+        if let Some(ValueView::Package(pkg)) = self.env.get(lookup).map(Value::view) {
             return format!("{}{}", pkg.resolve(), suffix);
         }
         // Fallback: when a compile-time pre-qualified name like `M::C1` cannot
@@ -472,7 +472,7 @@ impl Interpreter {
             if needs_bare {
                 return format!("{}{}", bare, suffix);
             }
-            if let Value::Package(pkg) = self.resolve_indirect_type_name(bare) {
+            if let ValueView::Package(pkg) = self.resolve_indirect_type_name(bare).view() {
                 let resolved = pkg.resolve();
                 if self.registry().classes.contains_key(resolved.as_str())
                     || self.registry().roles.contains_key(resolved.as_str())

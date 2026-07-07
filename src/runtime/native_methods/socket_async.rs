@@ -17,11 +17,11 @@ impl Interpreter {
     }
 
     pub(super) fn async_socket_kept(result: Value) -> Value {
-        Self::async_socket_status_result("Kept", result, Value::Nil)
+        Self::async_socket_status_result("Kept", result, Value::NIL)
     }
 
     pub(super) fn async_socket_broken(cause: Value) -> Value {
-        Self::async_socket_status_result("Broken", Value::Nil, cause)
+        Self::async_socket_status_result("Broken", Value::NIL, cause)
     }
 
     pub(super) fn async_supplier_emit_value(
@@ -71,7 +71,7 @@ impl Interpreter {
                 } => {
                     let new_acc = if let Some(acc) = accumulator {
                         self.call_sub_value(callable, vec![acc, val], false)
-                            .unwrap_or(Value::Nil)
+                            .unwrap_or(Value::NIL)
                     } else {
                         val
                     };
@@ -125,7 +125,7 @@ impl Interpreter {
                     if let ZipAction::Emit(tuple_val) = result {
                         let (output_sid, wf) = zip_state_info(zid);
                         let emit_val = if let Some(wfn) = wf {
-                            if let Value::Array(items, ..) = &tuple_val {
+                            if let ValueView::Array(items, ..) = tuple_val.view() {
                                 self.call_sub_value(wfn, items.to_vec(), false)
                                     .unwrap_or(tuple_val)
                             } else {
@@ -153,7 +153,7 @@ impl Interpreter {
                     if let ZipAction::Emit(tuple_val) = result {
                         let (output_sid, wf) = zip_latest_state_info(zid);
                         let emit_val = if let Some(wfn) = wf {
-                            if let Value::Array(items, ..) = &tuple_val {
+                            if let ValueView::Array(items, ..) = tuple_val.view() {
                                 self.call_sub_value(wfn, items.to_vec(), false)
                                     .unwrap_or(tuple_val)
                             } else {
@@ -233,7 +233,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "tap" | "act" => {
-                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let callback = args.first().cloned().unwrap_or(Value::NIL);
                 let quit_cb = Self::named_value(&args, "quit");
                 let host = attributes
                     .get("host")
@@ -241,9 +241,9 @@ impl Interpreter {
                     .unwrap_or_else(|| "0.0.0.0".to_string());
                 let requested_port = attributes
                     .get("port")
-                    .and_then(|v| match v {
-                        Value::Int(i) => Some(*i as u16),
-                        Value::Num(n) if n.is_finite() => Some(*n as u16),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i as u16),
+                        ValueView::Num(n) if n.is_finite() => Some(n as u16),
                         _ => None,
                     })
                     .unwrap_or(0);
@@ -370,15 +370,15 @@ impl Interpreter {
 
                                 let mut conn_attrs = HashMap::new();
                                 conn_attrs
-                                    .insert("conn-id".to_string(), Value::Int(conn_id as i64));
-                                conn_attrs.insert("tcp-real".to_string(), Value::Bool(true));
+                                    .insert("conn-id".to_string(), Value::int(conn_id as i64));
+                                conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
                                 conn_attrs.insert(
                                     "socket-host".to_string(),
                                     Value::str(accept_host.clone()),
                                 );
                                 conn_attrs.insert(
                                     "socket-port".to_string(),
-                                    Value::Int(actual_port as i64),
+                                    Value::int(actual_port as i64),
                                 );
                                 conn_attrs.insert(
                                     "peer-host".to_string(),
@@ -386,7 +386,7 @@ impl Interpreter {
                                 );
                                 conn_attrs.insert(
                                     "peer-port".to_string(),
-                                    Value::Int(peer_addr.port() as i64),
+                                    Value::int(peer_addr.port() as i64),
                                 );
                                 conn_attrs
                                     .insert("enc".to_string(), Value::str(accept_enc.clone()));
@@ -415,8 +415,8 @@ impl Interpreter {
                 let mut supply_attrs = HashMap::new();
                 supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
                 supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                supply_attrs.insert("live".to_string(), Value::Bool(true));
-                supply_attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+                supply_attrs.insert("live".to_string(), Value::TRUE);
+                supply_attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
                 let supply_val = Value::make_instance(Symbol::intern("Supply"), supply_attrs);
 
                 // If we are inside a react block, register the subscription so the
@@ -432,7 +432,7 @@ impl Interpreter {
                     if let Some(last) = self.supply_emit_buffer.last_mut() {
                         last.push(sub);
                     }
-                } else if !matches!(callback, Value::Nil) {
+                } else if !matches!(callback.view(), ValueView::Nil) {
                     let cb = callback.clone();
                     let mut driver = self.clone_for_thread();
                     crate::runtime::builtins_system::spawn_user_thread(move || {
@@ -453,17 +453,17 @@ impl Interpreter {
                 }
 
                 let socket_port = SharedPromise::new();
-                socket_port.keep(Value::Int(actual_port as i64), String::new(), String::new());
+                socket_port.keep(Value::int(actual_port as i64), String::new(), String::new());
                 let socket_host = SharedPromise::new();
                 socket_host.keep(Value::str(host), String::new(), String::new());
 
                 let mut tap_attrs = HashMap::new();
-                tap_attrs.insert("listener-id".to_string(), Value::Int(listener_id as i64));
+                tap_attrs.insert("listener-id".to_string(), Value::int(listener_id as i64));
                 tap_attrs.insert(
                     "socket-port".to_string(),
-                    Value::Promise(socket_port.clone()),
+                    Value::promise(socket_port.clone()),
                 );
-                tap_attrs.insert("socket-host".to_string(), Value::Promise(socket_host));
+                tap_attrs.insert("socket-host".to_string(), Value::promise(socket_host));
                 Ok(Value::make_instance(Symbol::intern("Tap"), tap_attrs))
             }
             _ => Err(RuntimeError::new(format!(
@@ -480,16 +480,18 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let udp_id = attributes.get("udp-socket-id").and_then(|v| match v {
-            Value::Int(i) => Some(*i as u64),
-            _ => None,
-        });
+        let udp_id = attributes
+            .get("udp-socket-id")
+            .and_then(|v| match v.view() {
+                ValueView::Int(i) => Some(i as u64),
+                _ => None,
+            });
 
         match method {
             "socket-port" => Ok(attributes
                 .get("socket-port")
                 .cloned()
-                .unwrap_or(Value::Int(0))),
+                .unwrap_or(Value::int(0))),
             "socket-host" => Ok(attributes
                 .get("socket-host")
                 .cloned()
@@ -503,7 +505,7 @@ impl Interpreter {
                         self.async_supplier_done_value(*sid);
                     }
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "Supply" => {
                 let id =
@@ -523,8 +525,8 @@ impl Interpreter {
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("live".to_string(), Value::Bool(true));
-                attrs.insert("supplier_id".to_string(), Value::Int(supply_id as i64));
+                attrs.insert("live".to_string(), Value::TRUE);
+                attrs.insert("supplier_id".to_string(), Value::int(supply_id as i64));
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
             "print-to" => {
@@ -534,10 +536,10 @@ impl Interpreter {
                     .unwrap_or_else(|| "127.0.0.1".to_string());
                 let port = args
                     .get(1)
-                    .map(|v| match v {
-                        Value::Int(i) => *i as u16,
-                        Value::Num(f) => *f as u16,
-                        other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i as u16,
+                        ValueView::Num(f) => f as u16,
+                        _ => v.to_string_value().parse::<u16>().unwrap_or(0),
                     })
                     .unwrap_or(0);
                 let text = args
@@ -549,11 +551,11 @@ impl Interpreter {
 
                 let promise = SharedPromise::new();
                 promise.keep(
-                    Self::async_socket_kept(Value::Bool(true)),
+                    Self::async_socket_kept(Value::TRUE),
                     String::new(),
                     String::new(),
                 );
-                Ok(Value::Promise(promise))
+                Ok(Value::promise(promise))
             }
             "write-to" => {
                 let host = args
@@ -562,10 +564,10 @@ impl Interpreter {
                     .unwrap_or_else(|| "127.0.0.1".to_string());
                 let port = args
                     .get(1)
-                    .map(|v| match v {
-                        Value::Int(i) => *i as u16,
-                        Value::Num(f) => *f as u16,
-                        other => other.to_string_value().parse::<u16>().unwrap_or(0),
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i as u16,
+                        ValueView::Num(f) => f as u16,
+                        _ => v.to_string_value().parse::<u16>().unwrap_or(0),
                     })
                     .unwrap_or(0);
                 let bytes = args
@@ -582,11 +584,11 @@ impl Interpreter {
 
                 let promise = SharedPromise::new();
                 promise.keep(
-                    Self::async_socket_kept(Value::Bool(true)),
+                    Self::async_socket_kept(Value::TRUE),
                     String::new(),
                     String::new(),
                 );
-                Ok(Value::Promise(promise))
+                Ok(Value::promise(promise))
             }
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on IO::Socket::Async (UDP)",

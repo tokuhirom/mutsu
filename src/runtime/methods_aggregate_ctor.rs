@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 impl Interpreter {
     /// Construct an `Array`/`List`/`Positional`/`array` from `.new` arguments.
@@ -39,15 +39,15 @@ impl Interpreter {
         }
         if let Some(dims) = self.shaped_dims_from_new_args(args)? {
             // Check for :data argument to populate the shaped array
-            let data = args.iter().find_map(|arg| match arg {
-                Value::Pair(name, value) if name == "data" => Some(value.as_ref().clone()),
+            let data = args.iter().find_map(|arg| match arg.view() {
+                ValueView::Pair(name, value) if name == "data" => Some(value.clone()),
                 _ => None,
             });
             // If no :data, collect positional (non-Pair) args as data
             let data = if data.is_none() {
                 let positional: Vec<Value> = args
                     .iter()
-                    .filter(|arg| !matches!(arg, Value::Pair(..)))
+                    .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
                     .cloned()
                     .collect();
                 if positional.is_empty() {
@@ -69,43 +69,43 @@ impl Interpreter {
             }
             if let Some(data_val) = data {
                 // Populate the shaped array with data
-                let data_items = match data_val {
-                    Value::Array(items, ..) => items.to_vec(),
-                    Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                    Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. } => crate::runtime::value_to_list(&data_val),
-                    other => vec![other],
+                let data_items = match data_val.view() {
+                    ValueView::Array(items, ..) => items.to_vec(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                    ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. } => crate::runtime::value_to_list(&data_val),
+                    _ => vec![data_val.clone()],
                 };
                 // For 1D shaped arrays, flatten nested arrays in the data
                 // e.g. Array.new(:shape(5,), [1,2,3,4,0]) should produce [1,2,3,4,0]
                 let data_items = if dims.len() == 1 {
                     let mut flat = Vec::new();
                     for item in data_items {
-                        match item {
-                            Value::Array(inner, ..) => {
+                        match item.view() {
+                            ValueView::Array(inner, ..) => {
                                 flat.extend(inner.iter().cloned());
                             }
-                            Value::Seq(inner) | Value::Slip(inner) => {
+                            ValueView::Seq(inner) | ValueView::Slip(inner) => {
                                 flat.extend(inner.iter().cloned());
                             }
-                            Value::Range(..)
-                            | Value::RangeExcl(..)
-                            | Value::RangeExclStart(..)
-                            | Value::RangeExclBoth(..)
-                            | Value::GenericRange { .. } => {
+                            ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. } => {
                                 flat.extend(crate::runtime::value_to_list(&item));
                             }
-                            other => flat.push(other),
+                            _ => flat.push(item.clone()),
                         }
                     }
                     flat
                 } else {
                     data_items
                 };
-                if let Value::Array(ref items, is_arr) = shaped {
+                if let ValueView::Array(items, is_arr) = shaped.view() {
                     let dim_size = dims[0];
                     // For multi-dim arrays, check if data has flat items
                     // (X::Assignment::ToShaped) or too many items for the
@@ -113,7 +113,7 @@ impl Interpreter {
                     if dims.len() > 1
                         && data_items
                             .iter()
-                            .any(|v| !matches!(v, Value::Array(..) | Value::Nil))
+                            .any(|v| !matches!(v.view(), ValueView::Array(..) | ValueView::Nil))
                     {
                         return Err(RuntimeError::new(
                             "X::Assignment::ToShaped: Cannot assign a flat list to a shaped array",
@@ -130,7 +130,7 @@ impl Interpreter {
                     for (i, val) in data_items.into_iter().enumerate() {
                         // For multi-dim: check sub-array size
                         if dims.len() > 1
-                            && let Value::Array(sub_items, ..) = &val
+                            && let ValueView::Array(sub_items, ..) = val.view()
                             && sub_items.len() > dims[1]
                         {
                             return Err(RuntimeError::new(format!(
@@ -143,17 +143,17 @@ impl Interpreter {
                         // List/Seq row (e.g. `<a b>`) to `ArrayKind::Array` so it
                         // renders as `[...]` and behaves like the `[a, b]` form.
                         use crate::value::ArrayKind;
-                        let val = match val {
-                            Value::Array(items, ArrayKind::List) => {
-                                Value::Array(items, ArrayKind::Array)
-                            }
-                            other => other,
+                        let val = if matches!(val.view(), ValueView::Array(_, ArrayKind::List)) {
+                            let (items, _) = val.into_array().unwrap();
+                            Value::array_with_kind(items, ArrayKind::Array)
+                        } else {
+                            val
                         };
                         if i < new_items.len() {
                             new_items[i] = val;
                         }
                     }
-                    let mut result = Value::Array(crate::gc::Gc::new(new_items), is_arr);
+                    let mut result = Value::array_with_kind(crate::gc::Gc::new(new_items), is_arr);
                     crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                     // Register type metadata for typed shaped arrays (e.g. array[str].new(:shape(5), ...))
                     if let Some(ta) = type_args
@@ -192,20 +192,20 @@ impl Interpreter {
         }
         let mut items = Vec::new();
         for arg in args {
-            match arg {
-                Value::Slip(vals) => items.extend(vals.iter().cloned()),
+            match arg.view() {
+                ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
                 // Ranges and sequences passed to `.new` flatten into
                 // their elements (e.g. `array[num].new(1e0..10e0)`).
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }
-                | Value::Seq(_)
-                | Value::LazyList(_) => {
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::Seq(_)
+                | ValueView::LazyList(_) => {
                     items.extend(crate::runtime::utils::value_to_list(arg));
                 }
-                other => items.push(other.clone()),
+                _ => items.push(arg.clone()),
             }
         }
         // Type check for typed arrays (e.g. Array[Int].new(...))
@@ -228,7 +228,7 @@ impl Interpreter {
                     attrs.insert("got".to_string(), item.clone());
                     attrs.insert(
                         "expected".to_string(),
-                        Value::Package(Symbol::intern(constraint)),
+                        Value::package(Symbol::intern(constraint)),
                     );
                     let ex =
                         Value::make_instance(Symbol::intern("X::TypeCheck::Assignment"), attrs);
@@ -287,16 +287,16 @@ impl Interpreter {
         let mut map = HashMap::new();
         let mut iter = flat.into_iter();
         while let Some(item) = iter.next() {
-            match item {
-                Value::Pair(k, v) => {
-                    map.insert(k, *v);
+            match item.view() {
+                ValueView::Pair(k, v) => {
+                    map.insert(k.clone(), v.clone());
                 }
-                Value::ValuePair(k, v) => {
-                    map.insert(k.to_string_value(), *v);
+                ValueView::ValuePair(k, v) => {
+                    map.insert(k.to_string_value(), v.clone());
                 }
-                other => {
-                    let key = other.to_string_value();
-                    let value = iter.next().unwrap_or(Value::Nil);
+                _ => {
+                    let key = item.to_string_value();
+                    let value = iter.next().unwrap_or(Value::NIL);
                     map.insert(key, value);
                 }
             }
@@ -321,7 +321,7 @@ impl Interpreter {
                     attrs.insert("got".to_string(), value.clone());
                     attrs.insert(
                         "expected".to_string(),
-                        Value::Package(Symbol::intern(constraint)),
+                        Value::package(Symbol::intern(constraint)),
                     );
                     let ex =
                         Value::make_instance(Symbol::intern("X::TypeCheck::Assignment"), attrs);

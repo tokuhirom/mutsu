@@ -4,14 +4,15 @@ impl Interpreter {
     pub(crate) fn test_fn_subtest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // subtest 'name' => { ... } (Pair arg) or subtest 'name', { ... } (two args)
         // Pairs are treated as named args by positional_value, so check raw args first
-        let (label, block) = if let Some(Value::Pair(key, val)) = args.first() {
-            (key.to_string(), *val.clone())
-        } else if let Some(Value::ValuePair(key, val)) = args.first() {
-            (key.to_string_value(), *val.clone())
+        let (label, block) = if let Some(ValueView::Pair(key, val)) = args.first().map(Value::view)
+        {
+            (key.to_string(), val.clone())
+        } else if let Some(ValueView::ValuePair(key, val)) = args.first().map(Value::view) {
+            (key.to_string_value(), val.clone())
         } else if let Some(first) = args.first() {
             if matches!(
-                first,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                first.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
                 let block = first.clone();
                 let label = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
@@ -20,21 +21,21 @@ impl Interpreter {
                 let label = Self::positional_string(args, 0);
                 let block = Self::positional_value(args, 1)
                     .cloned()
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 (label, block)
             }
         } else {
             let label = Self::positional_string(args, 0);
             let block = Self::positional_value(args, 1)
                 .cloned()
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             (label, block)
         };
         // Detect whether the callable is a Sub/Method (supports `return`) or a Block.
         // `plan skip-all` inside a subtest uses `return`, which only works for Subs.
-        let callable_is_sub = match &block {
-            Value::Sub(data) => !data.is_bare_block,
-            Value::Routine { .. } => true,
+        let callable_is_sub = match block.view() {
+            ValueView::Sub(data) => !data.is_bare_block,
+            ValueView::Routine { .. } => true,
             _ => false,
         };
         let ctx = self.begin_subtest();
@@ -108,16 +109,16 @@ impl Interpreter {
         self.type_metadata = saved_type_metadata;
         self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     pub(crate) fn test_fn_group_of(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // group-of $plan => $desc => { ... }
         // Accept both `Pair` and `ValuePair` keys for compatibility with non-string keys.
         let to_pair_parts = |value: &Value| -> Option<(Value, Value)> {
-            match value {
-                Value::Pair(k, v) => Some((Value::str(k.clone()), *v.clone())),
-                Value::ValuePair(k, v) => Some((*k.clone(), *v.clone())),
+            match value.view() {
+                ValueView::Pair(k, v) => Some((Value::str(k.clone()), v.clone())),
+                ValueView::ValuePair(k, v) => Some((k.clone(), v.clone())),
                 _ => None,
             }
         };
@@ -129,9 +130,9 @@ impl Interpreter {
                 "group-of expects $plan => $desc => { ... }",
             ));
         };
-        let plan: i64 = match plan_key {
-            Value::Int(i) => i,
-            other => other
+        let plan: i64 = match plan_key.as_int() {
+            Some(i) => i,
+            None => plan_key
                 .to_string_value()
                 .parse()
                 .map_err(|_| RuntimeError::new("group-of: plan must be an integer"))?,
@@ -150,7 +151,7 @@ impl Interpreter {
         let saved_subsets = self.registry().subsets.clone();
         let mut saved_type_metadata = self.type_metadata.clone();
         let saved_var_type_constraints = self.snapshot_var_type_constraints();
-        self.test_fn_plan(&[Value::Int(plan)])?;
+        self.test_fn_plan(&[Value::int(plan)])?;
         let run_result = self.call_sub_value(block, vec![], true);
         self.env = saved_env;
         self.registry_mut().functions = saved_functions;
@@ -169,6 +170,6 @@ impl Interpreter {
         self.type_metadata = saved_type_metadata;
         self.restore_var_type_constraints(saved_var_type_constraints);
         self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn init_io_environment(&mut self) {
@@ -55,10 +56,10 @@ impl Interpreter {
         let home_val = if let Ok(home) = env::var("HOME") {
             self.make_io_path_instance(&home)
         } else {
-            Value::Nil
+            Value::NIL
         };
         #[cfg(target_arch = "wasm32")]
-        let home_val = Value::Nil;
+        let home_val = Value::NIL;
         self.env.insert("$*HOME".to_string(), home_val.clone());
         self.env.insert("*HOME".to_string(), home_val);
         // $*EXECUTABLE - path to the interpreter binary
@@ -175,14 +176,15 @@ impl Interpreter {
     }
 
     pub(super) fn get_dynamic_string(&self, name: &str) -> Option<String> {
-        self.get_dynamic_handle(name).and_then(|value| match value {
-            Value::Str(s) => Some(s.to_string()),
-            Value::Instance { attributes, .. } => {
-                // Support IO::Path instances (e.g., $*CWD)
-                attributes.as_map().get("path").map(|v| v.to_string_value())
-            }
-            _ => None,
-        })
+        self.get_dynamic_handle(name)
+            .and_then(|value| match value.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                ValueView::Instance { attributes, .. } => {
+                    // Support IO::Path instances (e.g., $*CWD)
+                    attributes.as_map().get("path").map(|v| v.to_string_value())
+                }
+                _ => None,
+            })
     }
 
     pub(super) fn get_cwd_path(&self) -> PathBuf {
@@ -235,7 +237,7 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.get_dynamic_var("*SPEC").ok());
         if let Some(spec) = spec
-            && !matches!(&spec, Value::Nil)
+            && !spec.is_nil()
         {
             attrs.insert("SPEC".to_string(), spec);
         }

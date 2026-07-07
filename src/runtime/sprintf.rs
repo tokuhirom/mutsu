@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use num_bigint::BigInt;
 
 use super::sprintf_helpers::{
@@ -87,9 +87,9 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
         let mut width = String::new();
         if pos < len && bytes[pos] == b'*' {
             pos += 1;
-            let w = match args.get(arg_index) {
-                Some(Value::Int(i)) => *i as usize,
-                Some(Value::Num(f)) => *f as usize,
+            let w = match args.get(arg_index).map(Value::view) {
+                Some(ValueView::Int(i)) => i as usize,
+                Some(ValueView::Num(f)) => f as usize,
                 _ => 0,
             };
             arg_index += 1;
@@ -108,9 +108,9 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
             has_precision = true;
             if pos < len && bytes[pos] == b'*' {
                 pos += 1;
-                let p = match args.get(arg_index) {
-                    Some(Value::Int(i)) => *i as usize,
-                    Some(Value::Num(f)) => *f as usize,
+                let p = match args.get(arg_index).map(Value::view) {
+                    Some(ValueView::Int(i)) => i as usize,
+                    Some(ValueView::Num(f)) => f as usize,
                     _ => 0,
                 };
                 arg_index += 1;
@@ -154,84 +154,81 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
         };
         let raw_arg = args.get(effective_arg_index);
         let _mixin_storage: Value;
-        let arg = match raw_arg {
-            Some(Value::Mixin(inner, _)) => {
+        let arg = match raw_arg.map(Value::view) {
+            Some(ValueView::Mixin(inner, _)) => {
                 _mixin_storage = (**inner).clone();
                 Some(&_mixin_storage)
             }
-            other => other,
+            _ => raw_arg,
         };
-        let int_val = || match arg {
-            Some(Value::Int(i)) => *i,
-            Some(Value::BigInt(bi)) => {
-                num_traits::ToPrimitive::to_i64(bi.as_ref()).unwrap_or_else(|| {
+        let int_val = || match arg.map(Value::view) {
+            Some(ValueView::Int(i)) => i,
+            Some(ValueView::BigInt(bi)) => num_traits::ToPrimitive::to_i64(bi.as_ref())
+                .unwrap_or_else(|| {
                     if bi.sign() == num_bigint::Sign::Minus {
                         i64::MIN
                     } else {
                         i64::MAX
                     }
-                })
-            }
-            Some(Value::Num(f)) => *f as i64,
-            Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
-            Some(Value::FatRat(n, d)) if *d != 0 => *n / *d,
-            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
+                }),
+            Some(ValueView::Num(f)) => f as i64,
+            Some(ValueView::Rat(n, d)) if d != 0 => n / d,
+            Some(ValueView::FatRat(n, d)) if d != 0 => n / d,
+            Some(ValueView::BigRat(n, d)) if d != &num_bigint::BigInt::from(0) => {
                 use num_traits::ToPrimitive;
-                (n.as_ref() / d.as_ref()).to_i64().unwrap_or(0)
+                (n / d).to_i64().unwrap_or(0)
             }
-            Some(Value::Str(s)) => match sprintf_numify_str(s) {
-                Some(Value::Int(i)) => i,
-                Some(Value::BigInt(bi)) => {
+            Some(ValueView::Str(s)) => match sprintf_numify_str(s).as_ref().map(Value::view) {
+                Some(ValueView::Int(i)) => i,
+                Some(ValueView::BigInt(bi)) => {
                     num_traits::ToPrimitive::to_i64(bi.as_ref()).unwrap_or(0)
                 }
-                Some(Value::Num(f)) => f as i64,
-                Some(Value::Rat(n, d)) if d != 0 => n / d,
+                Some(ValueView::Num(f)) => f as i64,
+                Some(ValueView::Rat(n, d)) if d != 0 => n / d,
                 _ => s
                     .trim()
                     .parse::<i64>()
                     .unwrap_or_else(|_| s.trim().parse::<f64>().unwrap_or(0.0) as i64),
             },
-            Some(Value::Bool(true)) => 1,
-            Some(Value::Bool(false)) => 0,
+            Some(ValueView::Bool(true)) => 1,
+            Some(ValueView::Bool(false)) => 0,
             _ => 0,
         };
-        let bigint_val = || match arg {
-            Some(Value::BigInt(bi)) => (**bi).clone(),
-            Some(Value::Int(i)) => BigInt::from(*i),
-            Some(Value::Num(f)) => BigInt::from(*f as i64),
-            Some(Value::Rat(n, d)) if *d != 0 => BigInt::from(*n / *d),
-            Some(Value::FatRat(n, d)) if *d != 0 => BigInt::from(*n / *d),
-            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
-                n.as_ref() / d.as_ref()
-            }
-            Some(Value::Str(s)) => match sprintf_numify_str(s) {
-                Some(Value::BigInt(bi)) => (*bi).clone(),
-                Some(Value::Int(i)) => BigInt::from(i),
-                Some(Value::Num(f)) => BigInt::from(f as i64),
-                Some(Value::Rat(n, d)) if d != 0 => BigInt::from(n / d),
+        let bigint_val = || match arg.map(Value::view) {
+            Some(ValueView::BigInt(bi)) => (**bi).clone(),
+            Some(ValueView::Int(i)) => BigInt::from(i),
+            Some(ValueView::Num(f)) => BigInt::from(f as i64),
+            Some(ValueView::Rat(n, d)) if d != 0 => BigInt::from(n / d),
+            Some(ValueView::FatRat(n, d)) if d != 0 => BigInt::from(n / d),
+            Some(ValueView::BigRat(n, d)) if d != &num_bigint::BigInt::from(0) => n / d,
+            Some(ValueView::Str(s)) => match sprintf_numify_str(s).as_ref().map(Value::view) {
+                Some(ValueView::BigInt(bi)) => (**bi).clone(),
+                Some(ValueView::Int(i)) => BigInt::from(i),
+                Some(ValueView::Num(f)) => BigInt::from(f as i64),
+                Some(ValueView::Rat(n, d)) if d != 0 => BigInt::from(n / d),
                 _ => s.trim().parse::<BigInt>().unwrap_or_else(|_| {
                     BigInt::from(s.trim().parse::<f64>().unwrap_or(0.0) as i64)
                 }),
             },
-            Some(Value::Bool(true)) => BigInt::from(1),
-            Some(Value::Bool(false)) => BigInt::from(0),
+            Some(ValueView::Bool(true)) => BigInt::from(1),
+            Some(ValueView::Bool(false)) => BigInt::from(0),
             _ => BigInt::from(0),
         };
-        let float_val = || match arg {
-            Some(Value::Int(i)) => *i as f64,
-            Some(Value::Num(f)) => *f,
-            Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
-            Some(Value::FatRat(n, d)) if *d != 0 => *n as f64 / *d as f64,
-            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
+        let float_val = || match arg.map(Value::view) {
+            Some(ValueView::Int(i)) => i as f64,
+            Some(ValueView::Num(f)) => f,
+            Some(ValueView::Rat(n, d)) if d != 0 => n as f64 / d as f64,
+            Some(ValueView::FatRat(n, d)) if d != 0 => n as f64 / d as f64,
+            Some(ValueView::BigRat(n, d)) if d != &num_bigint::BigInt::from(0) => {
                 use num_traits::ToPrimitive;
-                let result = n.as_ref() * BigInt::from(1_000_000_000i64) / d.as_ref();
+                let result = n * BigInt::from(1_000_000_000i64) / d;
                 result.to_f64().unwrap_or(0.0) / 1_000_000_000.0
             }
-            Some(Value::Str(s)) => match sprintf_numify_str(s) {
-                Some(Value::Int(i)) => i as f64,
-                Some(Value::Num(f)) => f,
-                Some(Value::Rat(n, d)) if d != 0 => n as f64 / d as f64,
-                Some(Value::BigInt(bi)) => {
+            Some(ValueView::Str(s)) => match sprintf_numify_str(s).as_ref().map(Value::view) {
+                Some(ValueView::Int(i)) => i as f64,
+                Some(ValueView::Num(f)) => f,
+                Some(ValueView::Rat(n, d)) if d != 0 => n as f64 / d as f64,
+                Some(ValueView::BigInt(bi)) => {
                     num_traits::ToPrimitive::to_f64(bi.as_ref()).unwrap_or(0.0)
                 }
                 _ => s.trim().parse::<f64>().unwrap_or(0.0),

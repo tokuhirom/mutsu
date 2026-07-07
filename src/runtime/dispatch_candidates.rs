@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::types::is_coercion_constraint;
+use crate::value::ValueView;
 
 impl Interpreter {
     fn ambiguous_multi_dispatch_error(
@@ -10,7 +11,7 @@ impl Interpreter {
     ) -> RuntimeError {
         let arg_types = args
             .iter()
-            .filter(|v| !matches!(v, Value::Pair(..)))
+            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
             .map(super::value_type_name)
             .collect::<Vec<_>>()
             .join(", ");
@@ -61,7 +62,9 @@ impl Interpreter {
             {
                 let positional_arg_count = args
                     .iter()
-                    .filter(|arg| !matches!(arg, Value::Pair(..) | Value::ValuePair(..)))
+                    .filter(|arg| {
+                        !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                    })
                     .count();
                 positional_arg_count == def.params.len()
             } else {
@@ -227,9 +230,9 @@ impl Interpreter {
                 if pd.named {
                     let bare_name = pd.name.trim_start_matches(|c: char| "$@%&".contains(c));
                     let named_val = args.iter().find_map(|a| {
-                        if let Value::Pair(key, val) = a {
+                        if let ValueView::Pair(key, val) = a.view() {
                             if key == bare_name {
-                                Some(val.as_ref().clone())
+                                Some(val.clone())
                             } else {
                                 None
                             }
@@ -246,7 +249,9 @@ impl Interpreter {
                 }
                 if pos_idx < args.len() {
                     // Skip Pair args when looking for positional args
-                    while pos_idx < args.len() && matches!(&args[pos_idx], Value::Pair(..)) {
+                    while pos_idx < args.len()
+                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
+                    {
                         pos_idx += 1;
                     }
                     if pos_idx >= args.len() {
@@ -262,12 +267,12 @@ impl Interpreter {
                     {
                         total += self.type_hierarchy_distance(
                             base,
-                            &Value::Package(Symbol::intern(&return_type)),
+                            &Value::package(Symbol::intern(&return_type)),
                         );
                         continue;
                     }
                     if is_coercion_constraint(constraint)
-                        && let Value::Str(s) = &arg
+                        && let Some(s) = arg.as_str()
                         && matches!(base, "Int" | "Num" | "Rat" | "Complex" | "Numeric" | "Real")
                         && let Some(parsed) =
                             crate::runtime::str_numeric::parse_raku_str_to_numeric(s)
@@ -280,7 +285,7 @@ impl Interpreter {
                     {
                         total += self.type_hierarchy_distance(
                             base,
-                            &Value::Package(Symbol::intern(&info.value_type)),
+                            &Value::package(Symbol::intern(&info.value_type)),
                         );
                         continue;
                     }
@@ -289,7 +294,7 @@ impl Interpreter {
                     {
                         total += self.type_hierarchy_distance(
                             base,
-                            &Value::Package(Symbol::intern(var_type)),
+                            &Value::package(Symbol::intern(var_type)),
                         );
                         continue;
                     }
@@ -309,9 +314,9 @@ impl Interpreter {
     /// Unwrap a VarRef Capture wrapper to get the inner value and the source
     /// variable's declared type constraint (if any) for dispatch.
     fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
-        if let Value::Capture { positional, named } = value
+        if let ValueView::Capture { positional, named } = value.view()
             && positional.is_empty()
-            && let Some(Value::Str(var_name)) = named.get("__mutsu_varref_name")
+            && let Some(var_name) = named.get("__mutsu_varref_name").and_then(|v| v.as_str())
             && let Some(inner) = named.get("__mutsu_varref_value")
         {
             let var_type = self.var_type_constraint_fast(var_name).cloned();
@@ -332,14 +337,14 @@ impl Interpreter {
             constraint
         };
         if base == "Inf" {
-            return match value {
-                Value::Num(n) if n.is_infinite() && n.is_sign_positive() => 0,
+            return match value.view() {
+                ValueView::Num(n) if n.is_infinite() && n.is_sign_positive() => 0,
                 _ => 500,
             };
         }
         if base == "NaN" {
-            return match value {
-                Value::Num(n) if n.is_nan() => 0,
+            return match value.view() {
+                ValueView::Num(n) if n.is_nan() => 0,
                 _ => 500,
             };
         }
@@ -347,7 +352,7 @@ impl Interpreter {
             return 0;
         }
         // For instances, use the class MRO
-        if let Value::Instance { class_name, .. } = value {
+        if let ValueView::Instance { class_name, .. } = value.view() {
             let cn = class_name.resolve();
             if base == cn.as_str() {
                 return 0;
@@ -367,7 +372,7 @@ impl Interpreter {
                 return 1;
             }
         }
-        if let Value::Package(name) = value {
+        if let ValueView::Package(name) = value.view() {
             let cn = name.resolve();
             if base == cn.as_str() {
                 return 0;

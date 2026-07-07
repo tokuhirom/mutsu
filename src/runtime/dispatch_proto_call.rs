@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn call_proto_dispatch(&mut self) -> Result<Value, RuntimeError> {
@@ -18,8 +19,8 @@ impl Interpreter {
             // by name into env, so the current value lives in env (`code = None`).
             // Rebuild the rw args + arg_sources so the candidate matches and its
             // writeback chains back through the proto method param to the caller.
-            let invocant_class = match &ctx.invocant {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            let invocant_class = match ctx.invocant.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
             let (args, rw_sources) = match invocant_class
@@ -44,10 +45,10 @@ impl Interpreter {
             // Build call profile: name(Type1, Type2, ...)
             let arg_types: Vec<String> = args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
                 .map(|a| {
                     let tn = super::value_type_name(a);
-                    if !matches!(a, Value::Nil) {
+                    if !a.is_nil() {
                         format!("{}:D", tn)
                     } else {
                         tn.to_string()
@@ -126,7 +127,7 @@ impl Interpreter {
         if pushed_dispatch {
             self.multi_dispatch_stack.pop();
         }
-        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
+        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::NIL);
         let mut restored_env = saved_env.clone();
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.restore_env_preserving_existing(&restored_env, &def.params);
@@ -149,7 +150,7 @@ impl Interpreter {
     ) -> Vec<Arc<FunctionDef>> {
         let arity = args
             .iter()
-            .filter(|v| !matches!(v, Value::Pair(..)))
+            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
             .count();
         let prefix_local = format!("{}::{}/{}:", self.current_package(), name, arity);
         let prefix_global = format!("GLOBAL::{}/{}:", name, arity);

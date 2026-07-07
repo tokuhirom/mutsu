@@ -10,11 +10,11 @@ impl Interpreter {
         if let Some(seq) = crate::builtins::seq_coerce::to_seq_structural(&target) {
             return Ok(seq);
         }
-        Ok(match target {
-            Value::Seq(_) => target,
-            Value::Array(items, ..) => Value::Seq(std::sync::Arc::new(items.to_vec())),
-            Value::Slip(items) => Value::Seq(items),
-            Value::Instance {
+        Ok(match target.view() {
+            ValueView::Seq(_) => target.clone(),
+            ValueView::Array(items, ..) => Value::seq(items.to_vec()),
+            ValueView::Slip(items) => Value::seq_arc(items.clone()),
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -24,7 +24,7 @@ impl Interpreter {
                         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                             let mut a = HashMap::new();
                             a.insert("emitted".to_string(), Value::array(Vec::new()));
-                            a.insert("done".to_string(), Value::Bool(false));
+                            a.insert("done".to_string(), Value::FALSE);
                             a
                         });
                         self.supply_emit_buffer.push(Vec::new());
@@ -35,21 +35,21 @@ impl Interpreter {
                     } else {
                         Vec::new()
                     };
-                Value::Seq(std::sync::Arc::new(values))
+                Value::seq(values)
             }
-            Value::LazyList(ll) => {
-                let items = self.force_lazy_list_bridge(&ll)?;
-                Value::Seq(std::sync::Arc::new(items))
+            ValueView::LazyList(ll) => {
+                let items = self.force_lazy_list_bridge(ll)?;
+                Value::seq(items)
             }
-            other @ (Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }) => {
-                let items = Self::value_to_list(&other);
-                Value::Seq(std::sync::Arc::new(items))
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
+                let items = Self::value_to_list(&target);
+                Value::seq(items)
             }
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -65,13 +65,15 @@ impl Interpreter {
                     || cn.starts_with("blob")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                    Value::Seq(std::sync::Arc::new(items.clone().to_vec()))
+                if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+                {
+                    Value::seq(items.clone().to_vec())
                 } else {
-                    Value::Seq(std::sync::Arc::new(Vec::new()))
+                    Value::seq(Vec::new())
                 }
             }
-            other => Value::Seq(std::sync::Arc::new(vec![other])),
+            _ => Value::seq(vec![target.clone()]),
         })
     }
 
@@ -89,24 +91,24 @@ impl Interpreter {
     }
 
     fn flatten_shaped_dims(v: &Value, depth: usize, default: &Value, out: &mut Vec<Value>) {
-        match v {
-            Value::Array(items, _) if depth > 0 => {
+        match v.view() {
+            ValueView::Array(items, _) if depth > 0 => {
                 for it in items.iter() {
                     Self::flatten_shaped_dims(it, depth - 1, default, out);
                 }
             }
-            Value::Nil => out.push(default.clone()),
-            other => out.push(other.clone()),
+            ValueView::Nil => out.push(default.clone()),
+            _ => out.push(v.clone()),
         }
     }
 
     /// Dispatch .List coercion method
     pub(super) fn dispatch_list_coercion(&self, target: Value) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
-            ref class_name,
-            ref attributes,
+        if let ValueView::Instance {
+            class_name,
+            attributes,
             ..
-        } = target
+        } = target.view()
         {
             let cn = class_name.resolve();
             if cn == "Buf"
@@ -118,10 +120,15 @@ impl Interpreter {
                 || cn.starts_with("buf")
                 || cn.starts_with("blob")
             {
-                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                    return Ok(Value::Array(items.clone(), crate::value::ArrayKind::List));
+                if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+                {
+                    return Ok(Value::array_with_kind(
+                        items.clone(),
+                        crate::value::ArrayKind::List,
+                    ));
                 }
-                return Ok(Value::Array(
+                return Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                     crate::value::ArrayKind::List,
                 ));
@@ -131,13 +138,13 @@ impl Interpreter {
         // would lose the infinite tail (and `.elems`/`eqv` must still throw
         // X::Cannot::Lazy). Tag it as `.List`-coerced so `.WHAT` reports `List`
         // while the generator is untouched.
-        if let Value::LazyList(ll) = &target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.is_genuinely_lazy()
         {
-            return Ok(Value::LazyList(crate::gc::Gc::new(ll.with_list_context())));
+            return Ok(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())));
         }
         let items = Self::value_to_list(&target);
-        Ok(Value::Array(
+        Ok(Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         ))
@@ -152,11 +159,11 @@ impl Interpreter {
         // Role-ish quant hash family conversion on type objects.
         // Raku maps Set/Bag/Mix families to the corresponding family,
         // preserving hash flavor for *Hash type objects.
-        let source_type = match target {
-            Value::Package(name) => Some(name.resolve()),
-            Value::Set(_, _) => Some("Set".to_string()),
-            Value::Bag(_, _) => Some("Bag".to_string()),
-            Value::Mix(_, _) => Some("Mix".to_string()),
+        let source_type = match target.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Set(..) => Some("Set".to_string()),
+            ValueView::Bag(..) => Some("Bag".to_string()),
+            ValueView::Mix(..) => Some("Mix".to_string()),
             _ => None,
         };
         if let Some(source_type) = source_type
@@ -189,7 +196,7 @@ impl Interpreter {
                     }
                 }
             };
-            return Some(Ok(Value::Package(Symbol::intern(mapped))));
+            return Some(Ok(Value::package(Symbol::intern(mapped))));
         }
         None
     }

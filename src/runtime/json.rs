@@ -12,7 +12,7 @@
 //! no exponent. Decoding maps `true`/`false` to `Bool`, `null` to the `Any` type
 //! object, integers to `Int`, decimals to `Rat`, and exponential forms to `Num`.
 
-use crate::value::{Value, make_rat};
+use crate::value::{Value, ValueView, make_rat};
 use std::collections::HashMap;
 
 /// Options controlling `to-json` rendering. Mirrors the JSON::Fast named params.
@@ -48,10 +48,10 @@ fn indent(out: &mut String, opts: &ToJsonOpts, level: usize) {
 }
 
 fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
-    match val {
-        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        Value::Int(_) | Value::BigInt(_) => out.push_str(&val.to_string_value()),
-        Value::Rat(..) | Value::FatRat(..) | Value::BigRat(..) => {
+    match val.view() {
+        ValueView::Bool(b) => out.push_str(if b { "true" } else { "false" }),
+        ValueView::Int(_) | ValueView::BigInt(_) => out.push_str(&val.to_string_value()),
+        ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
             // JSON::Fast: emit the Rat string, appending ".0" when it has no
             // decimal point so the value reads back as a Rat, not an Int.
             let s = val.to_string_value();
@@ -60,7 +60,7 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
                 out.push_str(".0");
             }
         }
-        Value::Num(f) => {
+        ValueView::Num(f) => {
             if f.is_nan() || f.is_infinite() {
                 // JSON has no NaN/Inf; JSON::Fast emits `null` unless the dynamic
                 // var $*JSON_NAN_INF_SUPPORT is set (which mutsu does not model).
@@ -73,37 +73,38 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
                 }
             }
         }
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             out.push('"');
             escape_str(s, out);
             out.push('"');
         }
-        Value::Scalar(inner) => jsonify(inner, opts, level, out),
-        Value::Mixin(inner, _) => jsonify(inner, opts, level, out),
-        Value::Array(arr, _) => jsonify_seq(&arr.items, opts, level, out),
-        Value::Seq(items) | Value::Slip(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
-            jsonify_seq(items, opts, level, out)
-        }
-        Value::Hash(h) => {
+        ValueView::Scalar(inner) => jsonify(inner, opts, level, out),
+        ValueView::Mixin(inner, _) => jsonify(inner, opts, level, out),
+        ValueView::Array(arr, _) => jsonify_seq(&arr.items, opts, level, out),
+        ValueView::Seq(items)
+        | ValueView::Slip(items)
+        | ValueView::HyperSeq(items)
+        | ValueView::RaceSeq(items) => jsonify_seq(items, opts, level, out),
+        ValueView::Hash(h) => {
             let entries: Vec<(&String, &Value)> = h.map.iter().collect();
             jsonify_object(entries, opts, level, out);
         }
-        Value::Pair(k, v) => {
-            jsonify_object(vec![(k, v.as_ref())], opts, level, out);
+        ValueView::Pair(k, v) => {
+            jsonify_object(vec![(k, v)], opts, level, out);
         }
-        Value::ValuePair(k, v) => {
+        ValueView::ValuePair(k, v) => {
             let key = k.to_string_value();
-            jsonify_object(vec![(&key, v.as_ref())], opts, level, out);
+            jsonify_object(vec![(&key, v)], opts, level, out);
         }
         // Type objects / undefined values render as JSON null.
-        Value::Nil | Value::Package(_) | Value::Whatever | Value::HyperWhatever => {
+        ValueView::Nil | ValueView::Package(_) | ValueView::Whatever | ValueView::HyperWhatever => {
             out.push_str("null");
         }
         // Anything else: fall back to a quoted stringification. Raku would die on
         // an unjsonifiable object; being lenient keeps web/template use working.
-        other => {
+        _ => {
             out.push('"');
-            escape_str(&other.to_string_value(), out);
+            escape_str(&val.to_string_value(), out);
             out.push('"');
         }
     }
@@ -256,10 +257,10 @@ impl<'a> Parser<'a> {
             Some(b'{') => self.parse_object(),
             Some(b'[') => self.parse_array(),
             Some(b'"') => Ok(Value::str(self.parse_string()?)),
-            Some(b't') => self.parse_literal("true", Value::Bool(true)),
-            Some(b'f') => self.parse_literal("false", Value::Bool(false)),
+            Some(b't') => self.parse_literal("true", Value::TRUE),
+            Some(b'f') => self.parse_literal("false", Value::FALSE),
             Some(b'n') => {
-                self.parse_literal("null", Value::Package(crate::symbol::Symbol::intern("Any")))
+                self.parse_literal("null", Value::package(crate::symbol::Symbol::intern("Any")))
             }
             Some(c) if c == b'-' || c.is_ascii_digit() => self.parse_number(),
             Some(c) => Err(format!("Unexpected character in JSON: {}", c as char)),
@@ -282,7 +283,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         if self.peek() == Some(b'}') {
             self.pos += 1;
-            return Ok(Value::Hash(Value::hash_arc(map)));
+            return Ok(Value::hash_with_data(Value::hash_arc(map)));
         }
         loop {
             self.skip_ws();
@@ -304,7 +305,7 @@ impl<'a> Parser<'a> {
                 }
                 Some(b'}') => {
                     self.pos += 1;
-                    return Ok(Value::Hash(Value::hash_arc(map)));
+                    return Ok(Value::hash_with_data(Value::hash_arc(map)));
                 }
                 _ => return Err("Expected ',' or '}' in JSON object".to_string()),
             }
@@ -445,17 +446,17 @@ impl<'a> Parser<'a> {
             // Exponential form -> Num.
             num_str
                 .parse::<f64>()
-                .map(Value::Num)
+                .map(Value::num)
                 .map_err(|_| format!("Invalid JSON number: {num_str}"))
         } else if is_rat {
             Ok(decimal_to_rat(num_str))
         } else {
             // Plain integer -> Int (fall back to Num if it overflows i64).
             match num_str.parse::<i64>() {
-                Ok(i) => Ok(Value::Int(i)),
+                Ok(i) => Ok(Value::int(i)),
                 Err(_) => num_str
                     .parse::<f64>()
-                    .map(Value::Num)
+                    .map(Value::num)
                     .map_err(|_| format!("Invalid JSON number: {num_str}")),
             }
         }
@@ -485,5 +486,5 @@ fn decimal_to_rat(s: &str) -> Value {
         }
     }
     // Fallback for overflow / unexpected shape.
-    Value::Num(s.parse::<f64>().unwrap_or(0.0))
+    Value::num(s.parse::<f64>().unwrap_or(0.0))
 }

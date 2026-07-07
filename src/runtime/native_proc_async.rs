@@ -9,7 +9,7 @@ fn make_buf_value(bytes: &[u8]) -> Value {
     let mut battrs = HashMap::new();
     battrs.insert(
         "bytes".to_string(),
-        Value::array(bytes.iter().map(|b| Value::Int(*b as i64)).collect()),
+        Value::array(bytes.iter().map(|b| Value::int(*b as i64)).collect()),
     );
     Value::make_instance(Symbol::intern("Buf"), battrs)
 }
@@ -100,18 +100,18 @@ impl Interpreter {
                 if attrs.get("started").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error("X::Proc::Async::AlreadyStarted", &[]));
                 }
-                attrs.insert("started".to_string(), Value::Bool(true));
+                attrs.insert("started".to_string(), Value::TRUE);
 
                 // Extract command and args
-                let mut cmd_arr = match attrs.get("cmd") {
-                    Some(Value::Array(arr, ..)) => arr.to_vec(),
+                let mut cmd_arr = match attrs.get("cmd").map(Value::view) {
+                    Some(ValueView::Array(arr, ..)) => arr.to_vec(),
                     _ => Vec::new(),
                 };
                 if let Some(first) = cmd_arr.first().cloned() {
-                    let expanded = match first {
-                        Value::Array(items, ..) => Some(items.to_vec()),
-                        Value::Seq(items) => Some(items.to_vec()),
-                        Value::Slip(items) => Some(items.to_vec()),
+                    let expanded = match first.view() {
+                        ValueView::Array(items, ..) => Some(items.to_vec()),
+                        ValueView::Seq(items) => Some(items.to_vec()),
+                        ValueView::Slip(items) => Some(items.to_vec()),
                         _ => None,
                     };
                     if let Some(mut items) = expanded {
@@ -131,26 +131,29 @@ impl Interpreter {
 
                 // Get stdout/stderr supply IDs
                 let stdout_supply_id = attrs.get("stdout").and_then(|v| {
-                    if let Value::Instance { attributes, .. } = v
-                        && let Some(Value::Int(id)) = attributes.as_map().get("supply_id")
+                    if let ValueView::Instance { attributes, .. } = v.view()
+                        && let Some(ValueView::Int(id)) =
+                            attributes.as_map().get("supply_id").map(Value::view)
                     {
-                        return Some(*id as u64);
+                        return Some(id as u64);
                     }
                     None
                 });
                 let stderr_supply_id = attrs.get("stderr").and_then(|v| {
-                    if let Value::Instance { attributes, .. } = v
-                        && let Some(Value::Int(id)) = attributes.as_map().get("supply_id")
+                    if let ValueView::Instance { attributes, .. } = v.view()
+                        && let Some(ValueView::Int(id)) =
+                            attributes.as_map().get("supply_id").map(Value::view)
                     {
-                        return Some(*id as u64);
+                        return Some(id as u64);
                     }
                     None
                 });
                 let merged_supply_id = attrs.get("supply").and_then(|v| {
-                    if let Value::Instance { attributes, .. } = v
-                        && let Some(Value::Int(id)) = attributes.as_map().get("supply_id")
+                    if let ValueView::Instance { attributes, .. } = v.view()
+                        && let Some(ValueView::Int(id)) =
+                            attributes.as_map().get("supply_id").map(Value::view)
                     {
-                        return Some(*id as u64);
+                        return Some(id as u64);
                     }
                     None
                 });
@@ -158,10 +161,10 @@ impl Interpreter {
                 // Check if stdout/stderr should deliver binary (Buf) data
                 let stdout_bin = attrs
                     .get("stdout_mode")
-                    .is_some_and(|v| matches!(v, Value::Str(s) if s.as_str() == "bin"));
+                    .is_some_and(|v| matches!(v.view(), ValueView::Str(s) if s.as_str() == "bin"));
                 let stderr_bin = attrs
                     .get("stderr_mode")
-                    .is_some_and(|v| matches!(v, Value::Str(s) if s.as_str() == "bin"));
+                    .is_some_and(|v| matches!(v.view(), ValueView::Str(s) if s.as_str() == "bin"));
 
                 // Check if :w flag is set (stdin should be piped)
                 let w_flag = attrs.get("w").map(|v| v.truthy()).unwrap_or(false);
@@ -204,7 +207,9 @@ impl Interpreter {
                     attrs.insert("spawn_error".to_string(), os_error.clone());
 
                     // Break ready promise if set
-                    if let Some(Value::Promise(ready)) = attrs.get("ready_promise") {
+                    if let Some(ValueView::Promise(ready)) =
+                        attrs.get("ready_promise").map(Value::view)
+                    {
                         ready.break_with(os_error.clone(), String::new(), String::new());
                     }
 
@@ -227,36 +232,41 @@ impl Interpreter {
                     // Return a broken promise
                     let promise = SharedPromise::new();
                     promise.break_with(os_error, String::new(), String::new());
-                    return Ok((Value::Promise(promise), attrs));
+                    return Ok((Value::promise(promise), attrs));
                 }
 
                 let mut child = child_result.unwrap();
 
                 let pid = child.id();
-                attrs.insert("pid".to_string(), Value::Int(pid as i64));
+                attrs.insert("pid".to_string(), Value::int(pid as i64));
 
-                if let Some(Value::Instance {
+                if let Some(ValueView::Instance {
                     attributes: stdout_attrs,
                     ..
-                }) = attrs.get("stdout")
-                    && let Some(Value::Promise(promise)) =
-                        stdout_attrs.as_map().get("native_descriptor_promise")
+                }) = attrs.get("stdout").map(Value::view)
+                    && let Some(ValueView::Promise(promise)) = stdout_attrs
+                        .as_map()
+                        .get("native_descriptor_promise")
+                        .map(Value::view)
                 {
-                    promise.try_keep(Value::Int(1)).ok();
+                    promise.try_keep(Value::int(1)).ok();
                 }
-                if let Some(Value::Instance {
+                if let Some(ValueView::Instance {
                     attributes: stderr_attrs,
                     ..
-                }) = attrs.get("stderr")
-                    && let Some(Value::Promise(promise)) =
-                        stderr_attrs.as_map().get("native_descriptor_promise")
+                }) = attrs.get("stderr").map(Value::view)
+                    && let Some(ValueView::Promise(promise)) = stderr_attrs
+                        .as_map()
+                        .get("native_descriptor_promise")
+                        .map(Value::view)
                 {
-                    promise.try_keep(Value::Int(2)).ok();
+                    promise.try_keep(Value::int(2)).ok();
                 }
 
                 // Resolve ready promise if set
-                if let Some(Value::Promise(ready)) = attrs.get("ready_promise") {
-                    ready.try_keep(Value::Int(pid as i64)).ok();
+                if let Some(ValueView::Promise(ready)) = attrs.get("ready_promise").map(Value::view)
+                {
+                    ready.try_keep(Value::int(pid as i64)).ok();
                 }
 
                 // Store stdin in global registry if piped
@@ -346,7 +356,7 @@ impl Interpreter {
                 let child_stderr = child.stderr.take();
 
                 let promise = SharedPromise::new();
-                let ret = Value::Promise(promise.clone());
+                let ret = Value::promise(promise.clone());
                 let cmd_arr_clone = cmd_arr.clone();
 
                 // Builds Proc `Value`s (Gc nodes) and resolves the promise:
@@ -518,21 +528,21 @@ impl Interpreter {
                     let supply_taps = merged_supply_id.map(get_supply_taps).unwrap_or_default();
 
                     let mut proc_attrs = HashMap::new();
-                    proc_attrs.insert("exitcode".to_string(), Value::Int(exit_code));
-                    proc_attrs.insert("signal".to_string(), Value::Int(signal));
+                    proc_attrs.insert("exitcode".to_string(), Value::int(exit_code));
+                    proc_attrs.insert("signal".to_string(), Value::int(signal));
                     proc_attrs.insert(
                         "command".to_string(),
-                        Value::Array(
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(cmd_arr_clone)),
                             crate::value::ArrayKind::List,
                         ),
                     );
-                    proc_attrs.insert("pid".to_string(), Value::Int(pid as i64));
+                    proc_attrs.insert("pid".to_string(), Value::int(pid as i64));
                     if let Some(sid) = stdout_supply_id {
-                        proc_attrs.insert("stdout_supply_id".to_string(), Value::Int(sid as i64));
+                        proc_attrs.insert("stdout_supply_id".to_string(), Value::int(sid as i64));
                     }
                     if let Some(sid) = stderr_supply_id {
-                        proc_attrs.insert("stderr_supply_id".to_string(), Value::Int(sid as i64));
+                        proc_attrs.insert("stderr_supply_id".to_string(), Value::int(sid as i64));
                     }
                     proc_attrs.insert("collected_stdout".to_string(), Value::str(collected_stdout));
                     proc_attrs.insert("collected_stderr".to_string(), Value::str(collected_stderr));
@@ -540,7 +550,7 @@ impl Interpreter {
                     proc_attrs.insert("stdout_taps".to_string(), Value::array(stdout_taps));
                     proc_attrs.insert("stderr_taps".to_string(), Value::array(stderr_taps));
                     if let Some(sid) = merged_supply_id {
-                        proc_attrs.insert("supply_id".to_string(), Value::Int(sid as i64));
+                        proc_attrs.insert("supply_id".to_string(), Value::int(sid as i64));
                     }
                     proc_attrs.insert("supply_taps".to_string(), Value::array(supply_taps));
                     let proc_val = Value::make_instance(Symbol::intern("Proc"), proc_attrs);
@@ -560,16 +570,16 @@ impl Interpreter {
                     ));
                 }
                 if !has_pid {
-                    return Ok((Value::Nil, attrs));
+                    return Ok((Value::NIL, attrs));
                 }
                 #[cfg(feature = "native")]
-                if let Some(Value::Int(pid)) = attrs.get("pid") {
+                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
                     let sig = args
                         .first()
-                        .and_then(|v| match v {
-                            Value::Int(s) => Some(*s as i32),
-                            Value::Enum { value, .. } => Some(value.as_i64() as i32),
-                            Value::Str(s) => match s.as_str() {
+                        .and_then(|v| match v.view() {
+                            ValueView::Int(s) => Some(s as i32),
+                            ValueView::Enum { value, .. } => Some(value.as_i64() as i32),
+                            ValueView::Str(s) => match s.as_str() {
                                 "HUP" | "SIGHUP" => Some(libc::SIGHUP),
                                 "INT" | "SIGINT" => Some(libc::SIGINT),
                                 "QUIT" | "SIGQUIT" => Some(libc::SIGQUIT),
@@ -582,10 +592,10 @@ impl Interpreter {
                         })
                         .unwrap_or(libc::SIGHUP);
                     unsafe {
-                        libc::kill(*pid as i32, sig);
+                        libc::kill(pid as i32, sig);
                     }
                 }
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             "write" => {
                 if !attrs.get("w").is_some_and(|v| v.truthy()) {
@@ -607,13 +617,13 @@ impl Interpreter {
                 if let Some(err) = attrs.get("spawn_error").cloned() {
                     let p = SharedPromise::new();
                     p.break_with(err, String::new(), String::new());
-                    return Ok((Value::Promise(p), attrs));
+                    return Ok((Value::promise(p), attrs));
                 }
 
                 // Write bytes (Buf) to the process's stdin
-                let data = args.first().cloned().unwrap_or(Value::Nil);
-                let bytes: Vec<u8> = match &data {
-                    Value::Instance {
+                let data = args.first().cloned().unwrap_or(Value::NIL);
+                let bytes: Vec<u8> = match data.view() {
+                    ValueView::Instance {
                         class_name,
                         attributes,
                         ..
@@ -629,11 +639,13 @@ impl Interpreter {
                             || cn.starts_with("Blob[")
                     } =>
                     {
-                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        if let Some(ValueView::Array(items, ..)) =
+                            attributes.as_map().get("bytes").map(Value::view)
+                        {
                             items
                                 .iter()
-                                .map(|v| match v {
-                                    Value::Int(i) => *i as u8,
+                                .map(|v| match v.view() {
+                                    ValueView::Int(i) => i as u8,
                                     _ => 0,
                                 })
                                 .collect()
@@ -641,7 +653,7 @@ impl Interpreter {
                             Vec::new()
                         }
                     }
-                    Value::Str(s) => {
+                    ValueView::Str(s) => {
                         let enc = attrs
                             .get("enc")
                             .map(Value::to_string_value)
@@ -652,8 +664,8 @@ impl Interpreter {
                     _ => Vec::new(),
                 };
 
-                if let Some(Value::Int(pid)) = attrs.get("pid") {
-                    let pid = *pid as u32;
+                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                    let pid = pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid).cloned()
                     {
@@ -670,8 +682,8 @@ impl Interpreter {
 
                 // Return a kept Promise
                 let p = SharedPromise::new();
-                p.keep(Value::Bool(true), String::new(), String::new());
-                Ok((Value::Promise(p), attrs))
+                p.keep(Value::TRUE, String::new(), String::new());
+                Ok((Value::promise(p), attrs))
             }
             "close-stdin" => {
                 let started = attrs.get("started").is_some_and(|v| v.truthy());
@@ -683,10 +695,10 @@ impl Interpreter {
                     ));
                 }
                 if !has_pid {
-                    return Ok((Value::Bool(true), attrs));
+                    return Ok((Value::TRUE, attrs));
                 }
-                if let Some(Value::Int(pid)) = attrs.get("pid") {
-                    let pid = *pid as u32;
+                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                    let pid = pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid).cloned()
                     {
@@ -696,7 +708,7 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok((Value::Bool(true), attrs))
+                Ok((Value::TRUE, attrs))
             }
             "bind-stdin" => {
                 if attrs.get("w").is_some_and(|v| v.truthy()) {
@@ -705,9 +717,9 @@ impl Interpreter {
                         &[("handle", Value::str_from("stdin"))],
                     ));
                 }
-                let bound = args.first().cloned().unwrap_or(Value::Nil);
+                let bound = args.first().cloned().unwrap_or(Value::NIL);
                 attrs.insert("stdin_bind".to_string(), bound);
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             "bind-stdout" | "bind-stderr" => {
                 let handle_name = if method == "bind-stdout" {
@@ -725,31 +737,31 @@ impl Interpreter {
                         &[("handle", Value::str_from(handle_name))],
                     ));
                 }
-                let bound = args.first().cloned().unwrap_or(Value::Nil);
+                let bound = args.first().cloned().unwrap_or(Value::NIL);
                 attrs.insert(format!("{}_bind", handle_name), bound);
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             "ready" => {
                 // If spawn failed, return a broken promise with the error
                 if let Some(err) = attrs.get("spawn_error").cloned() {
                     let promise = SharedPromise::new();
                     promise.break_with(err, String::new(), String::new());
-                    return Ok((Value::Promise(promise), attrs));
+                    return Ok((Value::promise(promise), attrs));
                 }
                 // Returns a Promise that resolves with the PID when the process
                 // has been started. If already started, resolves immediately.
                 let promise = SharedPromise::new();
-                if let Some(Value::Int(pid)) = attrs.get("pid") {
-                    promise.keep(Value::Int(*pid), String::new(), String::new());
+                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                    promise.keep(Value::int(pid), String::new(), String::new());
                 }
                 // Store the ready promise so start can resolve it
-                attrs.insert("ready_promise".to_string(), Value::Promise(promise.clone()));
-                Ok((Value::Promise(promise), attrs))
+                attrs.insert("ready_promise".to_string(), Value::promise(promise.clone()));
+                Ok((Value::promise(promise), attrs))
             }
             "stdout" | "stderr" => {
                 if attrs
                     .get(&format!("{}_bind", method))
-                    .is_some_and(|v| !matches!(v, Value::Nil))
+                    .is_some_and(|v| !v.is_nil())
                 {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
@@ -760,11 +772,11 @@ impl Interpreter {
                     return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
                 }
                 let requested_bin = args.iter().any(
-                    |arg| matches!(arg, Value::Pair(key, value) if key == "bin" && value.truthy()),
+                    |arg| matches!(arg.view(), ValueView::Pair(key, value) if key == "bin" && value.truthy()),
                 );
                 let mode_key = format!("{}_mode", method);
-                if let Some(prev) = attrs.get(&mode_key).and_then(|v| match v {
-                    Value::Str(s) => Some(s.as_str()),
+                if let Some(prev) = attrs.get(&mode_key).and_then(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.as_str()),
                     _ => None,
                 }) {
                     let requested = if requested_bin { "bin" } else { "text" };
@@ -776,9 +788,9 @@ impl Interpreter {
                     }
                 }
                 if method == "stdout" {
-                    attrs.insert("stdout_selected".to_string(), Value::Bool(true));
+                    attrs.insert("stdout_selected".to_string(), Value::TRUE);
                 } else {
-                    attrs.insert("stderr_selected".to_string(), Value::Bool(true));
+                    attrs.insert("stderr_selected".to_string(), Value::TRUE);
                 }
                 attrs.insert(
                     mode_key,
@@ -792,7 +804,7 @@ impl Interpreter {
                 }
                 if args
                     .iter()
-                    .any(|arg| !matches!(arg, Value::Pair(key, _) if key == "bin" || key == "enc"))
+                    .any(|arg| !matches!(arg.view(), ValueView::Pair(key, _) if key == "bin" || key == "enc"))
                 {
                     return Err(proc_async_error(
                         "X::Proc::Async::CharsOrBytes",
@@ -802,20 +814,20 @@ impl Interpreter {
                 // A per-tap `:enc` (e.g. `$proc.stdout(:enc('latin-1'))`) overrides
                 // the constructor `:enc` for this stream's decode. Return a Supply
                 // whose `enc` attribute carries the override so the tap records it.
-                let value = attrs.get(method).cloned().unwrap_or(Value::Nil);
-                let value = if let Some(enc_pair) = args.iter().find_map(|arg| match arg {
-                    Value::Pair(key, v) if key == "enc" => Some(v.to_string_value()),
+                let value = attrs.get(method).cloned().unwrap_or(Value::NIL);
+                let value = if let Some(enc_pair) = args.iter().find_map(|arg| match arg.view() {
+                    ValueView::Pair(key, v) if key == "enc" => Some(v.to_string_value()),
                     _ => None,
                 }) {
-                    if let Value::Instance {
+                    if let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } = &value
+                    } = value.view()
                     {
                         let mut new_attrs = attributes.as_map().clone();
                         new_attrs.insert("enc".to_string(), Value::str(enc_pair));
-                        Value::make_instance(*class_name, new_attrs)
+                        Value::make_instance(class_name, new_attrs)
                     } else {
                         value
                     }
@@ -825,19 +837,13 @@ impl Interpreter {
                 Ok((value, attrs))
             }
             "Supply" => {
-                if attrs
-                    .get("stdout_bind")
-                    .is_some_and(|v| !matches!(v, Value::Nil))
-                {
+                if attrs.get("stdout_bind").is_some_and(|v| !v.is_nil()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
                         &[("handle", Value::str_from("stdout"))],
                     ));
                 }
-                if attrs
-                    .get("stderr_bind")
-                    .is_some_and(|v| !matches!(v, Value::Nil))
-                {
+                if attrs.get("stderr_bind").is_some_and(|v| !v.is_nil()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
                         &[("handle", Value::str_from("stderr"))],
@@ -848,8 +854,8 @@ impl Interpreter {
                 {
                     return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
                 }
-                attrs.insert("supply_selected".to_string(), Value::Bool(true));
-                Ok((attrs.get("supply").cloned().unwrap_or(Value::Nil), attrs))
+                attrs.insert("supply_selected".to_string(), Value::TRUE);
+                Ok((attrs.get("supply").cloned().unwrap_or(Value::NIL), attrs))
             }
             "print" | "put" | "say" => {
                 if !attrs.get("w").is_some_and(|v| v.truthy()) {
@@ -870,11 +876,11 @@ impl Interpreter {
                 if let Some(err) = attrs.get("spawn_error").cloned() {
                     let p = SharedPromise::new();
                     p.break_with(err, String::new(), String::new());
-                    return Ok((Value::Promise(p), attrs));
+                    return Ok((Value::promise(p), attrs));
                 }
                 // Write string to stdin of process, encoded with the constructor
                 // `:enc` (`say`/`put` add a trailing newline).
-                let data = args.first().cloned().unwrap_or(Value::Nil);
+                let data = args.first().cloned().unwrap_or(Value::NIL);
                 let mut s = data.to_string_value();
                 if method == "say" || method == "put" {
                     s.push('\n');
@@ -886,8 +892,8 @@ impl Interpreter {
                 let bytes = self
                     .encode_with_encoding(&s, &enc)
                     .unwrap_or_else(|_| s.as_bytes().to_vec());
-                if let Some(Value::Int(pid)) = attrs.get("pid") {
-                    let pid = *pid as u32;
+                if let Some(ValueView::Int(pid)) = attrs.get("pid").map(Value::view) {
+                    let pid = pid as u32;
                     if let Ok(map) = proc_stdin_map().lock()
                         && let Some(stdin_arc) = map.get(&pid).cloned()
                     {
@@ -902,8 +908,8 @@ impl Interpreter {
                     }
                 }
                 let p = SharedPromise::new();
-                p.keep(Value::Bool(true), String::new(), String::new());
-                Ok((Value::Promise(p), attrs))
+                p.keep(Value::TRUE, String::new(), String::new());
+                Ok((Value::promise(p), attrs))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native mutable method '{}' on Proc::Async",
@@ -957,16 +963,16 @@ impl Interpreter {
     }
 
     fn proc_async_supply_id_from_value(value: &Value) -> Option<u64> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
             && class_name == "Supply"
-            && let Some(Value::Int(sid)) = attributes.as_map().get("supply_id")
-            && *sid >= 0
+            && let Some(ValueView::Int(sid)) = attributes.as_map().get("supply_id").map(Value::view)
+            && sid >= 0
         {
-            return Some(*sid as u64);
+            return Some(sid as u64);
         }
         None
     }

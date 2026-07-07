@@ -10,7 +10,7 @@ impl Interpreter {
             .first()
             .ok_or_else(|| RuntimeError::new("chdir requires a path"))?;
         let (require_dir, require_read, require_write, require_exec) = parse_io_requirements(args);
-        let effective_arg = if let Value::Capture { positional, named } = arg {
+        let effective_arg = if let ValueView::Capture { positional, named } = arg.view() {
             if named.is_empty() && positional.len() == 1 {
                 positional[0].clone()
             } else {
@@ -21,11 +21,11 @@ impl Interpreter {
         };
         let mut requested = effective_arg.to_string_value();
         let mut requested_cwd_opt: Option<String> = None;
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &effective_arg
+        } = effective_arg.view()
             && (class_name == "IO::Path"
                 || self
                     .class_mro(&class_name.resolve())
@@ -91,7 +91,7 @@ impl Interpreter {
         let mut path_arg: Option<Value> = None;
         let mut body_arg: Option<Value> = None;
         for arg in args {
-            if matches!(arg, Value::Pair(_, _)) {
+            if matches!(arg.view(), ValueView::Pair(_, _)) {
                 continue;
             }
             if path_arg.is_none() {
@@ -103,11 +103,11 @@ impl Interpreter {
         let path_arg = path_arg.ok_or_else(|| RuntimeError::new("indir requires a path"))?;
         let mut requested = path_arg.to_string_value();
         let mut requested_cwd_opt: Option<String> = None;
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &path_arg
+        } = path_arg.view()
             && class_name == "IO::Path"
         {
             requested = attributes
@@ -158,15 +158,15 @@ impl Interpreter {
         self.env.insert("*CWD".to_string(), cwd_val);
         let result = if let Some(body) = body_arg {
             if matches!(
-                body,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                body.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
                 self.call_sub_value(body.clone(), vec![], true)
             } else {
                 Ok(body)
             }
         } else {
-            Ok(Value::Nil)
+            Ok(Value::NIL)
         };
         if let Some(prev) = saved {
             self.env.insert("$*CWD".to_string(), prev.clone());
@@ -229,7 +229,7 @@ impl Interpreter {
         // (target missing, link already exists, ...) Raku returns a Failure
         // carrying X::IO::Link rather than throwing immediately.
         match fs::hard_link(&target_buf, &link_buf) {
-            Ok(()) => Ok(Value::Bool(true)),
+            Ok(()) => Ok(Value::TRUE),
             Err(err) => Ok(Self::make_link_failure(&target, &link, &err)),
         }
     }
@@ -276,7 +276,7 @@ impl Interpreter {
         #[cfg(unix)]
         {
             match unix_fs::symlink(&target_buf, &link_buf) {
-                Ok(()) => Ok(Value::Bool(true)),
+                Ok(()) => Ok(Value::TRUE),
                 Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
             }
         }
@@ -289,7 +289,7 @@ impl Interpreter {
                 windows_fs::symlink_file(&target_buf, &link_buf)
             };
             match result {
-                Ok(()) => Ok(Value::Bool(true)),
+                Ok(()) => Ok(Value::TRUE),
                 Err(err) => Ok(Self::make_symlink_failure(&target, &link, &err)),
             }
         }

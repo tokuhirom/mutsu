@@ -1,7 +1,7 @@
 use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 
-use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value};
+use crate::value::{ArrayKind, EnumValue, JunctionKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
@@ -22,7 +22,7 @@ pub(crate) fn cannot_lazy_failure(action: &str) -> Value {
     let exception = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), ex_attrs);
     let mut failure_attrs = HashMap::new();
     failure_attrs.insert("exception".to_string(), exception);
-    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
@@ -34,16 +34,16 @@ pub(crate) fn cannot_lazy_failure(action: &str) -> Value {
 /// ranges (the caller falls back to `coerce_to_array`).
 pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
     use crate::value::{LazyList, SequenceSpec};
-    let start = match value {
-        Value::Range(a, b) | Value::RangeExcl(a, b) if *b == i64::MAX => *a,
-        Value::RangeExclStart(a, b) | Value::RangeExclBoth(a, b) if *b == i64::MAX => *a + 1,
-        Value::GenericRange { start, end, .. } => {
+    let start = match value.view() {
+        ValueView::Range(a, i64::MAX) | ValueView::RangeExcl(a, i64::MAX) => a,
+        ValueView::RangeExclStart(a, i64::MAX) | ValueView::RangeExclBoth(a, i64::MAX) => a + 1,
+        ValueView::GenericRange { start, end, .. } => {
             let end_f = end.to_f64();
             if !(end_f.is_infinite() && end_f.is_sign_positive()) {
                 return None;
             }
-            match start.as_ref() {
-                Value::Int(a) => *a,
+            match start.as_ref().view() {
+                ValueView::Int(a) => a,
                 _ => return None,
             }
         }
@@ -54,7 +54,7 @@ pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
     // `@a[N]` (`force_lazy_list_vm_n`), `.head(n)`/`.first` (bounded pull),
     // `.map`/`.grep` (lazy pipe over the sequence). This makes `my @a = 1..*`
     // O(1) memory instead of materializing a 100k-element prefix.
-    let seeds: Vec<Value> = vec![Value::Int(start)];
+    let seeds: Vec<Value> = vec![Value::int(start)];
     let ll = LazyList::new_sequence(
         seeds,
         SequenceSpec::Arithmetic {
@@ -63,7 +63,7 @@ pub(crate) fn infinite_int_range_to_lazy_array(value: &Value) -> Option<Value> {
         },
     )
     .with_array_context();
-    Some(Value::LazyList(crate::gc::Gc::new(ll)))
+    Some(Value::lazy_list(crate::gc::Gc::new(ll)))
 }
 
 /// Saturating conversion of an arbitrary-precision BigInt to i64.
@@ -171,7 +171,7 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
     let exception = Value::make_instance(Symbol::intern("X::Cannot::Empty"), ex_attrs);
     let mut failure_attrs = HashMap::new();
     failure_attrs.insert("exception".to_string(), exception);
-    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 /// Embed original (non-string) keys for an object hash into its `HashData`,
@@ -179,20 +179,27 @@ pub(crate) fn make_empty_array_failure_what(op: &str, what: &str) -> Value {
 /// through copy-on-write — replacing the old Arc-pointer-keyed side tables, so
 /// no `migrate`/`by_id` pointer bookkeeping is needed across COW. Callers must
 /// use the returned value (store it back into its slot).
-pub(crate) fn set_hash_original_keys(value: Value, original_keys: HashMap<String, Value>) -> Value {
+pub(crate) fn set_hash_original_keys(
+    mut value: Value,
+    original_keys: HashMap<String, Value>,
+) -> Value {
     if original_keys.is_empty() {
         return value;
     }
-    if let Value::Hash(mut arc) = value {
-        crate::gc::Gc::make_mut(&mut arc).original_keys = Some(original_keys);
-        return Value::Hash(arc);
+    if value
+        .with_hash_mut(|arc| {
+            crate::gc::Gc::make_mut(arc).original_keys = Some(original_keys);
+        })
+        .is_some()
+    {
+        return value;
     }
     value
 }
 
 /// Snapshot the original keys embedded in an object hash, if any.
 pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String, Value>> {
-    if let Value::Hash(arc) = hash {
+    if let ValueView::Hash(arc) = hash.view() {
         return arc.original_keys.clone();
     }
     None
@@ -201,7 +208,7 @@ pub(crate) fn hash_original_keys_snapshot(hash: &Value) -> Option<HashMap<String
 /// Whether reading this hash's entries should yield typed (original) keys
 /// rather than `Str` keys. See [`crate::value::HashData::has_typed_keys`].
 pub(crate) fn hash_uses_typed_keys(hash: &Value) -> bool {
-    matches!(hash, Value::Hash(arc) if arc.has_typed_keys())
+    matches!(hash.view(), ValueView::Hash(arc) if arc.has_typed_keys())
 }
 
 /// Retrieve the original (typed) key value for a hash entry, if available.
@@ -209,31 +216,31 @@ pub(crate) fn hash_uses_typed_keys(hash: &Value) -> bool {
 /// object-hash gate (see [`HashData::typed_key`]): a plain hash always yields a
 /// `Str` key.
 pub(crate) fn hash_typed_key(hash: &Value, str_key: &str) -> Value {
-    if let Value::Hash(arc) = hash {
+    if let ValueView::Hash(arc) = hash.view() {
         return arc.typed_key(str_key);
     }
     Value::str(str_key.to_string())
 }
 pub(crate) fn make_order(ord: std::cmp::Ordering) -> Value {
     match ord {
-        std::cmp::Ordering::Less => Value::Enum {
-            enum_type: Symbol::intern("Order"),
-            key: Symbol::intern("Less"),
-            value: EnumValue::Int(-1),
-            index: 0,
-        },
-        std::cmp::Ordering::Equal => Value::Enum {
-            enum_type: Symbol::intern("Order"),
-            key: Symbol::intern("Same"),
-            value: EnumValue::Int(0),
-            index: 1,
-        },
-        std::cmp::Ordering::Greater => Value::Enum {
-            enum_type: Symbol::intern("Order"),
-            key: Symbol::intern("More"),
-            value: EnumValue::Int(1),
-            index: 2,
-        },
+        std::cmp::Ordering::Less => Value::enum_parts(
+            Symbol::intern("Order"),
+            Symbol::intern("Less"),
+            EnumValue::Int(-1),
+            0,
+        ),
+        std::cmp::Ordering::Equal => Value::enum_parts(
+            Symbol::intern("Order"),
+            Symbol::intern("Same"),
+            EnumValue::Int(0),
+            1,
+        ),
+        std::cmp::Ordering::Greater => Value::enum_parts(
+            Symbol::intern("Order"),
+            Symbol::intern("More"),
+            EnumValue::Int(1),
+            2,
+        ),
     }
 }
 

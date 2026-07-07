@@ -98,7 +98,7 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
 
     if !saw_dot && exponent_scale == 0 {
         if let Ok(n) = i64::from_str_radix(&int_clean, base) {
-            return Some(Value::Int(n));
+            return Some(Value::int(n));
         }
         if let Some(n) = num_bigint::BigInt::parse_bytes(int_clean.as_bytes(), base) {
             return Some(Value::from_bigint(n));
@@ -134,98 +134,98 @@ pub(crate) fn parse_radix_number_body(body: &str, base: u32) -> Option<Value> {
 
 pub(crate) fn coerce_to_numeric(val: Value) -> Value {
     let val = val.into_descalarized();
-    match val {
-        Value::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
-        Value::Int(_)
-        | Value::BigInt(_)
-        | Value::Num(_)
-        | Value::Rat(_, _)
-        | Value::FatRat(_, _)
-        | Value::BigRat(_, _)
-        | Value::Complex(_, _) => val,
-        Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-        Value::Enum { value, .. } => Value::Int(value.as_i64()),
-        Value::Str(ref s) => {
+    match val.view() {
+        ValueView::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
+        ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Rat(_, _)
+        | ValueView::FatRat(_, _)
+        | ValueView::BigRat(_, _)
+        | ValueView::Complex(_, _) => val.clone(),
+        ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
+        ValueView::Enum { value, .. } => Value::int(value.as_i64()),
+        ValueView::Str(s) => {
             if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
                 v
             } else {
-                Value::Int(0)
+                Value::int(0)
             }
         }
-        _ if val.as_list_items().is_some() => Value::Int(val.as_list_items().unwrap().len() as i64),
-        Value::Hash(items) => Value::Int(items.len() as i64),
-        Value::Set(items, _) => Value::Int(items.len() as i64),
-        Value::Bag(items, _) => Value::from_bigint(items.values().sum::<BigInt>()),
-        Value::Mix(items, _) => {
+        _ if val.as_list_items().is_some() => Value::int(val.as_list_items().unwrap().len() as i64),
+        ValueView::Hash(items) => Value::int(items.len() as i64),
+        ValueView::Set(items, _) => Value::int(items.len() as i64),
+        ValueView::Bag(items, _) => Value::from_bigint(items.values().sum::<BigInt>()),
+        ValueView::Mix(items, _) => {
             // Sort values before summing for deterministic results
             // regardless of HashMap iteration order.
             let mut vals: Vec<f64> = items.values().copied().collect();
             vals.sort_by(|a, b| a.total_cmp(b));
             let total: f64 = vals.iter().copied().fold(0.0, std::ops::Add::add);
             if total == 0.0 && items.is_empty() {
-                Value::Int(0)
+                Value::int(0)
             } else if (total - (total as i64 as f64)).abs() < f64::EPSILON {
-                Value::Int(total as i64)
+                Value::int(total as i64)
             } else {
-                Value::Num(total)
+                Value::num(total)
             }
         }
-        Value::LazyList(ll) => {
+        ValueView::LazyList(ll) => {
             if let Some(count) = &ll.elems_count {
                 count.clone()
             } else if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
-                Value::Int(cached.len() as i64)
+                Value::int(cached.len() as i64)
             } else {
-                Value::Int(0)
+                Value::int(0)
             }
         }
-        Value::Range(..)
-        | Value::RangeExcl(..)
-        | Value::RangeExclStart(..)
-        | Value::RangeExclBoth(..)
-        | Value::GenericRange { .. } => Value::Int(value_to_list(&val).len() as i64),
-        Value::Nil => Value::Int(0),
-        Value::Instance {
-            ref class_name,
-            ref attributes,
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => Value::int(value_to_list(&val).len() as i64),
+        ValueView::Nil => Value::int(0),
+        ValueView::Instance {
+            class_name,
+            attributes,
             ..
         } if class_name == "Instant" => attributes
             .as_map()
             .get("value")
             .cloned()
-            .unwrap_or(Value::Num(0.0)),
-        Value::Instance {
-            ref class_name,
-            ref attributes,
+            .unwrap_or(Value::num(0.0)),
+        ValueView::Instance {
+            class_name,
+            attributes,
             ..
         } if class_name == "Duration" => attributes
             .as_map()
             .get("value")
             .cloned()
-            .unwrap_or(Value::Num(0.0)),
-        Value::Instance {
-            ref class_name,
-            ref attributes,
+            .unwrap_or(Value::num(0.0)),
+        ValueView::Instance {
+            class_name,
+            attributes,
             ..
         } if class_name == "Date" => {
             let (y, m, d) =
                 crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
             let epoch = crate::builtins::methods_0arg::temporal::civil_to_epoch_days(y, m, d);
-            Value::Int(epoch * 86400)
+            Value::int(epoch * 86400)
         }
-        Value::Instance {
-            ref class_name,
-            ref attributes,
+        ValueView::Instance {
+            class_name,
+            attributes,
             ..
         } if class_name == "DateTime" => {
             let (y, mo, d, h, mi, s, tz) =
                 crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
-            Value::Num(crate::builtins::methods_0arg::temporal::datetime_to_posix(
+            Value::num(crate::builtins::methods_0arg::temporal::datetime_to_posix(
                 y, mo, d, h, mi, s, tz,
             ))
         }
-        Value::Uni(u) => Value::Int(u.text.chars().count() as i64),
-        Value::Capture { ref positional, .. } => Value::Int(positional.len() as i64),
-        _ => Value::Int(0),
+        ValueView::Uni(u) => Value::int(u.text.chars().count() as i64),
+        ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
+        _ => Value::int(0),
     }
 }

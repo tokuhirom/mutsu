@@ -12,7 +12,7 @@ impl Interpreter {
         let mut ignore_case = false;
         let mut ignore_mark = false;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "i" | "ignorecase" => ignore_case = value.truthy(),
                     "m" | "ignoremark" => ignore_mark = value.truthy(),
@@ -28,7 +28,7 @@ impl Interpreter {
             ));
         }
         // Type objects (Package) as needle should throw
-        if let Value::Package(type_name) = &positional[0] {
+        if let ValueView::Package(type_name) = positional[0].view() {
             return Err(RuntimeError::new(format!(
                 "Cannot resolve caller substr-eq({}:U)",
                 type_name
@@ -48,7 +48,7 @@ impl Interpreter {
         if start < 0 || start > len {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
-                Value::Int(start),
+                Value::int(start),
                 &format!("0..{}", len),
             ));
         }
@@ -65,7 +65,7 @@ impl Interpreter {
                 self.strip_marks(&substr).to_lowercase() == self.strip_marks(&needle).to_lowercase()
             }
         };
-        Ok(Value::Bool(eq))
+        Ok(Value::truth(eq))
     }
 
     pub(super) fn dispatch_substr(
@@ -110,21 +110,21 @@ impl Interpreter {
 
         // Second arg: length (can be Int, WhateverCode/Sub, Num/Inf, or absent)
         let end = if let Some(len_val) = args.get(1) {
-            match len_val {
-                Value::Int(i) => {
-                    let len = (*i).max(0) as usize;
+            match len_val.view() {
+                ValueView::Int(i) => {
+                    let len = i.max(0) as usize;
                     (start + len).min(total_len)
                 }
-                Value::Num(f) if f.is_infinite() && *f > 0.0 => total_len,
-                Value::Num(f) => {
-                    let len = (*f as i64).max(0) as usize;
+                ValueView::Num(f) if f.is_infinite() && f > 0.0 => total_len,
+                ValueView::Num(f) => {
+                    let len = (f as i64).max(0) as usize;
                     (start + len).min(total_len)
                 }
-                Value::Rat(n, d) if *d != 0 => {
-                    let len = (*n / *d).max(0) as usize;
+                ValueView::Rat(n, d) if d != 0 => {
+                    let len = (n / d).max(0) as usize;
                     (start + len).min(total_len)
                 }
-                Value::Sub { .. } => {
+                ValueView::Sub(..) => {
                     // WhateverCode: call with remaining length to get actual length
                     let remaining = if start <= total_len {
                         (total_len - start) as i64
@@ -132,11 +132,11 @@ impl Interpreter {
                         0
                     };
                     let result =
-                        self.eval_call_on_value(len_val.clone(), vec![Value::Int(remaining)])?;
-                    let len = match &result {
-                        Value::Int(i) => (*i).max(0) as usize,
-                        Value::Num(f) => (*f as i64).max(0) as usize,
-                        Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+                        self.eval_call_on_value(len_val.clone(), vec![Value::int(remaining)])?;
+                    let len = match result.view() {
+                        ValueView::Int(i) => i.max(0) as usize,
+                        ValueView::Num(f) => (f as i64).max(0) as usize,
+                        ValueView::Rat(n, d) if d != 0 => (n / d).max(0) as usize,
                         _ => 0,
                     };
                     (start + len).min(total_len)
@@ -207,8 +207,8 @@ impl Interpreter {
             target: Box::new(crate::ast::Expr::Var(var_name.to_string())),
             name: crate::symbol::Symbol::intern("substr"),
             args: vec![
-                crate::ast::Expr::Literal(Value::Int(start as i64)),
-                crate::ast::Expr::Literal(Value::Int(len as i64)),
+                crate::ast::Expr::Literal(Value::int(start as i64)),
+                crate::ast::Expr::Literal(Value::int(len as i64)),
             ],
             modifier: None,
             quoted: false,
@@ -230,8 +230,8 @@ impl Interpreter {
                 crate::ast::Expr::Literal(Value::str("substr-rw".to_string())),
                 crate::ast::Expr::ArrayLiteral(vec![
                     crate::ast::Expr::Var(var_name.to_string()),
-                    crate::ast::Expr::Literal(Value::Int(start as i64)),
-                    crate::ast::Expr::Literal(Value::Int(len as i64)),
+                    crate::ast::Expr::Literal(Value::int(start as i64)),
+                    crate::ast::Expr::Literal(Value::int(len as i64)),
                 ]),
                 crate::ast::Expr::Var("__mutsu_substr_rw_store_value".to_string()),
             ],
@@ -249,12 +249,7 @@ impl Interpreter {
             self.env.clone(),
         );
 
-        Ok(Value::Proxy {
-            fetcher: Box::new(fetcher),
-            storer: Box::new(storer),
-            subclass: None,
-            decontainerized: false,
-        })
+        Ok(Value::proxy_parts(fetcher, storer, None, false))
     }
 
     /// Resolve a position argument to an i64, handling Int, Num, Rat, BigInt, WhateverCode/Sub.
@@ -263,11 +258,11 @@ impl Interpreter {
         pos: &Value,
         total_len: usize,
     ) -> Result<i64, RuntimeError> {
-        match pos {
-            Value::Int(i) => Ok(*i),
-            Value::Num(f) => Ok(*f as i64),
-            Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
-            Value::BigInt(b) => {
+        match pos.view() {
+            ValueView::Int(i) => Ok(i),
+            ValueView::Num(f) => Ok(f as i64),
+            ValueView::Rat(n, d) if d != 0 => Ok(n / d),
+            ValueView::BigInt(b) => {
                 if b.as_ref() > &num_bigint::BigInt::from(i64::MAX)
                     || b.as_ref() < &num_bigint::BigInt::from(i64::MIN)
                 {
@@ -276,18 +271,18 @@ impl Interpreter {
                     Ok(b.to_string().parse::<i64>().unwrap_or(0))
                 }
             }
-            Value::Sub { .. } => {
+            ValueView::Sub(..) => {
                 // WhateverCode/Callable: call with total_len to resolve position
                 let result =
-                    self.eval_call_on_value(pos.clone(), vec![Value::Int(total_len as i64)])?;
-                match &result {
-                    Value::Int(i) => Ok(*i),
-                    Value::Num(f) => Ok(*f as i64),
-                    Value::Rat(n, d) if *d != 0 => Ok(*n / *d),
+                    self.eval_call_on_value(pos.clone(), vec![Value::int(total_len as i64)])?;
+                match result.view() {
+                    ValueView::Int(i) => Ok(i),
+                    ValueView::Num(f) => Ok(f as i64),
+                    ValueView::Rat(n, d) if d != 0 => Ok(n / d),
                     _ => Ok(0),
                 }
             }
-            other => Ok(other.to_string_value().parse::<i64>().unwrap_or(0)),
+            _ => Ok(pos.to_string_value().parse::<i64>().unwrap_or(0)),
         }
     }
 
@@ -298,28 +293,28 @@ impl Interpreter {
         val: &Value,
         total_len: usize,
     ) -> Result<Option<(usize, usize)>, RuntimeError> {
-        match val {
-            Value::Range(a, b) => {
+        match val.view() {
+            ValueView::Range(a, b) => {
                 let end = b.saturating_add(1).max(0) as usize;
-                Ok(Some((*a as usize, end)))
+                Ok(Some((a as usize, end)))
             }
-            Value::RangeExcl(a, b) => Ok(Some((*a as usize, *b as usize))),
-            Value::RangeExclStart(a, b) => {
+            ValueView::RangeExcl(a, b) => Ok(Some((a as usize, b as usize))),
+            ValueView::RangeExclStart(a, b) => {
                 let end = b.saturating_add(1).max(0) as usize;
-                Ok(Some(((*a + 1) as usize, end)))
+                Ok(Some(((a + 1) as usize, end)))
             }
-            Value::RangeExclBoth(a, b) => Ok(Some(((*a + 1) as usize, *b as usize))),
-            Value::GenericRange {
+            ValueView::RangeExclBoth(a, b) => Ok(Some(((a + 1) as usize, b as usize))),
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
             } => {
                 let s = self.substr_resolve_position(start, total_len)?;
-                let s = if *excl_start { s + 1 } else { s };
+                let s = if excl_start { s + 1 } else { s };
                 let e_val = self.substr_resolve_position(end, total_len)?;
                 // For Inf end (e.g., 10..*), e_val will be very large; clamp later
-                let e = if *excl_end { e_val } else { e_val + 1 };
+                let e = if excl_end { e_val } else { e_val + 1 };
                 let s = s.max(0) as usize;
                 let e = e.max(0) as usize;
                 Ok(Some((s, e)))
@@ -348,7 +343,7 @@ impl Interpreter {
         let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
         Ok(Value::make_instance(
             Symbol::intern("Failure"),
             failure_attrs,

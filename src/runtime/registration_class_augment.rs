@@ -359,7 +359,7 @@ impl Interpreter {
             },
         );
         self.env
-            .insert(name.to_string(), Value::Package(Symbol::intern(name)));
+            .insert(name.to_string(), Value::package(Symbol::intern(name)));
     }
 
     pub(crate) fn register_cunion_class(&mut self, name: &str) {
@@ -380,8 +380,8 @@ impl Interpreter {
         // Parse named args
         let mut named_args: HashMap<String, Value> = HashMap::new();
         for arg in args {
-            if let Value::Pair(key, value) = arg {
-                named_args.insert(key.clone(), *value.clone());
+            if let ValueView::Pair(key, value) = arg.view() {
+                named_args.insert(key.clone(), value.clone());
             }
         }
 
@@ -391,9 +391,9 @@ impl Interpreter {
 
         for (attr_name, _is_public, _default, _is_rw, _, _, _) in &class_attrs {
             if let Some(val) = named_args.get(attr_name) {
-                let int_val = match val {
-                    Value::Int(i) => *i as u64,
-                    Value::BigInt(n) => {
+                let int_val = match val.view() {
+                    ValueView::Int(i) => i as u64,
+                    ValueView::BigInt(n) => {
                         use num_traits::ToPrimitive;
                         n.to_u64().unwrap_or(0)
                     }
@@ -418,9 +418,9 @@ impl Interpreter {
             if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name) {
                 let byte_width = Self::native_type_byte_width(&type_constraint);
                 let val = match byte_width {
-                    1 => Value::Int(bytes[0] as i64),
-                    2 => Value::Int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
-                    4 => Value::Int(
+                    1 => Value::int(bytes[0] as i64),
+                    2 => Value::int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
+                    4 => Value::int(
                         u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64
                     ),
                     8 => {
@@ -431,14 +431,14 @@ impl Interpreter {
                                 if v > i64::MAX as u64 {
                                     Value::bigint(num_bigint::BigInt::from(v as u128))
                                 } else {
-                                    Value::Int(v as i64)
+                                    Value::int(v as i64)
                                 }
                             } else {
                                 // Signed: reinterpret as i64
-                                Value::Int(v as i64)
+                                Value::int(v as i64)
                             }
                         } else {
-                            Value::Int(v as i64)
+                            Value::int(v as i64)
                         }
                     }
                     _ => {
@@ -447,7 +447,7 @@ impl Interpreter {
                         } else if let Some(expr) = default {
                             self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                         } else {
-                            Value::Int(0)
+                            Value::int(0)
                         }
                     }
                 };
@@ -460,7 +460,7 @@ impl Interpreter {
                     self.eval_block_value(&[Stmt::Expr(expr.clone())])?,
                 );
             } else {
-                attrs.insert(attr_name.clone(), Value::Int(0));
+                attrs.insert(attr_name.clone(), Value::int(0));
             }
         }
 

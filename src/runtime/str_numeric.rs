@@ -4,14 +4,14 @@
 //! Rat (`123.0`, `3/2`), Num (scientific notation with `e`/`E`),
 //! Complex (`1+2i`), Inf, NaN, and U+2212 MINUS SIGN.
 
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Result of attempting to parse a Raku numeric string.
 /// Returns `Some(value)` on success, `None` on failure (invalid format).
 pub(crate) fn parse_raku_str_to_numeric(input: &str) -> Option<Value> {
     let s = input.trim();
     if s.is_empty() {
-        return Some(Value::Int(0));
+        return Some(Value::int(0));
     }
 
     // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus
@@ -211,13 +211,13 @@ fn apply_sign(v: Value, sign: i32) -> Value {
     if sign >= 0 {
         return v;
     }
-    match v {
-        Value::Int(i) => Value::Int(-i),
-        Value::BigInt(n) => Value::BigInt(std::sync::Arc::new(-n.as_ref())),
-        Value::Num(f) => Value::Num(-f),
-        Value::Rat(n, d) => Value::Rat(-n, d),
-        Value::FatRat(n, d) => Value::FatRat(-n, d),
-        other => other,
+    match v.view() {
+        ValueView::Int(i) => Value::int(-i),
+        ValueView::BigInt(n) => Value::bigint_arc(std::sync::Arc::new(-n.as_ref())),
+        ValueView::Num(f) => Value::num(-f),
+        ValueView::Rat(n, d) => Value::rat_raw(-n, d),
+        ValueView::FatRat(n, d) => Value::fat_rat_raw(-n, d),
+        _ => v,
     }
 }
 
@@ -239,9 +239,9 @@ fn strip_underscores(s: &str) -> Option<String> {
 
 fn try_parse_inf_nan(s: &str) -> Option<Value> {
     match s {
-        "Inf" | "+Inf" => Some(Value::Num(f64::INFINITY)),
-        "-Inf" => Some(Value::Num(f64::NEG_INFINITY)),
-        "NaN" => Some(Value::Num(f64::NAN)),
+        "Inf" | "+Inf" => Some(Value::num(f64::INFINITY)),
+        "-Inf" => Some(Value::num(f64::NEG_INFINITY)),
+        "NaN" => Some(Value::num(f64::NAN)),
         _ => None,
     }
 }
@@ -284,17 +284,17 @@ fn try_parse_multiplicative(body: &str, sign: i32) -> Option<Value> {
     if exp_val >= 0
         && let Some(power) = (base_int).checked_pow(exp_val as u32)
     {
-        match &coeff {
-            Value::Int(n) => {
+        match coeff.view() {
+            ValueView::Int(n) => {
                 if let Some(result) = n.checked_mul(power) {
                     let result = if sign < 0 { -result } else { result };
-                    return Some(Value::Int(result));
+                    return Some(Value::int(result));
                 }
             }
-            Value::Rat(n, d) => {
+            ValueView::Rat(n, d) => {
                 if let Some(result_n) = n.checked_mul(power) {
                     let result_n = if sign < 0 { -result_n } else { result_n };
-                    return Some(crate::value::make_rat(result_n, *d));
+                    return Some(crate::value::make_rat(result_n, d));
                 }
             }
             _ => {}
@@ -303,7 +303,7 @@ fn try_parse_multiplicative(body: &str, sign: i32) -> Option<Value> {
 
     let result = value_to_f64(&coeff) * (base_int as f64).powi(exp_val);
     let result = if sign < 0 { -result } else { result };
-    Some(Value::Num(result))
+    Some(Value::num(result))
 }
 
 /// Parse a coefficient for multiplicative notation.
@@ -326,12 +326,12 @@ fn parse_coefficient(s: &str) -> Option<Value> {
 
 /// Convert a Value to f64 for arithmetic operations.
 fn value_to_f64(v: &Value) -> f64 {
-    match v {
-        Value::Int(i) => *i as f64,
-        Value::Num(f) => *f,
-        Value::Rat(n, d) if *d != 0 => *n as f64 / *d as f64,
-        Value::FatRat(n, d) if *d != 0 => *n as f64 / *d as f64,
-        Value::BigInt(n) => {
+    match v.view() {
+        ValueView::Int(i) => i as f64,
+        ValueView::Num(f) => f,
+        ValueView::Rat(n, d) if d != 0 => n as f64 / d as f64,
+        ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
+        ValueView::BigInt(n) => {
             use num_traits::ToPrimitive;
             n.to_f64().unwrap_or(f64::INFINITY)
         }
@@ -383,13 +383,13 @@ fn try_parse_0_radix(body: &str) -> Option<Value> {
     validate_radix_digits(&clean, base)?;
 
     if let Ok(n) = i64::from_str_radix(&clean, base) {
-        Some(Value::Int(n))
+        Some(Value::int(n))
     } else {
         use num_bigint::BigInt;
         use num_traits::Num;
         BigInt::from_str_radix(&clean, base)
             .ok()
-            .map(|b| Value::BigInt(std::sync::Arc::new(b)))
+            .map(|b| Value::bigint_arc(std::sync::Arc::new(b)))
     }
 }
 
@@ -595,7 +595,7 @@ fn try_parse_scientific(body: &str, sign: i32) -> Option<Value> {
                 // Huge negative exponent → 0.0
                 if sign < 0 { -0.0 } else { 0.0 }
             };
-            return Some(Value::Num(result));
+            return Some(Value::num(result));
         }
     };
     let exp = exp_sign * exp_val;
@@ -611,7 +611,7 @@ fn try_parse_scientific(body: &str, sign: i32) -> Option<Value> {
         let r = mantissa * 10f64.powi(exp);
         if sign < 0 { -r } else { r }
     };
-    Some(Value::Num(result))
+    Some(Value::num(result))
 }
 
 /// Parse mantissa for scientific notation (e.g., `123`, `123.01`, `1_2_3.0_1`,
@@ -691,7 +691,7 @@ fn try_parse_decimal_rat(body: &str, sign: i32) -> Option<Value> {
     let combined = format!("{}.{}", int_clean, frac_clean);
     let f: f64 = combined.parse().ok()?;
     let f = if sign < 0 { -f } else { f };
-    Some(Value::Num(f))
+    Some(Value::num(f))
 }
 
 /// Parse plain integer with underscores.
@@ -703,7 +703,7 @@ fn try_parse_plain_int(body: &str, sign: i32) -> Option<Value> {
 
     if let Ok(n) = clean.parse::<i64>() {
         let n = if sign < 0 { -n } else { n };
-        Some(Value::Int(n))
+        Some(Value::int(n))
     } else {
         // Try BigInt
         use num_bigint::BigInt;
@@ -759,7 +759,7 @@ fn try_parse_complex(s: &str) -> Option<Value> {
             parse_real_component_to_f64(imag_body)?
         };
         let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
-        Some(Value::Complex(real_val, imag_val))
+        Some(Value::complex(real_val, imag_val))
     } else {
         // Pure imaginary: "42i", "-3.5i", "4_2i", "Inf\i", "i", "-i", etc.
         let (imag_sign, imag_body) = strip_sign(without_i);
@@ -783,7 +783,7 @@ fn try_parse_complex(s: &str) -> Option<Value> {
             parse_real_component_to_f64(imag_body)?
         };
         let imag_val = if imag_sign < 0 { -imag_val } else { imag_val };
-        Some(Value::Complex(0.0, imag_val))
+        Some(Value::complex(0.0, imag_val))
     }
 }
 
@@ -885,22 +885,22 @@ mod tests {
         let result = parse_raku_str_to_numeric(input);
         assert!(result.is_some(), "Failed to parse '{}'", input);
         let val = result.unwrap();
-        let type_name = match &val {
-            Value::Int(_) | Value::BigInt(_) => "(Int)",
-            Value::Num(_) => "(Num)",
-            Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => "(Rat)",
-            Value::Complex(_, _) => "(Complex)",
-            other => panic!("Unexpected type for '{}': {:?}", input, other),
+        let type_name = match val.view() {
+            ValueView::Int(_) | ValueView::BigInt(_) => "(Int)",
+            ValueView::Num(_) => "(Num)",
+            ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => "(Rat)",
+            ValueView::Complex(_, _) => "(Complex)",
+            _ => panic!("Unexpected type for '{}': {:?}", input, val),
         };
         assert_eq!(type_name, expected_type, "Type mismatch for '{}'", input);
-        let actual_f64 = match &val {
-            Value::Int(i) => *i as f64,
-            Value::BigInt(n) => {
+        let actual_f64 = match val.view() {
+            ValueView::Int(i) => i as f64,
+            ValueView::BigInt(n) => {
                 use num_traits::ToPrimitive;
                 n.to_f64().unwrap()
             }
-            Value::Num(f) => *f,
-            Value::Rat(n, d) => *n as f64 / *d as f64,
+            ValueView::Num(f) => f,
+            ValueView::Rat(n, d) => n as f64 / d as f64,
             _ => 0.0,
         };
         assert!(

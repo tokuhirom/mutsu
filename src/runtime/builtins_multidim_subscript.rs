@@ -22,11 +22,11 @@ impl Interpreter {
         let push_args: Vec<Value> = args[3..].to_vec();
 
         // Handle Mixin targets (e.g. `&b does R` followed by `push &b.s, val`).
-        if let Value::Mixin(ref inner, ref mixins) = target {
+        if let ValueView::Mixin(inner, mixins) = target.view() {
             let attr_key = format!("__mutsu_attr__{}", attr_name);
             if let Some(current) = mixins.get(&attr_key).cloned() {
-                let old_array_arc = match &current {
-                    Value::Array(arc, ..) => Some(arc.clone()),
+                let old_array_arc = match current.view() {
+                    ValueView::Array(arc, ..) => Some(arc.clone()),
                     _ => None,
                 };
                 let temp_id: u64 = std::sync::Arc::as_ptr(mixins) as u64;
@@ -42,7 +42,8 @@ impl Interpreter {
                 self.env.remove(&temp_var);
                 let mut updated_mixins = (**mixins).clone();
                 updated_mixins.insert(attr_key, new_value.clone());
-                let new_mixin = Value::Mixin(inner.clone(), std::sync::Arc::new(updated_mixins));
+                let new_mixin =
+                    Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
                 self.propagate_mixin_update_by_arc(mixins, &new_mixin);
                 if let Some(old_arc) = &old_array_arc {
                     self.propagate_shared_array_in_instances(old_arc, &new_value);
@@ -53,11 +54,11 @@ impl Interpreter {
             return self.call_method_with_values(accessor_val, &method, push_args);
         }
 
-        let Value::Instance {
+        let ValueView::Instance {
             attributes,
             id: target_id,
             ..
-        } = &target
+        } = target.view()
         else {
             // Fallback: just call the method on the accessor result
             let accessor_val = self.call_method_with_values(target, &attr_name, vec![])?;
@@ -69,13 +70,13 @@ impl Interpreter {
             .as_map()
             .get(&attr_key)
             .cloned()
-            .unwrap_or(Value::Nil);
-        let old_array_arc = match &current {
-            Value::Array(arc, ..) => Some(arc.clone()),
+            .unwrap_or(Value::NIL);
+        let old_array_arc = match current.view() {
+            ValueView::Array(arc, ..) => Some(arc.clone()),
             _ => None,
         };
-        let old_hash_arc = match &current {
-            Value::Hash(arc) => Some(arc.clone()),
+        let old_hash_arc = match current.view() {
+            ValueView::Hash(arc) => Some(arc.clone()),
             _ => None,
         };
 
@@ -151,11 +152,14 @@ impl Interpreter {
         let mut target_is_coerced_list = false;
         let target = {
             let t = args[0].clone();
-            if !matches!(&t, Value::Array(..) | Value::Hash(_))
+            if !matches!(t.view(), ValueView::Array(..) | ValueView::Hash(_))
                 && (t.is_range()
                     || matches!(
-                        &t,
-                        Value::Seq(_) | Value::HyperSeq(_) | Value::RaceSeq(_) | Value::LazyList(_)
+                        t.view(),
+                        ValueView::Seq(_)
+                            | ValueView::HyperSeq(_)
+                            | ValueView::RaceSeq(_)
+                            | ValueView::LazyList(_)
                     ))
             {
                 target_is_coerced_list = true;
@@ -178,14 +182,14 @@ impl Interpreter {
                 skip_next = false;
                 continue;
             }
-            match extra {
-                Value::Pair(key, value) if key == "delete" => {
+            match extra.view() {
+                ValueView::Pair(key, value) if key == "delete" => {
                     delete_after = value.truthy();
                 }
-                Value::ValuePair(key, value) if key.to_string_value() == "delete" => {
+                ValueView::ValuePair(key, value) if key.to_string_value() == "delete" => {
                     delete_after = value.truthy();
                 }
-                Value::Str(s) if s.as_ref() == "__adverb_cond__" => {
+                ValueView::Str(s) if s.as_ref() == "__adverb_cond__" => {
                     // The next argument is the dynamic condition expression value.
                     if let Some(cond_val) = args.get(4 + i + 1) {
                         adverb_cond = Some(cond_val.truthy());
@@ -205,7 +209,7 @@ impl Interpreter {
             "not-k" | "k0" => ("k", true),
             "v" => ("v", false),
             "not-v" | "v0" => ("v", true),
-            _ => return Ok(Value::Nil),
+            _ => return Ok(Value::NIL),
         };
         // When a dynamic condition was provided (e.g. `:k($ok)`),
         // override keep_missing based on the condition's truthiness.
@@ -226,45 +230,48 @@ impl Interpreter {
         // `@a[@b]:!v` is `($T,)`, not the scalar `$T`. Only a bare scalar
         // subscript (`@a[11]:!v`) returns a scalar.
         let mut force_list = true;
-        let mut indices = match index {
-            Value::Array(items, ..) => items.to_vec(),
+        let mut indices = match index.view() {
+            ValueView::Array(items, ..) => items.to_vec(),
             // A Range subscript on a hash is a multi-key slice (`%h{"b".."c"}:kv`),
             // so expand it to its element keys.
-            ref r if r.is_range() => crate::runtime::utils::value_to_list(r),
-            Value::Seq(ref items) => {
+            _ if index.is_range() => crate::runtime::utils::value_to_list(&index),
+            ValueView::Seq(items) => {
                 truncate_oob = true;
                 items.to_vec()
             }
-            Value::LazyList(ref ll) => {
+            ValueView::LazyList(ll) => {
                 truncate_oob = true;
                 self.force_lazy_list_vm(ll)?
             }
-            other => {
+            _ => {
                 force_list = false;
-                vec![other]
+                vec![index.clone()]
             }
         };
         // Resolve WhateverCode indices (e.g. `@a[*-1]:k`) by applying them to the
         // target's length, exactly as the plain-value subscript path does.
-        if indices.iter().any(|i| matches!(i, Value::Sub(..))) {
-            let target_len = match &target {
-                Value::Array(items, ..) => items.len() as i64,
+        if indices
+            .iter()
+            .any(|i| matches!(i.view(), ValueView::Sub(..)))
+        {
+            let target_len = match target.view() {
+                ValueView::Array(items, ..) => items.len() as i64,
                 _ => 0,
             };
             for idx in indices.iter_mut() {
-                if matches!(idx, Value::Sub(..)) {
-                    *idx = self.call_sub_value(idx.clone(), vec![Value::Int(target_len)], false)?;
+                if matches!(idx.view(), ValueView::Sub(..)) {
+                    *idx = self.call_sub_value(idx.clone(), vec![Value::int(target_len)], false)?;
                 }
             }
         }
-        if matches!(indices.first(), Some(Value::Whatever))
-            || matches!(indices.first(), Some(Value::Num(f)) if f.is_infinite() && *f > 0.0)
+        if matches!(indices.first().map(Value::view), Some(ValueView::Whatever))
+            || matches!(indices.first().map(Value::view), Some(ValueView::Num(f)) if f.is_infinite() && f > 0.0)
         {
-            indices = match &target {
-                Value::Array(items, ..) => (0..items.len())
-                    .map(|i| Value::Int(i as i64))
+            indices = match target.view() {
+                ValueView::Array(items, ..) => (0..items.len())
+                    .map(|i| Value::int(i as i64))
                     .collect::<Vec<_>>(),
-                Value::Hash(map) => map
+                ValueView::Hash(map) => map
                     .keys()
                     .map(|k| Value::str(k.clone()))
                     .collect::<Vec<_>>(),
@@ -272,11 +279,11 @@ impl Interpreter {
             };
         }
         // Lazy-subscript truncation: keep only in-range indices of the array.
-        if truncate_oob && let Value::Array(items, ..) = &target {
+        if truncate_oob && let ValueView::Array(items, ..) = target.view() {
             let len = items.len() as i64;
-            indices.retain(|idx| match idx {
-                Value::Int(i) => *i >= 0 && *i < len,
-                Value::Num(f) => *f >= 0.0 && (*f as i64) < len,
+            indices.retain(|idx| match idx.view() {
+                ValueView::Int(i) => i >= 0 && i < len,
+                ValueView::Num(f) => f >= 0.0 && (f as i64) < len,
                 _ => idx
                     .to_string_value()
                     .parse::<i64>()
@@ -289,7 +296,7 @@ impl Interpreter {
         // own a recursive path so a *nested* sub-list index preserves its nesting
         // in the result — `@a[(3, (30, (5,)))]:k` yields `(3, ((5,),))`, not a
         // flattened list. A Hash target keeps the original flat path below.
-        if let Value::Array(items, ..) = &target {
+        if let ValueView::Array(items, ..) = target.view() {
             // The set of explicitly element-assigned indices travels with the
             // array value (embedded `ArrayData::initialized`), so a slot holding a
             // `Package("Any")` hole is distinguished from a real `Any` value even
@@ -316,7 +323,7 @@ impl Interpreter {
                         .as_ref()
                         .and_then(|name| self.var_type_constraint(name))
                 })
-                .map(|t| Value::Package(Symbol::intern(&t)));
+                .map(|t| Value::package(Symbol::intern(&t)));
             // A Range/List coerced to an array view has no container element
             // type, so a missing element reads back as `Nil` (matching
             // `("a".."z")[30]:!v`), not the `Any` a real `@`-array reports.
@@ -324,9 +331,9 @@ impl Interpreter {
                 .or(type_constraint_default)
                 .unwrap_or_else(|| {
                     if target_is_coerced_list {
-                        Value::Nil
+                        Value::NIL
                     } else {
-                        Value::Package(Symbol::intern("Any"))
+                        Value::package(Symbol::intern("Any"))
                     }
                 });
 
@@ -340,27 +347,38 @@ impl Interpreter {
                     .unwrap_or_else(|| "Any".to_string());
                 let mut leaves: Vec<i64> = Vec::new();
                 Self::collect_slice_leaf_indices(&indices, &mut leaves);
-                if let Some(Value::Array(live, ..)) = self.env.get_mut(var_name) {
-                    let hole_value = Value::Package(crate::symbol::Symbol::intern(&hole_type));
-                    let arr = crate::gc::Gc::make_mut(live);
-                    for i in &leaves {
-                        if *i >= 0 && (*i as usize) < arr.len() {
-                            arr[*i as usize] = hole_value.clone();
-                        }
-                    }
-                    // Trim trailing holes.
-                    while let Some(last) = arr.last() {
-                        let is_hole = match last {
-                            Value::Nil => true,
-                            Value::Package(name) => name == "Any" || name == hole_type.as_str(),
-                            _ => false,
-                        };
-                        if is_hole {
-                            arr.pop();
-                        } else {
-                            break;
-                        }
-                    }
+                let was_array = self
+                    .env
+                    .get_mut(var_name)
+                    .and_then(|entry| {
+                        entry.with_array_mut(|live, _| {
+                            let hole_value =
+                                Value::package(crate::symbol::Symbol::intern(&hole_type));
+                            let arr = crate::gc::Gc::make_mut(live);
+                            for i in &leaves {
+                                if *i >= 0 && (*i as usize) < arr.len() {
+                                    arr[*i as usize] = hole_value.clone();
+                                }
+                            }
+                            // Trim trailing holes.
+                            while let Some(last) = arr.last() {
+                                let is_hole = match last.view() {
+                                    ValueView::Nil => true,
+                                    ValueView::Package(name) => {
+                                        name == "Any" || name == hole_type.as_str()
+                                    }
+                                    _ => false,
+                                };
+                                if is_hole {
+                                    arr.pop();
+                                } else {
+                                    break;
+                                }
+                            }
+                        })
+                    })
+                    .is_some();
+                if was_array {
                     // Sync the env mutation back to the local slot (dual store) so
                     // a later read of the array observes the deletion.
                     self.writeback_multidim_var_to_local(var_name);
@@ -379,10 +397,10 @@ impl Interpreter {
                 }
                 return Ok(match kind {
                     "kv" => Value::array(vec![key, value]),
-                    "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                    "p" => Value::value_pair(key, value),
                     "k" => key,
                     "v" => value,
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 });
             }
             let out = Self::format_positional_slice_level(
@@ -397,8 +415,8 @@ impl Interpreter {
         }
 
         let mut rows: Vec<(Value, Value, bool)> = Vec::with_capacity(indices.len());
-        match &target {
-            Value::Hash(map) => {
+        match target.view() {
+            ValueView::Hash(map) => {
                 // The missing-key default comes from the Hash's *value type* — read
                 // it from the container value itself (via container metadata /
                 // `is default`) so it survives rebinding (e.g. `for %i -> %h {...}`
@@ -409,15 +427,15 @@ impl Interpreter {
                     .cloned()
                     .or_else(|| {
                         self.container_type_metadata(&target)
-                            .map(|info| Value::Package(Symbol::intern(&info.value_type)))
+                            .map(|info| Value::package(Symbol::intern(&info.value_type)))
                     })
                     .or_else(|| {
                         var_name
                             .as_ref()
                             .and_then(|name| self.var_type_constraint(name))
-                            .map(|t| Value::Package(Symbol::intern(&t)))
+                            .map(|t| Value::package(Symbol::intern(&t)))
                     })
-                    .unwrap_or_else(|| Value::Package(Symbol::intern("Any")));
+                    .unwrap_or_else(|| Value::package(Symbol::intern("Any")));
                 // Object hashes (`my %h{Int}`) store `.WHICH`-encoded keys, so
                 // the subscript value must be encoded the same way to find the
                 // entry; the *displayed* key is the original typed subscript.
@@ -438,33 +456,35 @@ impl Interpreter {
                     rows.push((key, value, exists));
                 }
             }
-            _ => return Ok(Value::Nil),
+            _ => return Ok(Value::NIL),
         }
 
         // Hash `:delete` companion (arrays handled in the positional path above).
         if delete_after
             && let Some(var_name) = var_name.as_ref()
-            && let Some(Value::Hash(map)) = self.env.get_mut(var_name)
+            && let Some(entry) = self.env.get_mut(var_name)
         {
-            let h = crate::gc::Gc::make_mut(map);
-            for idx in &indices {
-                h.remove(&idx.to_string_value());
-            }
+            entry.with_hash_mut(|map| {
+                let h = crate::gc::Gc::make_mut(map);
+                for idx in &indices {
+                    h.remove(&idx.to_string_value());
+                }
+            });
         }
 
         if !is_multi {
             let Some((key, value, exists)) = rows.into_iter().next() else {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             };
             if !keep_missing && !exists {
                 return Ok(Value::array(Vec::new()));
             }
             return Ok(match kind {
                 "kv" => Value::array(vec![key, value]),
-                "p" => Value::ValuePair(Box::new(key), Box::new(value)),
+                "p" => Value::value_pair(key, value),
                 "k" => key,
                 "v" => value,
-                _ => Value::Nil,
+                _ => Value::NIL,
             });
         }
 
@@ -478,7 +498,7 @@ impl Interpreter {
                     out.push(key);
                     out.push(value);
                 }
-                "p" => out.push(Value::ValuePair(Box::new(key), Box::new(value))),
+                "p" => out.push(Value::value_pair(key, value)),
                 "k" => out.push(key),
                 "v" => out.push(value),
                 _ => {}
@@ -523,7 +543,7 @@ impl Interpreter {
                     out.push(key);
                     out.push(value);
                 }
-                "p" => out.push(Value::ValuePair(Box::new(key), Box::new(value))),
+                "p" => out.push(Value::value_pair(key, value)),
                 "k" => out.push(key),
                 "v" => out.push(value),
                 _ => {}
@@ -536,12 +556,12 @@ impl Interpreter {
     /// an index element), return its direct elements for recursion; else `None`
     /// (it is a scalar leaf index).
     pub(crate) fn nested_index_elements(idx: &Value) -> Option<Vec<Value>> {
-        match idx {
-            Value::Array(items, kind) if !kind.is_itemized() => Some(items.to_vec()),
-            Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+        match idx.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => Some(items.to_vec()),
+            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                 Some(items.to_vec())
             }
-            r if r.is_range() => Some(crate::runtime::utils::value_to_list(r)),
+            _ if idx.is_range() => Some(crate::runtime::utils::value_to_list(idx)),
             _ => None,
         }
     }
@@ -555,19 +575,20 @@ impl Interpreter {
         missing_value: &Value,
         idx: &Value,
     ) -> (Value, Value, bool) {
-        let i = match idx {
-            Value::Int(i) => *i,
-            Value::Num(f) => *f as i64,
+        let i = match idx.view() {
+            ValueView::Int(i) => i,
+            ValueView::Num(f) => f as i64,
             _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
         };
-        let key = Value::Int(i);
+        let key = Value::int(i);
         if i < 0 || i as usize >= items.len() {
             return (key, missing_value.clone(), false);
         }
         let ui = i as usize;
         let exists = match bound_map {
             Some(set) => {
-                set.contains(&ui) || !matches!(&items[ui], Value::Package(name) if name == "Any")
+                set.contains(&ui)
+                    || !matches!(items[ui].view(), ValueView::Package(name) if name == "Any")
             }
             None => true,
         };
@@ -582,9 +603,9 @@ impl Interpreter {
                 Self::collect_slice_leaf_indices(&sub, out);
                 continue;
             }
-            let i = match idx {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
+            let i = match idx.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
                 _ => idx.to_string_value().parse::<i64>().unwrap_or(-1),
             };
             out.push(i);

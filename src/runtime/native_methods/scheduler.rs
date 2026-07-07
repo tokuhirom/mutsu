@@ -1,5 +1,6 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use std::sync::atomic::Ordering;
 
 use super::state::*;
@@ -23,7 +24,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "cancellation-id".to_string(),
-            Value::Int(next_cancellation_id() as i64),
+            Value::int(next_cancellation_id() as i64),
         );
         Value::make_instance(Symbol::intern("Cancellation"), attrs)
     }
@@ -32,20 +33,20 @@ impl Interpreter {
         let Some(value) = Self::named_value(args, "times") else {
             return Ok(None);
         };
-        let count = match value {
-            Value::Int(i) => i,
-            Value::Num(f) if f.is_finite() => f as i64,
-            Value::Bool(b) => i64::from(b),
-            Value::Str(s) => s.trim().parse::<i64>().map_err(|_| {
+        let count = match value.view() {
+            ValueView::Int(i) => i,
+            ValueView::Num(f) if f.is_finite() => f as i64,
+            ValueView::Bool(b) => i64::from(b),
+            ValueView::Str(s) => s.trim().parse::<i64>().map_err(|_| {
                 RuntimeError::new(format!(
                     "Scheduler.cue: :times must be numeric, got '{}'",
                     s
                 ))
             })?,
-            other => {
+            _ => {
                 return Err(RuntimeError::new(format!(
                     "Scheduler.cue: :times must be numeric, got '{}'",
-                    other.to_string_value()
+                    value.to_string_value()
                 )));
             }
         };
@@ -125,34 +126,39 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "cancel" | "close" => {
-                if let Some(Value::Int(listener_id)) = attributes.get("listener-id") {
-                    let lid = *listener_id as u64;
+                if let Some(ValueView::Int(listener_id)) =
+                    attributes.get("listener-id").map(Value::view)
+                {
+                    let lid = listener_id as u64;
                     close_async_listener(lid);
                     set_listener_closed(lid);
                 }
-                if let (Some(Value::Int(supplier_id)), Some(Value::Int(tap_id))) =
-                    (attributes.get("supplier_id"), attributes.get("tap_id"))
-                {
-                    close_supplier_tap(*supplier_id as u64, *tap_id as u64);
+                if let (Some(ValueView::Int(supplier_id)), Some(ValueView::Int(tap_id))) = (
+                    attributes.get("supplier_id").map(Value::view),
+                    attributes.get("tap_id").map(Value::view),
+                ) {
+                    close_supplier_tap(supplier_id as u64, tap_id as u64);
                 }
                 // Fire any CLOSE-phaser callbacks registered on this tap's
                 // supply emitter (run once — taking empties the list, so a
                 // later normal termination won't run them again).
-                if let Some(Value::Int(cid)) = attributes.get("close_supplier_id") {
-                    for cb in take_supplier_close_callbacks(*cid as u64) {
+                if let Some(ValueView::Int(cid)) =
+                    attributes.get("close_supplier_id").map(Value::view)
+                {
+                    for cb in take_supplier_close_callbacks(cid as u64) {
                         self.call_sub_value(cb, vec![], true)?;
                     }
                 }
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "socket-port" => Ok(attributes
                 .get("socket-port")
                 .cloned()
-                .unwrap_or(Value::Promise(SharedPromise::new()))),
+                .unwrap_or(Value::promise(SharedPromise::new()))),
             "socket-host" => Ok(attributes
                 .get("socket-host")
                 .cloned()
-                .unwrap_or(Value::Promise(SharedPromise::new()))),
+                .unwrap_or(Value::promise(SharedPromise::new()))),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Tap",
                 method
@@ -167,13 +173,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "cancel" => {
-                if let Some(Value::Int(id)) = attributes.get("cancellation-id")
-                    && *id > 0
-                    && let Some(flag) = cancellation_state(*id as u64)
+                if let Some(ValueView::Int(id)) = attributes.get("cancellation-id").map(Value::view)
+                    && id > 0
+                    && let Some(flag) = cancellation_state(id as u64)
                 {
                     flag.store(true, Ordering::Relaxed);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Cancellation",
@@ -213,7 +219,7 @@ impl Interpreter {
                         "Cannot specify :every in a CurrentThreadScheduler",
                     ));
                 }
-                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let callback = args.first().cloned().unwrap_or(Value::NIL);
                 let times_explicit = Self::scheduler_times_arg(&args)?;
                 let delay = Self::scheduler_delay(&args)?;
                 let every = Self::scheduler_every(&args)?;
@@ -229,10 +235,10 @@ impl Interpreter {
                 };
 
                 let cancellation = Self::cancellation_instance();
-                let cancellation_id = match &cancellation {
-                    Value::Instance { attributes, .. } => {
-                        match attributes.as_map().get("cancellation-id").cloned() {
-                            Some(Value::Int(id)) if id > 0 => id as u64,
+                let cancellation_id = match cancellation.view() {
+                    ValueView::Instance { attributes, .. } => {
+                        match attributes.as_map().get("cancellation-id").map(Value::view) {
+                            Some(ValueView::Int(id)) if id > 0 => id as u64,
                             _ => 0,
                         }
                     }
@@ -270,13 +276,13 @@ impl Interpreter {
             }
             "uncaught_handler" => {
                 // Getter: return current uncaught_handler or Nil
-                Ok(state_scheduler::get_uncaught_handler().unwrap_or(Value::Nil))
+                Ok(state_scheduler::get_uncaught_handler().unwrap_or(Value::NIL))
             }
             "loads" => {
                 // Number of outstanding (spawned-but-unfinished) scheduled tasks.
                 // A CurrentThreadScheduler cue runs inline (never increments), so
                 // this is 0 once the scheduler is idle.
-                Ok(Value::Int(state_scheduler::scheduler_loads() as i64))
+                Ok(Value::int(state_scheduler::scheduler_loads() as i64))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on Scheduler",
@@ -294,7 +300,7 @@ impl Interpreter {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         match method {
             "uncaught_handler" => {
-                let handler = args.into_iter().next().unwrap_or(Value::Nil);
+                let handler = args.into_iter().next().unwrap_or(Value::NIL);
                 state_scheduler::set_uncaught_handler(handler.clone());
                 Ok((handler, attributes))
             }
@@ -466,8 +472,8 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let sched_id = match attributes.get("scheduler_id") {
-            Some(Value::Int(id)) if *id > 0 => *id as u64,
+        let sched_id = match attributes.get("scheduler_id").map(Value::view) {
+            Some(ValueView::Int(id)) if id > 0 => id as u64,
             _ => {
                 return Err(RuntimeError::new(
                     "FakeScheduler called without scheduler_id",
@@ -476,7 +482,7 @@ impl Interpreter {
         };
         match method {
             "cue" => {
-                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let callback = args.first().cloned().unwrap_or(Value::NIL);
                 let delay = Self::named_value(&args, "at")
                     .or_else(|| Self::named_value(&args, "in"))
                     .map(|v| v.to_f64())
@@ -497,18 +503,18 @@ impl Interpreter {
                     // can collect them.
                     if let Some(buf) = self.supply_emit_buffer.last_mut() {
                         for v in &counter_values {
-                            buf.push(Value::Int(*v));
+                            buf.push(Value::int(*v));
                         }
                     }
                     return Ok(Value::array(
-                        counter_values.into_iter().map(Value::Int).collect(),
+                        counter_values.into_iter().map(Value::int).collect(),
                     ));
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "time" => {
                 let (_, _) = fake_scheduler_progress_by(sched_id, 0.0);
-                Ok(Value::Num(0.0))
+                Ok(Value::num(0.0))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on FakeScheduler",

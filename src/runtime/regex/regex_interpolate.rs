@@ -60,8 +60,12 @@ impl Interpreter {
     /// scalar literals.
     pub(in crate::runtime) fn value_is_round_trippable(value: &Value) -> bool {
         matches!(
-            value,
-            Value::Int(_) | Value::Num(_) | Value::Str(_) | Value::Bool(_) | Value::Nil
+            value.view(),
+            ValueView::Int(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Nil
         )
     }
 
@@ -226,13 +230,13 @@ impl Interpreter {
     }
 
     fn value_to_raku_literal(value: &Value) -> Option<String> {
-        match value {
-            Value::Int(n) => Some(n.to_string()),
-            Value::Num(n) => Some(format!("{n}e0")),
-            Value::Bool(true) => Some("True".to_string()),
-            Value::Bool(false) => Some("False".to_string()),
-            Value::Nil => Some("Nil".to_string()),
-            Value::Str(s) => {
+        match value.view() {
+            ValueView::Int(n) => Some(n.to_string()),
+            ValueView::Num(n) => Some(format!("{n}e0")),
+            ValueView::Bool(true) => Some("True".to_string()),
+            ValueView::Bool(false) => Some("False".to_string()),
+            ValueView::Nil => Some("Nil".to_string()),
+            ValueView::Str(s) => {
                 let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
                 Some(format!("'{escaped}'"))
             }
@@ -351,10 +355,10 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                     {
-                        match value {
-                            Value::Regex(pat) => out.push_str(&pat),
-                            other => {
-                                out.push_str(&Self::regex_escape_literal(&other.to_string_value()))
+                        match value.view() {
+                            ValueView::Regex(pat) => out.push_str(pat),
+                            _ => {
+                                out.push_str(&Self::regex_escape_literal(&value.to_string_value()))
                             }
                         }
                     } else {

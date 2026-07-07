@@ -11,12 +11,13 @@ mod unique_squish;
 
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 use std::sync::Mutex;
 
 /// Compute 0-based indices of filtered items within the original list.
 pub(crate) fn compute_grep_indices(original_items: &[Value], filtered: &Value) -> Vec<usize> {
-    let filtered_items = if let Value::Array(items, ..) = filtered {
+    let filtered_items = if let ValueView::Array(items, ..) = filtered.view() {
         items.to_vec()
     } else {
         return vec![];
@@ -55,24 +56,24 @@ impl GrepAdverb {
         match self {
             GrepAdverb::V => Ok(filtered),
             GrepAdverb::K => {
-                let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::Int(i as i64)).collect();
+                let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::int(i as i64)).collect();
                 Ok(Value::array(idx_vals))
             }
             GrepAdverb::Kv => {
-                let items = if let Value::Array(items, ..) = &filtered {
+                let items = if let ValueView::Array(items, ..) = filtered.view() {
                     items.to_vec()
                 } else {
                     vec![filtered]
                 };
                 let mut result = Vec::new();
                 for (i, item) in indices.iter().zip(items.iter()) {
-                    result.push(Value::Int(*i as i64));
+                    result.push(Value::int(*i as i64));
                     result.push(item.clone());
                 }
                 Ok(Value::array(result))
             }
             GrepAdverb::P => {
-                let items = if let Value::Array(items, ..) = &filtered {
+                let items = if let ValueView::Array(items, ..) = filtered.view() {
                     items.to_vec()
                 } else {
                     vec![filtered]
@@ -80,10 +81,7 @@ impl GrepAdverb {
                 let mut result = Vec::new();
                 for (i, item) in indices.iter().zip(items.iter()) {
                     // The key is the Int index (`3 => v`), not a Str ("3" => v).
-                    result.push(Value::ValuePair(
-                        Box::new(Value::Int(*i as i64)),
-                        Box::new(item.clone()),
-                    ));
+                    result.push(Value::value_pair(Value::int(*i as i64), item.clone()));
                 }
                 Ok(Value::array(result))
             }

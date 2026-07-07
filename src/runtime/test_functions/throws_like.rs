@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn test_fn_throws_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -8,8 +9,8 @@ impl Interpreter {
         let expected =
             Self::positional_value_required(args, 1, "throws-like expects type")?.to_string_value();
         let desc = Self::positional_string(args, 2);
-        let result = match &code_val {
-            Value::Sub(data) => {
+        let result = match code_val.view() {
+            ValueView::Sub(data) => {
                 // Evaluating the assertion block must not leak its last expression
                 // value (e.g. an unhandled Failure from `@a.pop` on an empty array)
                 // into the caller, where a subsequent `EVAL` would surface it as
@@ -19,10 +20,12 @@ impl Interpreter {
                 self.last_value = saved_last_value;
                 r
             }
-            Value::Str(code) => {
+            ValueView::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;
-                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                if let Some(pid_val) = self.env.get("*PID")
+                    && let ValueView::Int(pid) = pid_val.view()
+                {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.lib_paths = self.lib_paths.clone();
@@ -111,16 +114,16 @@ impl Interpreter {
                                 .and_then(|()| nested.check_eval_post_declared_types(&stmts))
                                 .and_then(|()| nested.check_eval_begin_forward_calls(&stmts))
                         }
-                        Err(mut e) => {
+                        Err(e) => {
                             // A compile-time exception raised while parsing the
                             // EVAL'd code reports the EVAL pseudo-file and the
                             // line within that source (Raku exposes `.filename`
                             // matching /EVAL/ and `.line`).
                             let line = e.line().unwrap_or(1) as i64;
-                            if let Some(ref mut exc_box) = e.exception
-                                && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                            if let Some(exc_box) = e.exception.as_ref()
+                                && let ValueView::Instance { attributes, .. } = exc_box.view()
                             {
-                                attributes.insert_if_absent("line".to_string(), Value::Int(line));
+                                attributes.insert_if_absent("line".to_string(), Value::int(line));
                                 attributes.insert_if_absent(
                                     "filename".to_string(),
                                     Value::str("EVAL_0".to_string()),
@@ -141,7 +144,7 @@ impl Interpreter {
                     // inside `run`, so listop calls like `b2 Num` parse as calls.
                     let run_result =
                         crate::parser::with_user_sub_preseed(user_subs, || nested.run(code))
-                            .map(|_| Value::Nil);
+                            .map(|_| Value::NIL);
                     // Write back mutations the code made to the caller's lexicals
                     // (e.g. `$str`), whether or not it threw — Raku runs the code
                     // in the caller's scope, so partial work before a throw is
@@ -169,7 +172,7 @@ impl Interpreter {
                                 // so a pure lazy sequence/range is never driven.
                                 // A force error IS the thrown exception: surface it
                                 // as the eval result so the type matcher sees it.
-                                if let Value::LazyList(ref ll) = last_val
+                                if let ValueView::LazyList(ll) = last_val.view()
                                     && ll.coroutine.is_some()
                                     && let Err(e) = nested.force_lazy_list_vm(ll)
                                 {
@@ -178,7 +181,7 @@ impl Interpreter {
                                     Self::sink_failure_to_error(last_val)
                                 }
                             } else {
-                                Ok(Value::Nil)
+                                Ok(Value::NIL)
                             }
                         }
                         err => err,
@@ -188,7 +191,7 @@ impl Interpreter {
             // When throws-like receives a non-code value (e.g., a Failure from
             // an eagerly-evaluated expression like `rindex(...)`), sink it so that
             // Failures throw their wrapped exception.
-            other => Self::sink_failure_to_error(other.clone()),
+            _ => Self::sink_failure_to_error(code_val.clone()),
         };
         // Also handle Failures returned as Ok values from block/string code evaluation.
         let result = match result {
@@ -209,14 +212,14 @@ impl Interpreter {
         // Collect named attribute matchers from args (e.g., status => 'Kept')
         let mut named_matchers: Vec<(String, Value)> = Vec::new();
         for arg in args.iter().skip(2) {
-            if let Value::Pair(key, val) = arg {
-                named_matchers.push((key.clone(), *val.clone()));
+            if let ValueView::Pair(key, val) = arg.view() {
+                named_matchers.push((key.clone(), val.clone()));
             }
         }
 
         // Check for Bool matchers — Raku throws X::Match::Bool
         for (attr_name, val) in &named_matchers {
-            if matches!(val, Value::Bool(_)) {
+            if matches!(val.view(), ValueView::Bool(_)) {
                 let msg = format!(
                     "Cannot use Bool as Matcher with '.{}'. Did you mean to use $_ inside a block?",
                     attr_name
@@ -237,7 +240,7 @@ impl Interpreter {
             Err(err) => {
                 // Check exception field first for structured exceptions
                 let ex_class = err.exception.as_ref().and_then(|ex| {
-                    if let Value::Instance { class_name, .. } = ex.as_ref() {
+                    if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                         Some(class_name.resolve())
                     } else {
                         None
@@ -297,7 +300,7 @@ impl Interpreter {
         // X::AdHoc is excluded because it wraps ad-hoc die() values and doesn't
         // carry the attributes of the expected exception type.
         let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
-            if let Value::Instance { class_name, .. } = ex {
+            if let ValueView::Instance { class_name, .. } = ex.view() {
                 let cn = class_name.resolve();
                 cn.starts_with("X::") && cn != "X::AdHoc"
             } else {
@@ -323,7 +326,7 @@ impl Interpreter {
         )?;
         for (attr_name, expected_val) in &named_checks {
             let actual_val = exception_val.as_ref().and_then(|ex| {
-                if let Value::Instance { attributes, .. } = ex {
+                if let ValueView::Instance { attributes, .. } = ex.view() {
                     attributes.as_map().get(attr_name).cloned()
                 } else {
                     None
@@ -344,9 +347,9 @@ impl Interpreter {
                     }
                 });
             let matched = self.matcher_accepts(expected_val, &actual_str, actual_val.as_ref());
-            let expected_display = match expected_val {
-                Value::Regex(pattern) => format!("/{}/", pattern),
-                Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
+            let expected_display = match expected_val.view() {
+                ValueView::Regex(pattern) => format!("/{}/", pattern),
+                ValueView::Sub(_) | ValueView::Routine { .. } => expected_val.to_string_value(),
                 _ => expected_val.to_string_value(),
             };
             self.test_ok(
@@ -370,7 +373,7 @@ impl Interpreter {
                 Err(RuntimeError::new(""))
             },
         )?;
-        Ok(Value::Bool(type_ok))
+        Ok(Value::truth(type_ok))
     }
 
     /// Smart-match a `throws-like` attribute matcher against the actual value.
@@ -382,31 +385,31 @@ impl Interpreter {
         actual_str: &str,
         actual_val: Option<&Value>,
     ) -> bool {
-        match matcher {
-            Value::Whatever => true,
-            Value::Regex(pattern) => self
+        match matcher.view() {
+            ValueView::Whatever => true,
+            ValueView::Regex(pattern) => self
                 .regex_match_with_captures(pattern, actual_str)
                 .is_some(),
             // `rx:i/.../` and friends carry adverbs, so route through the full
             // smart-match engine (which honours `:i`, `:m`, ...) rather than the
             // bare-pattern matcher above.
-            Value::RegexWithAdverbs { .. } => {
+            ValueView::RegexWithAdverbs(_) => {
                 let topic = actual_val
                     .cloned()
                     .unwrap_or_else(|| Value::str(actual_str.to_string()));
                 self.smart_match_values(&topic, matcher)
             }
-            Value::Sub(_) | Value::Routine { .. } => {
-                let call_arg = actual_val.cloned().unwrap_or(Value::Nil);
+            ValueView::Sub(_) | ValueView::Routine { .. } => {
+                let call_arg = actual_val.cloned().unwrap_or(Value::NIL);
                 match self.call_sub_value(matcher.clone(), vec![call_arg], false) {
                     Ok(result_val) => result_val.truthy(),
                     Err(_) => false,
                 }
             }
-            Value::Package(type_name) => actual_val.is_some_and(|actual| {
+            ValueView::Package(type_name) => actual_val.is_some_and(|actual| {
                 crate::value::types::what_type_name(actual) == type_name.resolve()
             }),
-            Value::Junction { kind, values } => {
+            ValueView::Junction { kind, values } => {
                 let mut matches = values
                     .iter()
                     .map(|v| self.matcher_accepts(v, actual_str, actual_val));
@@ -434,8 +437,8 @@ impl Interpreter {
             Self::positional_value_required(args, 1, "throws-like-any expects type list")?.clone();
 
         // Extract type names from the array argument
-        let type_names: Vec<String> = match &types_val {
-            Value::Array(items, _) => items
+        let type_names: Vec<String> = match types_val.view() {
+            ValueView::Array(items, _) => items
                 .iter()
                 .map(|v| {
                     let s = v.to_string_value();
@@ -454,14 +457,14 @@ impl Interpreter {
         let desc = Self::positional_string(args, 2);
 
         // Execute the code (reuse the same logic as throws-like)
-        let result = match &code_val {
-            Value::Sub(data) => {
+        let result = match code_val.view() {
+            ValueView::Sub(data) => {
                 let saved_last_value = self.last_value.take();
                 let r = self.eval_test_block_value(&data.body);
                 self.last_value = saved_last_value;
                 r
             }
-            Value::Str(code) => {
+            ValueView::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;
                 nested.lib_paths = self.lib_paths.clone();
@@ -502,16 +505,16 @@ impl Interpreter {
                             .and_then(|()| nested.check_eval_undeclared_names(&stmts))
                             .and_then(|()| nested.check_eval_post_declared_types(&stmts))
                             .and_then(|()| nested.check_eval_begin_forward_calls(&stmts)),
-                        Err(mut e) => {
+                        Err(e) => {
                             // A compile-time exception raised while parsing the
                             // EVAL'd code reports the EVAL pseudo-file and the
                             // line within that source (Raku exposes `.filename`
                             // matching /EVAL/ and `.line`).
                             let line = e.line().unwrap_or(1) as i64;
-                            if let Some(ref mut exc_box) = e.exception
-                                && let Value::Instance { attributes, .. } = exc_box.as_mut()
+                            if let Some(exc_box) = e.exception.as_ref()
+                                && let ValueView::Instance { attributes, .. } = exc_box.view()
                             {
-                                attributes.insert_if_absent("line".to_string(), Value::Int(line));
+                                attributes.insert_if_absent("line".to_string(), Value::int(line));
                                 attributes.insert_if_absent(
                                     "filename".to_string(),
                                     Value::str("EVAL_0".to_string()),
@@ -528,7 +531,7 @@ impl Interpreter {
                 if let Err(e) = pre_check_result {
                     Err(e)
                 } else {
-                    let run_result = nested.run(code).map(|_| Value::Nil);
+                    let run_result = nested.run(code).map(|_| Value::NIL);
                     match run_result {
                         Ok(_) => {
                             if let Some(last_val) = nested.last_value.take() {
@@ -541,7 +544,7 @@ impl Interpreter {
                                 // so a pure lazy sequence/range is never driven.
                                 // A force error IS the thrown exception: surface it
                                 // as the eval result so the type matcher sees it.
-                                if let Value::LazyList(ref ll) = last_val
+                                if let ValueView::LazyList(ll) = last_val.view()
                                     && ll.coroutine.is_some()
                                     && let Err(e) = nested.force_lazy_list_vm(ll)
                                 {
@@ -550,14 +553,14 @@ impl Interpreter {
                                     Self::sink_failure_to_error(last_val)
                                 }
                             } else {
-                                Ok(Value::Nil)
+                                Ok(Value::NIL)
                             }
                         }
                         err => err,
                     }
                 }
             }
-            other => Self::sink_failure_to_error(other.clone()),
+            _ => Self::sink_failure_to_error(code_val.clone()),
         };
         let result = match result {
             Ok(val) => Self::sink_failure_to_error(val),
@@ -570,7 +573,7 @@ impl Interpreter {
                 Ok(_) => false,
                 Err(err) => {
                     let ex_class = err.exception.as_ref().and_then(|ex| {
-                        if let Value::Instance { class_name, .. } = ex.as_ref() {
+                        if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                             Some(class_name.resolve().to_string())
                         } else {
                             None
@@ -623,6 +626,6 @@ impl Interpreter {
                 Err(RuntimeError::new(""))
             },
         )?;
-        Ok(Value::Bool(type_ok))
+        Ok(Value::truth(type_ok))
     }
 }

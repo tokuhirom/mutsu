@@ -3,18 +3,18 @@ use super::*;
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
     let value = value.into_descalarized();
-    match value {
-        Value::Hash(_) => value,
-        Value::Array(items, ..) => {
+    match value.view() {
+        ValueView::Hash(_) => value.clone(),
+        ValueView::Array(items, ..) => {
             // Flatten nested Hashes into pairs before building the hash.
             // This handles `%h = %h1, %h2` where each hash should be merged.
             // Itemized arrays ($[...]) are NOT flattened — they are treated
             // as opaque items, matching Raku's Scalar-container semantics.
             let mut flat: Vec<Value> = Vec::with_capacity(items.len());
             for item in items.iter() {
-                if let Value::Hash(h) = item {
+                if let ValueView::Hash(h) = item.view() {
                     for (k, v) in h.iter() {
-                        flat.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                        flat.push(Value::pair(k.clone(), v.clone()));
                     }
                 } else {
                     flat.push(item.clone());
@@ -24,30 +24,30 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut i = 0;
             while i < flat.len() {
-                if let Value::Pair(k, v) = &flat[i] {
+                if let ValueView::Pair(k, v) = flat[i].view() {
                     // A Pair value built by `key => $var` is a write-through
                     // `ContainerRef`; storing into a Hash decontainerizes (copies
                     // the value), matching Raku (`%h = k => $v; $v = 2` leaves
                     // `%h<k>` unchanged).
                     map.insert(k.clone(), v.deref_container());
                     i += 1;
-                } else if let Value::ValuePair(k, v) = &flat[i] {
+                } else if let ValueView::ValuePair(k, v) = flat[i].view() {
                     let str_key = k.to_string_value();
-                    if !matches!(k.as_ref(), Value::Str(_)) {
-                        original_keys.insert(str_key.clone(), *k.clone());
+                    if !matches!(k.view(), ValueView::Str(_)) {
+                        original_keys.insert(str_key.clone(), k.clone());
                     }
                     map.insert(str_key, v.deref_container());
                     i += 1;
                 } else {
                     let key_val = &flat[i];
                     let str_key = key_val.to_string_value();
-                    if !matches!(key_val, Value::Str(_)) {
+                    if !matches!(key_val.view(), ValueView::Str(_)) {
                         original_keys.insert(str_key.clone(), key_val.clone());
                     }
                     let val = if i + 1 < flat.len() {
                         flat[i + 1].clone()
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     map.insert(str_key, val);
                     i += 2;
@@ -55,14 +55,17 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             }
             set_hash_original_keys(Value::hash(map), original_keys)
         }
-        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
+        ValueView::Seq(items)
+        | ValueView::HyperSeq(items)
+        | ValueView::RaceSeq(items)
+        | ValueView::Slip(items) => {
             let mut map = HashMap::new();
             let mut i = 0;
             while i < items.len() {
-                if let Value::Pair(k, v) = &items[i] {
+                if let ValueView::Pair(k, v) = items[i].view() {
                     map.insert(k.clone(), v.deref_container());
                     i += 1;
-                } else if let Value::ValuePair(k, v) = &items[i] {
+                } else if let ValueView::ValuePair(k, v) = items[i].view() {
                     map.insert(k.to_string_value(), v.deref_container());
                     i += 1;
                 } else {
@@ -70,7 +73,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     let val = if i + 1 < items.len() {
                         items[i + 1].clone()
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     map.insert(key, val);
                     i += 2;
@@ -78,103 +81,103 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             }
             Value::hash(map)
         }
-        Value::Pair(k, v) => {
+        ValueView::Pair(k, v) => {
             let mut map = HashMap::new();
-            map.insert(k, v.deref_container());
+            map.insert(k.clone(), v.deref_container());
             Value::hash(map)
         }
-        Value::ValuePair(k, v) => {
+        ValueView::ValuePair(k, v) => {
             let mut map = HashMap::new();
             map.insert(k.to_string_value(), v.deref_container());
             Value::hash(map)
         }
-        Value::Set(items, _) => {
+        ValueView::Set(items, _) => {
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
             for key in items.iter() {
-                map.insert(key.clone(), Value::Bool(true));
+                map.insert(key.clone(), Value::TRUE);
                 let typed = items.typed_key(key);
-                if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
+                if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == key) {
                     has_typed = true;
                     original_keys.insert(key.clone(), typed);
                 }
             }
             let mut result = Value::hash(map);
             if has_typed {
-                original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
                 result = set_hash_original_keys(result, original_keys);
             }
             result
         }
-        Value::Bag(items, _) => {
+        ValueView::Bag(items, _) => {
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
             for (key, count) in items.iter() {
                 map.insert(key.clone(), Value::from_bigint(count.clone()));
                 let typed = items.typed_key(key);
-                if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
+                if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == key) {
                     has_typed = true;
                     original_keys.insert(key.clone(), typed);
                 }
             }
             let mut result = Value::hash(map);
             if has_typed {
-                original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
                 result = set_hash_original_keys(result, original_keys);
             }
             result
         }
-        Value::Mix(items, _) => {
+        ValueView::Mix(items, _) => {
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut has_typed = false;
             for (key, weight) in items.iter() {
                 map.insert(key.clone(), mix_weight_value(*weight));
                 let typed = items.typed_key(key);
-                if !matches!(&typed, Value::Str(sv) if sv.as_ref() == key) {
+                if !matches!(typed.view(), ValueView::Str(sv) if sv.as_ref() == key) {
                     has_typed = true;
                     original_keys.insert(key.clone(), typed);
                 }
             }
             let mut result = Value::hash(map);
             if has_typed {
-                original_keys.insert("__mutsu_setty_origin".to_string(), Value::Bool(true));
+                original_keys.insert("__mutsu_setty_origin".to_string(), Value::TRUE);
                 result = set_hash_original_keys(result, original_keys);
             }
             result
         }
-        Value::Range(a, b) => {
-            let items: Vec<Value> = (a..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(
+        ValueView::Range(a, b) => {
+            let items: Vec<Value> = (a..=b).map(Value::int).collect();
+            coerce_to_hash(Value::array_with_kind(
                 crate::value::Value::array_arc(items),
                 ArrayKind::List,
             ))
         }
-        Value::RangeExcl(a, b) => {
-            let items: Vec<Value> = (a..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(
+        ValueView::RangeExcl(a, b) => {
+            let items: Vec<Value> = (a..b).map(Value::int).collect();
+            coerce_to_hash(Value::array_with_kind(
                 crate::value::Value::array_arc(items),
                 ArrayKind::List,
             ))
         }
-        Value::RangeExclStart(a, b) => {
-            let items: Vec<Value> = (a + 1..=b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(
+        ValueView::RangeExclStart(a, b) => {
+            let items: Vec<Value> = (a + 1..=b).map(Value::int).collect();
+            coerce_to_hash(Value::array_with_kind(
                 crate::value::Value::array_arc(items),
                 ArrayKind::List,
             ))
         }
-        Value::RangeExclBoth(a, b) => {
-            let items: Vec<Value> = (a + 1..b).map(Value::Int).collect();
-            coerce_to_hash(Value::Array(
+        ValueView::RangeExclBoth(a, b) => {
+            let items: Vec<Value> = (a + 1..b).map(Value::int).collect();
+            coerce_to_hash(Value::array_with_kind(
                 crate::value::Value::array_arc(items),
                 ArrayKind::List,
             ))
         }
-        Value::Nil => Value::hash(HashMap::new()),
-        Value::Instance {
+        ValueView::Nil => Value::hash(HashMap::new()),
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -188,7 +191,7 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         _ => {
             let mut map = HashMap::new();
-            map.insert(value.to_string_value(), Value::Nil);
+            map.insert(value.to_string_value(), Value::NIL);
             Value::hash(map)
         }
     }
@@ -204,9 +207,9 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
     let mut original_keys: HashMap<String, Value> = HashMap::new();
     let mut iter = items.into_iter();
     while let Some(item) = iter.next() {
-        match item {
-            Value::Pair(key, boxed_val) => {
-                map.insert(key, *boxed_val);
+        match item.view() {
+            ValueView::Pair(key, boxed_val) => {
+                map.insert(key.clone(), boxed_val.clone());
             }
             // A bare (non-itemized) hash in list context flattens into its
             // key=>value pairs (`%m = (%h,)` / `%(%h,)`). A hash sourced from a
@@ -215,19 +218,19 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             // ($hashitem,)` dies "Odd number". Keys are the source hash's string
             // keys: flattening an object hash into a plain Hash/Map stringifies
             // them (the target re-tags via its own key-type metadata).
-            Value::Hash(ref h) if !h.itemized => {
+            ValueView::Hash(h) if !h.itemized => {
                 for (k, v) in h.iter() {
                     map.insert(k.clone(), v.clone());
                 }
             }
-            Value::ValuePair(key, boxed_val) => {
-                let str_key = Value::hash_key_encode(&key);
-                if !matches!(key.as_ref(), Value::Str(_)) {
-                    original_keys.insert(str_key.clone(), *key);
+            ValueView::ValuePair(key, boxed_val) => {
+                let str_key = Value::hash_key_encode(key);
+                if !matches!(key.view(), ValueView::Str(_)) {
+                    original_keys.insert(str_key.clone(), key.clone());
                 }
-                map.insert(str_key, *boxed_val);
+                map.insert(str_key, boxed_val.clone());
             }
-            other => {
+            _ => {
                 let Some(value) = iter.next() else {
                     let message = format!(
                         "Odd number of elements found where hash initializer expected: found {total_items} element(s); last element seen: {last_item}"
@@ -245,9 +248,9 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 };
-                let str_key = Value::hash_key_encode(&other);
-                if !matches!(&other, Value::Str(_)) {
-                    original_keys.insert(str_key.clone(), other);
+                let str_key = Value::hash_key_encode(&item);
+                if !matches!(item.view(), ValueView::Str(_)) {
+                    original_keys.insert(str_key.clone(), item.clone());
                 }
                 map.insert(str_key, value);
             }
@@ -267,103 +270,107 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         items.shape.clone()
     }
 
-    match value {
-        Value::Array(items, kind) => {
+    match value.view() {
+        ValueView::Array(items, kind) => {
             // Assigning an array to an `@` variable snapshots element VALUES
             // (Raku `=` semantics). A `:=`-bound element is a shared
             // `ContainerRef` cell (Phase 2); decontainerize it on copy so a
             // later write through the bound source does not leak into the copy.
             // Only rebuild when a cell is actually present (common path keeps
             // sharing the Arc, so there is no per-assignment cost).
-            let items = if items.iter().any(|v| matches!(v, Value::ContainerRef(_))) {
+            let items = if items
+                .iter()
+                .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+            {
                 crate::gc::Gc::new(items.iter().map(|v| v.deref_container()).collect())
             } else {
-                items
+                items.clone()
             };
             if kind.is_itemized() {
                 // Itemized arrays (from `$` scalar containers) are treated as
                 // a single item when assigned to an `@` variable.
-                Value::real_array(vec![Value::Array(items, kind)])
+                Value::real_array(vec![Value::array_with_kind(items, kind)])
             } else if kind == ArrayKind::Shaped {
-                Value::Array(items, kind)
+                Value::array_with_kind(items, kind)
             } else if let Some(shape) = metadata_shape_for_items(&items) {
-                let value = Value::Array(items, ArrayKind::Shaped);
+                let value = Value::array_with_kind(items, ArrayKind::Shaped);
                 mark_shaped_array(&value, Some(&shape));
                 value
             } else {
-                Value::Array(items, ArrayKind::Array)
+                Value::array_with_kind(items, ArrayKind::Array)
             }
         }
-        Value::Nil => Value::real_array(vec![Value::Package(crate::symbol::Symbol::intern("Any"))]),
-        Value::Range(a, b) => {
+        ValueView::Nil => {
+            Value::real_array(vec![Value::package(crate::symbol::Symbol::intern("Any"))])
+        }
+        ValueView::Range(a, b) => {
             if b == i64::MAX {
                 // Infinite range — mark as lazy
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::Array(
-                    crate::gc::Gc::new((a..=end).map(Value::Int).collect()),
+                Value::array_with_kind(
+                    crate::gc::Gc::new((a..=end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a..=end).map(Value::Int).collect())
+                Value::real_array((a..=end).map(Value::int).collect())
             }
         }
-        Value::RangeExcl(a, b) => {
+        ValueView::RangeExcl(a, b) => {
             if b == i64::MAX {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::Array(
-                    crate::gc::Gc::new((a..end).map(Value::Int).collect()),
+                Value::array_with_kind(
+                    crate::gc::Gc::new((a..end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a..end).map(Value::Int).collect())
+                Value::real_array((a..end).map(Value::int).collect())
             }
         }
-        Value::RangeExclStart(a, b) => {
+        ValueView::RangeExclStart(a, b) => {
             if b == i64::MAX {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::Array(
-                    crate::gc::Gc::new((a + 1..=end).map(Value::Int).collect()),
+                Value::array_with_kind(
+                    crate::gc::Gc::new((a + 1..=end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a + 1..=end).map(Value::Int).collect())
+                Value::real_array((a + 1..=end).map(Value::int).collect())
             }
         }
-        Value::RangeExclBoth(a, b) => {
+        ValueView::RangeExclBoth(a, b) => {
             if b == i64::MAX {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::Array(
-                    crate::gc::Gc::new((a + 1..end).map(Value::Int).collect()),
+                Value::array_with_kind(
+                    crate::gc::Gc::new((a + 1..end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
                 let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a + 1..end).map(Value::Int).collect())
+                Value::real_array((a + 1..end).map(Value::int).collect())
             }
         }
-        Value::GenericRange {
-            ref start, ref end, ..
-        } if matches!(start.as_ref(), Value::Str(_)) && matches!(end.as_ref(), Value::Str(_)) => {
+        ValueView::GenericRange { start, end, .. }
+            if matches!(start.as_ref().view(), ValueView::Str(_))
+                && matches!(end.as_ref().view(), ValueView::Str(_)) =>
+        {
             Value::real_array(value_to_list(&value))
         }
-        Value::GenericRange {
-            ref start, ref end, ..
-        } => {
+        ValueView::GenericRange { start, end, .. } => {
             // An infinite numeric range is a lazy list (it cannot be fully
             // materialized): mark the resulting array `Lazy` so native typed
             // arrays reject it (`X::Cannot::Lazy`) and `.elems` stays lazy. This
             // covers a right-infinite end (`0e0..Inf`), a `-Inf`/`NaN` start
             // (`-Inf..0e0`, `NaN..NaN`), and a `Whatever` start (`*..1`). An
             // empty range (start strictly past end, e.g. `Inf..0`) is finite.
-            let start_f = match start.as_ref() {
-                Value::Whatever | Value::HyperWhatever => f64::NEG_INFINITY,
+            let start_f = match start.as_ref().view() {
+                ValueView::Whatever | ValueView::HyperWhatever => f64::NEG_INFINITY,
                 _ => start.to_f64(),
             };
-            let end_f = match end.as_ref() {
-                Value::Whatever | Value::HyperWhatever => f64::INFINITY,
+            let end_f = match end.as_ref().view() {
+                ValueView::Whatever | ValueView::HyperWhatever => f64::INFINITY,
                 _ => end.to_f64(),
             };
             // Not infinite when the start strictly exceeds the end (empty
@@ -375,7 +382,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             );
             let infinite = (!start_f.is_finite() || !end_f.is_finite()) && !empty;
             if infinite {
-                Value::Array(
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(value_to_list(&value))),
                     ArrayKind::Lazy,
                 )
@@ -383,82 +390,86 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 Value::real_array(value_to_list(&value))
             }
         }
-        Value::Slip(items) | Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
-            // Like the `Value::Array` arm: assigning to an `@` variable snapshots
+        ValueView::Slip(items)
+        | ValueView::Seq(items)
+        | ValueView::HyperSeq(items)
+        | ValueView::RaceSeq(items) => {
+            // Like the `Array` arm: assigning to an `@` variable snapshots
             // element VALUES, so decontainerize any shared `ContainerRef` cells the
             // Seq carries (e.g. `my @g = @a.grep(...)`, whose Seq references @a's
             // rw slots) so a later write through the copy does not leak into the
             // source. Only rebuild when a cell is actually present.
-            let arc = if items.iter().any(|v| matches!(v, Value::ContainerRef(_))) {
+            let arc = if items
+                .iter()
+                .any(|v| matches!(v.view(), ValueView::ContainerRef(_)))
+            {
                 crate::value::Value::array_arc(items.iter().map(|v| v.deref_container()).collect())
             } else {
                 crate::value::Value::array_arc(items.to_vec())
             };
-            Value::Array(arc, ArrayKind::Array)
+            Value::array_with_kind(arc, ArrayKind::Array)
         }
-        Value::LazyList(_) => value,
+        ValueView::LazyList(_) => value.clone(),
         // A bare Hash assigned to an @-var flattens into its pairs
         // (`my @a = %h`). An *itemized* hash (`my $h = %(...); my @a = $h`)
         // stays a single element — `ItemizeVar` now tags it with
         // `HashData.itemized` rather than the old `Scalar(Hash)` wrapper, so it
         // must be handled here too (the `Scalar(inner)` arm below covers the
         // Set/Bag/Mix itemized forms, which still use the wrapper).
-        Value::Hash(ref map) if !map.itemized => {
+        ValueView::Hash(map) if !map.itemized => {
             let pairs: Vec<Value> = map
                 .iter()
                 .map(|(k, v)| map.typed_pair(k, v.clone()))
                 .collect();
             Value::real_array(pairs)
         }
-        Value::Hash(map) => Value::real_array(vec![Value::Hash(map)]),
+        ValueView::Hash(map) => Value::real_array(vec![Value::hash_with_data(map.clone())]),
         // A scalar holding a Hash/Set/Bag/Mix (itemized by `ItemizeVar` as
         // `Scalar(container)`) stays a single element, but unwrap the Scalar so
         // `@a[0]` is the bare container (preserving its `.gist`/`.raku`/type),
         // rather than an opaque `$(...)`-wrapped value.
-        Value::Scalar(inner)
+        ValueView::Scalar(inner)
             if matches!(
-                inner.as_ref(),
-                Value::Hash(_) | Value::Set(..) | Value::Bag(..) | Value::Mix(..)
+                inner.view(),
+                ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
             ) =>
         {
-            Value::real_array(vec![*inner])
+            Value::real_array(vec![inner.clone()])
         }
         // Set/Bag/Mix assigned to an @-var flatten into their `key => weight`
         // pairs in list context, exactly like a Hash (Raku: `my @a = set(1,2,3)`
         // yields three `* => True` pairs, so `@a.elems == 3`). This mirrors
         // `value_to_list`. (Note: an array *literal* `[set(...)]` does NOT
         // flatten — that path is handled separately in `exec_make_array_op`.)
-        Value::Set(ref items, _) => Value::real_array(
+        ValueView::Set(items, _) => Value::real_array(
             items
                 .iter()
-                .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
+                .map(|s| Value::pair(s.clone(), Value::TRUE))
                 .collect(),
         ),
-        Value::Bag(ref items, _) => Value::real_array(
+        ValueView::Bag(items, _) => Value::real_array(
             items
                 .iter()
-                .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone()))))
+                .map(|(k, v)| Value::pair(k.clone(), Value::from_bigint(v.clone())))
                 .collect(),
         ),
-        Value::Mix(ref items, _) => Value::real_array(
+        ValueView::Mix(items, _) => Value::real_array(
             items
                 .iter()
-                .map(|(k, v)| {
-                    Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v)))
-                })
+                .map(|(k, v)| Value::pair(k.clone(), crate::value::mix_weight_to_value(*v)))
                 .collect(),
         ),
         // A WalkList assigned to an `@` variable flattens to its candidate
         // closures, so `my @cands = $x.WALK(...)` yields the per-level candidates.
-        Value::Instance {
-            ref class_name,
-            ref attributes,
+        ValueView::Instance {
+            class_name,
+            attributes,
             ..
         } if class_name.resolve() == "WalkList" => match walk_list_candidates(attributes) {
             Some(cands) => Value::real_array(cands),
             None => Value::real_array(vec![value.clone()]),
         },
-        other => Value::real_array(vec![other]),
+        _ => Value::real_array(vec![value.clone()]),
     }
 }
 

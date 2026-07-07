@@ -34,16 +34,16 @@ impl Interpreter {
                     attributes.clone(),
                 ))
             }
-            "e" => Ok(Value::Bool(true)),
-            "d" | "f" | "l" | "x" => Ok(Value::Bool(false)),
-            "s" => Ok(Value::Int(0)),
-            "r" => Ok(Value::Bool(is_stdin)),
-            "w" => Ok(Value::Bool(is_stdout || is_stderr)),
+            "e" => Ok(Value::TRUE),
+            "d" | "f" | "l" | "x" => Ok(Value::FALSE),
+            "s" => Ok(Value::int(0)),
+            "r" => Ok(Value::truth(is_stdin)),
+            "w" => Ok(Value::truth(is_stdout || is_stderr)),
             "modified" | "accessed" | "changed" => {
                 // Return the Instant type object
-                Ok(Value::Package(Symbol::intern("Instant")))
+                Ok(Value::package(Symbol::intern("Instant")))
             }
-            "mode" => Ok(Value::Nil),
+            "mode" => Ok(Value::NIL),
             "raku" | "perl" => Ok(Value::str(format!("IO::Special.new(\"{}\")", what))),
             "WHICH" => Ok(Value::str(format!("IO::Special|{}", what))),
             "new" => {
@@ -62,8 +62,8 @@ impl Interpreter {
                     ))
                 }
             }
-            "Bool" => Ok(Value::Bool(true)),
-            "defined" => Ok(Value::Bool(true)),
+            "Bool" => Ok(Value::TRUE),
+            "defined" => Ok(Value::TRUE),
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Special",
                 method

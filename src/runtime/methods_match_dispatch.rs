@@ -8,7 +8,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         if args.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         let text = target.to_string_value();
         let mut overlap = false;
@@ -20,7 +20,7 @@ impl Interpreter {
         let mut nth_arg: Option<Value> = None;
         let mut pattern_arg: Option<&Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 if (key == "ov" || key == "overlap") && value.truthy() {
                     overlap = true;
                 } else if (key == "ex" || key == "exhaustive") && value.truthy() {
@@ -37,7 +37,7 @@ impl Interpreter {
                     }
                     repeat_bounds = Self::parse_match_repeat_bounds(value);
                 } else if key == "nth" {
-                    nth_arg = Some(*value.clone());
+                    nth_arg = Some(value.clone());
                 }
                 continue;
             }
@@ -46,19 +46,19 @@ impl Interpreter {
             }
         }
         let Some(pattern) = pattern_arg else {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         };
-        let pat: String = match &pattern {
-            Value::Regex(p) => p.to_string(),
+        let pat: String = match pattern.view() {
+            ValueView::Regex(p) => p.to_string(),
             // Str patterns are treated as literal strings in Raku regex,
             // so wrap them in quotes to prevent regex metachar interpretation
             // (e.g., spaces are insignificant in Raku regex but significant in literals)
-            Value::Str(p) => {
+            ValueView::Str(p) => {
                 // Escape any single quotes in the pattern, then wrap in quotes
                 let escaped = p.replace('\'', "\\'");
                 format!("'{}'", escaped)
             }
-            _ => return Ok(Value::Nil),
+            _ => return Ok(Value::NIL),
         };
         if global || overlap || exhaustive || repeat_bounds.is_some() || nth_arg.is_some() {
             let all = self.regex_match_all_with_captures(&pat, &text);
@@ -102,16 +102,16 @@ impl Interpreter {
                 let Some(restricted) =
                     Self::select_matches_by_repeat_bounds(selected, min_required, max_to_return)
                 else {
-                    self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(Value::Nil);
+                    self.env.insert("/".to_string(), Value::NIL);
+                    return Ok(Value::NIL);
                 };
                 selected = restricted;
             }
             if selected.is_empty() {
-                self.env.insert("/".to_string(), Value::Nil);
+                self.env.insert("/".to_string(), Value::NIL);
                 // :nth with a single value returns Nil, not empty array
                 if nth_arg.is_some() && repeat_bounds.is_none() && !global && !overlap {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 }
                 return Ok(Value::array(Vec::new()));
             }
@@ -142,8 +142,8 @@ impl Interpreter {
                     self.env.insert("/".to_string(), result.clone());
                     return Ok(result);
                 } else {
-                    self.env.insert("/".to_string(), Value::Nil);
-                    return Ok(Value::Nil);
+                    self.env.insert("/".to_string(), Value::NIL);
+                    return Ok(Value::NIL);
                 }
             }
             let result = Value::array(matches);
@@ -178,16 +178,18 @@ impl Interpreter {
                 Some(&text),
             );
             // Set positional capture env vars ($0, $1, ...) from match object
-            if let Value::Instance { ref attributes, .. } = match_obj
-                && let Some(Value::Array(list, _)) = attributes.as_map().get("list")
+            if let ValueView::Instance { attributes, .. } = match_obj.view()
+                && let Some(ValueView::Array(list, _)) =
+                    attributes.as_map().get("list").map(Value::view)
             {
                 for (i, v) in list.iter().enumerate() {
                     self.env.insert(i.to_string(), v.clone());
                 }
             }
             // Set named capture env vars from match object
-            if let Value::Instance { ref attributes, .. } = match_obj
-                && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
+            if let ValueView::Instance { attributes, .. } = match_obj.view()
+                && let Some(ValueView::Hash(named_hash)) =
+                    attributes.as_map().get("named").map(Value::view)
             {
                 for (k, v) in named_hash.iter() {
                     self.env.insert(format!("<{}>", k), v.clone());
@@ -200,13 +202,13 @@ impl Interpreter {
             if let Some(err) = Self::take_pending_regex_error() {
                 return Err(err);
             }
-            Ok(Value::Nil)
+            Ok(Value::NIL)
         }
     }
 
     /// Check if an :nth argument is a single integer (not a list or range)
     fn is_single_nth(val: &Value) -> bool {
-        matches!(val, Value::Int(_) | Value::Num(_))
+        matches!(val.view(), ValueView::Int(_) | ValueView::Num(_))
     }
 
     /// Resolve :nth argument (Value) into a list of 1-based indices.
@@ -217,19 +219,21 @@ impl Interpreter {
         total_matches: usize,
     ) -> Result<Vec<usize>, RuntimeError> {
         let mut indices = Vec::new();
-        match val {
-            Value::Int(n) => {
-                Self::validate_nth_value(*n)?;
-                indices.push(*n as usize);
+        match val.view() {
+            ValueView::Int(n) => {
+                Self::validate_nth_value(n)?;
+                indices.push(n as usize);
             }
-            Value::Num(n) => {
-                let i = *n as i64;
+            ValueView::Num(n) => {
+                let i = n as i64;
                 Self::validate_nth_value(i)?;
                 indices.push(i as usize);
             }
-            Value::Array(items, _) => {
+            ValueView::Array(items, _) => {
                 // Check if any item is a LazyList (indicates partially-evaluated sequence)
-                let has_lazy = items.iter().any(|v| matches!(v, Value::LazyList(_)));
+                let has_lazy = items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::LazyList(_)));
                 if has_lazy {
                     // Array contains lazy list items (e.g., from sequence operator
                     // `2, 4 ... *` stored as `[Int(2), LazyList(...)]`).
@@ -238,7 +242,7 @@ impl Interpreter {
                     let mut seed_values: Vec<i64> = Vec::new();
                     let mut lazy_ref: Option<&crate::value::LazyList> = None;
                     for item in items.iter() {
-                        if let Value::LazyList(ll) = item {
+                        if let ValueView::LazyList(ll) = item.view() {
                             lazy_ref = Some(ll.as_ref());
                             // Peek at the first cached element to get the next seed
                             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
@@ -286,7 +290,7 @@ impl Interpreter {
                             let forced = self.force_lazy_list(ll)?;
                             let filtered: Vec<Value> = forced
                                 .into_iter()
-                                .filter(|v| !matches!(v, Value::LazyList(_)))
+                                .filter(|v| !matches!(v.view(), ValueView::LazyList(_)))
                                 .collect();
                             Self::collect_nth_list_indices(&filtered, total_matches, &mut indices)?;
                         }
@@ -295,9 +299,11 @@ impl Interpreter {
                     Self::collect_nth_list_indices(items, total_matches, &mut indices)?;
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 // Check if any item is a LazyList (indicates partially-evaluated sequence)
-                let has_lazy = items.iter().any(|v| matches!(v, Value::LazyList(_)));
+                let has_lazy = items
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::LazyList(_)));
                 if has_lazy {
                     // Array contains lazy list items (e.g., from sequence operator
                     // `2, 4 ... *` stored as `[Int(2), LazyList(...)]`).
@@ -306,7 +312,7 @@ impl Interpreter {
                     let mut seed_values: Vec<i64> = Vec::new();
                     let mut lazy_ref: Option<&crate::value::LazyList> = None;
                     for item in items.iter() {
-                        if let Value::LazyList(ll) = item {
+                        if let ValueView::LazyList(ll) = item.view() {
                             lazy_ref = Some(ll.as_ref());
                             // Peek at the first cached element to get the next seed
                             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
@@ -354,7 +360,7 @@ impl Interpreter {
                             let forced = self.force_lazy_list(ll)?;
                             let filtered: Vec<Value> = forced
                                 .into_iter()
-                                .filter(|v| !matches!(v, Value::LazyList(_)))
+                                .filter(|v| !matches!(v.view(), ValueView::LazyList(_)))
                                 .collect();
                             Self::collect_nth_list_indices(&filtered, total_matches, &mut indices)?;
                         }
@@ -363,36 +369,36 @@ impl Interpreter {
                     Self::collect_nth_list_indices(items, total_matches, &mut indices)?;
                 }
             }
-            Value::Range(start, end) => {
-                Self::validate_nth_value(*start)?;
-                let effective_end = (*end as usize).min(total_matches) as i64;
-                for i in *start..=effective_end {
+            ValueView::Range(start, end) => {
+                Self::validate_nth_value(start)?;
+                let effective_end = (end as usize).min(total_matches) as i64;
+                for i in start..=effective_end {
                     if i > 0 {
                         indices.push(i as usize);
                     }
                 }
             }
-            Value::RangeExcl(start, end) => {
-                Self::validate_nth_value(*start)?;
-                let effective_end = (*end as usize).min(total_matches + 1) as i64;
-                for i in *start..effective_end {
+            ValueView::RangeExcl(start, end) => {
+                Self::validate_nth_value(start)?;
+                let effective_end = (end as usize).min(total_matches + 1) as i64;
+                for i in start..effective_end {
                     if i > 0 && (i as usize) <= total_matches {
                         indices.push(i as usize);
                     }
                 }
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
             } => {
                 let s = Self::value_to_nth_int(start)?;
-                let actual_start = if *excl_start { s + 1 } else { s };
+                let actual_start = if excl_start { s + 1 } else { s };
                 Self::validate_nth_value(actual_start)?;
                 // Check for infinite end
-                if matches!(end.as_ref(), Value::Num(n) if n.is_infinite() && *n > 0.0)
-                    || matches!(end.as_ref(), Value::Whatever)
+                if matches!(end.as_ref().view(), ValueView::Num(n) if n.is_infinite() && n > 0.0)
+                    || matches!(end.as_ref().view(), ValueView::Whatever)
                 {
                     for i in actual_start..=(total_matches as i64) {
                         if i > 0 {
@@ -401,7 +407,7 @@ impl Interpreter {
                     }
                 } else {
                     let e = Self::value_to_nth_int(end)?;
-                    let actual_end = if *excl_end { e - 1 } else { e };
+                    let actual_end = if excl_end { e - 1 } else { e };
                     for i in actual_start..=actual_end {
                         if i > 0 && (i as usize) <= total_matches {
                             indices.push(i as usize);
@@ -409,12 +415,12 @@ impl Interpreter {
                     }
                 }
             }
-            Value::LazyList(ll) => {
+            ValueView::LazyList(ll) => {
                 let forced = self.force_lazy_list_bridge(ll)?;
                 Self::collect_nth_list_indices(&forced, total_matches, &mut indices)?;
             }
             // Bare `*` selects the last match.
-            Value::Whatever => {
+            ValueView::Whatever => {
                 if total_matches >= 1 {
                     indices.push(total_matches);
                 }
@@ -422,10 +428,10 @@ impl Interpreter {
             // A WhateverCode (`*-1`, `*-2`, …) is applied to the match count, so
             // `:nth(*-1)` is the second-to-last match. An out-of-range result
             // selects nothing (rather than erroring like a literal `:nth(0)`).
-            Value::Sub(_) => {
+            ValueView::Sub(_) => {
                 let result = self.call_sub_value(
                     val.clone(),
-                    vec![Value::Int(total_matches as i64)],
+                    vec![Value::int(total_matches as i64)],
                     false,
                 )?;
                 let i = Self::value_to_nth_int(&result)?;
@@ -484,9 +490,9 @@ impl Interpreter {
     }
 
     fn value_to_nth_int(val: &Value) -> Result<i64, RuntimeError> {
-        match val {
-            Value::Int(n) => Ok(*n),
-            Value::Num(n) => Ok(*n as i64),
+        match val.view() {
+            ValueView::Int(n) => Ok(n),
+            ValueView::Num(n) => Ok(n as i64),
             _ => {
                 let s = val.to_string_value();
                 s.parse::<i64>().map_err(|_| {

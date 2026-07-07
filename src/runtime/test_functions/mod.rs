@@ -9,6 +9,7 @@ mod throws_like;
 mod util;
 
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn sync_eval_definition_state(&mut self, nested: &Interpreter) {
@@ -39,9 +40,9 @@ impl Interpreter {
 
     pub(crate) fn cmp_eqv_bool(left: &Value, right: &Value) -> bool {
         use crate::value::JunctionKind;
-        match (left, right) {
+        match (left.view(), right.view()) {
             (
-                Value::Junction {
+                ValueView::Junction {
                     kind: lkind,
                     values: lvals,
                 },
@@ -60,7 +61,7 @@ impl Interpreter {
             },
             (
                 _,
-                Value::Junction {
+                ValueView::Junction {
                     kind: rkind,
                     values: rvals,
                 },
@@ -81,20 +82,21 @@ impl Interpreter {
     }
 
     pub(crate) fn unwrap_test_arg_value(value: &Value) -> Value {
-        match value {
-            Value::Capture { positional, named }
+        match value.view() {
+            ValueView::Capture { positional, named }
                 if positional.is_empty()
-                    && matches!(named.get("__mutsu_varref_name"), Some(Value::Str(_)))
+                    && named
+                        .get("__mutsu_varref_name")
+                        .and_then(|v| v.as_str())
+                        .is_some()
                     && named.contains_key("__mutsu_varref_value") =>
             {
                 named
                     .get("__mutsu_varref_value")
                     .cloned()
-                    .unwrap_or(Value::Nil)
+                    .unwrap_or(Value::NIL)
             }
-            Value::Pair(key, val) => {
-                Value::Pair(key.clone(), Box::new(Self::unwrap_test_arg_value(val)))
-            }
+            ValueView::Pair(key, val) => Value::pair(key.clone(), Self::unwrap_test_arg_value(val)),
             _ => value.clone(),
         }
     }
@@ -269,7 +271,10 @@ impl Interpreter {
     /// falling back to basic string representation.
     pub(crate) fn value_for_diag(&mut self, val: &Value) -> String {
         // For instances, try .gist first, then .raku
-        if matches!(val, Value::Instance { .. } | Value::Package(_)) {
+        if matches!(
+            val.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
             if let Ok(result) = self.call_method_with_values(val.clone(), "gist", vec![]) {
                 return result.to_string_value();
             }
@@ -281,8 +286,9 @@ impl Interpreter {
     }
 
     pub(crate) fn value_raku_repr(val: &Value) -> String {
-        if let Some(Ok(Value::Str(s))) =
+        if let Some(Ok(v)) =
             crate::builtins::native_method_0arg(val, crate::symbol::Symbol::intern("raku"))
+            && let Some(s) = v.as_str()
         {
             s.to_string()
         } else {

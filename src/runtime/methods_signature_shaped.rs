@@ -9,8 +9,8 @@ impl Interpreter {
         &self,
         args: &[Value],
     ) -> Result<Option<Vec<usize>>, RuntimeError> {
-        let shape_val = match args.iter().find_map(|arg| match arg {
-            Value::Pair(name, value) if name == "shape" => Some(value.as_ref().clone()),
+        let shape_val = match args.iter().find_map(|arg| match arg.view() {
+            ValueView::Pair(name, value) if name == "shape" => Some(value.clone()),
             _ => None,
         }) {
             Some(v) => v,
@@ -19,16 +19,16 @@ impl Interpreter {
         let dims_vals = if let Some(items) = shape_val.as_list_items() {
             items.to_vec()
         } else {
-            match shape_val {
-                Value::Int(i) => vec![Value::Int(i)],
-                Value::BigInt(ref n) => vec![Value::BigInt(n.clone())],
-                Value::Package(ref name) => {
+            match shape_val.view() {
+                ValueView::Int(i) => vec![Value::int(i)],
+                ValueView::BigInt(n) => vec![Value::bigint_arc(n.clone())],
+                ValueView::Package(name) => {
                     // Enum type as shape: use the number of enum variants
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
-                        vec![Value::Int(variants.len() as i64)]
+                        vec![Value::int(variants.len() as i64)]
                     } else if name == "Bool" {
                         // Bool is a builtin enum with 2 values (False, True)
-                        vec![Value::Int(2)]
+                        vec![Value::int(2)]
                     } else {
                         return Ok(None);
                     }
@@ -38,21 +38,21 @@ impl Interpreter {
         };
         let mut dims = Vec::with_capacity(dims_vals.len());
         for dim in &dims_vals {
-            let n = match dim {
-                Value::Int(i) if *i > 0 => *i as usize,
-                Value::Int(i) => {
-                    return Err(RuntimeError::illegal_dimension_in_shape(*i));
+            let n = match dim.view() {
+                ValueView::Int(i) if i > 0 => i as usize,
+                ValueView::Int(i) => {
+                    return Err(RuntimeError::illegal_dimension_in_shape(i));
                 }
-                Value::Num(f) if *f > 0.0 => *f as usize,
-                Value::Num(f) => {
-                    return Err(RuntimeError::illegal_dimension_in_shape(*f as i64));
+                ValueView::Num(f) if f > 0.0 => f as usize,
+                ValueView::Num(f) => {
+                    return Err(RuntimeError::illegal_dimension_in_shape(f as i64));
                 }
                 // A dimension that overflows i64 (parsed as a BigInt) is always
                 // illegal: either negative, or far too large to allocate.
-                Value::BigInt(n) => {
+                ValueView::BigInt(n) => {
                     return Err(RuntimeError::illegal_dimension_in_shape_bigint(n.as_ref()));
                 }
-                Value::Package(name) => {
+                ValueView::Package(name) => {
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
                         variants.len()
                     } else if name == "Bool" {
@@ -79,12 +79,12 @@ impl Interpreter {
     /// abort. (raku aborts with a MoarVM panic on the same input.)
     pub(super) fn make_shaped_array(dims: &[usize]) -> Result<Value, RuntimeError> {
         if dims.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         let len = dims[0];
         if dims.len() == 1 {
             let mut items = Vec::new();
-            Self::autoviv_resize(&mut items, len, Value::Nil)?;
+            Self::autoviv_resize(&mut items, len, Value::NIL)?;
             let value = Value::shaped_array(items);
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return Ok(value);
@@ -107,12 +107,15 @@ impl Interpreter {
         if let Some(shape) = crate::runtime::utils::shaped_array_shape(value) {
             return Some(shape);
         }
-        let Value::Array(items, ..) = value else {
+        let ValueView::Array(items, ..) = value.view() else {
             return None;
         };
         let mut shape = vec![items.len()];
         let mut current = items.first().cloned();
-        while let Some(Value::Array(inner, ..)) = current {
+        while let Some(cur) = current {
+            let ValueView::Array(inner, ..) = cur.view() else {
+                break;
+            };
             shape.push(inner.len());
             current = inner.first().cloned();
         }
@@ -141,11 +144,11 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Vec<Value>, RuntimeError> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             id: target_id,
-        } = &target
+        } = target.view()
         {
             if let Some(private_rest) = method.strip_prefix('!') {
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
@@ -218,12 +221,8 @@ impl Interpreter {
                     // Build an invocant with the latest attributes so that
                     // `$.attr` accessor reads inside the method body see
                     // values updated by preceding calls in the MRO chain.
-                    let invocant = Value::write_back_sharing(
-                        attributes,
-                        *class_name,
-                        attrs.clone(),
-                        *target_id,
-                    );
+                    let invocant =
+                        Value::write_back_sharing(attributes, class_name, attrs.clone(), target_id);
                     let (result, updated) = self.run_resolved_method_compiled_or_treewalk(
                         &class_name.resolve(),
                         &resolved_owner,
@@ -278,7 +277,7 @@ impl Interpreter {
     ) {
         self.overwrite_array_bindings_by_identity(
             needle,
-            Value::Array(
+            Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
                 kind,
             ),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn dispatch_classhow_methods(
@@ -6,10 +7,10 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let invocant = &args[0];
-        let class_name = match invocant {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            other => value_type_name(other).to_string(),
+        let class_name = match invocant.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => value_type_name(invocant).to_string(),
         };
 
         // Parse named arguments
@@ -18,7 +19,7 @@ impl Interpreter {
         let mut private = false;
         let mut tree = false;
         for arg in &args[1..] {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "local" => local = value.truthy(),
                     "all" => all = value.truthy(),
@@ -36,7 +37,7 @@ impl Interpreter {
         let mut result = Vec::new();
 
         // Extract mixin role names from the invocant for runtime role method collection
-        let mixin_role_names: Vec<String> = if let Value::Mixin(_, mixins) = invocant {
+        let mixin_role_names: Vec<String> = if let ValueView::Mixin(_, mixins) = invocant.view() {
             mixins
                 .keys()
                 .filter_map(|key| key.strip_prefix("__mutsu_role__").map(String::from))
@@ -85,7 +86,7 @@ impl Interpreter {
             crate::builtins::builtin_type_methods::introspected_type_method_names(type_name);
         for name in &methods {
             if !result.iter().any(|v| {
-                if let Value::Instance { attributes, .. } = v {
+                if let ValueView::Instance { attributes, .. } = v.view() {
                     attributes
                         .as_map()
                         .get("name")

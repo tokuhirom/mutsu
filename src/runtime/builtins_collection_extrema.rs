@@ -2,13 +2,13 @@ use super::*;
 
 impl Interpreter {
     fn failure_exception_from_value(value: &Value) -> Option<Value> {
-        match value {
-            Value::Instance {
+        match value.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             } if class_name == "Failure" => attributes.as_map().get("exception").cloned(),
-            Value::Mixin(inner, mixins) => {
+            ValueView::Mixin(inner, mixins) => {
                 if let Some(mixed) = mixins.get("Failure")
                     && let Some(ex) = Self::failure_exception_from_value(mixed)
                 {
@@ -27,15 +27,15 @@ impl Interpreter {
     /// Determine the arity of a callable for min/max/minmax by-block dispatch.
     /// Returns 1 for sort-key extractors, 2 for comparators.
     pub(crate) fn extrema_callable_arity(&self, callable: &Value) -> usize {
-        match callable {
-            Value::Sub(data) => {
+        match callable.view() {
+            ValueView::Sub(data) => {
                 if data.params.is_empty() {
                     1 // implicit $_ → arity 1
                 } else {
                     data.params.len()
                 }
             }
-            Value::WeakSub(weak) => {
+            ValueView::WeakSub(weak) => {
                 if let Some(data) = weak.upgrade() {
                     if data.params.is_empty() {
                         1
@@ -46,7 +46,7 @@ impl Interpreter {
                     2
                 }
             }
-            Value::Routine { .. } => {
+            ValueView::Routine { .. } => {
                 let (params, param_defs) = self.callable_signature(callable);
                 if !param_defs.is_empty() {
                     let positional_count = param_defs
@@ -94,7 +94,7 @@ impl Interpreter {
         F: FnMut(&Value, Vec<Value>) -> Result<Value, RuntimeError>,
     {
         if args.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
 
         // Flatten: if a single array/seq/list arg is provided, use its items
@@ -111,9 +111,9 @@ impl Interpreter {
         if expanded.is_empty() {
             // Empty list: return Inf for min, -Inf for max
             return Ok(if want_max {
-                Value::Num(f64::NEG_INFINITY)
+                Value::num(f64::NEG_INFINITY)
             } else {
-                Value::Num(f64::INFINITY)
+                Value::num(f64::INFINITY)
             });
         }
 
@@ -135,7 +135,7 @@ impl Interpreter {
 
         let mut filtered: Vec<Value> = expanded
             .iter()
-            .filter(|v| !matches!(v, Value::Package(name) if name == "Any"))
+            .filter(|v| !matches!(v.view(), ValueView::Package(name) if name == "Any"))
             .cloned()
             .collect();
         if filtered.is_empty() {
@@ -199,7 +199,7 @@ impl Interpreter {
             }
         }
 
-        Ok(best_pair.unwrap_or(Value::Nil))
+        Ok(best_pair.unwrap_or(Value::NIL))
     }
 
     /// Extract named adverbs (:k, :v, :kv, :p) from args for min/max.
@@ -208,12 +208,12 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut by_found = false;
         for arg in args {
-            match arg {
-                Value::Pair(name, _) if name == "by" => {
+            match arg.view() {
+                ValueView::Pair(name, _) if name == "by" => {
                     by_found = true;
                     positional.push(arg.clone()); // keep by pair for later extraction
                 }
-                Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by") =>
+                ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by") =>
                 {
                     by_found = true;
                     positional.push(arg.clone());
@@ -222,8 +222,8 @@ impl Interpreter {
                 // form (`:!k`, Bool false) means "the value" (the default), but in
                 // either case the adverb pair must be stripped from the positional
                 // candidates so it never participates in the min/max comparison.
-                Value::Pair(name, value) if matches!(name.as_str(), "k" | "v" | "kv" | "p") => {
-                    if matches!(value.as_ref(), Value::Bool(true)) {
+                ValueView::Pair(name, value) if matches!(name.as_str(), "k" | "v" | "kv" | "p") => {
+                    if matches!(value.view(), ValueView::Bool(true)) {
                         adverb = Some(name.clone());
                     }
                 }
@@ -257,45 +257,47 @@ impl Interpreter {
             return None;
         }
         let has_by = filtered_args.iter().any(|a| {
-            matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
-                || matches!(a, Value::Pair(n, _) if n == "by")
+            matches!(
+                a.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+            ) || matches!(a.view(), ValueView::Pair(n, _) if n == "by")
         });
         if has_by {
             return None;
         }
         let method_args = match adverb {
-            Some(a) => vec![Value::Pair(a.to_string(), Box::new(Value::Bool(true)))],
+            Some(a) => vec![Value::pair(a.to_string(), Value::TRUE)],
             None => vec![],
         };
         Some(self.call_method_with_values(only.clone(), method, method_args))
     }
 
     fn builtin_min_inner(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let by = args.iter().find_map(|arg| match arg {
-            Value::Pair(name, value) if name == "by" => Some((**value).clone()),
-            Value::ValuePair(key, value)
-                if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by") =>
+        let by = args.iter().find_map(|arg| match arg.view() {
+            ValueView::Pair(name, value) if name == "by" => Some(value.clone()),
+            ValueView::ValuePair(key, value)
+                if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by") =>
             {
-                Some((**value).clone())
+                Some(value.clone())
             }
             _ => None,
         });
         let positional: Vec<Value> = args
             .iter()
             .filter(|arg| {
-                !matches!(arg, Value::Pair(name, _) if name == "by")
-                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
+                !matches!(arg.view(), ValueView::Pair(name, _) if name == "by")
+                    && !matches!(arg.view(), ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by"))
             })
             .cloned()
             .collect();
 
         if positional.len() == 1
-            && let Value::Hash(map) = &positional[0]
+            && let ValueView::Hash(map) = positional[0].view()
         {
             return self.extrema_from_hash(map, by, false);
         }
         if positional.len() == 1
-            && let Value::Instance { class_name, .. } = &positional[0]
+            && let ValueView::Instance { class_name, .. } = positional[0].view()
             && class_name == "Hash"
         {
             let method_args = by.map_or_else(Vec::new, |v| vec![v]);
@@ -314,31 +316,31 @@ impl Interpreter {
     }
 
     fn builtin_max_inner(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let by = args.iter().find_map(|arg| match arg {
-            Value::Pair(name, value) if name == "by" => Some((**value).clone()),
-            Value::ValuePair(key, value)
-                if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by") =>
+        let by = args.iter().find_map(|arg| match arg.view() {
+            ValueView::Pair(name, value) if name == "by" => Some(value.clone()),
+            ValueView::ValuePair(key, value)
+                if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by") =>
             {
-                Some((**value).clone())
+                Some(value.clone())
             }
             _ => None,
         });
         let positional: Vec<Value> = args
             .iter()
             .filter(|arg| {
-                !matches!(arg, Value::Pair(name, _) if name == "by")
-                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
+                !matches!(arg.view(), ValueView::Pair(name, _) if name == "by")
+                    && !matches!(arg.view(), ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by"))
             })
             .cloned()
             .collect();
 
         if positional.len() == 1
-            && let Value::Hash(map) = &positional[0]
+            && let ValueView::Hash(map) = positional[0].view()
         {
             return self.extrema_from_hash(map, by, true);
         }
         if positional.len() == 1
-            && let Value::Instance { class_name, .. } = &positional[0]
+            && let ValueView::Instance { class_name, .. } = positional[0].view()
             && class_name == "Hash"
         {
             let method_args = by.map_or_else(Vec::new, |v| vec![v]);

@@ -13,7 +13,7 @@ impl Interpreter {
         let exception = Value::make_instance(Symbol::intern(ex_type), ex_attrs);
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
@@ -324,7 +324,7 @@ impl Interpreter {
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+                attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
             _ => Err(RuntimeError::new(format!(

@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::{CallArg, ControlFlowKind};
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(in crate::runtime) fn dispatch_grep(
@@ -192,11 +193,11 @@ impl Interpreter {
         let mut has_p = false;
         let mut positional_args: Vec<Value> = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "k" => has_k = value.truthy(),
-                Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
-                Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
-                Value::Pair(key, value) if key == "v" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "k" => has_k = value.truthy(),
+                ValueView::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
+                ValueView::Pair(key, value) if key == "p" => has_p = value.truthy(),
+                ValueView::Pair(key, value) if key == "v" => {
                     if !value.truthy() {
                         return Err(RuntimeError::new(
                             "X::Adverb: Unexpected adverb 'v' passed to grep",
@@ -204,7 +205,7 @@ impl Interpreter {
                     }
                     // :v is the default behavior, just ignore when truthy
                 }
-                Value::Pair(key, _) => {
+                ValueView::Pair(key, _) => {
                     return Err(RuntimeError::new(format!(
                         "X::Adverb: Unexpected adverb '{}'",
                         key
@@ -236,11 +237,11 @@ impl Interpreter {
             return Ok(pipe);
         }
 
-        match target {
-            Value::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
+        match target.view() {
+            ValueView::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
                 "Cannot call .grep on a Supply type object",
             )),
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -250,7 +251,7 @@ impl Interpreter {
                         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                             let mut a = HashMap::new();
                             a.insert("emitted".to_string(), Value::array(Vec::new()));
-                            a.insert("done".to_string(), Value::Bool(false));
+                            a.insert("done".to_string(), Value::FALSE);
                             a
                         });
                         self.supply_emit_buffer.push(Vec::new());
@@ -261,7 +262,7 @@ impl Interpreter {
                             .as_map()
                             .get("values")
                             .and_then(|v| {
-                                if let Value::Array(items, ..) = v {
+                                if let ValueView::Array(items, ..) = v.view() {
                                     Some(items.to_vec())
                                 } else {
                                     None
@@ -280,18 +281,18 @@ impl Interpreter {
                         .as_map()
                         .get("live")
                         .cloned()
-                        .unwrap_or(Value::Bool(false)),
+                        .unwrap_or(Value::FALSE),
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            Value::Array(items, arr_kind) => {
+            ValueView::Array(items, arr_kind) => {
                 let (filtered, mutated_items) =
                     self.eval_grep_over_items_with_mutated(args.first().cloned(), items.to_vec())?;
                 // Determine which source positions matched (identity scan against
                 // the post-grep source), so the matched slots can be shared with
                 // the result as first-class element containers.
                 let mut indices = Vec::new();
-                if let Value::Array(filtered_items, ..) = &filtered {
+                if let ValueView::Array(filtered_items, ..) = filtered.view() {
                     let mut scan_from = 0usize;
                     for needle in filtered_items.iter() {
                         if let Some(rel) = mutated_items[scan_from..].iter().position(|candidate| {
@@ -313,38 +314,39 @@ impl Interpreter {
                 let mut promoted = mutated_items;
                 let mut shared_cells: Vec<Value> = Vec::with_capacity(indices.len());
                 for &i in &indices {
-                    let cell = match &promoted[i] {
-                        v @ Value::ContainerRef(_) => v.clone(),
-                        other => Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(
-                            other.clone(),
+                    let cell = match promoted[i].view() {
+                        ValueView::ContainerRef(_) => promoted[i].clone(),
+                        _ => Value::container_ref(crate::gc::Gc::new(std::sync::Mutex::new(
+                            promoted[i].clone(),
                         ))),
                     };
                     promoted[i] = cell.clone();
                     shared_cells.push(cell);
                 }
-                let updated_source = crate::value::Value::array_data_like(&items, promoted);
+                let updated_source = crate::value::Value::array_data_like(items, promoted);
                 self.overwrite_array_bindings_by_identity(
-                    &items,
-                    Value::Array(updated_source, arr_kind),
+                    items,
+                    Value::array_with_kind(updated_source, arr_kind),
                 );
                 // Build the result array from the shared cells (default `:v`
                 // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
                 // `transform_result` from `indices`, which drops the aliasing (a
                 // keys/pairs copy owns its values).
-                let filtered = match filtered {
-                    Value::Array(filtered_items, fkind) if !indices.is_empty() => {
-                        let mut data = (*filtered_items).clone();
-                        data.items = shared_cells;
-                        Value::Array(crate::gc::Gc::new(data), fkind)
-                    }
-                    other => other,
+                let filtered = if !indices.is_empty()
+                    && let ValueView::Array(filtered_items, fkind) = filtered.view()
+                {
+                    let mut data = (**filtered_items).clone();
+                    data.items = shared_cells;
+                    Value::array_with_kind(crate::gc::Gc::new(data), fkind)
+                } else {
+                    filtered
                 };
                 grep_adverb.transform_result(filtered, &indices)
             }
-            Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..) => {
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..) => {
                 // Route integer ranges through the unified pull iterator so an
                 // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
                 // truncated at the cap instead of panicking with
@@ -356,22 +358,23 @@ impl Interpreter {
                 );
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
-            Value::GenericRange { .. } => {
-                if let Value::GenericRange {
+            ValueView::GenericRange { .. } => {
+                if let ValueView::GenericRange {
                     start,
                     end,
                     excl_start,
                     ..
-                } = &target
+                } = target.view()
                 {
                     let end_num = end.to_f64();
                     if end_num.is_infinite()
                         && end_num.is_sign_positive()
-                        && let Some(Value::Sub(data)) = args.first().cloned()
+                        && let Some(func) = args.first().cloned()
+                        && let ValueView::Sub(data) = func.view()
                         && data.body.iter().any(stmt_contains_last)
                     {
                         let mut current = start.to_f64() as i64;
-                        if *excl_start {
+                        if excl_start {
                             current += 1;
                         }
                         let mut result = Vec::new();
@@ -379,17 +382,15 @@ impl Interpreter {
                         let limit = 1_000_000usize;
                         let mut item_idx = 0usize;
                         while result.len() < limit {
-                            let item = match start.as_ref() {
-                                Value::Num(_) => Value::Num(current as f64),
-                                Value::Rat(_, den) => crate::value::make_rat(current * *den, *den),
-                                _ => Value::Int(current),
+                            let item = match start.as_ref().view() {
+                                ValueView::Num(_) => Value::num(current as f64),
+                                ValueView::Rat(_, den) => {
+                                    crate::value::make_rat(current * den, den)
+                                }
+                                _ => Value::int(current),
                             };
                             'redo_item: loop {
-                                match self.call_sub_value(
-                                    Value::Sub(data.clone()),
-                                    vec![item.clone()],
-                                    false,
-                                ) {
+                                match self.call_sub_value(func.clone(), vec![item.clone()], false) {
                                     Ok(pred) => {
                                         if pred.truthy() {
                                             result.push(item.clone());
@@ -421,43 +422,42 @@ impl Interpreter {
                 let items = crate::runtime::utils::value_to_list(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
-            Value::Str(s) => {
-                if let Some(Value::Sub(data)) = args.first()
-                    && matches!(
-                        data.body.last(),
-                        Some(Stmt::Expr(Expr::Literal(Value::Regex(_))))
-                    )
+            ValueView::Str(s) => {
+                if let Some(ValueView::Sub(data)) = args.first().map(Value::view)
+                    && let Some(Stmt::Expr(Expr::Literal(lit))) = data.body.last()
+                    && matches!(lit.view(), ValueView::Regex(_))
                 {
                     return self.eval_grep_with_adverb(
                         args.first().cloned(),
-                        vec![Value::Str(s.clone())],
+                        vec![Value::str_arc(s.clone())],
                         &grep_adverb,
                     );
                 }
                 match grep_adverb {
-                    GrepAdverb::K => Ok(Value::Int(0)),
-                    GrepAdverb::Kv => Ok(Value::array(vec![Value::Int(0), Value::Str(s.clone())])),
-                    GrepAdverb::P => Ok(Value::ValuePair(
-                        Box::new(Value::Int(0)),
-                        Box::new(Value::Str(s.clone())),
-                    )),
-                    GrepAdverb::V => Ok(Value::Str(s.clone())),
+                    GrepAdverb::K => Ok(Value::int(0)),
+                    GrepAdverb::Kv => {
+                        Ok(Value::array(vec![Value::int(0), Value::str_arc(s.clone())]))
+                    }
+                    GrepAdverb::P => {
+                        Ok(Value::value_pair(Value::int(0), Value::str_arc(s.clone())))
+                    }
+                    GrepAdverb::V => Ok(Value::str_arc(s.clone())),
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
-            Value::Set(..) | Value::Bag(..) | Value::Mix(..) | Value::Hash(..) => {
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) | ValueView::Hash(..) => {
                 let items = crate::runtime::utils::value_to_list(&target);
                 self.eval_grep_with_adverb(args.first().cloned(), items, &grep_adverb)
             }
-            other => {
+            _ => {
                 // A Blob/Buf greps over its bytes (matches raku iteration).
-                if let Some(bytes) = Self::buf_as_byte_items(&other) {
+                if let Some(bytes) = Self::buf_as_byte_items(&target) {
                     return self.eval_grep_with_adverb(args.first().cloned(), bytes, &grep_adverb);
                 }
                 // Treat any other value as a single-element list for grep
-                self.eval_grep_with_adverb(args.first().cloned(), vec![other], &grep_adverb)
+                self.eval_grep_with_adverb(args.first().cloned(), vec![target], &grep_adverb)
             }
         }
     }

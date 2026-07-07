@@ -271,7 +271,7 @@ impl Interpreter {
             loop {
                 let ret = unsafe { libc::fcntl(fd, cmd, &fl) };
                 if ret != -1 {
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 let err = std::io::Error::last_os_error();
                 // A blocking lock interrupted by a signal must be retried.
@@ -312,7 +312,7 @@ impl Interpreter {
         }
         #[cfg(not(unix))]
         let _ = handle_value;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     /// Build a `Failure` carrying an `X::IO::Lock` exception (returned, not
@@ -374,7 +374,7 @@ impl Interpreter {
         let mut nl_out: Option<String> = None;
         let mut enc: Option<String> = None;
         for arg in args {
-            if let Value::Pair(name, value) = arg {
+            if let ValueView::Pair(name, value) = arg.view() {
                 let truthy = value.truthy();
                 match name.as_str() {
                     "r" => read = truthy,

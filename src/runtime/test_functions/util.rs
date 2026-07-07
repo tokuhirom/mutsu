@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// `doesn't-hang` -- run code in a subprocess and verify it completes
@@ -9,15 +10,15 @@ impl Interpreter {
 
         let first_arg = Self::positional_value(args, 0)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
 
         // Determine executable and arguments.
         // Two calling conventions:
         //   1. doesn't-hang("code", $desc, ...)    -- Str first arg
         //   2. doesn't-hang(\($exe, '-e', $code), $desc, ...)  -- Capture first arg
-        let (exe, cmd_args) = if let Value::Capture { positional, .. } = &first_arg {
+        let (exe, cmd_args) = if let ValueView::Capture { positional, .. } = first_arg.view() {
             // Capture form: first element is exe, rest are args
-            let exe_val = positional.first().cloned().unwrap_or(Value::Nil);
+            let exe_val = positional.first().cloned().unwrap_or(Value::NIL);
             let exe_str = exe_val.to_string_value();
             let rest: Vec<String> = positional[1..]
                 .iter()
@@ -44,9 +45,9 @@ impl Interpreter {
         let expected_out = Self::named_value(args, "out");
         let expected_err = Self::named_value(args, "err");
         let wait_secs = Self::named_value(args, "wait")
-            .and_then(|v| match v {
-                Value::Int(i) => Some(i as u64),
-                Value::Num(f) => Some(f as u64),
+            .and_then(|v| match v.view() {
+                ValueView::Int(i) => Some(i as u64),
+                ValueView::Num(f) => Some(f as u64),
                 _ => None,
             })
             .unwrap_or(15);
@@ -120,7 +121,7 @@ impl Interpreter {
                 plan_count += 1;
             }
         }
-        self.test_fn_plan(&[Value::Int(plan_count)])?;
+        self.test_fn_plan(&[Value::int(plan_count)])?;
         self.test_ok(did_not_hang, "program did not hang", false)?;
         if did_not_hang {
             if let Some(expected) = expected_out {
@@ -133,7 +134,7 @@ impl Interpreter {
             }
         }
         self.finish_subtest(ctx, &desc, Ok(()))?;
-        Ok(Value::Bool(did_not_hang))
+        Ok(Value::truth(did_not_hang))
     }
 
     /// `make-temp-file` -- create a temporary file, optionally with content.
@@ -169,7 +170,7 @@ impl Interpreter {
         }
         // When neither :content nor :chmod is given, don't create the file
 
-        if let Some(Value::Int(_mode)) = chmod_val {
+        if let Some(ValueView::Int(_mode)) = chmod_val.as_ref().map(Value::view) {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -200,7 +201,7 @@ impl Interpreter {
         std::fs::create_dir_all(&path)
             .map_err(|e| RuntimeError::new(format!("make-temp-dir: cannot create: {}", e)))?;
 
-        if let Some(Value::Int(_mode)) = chmod_val {
+        if let Some(ValueView::Int(_mode)) = chmod_val.as_ref().map(Value::view) {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -218,8 +219,8 @@ impl Interpreter {
     pub(crate) fn positional_string_opt(args: &[Value], idx: usize) -> Option<String> {
         let mut pos_idx = 0;
         for arg in args {
-            match arg {
-                Value::Pair(..) | Value::ValuePair(..) => continue,
+            match arg.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => continue,
                 _ => {
                     if pos_idx == idx {
                         return Some(arg.to_string_value());
@@ -236,10 +237,10 @@ impl Interpreter {
     pub(crate) fn test_fn_is_path(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let got = Self::positional_value(args, 0)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let exp = Self::positional_value(args, 1)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let desc = Self::positional_string(args, 2);
 
         // Resolve both paths: call .resolve method if available, otherwise
@@ -265,6 +266,6 @@ impl Interpreter {
             );
             self.output_sink_mut().stderr_output.push_str(&diag);
         }
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 }

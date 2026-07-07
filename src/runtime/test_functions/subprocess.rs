@@ -3,25 +3,27 @@ use super::super::*;
 impl Interpreter {
     pub(crate) fn test_fn_is_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "is_run expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.to_string(),
+        let program = match program_val.view() {
+            ValueView::Str(s) => s.to_string(),
             // Str type object = no code (e.g., is_run Str, :args['--help'])
-            Value::Package(name) if name == "Str" => String::new(),
-            Value::Nil => String::new(),
+            ValueView::Package(name) if name == "Str" => String::new(),
+            ValueView::Nil => String::new(),
             _ => return Err(RuntimeError::new("is_run expects string code")),
         };
-        let (input, expectations_idx, desc_idx) =
-            if matches!(Self::positional_value(args, 1), Some(Value::Hash(_))) {
-                (String::new(), 1usize, 2usize)
-            } else {
-                (
-                    Self::positional_value(args, 1)
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default(),
-                    2usize,
-                    3usize,
-                )
-            };
+        let (input, expectations_idx, desc_idx) = if matches!(
+            Self::positional_value(args, 1).map(Value::view),
+            Some(ValueView::Hash(_))
+        ) {
+            (String::new(), 1usize, 2usize)
+        } else {
+            (
+                Self::positional_value(args, 1)
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default(),
+                2usize,
+                3usize,
+            )
+        };
         let expectations =
             Self::positional_value_required(args, expectations_idx, "is_run expects expectations")?
                 .clone();
@@ -30,7 +32,7 @@ impl Interpreter {
         let mut expected_err: Option<Value> = None;
         let mut expected_status: Option<Value> = None;
         let mut run_args: Option<Vec<Value>> = None;
-        if let Value::Hash(expected_hash) = &expectations {
+        if let ValueView::Hash(expected_hash) = expectations.view() {
             for (name, value) in expected_hash.iter() {
                 match name.as_str() {
                     "out" => expected_out = Some(value.clone()),
@@ -40,16 +42,21 @@ impl Interpreter {
                 }
             }
         }
-        if let Some(Value::Array(items, ..)) = Self::named_value(args, "args") {
+        if let Some(ValueView::Array(items, ..)) =
+            Self::named_value(args, "args").as_ref().map(Value::view)
+        {
             run_args = Some(items.to_vec());
         }
         // Check for :compiler-args
-        let compiler_args: Vec<String> =
-            if let Some(Value::Array(items, ..)) = Self::named_value(args, "compiler-args") {
-                items.iter().map(|v| v.to_string_value()).collect()
-            } else {
-                Vec::new()
-            };
+        let compiler_args: Vec<String> = if let Some(ValueView::Array(items, ..)) =
+            Self::named_value(args, "compiler-args")
+                .as_ref()
+                .map(Value::view)
+        {
+            items.iter().map(|v| v.to_string_value()).collect()
+        } else {
+            Vec::new()
+        };
         let is_doc_mode = compiler_args
             .iter()
             .any(|a| a == "--doc" || a.starts_with("--doc="));
@@ -118,7 +125,7 @@ impl Interpreter {
         } else {
             let mut nested = Interpreter::new();
             nested.nested_mode = true;
-            if let Some(Value::Int(pid)) = self.env.get("*PID") {
+            if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
                 nested.set_pid(pid.saturating_add(1));
             }
             if let Some(items) = run_args {
@@ -137,31 +144,39 @@ impl Interpreter {
             ok &= self.smart_match(&Value::str(err), &expected);
         }
         if let Some(expected) = expected_status {
-            ok &= self.smart_match(&Value::Int(status), &expected);
+            ok &= self.smart_match(&Value::int(status), &expected);
         }
         self.test_ok(ok, &desc, false)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_get_out(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "get_out expects code")?;
-        let program = match program_val {
-            Value::Str(s) => s.to_string(),
+        let program = match program_val.view() {
+            ValueView::Str(s) => s.to_string(),
             _ => return Err(RuntimeError::new("get_out expects string code")),
         };
         let input = Self::positional_value(args, 1)
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let run_args: Vec<String> = match Self::named_value(args, "args") {
-            Some(Value::Array(items, ..)) => items.iter().map(|v| v.to_string_value()).collect(),
-            Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
+        let run_args: Vec<String> = match Self::named_value(args, "args").as_ref().map(Value::view)
+        {
+            Some(ValueView::Array(items, ..)) => {
+                items.iter().map(|v| v.to_string_value()).collect()
+            }
+            Some(ValueView::Seq(items)) | Some(ValueView::Slip(items)) => {
                 items.iter().map(|v| v.to_string_value()).collect()
             }
             _ => Vec::new(),
         };
-        let compiler_args: Vec<String> = match Self::named_value(args, "compiler-args") {
-            Some(Value::Array(items, ..)) => items.iter().map(|v| v.to_string_value()).collect(),
-            Some(Value::Seq(items)) | Some(Value::Slip(items)) => {
+        let compiler_args: Vec<String> = match Self::named_value(args, "compiler-args")
+            .as_ref()
+            .map(Value::view)
+        {
+            Some(ValueView::Array(items, ..)) => {
+                items.iter().map(|v| v.to_string_value()).collect()
+            }
+            Some(ValueView::Seq(items)) | Some(ValueView::Slip(items)) => {
                 items.iter().map(|v| v.to_string_value()).collect()
             }
             _ => Vec::new(),
@@ -171,22 +186,22 @@ impl Interpreter {
         let mut hash = std::collections::HashMap::new();
         hash.insert("out".to_string(), Value::str(out));
         hash.insert("err".to_string(), Value::str(err));
-        hash.insert("status".to_string(), Value::Int(status));
-        Ok(Value::Hash(Value::hash_arc(hash)))
+        hash.insert("status".to_string(), Value::int(status));
+        Ok(Value::hash_with_data(Value::hash_arc(hash)))
     }
 
     pub(crate) fn test_fn_run(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let got = self.test_fn_get_out(args)?;
-        let Value::Hash(map) = got else {
+        let ValueView::Hash(map) = got.view() else {
             return Ok(Value::str(String::new()));
         };
-        if let Some(Value::Str(err)) = map.get("err")
+        if let Some(ValueView::Str(err)) = map.get("err").map(Value::view)
             && !err.is_empty()
         {
             self.emit_output(&format!("# error: {}\n", err.trim_end()));
         }
-        if let Some(Value::Str(out)) = map.get("out") {
-            return Ok(Value::Str(out.clone()));
+        if let Some(ValueView::Str(out)) = map.get("out").map(Value::view) {
+            return Ok(Value::str_arc(out.clone()));
         }
         Ok(Value::str(String::new()))
     }

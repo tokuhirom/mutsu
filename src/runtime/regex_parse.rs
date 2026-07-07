@@ -1060,10 +1060,13 @@ mod tests {
     fn validate_exc(pattern: &str) -> Option<String> {
         match validate_regex_structurally(pattern) {
             Ok(()) => None,
-            Err(e) => e.exception.as_ref().and_then(|ex| match ex.as_ref() {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                _ => None,
-            }),
+            Err(e) => e
+                .exception
+                .as_ref()
+                .and_then(|ex| match ex.as_ref().view() {
+                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                    _ => None,
+                }),
         }
     }
 

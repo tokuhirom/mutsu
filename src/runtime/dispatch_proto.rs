@@ -109,7 +109,7 @@ impl Interpreter {
                 self.restore_readonly_vars(saved_readonly);
                 // Convert binding type-check errors to X::TypeCheck::Argument for proto calls
                 let is_binding_param = e.exception.as_ref().is_some_and(|ex| {
-                    if let Value::Instance { class_name, .. } = ex.as_ref() {
+                    if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                         class_name.resolve() == "X::TypeCheck::Binding::Parameter"
                     } else {
                         false
@@ -120,7 +120,7 @@ impl Interpreter {
                 if is_binding_param {
                     let type_names: Vec<String> = args
                         .iter()
-                        .filter(|a| !matches!(a, Value::Pair(..)))
+                        .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                         .map(|a| super::value_type_name(a).to_string())
                         .collect();
                     let mut err = RuntimeError::new(format!(
@@ -171,7 +171,7 @@ impl Interpreter {
                         Value::array(type_names.iter().cloned().map(Value::str).collect()),
                     );
                     // This dispatch failure is against a `proto` signature.
-                    attrs.insert("protoguilt".to_string(), Value::Bool(true));
+                    attrs.insert("protoguilt".to_string(), Value::TRUE);
                     err.exception = Some(Box::new(Value::make_instance(
                         Symbol::intern("X::TypeCheck::Argument"),
                         attrs,
@@ -264,8 +264,8 @@ impl Interpreter {
             deprecated_message: None,
             is_submethod: false,
         };
-        let attributes = match &invocant {
-            Value::Instance { attributes, .. } => attributes.as_map().clone(),
+        let attributes = match invocant.view() {
+            ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
             _ => std::collections::HashMap::new(),
         };
         self.proto_dispatch_stack.push((
@@ -305,8 +305,8 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let cn = match target {
-            Value::Instance { class_name, .. } => class_name.resolve(),
+        let cn = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return None,
         };
         if self.proto_method_skip.as_deref() == Some(method) {

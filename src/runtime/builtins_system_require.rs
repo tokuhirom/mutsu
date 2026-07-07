@@ -1,12 +1,13 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     fn missing_symbol_name_from_failure(value: &Value) -> Option<String> {
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
         else {
             return None;
         };
@@ -15,10 +16,10 @@ impl Interpreter {
         }
         let map = attributes.as_map();
         let exception = map.get("exception")?;
-        let Value::Instance {
+        let ValueView::Instance {
             attributes: ex_attrs,
             ..
-        } = exception
+        } = exception.view()
         else {
             return None;
         };
@@ -342,21 +343,17 @@ impl Interpreter {
         if self.has_class(&source_single) || self.is_role(&source_single) {
             self.env.insert(
                 symbol.to_string(),
-                Value::Package(Symbol::intern(&source_single)),
+                Value::package(Symbol::intern(&source_single)),
             );
-            self.env.insert(
-                format!("__mutsu_sigilless_readonly::{symbol}"),
-                Value::Bool(true),
-            );
+            self.env
+                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
             return true;
         }
         if self.has_class(symbol) || self.is_role(symbol) {
             self.env
-                .insert(symbol.to_string(), Value::Package(Symbol::intern(symbol)));
-            self.env.insert(
-                format!("__mutsu_sigilless_readonly::{symbol}"),
-                Value::Bool(true),
-            );
+                .insert(symbol.to_string(), Value::package(Symbol::intern(symbol)));
+            self.env
+                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
             return true;
         }
         if let Some(value) = self.env.get(&source_single).cloned() {
@@ -364,24 +361,20 @@ impl Interpreter {
                 .registry()
                 .functions
                 .contains_key(&Symbol::intern(&source_single))
-                && matches!(value, Value::Int(_))
+                && matches!(value.view(), ValueView::Int(_))
             {
                 return false;
             }
             self.env.insert(symbol.to_string(), value);
-            self.env.insert(
-                format!("__mutsu_sigilless_readonly::{symbol}"),
-                Value::Bool(true),
-            );
+            self.env
+                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
             return true;
         }
         if let Some(value) = self.env.get(symbol).cloned() {
-            let is_nil = matches!(value, Value::Nil);
+            let is_nil = value.is_nil();
             self.env.insert(symbol.to_string(), value);
-            self.env.insert(
-                format!("__mutsu_sigilless_readonly::{symbol}"),
-                Value::Bool(true),
-            );
+            self.env
+                .insert(format!("__mutsu_sigilless_readonly::{symbol}"), Value::TRUE);
             return !is_nil;
         }
         false
@@ -413,32 +406,32 @@ impl Interpreter {
         let mut file_target: Option<String> = None;
         let mut imports: Vec<String> = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "__mutsu_require_file" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "__mutsu_require_file" => {
                     file_target = Some(value.to_string_value());
                 }
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     imports.extend(items.iter().map(|v| v.to_string_value()));
                 }
-                other => {
+                _ => {
                     if module_value.is_none() {
-                        module_value = Some(other.clone());
+                        module_value = Some(arg.clone());
                     } else {
-                        imports.push(other.to_string_value());
+                        imports.push(arg.to_string_value());
                     }
                 }
             }
         }
         let module_value =
             module_value.ok_or_else(|| RuntimeError::new("require expects a module"))?;
-        let module_string = match &module_value {
-            Value::Package(name) => name.resolve(),
-            Value::Str(name) => name.to_string(),
-            value @ Value::Instance { .. } => Self::missing_symbol_name_from_failure(value)
-                .unwrap_or_else(|| value.to_string_value()),
-            other => other.to_string_value(),
+        let module_string = match module_value.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Str(name) => name.to_string(),
+            ValueView::Instance { .. } => Self::missing_symbol_name_from_failure(&module_value)
+                .unwrap_or_else(|| module_value.to_string_value()),
+            _ => module_value.to_string_value(),
         };
-        let return_is_str = matches!(module_value, Value::Str(_));
+        let return_is_str = matches!(module_value.view(), ValueView::Str(_));
         let mut module_name = if module_string.is_empty() {
             None
         } else {
@@ -486,7 +479,7 @@ impl Interpreter {
             && should_install_stub
         {
             self.env
-                .insert(module.clone(), Value::Package(Symbol::intern(module)));
+                .insert(module.clone(), Value::package(Symbol::intern(module)));
             if !imports.is_empty() {
                 self.require_import_symbols(module, &imports)?;
             }
@@ -500,7 +493,7 @@ impl Interpreter {
             Ok(Value::str(module_string))
         } else {
             let name = module_name.unwrap_or(module_string);
-            Ok(Value::Package(Symbol::intern(&name)))
+            Ok(Value::package(Symbol::intern(&name)))
         }
     }
 }

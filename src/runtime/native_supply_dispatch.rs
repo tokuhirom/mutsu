@@ -17,8 +17,8 @@ impl Interpreter {
                 // `migrate` forwards values from the most-recently-emitted inner
                 // Supply of a supply-of-supplies. Requires a live source (a bare
                 // `Supply.migrate` class call has no supplier_id and dies here).
-                let source_sid = match attributes.get("supplier_id") {
-                    Some(Value::Int(sid)) => *sid as u64,
+                let source_sid = match attributes.get("supplier_id").map(Value::view) {
+                    Some(ValueView::Int(sid)) => sid as u64,
                     _ => {
                         return Err(RuntimeError::new(
                             "migrate can only be called on a live Supply",
@@ -29,14 +29,14 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(true));
-                new_attrs.insert("supplier_id".to_string(), Value::Int(downstream_sid as i64));
-                new_attrs.insert("migrate_source".to_string(), Value::Int(source_sid as i64));
+                new_attrs.insert("live".to_string(), Value::TRUE);
+                new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                new_attrs.insert("migrate_source".to_string(), Value::int(source_sid as i64));
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "encode" => {
-                let source_values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let source_values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let mut emitted: Vec<Value> = Vec::with_capacity(source_values.len());
@@ -49,10 +49,7 @@ impl Interpreter {
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert(
                     "live".to_string(),
-                    attributes
-                        .get("live")
-                        .cloned()
-                        .unwrap_or(Value::Bool(false)),
+                    attributes.get("live").cloned().unwrap_or(Value::FALSE),
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
@@ -61,8 +58,8 @@ impl Interpreter {
                     .first()
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| "utf-8".to_string());
-                let source_values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let source_values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
 
@@ -95,10 +92,7 @@ impl Interpreter {
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert(
                     "live".to_string(),
-                    attributes
-                        .get("live")
-                        .cloned()
-                        .unwrap_or(Value::Bool(false)),
+                    attributes.get("live").cloned().unwrap_or(Value::FALSE),
                 );
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
@@ -107,12 +101,12 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| {
                     let promise = SharedPromise::new();
-                    promise.keep(Value::Int(1), String::new(), String::new());
-                    Value::Promise(promise)
+                    promise.keep(Value::int(1), String::new(), String::new());
+                    Value::promise(promise)
                 })),
             "tail" => {
-                let values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let tail_count = self.resolve_supply_tail_count(args.first(), values.len())?;
@@ -120,7 +114,7 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(values[start..].to_vec()));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "delayed" => {
@@ -133,22 +127,25 @@ impl Interpreter {
                     ));
                 }
                 let mut new_attrs = attributes.clone();
-                new_attrs.insert("delay_seconds".to_string(), Value::Num(delay_seconds));
+                new_attrs.insert("delay_seconds".to_string(), Value::num(delay_seconds));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "min" => {
                 let mapper = args.first().cloned();
                 if let Some(ref m) = mapper
-                    && !matches!(m, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                    && !matches!(
+                        m.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
                 {
                     return Err(RuntimeError::new(
                         "Supply.min: mapper must be code if specified",
                     ));
                 }
 
-                let values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
 
@@ -173,7 +170,7 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(result));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "split" => {
@@ -181,34 +178,34 @@ impl Interpreter {
                 let limit = Self::positional_value(&args, 1);
                 let skip_empty = Self::named_bool(&args, "skip-empty");
 
-                let max_parts = match limit {
+                let max_parts = match limit.map(Value::view) {
                     None => None,
-                    Some(Value::Int(i)) => {
-                        if *i <= 0 {
+                    Some(ValueView::Int(i)) => {
+                        if i <= 0 {
                             return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs.insert("live".to_string(), Value::FALSE);
                                 attrs
                             }));
                         }
-                        Some(*i as usize)
+                        Some(i as usize)
                     }
-                    Some(Value::Num(f)) if f.is_infinite() && f.is_sign_positive() => None,
-                    Some(Value::Num(f)) => {
-                        if *f <= 0.0 {
+                    Some(ValueView::Num(f)) if f.is_infinite() && f.is_sign_positive() => None,
+                    Some(ValueView::Num(f)) => {
+                        if f <= 0.0 {
                             return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs.insert("live".to_string(), Value::FALSE);
                                 attrs
                             }));
                         }
-                        Some(*f as usize)
+                        Some(f as usize)
                     }
-                    Some(Value::Str(s)) => {
+                    Some(ValueView::Str(s)) => {
                         let t = s.trim();
                         if t.eq_ignore_ascii_case("inf") {
                             None
@@ -217,7 +214,7 @@ impl Interpreter {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs.insert("live".to_string(), Value::FALSE);
                                 attrs
                             }));
                         } else {
@@ -229,21 +226,21 @@ impl Interpreter {
                                         attrs
                                             .insert("values".to_string(), Value::array(Vec::new()));
                                         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                                        attrs.insert("live".to_string(), Value::Bool(false));
+                                        attrs.insert("live".to_string(), Value::FALSE);
                                         attrs
                                     }));
                                 }
                             }
                         }
                     }
-                    Some(other) => {
-                        let n = other.to_f64();
+                    Some(_) => {
+                        let n = limit.unwrap().to_f64();
                         if n <= 0.0 {
                             return Ok(Value::make_instance(Symbol::intern("Supply"), {
                                 let mut attrs = HashMap::new();
                                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                                attrs.insert("live".to_string(), Value::Bool(false));
+                                attrs.insert("live".to_string(), Value::FALSE);
                                 attrs
                             }));
                         }
@@ -251,8 +248,8 @@ impl Interpreter {
                     }
                 };
 
-                let source = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items
+                let source = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items
                         .iter()
                         .map(|v| v.to_string_value())
                         .collect::<Vec<_>>()
@@ -260,8 +257,8 @@ impl Interpreter {
                     _ => String::new(),
                 };
 
-                let mut parts: Vec<Value> = match needle {
-                    Value::Regex(pat) => {
+                let mut parts: Vec<Value> = match needle.view() {
+                    ValueView::Regex(pat) => {
                         let matches = self.regex_find_all(pat, &source);
                         if matches.is_empty() {
                             vec![Value::str(source)]
@@ -279,8 +276,8 @@ impl Interpreter {
                             out
                         }
                     }
-                    other => {
-                        let sep = other.to_string_value();
+                    _ => {
+                        let sep = needle.to_string_value();
                         source
                             .split(&sep)
                             .map(|s| Value::str(s.to_string()))
@@ -298,12 +295,12 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(parts));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "reverse" => {
-                let values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => {
+                let values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => {
                         let mut v = items.to_vec();
                         v.reverse();
                         v
@@ -313,14 +310,14 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(values));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "repeated" => {
                 let as_fn = Self::named_value(&args, "as");
                 let with_fn = Self::named_value(&args, "with");
-                let values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let mut seen_keys: Vec<Value> = Vec::new();
@@ -349,7 +346,7 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(result));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "tap" | "act" => {
@@ -361,10 +358,10 @@ impl Interpreter {
                 Ok(tap)
             }
             "on-close" => {
-                let close_cb = args.first().cloned().unwrap_or(Value::Nil);
+                let close_cb = args.first().cloned().unwrap_or(Value::NIL);
                 let mut new_attrs = attributes.clone();
-                let mut callbacks = if let Some(Value::Array(existing, ..)) =
-                    attributes.get("on_close_callbacks")
+                let mut callbacks = if let Some(ValueView::Array(existing, ..)) =
+                    attributes.get("on_close_callbacks").map(Value::view)
                 {
                     existing.to_vec()
                 } else {
@@ -377,26 +374,24 @@ impl Interpreter {
             "do" => {
                 // Supply.do($callback) — create a new Supply that calls $callback
                 // as a side-effect for each value, passing values through
-                let callback = args.first().cloned().unwrap_or(Value::Nil);
+                let callback = args.first().cloned().unwrap_or(Value::NIL);
                 let values = attributes
                     .get("values")
                     .cloned()
                     .unwrap_or(Value::array(Vec::new()));
-                let live = attributes
-                    .get("live")
-                    .cloned()
-                    .unwrap_or(Value::Bool(false));
+                let live = attributes.get("live").cloned().unwrap_or(Value::FALSE);
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), values);
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), live);
                 // Accumulate do_callbacks chain
-                let mut do_cbs =
-                    if let Some(Value::Array(existing, ..)) = attributes.get("do_callbacks") {
-                        existing.to_vec()
-                    } else {
-                        Vec::new()
-                    };
+                let mut do_cbs = if let Some(ValueView::Array(existing, ..)) =
+                    attributes.get("do_callbacks").map(Value::view)
+                {
+                    existing.to_vec()
+                } else {
+                    Vec::new()
+                };
                 do_cbs.push(callback);
                 new_attrs.insert("do_callbacks".to_string(), Value::array(do_cbs));
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
@@ -416,19 +411,19 @@ impl Interpreter {
                 } else {
                     let live = attributes.get("live").map(Value::truthy).unwrap_or(false);
                     if !live {
-                        let result = match attributes.get("values") {
-                            Some(Value::Array(items, ..)) => {
-                                items.last().cloned().unwrap_or(Value::Nil)
+                        let result = match attributes.get("values").map(Value::view) {
+                            Some(ValueView::Array(items, ..)) => {
+                                items.last().cloned().unwrap_or(Value::NIL)
                             }
-                            _ => Value::Nil,
+                            _ => Value::NIL,
                         };
                         promise.keep(result, String::new(), String::new());
                     }
                 }
-                Ok(Value::Promise(promise))
+                Ok(Value::promise(promise))
             }
             "schedule-on" => {
-                let scheduler = args.first().cloned().unwrap_or(Value::Nil);
+                let scheduler = args.first().cloned().unwrap_or(Value::NIL);
                 if !self.type_matches_value("Scheduler", &scheduler) {
                     return Err(RuntimeError::new(
                         "Supply.schedule-on expects a Scheduler argument",
@@ -445,8 +440,8 @@ impl Interpreter {
                 let chomp = Self::named_value(&args, "chomp")
                     .map(|v| v.truthy())
                     .unwrap_or(true);
-                let source_values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let source_values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let new_id = next_supply_id();
@@ -456,10 +451,10 @@ impl Interpreter {
                     Value::array(split_supply_chunks_into_lines(&source_values, chomp)),
                 );
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
-                new_attrs.insert("is_lines".to_string(), Value::Bool(true));
-                new_attrs.insert("line_chomp".to_string(), Value::Bool(chomp));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("supply_id".to_string(), Value::int(new_id as i64));
+                new_attrs.insert("is_lines".to_string(), Value::TRUE);
+                new_attrs.insert("line_chomp".to_string(), Value::truth(chomp));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 if let Some(parent_id) = attributes.get("supply_id") {
                     new_attrs.insert("parent_supply_id".to_string(), parent_id.clone());
                 }
@@ -479,12 +474,14 @@ impl Interpreter {
                 // For now, just concatenate values from all supplies
                 let new_id = next_supply_id();
                 let mut all_values = Vec::new();
-                if let Some(Value::Array(items, ..)) = attributes.get("values") {
+                if let Some(ValueView::Array(items, ..)) = attributes.get("values").map(Value::view)
+                {
                     all_values.extend(items.iter().cloned());
                 }
                 for arg in &args {
-                    if let Value::Instance { attributes, .. } = arg
-                        && let Some(Value::Array(items, ..)) = attributes.as_map().get("values")
+                    if let ValueView::Instance { attributes, .. } = arg.view()
+                        && let Some(ValueView::Array(items, ..)) =
+                            attributes.as_map().get("values").map(Value::view)
                     {
                         all_values.extend(items.iter().cloned());
                     }
@@ -492,7 +489,7 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(all_values));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
+                new_attrs.insert("supply_id".to_string(), Value::int(new_id as i64));
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
             }
             "unique" => self.supply_unique(attributes, &args),
@@ -511,9 +508,9 @@ impl Interpreter {
                         match self.call_sub_value(comp.clone(), vec![a.clone(), b.clone()], false) {
                             Ok(result) => {
                                 // Handle Order enum (Less=-1, Same=0, More=1)
-                                let n = match &result {
-                                    Value::Enum { value, .. } => value.as_i64() as f64,
-                                    other => other.to_f64(),
+                                let n = match result.view() {
+                                    ValueView::Enum { value, .. } => value.as_i64() as f64,
+                                    _ => result.to_f64(),
                                 };
                                 if n < 0.0 {
                                     std::cmp::Ordering::Less
@@ -549,10 +546,10 @@ impl Interpreter {
             "squish" => {
                 let source_values = self.supply_get_values(attributes)?;
                 let squished = self.dispatch_squish(Value::array(source_values), &args)?;
-                let items = match squished {
-                    Value::Array(items, ..) => items.to_vec(),
-                    Value::Seq(items) => items.to_vec(),
-                    other => vec![other],
+                let items = match squished.view() {
+                    ValueView::Array(items, ..) => items.to_vec(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    _ => vec![squished.clone()],
                 };
                 Ok(self.make_supply_from_values(items, attributes))
             }
@@ -562,33 +559,36 @@ impl Interpreter {
                 let count = if args.is_empty() {
                     1
                 } else {
-                    match args.first() {
-                        Some(Value::Whatever) => {
+                    match args.first().map(Value::view) {
+                        Some(ValueView::Whatever) => {
                             if has_supplier {
                                 usize::MAX
                             } else {
                                 source_values.len()
                             }
                         }
-                        Some(Value::Num(f)) if f.is_infinite() => {
+                        Some(ValueView::Num(f)) if f.is_infinite() => {
                             if has_supplier {
                                 usize::MAX
                             } else {
                                 source_values.len()
                             }
                         }
-                        Some(Value::Int(n)) => {
-                            if *n < 0 {
+                        Some(ValueView::Int(n)) => {
+                            if n < 0 {
                                 0
                             } else {
-                                *n as usize
+                                n as usize
                             }
                         }
-                        Some(val) => {
+                        Some(_) => {
                             // WhateverCode like *-3
                             let total = source_values.len() as i64;
-                            let result =
-                                self.call_sub_value(val.clone(), vec![Value::Int(total)], true)?;
+                            let result = self.call_sub_value(
+                                args.first().unwrap().clone(),
+                                vec![Value::int(total)],
+                                true,
+                            )?;
                             let n = result.to_f64() as i64;
                             if n < 0 { 0 } else { n as usize }
                         }
@@ -599,7 +599,7 @@ impl Interpreter {
                     // For live (supplier-backed) supplies, create a transformed supply
                     // that preserves the supplier connection but limits emissions.
                     let mut new_attrs = attributes.clone();
-                    new_attrs.insert("head_limit".to_string(), Value::Int(count as i64));
+                    new_attrs.insert("head_limit".to_string(), Value::int(count as i64));
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
                 } else {
@@ -611,38 +611,45 @@ impl Interpreter {
                 // For live (Supplier-backed) supplies, set up a flat tap chain:
                 // incoming values are flattened and each element is re-emitted
                 // to a new downstream supplier.
-                if let Some(Value::Int(source_supplier_id)) = attributes.get("supplier_id") {
-                    let source_sid = *source_supplier_id as u64;
+                if let Some(ValueView::Int(source_supplier_id)) =
+                    attributes.get("supplier_id").map(Value::view)
+                {
+                    let source_sid = source_supplier_id as u64;
                     let downstream_sid = next_supplier_id();
                     register_supplier_flat_tap(source_sid, downstream_sid);
 
                     let mut new_attrs = HashMap::new();
                     new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    new_attrs.insert("supplier_id".to_string(), Value::Int(downstream_sid as i64));
-                    new_attrs.insert("live".to_string(), Value::Bool(true));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    new_attrs.insert("live".to_string(), Value::TRUE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
                 let source_values = self.supply_get_values(attributes)?;
                 let mut flattened = Vec::new();
                 for val in source_values {
-                    match val {
-                        Value::Array(items, kind) if !kind.is_itemized() => {
+                    let extended = match val.view() {
+                        ValueView::Array(items, kind) if !kind.is_itemized() => {
                             flattened.extend(items.iter().cloned());
+                            true
                         }
-                        Value::Slip(items) | Value::Seq(items) => {
+                        ValueView::Slip(items) | ValueView::Seq(items) => {
                             flattened.extend(items.iter().cloned());
+                            true
                         }
-                        other => flattened.push(other),
+                        _ => false,
+                    };
+                    if !extended {
+                        flattened.push(val);
                     }
                 }
                 Ok(self.make_supply_from_values(flattened, attributes))
             }
             "produce" => {
-                let reducer = args.first().cloned().unwrap_or(Value::Nil);
+                let reducer = args.first().cloned().unwrap_or(Value::NIL);
                 if !matches!(
-                    reducer,
-                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    reducer.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                 ) {
                     return Err(RuntimeError::new("Supply.produce requires a code argument"));
                 }
@@ -656,7 +663,7 @@ impl Interpreter {
                         new_attrs.insert("supplier_id".to_string(), sid.clone());
                     }
                     new_attrs.insert("produce_callable".to_string(), reducer);
-                    new_attrs.insert("live".to_string(), Value::Bool(false));
+                    new_attrs.insert("live".to_string(), Value::FALSE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
                 let source_values = self.supply_get_values(attributes)?;
@@ -676,7 +683,7 @@ impl Interpreter {
                 let mut batch_elems: Option<usize> = None;
                 let mut batch_seconds: Option<f64> = None;
                 for arg in &args {
-                    if let Value::Pair(key, value) = arg {
+                    if let ValueView::Pair(key, value) = arg.view() {
                         match key.as_str() {
                             "elems" => batch_elems = Some(value.to_f64() as usize),
                             "seconds" => batch_seconds = Some(value.to_f64()),
@@ -688,8 +695,10 @@ impl Interpreter {
                 }
 
                 // For supplier-backed (live) supplies, set up a batch tap chain
-                if let Some(Value::Int(source_supplier_id)) = attributes.get("supplier_id") {
-                    let source_sid = *source_supplier_id as u64;
+                if let Some(ValueView::Int(source_supplier_id)) =
+                    attributes.get("supplier_id").map(Value::view)
+                {
+                    let source_sid = source_supplier_id as u64;
                     let downstream_sid = next_supplier_id();
 
                     register_supplier_batch_tap(
@@ -702,8 +711,8 @@ impl Interpreter {
                     let mut new_attrs = HashMap::new();
                     new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    new_attrs.insert("supplier_id".to_string(), Value::Int(downstream_sid as i64));
-                    new_attrs.insert("live".to_string(), Value::Bool(false));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    new_attrs.insert("live".to_string(), Value::FALSE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
 
@@ -720,10 +729,10 @@ impl Interpreter {
             "rotor" => {
                 let source_values = self.supply_get_values(attributes)?;
                 let rotored = self.dispatch_rotor(Value::array(source_values), &args)?;
-                let items = match rotored {
-                    Value::Array(items, ..) => items.to_vec(),
-                    Value::Seq(items) => items.to_vec(),
-                    other => vec![other],
+                let items = match rotored.view() {
+                    ValueView::Array(items, ..) => items.to_vec(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    _ => vec![rotored.clone()],
                 };
                 Ok(self.make_supply_from_values(items, attributes))
             }
@@ -753,20 +762,20 @@ impl Interpreter {
                 // matching Rakudo's behavior.
                 let positional_args: Vec<Value> = args
                     .iter()
-                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "match"))
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "match"))
                     .cloned()
                     .collect();
                 let result = self.call_method_with_values(target, "comb", positional_args)?;
-                let combed: Vec<Value> = match result {
-                    Value::Array(items, ..) => items.iter().cloned().collect(),
-                    Value::Seq(items) => items.iter().cloned().collect(),
-                    other => vec![other],
+                let combed: Vec<Value> = match result.view() {
+                    ValueView::Array(items, ..) => items.iter().cloned().collect(),
+                    ValueView::Seq(items) => items.iter().cloned().collect(),
+                    _ => vec![result.clone()],
                 };
                 Ok(self.make_supply_from_values(combed, attributes))
             }
             "words" => {
-                let source_values = match attributes.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let source_values = match attributes.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let mut words = Vec::new();
@@ -800,9 +809,9 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(words));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("supply_id".to_string(), Value::Int(new_id as i64));
-                new_attrs.insert("is_words".to_string(), Value::Bool(true));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("supply_id".to_string(), Value::int(new_id as i64));
+                new_attrs.insert("is_words".to_string(), Value::TRUE);
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 if let Some(parent_id) = attributes.get("supply_id") {
                     new_attrs.insert("parent_supply_id".to_string(), parent_id.clone());
                 }
@@ -847,7 +856,10 @@ impl Interpreter {
             "minmax" => {
                 let mapper = args.first().cloned();
                 if let Some(ref m) = mapper
-                    && !matches!(m, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                    && !matches!(
+                        m.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
                 {
                     return Err(RuntimeError::new(
                         "Supply.minmax: mapper must be code if specified",
@@ -881,8 +893,8 @@ impl Interpreter {
                         changed = true;
                     }
                     if changed && let (Some(mn), Some(mx)) = (&cur_min, &cur_max) {
-                        let range = match (mn, mx) {
-                            (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
+                        let range = match (mn.view(), mx.view()) {
+                            (ValueView::Int(a), ValueView::Int(b)) => Value::range(a, b),
                             _ => Value::generic_range(mn.clone(), mx.clone(), false, false),
                         };
                         results.push(range);
@@ -899,11 +911,11 @@ impl Interpreter {
                 let mut initial: Option<Vec<Value>> = None;
                 let mut other_supplies: Vec<Value> = Vec::new();
                 for arg in &args {
-                    if let Value::Pair(key, value) = arg {
+                    if let ValueView::Pair(key, value) = arg.view() {
                         if key == "with" {
-                            with_fn = Some(*value.clone());
+                            with_fn = Some(value.clone());
                         } else if key == "initial" {
-                            if let Value::Array(items, ..) = &**value {
+                            if let ValueView::Array(items, ..) = value.view() {
                                 initial = Some(items.to_vec());
                             }
                         } else {
@@ -919,7 +931,7 @@ impl Interpreter {
                     || attributes.contains_key("supply_id");
                 let any_live = self_is_live
                     || other_supplies.iter().any(|s| {
-                        if let Value::Instance { attributes, .. } = s {
+                        if let ValueView::Instance { attributes, .. } = s.view() {
                             supplier_id_from_attrs(&(attributes).as_map()).is_some()
                                 || attributes.contains_key("supply_id")
                         } else {
@@ -934,7 +946,7 @@ impl Interpreter {
                     // Check if any source is channel-based (has supply_id)
                     let has_channel = attributes.contains_key("supply_id")
                         || other_supplies.iter().any(|s| {
-                            matches!(s, Value::Instance { attributes: a, .. } if a.contains_key("supply_id"))
+                            matches!(s.view(), ValueView::Instance { attributes: a, .. } if a.contains_key("supply_id"))
                         });
 
                     if is_latest && has_channel {
@@ -958,21 +970,21 @@ impl Interpreter {
                         let mut all_supplies: Vec<HashMap<String, Value>> =
                             vec![attributes.clone()];
                         for supply in &other_supplies {
-                            if let Value::Instance { attributes: a, .. } = supply {
+                            if let ValueView::Instance { attributes: a, .. } = supply.view() {
                                 all_supplies.push(a.to_map());
                             }
                         }
 
                         let mut sources: Vec<SourceKind> = Vec::with_capacity(all_supplies.len());
                         for a in &all_supplies {
-                            if let Some(Value::Int(sid)) = a.get("supply_id")
-                                && let Some(rx) = take_supply_channel(*sid as u64)
+                            if let Some(ValueView::Int(sid)) = a.get("supply_id").map(Value::view)
+                                && let Some(rx) = take_supply_channel(sid as u64)
                             {
                                 sources.push(SourceKind::Channel(rx));
                                 continue;
                             }
-                            let items = match a.get("values") {
-                                Some(Value::Array(items, ..)) => items.to_vec(),
+                            let items = match a.get("values").map(Value::view) {
+                                Some(ValueView::Array(items, ..)) => items.to_vec(),
                                 _ => Vec::new(),
                             };
                             sources.push(SourceKind::Static(items));
@@ -1052,8 +1064,8 @@ impl Interpreter {
                         let mut new_attrs = HashMap::new();
                         new_attrs.insert("values".to_string(), Value::array(Vec::new()));
                         new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                        new_attrs.insert("supply_id".to_string(), Value::Int(zip_supply_id as i64));
-                        new_attrs.insert("live".to_string(), Value::Bool(false));
+                        new_attrs.insert("supply_id".to_string(), Value::int(zip_supply_id as i64));
+                        new_attrs.insert("live".to_string(), Value::FALSE);
                         return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                     } else if is_latest {
                         let zip_latest_state_id = register_zip_latest_state(
@@ -1066,10 +1078,10 @@ impl Interpreter {
                             register_supplier_zip_latest_tap(sid, zip_latest_state_id, 0);
                         }
                         for (i, supply) in other_supplies.iter().enumerate() {
-                            if let Value::Instance {
+                            if let ValueView::Instance {
                                 attributes: other_attrs,
                                 ..
-                            } = supply
+                            } = supply.view()
                             {
                                 let source_index = i + 1;
                                 if let Some(sid) = supplier_id_from_attrs(&(other_attrs).as_map()) {
@@ -1088,10 +1100,10 @@ impl Interpreter {
                             register_supplier_zip_tap(sid, zip_state_id, 0);
                         }
                         for (i, supply) in other_supplies.iter().enumerate() {
-                            if let Value::Instance {
+                            if let ValueView::Instance {
                                 attributes: other_attrs,
                                 ..
-                            } = supply
+                            } = supply.view()
                             {
                                 let source_index = i + 1;
                                 if let Some(sid) = supplier_id_from_attrs(&(other_attrs).as_map()) {
@@ -1106,20 +1118,20 @@ impl Interpreter {
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     new_attrs.insert(
                         "supplier_id".to_string(),
-                        Value::Int(output_supplier_id as i64),
+                        Value::int(output_supplier_id as i64),
                     );
-                    new_attrs.insert("live".to_string(), Value::Bool(false));
+                    new_attrs.insert("live".to_string(), Value::FALSE);
                     Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
                 } else {
                     // Non-live path
                     let source_values = self.supply_get_values(attributes)?;
                     let mut other_values: Vec<Vec<Value>> = Vec::new();
                     for arg in &other_supplies {
-                        if let Value::Instance {
+                        if let ValueView::Instance {
                             class_name,
                             attributes,
                             ..
-                        } = arg
+                        } = arg.view()
                             && class_name == "Supply"
                         {
                             other_values.push(self.supply_get_values(&(attributes).as_map())?);
@@ -1148,7 +1160,7 @@ impl Interpreter {
             "start" => {
                 // Supply.start: for each emitted value, run the block and wrap
                 // the result in a single-value Supply, emitting that Supply downstream.
-                let block = args.first().cloned().unwrap_or(Value::Nil);
+                let block = args.first().cloned().unwrap_or(Value::NIL);
 
                 // For live (Supplier-backed) supplies, create a derived supplier
                 // and register a start-transform tap on the source.
@@ -1160,9 +1172,9 @@ impl Interpreter {
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     new_attrs.insert(
                         "supplier_id".to_string(),
-                        Value::Int(output_supplier_id as i64),
+                        Value::int(output_supplier_id as i64),
                     );
-                    new_attrs.insert("live".to_string(), Value::Bool(true));
+                    new_attrs.insert("live".to_string(), Value::TRUE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
 
@@ -1174,7 +1186,7 @@ impl Interpreter {
                     let mut inner_attrs = HashMap::new();
                     inner_attrs.insert("values".to_string(), Value::array(vec![result]));
                     inner_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    inner_attrs.insert("live".to_string(), Value::Bool(false));
+                    inner_attrs.insert("live".to_string(), Value::FALSE);
                     results.push(Value::make_instance(Symbol::intern("Supply"), inner_attrs));
                 }
                 Ok(self.make_supply_from_values(results, attributes))
@@ -1212,7 +1224,7 @@ impl Interpreter {
                     return Ok(result);
                 }
                 let source_values = self.supply_get_values(attributes)?;
-                Ok(source_values.last().cloned().unwrap_or(Value::Nil))
+                Ok(source_values.last().cloned().unwrap_or(Value::NIL))
             }
             "Channel" => {
                 // Supply.Channel: create a Channel that receives all values
@@ -1237,7 +1249,7 @@ impl Interpreter {
                 } else {
                     ch.close();
                 }
-                Ok(Value::Channel(ch))
+                Ok(Value::channel(ch))
             }
             "Supply" | "supply" => {
                 // .Supply on a Supply is identity (noop) — return self

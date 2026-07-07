@@ -7,16 +7,17 @@ impl Interpreter {
         updated: &mut std::collections::HashMap<String, Value>,
         item: Value,
     ) -> bool {
-        match item.into_descalarized() {
-            Value::Pair(key, boxed) => {
-                updated.insert(key, *boxed);
+        let item = item.into_descalarized();
+        match item.view() {
+            ValueView::Pair(key, boxed) => {
+                updated.insert(key.clone(), boxed.clone());
                 true
             }
-            Value::ValuePair(key, boxed) => {
-                updated.insert(key.to_string_value(), *boxed);
+            ValueView::ValuePair(key, boxed) => {
+                updated.insert(key.to_string_value(), boxed.clone());
                 true
             }
-            Value::Hash(map) => {
+            ValueView::Hash(map) => {
                 updated.extend(map.map.clone());
                 true
             }
@@ -29,13 +30,13 @@ impl Interpreter {
         value: Value,
     ) -> Value {
         let normalized_value = value.into_descalarized();
-        match normalized_value {
-            Value::Pair(..) | Value::ValuePair(..) | Value::Hash(..) => {
+        match normalized_value.view() {
+            ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(..) => {
                 let mut updated = existing_hash;
-                let _ = Self::apply_hash_assignment_entry(&mut updated, normalized_value);
+                let _ = Self::apply_hash_assignment_entry(&mut updated, normalized_value.clone());
                 Value::hash(updated)
             }
-            Value::Array(items, _) => {
+            ValueView::Array(items, _) => {
                 let mut updated = existing_hash;
                 let mut iter = items.iter().cloned();
                 if let Some(first) = iter.next()
@@ -45,12 +46,12 @@ impl Interpreter {
                 }
                 for item in iter {
                     if !Self::apply_hash_assignment_entry(&mut updated, item) {
-                        return Value::Array(items.clone(), ArrayKind::List);
+                        return Value::array_with_kind(items.clone(), ArrayKind::List);
                     }
                 }
                 Value::hash(updated)
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 let mut updated = existing_hash;
                 let mut iter = items.iter().cloned();
                 if let Some(first) = iter.next()
@@ -60,7 +61,7 @@ impl Interpreter {
                 }
                 for item in iter {
                     if !Self::apply_hash_assignment_entry(&mut updated, item) {
-                        return Value::Array(
+                        return Value::array_with_kind(
                             crate::value::Value::array_arc(items.clone().to_vec()),
                             ArrayKind::List,
                         );
@@ -68,7 +69,7 @@ impl Interpreter {
                 }
                 Value::hash(updated)
             }
-            other => other,
+            _ => normalized_value.clone(),
         }
     }
 
@@ -119,111 +120,119 @@ impl Interpreter {
 
     pub(crate) fn normalize_rw_accessor_assignment(current: Option<Value>, value: Value) -> Value {
         let current = current.map(Value::into_descalarized);
-        match current {
-            Some(Value::Hash(existing_hash)) => {
+        match current.as_ref().map(Value::view) {
+            Some(ValueView::Hash(existing_hash)) => {
                 // Carry the existing container's `is default(...)` onto the result
                 // so a whole-hash rw-accessor writeback (`$o.h<k> = v`, which
                 // round-trips the whole hash) does not strip the element default.
                 let existing_default = existing_hash.default.clone();
                 let mut result =
                     Self::normalize_hash_like_assignment(existing_hash.map.clone(), value);
-                if let (Value::Hash(arc), Some(def)) = (&mut result, existing_default)
-                    && arc.default.is_none()
-                {
-                    crate::gc::Gc::make_mut(arc).default = Some(def);
+                if let Some(def) = existing_default {
+                    result.with_hash_mut(|arc| {
+                        if arc.default.is_none() {
+                            crate::gc::Gc::make_mut(arc).default = Some(def);
+                        }
+                    });
                 }
                 result
             }
-            Some(Value::Array(..)) => super::coerce_to_array(value),
+            Some(ValueView::Array(..)) => super::coerce_to_array(value),
             _ => value,
         }
     }
 
     fn normalize_push_unshift_arg(arg: Value) -> Value {
-        match arg {
-            Value::Scalar(inner) => *inner,
-            Value::Array(items, kind) if kind.is_itemized() => {
-                Value::Array(items, kind.decontainerize())
+        match arg.view() {
+            ValueView::Scalar(inner) => inner.clone(),
+            ValueView::Array(items, kind) if kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.decontainerize())
             }
-            other => other,
+            _ => arg,
         }
     }
 
     pub(crate) fn normalize_push_unshift_args(args: Vec<Value>) -> Vec<Value> {
-        let needs_normalize = args.iter().any(|arg| match arg {
-            Value::Scalar(_) => true,
-            Value::Array(_, kind) => kind.is_itemized(),
-            Value::Slip(_) => true,
+        let needs_normalize = args.iter().any(|arg| match arg.view() {
+            ValueView::Scalar(_) => true,
+            ValueView::Array(_, kind) => kind.is_itemized(),
+            ValueView::Slip(_) => true,
             _ => false,
         });
         if !needs_normalize {
             return args;
         }
         args.into_iter()
-            .flat_map(|arg| match arg {
-                Value::Slip(items) => items.to_vec(),
-                other => vec![Self::normalize_push_unshift_arg(other)],
+            .flat_map(|arg| match arg.view() {
+                ValueView::Slip(items) => items.to_vec(),
+                _ => vec![Self::normalize_push_unshift_arg(arg)],
             })
             .collect()
     }
 
     pub(crate) fn normalize_incdec_source_for_mut(value: Value) -> Value {
-        match value {
-            Value::Nil => Value::Int(0),
-            Value::Package(name) => match name.resolve().as_str() {
-                "Num" | "num" => Value::Num(0.0),
+        match value.view() {
+            ValueView::Nil => Value::int(0),
+            ValueView::Package(name) => match name.resolve().as_str() {
+                "Num" | "num" => Value::num(0.0),
                 "Rat" => crate::value::make_rat(0, 1),
-                "Complex" => Value::Complex(0.0, 0.0),
-                _ => Value::Int(0),
+                "Complex" => Value::complex(0.0, 0.0),
+                _ => Value::int(0),
             },
-            other => other,
+            _ => value,
         }
     }
 
     pub(crate) fn increment_mut_target_value(value: &Value) -> Value {
-        match value {
-            Value::Int(i) => i
+        match value.view() {
+            ValueView::Int(i) => i
                 .checked_add(1)
-                .map(Value::Int)
-                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) + 1)),
-            Value::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
-            Value::Bool(_) => Value::Bool(true),
-            Value::Rat(n, d) => make_rat(n + d, *d),
-            Value::FatRat(n, d) => match make_rat(n + d, *d) {
-                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                other => other,
-            },
-            Value::Str(s) => Value::str(Self::string_succ(s)),
-            _ => Value::Int(1),
+                .map(Value::int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(i) + 1)),
+            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() + 1),
+            ValueView::Bool(_) => Value::TRUE,
+            ValueView::Rat(n, d) => make_rat(n + d, d),
+            ValueView::FatRat(n, d) => {
+                let r = make_rat(n + d, d);
+                match r.view() {
+                    ValueView::Rat(nn, dd) => Value::fat_rat_raw(nn, dd),
+                    _ => r,
+                }
+            }
+            ValueView::Str(s) => Value::str(Self::string_succ(s)),
+            _ => Value::int(1),
         }
     }
 
     pub(crate) fn decrement_mut_target_value(value: &Value) -> Value {
-        match value {
-            Value::Int(i) => i
+        match value.view() {
+            ValueView::Int(i) => i
                 .checked_sub(1)
-                .map(Value::Int)
-                .unwrap_or_else(|| Value::from_bigint(BigInt::from(*i) - 1)),
-            Value::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
-            Value::Bool(_) => Value::Bool(false),
-            Value::Rat(n, d) => make_rat(n - d, *d),
-            Value::FatRat(n, d) => match make_rat(n - d, *d) {
-                Value::Rat(nn, dd) => Value::FatRat(nn, dd),
-                other => other,
-            },
-            Value::Str(s) => match Self::string_pred(s) {
+                .map(Value::int)
+                .unwrap_or_else(|| Value::from_bigint(BigInt::from(i) - 1)),
+            ValueView::BigInt(n) => Value::from_bigint(n.as_ref() - 1),
+            ValueView::Bool(_) => Value::FALSE,
+            ValueView::Rat(n, d) => make_rat(n - d, d),
+            ValueView::FatRat(n, d) => {
+                let r = make_rat(n - d, d);
+                match r.view() {
+                    ValueView::Rat(nn, dd) => Value::fat_rat_raw(nn, dd),
+                    _ => r,
+                }
+            }
+            ValueView::Str(s) => match Self::string_pred(s) {
                 Ok(prev) => Value::str(prev),
-                Err(_) => Value::Str(s.clone()),
+                Err(_) => Value::str_arc(s.clone()),
             },
-            _ => Value::Int(-1),
+            _ => Value::int(-1),
         }
     }
 
     pub(crate) fn value_to_non_negative_i64(value: &Value) -> Option<i64> {
-        match value {
-            Value::Int(i) => Some(*i),
-            Value::Num(f) => Some(*f as i64),
-            Value::BigInt(i) => num_traits::ToPrimitive::to_i64(i.as_ref()),
+        match value.view() {
+            ValueView::Int(i) => Some(i),
+            ValueView::Num(f) => Some(f as i64),
+            ValueView::BigInt(i) => num_traits::ToPrimitive::to_i64(i.as_ref()),
             _ => None,
         }
     }
@@ -241,12 +250,12 @@ impl Interpreter {
         // so every alias of the cell observes the element write.
         let mut cells: Vec<crate::gc::Gc<std::sync::Mutex<Value>>> = Vec::new();
         for (name, value) in self.env.iter() {
-            match value {
-                Value::Array(existing, ..) if crate::gc::Gc::ptr_eq(existing, needle) => {
+            match value.view() {
+                ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(existing, needle) => {
                     keys.push(*name);
                 }
-                Value::ContainerRef(cell) => {
-                    if let Value::Array(existing, ..) = &*cell.lock().unwrap()
+                ValueView::ContainerRef(cell) => {
+                    if let ValueView::Array(existing, ..) = cell.lock().unwrap().view()
                         && crate::gc::Gc::ptr_eq(existing, needle)
                     {
                         cells.push(cell.clone());
@@ -279,12 +288,12 @@ impl Interpreter {
         let mut keys: Vec<Symbol> = Vec::new();
         let mut cells: Vec<crate::gc::Gc<std::sync::Mutex<Value>>> = Vec::new();
         for (name, value) in self.env.iter() {
-            match value {
-                Value::Hash(existing) if crate::gc::Gc::ptr_eq(existing, needle) => {
+            match value.view() {
+                ValueView::Hash(existing) if crate::gc::Gc::ptr_eq(existing, needle) => {
                     keys.push(*name);
                 }
-                Value::ContainerRef(cell) => {
-                    if let Value::Hash(existing) = &*cell.lock().unwrap()
+                ValueView::ContainerRef(cell) => {
+                    if let ValueView::Hash(existing) = cell.lock().unwrap().view()
                         && crate::gc::Gc::ptr_eq(existing, needle)
                     {
                         cells.push(cell.clone());
@@ -315,9 +324,9 @@ impl Interpreter {
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();
         for (var_name, value) in self.env.iter() {
-            if let Value::Instance { attributes, .. } = value {
+            if let ValueView::Instance { attributes, .. } = value.view() {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
-                    if let Value::Array(arc, ..) = attr_val
+                    if let ValueView::Array(arc, ..) = attr_val.view()
                         && crate::gc::Gc::ptr_eq(arc, needle)
                     {
                         updates.push((*var_name, attr_key.clone()));
@@ -326,7 +335,9 @@ impl Interpreter {
             }
         }
         for (var_name, attr_key) in updates {
-            if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
+            if let Some(ValueView::Instance { attributes, .. }) =
+                self.env.get_sym(var_name).map(Value::view)
+            {
                 // The env binding shares this instance's live cell, so the in-place
                 // insert is visible without rebuilding/re-inserting the value.
                 attributes.insert(attr_key, replacement.clone());
@@ -342,9 +353,9 @@ impl Interpreter {
     ) {
         let mut updates: Vec<(Symbol, String)> = Vec::new();
         for (var_name, value) in self.env.iter() {
-            if let Value::Instance { attributes, .. } = value {
+            if let ValueView::Instance { attributes, .. } = value.view() {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
-                    if let Value::Hash(arc) = attr_val
+                    if let ValueView::Hash(arc) = attr_val.view()
                         && crate::gc::Gc::ptr_eq(arc, needle)
                     {
                         updates.push((*var_name, attr_key.clone()));
@@ -353,7 +364,9 @@ impl Interpreter {
             }
         }
         for (var_name, attr_key) in updates {
-            if let Some(Value::Instance { attributes, .. }) = self.env.get_sym(var_name) {
+            if let Some(ValueView::Instance { attributes, .. }) =
+                self.env.get_sym(var_name).map(Value::view)
+            {
                 // Shared live cell — in-place insert is visible to the env binding.
                 attributes.insert(attr_key, replacement.clone());
             }
@@ -369,8 +382,8 @@ impl Interpreter {
         let top_keys: Vec<Symbol> = self
             .env
             .iter()
-            .filter_map(|(sym, val)| match val {
-                Value::Mixin(_, existing_mixins)
+            .filter_map(|(sym, val)| match val.view() {
+                ValueView::Mixin(_, existing_mixins)
                     if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
                 {
                     Some(*sym)
@@ -386,7 +399,7 @@ impl Interpreter {
             .env
             .iter()
             .filter_map(|(sym, val)| {
-                if let Value::Sub(_) = val {
+                if let ValueView::Sub(_) = val.view() {
                     Some(*sym)
                 } else {
                     None
@@ -394,13 +407,13 @@ impl Interpreter {
             })
             .collect();
         for key in sub_keys {
-            if let Some(Value::Sub(data)) = self.env.get_sym(key) {
+            if let Some(ValueView::Sub(data)) = self.env.get_sym(key).map(Value::view) {
                 let sub_data = data.clone();
                 let closure_keys: Vec<Symbol> = sub_data
                     .env
                     .iter()
-                    .filter_map(|(sym, val)| match val {
-                        Value::Mixin(_, existing_mixins)
+                    .filter_map(|(sym, val)| match val.view() {
+                        ValueView::Mixin(_, existing_mixins)
                             if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
                         {
                             Some(*sym)
@@ -409,12 +422,14 @@ impl Interpreter {
                     })
                     .collect();
                 if !closure_keys.is_empty()
-                    && let Some(Value::Sub(data_arc)) = self.env.get_mut_sym(key)
+                    && let Some(sub_val) = self.env.get_mut_sym(key)
                 {
-                    let data_mut = crate::gc::Gc::make_mut(data_arc);
-                    for closure_key in closure_keys {
-                        data_mut.env.insert_sym(closure_key, new_mixin.clone());
-                    }
+                    sub_val.with_sub_mut(|data_arc| {
+                        let data_mut = crate::gc::Gc::make_mut(data_arc);
+                        for closure_key in closure_keys {
+                            data_mut.env.insert_sym(closure_key, new_mixin.clone());
+                        }
+                    });
                 }
             }
         }
@@ -434,12 +449,12 @@ impl Interpreter {
         new_mixin: &Value,
         sub_val: &mut Value,
     ) {
-        if let Value::Sub(data_arc) = sub_val {
+        sub_val.with_sub_mut(|data_arc| {
             let closure_keys: Vec<Symbol> = data_arc
                 .env
                 .iter()
-                .filter_map(|(sym, val)| match val {
-                    Value::Mixin(_, existing_mixins)
+                .filter_map(|(sym, val)| match val.view() {
+                    ValueView::Mixin(_, existing_mixins)
                         if std::sync::Arc::ptr_eq(existing_mixins, old_mixins) =>
                     {
                         Some(*sym)
@@ -453,6 +468,6 @@ impl Interpreter {
                     data_mut.env.insert_sym(key, new_mixin.clone());
                 }
             }
-        }
+        });
     }
 }

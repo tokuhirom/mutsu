@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Dispatch method calls on Value::Mixin targets.
+    /// Dispatch method calls on Mixin targets.
     /// Returns Some(result) if the method was handled, None if not.
     pub(super) fn dispatch_mixin_method_call(
         &mut self,
@@ -10,7 +10,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Mixin(inner, mixins) = target else {
+        let ValueView::Mixin(inner, mixins) = target.view() else {
             return None;
         };
 
@@ -49,14 +49,14 @@ impl Interpreter {
                 }
             }
             for mixin_val in mixins.values() {
-                if let Value::Enum { enum_type, key, .. } = mixin_val {
+                if let ValueView::Enum { enum_type, key, .. } = mixin_val.view() {
                     if method == key.resolve() {
-                        return Some(Ok(Value::Bool(true)));
+                        return Some(Ok(Value::TRUE));
                     }
                     if let Some(variants) = self.registry().enum_types.get(&enum_type.resolve())
                         && variants.iter().any(|(variant, _)| variant == method)
                     {
-                        return Some(Ok(Value::Bool(false)));
+                        return Some(Ok(Value::FALSE));
                     }
                 }
             }
@@ -109,8 +109,8 @@ impl Interpreter {
                 // attributes like `@.order`) so that `$.attr` accessors inside
                 // the role method see and can mutate the class's state, then
                 // overlay the role's own `__mutsu_attr__` attributes.
-                let (inner_cell, mut method_attrs) = match inner.as_ref() {
-                    Value::Instance { attributes, .. } => {
+                let (inner_cell, mut method_attrs) = match inner.as_ref().view() {
+                    ValueView::Instance { attributes, .. } => {
                         (Some(attributes.clone()), attributes.to_map())
                     }
                     _ => (None, HashMap::new()),
@@ -124,8 +124,10 @@ impl Interpreter {
                 // the role method falls through to the mixed-in base object's
                 // method of the same name: `A.new but Role` where the role's
                 // method calls `nextsame` must reach the class's original method.
-                let base_class = match inner.as_ref() {
-                    Value::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
+                let base_class = match inner.as_ref().view() {
+                    ValueView::Instance { class_name, .. } => {
+                        Some(class_name.resolve().to_string())
+                    }
                     _ => None,
                 };
                 let base_remaining: Vec<(String, MethodDef)> = if let Some(bc) = &base_class {
@@ -206,11 +208,11 @@ impl Interpreter {
                 || mixins.contains_key(&format!("__mutsu_attr__{}", method_name)))
                 && results.is_empty()
             {
-                results.push(Value::Routine {
-                    package: Symbol::intern("Mixin"),
-                    name: Symbol::intern(&method_name),
-                    is_regex: false,
-                });
+                results.push(Value::routine_parts(
+                    Symbol::intern("Mixin"),
+                    Symbol::intern(&method_name),
+                    false,
+                ));
             }
             for role_name in mixins.keys().filter_map(|key| {
                 key.strip_prefix("__mutsu_role__")
@@ -235,16 +237,16 @@ impl Interpreter {
             return Some(Ok(Value::array(results)));
         }
         if method == "does" && args.len() == 1 {
-            let does = match &args[0] {
-                Value::Enum {
+            let does = match args[0].view() {
+                ValueView::Enum {
                     enum_type,
                     key: probe_key,
                     ..
                 } => matches!(
-                    mixins.get(&enum_type.resolve()),
-                    Some(Value::Enum { key, .. }) if key == probe_key
+                    mixins.get(&enum_type.resolve()).map(Value::view),
+                    Some(ValueView::Enum { key, .. }) if key == probe_key
                 ),
-                Value::ParametricRole {
+                ValueView::ParametricRole {
                     base_name,
                     type_args,
                 } => {
@@ -254,7 +256,9 @@ impl Interpreter {
                         || mixins.contains_key(&format!("__mutsu_role__{}", base));
                     if has_role {
                         let key = format!("__mutsu_role_typeargs__{}", base);
-                        if let Some(Value::Array(actual_args, ..)) = mixins.get(&key) {
+                        if let Some(ValueView::Array(actual_args, ..)) =
+                            mixins.get(&key).map(Value::view)
+                        {
                             actual_args.len() == type_args.len()
                                 && actual_args
                                     .iter()
@@ -267,7 +271,7 @@ impl Interpreter {
                         false
                     }
                 }
-                Value::Package(name) => {
+                ValueView::Package(name) => {
                     let n = name.resolve();
                     let base = n.split('[').next().unwrap_or(&n);
                     mixins.contains_key(&n)
@@ -276,38 +280,39 @@ impl Interpreter {
                         || mixins.contains_key(&format!("__mutsu_role__{}", base))
                         || self.type_matches_value(&n, target)
                 }
-                Value::Str(name) => {
+                ValueView::Str(name) => {
                     mixins.contains_key(name.as_str())
                         || mixins.contains_key(&format!("__mutsu_role__{}", name))
                         || self.type_matches_value(name, target)
                 }
-                Value::Instance { class_name, .. } => {
+                ValueView::Instance { class_name, .. } => {
                     self.type_matches_value(&class_name.resolve(), target)
                 }
-                other => self.type_matches_value(&other.to_string_value(), target),
+                _ => self.type_matches_value(&args[0].to_string_value(), target),
             };
-            return Some(Ok(Value::Bool(does)));
+            return Some(Ok(Value::truth(does)));
         }
         if method == "isa" && args.len() == 1 {
-            let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                Value::Package(name) => name.resolve(),
-                Value::Str(name) => name.to_string(),
-                Value::Instance { class_name, .. } => class_name.resolve(),
-                other => other.to_string_value(),
+            let arg0 = args.first().cloned().unwrap_or(Value::NIL);
+            let target_name = match arg0.view() {
+                ValueView::Package(name) => name.resolve(),
+                ValueView::Str(name) => name.to_string(),
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
+                _ => arg0.to_string_value(),
             };
             // Roles are excluded from isa checks
             let role_key = format!("__mutsu_role__{}", target_name);
             if mixins.contains_key(&role_key) {
-                return Some(Ok(Value::Bool(false)));
+                return Some(Ok(Value::FALSE));
             }
             // Delegate to inner value's isa check using class MRO
-            let result = match inner.as_ref() {
-                Value::Instance { class_name, .. } => {
+            let result = match inner.as_ref().view() {
+                ValueView::Instance { class_name, .. } => {
                     self.class_mro(&class_name.resolve()).contains(&target_name)
                 }
                 _ => inner.isa_check(&target_name),
             };
-            return Some(Ok(Value::Bool(result)));
+            return Some(Ok(Value::truth(result)));
         }
 
         None

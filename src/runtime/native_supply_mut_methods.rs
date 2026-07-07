@@ -13,47 +13,66 @@ impl Interpreter {
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
         match method {
             "emit" => {
-                let value = args.first().cloned().unwrap_or(Value::Nil);
-                if let Some(Value::Array(items, ..)) = attrs.get_mut("values") {
-                    crate::gc::Gc::make_mut(items).push(value.clone());
-                } else {
+                let value = args.first().cloned().unwrap_or(Value::NIL);
+                let pushed = attrs
+                    .get_mut("values")
+                    .and_then(|v| {
+                        v.with_array_mut(|items, _| {
+                            crate::gc::Gc::make_mut(items).push(value.clone());
+                        })
+                    })
+                    .is_some();
+                if !pushed {
                     attrs.insert("values".to_string(), Value::array(vec![value.clone()]));
                 }
-                if let Some(Value::Array(taps, ..)) = attrs.get_mut("taps") {
+                if let Some(ValueView::Array(taps, ..)) = attrs.get("taps").map(Value::view) {
                     for tap in taps.iter().cloned().collect::<Vec<_>>() {
                         if Self::supply_has_active_callback(&tap) {
                             let _ = self.call_sub_value(tap, vec![value.clone()], true);
                         }
                     }
                 }
-                Ok((Value::Nil, attrs))
+                Ok((Value::NIL, attrs))
             }
             "tap" | "act" => {
                 let tap_cb = Self::positional_value(&args, 0)
                     .cloned()
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 let done_cb = Self::named_value(&args, "done");
                 let quit_cb = Self::named_value(&args, "quit");
                 let delay_seconds = Self::supply_delay_seconds(&attrs);
 
-                if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                    let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
-                    let is_lines = matches!(attrs.get("is_lines"), Some(Value::Bool(true)));
-                    let is_words = matches!(attrs.get("is_words"), Some(Value::Bool(true)));
-                    let is_elems = matches!(attrs.get("elems_filter"), Some(Value::Bool(true)));
+                if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
+                {
+                    let has_unique = matches!(
+                        attrs.get("unique_filter").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    let is_lines = matches!(
+                        attrs.get("is_lines").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    let is_words = matches!(
+                        attrs.get("is_words").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    let is_elems = matches!(
+                        attrs.get("elems_filter").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
                     if !Self::supply_has_active_callback(&tap_cb) {
                         // done/quit-only taps do not register a value callback
                     } else if is_lines {
                         let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
                         register_supplier_lines_tap(
-                            *supplier_id as u64,
+                            supplier_id as u64,
                             tap_cb.clone(),
                             chomp,
                             delay_seconds,
                         );
                     } else if is_words {
                         register_supplier_words_tap(
-                            *supplier_id as u64,
+                            supplier_id as u64,
                             tap_cb.clone(),
                             delay_seconds,
                         );
@@ -62,7 +81,7 @@ impl Interpreter {
                         let with_fn = attrs.get("unique_with").cloned();
                         let expires = attrs.get("unique_expires").map(|v| v.to_f64());
                         register_supplier_unique_tap(
-                            *supplier_id as u64,
+                            supplier_id as u64,
                             tap_cb.clone(),
                             delay_seconds,
                             as_fn,
@@ -76,34 +95,36 @@ impl Interpreter {
                             .unwrap_or(0.0);
                         let initial_count = attrs
                             .get("elems_initial_count")
-                            .and_then(|v| match v {
-                                Value::Int(i) => Some(*i),
+                            .and_then(|v| match v.view() {
+                                ValueView::Int(i) => Some(i),
                                 _ => None,
                             })
                             .unwrap_or(0);
                         register_supplier_elems_tap(
-                            *supplier_id as u64,
+                            supplier_id as u64,
                             tap_cb.clone(),
                             delay_seconds,
                             interval,
                             initial_count,
                         );
-                    } else if let Some(Value::Int(limit)) = attrs.get("head_limit") {
+                    } else if let Some(ValueView::Int(limit)) =
+                        attrs.get("head_limit").map(Value::view)
+                    {
                         register_supplier_tap_with_head_limit(
-                            *supplier_id as u64,
+                            supplier_id as u64,
                             tap_cb.clone(),
                             delay_seconds,
-                            *limit as usize,
+                            limit as usize,
                         );
                     } else if let Some(produce_callable) = attrs.get("produce_callable").cloned() {
                         register_supplier_produce_tap(
-                            *supplier_id as u64,
+                            supplier_id as u64,
                             tap_cb.clone(),
                             delay_seconds,
                             produce_callable,
                         );
                     } else {
-                        register_supplier_tap(*supplier_id as u64, tap_cb.clone(), delay_seconds);
+                        register_supplier_tap(supplier_id as u64, tap_cb.clone(), delay_seconds);
                     }
                 }
 
@@ -111,34 +132,36 @@ impl Interpreter {
                 // on the master supply-of-supplies so that emitted inner supplies
                 // switch the forwarded source (the user tap above was registered
                 // on the migrate output supplier `supplier_id`).
-                if let (Some(Value::Int(master_sid)), Some(Value::Int(ds_sid))) =
-                    (attrs.get("migrate_source"), attrs.get("supplier_id"))
-                {
-                    register_supplier_migrate_tap(*master_sid as u64, *ds_sid as u64);
+                if let (Some(ValueView::Int(master_sid)), Some(ValueView::Int(ds_sid))) = (
+                    attrs.get("migrate_source").map(Value::view),
+                    attrs.get("supplier_id").map(Value::view),
+                ) {
+                    register_supplier_migrate_tap(master_sid as u64, ds_sid as u64);
                 }
 
                 // Build a Tap handle referencing the registered subscription so
                 // `.close` can stop it later.
-                let mut tap_handle_attrs =
-                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                        let sid = *supplier_id as u64;
-                        let mut h = HashMap::new();
-                        h.insert("supplier_id".to_string(), Value::Int(sid as i64));
-                        if let Some(tid) = last_supplier_tap_id(sid) {
-                            h.insert("tap_id".to_string(), Value::Int(tid as i64));
-                        }
-                        h
-                    } else {
-                        HashMap::new()
-                    };
+                let mut tap_handle_attrs = if let Some(ValueView::Int(supplier_id)) =
+                    attrs.get("supplier_id").map(Value::view)
+                {
+                    let sid = supplier_id as u64;
+                    let mut h = HashMap::new();
+                    h.insert("supplier_id".to_string(), Value::int(sid as i64));
+                    if let Some(tid) = last_supplier_tap_id(sid) {
+                        h.insert("tap_id".to_string(), Value::int(tid as i64));
+                    }
+                    h
+                } else {
+                    HashMap::new()
+                };
                 // The on-demand emitter (created below) owns any CLOSE-phaser
                 // callbacks; remember its id on the Tap so `.close` fires them.
                 let mut close_supplier_id: Option<u64> = None;
 
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
-                if let Some(Value::Int(sid)) = attrs.get("supply_id") {
-                    let sid = *sid as u64;
+                if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view) {
+                    let sid = sid as u64;
                     if Self::supply_has_active_callback(&tap_cb) {
                         register_supply_tap(sid, tap_cb.clone());
                     }
@@ -158,8 +181,8 @@ impl Interpreter {
 
                 // For live/async supplies (e.g., signal), spawn a background thread
                 // to consume events from the channel and call the callback.
-                if let Some(Value::Int(sid)) = attrs.get("supply_id")
-                    && let Some(rx) = take_supply_channel(*sid as u64)
+                if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
+                    && let Some(rx) = take_supply_channel(sid as u64)
                 {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
@@ -170,8 +193,8 @@ impl Interpreter {
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
                 }
-                if let Some(Value::Int(sid)) = attrs.get("supply_id")
-                    && let Some(collected) = get_supply_collected_output(*sid as u64)
+                if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
+                    && let Some(collected) = get_supply_collected_output(sid as u64)
                     && !collected.is_empty()
                 {
                     if Self::supply_has_active_callback(&tap_cb) {
@@ -183,7 +206,10 @@ impl Interpreter {
                 }
 
                 // For on-demand supplies, execute the callback to produce values
-                let has_unique = matches!(attrs.get("unique_filter"), Some(Value::Bool(true)));
+                let has_unique = matches!(
+                    attrs.get("unique_filter").map(Value::view),
+                    Some(ValueView::Bool(true))
+                );
                 let mut on_demand_quit: Option<Value> = None;
                 let mut done_group_marker: Option<Value> = None;
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
@@ -212,14 +238,14 @@ impl Interpreter {
                     let whenever_supplier_count = emitted
                         .iter()
                         .filter(|item| {
-                            if let Value::Array(arr, ..) = item
+                            if let ValueView::Array(arr, ..) = item.view()
                                 && arr.len() == 4
-                                && let Value::Instance {
+                                && let ValueView::Instance {
                                     class_name,
                                     attributes,
                                     ..
-                                } = &arr[0]
-                                && *class_name == "Supply"
+                                } = arr[0].view()
+                                && class_name == "Supply"
                                 && attributes.contains_key("supplier_id")
                             {
                                 true
@@ -245,21 +271,21 @@ impl Interpreter {
                     // true when the block body itself ran `done`.
                     let body_done = body_ran_done;
                     for item in emitted {
-                        if let Value::Array(ref arr, ..) = item
+                        if let ValueView::Array(arr, ..) = item.view()
                             && arr.len() == 4
-                            && matches!(&arr[0], Value::Instance { class_name, .. } if class_name == "Supply")
+                            && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
                         {
                             let inner_supply = &arr[0];
                             let body_cb = arr[1].clone();
 
-                            if let Value::Instance {
+                            if let ValueView::Instance {
                                 attributes: inner_attrs,
                                 ..
-                            } = inner_supply
-                                && let Some(Value::Int(sid)) =
-                                    inner_attrs.as_map().get("supplier_id")
+                            } = inner_supply.view()
+                                && let Some(ValueView::Int(sid)) =
+                                    inner_attrs.as_map().get("supplier_id").map(Value::view)
                             {
-                                let supplier_id = *sid as u64;
+                                let supplier_id = sid as u64;
                                 register_supplier_tap(supplier_id, body_cb, 0.0);
                                 // Register the outer tap callback on the emitter
                                 // so that `$emitter.emit(val)` inside the body
@@ -285,7 +311,7 @@ impl Interpreter {
                                 // LAST blocks run first. Their `emit` routes to
                                 // the supply block's emitter (and out to the
                                 // outer tap) just like the main body's emit.
-                                if let Value::Array(last_arr, ..) = &arr[2] {
+                                if let ValueView::Array(last_arr, ..) = arr[2].view() {
                                     for last_cb in last_arr.iter() {
                                         register_supplier_done_callback(
                                             supplier_id,
@@ -298,7 +324,7 @@ impl Interpreter {
                                 // On quit they run before the downstream quit
                                 // handler; if one handles the exception the
                                 // supply completes with done instead of quit.
-                                if let Value::Array(quit_arr, ..) = &arr[3] {
+                                if let ValueView::Array(quit_arr, ..) = arr[3].view() {
                                     for qcb in quit_arr.iter() {
                                         register_supplier_whenever_quit_callback(
                                             supplier_id,
@@ -322,14 +348,18 @@ impl Interpreter {
                                 }
                                 // Collect this source's on-close callbacks so a
                                 // `done`-driven supply completion can fire them.
-                                if let Some(Value::Array(cbs, ..)) =
-                                    inner_attrs.as_map().get("on_close_callbacks")
+                                if let Some(ValueView::Array(cbs, ..)) = inner_attrs
+                                    .as_map()
+                                    .get("on_close_callbacks")
+                                    .map(Value::view)
                                 {
                                     whenever_on_close.extend(cbs.iter().cloned());
                                 }
                             } else {
                                 let inner_vals =
-                                    if let Value::Instance { attributes: a, .. } = inner_supply {
+                                    if let ValueView::Instance { attributes: a, .. } =
+                                        inner_supply.view()
+                                    {
                                         self.supply_list_values(&a.as_map(), true)?
                                     } else {
                                         self.supply_list_values(&HashMap::new(), true)?
@@ -362,7 +392,7 @@ impl Interpreter {
                                 }
                             }
                         } else {
-                            plain_values.push(item);
+                            plain_values.push(item.clone());
                         }
                     }
                     // A `done` that terminates the whole supply (an explicit
@@ -392,10 +422,11 @@ impl Interpreter {
                     // and — since a plain async body registers no inner whenever —
                     // the outer tap must also be registered on the emitter so the
                     // thread's `emit`s reach the tap subscriber.
-                    let own_close_cbs: Vec<Value> = match attrs.get("on_close_callbacks") {
-                        Some(Value::Array(cbs, ..)) => cbs.to_vec(),
-                        _ => Vec::new(),
-                    };
+                    let own_close_cbs: Vec<Value> =
+                        match attrs.get("on_close_callbacks").map(Value::view) {
+                            Some(ValueView::Array(cbs, ..)) => cbs.to_vec(),
+                            _ => Vec::new(),
+                        };
                     if !own_close_cbs.is_empty() {
                         let (_, emitter_done, _) = supplier_snapshot(emitter_supplier_id);
                         if body_done || emitter_done {
@@ -422,9 +453,15 @@ impl Interpreter {
                     plain_values
                 } else if has_unique {
                     if Self::supply_has_active_callback(&tap_cb) {
-                        if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
-                            crate::gc::Gc::make_mut(items).push(tap_cb.clone());
-                        } else {
+                        let pushed = attrs
+                            .get_mut("taps")
+                            .and_then(|v| {
+                                v.with_array_mut(|items, _| {
+                                    crate::gc::Gc::make_mut(items).push(tap_cb.clone());
+                                })
+                            })
+                            .is_some();
+                        if !pushed {
                             attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
                         }
                     }
@@ -432,8 +469,10 @@ impl Interpreter {
                     // values through the unique filter at tap-time. This handles
                     // the case where emissions happen before the tap is registered
                     // (e.g., tap-ok's :after-tap evaluation order).
-                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                        let (emitted, _done, _quit) = supplier_snapshot(*supplier_id as u64);
+                    if let Some(ValueView::Int(supplier_id)) =
+                        attrs.get("supplier_id").map(Value::view)
+                    {
+                        let (emitted, _done, _quit) = supplier_snapshot(supplier_id as u64);
                         let as_fn = attrs.get("unique_as").cloned();
                         let with_fn = attrs.get("unique_with").cloned();
                         let expires_secs = attrs.get("unique_expires").map(|v| v.to_f64());
@@ -474,7 +513,7 @@ impl Interpreter {
                                 unique_items.push(item);
                                 // Also mark as seen in the global unique filter state
                                 // so future real-time emissions know about these
-                                let sid = *supplier_id as u64;
+                                let sid = supplier_id as u64;
                                 let tap_count = supplier_tap_count(sid);
                                 if tap_count > 0 {
                                     supplier_unique_mark_seen(sid, tap_count - 1, key);
@@ -487,27 +526,42 @@ impl Interpreter {
                     }
                 } else {
                     if Self::supply_has_active_callback(&tap_cb) {
-                        if let Some(Value::Array(items, ..)) = attrs.get_mut("taps") {
-                            crate::gc::Gc::make_mut(items).push(tap_cb.clone());
-                        } else {
+                        let pushed = attrs
+                            .get_mut("taps")
+                            .and_then(|v| {
+                                v.with_array_mut(|items, _| {
+                                    crate::gc::Gc::make_mut(items).push(tap_cb.clone());
+                                })
+                            })
+                            .is_some();
+                        if !pushed {
                             attrs.insert("taps".to_string(), Value::array(vec![tap_cb.clone()]));
                         }
                     }
-                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                        let is_live = matches!(attrs.get("live"), Some(Value::Bool(true)));
+                    if let Some(ValueView::Int(supplier_id)) =
+                        attrs.get("supplier_id").map(Value::view)
+                    {
+                        let is_live = matches!(
+                            attrs.get("live").map(Value::view),
+                            Some(ValueView::Bool(true))
+                        );
                         if is_live {
                             Vec::new()
                         } else {
-                            let (snap_values, _, _) = supplier_snapshot(*supplier_id as u64);
+                            let (snap_values, _, _) = supplier_snapshot(supplier_id as u64);
                             if !snap_values.is_empty() {
                                 snap_values
-                            } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
+                            } else if let Some(ValueView::Array(values, ..)) =
+                                attrs.get("values").map(Value::view)
+                            {
                                 values.to_vec()
                             } else {
                                 Vec::new()
                             }
                         }
-                    } else if let Some(Value::Array(values, ..)) = attrs.get("values") {
+                    } else if let Some(ValueView::Array(values, ..)) =
+                        attrs.get("values").map(Value::view)
+                    {
                         values.to_vec()
                     } else {
                         Vec::new()
@@ -516,15 +570,15 @@ impl Interpreter {
 
                 // Call do_callbacks and tap callback for each value
                 let do_cbs = attrs.get("do_callbacks").and_then(|v| {
-                    if let Value::Array(a, ..) = v {
+                    if let ValueView::Array(a, ..) = v.view() {
                         Some(a.to_vec())
                     } else {
                         None
                     }
                 });
                 let throttle_limit = attrs.get("throttle_limit").and_then(|v| {
-                    if let Value::Int(n) = v {
-                        Some(*n as usize)
+                    if let ValueView::Int(n) = v.view() {
+                        Some(n as usize)
                     } else {
                         None
                     }
@@ -563,7 +617,7 @@ impl Interpreter {
                 // (mirrors the lazy-map / gather / cross-shortcircuit carriers) —
                 // without this they are lost once the blanket reconcile is removed
                 // (docs/captured-outer-cell-sharing.md §7.2).
-                if let Value::Sub(ref data) = tap_cb
+                if let ValueView::Sub(data) = tap_cb.view()
                     && let Some(code) = data.compiled_code.clone()
                 {
                     self.record_eager_block_free_var_writeback(&code, &data.params);
@@ -579,7 +633,7 @@ impl Interpreter {
                         // them after the handler so the enclosing `.tap` call site
                         // still drains the tap block's scalar writes (e.g.
                         // `$emits-run++` in `supply { emit ...; die }`).
-                        if let Value::Sub(ref data) = tap_cb
+                        if let ValueView::Sub(data) = tap_cb.view()
                             && let Some(code) = data.compiled_code.clone()
                         {
                             self.record_eager_block_free_var_writeback(&code, &data.params);
@@ -593,20 +647,22 @@ impl Interpreter {
 
                 // Call done callback after all values emitted
                 if let Some(done_fn) = done_cb {
-                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
+                    if let Some(ValueView::Int(supplier_id)) =
+                        attrs.get("supplier_id").map(Value::view)
+                    {
                         // Check both the attribute and the global supplier state
                         let supplier_is_done = attrs
                             .get("supplier_done")
                             .map(Value::truthy)
                             .unwrap_or(false)
                             || {
-                                let (_, done, _) = supplier_snapshot(*supplier_id as u64);
+                                let (_, done, _) = supplier_snapshot(supplier_id as u64);
                                 done
                             };
                         if supplier_is_done {
                             let _ = self.call_sub_value(done_fn, vec![], true);
                         } else {
-                            register_supplier_done_callback(*supplier_id as u64, done_fn);
+                            register_supplier_done_callback(supplier_id as u64, done_fn);
                         }
                     } else if done_group_marker.is_none() {
                         // Only call done immediately when there are no
@@ -618,12 +674,14 @@ impl Interpreter {
                     }
                 }
                 if let Some(quit_fn) = quit_cb {
-                    if let Some(Value::Int(supplier_id)) = attrs.get("supplier_id") {
-                        let (_, _, quit_reason) = supplier_snapshot(*supplier_id as u64);
+                    if let Some(ValueView::Int(supplier_id)) =
+                        attrs.get("supplier_id").map(Value::view)
+                    {
+                        let (_, _, quit_reason) = supplier_snapshot(supplier_id as u64);
                         if let Some(reason) = quit_reason {
                             self.call_supply_quit_handler(quit_fn, reason)?;
                         } else {
-                            register_supplier_quit_callback(*supplier_id as u64, quit_fn);
+                            register_supplier_quit_callback(supplier_id as u64, quit_fn);
                         }
                     } else if let Some(reason) = attrs.get("quit_reason").cloned() {
                         self.call_supply_quit_handler(quit_fn, reason)?;
@@ -631,20 +689,21 @@ impl Interpreter {
                 }
                 if let Some(cid) = close_supplier_id {
                     tap_handle_attrs
-                        .insert("close_supplier_id".to_string(), Value::Int(cid as i64));
+                        .insert("close_supplier_id".to_string(), Value::int(cid as i64));
                 }
                 let tap_instance = Value::make_instance(Symbol::intern("Tap"), tap_handle_attrs);
                 Ok((tap_instance, attrs))
             }
             "on-close" => {
-                let close_cb = args.first().cloned().unwrap_or(Value::Nil);
+                let close_cb = args.first().cloned().unwrap_or(Value::NIL);
                 let mut new_attrs = attrs.clone();
-                let mut callbacks =
-                    if let Some(Value::Array(existing, ..)) = attrs.get("on_close_callbacks") {
-                        existing.to_vec()
-                    } else {
-                        Vec::new()
-                    };
+                let mut callbacks = if let Some(ValueView::Array(existing, ..)) =
+                    attrs.get("on_close_callbacks").map(Value::view)
+                {
+                    existing.to_vec()
+                } else {
+                    Vec::new()
+                };
                 callbacks.push(close_cb);
                 new_attrs.insert("on_close_callbacks".to_string(), Value::array(callbacks));
                 Ok((
@@ -655,8 +714,8 @@ impl Interpreter {
             "repeated" => {
                 let as_fn = Self::named_value(&args, "as");
                 let with_fn = Self::named_value(&args, "with");
-                let values = match attrs.get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let values = match attrs.get("values").map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let mut seen_keys: Vec<Value> = Vec::new();
@@ -685,7 +744,7 @@ impl Interpreter {
                 let mut new_attrs = HashMap::new();
                 new_attrs.insert("values".to_string(), Value::array(result));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                new_attrs.insert("live".to_string(), Value::Bool(false));
+                new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok((
                     Value::make_instance(Symbol::intern("Supply"), new_attrs),
                     attrs,

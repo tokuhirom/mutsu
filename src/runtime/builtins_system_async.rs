@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn builtin_kill(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -13,22 +14,19 @@ impl Interpreter {
         if !had_pid {
             success = false;
         }
-        Ok(Value::Bool(success))
+        Ok(Value::truth(success))
     }
 
     pub(super) fn builtin_syscall(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let Some(val) = args.first() else {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         };
         let num = super::to_int(val);
         if num == 0 {
             let pid = self
                 .env
                 .get("*PID")
-                .and_then(|v| match v {
-                    Value::Int(i) => Some(*i),
-                    _ => None,
-                })
+                .and_then(|v| v.as_int())
                 .unwrap_or_else(|| {
                     #[cfg(not(target_arch = "wasm32"))]
                     {
@@ -39,9 +37,9 @@ impl Interpreter {
                         0
                     }
                 });
-            return Ok(Value::Int(pid));
+            return Ok(Value::int(pid));
         }
-        Ok(Value::Int(-1))
+        Ok(Value::int(-1))
     }
 
     pub(super) fn builtin_sleep(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -56,7 +54,7 @@ impl Interpreter {
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
                         self.halted = true;
                         self.exit_code = code;
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                 }
             }
@@ -69,13 +67,13 @@ impl Interpreter {
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
                         self.halted = true;
                         self.exit_code = code;
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                 } else {
                     crate::gc::block_quiescent(|| thread::sleep(duration));
                 }
                 self.sync_shared_vars_to_env();
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
         }
     }
@@ -108,48 +106,53 @@ impl Interpreter {
         let arg = args.first().cloned();
         // Extract the target POSIX timestamp, handling Instant (TAI) values
         let target_posix = match &arg {
-            Some(Value::Instance {
-                class_name,
-                attributes,
-                ..
-            }) if class_name.resolve() == "Instant" => {
-                // Instant stores TAI time; convert back to POSIX
-                attributes
-                    .as_map()
-                    .get("value")
-                    .and_then(super::to_float_value)
-                    .map(crate::builtins::methods_0arg::temporal::instant_to_posix)
-            }
-            Some(Value::Instance {
-                class_name,
-                attributes,
-                ..
-            }) if class_name.resolve() == "DateTime" => {
-                // Compute posix from DateTime attributes
-                use crate::builtins::methods_0arg::temporal::{datetime_attrs, datetime_to_posix};
-                let (year, month, day, hour, minute, second, timezone) =
-                    datetime_attrs(&(attributes).as_map());
-                Some(datetime_to_posix(
-                    year, month, day, hour, minute, second, timezone,
-                ))
-            }
-            _ => Self::seconds_from_value(arg),
+            Some(v) => match v.view() {
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name.resolve() == "Instant" => {
+                    // Instant stores TAI time; convert back to POSIX
+                    attributes
+                        .as_map()
+                        .get("value")
+                        .and_then(super::to_float_value)
+                        .map(crate::builtins::methods_0arg::temporal::instant_to_posix)
+                }
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name.resolve() == "DateTime" => {
+                    // Compute posix from DateTime attributes
+                    use crate::builtins::methods_0arg::temporal::{
+                        datetime_attrs, datetime_to_posix,
+                    };
+                    let (year, month, day, hour, minute, second, timezone) =
+                        datetime_attrs(&(attributes).as_map());
+                    Some(datetime_to_posix(
+                        year, month, day, hour, minute, second, timezone,
+                    ))
+                }
+                _ => Self::seconds_from_value(arg.clone()),
+            },
+            None => Self::seconds_from_value(arg),
         };
         if let Some(target) = target_posix {
             let now = crate::value::current_time_secs_f64();
             if target <= now {
-                return Ok(Value::Bool(false));
+                return Ok(Value::FALSE);
             }
             let diff_secs = target - now;
             crate::gc::block_quiescent(|| thread::sleep(Duration::from_secs_f64(diff_secs)));
-            return Ok(Value::Bool(true));
+            return Ok(Value::TRUE);
         }
-        Ok(Value::Bool(false))
+        Ok(Value::FALSE)
     }
 
     /// `start { ... }` — spawn a thread to execute the block and return a Promise.
     pub(super) fn builtin_start(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
-        let block = args.into_iter().next().unwrap_or(Value::Nil);
+        let block = args.into_iter().next().unwrap_or(Value::NIL);
         Ok(self.spawn_callable_promise(block, Symbol::intern("Promise")))
     }
 
@@ -187,14 +190,15 @@ impl Interpreter {
         // Append the await call-site to the exception's backtrace, so the gist
         // surfaces both where the Promise's code died (preserved) and where it
         // was awaited (the re-throw location) — matching Raku's X::Await::Died.
-        if let Value::Instance { attributes, .. } = &cause {
+        if let ValueView::Instance { attributes, .. } = cause.view() {
             let await_bt = self.await_site_backtrace();
             if !await_bt.is_empty()
-                && let Some(Value::Instance {
+                && let Some(bt) = attributes.as_map().get("backtrace").cloned()
+                && let ValueView::Instance {
                     class_name: bt_cn,
                     attributes: bt_attrs,
                     ..
-                }) = attributes.as_map().get("backtrace").cloned()
+                } = bt.view()
                 && bt_cn == "Backtrace"
             {
                 let old = bt_attrs
@@ -210,25 +214,25 @@ impl Interpreter {
                 bt_attrs.insert("text".to_string(), Value::str(combined));
             }
         }
-        let msg = match &cause {
-            Value::Instance { attributes, .. } => {
-                attributes.insert("__mutsu_does_await_died".to_string(), Value::Bool(true));
+        let msg = match cause.view() {
+            ValueView::Instance { attributes, .. } => {
+                attributes.insert("__mutsu_does_await_died".to_string(), Value::TRUE);
                 attributes
                     .as_map()
                     .get("message")
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| cause.to_string_value())
             }
-            other => other.to_string_value(),
+            _ => cause.to_string_value(),
         };
         let mut err = RuntimeError::new(msg.clone());
-        let exc = if matches!(cause, Value::Instance { .. }) {
+        let exc = if matches!(cause.view(), ValueView::Instance { .. }) {
             cause
         } else {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.clone()));
             attrs.insert("payload".to_string(), Value::str(msg));
-            attrs.insert("__mutsu_does_await_died".to_string(), Value::Bool(true));
+            attrs.insert("__mutsu_does_await_died".to_string(), Value::TRUE);
             Value::make_instance(Symbol::intern("X::Await::Died"), attrs)
         };
         err.exception = Some(Box::new(exc));
@@ -240,7 +244,7 @@ impl Interpreter {
     /// broken if it quits) — `await $supply` ≡ `await $supply.Promise`. All other
     /// values pass through unchanged (Promises and Channels are handled inline).
     fn await_normalize(&mut self, v: Value) -> Result<Value, RuntimeError> {
-        if let Value::Instance { class_name, .. } = &v
+        if let ValueView::Instance { class_name, .. } = v.view()
             && class_name == "Supply"
         {
             return self.call_method_with_values(v, "Promise", vec![]);
@@ -268,8 +272,8 @@ impl Interpreter {
         }
         let mut results = Vec::new();
         for arg in &await_targets {
-            match arg {
-                Value::Promise(shared) => {
+            match arg.view() {
+                ValueView::Promise(shared) => {
                     let (result, output, stderr) = shared.wait();
                     self.emit_output(&output);
                     self.output_sink_mut().stderr_output.push_str(&stderr);
@@ -294,11 +298,11 @@ impl Interpreter {
                         return Err(self.await_died_error(result));
                     }
                     // Replay deferred Proc::Async taps
-                    if let Value::Instance {
-                        ref class_name,
-                        ref attributes,
+                    if let ValueView::Instance {
+                        class_name,
+                        attributes,
                         ..
-                    } = result
+                    } = result.view()
                         && class_name == "Proc"
                     {
                         self.replay_proc_taps(attributes);
@@ -309,7 +313,7 @@ impl Interpreter {
                     self.sync_shared_vars_to_env();
                 }
                 // Backward compat: Instance-based Promise
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -318,13 +322,13 @@ impl Interpreter {
                         .as_map()
                         .get("result")
                         .cloned()
-                        .unwrap_or(Value::Nil);
+                        .unwrap_or(Value::NIL);
                     results.push(result);
                 }
-                Value::Array(elems, ..) => {
+                ValueView::Array(elems, ..) => {
                     for elem in elems.iter() {
-                        match elem {
-                            Value::Promise(shared) => {
+                        match elem.view() {
+                            ValueView::Promise(shared) => {
                                 let (result, output, stderr) = shared.wait();
                                 self.emit_output(&output);
                                 self.output_sink_mut().stderr_output.push_str(&stderr);
@@ -335,7 +339,7 @@ impl Interpreter {
                                 let result = Self::unwrap_async_status_result(result)?;
                                 results.push(result);
                             }
-                            Value::Instance {
+                            ValueView::Instance {
                                 class_name,
                                 attributes,
                                 ..
@@ -344,7 +348,7 @@ impl Interpreter {
                                     .as_map()
                                     .get("result")
                                     .cloned()
-                                    .unwrap_or(Value::Nil);
+                                    .unwrap_or(Value::NIL);
                                 results.push(result);
                             }
                             _ => results.push(elem.clone()),
@@ -354,8 +358,8 @@ impl Interpreter {
                 // `await $channel` blocks for the next value (like `.receive`):
                 // returns it, or throws X::Channel::ReceiveOnClosed when the
                 // channel is drained and closed, or the failure cause when failed.
-                Value::Channel(ch) => match ch.receive_result() {
-                    Ok(Value::Nil) => return Err(Self::channel_receive_closed_error()),
+                ValueView::Channel(ch) => match ch.receive_result() {
+                    Ok(value) if value.is_nil() => return Err(Self::channel_receive_closed_error()),
                     Ok(value) => results.push(value),
                     Err(cause) => {
                         let ex = Self::as_exception_value(cause);
@@ -382,10 +386,13 @@ impl Interpreter {
         // semantics): `await start { (2, 3).Slip }, start { 4 }` yields
         // `(2, 3, 4)`, not `((2, 3), 4)`. A plain List/Array result is NOT a
         // Slip and stays nested, matching Raku.
-        if results.iter().any(|r| matches!(r, Value::Slip(_))) {
+        if results
+            .iter()
+            .any(|r| matches!(r.view(), ValueView::Slip(_)))
+        {
             let mut flat = Vec::with_capacity(results.len());
             for r in results {
-                if let Value::Slip(items) = r {
+                if let ValueView::Slip(items) = r.view() {
                     flat.extend(items.iter().cloned());
                 } else {
                     flat.push(r);
@@ -402,11 +409,11 @@ impl Interpreter {
     }
 
     fn unwrap_async_status_result(value: Value) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &value
+        } = value.view()
             && class_name == "IO::Socket::Async::StatusResult"
         {
             let status = attributes
@@ -419,16 +426,16 @@ impl Interpreter {
                     .as_map()
                     .get("result")
                     .cloned()
-                    .unwrap_or(Value::Nil));
+                    .unwrap_or(Value::NIL));
             }
             let cause = attributes
                 .as_map()
                 .get("cause")
                 .cloned()
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             let message = cause.to_string_value();
             let mut err = RuntimeError::new(message.clone());
-            if matches!(cause, Value::Instance { .. }) {
+            if matches!(cause.view(), ValueView::Instance { .. }) {
                 err.exception = Some(Box::new(cause));
             } else {
                 let mut attrs = std::collections::HashMap::new();
@@ -449,9 +456,9 @@ impl Interpreter {
         // Extract signal numbers and their enum representations
         let signals: Vec<(i64, Value)> = args
             .iter()
-            .filter_map(|v| match v {
-                Value::Enum { value, .. } => Some((value.as_i64(), v.clone())),
-                Value::Int(i) => Some((*i, v.clone())),
+            .filter_map(|v| match v.view() {
+                ValueView::Enum { value, .. } => Some((value.as_i64(), v.clone())),
+                ValueView::Int(i) => Some((i, v.clone())),
                 _ => None,
             })
             .collect();
@@ -474,7 +481,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+        attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 }

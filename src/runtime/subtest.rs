@@ -284,7 +284,7 @@ impl Interpreter {
     }
 
     pub(crate) fn value_array_items(value: &Value) -> Option<Vec<Value>> {
-        if let Value::Array(items, ..) = value {
+        if let ValueView::Array(items, ..) = value.view() {
             Some(items.to_vec())
         } else {
             None
@@ -303,7 +303,7 @@ impl Interpreter {
         // Without this, `whenever $supplier { ... }` inside a `supply` block
         // would pass the Supplier object itself as the subscription source,
         // which the tap dispatch code does not recognize (it expects Supply).
-        let supply_val = if let Value::Instance { class_name, .. } = &supply_val
+        let supply_val = if let ValueView::Instance { class_name, .. } = supply_val.view()
             && (class_name == "Supplier" || class_name == "Supplier::Preserving")
         {
             self.call_method_with_values(supply_val, "Supply", vec![])?
@@ -352,7 +352,7 @@ impl Interpreter {
 
         // Check if we're in a react block (supply_emit_buffer has an entry)
         if !self.supply_emit_buffer.is_empty() {
-            if let Value::Instance { class_name, .. } = &supply_val
+            if let ValueView::Instance { class_name, .. } = supply_val.view()
                 && class_name == "IO::Socket::Async::Listener"
             {
                 let tap = self.call_method_with_values(
@@ -377,23 +377,27 @@ impl Interpreter {
             }
 
             // Also register taps on the supply for non-react backward compat
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &supply_val
+            } = supply_val.view()
                 && class_name == "Supply"
             {
-                if let Some(Value::Int(sid)) = attributes.as_map().get("supply_id") {
+                if let Some(ValueView::Int(sid)) =
+                    attributes.as_map().get("supply_id").map(Value::view)
+                {
                     crate::runtime::native_methods::register_supply_tap(
-                        *sid as u64,
+                        sid as u64,
                         callback.clone(),
                     );
                 }
                 // Also register on parent for lines supplies
-                if let Some(Value::Int(pid)) = attributes.as_map().get("parent_supply_id") {
+                if let Some(ValueView::Int(pid)) =
+                    attributes.as_map().get("parent_supply_id").map(Value::view)
+                {
                     crate::runtime::native_methods::register_supply_tap(
-                        *pid as u64,
+                        pid as u64,
                         callback.clone(),
                     );
                 }
@@ -406,25 +410,25 @@ impl Interpreter {
         }
 
         // Not in react mode: original behavior
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes: _,
             ..
-        } = &supply_val
+        } = supply_val.view()
             && class_name == "Supply"
         {
             let mut tap_args = vec![callback.clone()];
             if let Some(done_cb) = last_callbacks.first().cloned() {
-                tap_args.push(Value::Pair("done".to_string(), Box::new(done_cb)));
+                tap_args.push(Value::pair("done".to_string(), done_cb));
             }
             if let Some(quit_cb) = quit_callbacks.first().cloned() {
-                tap_args.push(Value::Pair("quit".to_string(), Box::new(quit_cb)));
+                tap_args.push(Value::pair("quit".to_string(), quit_cb));
             }
             let updated = self.call_method_with_values(supply_val.clone(), "tap", tap_args)?;
             if let Some(name) = target_var {
                 self.env.insert(name.to_string(), updated);
             }
-        } else if let Value::Instance { class_name, .. } = &supply_val
+        } else if let ValueView::Instance { class_name, .. } = supply_val.view()
             && class_name == "IO::Socket::Async::Listener"
         {
             let tap = self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;

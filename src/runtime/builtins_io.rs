@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 /// Check for NUL bytes in a path and return X::IO::Null error if found.
 pub(super) fn check_null_in_path(path: &str) -> Result<(), RuntimeError> {
@@ -59,7 +60,7 @@ pub(super) fn parse_io_requirements(args: &[Value]) -> (bool, bool, bool, bool) 
     let mut require_write = false;
     let mut require_exec = false;
     for arg in args {
-        if let Value::Pair(key, val) = arg {
+        if let ValueView::Pair(key, val) = arg.view() {
             match key.as_str() {
                 "d" => require_dir = val.truthy(),
                 "r" => require_read = val.truthy(),
@@ -79,8 +80,8 @@ impl Interpreter {
         entry_name: &str,
         dir_path: &Path,
     ) -> bool {
-        if let Value::Bool(b) = test {
-            return *b;
+        if let ValueView::Bool(b) = test.view() {
+            return b;
         }
 
         let saved_cwd = self.env.get("$*CWD").cloned();
@@ -96,8 +97,8 @@ impl Interpreter {
         self.env
             .insert("$_".to_string(), Value::str(entry_name.to_string()));
 
-        let matched = match test {
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => self
+        let matched = match test.view() {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => self
                 .call_sub_value(test.clone(), vec![Value::str(entry_name.to_string())], true)
                 .map(|v| v.truthy())
                 .unwrap_or(false),
@@ -165,23 +166,26 @@ impl Interpreter {
 
     pub(super) fn builtin_slurp(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Check if first arg is a named pair (not a positional path)
-        let first_is_pair = args.first().is_none_or(|v| matches!(v, Value::Pair(_, _)));
+        let first_is_pair = args
+            .first()
+            .is_none_or(|v| matches!(v.view(), ValueView::Pair(..)));
         // If no positional path argument, slurp from $*ARGFILES
         if first_is_pair {
-            let argfiles = self.env.get("$*ARGFILES").cloned().unwrap_or(Value::Nil);
+            let argfiles = self.env.get("$*ARGFILES").cloned().unwrap_or(Value::NIL);
             return self.call_method_with_values(argfiles, "slurp", args.to_vec());
         }
         // If first arg is an IO::Handle, delegate to .slurp() method on it
-        if let Some(handle @ Value::Instance { class_name, .. }) = args.first()
+        if let Some(handle) = args.first()
+            && let ValueView::Instance { class_name, .. } = handle.view()
             && class_name == "IO::Handle"
         {
-            let has_close = args[1..].iter().any(
-                |arg| matches!(arg, Value::Pair(name, value) if name == "close" && value.truthy()),
-            );
+            let has_close = args[1..].iter().any(|arg| {
+                matches!(arg.view(), ValueView::Pair(name, value) if name == "close" && value.truthy())
+            });
             // Filter out :close from args passed to the slurp method
             let remaining: Vec<Value> = args[1..]
                 .iter()
-                .filter(|arg| !matches!(arg, Value::Pair(name, _) if name == "close"))
+                .filter(|arg| !matches!(arg.view(), ValueView::Pair(name, _) if name == "close"))
                 .cloned()
                 .collect();
             let result = self.call_method_with_values(handle.clone(), "slurp", remaining)?;
@@ -195,9 +199,9 @@ impl Interpreter {
         let bin = args
             .iter()
             .skip(1)
-            .any(|arg| matches!(arg, Value::Pair(name, value) if name == "bin" && value.truthy()));
+            .any(|arg| matches!(arg.view(), ValueView::Pair(name, value) if name == "bin" && value.truthy()));
         let enc = args.iter().skip(1).find_map(|arg| {
-            if let Value::Pair(name, value) = arg
+            if let ValueView::Pair(name, value) = arg.view()
                 && name == "enc"
             {
                 return Some(value.to_string_value());
@@ -209,7 +213,7 @@ impl Interpreter {
                 .map_err(|err| RuntimeError::new(format!("Failed to slurp '{}': {}", path, err)))?;
             let byte_vals: Vec<Value> = bytes
                 .into_iter()
-                .map(|b| Value::Int(i64::from(b)))
+                .map(|b| Value::int(i64::from(b)))
                 .collect();
             let mut attrs = HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
@@ -235,17 +239,18 @@ impl Interpreter {
 
     pub(super) fn builtin_spurt(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // If the first argument is an IO::Handle, delegate to IO::Handle.spurt
-        if let Some(Value::Instance {
-            class_name,
-            attributes,
-            ..
-        }) = args.first()
+        if let Some(inst) = args.first()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = inst.view()
             && class_name == "IO::Handle"
         {
             let content_value = args
                 .get(1)
                 .cloned()
-                .unwrap_or(Value::Str(String::new().into()));
+                .unwrap_or(Value::str_arc(String::new().into()));
             let method_args = std::iter::once(content_value)
                 .chain(args.iter().skip(2).cloned())
                 .collect();
@@ -263,7 +268,7 @@ impl Interpreter {
         let mut createonly = false;
         let mut enc: Option<String> = None;
         for arg in args.iter().skip(2) {
-            if let Value::Pair(key, val) = arg {
+            if let ValueView::Pair(key, val) = arg.view() {
                 match key.as_str() {
                     "append" => append = val.truthy(),
                     "createonly" => createonly = val.truthy(),
@@ -332,7 +337,7 @@ impl Interpreter {
             }
         };
         match write_result {
-            Ok(()) => Ok(Value::Bool(true)),
+            Ok(()) => Ok(Value::TRUE),
             Err(err) => Ok(io_exception_failure(
                 "X::IO::Spurt",
                 format!("Failed to spurt '{}': {}", path, err),
@@ -357,7 +362,7 @@ impl Interpreter {
                     )));
                 }
             }
-            names.push(Value::Str(path.into()));
+            names.push(Value::str_arc(path.into()));
         }
         Ok(Value::array(names))
     }
@@ -367,16 +372,18 @@ impl Interpreter {
         // (e.g. `open(IO::Handle.new(:path($p)))`), coerce it to its `.path`
         // so the underlying file is opened, matching rakudo.
         let path = match args.first() {
-            Some(Value::Instance {
-                class_name,
-                attributes,
-                ..
-            }) if class_name.resolve() == "IO::Handle" => attributes
-                .as_map()
-                .get("path")
-                .map(|p| p.to_string_value())
-                .unwrap_or_default(),
-            Some(v) => v.to_string_value(),
+            Some(v) => match v.view() {
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if class_name.resolve() == "IO::Handle" => attributes
+                    .as_map()
+                    .get("path")
+                    .map(|p| p.to_string_value())
+                    .unwrap_or_default(),
+                _ => v.to_string_value(),
+            },
             None => return Err(RuntimeError::new("open requires a path argument")),
         };
         check_null_in_path(&path)?;
@@ -417,8 +424,8 @@ impl Interpreter {
                 let class_name = err
                     .exception
                     .as_deref()
-                    .and_then(|ex| match ex {
-                        Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                    .and_then(|ex| match ex.view() {
+                        ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
                         _ => None,
                     })
                     .unwrap_or_else(|| "X::AdHoc".to_string());
@@ -431,6 +438,6 @@ impl Interpreter {
         let handle = args
             .first()
             .ok_or_else(|| RuntimeError::new("close requires a handle"))?;
-        Ok(Value::Bool(self.close_handle_value(handle)?))
+        Ok(Value::truth(self.close_handle_value(handle)?))
     }
 }

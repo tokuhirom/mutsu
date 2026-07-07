@@ -1,5 +1,5 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Build rakudo's `X::Str::Sprintf::Directives::Count` message: the directive
 /// count (`args_used`) is pluralized simply, the supplied count (`args_have`)
@@ -270,8 +270,8 @@ pub(crate) fn validate_sprintf_directives(fmt: &str, arg_count: usize) -> Result
     if expected_args != arg_count {
         let message = directives_count_message(fmt, expected_args, arg_count);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("args-have".to_string(), Value::Int(arg_count as i64));
-        attrs.insert("args-used".to_string(), Value::Int(expected_args as i64));
+        attrs.insert("args-have".to_string(), Value::int(arg_count as i64));
+        attrs.insert("args-used".to_string(), Value::int(expected_args as i64));
         attrs.insert("message".to_string(), Value::str(message.clone()));
         let mut err = RuntimeError::new(message);
         err.exception = Some(Box::new(Value::make_instance(
@@ -358,7 +358,7 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
         };
         let effective_index = positional_arg.unwrap_or(arg_index);
         if let Some(arg) = args.get(effective_index)
-            && matches!(arg, Value::Junction { .. })
+            && matches!(arg.view(), ValueView::Junction { .. })
         {
             let type_name = "Junction";
             let mut attrs = std::collections::HashMap::new();

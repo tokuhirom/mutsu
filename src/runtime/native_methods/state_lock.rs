@@ -143,7 +143,7 @@ pub(crate) fn async_acquire_lock(
         state.owner = Some(me);
         state.recursion = 1;
         // Promise resolves immediately.
-        let _ = promise.try_keep(crate::value::Value::Nil);
+        let _ = promise.try_keep(crate::value::Value::NIL);
     } else {
         state.async_waiters.push_back(promise.clone());
     }
@@ -181,7 +181,7 @@ pub(crate) fn async_release_lock(runtime: &LockRuntime) -> Result<(), RuntimeErr
         state.owner = Some(current_thread_id());
         state.recursion = 1;
         drop(state);
-        let _ = next.try_keep(crate::value::Value::Nil);
+        let _ = next.try_keep(crate::value::Value::NIL);
     } else {
         state.owner = None;
         state.recursion = 0;

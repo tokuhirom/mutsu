@@ -1974,10 +1974,10 @@ impl Interpreter {
                                             return None;
                                         }
                                     };
-                                    let pat_str = match &value {
-                                        Value::Regex(pat) => pat.to_string(),
-                                        Value::RegexWithAdverbs(a) => a.pattern.to_string(),
-                                        other => other.to_string_value(),
+                                    let pat_str = match value.view() {
+                                        ValueView::Regex(pat) => pat.to_string(),
+                                        ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                                        _ => value.to_string_value(),
                                     };
                                     // Check for longname alias first
                                     if Self::contains_longname_alias(&pat_str) {
@@ -2035,20 +2035,20 @@ impl Interpreter {
                                     // each element as a regex pattern (alternation)
                                     let env_key = trimmed.to_string(); // includes @
                                     let value =
-                                        self.env.get(&env_key).cloned().unwrap_or(Value::Nil);
-                                    let elements = match &value {
-                                        Value::Array(arr, _) => arr.as_ref().clone(),
-                                        Value::Seq(items) | Value::Slip(items) => {
+                                        self.env.get(&env_key).cloned().unwrap_or(Value::NIL);
+                                    let elements = match value.view() {
+                                        ValueView::Array(arr, _) => arr.as_ref().clone(),
+                                        ValueView::Seq(items) | ValueView::Slip(items) => {
                                             crate::value::ArrayData::new((**items).clone())
                                         }
-                                        _ => crate::value::ArrayData::new(vec![value]),
+                                        _ => crate::value::ArrayData::new(vec![value.clone()]),
                                     };
                                     let mut alt_patterns = Vec::new();
                                     for elt in &elements {
-                                        let pat_str = match elt {
-                                            Value::Regex(pat) => pat.to_string(),
-                                            Value::RegexWithAdverbs(a) => a.pattern.to_string(),
-                                            other => other.to_string_value(),
+                                        let pat_str = match elt.view() {
+                                            ValueView::Regex(pat) => pat.to_string(),
+                                            ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                                            _ => elt.to_string_value(),
                                         };
                                         if let Some(parsed) =
                                             self.parse_regex_with_mode(&pat_str, mode)

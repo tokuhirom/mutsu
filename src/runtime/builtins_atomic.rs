@@ -6,6 +6,7 @@
 
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(super) static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -105,8 +106,8 @@ impl Interpreter {
             && !name.starts_with('%')
             && !name.starts_with('@')
         {
-            if matches!(value, Value::Nil) {
-                value = Value::Package(Symbol::intern(&constraint));
+            if value.is_nil() {
+                value = Value::package(Symbol::intern(&constraint));
             } else if !self.type_matches_value(&constraint, &value) {
                 return Err(crate::runtime::utils::type_check_assignment_typed_error(
                     name,
@@ -114,7 +115,7 @@ impl Interpreter {
                     &value,
                 ));
             }
-            if !matches!(value, Value::Nil | Value::Package(_)) {
+            if !matches!(value.view(), ValueView::Nil | ValueView::Package(_)) {
                 value = self.try_coerce_value_for_constraint(&constraint, value)?;
             }
         }
@@ -124,12 +125,14 @@ impl Interpreter {
     pub(super) fn atomic_value_key_for_name(&mut self, name: &str) -> String {
         self.mark_atomic_var_seen();
         let name_key = Self::atomic_shared_name_key(name);
-        if let Some(Value::Str(existing)) = self.env.get(&name_key) {
+        if let Some(v) = self.env.get(&name_key)
+            && let ValueView::Str(existing) = v.view()
+        {
             return existing.to_string();
         }
         let value_key = {
             let mut shared = self.shared_vars.write().unwrap();
-            if let Some(Value::Str(existing)) = shared.get(&name_key) {
+            if let Some(existing) = shared.get(&name_key).and_then(|v| v.as_str()) {
                 existing.to_string()
             } else {
                 let id = ATOMIC_VAR_KEY_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -152,24 +155,24 @@ impl Interpreter {
             .get(value_key)
             .cloned()
             .or_else(|| self.env.get(name).cloned())
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         if let Some(constraint) = self.var_type_constraint(name) {
-            let is_untyped_placeholder = matches!(current, Value::Nil)
-                || matches!(current, Value::Package(sym) if sym.resolve() == "Any");
+            let is_untyped_placeholder = matches!(current.view(), ValueView::Nil)
+                || matches!(current.view(), ValueView::Package(sym) if sym.resolve() == "Any");
             if is_untyped_placeholder {
-                return Value::Package(Symbol::intern(&constraint));
+                return Value::package(Symbol::intern(&constraint));
             }
         }
         current
     }
 
     pub(super) fn cas_retry_matches(expected_seen: &Value, latest_seen: &Value) -> bool {
-        match (expected_seen, latest_seen) {
-            (Value::Instance { id: a, .. }, Value::Instance { id: b, .. }) => a == b,
-            (Value::Array(a, ..), Value::Array(b, ..)) => crate::gc::Gc::ptr_eq(a, b),
-            (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
-            (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-            (Value::Slip(a), Value::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+        match (expected_seen.view(), latest_seen.view()) {
+            (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
+            (ValueView::Array(a, ..), ValueView::Array(b, ..)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+            (ValueView::Slip(a), ValueView::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
             _ => expected_seen == latest_seen,
         }
     }
@@ -181,7 +184,7 @@ impl Interpreter {
         let name = self.atomic_var_name_arg(args)?;
         // Phase 3 cell-CAS: attribute targets read the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
-            let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::Nil);
+            let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::NIL);
             return Ok(val);
         }
         let value_key = self.atomic_value_key_for_name(&name);
@@ -233,9 +236,9 @@ impl Interpreter {
         // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
             let (_, next) = attrs.fetch_update(&key, |cur| {
-                let base = match cur {
-                    Value::Nil | Value::Package(_) => Value::Int(0),
-                    other => other.clone(),
+                let base = match cur.view() {
+                    ValueView::Nil | ValueView::Package(_) => Value::int(0),
+                    _ => cur.clone(),
                 };
                 crate::builtins::arith_add(base, delta.clone())
             })?;
@@ -273,9 +276,9 @@ impl Interpreter {
         // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
             let (old, next) = attrs.fetch_update(&key, |cur| {
-                let base = match cur {
-                    Value::Nil | Value::Package(_) => Value::Int(0),
-                    other => other.clone(),
+                let base = match cur.view() {
+                    ValueView::Nil | ValueView::Package(_) => Value::int(0),
+                    _ => cur.clone(),
                 };
                 crate::builtins::arith_add(base, delta.clone())
             })?;
@@ -310,29 +313,30 @@ impl Interpreter {
         if name.starts_with('!') || name.starts_with('.') {
             if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
                 let (old, next) = attrs.fetch_update(&key, |cur| {
-                    let base = match cur {
-                        Value::Nil | Value::Package(_) => Value::Int(0),
-                        other => other.clone(),
+                    let base = match cur.view() {
+                        ValueView::Nil | ValueView::Package(_) => Value::int(0),
+                        _ => cur.clone(),
                     };
-                    crate::builtins::arith_add(base, Value::Int(delta))
+                    crate::builtins::arith_add(base, Value::int(delta))
                 })?;
-                let old = match old {
-                    Value::Nil | Value::Package(_) => Value::Int(0),
-                    other => other,
+                let old = if matches!(old.view(), ValueView::Nil | ValueView::Package(_)) {
+                    Value::int(0)
+                } else {
+                    old
                 };
                 self.env.insert(name, next.clone());
                 return if return_old { Ok(old) } else { Ok(next) };
             }
             // Fallback for non-instance context: use env directly
-            let current = self.env.get(&name).cloned().unwrap_or(Value::Int(0));
-            let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
+            let current = self.env.get(&name).cloned().unwrap_or(Value::int(0));
+            let next = crate::builtins::arith_add(current.clone(), Value::int(delta))?;
             self.env.insert(name, next.clone());
             return if return_old { Ok(current) } else { Ok(next) };
         }
         let value_key = self.atomic_value_key_for_name(&name);
         let mut shared = self.shared_vars.write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
-        let next = crate::builtins::arith_add(current.clone(), Value::Int(delta))?;
+        let next = crate::builtins::arith_add(current.clone(), Value::int(delta))?;
         self.env.insert(name.clone(), next.clone());
         shared.insert(value_key.clone(), next.clone());
         drop(shared);

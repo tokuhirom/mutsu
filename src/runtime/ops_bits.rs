@@ -2,7 +2,7 @@ use super::*;
 
 impl Interpreter {
     fn buf_class_name(val: &Value) -> Option<String> {
-        if let Value::Instance { class_name, .. } = val {
+        if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
             if cn == "Buf"
                 || cn == "Blob"
@@ -53,7 +53,7 @@ impl Interpreter {
                 let b = rb.get(i).copied().unwrap_or(0) as u32;
                 out.push(op(a, b) as u8);
             }
-            let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::Int(b as i64)).collect();
+            let byte_vals: Vec<Value> = out.into_iter().map(|b| Value::int(b as i64)).collect();
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("bytes".to_string(), Value::array(byte_vals));
             let result_type = match (Self::buf_class_name(left), Self::buf_class_name(right)) {
@@ -98,7 +98,7 @@ impl Interpreter {
             } else {
                 a >> (shift as u32)
             };
-            return Value::Int(shifted);
+            return Value::int(shifted);
         }
         let shift = b as u64;
         if shift >= i64::BITS as u64 {
@@ -115,7 +115,7 @@ impl Interpreter {
                 return Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize));
             }
             if let Some(v) = a.checked_shl(shift as u32) {
-                Value::Int(v)
+                Value::int(v)
             } else {
                 Value::from_bigint(num_bigint::BigInt::from(a) << (shift as usize))
             }
@@ -126,7 +126,7 @@ impl Interpreter {
             } else {
                 a >> (shift as u32)
             };
-            Value::Int(shifted)
+            Value::int(shifted)
         }
     }
 

@@ -95,8 +95,8 @@ impl Interpreter {
         // Merge adjacent strings
         let mut merged: Vec<Value> = Vec::new();
         for val in result {
-            if let Value::Str(s) = &val
-                && let Some(Value::Str(prev)) = merged.last()
+            if let ValueView::Str(s) = val.view()
+                && let Some(ValueView::Str(prev)) = merged.last().map(Value::view)
             {
                 let combined = format!("{}{}", &**prev, &**s);
                 let len = merged.len();
@@ -362,7 +362,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert("contents".to_string(), Value::array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        attrs.insert("level".to_string(), Value::Int(level));
+        attrs.insert("level".to_string(), Value::int(level));
         Value::make_instance(Symbol::intern("Pod::Item"), attrs)
     }
 
@@ -414,9 +414,7 @@ impl Interpreter {
         if let Some(rest) = term.strip_prefix('#') {
             let rest = rest.trim_start();
             term = rest.to_string();
-            config
-                .entry("numbered".to_string())
-                .or_insert(Value::Bool(true));
+            config.entry("numbered".to_string()).or_insert(Value::TRUE);
         }
         let body_lines: Vec<String> = match term_idx {
             Some(i) => all_lines[i + 1..].to_vec(),

@@ -67,12 +67,12 @@ impl Interpreter {
                             && let Some(entry_val) = provides.hash_get_str(module)
                         {
                             // entry_val is either {"file": "hash_id"} or just a string
-                            let hash_id = match &entry_val {
-                                Value::Hash(map) => map
+                            let hash_id = match entry_val.view() {
+                                ValueView::Hash(map) => map
                                     .get("file")
                                     .map(|v| v.to_string_value())
                                     .unwrap_or_default(),
-                                other => other.to_string_value(),
+                                _ => entry_val.to_string_value(),
                             };
                             if !hash_id.is_empty() {
                                 let source_path = sources_dir.join(&hash_id);
@@ -327,7 +327,7 @@ impl Interpreter {
 
                     let mut resolved_files: HashMap<String, Value> = HashMap::new();
                     if let Some(files_val) = meta_val.hash_get_str("files")
-                        && let Value::Hash(fmap) = files_val
+                        && let ValueView::Hash(fmap) = files_val.view()
                     {
                         for (k, v) in fmap.iter() {
                             let hash_id = v.to_string_value();
@@ -340,17 +340,20 @@ impl Interpreter {
                             resolved_files.insert(k.clone(), Value::str(full_path));
                         }
                     }
-                    let mut meta_map = match &meta_val {
-                        Value::Hash(m) => m.map.clone(),
+                    let mut meta_map = match meta_val.view() {
+                        ValueView::Hash(m) => m.map.clone(),
                         _ => HashMap::new(),
                     };
                     meta_map.insert(
                         "files".to_string(),
-                        Value::Hash(Value::hash_arc(resolved_files)),
+                        Value::hash_with_data(Value::hash_arc(resolved_files)),
                     );
                     meta_map.insert("prefix".to_string(), Value::str(prefix.to_string()));
                     let mut attrs = HashMap::new();
-                    attrs.insert("meta".to_string(), Value::Hash(Value::hash_arc(meta_map)));
+                    attrs.insert(
+                        "meta".to_string(),
+                        Value::hash_with_data(Value::hash_arc(meta_map)),
+                    );
                     attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
                     return Some(Value::make_instance_without_destroy(
                         crate::symbol::Symbol::intern("Distribution::Installation"),

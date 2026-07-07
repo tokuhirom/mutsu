@@ -24,8 +24,8 @@ impl Interpreter {
         let mut has_named = false;
         let mut formatter: Option<Value> = None;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) => match key.as_str() {
+            if let ValueView::Pair(key, value) = arg.view() {
+                match key.as_str() {
                     "year" => {
                         year = to_int(value);
                         has_named = true;
@@ -39,23 +39,24 @@ impl Interpreter {
                         has_named = true;
                     }
                     "formatter" => {
-                        formatter = Some(*value.clone());
+                        formatter = Some(value.clone());
                     }
                     _ => {}
-                },
-                other => positional.push(other),
+                }
+            } else {
+                positional.push(arg);
             }
         }
         // Positional args: a date string, a DateTime/Instant, or y/m/d.
         if let Some(v) = positional.first() {
-            match v {
-                Value::Str(s) if positional.len() == 1 => {
+            match v.view() {
+                ValueView::Str(s) if positional.len() == 1 => {
                     let (y, m, d) = temporal::parse_date_string(s)?;
                     year = y;
                     month = m;
                     day = d;
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -65,7 +66,7 @@ impl Interpreter {
                     month = m;
                     day = d;
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -126,8 +127,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut has_named = false;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) => match key.as_str() {
+            if let ValueView::Pair(key, value) = arg.view() {
+                match key.as_str() {
                     "year" => {
                         year = to_int(value);
                         has_named = true;
@@ -164,11 +165,11 @@ impl Interpreter {
                         has_named = true;
                     }
                     "date" => {
-                        if let Value::Instance {
+                        if let ValueView::Instance {
                             class_name,
                             attributes,
                             ..
-                        } = value.as_ref()
+                        } = value.view()
                             && class_name == "Date"
                         {
                             let (y, m, d) = temporal::date_attrs(&attributes.as_map());
@@ -180,12 +181,13 @@ impl Interpreter {
                         }
                     }
                     "formatter" => {
-                        formatter = Some(*value.clone());
+                        formatter = Some(value.clone());
                         has_named = true;
                     }
                     _ => {}
-                },
-                other => positional.push(other),
+                }
+            } else {
+                positional.push(arg);
             }
         }
         if has_component_named && !positional.is_empty() {
@@ -202,8 +204,8 @@ impl Interpreter {
             second = to_float_value(positional[5]).unwrap_or(0.0);
             has_named = true;
         } else if let Some(v) = positional.first() {
-            match v {
-                Value::Str(s) => {
+            match v.view() {
+                ValueView::Str(s) => {
                     if timezone_set && string_has_numeric_tz_offset(s) {
                         let message =
                             "DateTime.new(Str): :timezone argument not allowed with a timestamp offset"
@@ -230,8 +232,8 @@ impl Interpreter {
                     }
                     has_named = true;
                 }
-                Value::Int(epoch) => {
-                    let total = *epoch as f64 + timezone as f64;
+                ValueView::Int(epoch) => {
+                    let total = epoch as f64 + timezone as f64;
                     let total_i = total.floor() as i64;
                     let frac = total - total_i as f64;
                     let day_secs = total_i.rem_euclid(86400);
@@ -245,7 +247,7 @@ impl Interpreter {
                     second = (day_secs % 60) as f64 + frac;
                     has_named = true;
                 }
-                Value::BigInt(epoch) => {
+                ValueView::BigInt(epoch) => {
                     let total = epoch.as_ref().clone() + num_bigint::BigInt::from(timezone);
                     let secs_per_day = num_bigint::BigInt::from(86_400i64);
                     let day_secs_big = ((&total % &secs_per_day) + &secs_per_day) % &secs_per_day;
@@ -265,8 +267,8 @@ impl Interpreter {
                     second = (day_secs % 60) as f64;
                     has_named = true;
                 }
-                Value::Num(epoch) => {
-                    let total = *epoch + timezone as f64;
+                ValueView::Num(epoch) => {
+                    let total = epoch + timezone as f64;
                     let total_i = total.floor() as i64;
                     let frac = total - total_i as f64;
                     let day_secs = total_i.rem_euclid(86400);
@@ -280,7 +282,7 @@ impl Interpreter {
                     second = (day_secs % 60) as f64 + frac;
                     has_named = true;
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -294,7 +296,7 @@ impl Interpreter {
                     second = 0.0;
                     has_named = true;
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -303,9 +305,9 @@ impl Interpreter {
                         .as_map()
                         .get("value")
                         .cloned()
-                        .unwrap_or(Value::Int(0));
-                    let (tai_int, tai_frac) = match &val {
-                        Value::Rat(n, d) if *d != 0 => (*n / *d, (*n % *d) as f64 / *d as f64),
+                        .unwrap_or(Value::int(0));
+                    let (tai_int, tai_frac) = match val.view() {
+                        ValueView::Rat(n, d) if d != 0 => (n / d, (n % d) as f64 / d as f64),
                         _ => {
                             let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
                             (f.floor() as i64, f - f.floor())
@@ -321,8 +323,8 @@ impl Interpreter {
                     second = s;
                     has_named = true;
                 }
-                other if other.is_numeric() => {
-                    let epoch = other.to_f64() + timezone as f64;
+                _ if v.is_numeric() => {
+                    let epoch = v.to_f64() + timezone as f64;
                     let total_i = epoch.floor() as i64;
                     let frac = epoch - total_i as f64;
                     let day_secs = total_i.rem_euclid(86400);
@@ -354,7 +356,7 @@ impl Interpreter {
     /// `X::Str::Numeric` error (the one fallible built-in builder).
     pub(crate) fn build_native_duration_value(args: &[Value]) -> Result<Value, RuntimeError> {
         let secs = if let Some(arg) = args.first() {
-            if let Value::Str(s) = arg {
+            if let ValueView::Str(s) = arg.view() {
                 match s.parse::<f64>() {
                     Ok(f) => f,
                     Err(_) => {
@@ -364,7 +366,7 @@ impl Interpreter {
                         ));
                         let mut eattrs = HashMap::new();
                         eattrs.insert("source".to_string(), Value::str(s.to_string()));
-                        eattrs.insert("pos".to_string(), Value::Int(0));
+                        eattrs.insert("pos".to_string(), Value::int(0));
                         eattrs.insert(
                             "reason".to_string(),
                             Value::str(
@@ -386,12 +388,12 @@ impl Interpreter {
         };
         let val = if secs.is_infinite() {
             if secs > 0.0 {
-                Value::Rat(1, 0)
+                Value::rat_raw(1, 0)
             } else {
-                Value::Rat(-1, 0)
+                Value::rat_raw(-1, 0)
             }
         } else if secs.is_nan() {
-            Value::Rat(0, 0)
+            Value::rat_raw(0, 0)
         } else {
             match args.first() {
                 Some(v) => crate::builtins::arith::real_to_rat(v),

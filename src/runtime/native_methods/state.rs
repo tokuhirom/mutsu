@@ -174,8 +174,8 @@ fn supplier_state_map() -> &'static SupplierStateMap {
 pub(in crate::runtime) fn supplier_id_from_attrs(
     attributes: &HashMap<String, Value>,
 ) -> Option<u64> {
-    match attributes.get("supplier_id") {
-        Some(Value::Int(id)) if *id > 0 => Some(*id as u64),
+    match attributes.get("supplier_id").and_then(|v| v.as_int()) {
+        Some(id) if id > 0 => Some(id as u64),
         _ => None,
     }
 }
@@ -196,7 +196,7 @@ pub(crate) fn supplier_snapshot(supplier_id: u64) -> (Vec<Value>, bool, Option<V
 /// These registries are GC **root containers**, not GC-managed nodes: the
 /// collector never frees them, it only needs to see the `Value`s / async nodes
 /// they keep reachable so a supply-held `Promise`/`Channel`/callback closure is
-/// not misjudged as garbage. `Value::Promise` wrapping a `SharedPromise` (etc.)
+/// not misjudged as garbage. `Value::promise` wrapping a `SharedPromise` (etc.)
 /// is created transiently just to feed the visitor — it is not retained.
 ///
 /// The blocking `.lock()` matches `visit_roots`' `shared_vars` read: a
@@ -215,7 +215,7 @@ pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::
     if let Ok(map) = promise_combinator_map().lock() {
         for promises in map.values() {
             for p in promises {
-                visitor.visit_value(&Value::Promise(p.clone()));
+                visitor.visit_value(&Value::promise(p.clone()));
             }
         }
     }
@@ -228,7 +228,7 @@ pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::
                 visitor.visit_value(reason);
             }
             for p in &state.pending_promises {
-                visitor.visit_value(&Value::Promise(p.clone()));
+                visitor.visit_value(&Value::promise(p.clone()));
             }
         }
     }
@@ -320,7 +320,7 @@ pub(crate) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise
         if let Some(reason) = state.quit_reason.clone() {
             promise.break_with(reason, String::new(), String::new());
         } else if state.done {
-            let result = state.emitted.last().cloned().unwrap_or(Value::Nil);
+            let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
             promise.keep(result, String::new(), String::new());
         } else {
             state.pending_promises.push(promise);
@@ -345,7 +345,7 @@ pub(in crate::runtime) fn supplier_done(supplier_id: u64) {
             return;
         }
         state.done = true;
-        let result = state.emitted.last().cloned().unwrap_or(Value::Nil);
+        let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
         for promise in pending {
             promise.keep(result.clone(), String::new(), String::new());
@@ -365,7 +365,7 @@ pub(in crate::runtime) fn supplier_done_deferred(
             return Vec::new();
         }
         state.done = true;
-        let result = state.emitted.last().cloned().unwrap_or(Value::Nil);
+        let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
         pending.into_iter().map(|p| (p, result.clone())).collect()
     } else {
@@ -757,6 +757,7 @@ pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
 #[cfg(test)]
 mod gc_root_tests {
     use super::*;
+    use crate::value::ValueView;
 
     struct Collector {
         seen: Vec<String>,
@@ -764,7 +765,7 @@ mod gc_root_tests {
 
     impl crate::gc::RootVisitor for Collector {
         fn visit_value(&mut self, value: &Value) {
-            if let Value::Str(s) = value {
+            if let ValueView::Str(s) = value.view() {
                 self.seen.push(s.to_string());
             }
         }

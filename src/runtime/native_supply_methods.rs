@@ -1,6 +1,7 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 /// How a `whenever` QUIT phaser handled (or did not handle) an exception.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -15,22 +16,23 @@ pub(super) enum QuitOutcome {
 
 impl Interpreter {
     pub(super) fn supply_has_active_callback(callback: &Value) -> bool {
-        !matches!(callback, Value::Nil)
+        !callback.is_nil()
     }
 
     /// Invoke a done callback. If the callback is a WheneverDoneGroup marker,
     /// decrement the group counter and only call the real done callback when
     /// all whenevers are done. Otherwise, call the callback directly.
     pub(super) fn invoke_done_callback(&mut self, done_cb: Value) -> Result<(), RuntimeError> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &done_cb
-            && *class_name == "__WheneverDoneGroup"
-            && let Some(Value::Int(group_id)) = attributes.as_map().get("group_id")
+        } = done_cb.view()
+            && class_name == "__WheneverDoneGroup"
+            && let Some(ValueView::Int(group_id)) =
+                attributes.as_map().get("group_id").map(|v| v.view())
         {
-            if let Some(real_done_cb) = whenever_done_group_decrement(*group_id as u64) {
+            if let Some(real_done_cb) = whenever_done_group_decrement(group_id as u64) {
                 let _ = self.call_sub_value(real_done_cb, vec![], true);
             }
             return Ok(());
@@ -38,15 +40,18 @@ impl Interpreter {
         // A close marker fires the supply's CLOSE-phaser callbacks (registered
         // on the emitter) when the supply terminates normally. Taking them
         // gives run-once across normal termination and an explicit tap close.
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &done_cb
-            && *class_name == "__SupplyCloseMarker"
-            && let Some(Value::Int(cid)) = attributes.as_map().get("close_supplier_id")
+        } = done_cb.view()
+            && class_name == "__SupplyCloseMarker"
+            && let Some(ValueView::Int(cid)) = attributes
+                .as_map()
+                .get("close_supplier_id")
+                .map(|v| v.view())
         {
-            for cb in take_supplier_close_callbacks(*cid as u64) {
+            for cb in take_supplier_close_callbacks(cid as u64) {
                 self.call_sub_value(cb, vec![], true)?;
             }
             return Ok(());
@@ -55,15 +60,15 @@ impl Interpreter {
         // explicit `done` in the block or a `done` inside a whenever body), the
         // whole supply finishes: each whenever source's on-close callbacks run
         // and the downstream `done` handler fires.
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &done_cb
-            && *class_name == "__SupplyOnDemandComplete"
+        } = done_cb.view()
+            && class_name == "__SupplyOnDemandComplete"
         {
             let attrs = attributes.as_map();
-            if let Some(Value::Array(on_close, ..)) = attrs.get("on_close") {
+            if let Some(ValueView::Array(on_close, ..)) = attrs.get("on_close").map(|v| v.view()) {
                 for cb in on_close.iter().cloned().collect::<Vec<_>>() {
                     self.call_sub_value(cb, vec![], true)?;
                 }
@@ -100,7 +105,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "close_supplier_id".to_string(),
-            Value::Int(close_supplier_id as i64),
+            Value::int(close_supplier_id as i64),
         );
         Value::make_instance(Symbol::intern("__SupplyCloseMarker"), attrs)
     }
@@ -109,7 +114,7 @@ impl Interpreter {
     /// callback on inner suppliers.
     pub(super) fn make_whenever_done_group_marker(group_id: u64) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("group_id".to_string(), Value::Int(group_id as i64));
+        attrs.insert("group_id".to_string(), Value::int(group_id as i64));
         Value::make_instance(Symbol::intern("__WheneverDoneGroup"), attrs)
     }
 

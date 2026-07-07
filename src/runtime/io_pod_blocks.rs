@@ -33,7 +33,7 @@ impl Interpreter {
                     let (numbered, rest_after) = Self::extract_numbered_alias(rest);
                     let (mut config, _) = Self::parse_pod_config(rest_after);
                     if numbered {
-                        config.insert("numbered".to_string(), Value::Bool(true));
+                        config.insert("numbered".to_string(), Value::TRUE);
                     }
                     let (headers, rows, next_idx) =
                         Self::collect_table_rows_with_headers(&lines, idx + 1);
@@ -77,7 +77,7 @@ impl Interpreter {
                         let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                         let (mut config, _) = Self::parse_pod_config(inline_after);
                         if numbered {
-                            config.insert("numbered".to_string(), Value::Bool(true));
+                            config.insert("numbered".to_string(), Value::TRUE);
                         }
                         let (headers, rows, next_idx) =
                             Self::collect_table_rows_with_headers(&lines, idx + 1);
@@ -88,7 +88,7 @@ impl Interpreter {
                     let (numbered, inline_after) = Self::extract_numbered_alias(inline);
                     let (mut config, leftover) = Self::parse_pod_config(inline_after);
                     if numbered {
-                        config.insert("numbered".to_string(), Value::Bool(true));
+                        config.insert("numbered".to_string(), Value::TRUE);
                     }
                     let mut cont_idx = idx + 1;
                     while cont_idx < lines.len() {
@@ -266,7 +266,7 @@ impl Interpreter {
                 let (numbered, rest_after) = Self::extract_numbered_alias(rest);
                 let mut config = HashMap::new();
                 if numbered {
-                    config.insert("numbered".to_string(), Value::Bool(true));
+                    config.insert("numbered".to_string(), Value::TRUE);
                 }
                 let (para, next_idx) =
                     Self::collect_pod_para_with_inline(&lines, idx + 1, rest_after, None);

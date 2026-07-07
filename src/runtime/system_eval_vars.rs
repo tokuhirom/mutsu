@@ -87,7 +87,7 @@ impl Interpreter {
             _ => return Ok(()),
         };
         let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer")
-            || !matches!(expr, Expr::Literal(Value::Nil));
+            || !matches!(expr, Expr::Literal(v) if v.is_nil());
         let self_ref_expr = has_init && Self::expr_references_var(expr, name);
         let self_ref_trait = custom_traits.iter().any(|(_, arg)| {
             arg.as_ref()

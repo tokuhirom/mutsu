@@ -6,7 +6,7 @@ impl Interpreter {
         target: Value,
         method: &str,
     ) -> Result<Value, RuntimeError> {
-        if matches!(target, Value::Instance { .. })
+        if matches!(target.view(), ValueView::Instance { .. })
             && let Ok(pairs) = self.call_method_with_values(target.clone(), "pairs", Vec::new())
         {
             return Ok(pairs);
@@ -16,24 +16,26 @@ impl Interpreter {
             let mut best: Option<Value> = None;
             let mut out: Vec<Value> = Vec::new();
             for (idx, item) in items.iter().enumerate() {
-                if matches!(item, Value::Nil) || matches!(item, Value::Package(n) if n == "Any") {
+                if matches!(item.view(), ValueView::Nil)
+                    || matches!(item.view(), ValueView::Package(n) if n == "Any")
+                {
                     continue;
                 }
                 let ord = if let Some(current) = &best {
                     // Use `cmp` semantics: numeric comparison for numeric
                     // pairs, string comparison otherwise
-                    match (item, current) {
-                        (Value::Int(a), Value::Int(b)) => a.cmp(b),
-                        (Value::Num(a), Value::Num(b)) => {
-                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                    match (item.view(), current.view()) {
+                        (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b),
+                        (ValueView::Num(a), ValueView::Num(b)) => {
+                            a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
                         }
-                        (Value::Int(a), Value::Num(b)) => (*a as f64)
-                            .partial_cmp(b)
+                        (ValueView::Int(a), ValueView::Num(b)) => (a as f64)
+                            .partial_cmp(&b)
                             .unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Num(a), Value::Int(b)) => a
-                            .partial_cmp(&(*b as f64))
+                        (ValueView::Num(a), ValueView::Int(b)) => a
+                            .partial_cmp(&(b as f64))
                             .unwrap_or(std::cmp::Ordering::Equal),
-                        (Value::Rat(..), _) | (_, Value::Rat(..)) => {
+                        (ValueView::Rat(..), _) | (_, ValueView::Rat(..)) => {
                             if let (Some((an, ad)), Some((bn, bd))) = (
                                 crate::runtime::to_rat_parts(item),
                                 crate::runtime::to_rat_parts(current),
@@ -54,37 +56,31 @@ impl Interpreter {
                 if replace {
                     best = Some(item.clone());
                     out.clear();
-                    out.push(Value::ValuePair(
-                        Box::new(Value::Int(idx as i64)),
-                        Box::new(item.clone()),
-                    ));
+                    out.push(Value::value_pair(Value::int(idx as i64), item.clone()));
                 } else if ord == std::cmp::Ordering::Equal {
-                    out.push(Value::ValuePair(
-                        Box::new(Value::Int(idx as i64)),
-                        Box::new(item.clone()),
-                    ));
+                    out.push(Value::value_pair(Value::int(idx as i64), item.clone()));
                 }
             }
-            Value::Seq(Arc::new(out))
+            Value::seq(out)
         };
-        Ok(match target {
-            Value::Array(items, ..) => to_pairs(&items),
-            Value::Set(ref set, ..) => {
+        Ok(match target.view() {
+            ValueView::Array(items, ..) => to_pairs(items),
+            ValueView::Set(set, ..) => {
                 if set.elements.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::seq(Vec::new())
                 } else {
                     // All Set weights are True, so min == max == all elements
                     let out: Vec<Value> = set
                         .elements
                         .iter()
-                        .map(|k| Value::Pair(k.clone(), Box::new(Value::Bool(true))))
+                        .map(|k| Value::pair(k.clone(), Value::TRUE))
                         .collect();
-                    Value::Seq(Arc::new(out))
+                    Value::seq(out)
                 }
             }
-            Value::Bag(ref bag, ..) => {
+            ValueView::Bag(bag, ..) => {
                 if bag.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::seq(Vec::new())
                 } else {
                     let mut best_count: Option<num_bigint::BigInt> = None;
                     let mut out: Vec<Value> = Vec::new();
@@ -100,23 +96,17 @@ impl Interpreter {
                         if replace {
                             best_count = Some(count.clone());
                             out.clear();
-                            out.push(Value::Pair(
-                                key.clone(),
-                                Box::new(Value::from_bigint(count.clone())),
-                            ));
+                            out.push(Value::pair(key.clone(), Value::from_bigint(count.clone())));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::Pair(
-                                key.clone(),
-                                Box::new(Value::from_bigint(count.clone())),
-                            ));
+                            out.push(Value::pair(key.clone(), Value::from_bigint(count.clone())));
                         }
                     }
-                    Value::Seq(Arc::new(out))
+                    Value::seq(out)
                 }
             }
-            Value::Mix(ref mix, ..) => {
+            ValueView::Mix(mix, ..) => {
                 if mix.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::seq(Vec::new())
                 } else {
                     let mut best_weight: Option<f64> = None;
                     let mut out: Vec<Value> = Vec::new();
@@ -134,31 +124,31 @@ impl Interpreter {
                         if replace {
                             best_weight = Some(*weight);
                             out.clear();
-                            out.push(Value::Pair(
+                            out.push(Value::pair(
                                 key.clone(),
-                                Box::new(crate::value::mix_weight_to_value(*weight)),
+                                crate::value::mix_weight_to_value(*weight),
                             ));
                         } else if ord == std::cmp::Ordering::Equal {
-                            out.push(Value::Pair(
+                            out.push(Value::pair(
                                 key.clone(),
-                                Box::new(crate::value::mix_weight_to_value(*weight)),
+                                crate::value::mix_weight_to_value(*weight),
                             ));
                         }
                     }
-                    Value::Seq(Arc::new(out))
+                    Value::seq(out)
                 }
             }
-            Value::Hash(ref hash) => {
+            ValueView::Hash(hash) => {
                 if hash.is_empty() {
-                    Value::Seq(Arc::new(Vec::new()))
+                    Value::seq(Vec::new())
                 } else {
                     // For Hash, compare values
                     let mut best: Option<&Value> = None;
                     let mut out: Vec<Value> = Vec::new();
                     for (key, value) in hash.iter() {
                         let ord = if let Some(current) = best {
-                            match (value, current) {
-                                (Value::Int(a), Value::Int(b)) => a.cmp(b),
+                            match (value.view(), current.view()) {
+                                (ValueView::Int(a), ValueView::Int(b)) => a.cmp(&b),
                                 _ => value.to_string_value().cmp(&current.to_string_value()),
                             }
                         } else {
@@ -175,13 +165,10 @@ impl Interpreter {
                             out.push(hash.typed_pair(key, value.clone()));
                         }
                     }
-                    Value::Seq(Arc::new(out))
+                    Value::seq(out)
                 }
             }
-            other => Value::Seq(Arc::new(vec![Value::ValuePair(
-                Box::new(Value::Int(0)),
-                Box::new(other),
-            )])),
+            _ => Value::seq(vec![Value::value_pair(Value::int(0), target.clone())]),
         })
     }
 
@@ -191,10 +178,12 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let Value::Instance { attributes, .. } = target else {
+        let ValueView::Instance { attributes, .. } = target.view() else {
             return Err(RuntimeError::new("Expected Supply instance"));
         };
-        let values = if let Some(Value::Array(items, ..)) = attributes.as_map().get("values") {
+        let values = if let Some(ValueView::Array(items, ..)) =
+            attributes.as_map().get("values").map(Value::view)
+        {
             items.to_vec()
         } else {
             Vec::new()
@@ -205,15 +194,15 @@ impl Interpreter {
             let mut attrs = HashMap::new();
             attrs.insert("values".to_string(), Value::array(vals));
             attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            attrs.insert("live".to_string(), Value::Bool(false));
+            attrs.insert("live".to_string(), Value::FALSE);
             Value::make_instance(Symbol::intern("Supply"), attrs)
         };
 
         let compare_or_key_fn = args.first().cloned();
         if let Some(ref fn_val) = compare_or_key_fn
             && !matches!(
-                fn_val,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                fn_val.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             )
         {
             return Err(RuntimeError::new("must be code if specified"));
@@ -238,7 +227,7 @@ impl Interpreter {
         };
 
         let is_binary_comparator =
-            matches!(&compare_or_key_fn, Value::Sub(data) if data.params.len() >= 2);
+            matches!(compare_or_key_fn.view(), ValueView::Sub(data) if data.params.len() >= 2);
         let mut emitted = Vec::new();
         let mut best = values[0].clone();
         emitted.push(best.clone());
@@ -250,14 +239,12 @@ impl Interpreter {
                     vec![item.clone(), best.clone()],
                     true,
                 )?;
-                let cmp = match cmp_val {
-                    Value::Enum {
-                        ref enum_type,
-                        ref value,
-                        ..
+                let cmp = match cmp_val.view() {
+                    ValueView::Enum {
+                        enum_type, value, ..
                     } if enum_type == "Order" => value.as_i64(),
-                    other => {
-                        let n = other.to_f64();
+                    _ => {
+                        let n = cmp_val.to_f64();
                         if n > 0.0 {
                             1
                         } else if n < 0.0 {

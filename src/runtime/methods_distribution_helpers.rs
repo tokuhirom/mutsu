@@ -3,7 +3,7 @@
 //! (identity tuple, platform library naming, string hashing). Kept `pub(super)`
 //! so the sibling `impl Interpreter` modules can call them.
 
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 use std::collections::HashMap;
 
 // ---- Simple JSON parser (no serde_json dependency) ----
@@ -17,9 +17,9 @@ pub(super) fn parse_json_value(s: &str) -> Result<(Value, &str), String> {
         b'{' => parse_json_object(&s[1..]),
         b'[' => parse_json_array(&s[1..]),
         b'"' => parse_json_string(&s[1..]),
-        b't' if s.starts_with("true") => Ok((Value::Bool(true), &s[4..])),
-        b'f' if s.starts_with("false") => Ok((Value::Bool(false), &s[5..])),
-        b'n' if s.starts_with("null") => Ok((Value::Nil, &s[4..])),
+        b't' if s.starts_with("true") => Ok((Value::TRUE, &s[4..])),
+        b'f' if s.starts_with("false") => Ok((Value::FALSE, &s[5..])),
+        b'n' if s.starts_with("null") => Ok((Value::NIL, &s[4..])),
         b'-' | b'0'..=b'9' => parse_json_number(s),
         ch => Err(format!("Unexpected character in JSON: {}", ch as char)),
     }
@@ -29,7 +29,7 @@ pub(super) fn parse_json_object(s: &str) -> Result<(Value, &str), String> {
     let mut map = HashMap::new();
     let mut s = s.trim_start();
     if let Some(rest) = s.strip_prefix('}') {
-        return Ok((Value::Hash(Value::hash_arc(map)), rest));
+        return Ok((Value::hash_with_data(Value::hash_arc(map)), rest));
     }
     loop {
         let s2 = s.trim_start();
@@ -46,7 +46,7 @@ pub(super) fn parse_json_object(s: &str) -> Result<(Value, &str), String> {
         map.insert(key, val);
         let rest = rest.trim_start();
         if let Some(after) = rest.strip_prefix('}') {
-            return Ok((Value::Hash(Value::hash_arc(map)), after));
+            return Ok((Value::hash_with_data(Value::hash_arc(map)), after));
         }
         if let Some(after) = rest.strip_prefix(',') {
             s = after;
@@ -144,32 +144,32 @@ pub(super) fn parse_json_number(s: &str) -> Result<(Value, &str), String> {
         let f: f64 = num_str
             .parse()
             .map_err(|_| format!("Invalid JSON number: {num_str}"))?;
-        Ok((Value::Num(f), &s[end..]))
+        Ok((Value::num(f), &s[end..]))
     } else {
         let i: i64 = num_str
             .parse()
             .map_err(|_| format!("Invalid JSON number: {num_str}"))?;
-        Ok((Value::Int(i), &s[end..]))
+        Ok((Value::int(i), &s[end..]))
     }
 }
 
 pub(super) fn value_to_json_string(val: &Value) -> String {
-    match val {
-        Value::Hash(map) => {
+    match val.view() {
+        ValueView::Hash(map) => {
             let parts: Vec<String> = map
                 .iter()
                 .map(|(k, v)| format!("  {:?}: {}", k, value_to_json_string(v)))
                 .collect();
             format!("{{\n{}\n}}", parts.join(",\n"))
         }
-        Value::Array(arr, _) => {
+        ValueView::Array(arr, _) => {
             let parts: Vec<String> = arr.iter().map(value_to_json_string).collect();
             format!("[{}]", parts.join(", "))
         }
-        Value::Str(s) => format!("{:?}", s.to_string()),
-        Value::Int(i) => format!("{i}"),
-        Value::Bool(b) => format!("{b}"),
-        Value::Nil => "null".to_string(),
+        ValueView::Str(s) => format!("{:?}", s.to_string()),
+        ValueView::Int(i) => format!("{i}"),
+        ValueView::Bool(b) => format!("{b}"),
+        ValueView::Nil => "null".to_string(),
         _ => format!("{:?}", val.to_string_value()),
     }
 }

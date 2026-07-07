@@ -6,33 +6,32 @@ impl Interpreter {
         if let Some((base, args)) = Self::parse_parametric_type_name(trimmed)
             && self.is_role(&base)
         {
-            return Value::ParametricRole {
-                base_name: Symbol::intern(&base),
-                type_args: args
-                    .iter()
+            return Value::parametric_role(
+                Symbol::intern(&base),
+                args.iter()
                     .map(|arg| self.type_arg_value_from_name(arg))
                     .collect(),
-            };
+            );
         }
-        Value::Package(Symbol::intern(trimmed))
+        Value::package(Symbol::intern(trimmed))
     }
 
     pub(in crate::runtime) fn normalize_type_capture_value(&self, value: Value) -> Value {
-        match value {
-            Value::Str(name) if self.is_resolvable_type(&name) => {
-                self.type_arg_value_from_name(&name)
-            }
-            other => other,
+        if let ValueView::Str(name) = value.view()
+            && self.is_resolvable_type(name)
+        {
+            return self.type_arg_value_from_name(name);
         }
+        value
     }
 
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
         if self.has_type_capture_binding(constraint)
             && let Some(value) = self.env.get(constraint)
         {
-            return match value {
-                Value::Package(name) => name.resolve(),
-                Value::ParametricRole {
+            return match value.view() {
+                ValueView::Package(name) => name.resolve(),
+                ValueView::ParametricRole {
                     base_name,
                     type_args,
                 } => format!(
@@ -40,14 +39,14 @@ impl Interpreter {
                     base_name.resolve(),
                     type_args
                         .iter()
-                        .map(|arg| match arg {
-                            Value::Package(name) => name.resolve(),
-                            other => other.to_string_value(),
+                        .map(|arg| match arg.view() {
+                            ValueView::Package(name) => name.resolve(),
+                            _ => arg.to_string_value(),
                         })
                         .collect::<Vec<_>>()
                         .join(",")
                 ),
-                other => other.to_string_value(),
+                _ => value.to_string_value(),
             };
         }
         // Handle composite type specs where the base name is a type capture
@@ -58,9 +57,9 @@ impl Interpreter {
             && self.has_type_capture_binding(base)
             && let Some(value) = self.env.get(base)
         {
-            let resolved_base = match value {
-                Value::Package(name) => name.resolve(),
-                other => other.to_string_value(),
+            let resolved_base = match value.view() {
+                ValueView::Package(name) => name.resolve(),
+                _ => value.to_string_value(),
             };
             return format!("{}{}", resolved_base, suffix);
         }
@@ -100,16 +99,16 @@ impl Interpreter {
             }
         }
         let container_kind_matches = if name.starts_with('@') {
-            matches!(value, Value::Array(..) | Value::Slip(..))
+            matches!(value.view(), ValueView::Array(..) | ValueView::Slip(..))
         } else if name.starts_with('%') {
-            matches!(value, Value::Hash(..) | Value::Array(..))
+            matches!(value.view(), ValueView::Hash(..) | ValueView::Array(..))
         } else {
             false
         };
         if container_kind_matches && let Some(source) = source_constraint {
             return self.type_matches_value(
                 &resolved_constraint,
-                &Value::Package(Symbol::intern(source)),
+                &Value::package(Symbol::intern(source)),
             );
         }
         if let Some(metadata) = self.container_type_metadata(value)
@@ -118,18 +117,18 @@ impl Interpreter {
         {
             return self.type_matches_value(
                 &resolved_constraint,
-                &Value::Package(Symbol::intern(&metadata.value_type)),
+                &Value::package(Symbol::intern(&metadata.value_type)),
             );
         }
 
         if name.starts_with('@') {
-            return match value {
-                Value::Array(items, ..) => {
+            return match value.view() {
+                ValueView::Array(items, ..) => {
                     if items.is_empty() {
                         return source_constraint.is_some_and(|source| {
                             self.type_matches_value(
                                 &resolved_constraint,
-                                &Value::Package(Symbol::intern(source)),
+                                &Value::package(Symbol::intern(source)),
                             )
                         });
                     }
@@ -138,12 +137,12 @@ impl Interpreter {
                             .iter()
                             .all(|item| self.type_matches_value(&resolved_constraint, item))
                 }
-                Value::Slip(items) => {
+                ValueView::Slip(items) => {
                     if items.is_empty() {
                         return source_constraint.is_some_and(|source| {
                             self.type_matches_value(
                                 &resolved_constraint,
-                                &Value::Package(Symbol::intern(source)),
+                                &Value::package(Symbol::intern(source)),
                             )
                         });
                     }
@@ -157,13 +156,13 @@ impl Interpreter {
         }
 
         if name.starts_with('%') {
-            return match value {
-                Value::Hash(map) => {
+            return match value.view() {
+                ValueView::Hash(map) => {
                     if map.is_empty() {
                         return source_constraint.is_some_and(|source| {
                             self.type_matches_value(
                                 &resolved_constraint,
-                                &Value::Package(Symbol::intern(source)),
+                                &Value::package(Symbol::intern(source)),
                             )
                         });
                     }
@@ -172,18 +171,18 @@ impl Interpreter {
                             .values()
                             .all(|item| self.type_matches_value(&resolved_constraint, item))
                 }
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     if items.is_empty() {
                         return source_constraint.is_some_and(|source| {
                             self.type_matches_value(
                                 &resolved_constraint,
-                                &Value::Package(Symbol::intern(source)),
+                                &Value::package(Symbol::intern(source)),
                             )
                         });
                     }
                     !items.is_empty()
                         && items.iter().all(|item| {
-                            if let Value::Pair(_, value) = item {
+                            if let ValueView::Pair(_, value) = item.view() {
                                 self.type_matches_value(&resolved_constraint, value)
                             } else {
                                 false
@@ -204,7 +203,7 @@ impl Interpreter {
         if self.registry().roles.contains_key(name) {
             return Some(name.to_string());
         }
-        if let Some(Value::Package(pkg)) = self.env.get(name) {
+        if let Some(ValueView::Package(pkg)) = self.env.get(name).map(Value::view) {
             let resolved = pkg.resolve();
             if self.registry().roles.contains_key(&resolved) {
                 return Some(resolved);
@@ -264,33 +263,36 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
-        if let Value::Scalar(inner) = value {
-            return self.type_matches_value(constraint, inner.as_ref());
+        if let ValueView::Scalar(inner) = value.view() {
+            return self.type_matches_value(constraint, inner);
         }
         // X::Await::Died role mixed into an exception by `await` of a broken
         // Promise (see `await_died_error`): the cause keeps its own class but
         // also does X::Await::Died.
         if constraint == "X::Await::Died"
-            && let Value::Instance { attributes, .. } = value
+            && let ValueView::Instance { attributes, .. } = value.view()
             && matches!(
-                attributes.as_map().get("__mutsu_does_await_died"),
-                Some(Value::Bool(true))
+                attributes
+                    .as_map()
+                    .get("__mutsu_does_await_died")
+                    .map(Value::view),
+                Some(ValueView::Bool(true))
             )
         {
             return true;
         }
         if constraint == "Inf" {
-            return matches!(value, Value::Num(n) if n.is_infinite() && n.is_sign_positive());
+            return matches!(value.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
         }
         if constraint == "NaN" {
-            return matches!(value, Value::Num(n) if n.is_nan());
+            return matches!(value.view(), ValueView::Num(n) if n.is_nan());
         }
         if constraint == "UInt" {
-            return match value {
-                Value::Int(i) => *i >= 0,
-                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
-                Value::Nil => true,
-                Value::Package(name) => {
+            return match value.view() {
+                ValueView::Int(i) => i >= 0,
+                ValueView::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+                ValueView::Nil => true,
+                ValueView::Package(name) => {
                     let name = name.resolve();
                     name == "UInt" || name == "Int"
                 }
@@ -306,7 +308,7 @@ impl Interpreter {
         if constraint == "Variable" && varref_from_value(value).is_some() {
             return true;
         }
-        if let Value::Enum { enum_type, .. } = value {
+        if let ValueView::Enum { enum_type, .. } = value.view() {
             let enum_name = enum_type.resolve();
             if constraint == enum_name || Self::type_matches(constraint, &enum_name) {
                 return true;
@@ -327,7 +329,7 @@ impl Interpreter {
             }
             false
         };
-        if let Value::Package(package_name) = value
+        if let ValueView::Package(package_name) = value.view()
             && let Some((lhs_base, lhs_inner)) =
                 Self::parse_generic_constraint(&package_name.resolve())
             && let Some((rhs_base, rhs_inner)) = Self::parse_generic_constraint(constraint)
@@ -344,14 +346,14 @@ impl Interpreter {
                 _ => true,
             };
         }
-        if let Value::Package(package_name) = value
+        if let ValueView::Package(package_name) = value.view()
             && let Some((pkg_target, pkg_source)) = parse_coercion_type(&package_name.resolve())
             && (Self::type_matches(constraint, pkg_target)
                 || pkg_source.is_some_and(|src| Self::type_matches(constraint, src)))
         {
             return true;
         }
-        if let Value::Package(package_name) = value
+        if let ValueView::Package(package_name) = value.view()
             && let Some((target, source)) = parse_coercion_type(constraint)
         {
             let pkg_resolved = package_name.resolve();
@@ -359,7 +361,7 @@ impl Interpreter {
             let source_ok = source.is_some_and(|src| self.type_matches_value(src, value));
             return target_ok || source_ok;
         }
-        if let Value::Package(package_name) = value
+        if let ValueView::Package(package_name) = value.view()
             && package_matches_type(&package_name.resolve(), constraint)
         {
             return true;
@@ -375,7 +377,7 @@ impl Interpreter {
         if let Some((base, inner)) = Self::parse_generic_constraint(constraint) {
             match base {
                 "array" => {
-                    if let Value::Array(..) = value
+                    if let ValueView::Array(..) = value.view()
                         && let Some(metadata) = self.container_type_metadata(value)
                         && metadata
                             .declared_type
@@ -384,13 +386,13 @@ impl Interpreter {
                     {
                         return self.type_matches_value(
                             inner,
-                            &Value::Package(Symbol::intern(&metadata.value_type)),
+                            &Value::package(Symbol::intern(&metadata.value_type)),
                         );
                     }
                     return false;
                 }
                 "Array" | "List" | "Positional" => {
-                    if let Value::Array(items, ..) = value {
+                    if let ValueView::Array(items, ..) = value.view() {
                         // Prefer the container's declared element type when known
                         // (typed arrays carry metadata); otherwise fall back to a
                         // value-based check (an empty array matches vacuously).
@@ -408,7 +410,7 @@ impl Interpreter {
                     return false;
                 }
                 "buf8" | "blob8" | "buf16" | "buf32" | "buf64" | "blob16" | "blob32" | "blob64" => {
-                    if let Value::Instance { class_name, .. } = value {
+                    if let ValueView::Instance { class_name, .. } = value.view() {
                         let cn = class_name.resolve();
                         if cn == "Buf"
                             || cn == "Blob"
@@ -431,7 +433,7 @@ impl Interpreter {
                     } else {
                         (inner, None)
                     };
-                    if let Value::Hash(map) = value {
+                    if let ValueView::Hash(map) = value.view() {
                         // Check container type metadata first (typed hashes)
                         if let Some(metadata) = self.container_type_metadata(value) {
                             let (vt_base, _) = strip_type_smiley(value_type);
@@ -469,9 +471,9 @@ impl Interpreter {
                         };
                         return values_ok && keys_ok;
                     }
-                    if let Value::Array(items, ..) = value {
+                    if let ValueView::Array(items, ..) = value.view() {
                         return items.iter().all(|item| {
-                            if let Value::Pair(_, v) = item {
+                            if let ValueView::Pair(_, v) = item.view() {
                                 self.type_matches_value(value_type, v)
                             } else {
                                 false
@@ -484,8 +486,8 @@ impl Interpreter {
                     // Callable[ReturnType] — check if value is callable and has a matching return type
                     if value.as_sub().is_some()
                         || matches!(
-                            value,
-                            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                            value.view(),
+                            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                         )
                     {
                         let return_type = self
@@ -494,17 +496,17 @@ impl Interpreter {
                         return Self::type_matches(&return_type, inner)
                             || self.type_matches_value(
                                 inner,
-                                &Value::Package(Symbol::intern(&return_type)),
+                                &Value::package(Symbol::intern(&return_type)),
                             );
                     }
                     return false;
                 }
                 "Buf" | "Blob" => {
-                    if let Value::Instance {
+                    if let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } = value
+                    } = value.view()
                     {
                         let class = class_name.resolve();
                         let class_ok = if base == "Buf" {
@@ -517,7 +519,9 @@ impl Interpreter {
                         if !class_ok {
                             return false;
                         }
-                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                        if let Some(ValueView::Array(items, ..)) =
+                            attributes.as_map().get("bytes").map(Value::view)
+                        {
                             return items.iter().all(|v| self.type_matches_value(inner, v));
                         }
                     }
@@ -534,7 +538,8 @@ impl Interpreter {
         // the user `Foo::Any` and wrongly fail. Core type names always mean the
         // core type in type matching.
         if !crate::runtime::utils::is_known_type_constraint(constraint)
-            && let Some(Value::Package(bound)) = self.env.get(constraint).cloned()
+            && let Some(bound_val) = self.env.get(constraint).cloned()
+            && let ValueView::Package(bound) = bound_val.view()
             && bound != *constraint
         {
             return self.type_matches_value(&bound.resolve(), value);
@@ -628,7 +633,7 @@ impl Interpreter {
                     if is_callable_expr {
                         // Evaluate to get a callable, then call with the value
                         match self.eval_precompiled_block_fast(&compiled.0, &compiled.1) {
-                            Ok(callable @ Value::Sub(_)) => {
+                            Ok(callable) if matches!(callable.view(), ValueView::Sub(_)) => {
                                 match self.call_sub_value(callable, vec![predicate_value], false) {
                                     // A `fail "msg"` inside the predicate body
                                     // returns an unhandled Failure (not an Err) from
@@ -683,14 +688,14 @@ impl Interpreter {
         if let Some((constraint_base, constraint_args)) =
             Self::parse_parametric_type_name(constraint)
             && self.is_role(&constraint_base)
-            && let Value::Mixin(_, mixins) = value
+            && let ValueView::Mixin(_, mixins) = value.view()
         {
             let key = format!(
                 "__mutsu_role_typeargs__{}",
                 Symbol::intern(&constraint_base)
             );
             if value.does_check(&constraint_base)
-                && let Some(Value::Array(actual_args, ..)) = mixins.get(&key)
+                && let Some(ValueView::Array(actual_args, ..)) = mixins.get(&key).map(Value::view)
             {
                 let expected_args = constraint_args
                     .iter()
@@ -706,10 +711,10 @@ impl Interpreter {
                 }
             }
         }
-        if let Value::ParametricRole {
+        if let ValueView::ParametricRole {
             base_name,
             type_args,
-        } = value
+        } = value.view()
         {
             if let Some((constraint_base, constraint_args)) =
                 Self::parse_parametric_type_name(constraint)
@@ -756,7 +761,7 @@ impl Interpreter {
             return true;
         }
         // Type-object checks: Package values should respect declared class/role ancestry.
-        if let Value::Package(package_name) = value {
+        if let ValueView::Package(package_name) = value.view() {
             if Self::type_matches(constraint, &package_name.resolve()) {
                 return true;
             }
@@ -797,7 +802,7 @@ impl Interpreter {
                 && (constraint == package_name.resolve()
                     || self.type_matches_value(
                         constraint,
-                        &Value::Package(Symbol::intern(&subset_base)),
+                        &Value::package(Symbol::intern(&subset_base)),
                     ))
             {
                 return true;
@@ -907,7 +912,7 @@ impl Interpreter {
             }
         }
         // Check Instance class name against constraint (including parent classes)
-        if let Value::Instance { class_name, .. } = value {
+        if let ValueView::Instance { class_name, .. } = value.view() {
             if Self::type_matches(constraint, &class_name.resolve()) {
                 return true;
             }
@@ -992,7 +997,7 @@ impl Interpreter {
             return false;
         }
         // Mixin allomorphic types: check both inner type and mixin type keys
-        if let Value::Mixin(inner, mixins) = value {
+        if let ValueView::Mixin(inner, mixins) = value.view() {
             if let Some((constraint_base, constraint_args)) =
                 Self::parse_parametric_type_name(constraint)
             {
@@ -1004,7 +1009,7 @@ impl Interpreter {
                     let Some(actual_base) = key.strip_prefix("__mutsu_role_typeargs__") else {
                         continue;
                     };
-                    let Value::Array(actual_args, ..) = mixin_value else {
+                    let ValueView::Array(actual_args, ..) = mixin_value.view() else {
                         continue;
                     };
                     let comparable_actual_args = if actual_base == constraint_base {
@@ -1041,7 +1046,7 @@ impl Interpreter {
         // For Package (type object) values, use the package name as the type
         // so that e.g. Junction (which is Mu, not Any) is correctly rejected
         // when the constraint is Any.
-        if let Value::Package(package_name) = value {
+        if let ValueView::Package(package_name) = value.view() {
             let resolved = package_name.resolve();
             return Self::type_matches(constraint, &resolved);
         }

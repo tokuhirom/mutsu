@@ -1,5 +1,6 @@
 //! Multi-dimensional index-assignment and assign-through-accessor lvalue ops.
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Handle `$obj.method<key> = value` — index assignment through a method accessor.
@@ -26,23 +27,23 @@ impl Interpreter {
         // for the element modify; the shared-Arc propagation below
         // (`overwrite_array_bindings_by_identity`, now cell-aware) reaches every
         // alias through the cell's inner Arc.
-        let current = match &current {
-            Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        let current = match current.view() {
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
             _ => current,
         };
 
         // Save Arc pointers before modifying (for shared container propagation)
-        let old_array_arc = match &current {
-            Value::Array(arc, ..) => Some(arc.clone()),
+        let old_array_arc = match current.view() {
+            ValueView::Array(arc, ..) => Some(arc.clone()),
             _ => None,
         };
-        let old_hash_arc = match &current {
-            Value::Hash(arc) => Some(arc.clone()),
+        let old_hash_arc = match current.view() {
+            ValueView::Hash(arc) => Some(arc.clone()),
             _ => None,
         };
 
         // Check if index is multi-dimensional (array of indices like [2, 1] from [2;1])
-        let dims: Vec<usize> = if let Value::Array(ref items, ..) = index {
+        let dims: Vec<usize> = if let ValueView::Array(items, ..) = index.view() {
             items
                 .iter()
                 .map(|v| crate::runtime::to_int(v) as usize)
@@ -53,12 +54,12 @@ impl Interpreter {
 
         // When assigning Nil to a container element with `is default(...)`,
         // restore the default value instead of Nil.
-        let effective_value = if matches!(value, Value::Nil) {
+        let effective_value = if value.is_nil() {
             if let Some(def) = self.container_default(&current).cloned() {
                 def
             } else {
                 // Check class_attribute_default for instance attributes
-                let class_default = if let Value::Instance { class_name, .. } = &target {
+                let class_default = if let ValueView::Instance { class_name, .. } = target.view() {
                     self.class_attribute_default(&class_name.resolve(), &method)
                 } else {
                     None
@@ -71,10 +72,10 @@ impl Interpreter {
 
         // Type check for typed hash/array attribute subscript assignment
         // (e.g., $o.h<a> = 'b' where h is Int, or $o.a[2] = $*IN where a is Int)
-        if let Value::Instance { class_name, .. } = &target {
+        if let ValueView::Instance { class_name, .. } = target.view() {
             let tc = self.get_attr_type_constraint(&class_name.resolve(), &method);
-            let is_hash_attr = matches!(&current, Value::Hash(_));
-            let is_array_attr = matches!(&current, Value::Array(..));
+            let is_hash_attr = matches!(current.view(), ValueView::Hash(_));
+            let is_array_attr = matches!(current.view(), ValueView::Array(..));
             // An object hash (`%.h{Str:D}`) checks elements against the value type.
             let elem_tc = tc.as_deref().map(|t| {
                 crate::runtime::types::split_object_hash_constraint(t)
@@ -84,7 +85,7 @@ impl Interpreter {
             if (is_hash_attr || is_array_attr)
                 && let Some(ref type_constraint) = elem_tc
                 && !matches!(type_constraint.as_str(), "Mu" | "Any")
-                && !matches!(effective_value, Value::Nil)
+                && !effective_value.is_nil()
                 && !self.type_matches_value(type_constraint, &effective_value)
             {
                 let sigil = if is_hash_attr { "%" } else { "@" };
@@ -109,7 +110,7 @@ impl Interpreter {
                 // intermediate key would create a Hash value, which fails the type check.
                 // We detect this by checking if effective_value itself is a Hash
                 // (which would happen in nested assignment like h<key><sub> = val).
-                if matches!(&effective_value, Value::Hash(_)) {
+                if matches!(effective_value.view(), ValueView::Hash(_)) {
                     return Err(crate::runtime::RuntimeError::new(format!(
                         "Type check failed in assignment to %{}; expected {} but got Hash",
                         method, type_constraint,
@@ -119,8 +120,8 @@ impl Interpreter {
         }
         // Also check via container type metadata (for non-attribute typed hashes/arrays)
         {
-            let is_hash_attr = matches!(&current, Value::Hash(_));
-            let is_array_attr = matches!(&current, Value::Array(..));
+            let is_hash_attr = matches!(current.view(), ValueView::Hash(_));
+            let is_array_attr = matches!(current.view(), ValueView::Array(..));
             if (is_hash_attr || is_array_attr)
                 && let Some(info) = self.container_type_metadata(&current)
             {
@@ -146,8 +147,8 @@ impl Interpreter {
             Self::multidim_assign_nested(current, &dims, effective_value.clone())?
         } else {
             let key = index.to_string_value();
-            match current {
-                Value::Hash(ref h) => {
+            match current.view() {
+                ValueView::Hash(h) => {
                     // Check for autovivification via nested subscript assignment:
                     // If the hash attribute has a type constraint and the key doesn't exist,
                     // Raku would normally autovivify a hash value, but for typed Int/etc,
@@ -157,7 +158,7 @@ impl Interpreter {
                     new_hash.insert(key, effective_value.clone());
                     Value::hash(new_hash)
                 }
-                Value::Array(ref items, kind) => {
+                ValueView::Array(items, kind) => {
                     let idx = crate::runtime::to_int(&index) as usize;
                     let mut new_items = (**items).clone();
                     if idx >= new_items.len() {
@@ -166,11 +167,11 @@ impl Interpreter {
                         }
                         new_items.resize(
                             idx + 1,
-                            Value::Package(crate::symbol::Symbol::intern("Any")),
+                            Value::package(crate::symbol::Symbol::intern("Any")),
                         );
                     }
                     new_items[idx] = effective_value.clone();
-                    Value::Array(crate::gc::Gc::new(new_items), kind)
+                    Value::array_with_kind(crate::gc::Gc::new(new_items), kind)
                 }
                 _ => return Ok(effective_value),
             }
@@ -226,14 +227,14 @@ impl Interpreter {
         let var_name = args[3].to_string_value();
 
         let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
-        let current = match &current {
-            Value::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        let current = match current.view() {
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
             _ => current,
         };
         // The default returned for an absent key: the container's own
         // `is default(...)`, else the attribute's declared default, else Nil.
         let absent_default = self.container_default(&current).cloned().or_else(|| {
-            if let Value::Instance { class_name, .. } = &target {
+            if let ValueView::Instance { class_name, .. } = target.view() {
                 self.class_attribute_default(&class_name.resolve(), &method)
             } else {
                 None
@@ -242,25 +243,25 @@ impl Interpreter {
 
         // Save the pre-delete Arc identity so the modified container can be
         // propagated to every instance/binding sharing it (mirrors the assign path).
-        let old_array_arc = match &current {
-            Value::Array(arc, ..) => Some(arc.clone()),
+        let old_array_arc = match current.view() {
+            ValueView::Array(arc, ..) => Some(arc.clone()),
             _ => None,
         };
-        let old_hash_arc = match &current {
-            Value::Hash(arc) => Some(arc.clone()),
+        let old_hash_arc = match current.view() {
+            ValueView::Hash(arc) => Some(arc.clone()),
             _ => None,
         };
 
-        let (removed, updated) = match &current {
-            Value::Hash(h) => {
+        let (removed, updated) = match current.view() {
+            ValueView::Hash(h) => {
                 let key = index.to_string_value();
                 let mut new_hash = (**h).clone();
                 let removed = new_hash
                     .remove(&key)
-                    .unwrap_or_else(|| absent_default.clone().unwrap_or(Value::Nil));
-                (removed, Value::Hash(crate::gc::Gc::new(new_hash)))
+                    .unwrap_or_else(|| absent_default.clone().unwrap_or(Value::NIL));
+                (removed, Value::hash_with_data(crate::gc::Gc::new(new_hash)))
             }
-            Value::Array(items, kind) => {
+            ValueView::Array(items, kind) => {
                 let idx = crate::runtime::to_int(&index);
                 let mut new_items = (**items).clone();
                 let removed = if idx >= 0 && (idx as usize) < new_items.len() {
@@ -270,15 +271,18 @@ impl Interpreter {
                     if i + 1 == new_items.len() {
                         new_items.truncate(i);
                     } else {
-                        new_items[i] = Value::Nil;
+                        new_items[i] = Value::NIL;
                     }
                     r
                 } else {
-                    absent_default.clone().unwrap_or(Value::Nil)
+                    absent_default.clone().unwrap_or(Value::NIL)
                 };
-                (removed, Value::Array(crate::gc::Gc::new(new_items), *kind))
+                (
+                    removed,
+                    Value::array_with_kind(crate::gc::Gc::new(new_items), kind),
+                )
             }
-            _ => return Ok(absent_default.unwrap_or(Value::Nil)),
+            _ => return Ok(absent_default.unwrap_or(Value::NIL)),
         };
 
         if let Some(old_arc) = &old_array_arc {
@@ -327,28 +331,28 @@ impl Interpreter {
         let container = self.call_method_with_values(target.clone(), &method, Vec::new())?;
 
         // For typed containers, check if the inner element is Nil (would need autovivification)
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && let Some(type_constraint) =
                 self.get_attr_type_constraint(&class_name.resolve(), &method)
             && !matches!(type_constraint.as_str(), "Mu" | "Any" | "Hash" | "Map")
         {
             // Check if the inner_index slot is Nil/undef (would need autovivification)
-            let inner_val = match &container {
-                Value::Array(items, ..) => {
+            let inner_val = match container.view() {
+                ValueView::Array(items, ..) => {
                     let idx = crate::runtime::to_int(&inner_index) as usize;
-                    items.get(idx).cloned().unwrap_or(Value::Nil)
+                    items.get(idx).cloned().unwrap_or(Value::NIL)
                 }
-                Value::Hash(map) => {
+                ValueView::Hash(map) => {
                     let key = inner_index.to_string_value();
-                    map.get(&key).cloned().unwrap_or(Value::Nil)
+                    map.get(&key).cloned().unwrap_or(Value::NIL)
                 }
-                _ => Value::Nil,
+                _ => Value::NIL,
             };
-            let is_nil = matches!(&inner_val, Value::Nil | Value::Package(_));
+            let is_nil = matches!(inner_val.view(), ValueView::Nil | ValueView::Package(_));
             if is_nil {
                 // Autovivification would create a Hash at this slot,
                 // but the container is typed, so it's not allowed.
-                let sigil = if matches!(&container, Value::Hash(_)) {
+                let sigil = if matches!(container.view(), ValueView::Hash(_)) {
                     "%"
                 } else {
                     "@"
@@ -366,7 +370,7 @@ impl Interpreter {
         // if the intermediate value is not a container).
         // TODO: implement proper nested assignment for non-Nil elements.
         let _ = value;
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     /// Assign a value into a nested multi-dimensional array structure.
@@ -389,14 +393,14 @@ impl Interpreter {
                 }
             }
         }
-        match container {
-            Value::Array(ref items, kind) => {
+        match container.view() {
+            ValueView::Array(items, kind) => {
                 let idx = dims[0];
                 let mut new_items = (**items).clone();
                 if idx >= new_items.len() {
                     new_items.resize(
                         idx + 1,
-                        Value::Package(crate::symbol::Symbol::intern("Any")),
+                        Value::package(crate::symbol::Symbol::intern("Any")),
                     );
                 }
                 if dims.len() == 1 {
@@ -405,7 +409,7 @@ impl Interpreter {
                     let inner = new_items[idx].clone();
                     new_items[idx] = Self::multidim_assign_nested(inner, &dims[1..], value)?;
                 }
-                let result = Value::Array(crate::gc::Gc::new(new_items), kind);
+                let result = Value::array_with_kind(crate::gc::Gc::new(new_items), kind);
                 // Preserve the shape registration on the new Arc so subsequent
                 // bounds checks (via shaped_array_shape) still work.
                 if let Some(ref shape) = shape {
@@ -418,7 +422,7 @@ impl Interpreter {
                 if dims.len() == 1 {
                     let idx = dims[0];
                     let mut new_items =
-                        vec![Value::Package(crate::symbol::Symbol::intern("Any")); idx + 1];
+                        vec![Value::package(crate::symbol::Symbol::intern("Any")); idx + 1];
                     new_items[idx] = value;
                     Ok(Value::real_array(new_items))
                 } else {
@@ -441,10 +445,10 @@ impl Interpreter {
         }
         let target = args[0].clone();
         let method = args[1].to_string_value();
-        let method_args = match &args[2] {
-            Value::Array(items, ..) => items.to_vec(),
-            Value::Nil => Vec::new(),
-            other => vec![other.clone()],
+        let method_args = match args[2].view() {
+            ValueView::Array(items, ..) => items.to_vec(),
+            ValueView::Nil => Vec::new(),
+            _ => vec![args[2].clone()],
         };
         let value = args[3].clone();
         let target_var = args.get(4).and_then(|v| {

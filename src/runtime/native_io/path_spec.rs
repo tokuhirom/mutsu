@@ -57,9 +57,9 @@ impl Interpreter {
         attributes
             .get("SPEC")
             .map(|s| {
-                let name = match s {
-                    Value::Package(n) => n.resolve().to_string(),
-                    Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                let name = match s.view() {
+                    ValueView::Package(n) => n.resolve().to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
                     _ => String::new(),
                 };
                 name == "IO::Spec::Win32" || name.ends_with("Win32")
@@ -74,9 +74,9 @@ impl Interpreter {
         attributes
             .get("SPEC")
             .map(|s| {
-                let name = match s {
-                    Value::Package(n) => n.resolve().to_string(),
-                    Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                let name = match s.view() {
+                    ValueView::Package(n) => n.resolve().to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
                     _ => String::new(),
                 };
                 name == "IO::Spec::Cygwin" || name.ends_with("Cygwin")

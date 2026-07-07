@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
+use crate::value::ValueView;
 use num_traits::{Signed, ToPrimitive, Zero};
 
 impl Interpreter {
@@ -15,14 +16,14 @@ impl Interpreter {
 
     pub(crate) fn parse_repeat_count(value: &Value) -> Result<Option<i64>, RuntimeError> {
         let mut current = value;
-        while let Value::Mixin(inner, _) = current {
+        while let ValueView::Mixin(inner, _) = current.view() {
             current = inner;
         }
-        match current {
-            Value::Whatever => Ok(None),
-            Value::Int(i) => Ok(Some(*i)),
-            Value::BigInt(n) => Ok(Some(n.to_i64().unwrap_or(i64::MAX))),
-            Value::Num(f) => {
+        match current.view() {
+            ValueView::Whatever => Ok(None),
+            ValueView::Int(i) => Ok(Some(i)),
+            ValueView::BigInt(n) => Ok(Some(n.to_i64().unwrap_or(i64::MAX))),
+            ValueView::Num(f) => {
                 if f.is_nan() {
                     return Err(Self::repeat_error(
                         "X::Numeric::CannotConvert",
@@ -40,12 +41,12 @@ impl Interpreter {
                 }
                 Ok(Some(f.trunc() as i64))
             }
-            Value::Rat(n, d) => {
-                if *d == 0 {
-                    if *n > 0 {
+            ValueView::Rat(n, d) => {
+                if d == 0 {
+                    if n > 0 {
                         return Ok(None);
                     }
-                    let msg = if *n < 0 {
+                    let msg = if n < 0 {
                         "Cannot convert -Inf to Int"
                     } else {
                         "Cannot convert NaN to Int"
@@ -57,7 +58,7 @@ impl Interpreter {
                 }
                 Ok(Some(n / d))
             }
-            Value::FatRat(n, d) => {
+            ValueView::FatRat(n, d) => {
                 if d.is_zero() {
                     if n.is_positive() {
                         return Ok(None);
@@ -74,7 +75,7 @@ impl Interpreter {
                 }
                 Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
             }
-            Value::BigRat(n, d) => {
+            ValueView::BigRat(n, d) => {
                 if d.is_zero() {
                     if n.is_positive() {
                         return Ok(None);
@@ -89,27 +90,27 @@ impl Interpreter {
                         msg.to_string(),
                     ));
                 }
-                Ok(Some((n.as_ref() / d.as_ref()).to_i64().unwrap_or(i64::MAX)))
+                Ok(Some((n / d).to_i64().unwrap_or(i64::MAX)))
             }
-            Value::Str(s) => {
+            ValueView::Str(s) => {
                 let parsed = s.trim().parse::<f64>().map_err(|_| {
                     Self::repeat_error(
                         "X::Str::Numeric",
                         format!("Cannot convert string '{}' to a number", s),
                     )
                 })?;
-                Self::parse_repeat_count(&Value::Num(parsed))
+                Self::parse_repeat_count(&Value::num(parsed))
             }
-            Value::Array(items, ..) => Ok(Some(items.len() as i64)),
-            Value::Seq(items) => Ok(Some(items.len() as i64)),
-            Value::LazyList(ll) => Ok(Some(
+            ValueView::Array(items, ..) => Ok(Some(items.len() as i64)),
+            ValueView::Seq(items) => Ok(Some(items.len() as i64)),
+            ValueView::LazyList(ll) => Ok(Some(
                 ll.cache
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .as_ref()
                     .map_or(0usize, |v| v.len()) as i64,
             )),
-            Value::Package(_) => Ok(Some(0)),
+            ValueView::Package(_) => Ok(Some(0)),
             _ => Ok(Some(0)),
         }
     }
@@ -121,31 +122,31 @@ impl Interpreter {
     pub(crate) fn make_repeat_lazy_cache_counted(items: Vec<Value>, count: Value) -> Value {
         let mut ll = crate::value::LazyList::new_cached(items);
         ll.elems_count = Some(count);
-        Value::LazyList(crate::gc::Gc::new(ll))
+        Value::lazy_list(crate::gc::Gc::new(ll))
     }
 
     /// The logical element count of `LHS xx right` when the result is lazy
     /// (`right` exceeded the eager limit or is infinite). `*`/`∞`/`Inf` map to
     /// `Inf`; a finite count keeps its exact (possibly big) integer value.
     pub(crate) fn repeat_logical_count(right: &Value) -> Value {
-        match right {
-            Value::Whatever | Value::HyperWhatever => Value::Num(f64::INFINITY),
-            Value::Num(n) if n.is_infinite() => Value::Num(*n),
-            Value::Int(_) | Value::BigInt(_) => right.clone(),
-            other => {
-                let f = other.to_f64();
+        match right.view() {
+            ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
+            ValueView::Num(n) if n.is_infinite() => Value::num(n),
+            ValueView::Int(_) | ValueView::BigInt(_) => right.clone(),
+            _ => {
+                let f = right.to_f64();
                 if f.is_infinite() {
-                    Value::Num(f)
+                    Value::num(f)
                 } else {
-                    Value::Int(f as i64)
+                    Value::int(f as i64)
                 }
             }
         }
     }
 
     pub(crate) fn repeat_lhs_once(&mut self, left: &Value) -> Result<Value, RuntimeError> {
-        match left {
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+        match left.view() {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                 let saved_topic = self.env.get("_").cloned();
                 let result = self.eval_call_on_value(left.clone(), Vec::new());
                 match saved_topic {
@@ -159,13 +160,15 @@ impl Interpreter {
                 result
             }
             // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
-            Value::Seq(items) => Ok(Value::array(items.as_ref().clone())),
+            ValueView::Seq(items) => Ok(Value::array(items.as_ref().clone())),
             // xx thunks the LHS: each repetition must be an independent copy
-            Value::Array(items, kind) => Ok(Value::Array(
+            ValueView::Array(items, kind) => Ok(Value::array_with_kind(
                 crate::gc::Gc::new(items.as_ref().clone()),
-                *kind,
+                kind,
             )),
-            Value::Hash(map) => Ok(Value::Hash(Value::hash_arc(map.as_ref().clone()))),
+            ValueView::Hash(map) => {
+                Ok(Value::hash_with_data(Value::hash_arc(map.as_ref().clone())))
+            }
             _ => Ok(left.clone()),
         }
     }
@@ -215,7 +218,7 @@ impl Interpreter {
         for rhs in &args[1..] {
             match op {
                 "x" => {
-                    if let Value::Package(name) = rhs
+                    if let ValueView::Package(name) = rhs.view()
                         && name == "Int"
                         && !self.warning_suppressed()
                     {
@@ -224,7 +227,7 @@ impl Interpreter {
                             name
                         ));
                     }
-                    if matches!(rhs, Value::Whatever) {
+                    if matches!(rhs.view(), ValueView::Whatever) {
                         acc = self.make_x_whatevercode(acc);
                         continue;
                     }
@@ -247,7 +250,7 @@ impl Interpreter {
                     // Callable LHS is expensive (each iteration calls eval_call_on_value),
                     // so use a much smaller cache to avoid timeouts on `callable xx *`.
                     const LAZY_CACHE_CALLABLE: usize = 256;
-                    if let Value::Package(name) = rhs
+                    if let ValueView::Package(name) = rhs.view()
                         && name == "Int"
                         && !self.warning_suppressed()
                     {
@@ -257,8 +260,8 @@ impl Interpreter {
                         ));
                     }
                     let is_callable = matches!(
-                        acc,
-                        Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                        acc.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                     );
                     let lazy_cache = if is_callable {
                         LAZY_CACHE_CALLABLE
@@ -273,9 +276,9 @@ impl Interpreter {
                         None => (lazy_cache, true),
                     };
                     let mut items = Vec::with_capacity(repeat);
-                    if let Value::Slip(slip_items) = &acc {
+                    if let ValueView::Slip(slip_items) = acc.view() {
                         if slip_items.is_empty() {
-                            items.extend(std::iter::repeat_n(Value::Nil, repeat));
+                            items.extend(std::iter::repeat_n(Value::NIL, repeat));
                         } else {
                             for _ in 0..repeat {
                                 items.extend(slip_items.iter().cloned());
@@ -290,7 +293,7 @@ impl Interpreter {
                         let count = Self::repeat_logical_count(rhs);
                         Self::make_repeat_lazy_cache_counted(items, count)
                     } else {
-                        Value::Seq(std::sync::Arc::new(items))
+                        Value::seq(items)
                     };
                 }
                 _ => unreachable!(),

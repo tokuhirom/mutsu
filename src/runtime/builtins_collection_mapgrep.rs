@@ -36,26 +36,26 @@ impl Interpreter {
                 // Itemized containers (from $ variables) are NOT flattened
                 list_items.push(arg.clone());
             } else {
-                match arg {
-                    Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
-                    Value::Seq(items) => list_items.extend(items.iter().cloned()),
-                    Value::Hash(map) => {
+                match arg.view() {
+                    ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                    ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
+                    ValueView::Hash(map) => {
                         // Hashes in list context flatten to key-value Pairs
                         for (k, v) in map.iter() {
-                            list_items.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                            list_items.push(Value::pair(k.clone(), v.clone()));
                         }
                     }
-                    v if v.is_range() => {
+                    _ if arg.is_range() => {
                         // Route ranges through the unified pull iterator so an
                         // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
                         // truncated at the cap instead of panicking with
                         // `capacity overflow` (ANALYSIS §8.2).
                         list_items.extend(crate::runtime::value_iterator::materialize_capped(
-                            v,
+                            arg,
                             crate::runtime::utils::MAX_RANGE_EXPAND as usize,
                         ));
                     }
-                    other => list_items.push(other.clone()),
+                    _ => list_items.push(arg.clone()),
                 }
             }
         }
@@ -75,11 +75,11 @@ impl Interpreter {
         let mut has_p = false;
         let mut positional_args: Vec<Value> = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "k" => has_k = value.truthy(),
-                Value::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
-                Value::Pair(key, value) if key == "p" => has_p = value.truthy(),
-                Value::Pair(key, value) if key == "v" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "k" => has_k = value.truthy(),
+                ValueView::Pair(key, value) if key == "kv" => has_kv = value.truthy(),
+                ValueView::Pair(key, value) if key == "p" => has_p = value.truthy(),
+                ValueView::Pair(key, value) if key == "v" => {
                     if !value.truthy() {
                         return Err(RuntimeError::new(
                             "X::Adverb: Unexpected adverb 'v' passed to grep",
@@ -93,13 +93,18 @@ impl Interpreter {
         let func = args.first().cloned();
         // Check if the matcher is a Bool — this is always an error.
         // `grep $_ == 1, 1,2,3` passes a Bool as the matcher.
-        if let Some(Value::Bool(_)) = func.as_ref() {
+        if let Some(ValueView::Bool(_)) = func.as_ref().map(Value::view) {
             return Err(RuntimeError::typed_msg(
                 "X::Match::Bool",
                 "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
             ));
         }
-        if args.len() == 1 && matches!(args[0], Value::Int(_) | Value::Num(_) | Value::Str(_)) {
+        if args.len() == 1
+            && matches!(
+                args[0].view(),
+                ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_)
+            )
+        {
             return Err(RuntimeError::typed_msg(
                 "X::Match::Bool",
                 "Cannot use Bool as Matcher with '.match'. Did you mean to use $_ ~~ ... instead?",
@@ -108,20 +113,20 @@ impl Interpreter {
         if args.len() == 2 && Self::is_lazy_pipe_source(&args[1]) {
             let mut method_args: Vec<Value> = func.into_iter().collect();
             if has_k {
-                method_args.push(Value::Pair("k".to_string(), Box::new(Value::Bool(true))));
+                method_args.push(Value::pair("k".to_string(), Value::TRUE));
             } else if has_kv {
-                method_args.push(Value::Pair("kv".to_string(), Box::new(Value::Bool(true))));
+                method_args.push(Value::pair("kv".to_string(), Value::TRUE));
             } else if has_p {
-                method_args.push(Value::Pair("p".to_string(), Box::new(Value::Bool(true))));
+                method_args.push(Value::pair("p".to_string(), Value::TRUE));
             }
             return self.call_method_with_values(args[1].clone(), "grep", method_args);
         }
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
-            match arg {
+            match arg.view() {
                 // Only flatten List-kind arrays (from @-sigiled variables).
                 // Array-kind (from [...] literals) are kept as individual items.
-                Value::Array(items, kind)
+                ValueView::Array(items, kind)
                     if matches!(
                         kind,
                         crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
@@ -131,22 +136,22 @@ impl Interpreter {
                 }
                 // A Seq (e.g. the result of `@a.sort`) is an iterable sequence and
                 // is flattened into grep's list, mirroring `map` (which already
-                // handles `Value::Seq`). Without this, `grep { ... }, @a.sort`
+                // handles `Seq`). Without this, `grep { ... }, @a.sort`
                 // greps over a single one-element list.
-                Value::Seq(items) => {
+                ValueView::Seq(items) => {
                     list_items.extend(items.iter().cloned());
                 }
-                v if v.is_range() => {
+                _ if arg.is_range() => {
                     // Route ranges through the unified pull iterator so an
                     // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
                     // truncated at the cap instead of panicking with
                     // `capacity overflow` (ANALYSIS §8.2).
                     list_items.extend(crate::runtime::value_iterator::materialize_capped(
-                        v,
+                        arg,
                         crate::runtime::utils::MAX_RANGE_EXPAND as usize,
                     ));
                 }
-                other => list_items.push(other.clone()),
+                _ => list_items.push(arg.clone()),
             }
         }
         if has_k || has_kv || has_p {
@@ -157,23 +162,23 @@ impl Interpreter {
                 &filtered,
             );
             if has_k {
-                let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::Int(i as i64)).collect();
+                let idx_vals: Vec<Value> = indices.iter().map(|&i| Value::int(i as i64)).collect();
                 Ok(Value::array(idx_vals))
             } else if has_kv {
-                let items = if let Value::Array(items, ..) = &filtered {
+                let items = if let ValueView::Array(items, ..) = filtered.view() {
                     items.to_vec()
                 } else {
                     vec![filtered]
                 };
                 let mut result = Vec::new();
                 for (i, item) in indices.iter().zip(items.iter()) {
-                    result.push(Value::Int(*i as i64));
+                    result.push(Value::int(*i as i64));
                     result.push(item.clone());
                 }
                 Ok(Value::array(result))
             } else {
                 // :p
-                let items = if let Value::Array(items, ..) = &filtered {
+                let items = if let ValueView::Array(items, ..) = filtered.view() {
                     items.to_vec()
                 } else {
                     vec![filtered]
@@ -181,10 +186,7 @@ impl Interpreter {
                 let mut result = Vec::new();
                 for (i, item) in indices.iter().zip(items.iter()) {
                     // The key is the Int index (`3 => v`), not a Str ("3" => v).
-                    result.push(Value::ValuePair(
-                        Box::new(Value::Int(*i as i64)),
-                        Box::new(item.clone()),
-                    ));
+                    result.push(Value::value_pair(Value::int(*i as i64), item.clone()));
                 }
                 Ok(Value::array(result))
             }
@@ -201,9 +203,9 @@ impl Interpreter {
         let matcher = args[0].clone();
         let mut list_items = Vec::new();
         for arg in args.iter().skip(1) {
-            match arg {
-                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
-                other => list_items.push(other.clone()),
+            match arg.view() {
+                ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                _ => list_items.push(arg.clone()),
             }
         }
         self.eval_snip(matcher, list_items)
@@ -217,10 +219,10 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // Extract the list of matchers: if matcher is a list/array of callables/types,
         // use them in sequence; otherwise treat as a single matcher.
-        let matchers: Vec<Value> = match &matcher {
-            Value::Array(elems, ..) => elems.iter().cloned().collect(),
-            Value::Seq(elems) | Value::Slip(elems) => elems.iter().cloned().collect(),
-            other => vec![other.clone()],
+        let matchers: Vec<Value> = match matcher.view() {
+            ValueView::Array(elems, ..) => elems.iter().cloned().collect(),
+            ValueView::Seq(elems) | ValueView::Slip(elems) => elems.iter().cloned().collect(),
+            _ => vec![matcher.clone()],
         };
 
         let mut result_groups: Vec<Value> = Vec::new();
@@ -255,7 +257,7 @@ impl Interpreter {
 
     /// Check if a value matches a snip matcher (Callable or type object).
     fn snip_matches(&mut self, item: &Value, matcher: &Value) -> Result<bool, RuntimeError> {
-        if matches!(matcher, Value::Sub(_)) {
+        if matches!(matcher.view(), ValueView::Sub(_)) {
             Ok(self
                 .call_sub_value(matcher.clone(), vec![item.clone()], true)?
                 .truthy())
@@ -270,11 +272,11 @@ impl Interpreter {
     /// (Note: list-*assignment* keeps a Blob as one element — `my @a = $buf` —
     /// so this is used only by the iterating methods, not `value_to_list`.)
     pub(crate) fn buf_as_byte_items(v: &Value) -> Option<Vec<Value>> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = v
+        } = v.view()
         {
             let cn = class_name.resolve();
             let is_blob = cn == "Buf"
@@ -286,7 +288,10 @@ impl Interpreter {
                 || cn.starts_with("Blob[")
                 || cn.starts_with("buf")
                 || cn.starts_with("blob");
-            if is_blob && let Some(Value::Array(bytes, ..)) = attributes.as_map().get("bytes") {
+            if is_blob
+                && let Some(ValueView::Array(bytes, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+            {
                 return Some(bytes.iter().cloned().collect());
             }
         }
@@ -303,26 +308,26 @@ impl Interpreter {
         let mut has_kv = false;
         let mut has_p = false;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "v" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "v" => {
                     if value.truthy() {
                         has_v = true;
                     } else {
                         has_neg_v = true;
                     }
                 }
-                Value::Pair(key, value) if key == "end" => {
+                ValueView::Pair(key, value) if key == "end" => {
                     if value.truthy() {
                         has_end = true;
                     }
                 }
-                Value::Pair(key, value) if key == "k" => {
+                ValueView::Pair(key, value) if key == "k" => {
                     has_k = value.truthy();
                 }
-                Value::Pair(key, value) if key == "kv" => {
+                ValueView::Pair(key, value) if key == "kv" => {
                     has_kv = value.truthy();
                 }
-                Value::Pair(key, value) if key == "p" => {
+                ValueView::Pair(key, value) if key == "p" => {
                     has_p = value.truthy();
                 }
                 _ => positional.push(arg.clone()),
@@ -365,7 +370,10 @@ impl Interpreter {
             }
         }
         // Check for Bool matcher (X::Match::Bool)
-        if matches!(positional.first(), Some(Value::Bool(_))) {
+        if matches!(
+            positional.first().map(Value::view),
+            Some(ValueView::Bool(_))
+        ) {
             let mut err = RuntimeError::new("Cannot use Bool as a matcher");
             err.exception = Some(Box::new(Value::make_instance(
                 Symbol::intern("X::Match::Bool"),
@@ -376,34 +384,34 @@ impl Interpreter {
         let func = positional.first().cloned();
         let mut list_items = Vec::new();
         for arg in positional.iter().skip(1) {
-            match arg {
-                Value::Array(items, ..) => list_items.extend(items.iter().cloned()),
-                v if v.is_range() => {
+            match arg.view() {
+                ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
+                _ if arg.is_range() => {
                     // Route ranges through the unified pull iterator so an
                     // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
                     // truncated at the cap instead of panicking with
                     // `capacity overflow` (ANALYSIS §8.2).
                     list_items.extend(crate::runtime::value_iterator::materialize_capped(
-                        v,
+                        arg,
                         crate::runtime::utils::MAX_RANGE_EXPAND as usize,
                     ));
                 }
-                other => list_items.push(other.clone()),
+                _ => list_items.push(arg.clone()),
             }
         }
         if let Some((idx, value)) = self.find_first_match_over_items(func, &list_items, has_end)? {
             return Ok(format_first_result(idx, value, has_k, has_kv, has_p));
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     /// Find a variable name in the current environment whose value is identical
     /// (by Arc pointer) to the given value. Used for :into writeback.
     pub(super) fn find_var_by_identity(&self, value: &Value) -> Option<String> {
-        match value {
-            Value::Hash(target_arc) => {
+        match value.view() {
+            ValueView::Hash(target_arc) => {
                 for (name, env_val) in self.env().iter() {
-                    if let Value::Hash(env_arc) = env_val
+                    if let ValueView::Hash(env_arc) = env_val.view()
                         && crate::gc::Gc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.resolve());
@@ -411,9 +419,9 @@ impl Interpreter {
                 }
                 None
             }
-            Value::Bag(target_arc, _) => {
+            ValueView::Bag(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
-                    if let Value::Bag(env_arc, _) = env_val
+                    if let ValueView::Bag(env_arc, _) = env_val.view()
                         && crate::gc::Gc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.resolve());
@@ -421,9 +429,9 @@ impl Interpreter {
                 }
                 None
             }
-            Value::Mix(target_arc, _) => {
+            ValueView::Mix(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
-                    if let Value::Mix(env_arc, _) = env_val
+                    if let ValueView::Mix(env_arc, _) = env_val.view()
                         && crate::gc::Gc::ptr_eq(target_arc, env_arc)
                     {
                         return Some(name.resolve());

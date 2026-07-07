@@ -133,21 +133,21 @@ impl Interpreter {
                     | "wait"
                     | "zip"
                     | "zip-latest"
-            ) && matches!(target, Value::Instance { class_name, .. } if class_name == "Supply"))
-            || (method == "elems" && matches!(target, Value::Instance { .. }))
+            ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
+            || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
             || (matches!(method, "list" | "Array" | "Seq")
-                && matches!(target, Value::Instance { class_name, .. } if class_name == "Supply"))
+                && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
             || (method == "Supply"
-                && matches!(target, Value::Instance { class_name, .. }
+                && matches!(target.view(), ValueView::Instance { class_name, .. }
                     if class_name == "Supplier" || class_name == "Supplier::Preserving"))
-            || matches!(target, Value::Instance { class_name, .. }
+            || matches!(target.view(), ValueView::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
-            || (matches!(target, Value::Instance { class_name, .. } if class_name == "IO::Handle")
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
                 && matches!(method, "chomp" | "encoding" | "opened" | "DESTROY"))
-            || (matches!(target, Value::Instance { .. })
+            || (matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
-            || matches!(target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
-            || (matches!(target, Value::Instance { class_name, .. } if class_name == "Proc::Async")
+            || matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
                 && matches!(
                     method,
                     "start"
@@ -170,21 +170,21 @@ impl Interpreter {
                         | "Supply"
                 ))
             || (matches!(method, "AT-KEY" | "keys")
-                && matches!(target, Value::Instance { class_name, .. } if class_name == "Stash"))
+                && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash"))
             || (method == "keys"
                 && args.is_empty()
-                && (matches!(target, Value::Hash(_))
-                    || matches!(target, Value::Mixin(inner, _) if matches!(inner.as_ref(), Value::Hash(_)))))
+                && (matches!(target.view(), ValueView::Hash(_))
+                    || matches!(target.view(), ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Hash(_)))))
             || (!is_pseudo_method
-                && matches!(target, Value::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)))
+                && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)))
             || (!is_pseudo_method
-                && matches!(target, Value::Instance { class_name, .. } if self.has_public_accessor(&class_name.resolve(), method)))
+                && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_public_accessor(&class_name.resolve(), method)))
             || (!is_pseudo_method
-                && matches!(target, Value::Package(class_name) if self.has_user_method(&class_name.resolve(), method)))
+                && matches!(target.view(), ValueView::Package(class_name) if self.has_user_method(&class_name.resolve(), method)))
             || (!is_pseudo_method
-                && matches!(target, Value::Package(class_name) if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
+                && matches!(target.view(), ValueView::Package(class_name) if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
             || (!is_pseudo_method
-                && matches!(target, Value::Instance { class_name, .. } if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
+                && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
             || (!is_pseudo_method && self.mixin_role_has_method(target, method))
     }
 
@@ -192,7 +192,7 @@ impl Interpreter {
     /// Used so that role-method dispatch on punned role instances takes
     /// precedence over the built-in Cool fallbacks (e.g. `.uc`).
     pub(crate) fn mixin_role_has_method(&self, target: &Value, method: &str) -> bool {
-        let Value::Mixin(_, mixins) = target else {
+        let ValueView::Mixin(_, mixins) = target.view() else {
             return false;
         };
         for key in mixins.keys() {
@@ -224,7 +224,7 @@ impl Interpreter {
                     .iter()
                     .map(|k| {
                         let v = &map[*k];
-                        let repr = if matches!(v, Value::Nil) {
+                        let repr = if v.is_nil() {
                             "Any".to_string()
                         } else {
                             self.call_method_with_values(v.clone(), "raku", vec![])
@@ -232,8 +232,8 @@ impl Interpreter {
                                 .unwrap_or_else(|_| format!("{:?}", v))
                         };
                         let typed = map.typed_key(k);
-                        match &typed {
-                        Value::Str(s)
+                        match typed.view() {
+                        ValueView::Str(s)
                             if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(s) =>
                         {
                             format!(":{}({})", s, repr)
@@ -253,7 +253,7 @@ impl Interpreter {
             .map(|k| {
                 let v = &map[*k];
                 let mut value_repr = || {
-                    if matches!(v, Value::Nil) {
+                    if v.is_nil() {
                         "Any".to_string()
                     } else {
                         self.call_method_with_values(v.clone(), "raku", vec![])
@@ -268,8 +268,8 @@ impl Interpreter {
                 // every other key (a non-Str key, or a Str needing quotes) becomes
                 // `key => value` with the key rendered via `.raku`.
                 let typed = map.typed_key(k);
-                match &typed {
-                    Value::Str(s)
+                match typed.view() {
+                    ValueView::Str(s)
                         if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(s) =>
                     {
                         format!(":{}({})", s, value_repr())
@@ -306,10 +306,10 @@ impl Interpreter {
         let tolerance = self
             .get_dynamic_var("*TOLERANCE")
             .ok()
-            .and_then(|v| match v {
-                Value::Num(n) => Some(n),
-                Value::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-                Value::Int(n) => Some(n as f64),
+            .and_then(|v| match v.view() {
+                ValueView::Num(n) => Some(n),
+                ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                ValueView::Int(n) => Some(n as f64),
                 _ => None,
             })
             .unwrap_or(1e-15);
@@ -322,13 +322,13 @@ impl Interpreter {
             );
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.clone()));
-            attrs.insert("target".to_string(), Value::Package(Symbol::intern("Num")));
+            attrs.insert("target".to_string(), Value::package(Symbol::intern("Num")));
             attrs.insert("source".to_string(), target.clone());
             let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
             let mut err = RuntimeError::new(msg);
             err.exception = Some(Box::new(ex));
             return Err(err);
         }
-        Ok(Value::Num(r))
+        Ok(Value::num(r))
     }
 }

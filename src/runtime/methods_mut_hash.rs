@@ -7,25 +7,25 @@ impl Interpreter {
         let mut pairs = Vec::new();
         let mut iter = args.into_iter().peekable();
         while let Some(arg) = iter.next() {
-            match &arg {
-                Value::Pair(k, v) => {
-                    pairs.push((k.clone(), (**v).clone()));
+            match arg.view() {
+                ValueView::Pair(k, v) => {
+                    pairs.push((k.clone(), v.clone()));
                 }
-                Value::ValuePair(k, v) => {
-                    pairs.push((k.to_string_value(), (**v).clone()));
+                ValueView::ValuePair(k, v) => {
+                    pairs.push((k.to_string_value(), v.clone()));
                 }
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     // Recursively collect pairs from array elements
                     let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
                     pairs.extend(inner_pairs);
                 }
-                Value::Seq(items) | Value::Slip(items) => {
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     // A Seq/Slip of pairs (e.g. from `%h.push: %x.invert`) is
                     // flattened like an array, not stringified as one key.
                     let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
                     pairs.extend(inner_pairs);
                 }
-                Value::Hash(h, ..) => {
+                ValueView::Hash(h) => {
                     for (k, v) in h.iter() {
                         pairs.push((k.clone(), v.clone()));
                     }
@@ -33,7 +33,7 @@ impl Interpreter {
                 _ => {
                     // Alternating key, value
                     let key = arg.to_string_value();
-                    let val = iter.next().unwrap_or(Value::Nil);
+                    let val = iter.next().unwrap_or(Value::NIL);
                     pairs.push((key, val));
                 }
             }
@@ -49,20 +49,20 @@ impl Interpreter {
         let mut pairs = Vec::new();
         let mut iter = args.into_iter().peekable();
         while let Some(arg) = iter.next() {
-            match arg {
-                Value::Pair(k, v) => {
-                    pairs.push((Value::str(k), *v));
+            match arg.view() {
+                ValueView::Pair(k, v) => {
+                    pairs.push((Value::str(k.clone()), v.clone()));
                 }
-                Value::ValuePair(k, v) => {
-                    pairs.push((*k, *v));
+                ValueView::ValuePair(k, v) => {
+                    pairs.push((k.clone(), v.clone()));
                 }
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
                 }
-                Value::Seq(items) | Value::Slip(items) => {
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
                 }
-                Value::Hash(h, ..) => {
+                ValueView::Hash(h) => {
                     for (k, v) in h.map.iter() {
                         let key = h
                             .original_keys
@@ -72,9 +72,9 @@ impl Interpreter {
                         pairs.push((key, v.clone()));
                     }
                 }
-                other => {
-                    let val = iter.next().unwrap_or(Value::Nil);
-                    pairs.push((other, val));
+                _ => {
+                    let val = iter.next().unwrap_or(Value::NIL);
+                    pairs.push((arg.clone(), val));
                 }
             }
         }
@@ -91,19 +91,19 @@ impl Interpreter {
         is_push: bool,
     ) {
         if let Some(existing) = hash.get(&key) {
-            let new_val = match existing {
-                Value::Array(arr, ..) => {
+            let new_val = match existing.view() {
+                ValueView::Array(arr, ..) => {
                     let mut items = arr.to_vec();
                     if is_push {
                         // push: add value as-is (could be nested array)
                         items.push(value);
                     } else {
                         // append: flatten arrays
-                        match value {
-                            Value::Array(new_items, ..) => {
+                        match value.view() {
+                            ValueView::Array(new_items, ..) => {
                                 items.extend(new_items.iter().cloned());
                             }
-                            other => items.push(other),
+                            _ => items.push(value.clone()),
                         }
                     }
                     Value::real_array(items)
@@ -115,11 +115,11 @@ impl Interpreter {
                     } else {
                         // append: flatten arrays
                         let mut items = vec![existing.clone()];
-                        match value {
-                            Value::Array(new_items, ..) => {
+                        match value.view() {
+                            ValueView::Array(new_items, ..) => {
                                 items.extend(new_items.iter().cloned());
                             }
-                            other => items.push(other),
+                            _ => items.push(value.clone()),
                         }
                         Value::real_array(items)
                     }

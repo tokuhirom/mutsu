@@ -3,6 +3,7 @@ use super::methods_signature_errors::{
 };
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Dispatch method calls for Instance values and handle all fallback paths.
@@ -16,11 +17,11 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // Instance dispatch
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             id: target_id,
-        } = &target
+        } = target.view()
         {
             // A per-attribute container descriptor produced by `Attribute.container`
             // (tagged with `__mutsu_attr_container_owner`). `.VAR` returns the
@@ -43,7 +44,7 @@ impl Interpreter {
                 let base = match sigil.as_str() {
                     "@" => Value::array(Vec::new()),
                     "%" => Value::hash(std::collections::HashMap::new()),
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 };
                 return self.call_method_with_values(base, method, args);
             }
@@ -166,21 +167,29 @@ impl Interpreter {
             }
 
             if class_name == "IterationBuffer" {
-                let mut items = match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                    Some(Value::Array(values, ..)) => values.to_vec(),
-                    Some(Value::Seq(values)) | Some(Value::Slip(values)) => values.to_vec(),
+                let mut items = match attributes
+                    .as_map()
+                    .get("__mutsu_iterationbuffer_items")
+                    .map(Value::view)
+                {
+                    Some(ValueView::Array(values, ..)) => values.to_vec(),
+                    Some(ValueView::Seq(values)) | Some(ValueView::Slip(values)) => values.to_vec(),
                     _ => Vec::new(),
                 };
                 let iterationbuffer_values = |value: &Value| -> Vec<Value> {
-                    match value {
-                        Value::Instance {
+                    match value.view() {
+                        ValueView::Instance {
                             class_name,
                             attributes,
                             ..
                         } if class_name == "IterationBuffer" => {
-                            match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                                Some(Value::Array(values, ..)) => values.to_vec(),
-                                Some(Value::Seq(values)) | Some(Value::Slip(values)) => {
+                            match attributes
+                                .as_map()
+                                .get("__mutsu_iterationbuffer_items")
+                                .map(Value::view)
+                            {
+                                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                                Some(ValueView::Seq(values)) | Some(ValueView::Slip(values)) => {
                                     values.to_vec()
                                 }
                                 _ => Vec::new(),
@@ -195,10 +204,10 @@ impl Interpreter {
                         "__mutsu_iterationbuffer_items".to_string(),
                         Value::real_array(new_items),
                     );
-                    Value::write_back_sharing(attributes, *class_name, updated_attrs, *target_id)
+                    Value::write_back_sharing(attributes, class_name, updated_attrs, target_id)
                 };
                 match method {
-                    "elems" if args.is_empty() => return Ok(Value::Int(items.len() as i64)),
+                    "elems" if args.is_empty() => return Ok(Value::int(items.len() as i64)),
                     "AT-POS" if args.len() == 1 => {
                         let index = crate::runtime::to_int(&args[0]);
                         if index >= 0
@@ -206,14 +215,14 @@ impl Interpreter {
                         {
                             return Ok(value.clone());
                         }
-                        return Ok(Value::Package(Symbol::intern("Mu")));
+                        return Ok(Value::package(Symbol::intern("Mu")));
                     }
                     "BIND-POS" if args.len() == 2 => {
                         let index = crate::runtime::to_int(&args[0]);
                         if index >= 0 {
                             let idx = index as usize;
                             if idx >= items.len() {
-                                items.resize(idx + 1, Value::Package(Symbol::intern("Mu")));
+                                items.resize(idx + 1, Value::package(Symbol::intern("Mu")));
                             }
                             items[idx] = args[1].clone();
                         }
@@ -223,20 +232,20 @@ impl Interpreter {
                     }
                     "push" if !args.is_empty() => {
                         items.extend(args.iter().cloned());
-                        let result = args.last().cloned().unwrap_or(Value::Nil);
+                        let result = args.last().cloned().unwrap_or(Value::NIL);
                         update_items(items);
                         return Ok(result);
                     }
                     "unshift" if !args.is_empty() => {
                         let mut prepended = args.clone();
                         prepended.extend(items);
-                        let result = args.last().cloned().unwrap_or(Value::Nil);
+                        let result = args.last().cloned().unwrap_or(Value::NIL);
                         update_items(prepended);
                         return Ok(result);
                     }
                     "List" if args.is_empty() => return Ok(Value::array(items)),
                     "Slip" if args.is_empty() => return Ok(Value::slip(items)),
-                    "Seq" if args.is_empty() => return Ok(Value::Seq(std::sync::Arc::new(items))),
+                    "Seq" if args.is_empty() => return Ok(Value::seq(items)),
                     "append" if args.len() == 1 => {
                         items.extend(iterationbuffer_values(&args[0]));
                         return Ok(update_items(items));
@@ -248,7 +257,7 @@ impl Interpreter {
                     }
                     "clear" if args.is_empty() => {
                         update_items(Vec::new());
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     _ => {}
                 }
@@ -285,28 +294,28 @@ impl Interpreter {
                             .as_map()
                             .get("name")
                             .cloned()
-                            .unwrap_or(Value::Nil));
+                            .unwrap_or(Value::NIL));
                     }
                     "type" => {
                         return Ok(attributes
                             .as_map()
                             .get("type")
                             .cloned()
-                            .unwrap_or(Value::Package(crate::symbol::Symbol::intern("Mu"))));
+                            .unwrap_or(Value::package(crate::symbol::Symbol::intern("Mu"))));
                     }
                     "has_accessor" => {
                         return Ok(attributes
                             .as_map()
                             .get("has_accessor")
                             .cloned()
-                            .unwrap_or(Value::Bool(false)));
+                            .unwrap_or(Value::FALSE));
                     }
                     "set_rw" => {
                         // Mark the attribute as read-write. The generated accessor
                         // for a `has $.x is rw` is already rw; for an attribute that
                         // a custom `trait_mod:<is>` makes rw, record it on the meta
                         // so `.rw`/`.readonly` introspection reflects the change.
-                        attributes.insert("is_rw".to_string(), Value::Bool(true));
+                        attributes.insert("is_rw".to_string(), Value::TRUE);
                         return Ok(target.clone());
                     }
                     "rw" => {
@@ -314,7 +323,7 @@ impl Interpreter {
                             .as_map()
                             .get("is_rw")
                             .cloned()
-                            .unwrap_or(Value::Bool(false)));
+                            .unwrap_or(Value::FALSE));
                     }
                     "readonly" => {
                         let is_rw = attributes
@@ -322,7 +331,7 @@ impl Interpreter {
                             .get("is_rw")
                             .map(|v| v.truthy())
                             .unwrap_or(false);
-                        return Ok(Value::Bool(!is_rw));
+                        return Ok(Value::truth(!is_rw));
                     }
                     "build" => {
                         if let Some(build_val) = attributes.as_map().get("build") {
@@ -334,9 +343,9 @@ impl Interpreter {
                             .map(|v| v.truthy())
                             .unwrap_or(false)
                         {
-                            return Ok(Value::Bool(true));
+                            return Ok(Value::TRUE);
                         }
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     "get_value" => {
                         let obj = args.first().ok_or_else(|| {
@@ -347,18 +356,18 @@ impl Interpreter {
                             .get("__mutsu_attr_name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        if let Value::Instance {
+                        if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..
-                        } = obj
+                        } = obj.view()
                         {
                             return Ok(obj_attrs
                                 .as_map()
                                 .get(&attr_name)
                                 .cloned()
-                                .unwrap_or(Value::Nil));
+                                .unwrap_or(Value::NIL));
                         }
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     "set_value" => {
                         if args.len() < 2 {
@@ -372,23 +381,23 @@ impl Interpreter {
                             .get("__mutsu_attr_name")
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
-                        if let Value::Instance {
+                        if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..
-                        } = &args[0]
+                        } = args[0].view()
                         {
                             let mut updated = obj_attrs.to_map();
                             updated.insert(attr_name, new_val);
                             obj_attrs.commit_attrs(updated);
                         }
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     "gist" | "Str" => {
                         let type_name = attributes
                             .as_map()
                             .get("type")
-                            .map(|v| match v {
-                                Value::Package(name) => name.resolve(),
+                            .map(|v| match v.view() {
+                                ValueView::Package(name) => name.resolve(),
                                 _ => v.to_string_value(),
                             })
                             .unwrap_or_else(|| "Mu".to_string());
@@ -418,7 +427,7 @@ impl Interpreter {
                             .get("__mutsu_attr_owner")
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "Any".to_string());
-                        return Ok(Value::Package(crate::symbol::Symbol::intern(&owner)));
+                        return Ok(Value::package(crate::symbol::Symbol::intern(&owner)));
                     }
                     "container" => {
                         // Return a per-attribute container descriptor tagged with
@@ -468,12 +477,12 @@ impl Interpreter {
                     .unwrap_or_default();
                 // curupdir rejects "." and "..", accepts everything else
                 let result = arg != "." && arg != "..";
-                return Ok(Value::Bool(result));
+                return Ok(Value::truth(result));
             }
 
             // IO::Spec methods — delegate to Package-based handler
             if class_name == "IO::Spec" || class_name.resolve().starts_with("IO::Spec::") {
-                let pkg = Value::Package(*class_name);
+                let pkg = Value::package(class_name);
                 return self.call_method_with_values(pkg, method, args);
             }
             // Distribution::Path / ::Hash / ::Installation
@@ -503,35 +512,35 @@ impl Interpreter {
                             .as_map()
                             .get("short-name")
                             .cloned()
-                            .unwrap_or(Value::Nil));
+                            .unwrap_or(Value::NIL));
                     }
                     "auth-matcher" => {
                         return Ok(attributes
                             .as_map()
                             .get("auth-matcher")
                             .cloned()
-                            .unwrap_or(Value::Bool(true)));
+                            .unwrap_or(Value::TRUE));
                     }
                     "version-matcher" => {
                         return Ok(attributes
                             .as_map()
                             .get("version-matcher")
                             .cloned()
-                            .unwrap_or(Value::Bool(true)));
+                            .unwrap_or(Value::TRUE));
                     }
                     "api-matcher" => {
                         return Ok(attributes
                             .as_map()
                             .get("api-matcher")
                             .cloned()
-                            .unwrap_or(Value::Bool(true)));
+                            .unwrap_or(Value::TRUE));
                     }
                     "Str" | "gist" => {
                         return Ok(attributes
                             .as_map()
                             .get("short-name")
                             .cloned()
-                            .unwrap_or(Value::Nil));
+                            .unwrap_or(Value::NIL));
                     }
                     _ => {}
                 }
@@ -544,16 +553,16 @@ impl Interpreter {
                             .get("prefix")
                             .map(Value::to_string_value)
                             .unwrap_or_default();
-                        let depspec = args.first().cloned().unwrap_or(Value::Nil);
+                        let depspec = args.first().cloned().unwrap_or(Value::NIL);
                         return self.cur_fs_candidates(&prefix, &depspec);
                     }
                     "install" => {
                         return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
                     }
                     "need" => {
-                        let short_name = match args.first() {
-                            Some(Value::CompUnitDepSpec { short_name }) => *short_name,
-                            _ => return Ok(Value::Nil),
+                        let short_name = match args.first().map(Value::view) {
+                            Some(ValueView::CompUnitDepSpec { short_name }) => short_name,
+                            _ => return Ok(Value::NIL),
                         };
                         let short_name_str = short_name.resolve();
                         let prefix = attributes
@@ -587,7 +596,7 @@ impl Interpreter {
                             found_path = self.resolve_module_path(&short_name_str).map(|(p, _)| p);
                         }
                         let Some(source_path) = found_path else {
-                            return Ok(Value::Nil);
+                            return Ok(Value::NIL);
                         };
                         let repo_precomp_enabled = attributes
                             .as_map()
@@ -631,7 +640,7 @@ impl Interpreter {
                         attrs.insert("short-name".to_string(), Value::str(short_name_str));
                         attrs.insert(
                             "precompiled".to_string(),
-                            Value::Bool(precompiled && repo_precomp_enabled),
+                            Value::truth(precompiled && repo_precomp_enabled),
                         );
                         let compunit = Value::make_instance(Symbol::intern("CompUnit"), attrs);
                         self.env.insert(cache_key, compunit.clone());
@@ -647,21 +656,21 @@ impl Interpreter {
                             .as_map()
                             .get("short-name")
                             .cloned()
-                            .unwrap_or(Value::Nil));
+                            .unwrap_or(Value::NIL));
                     }
                     "name" => {
                         return Ok(attributes
                             .as_map()
                             .get("short-name")
                             .cloned()
-                            .unwrap_or(Value::Nil));
+                            .unwrap_or(Value::NIL));
                     }
                     "version" => {
                         return Ok(attributes
                             .as_map()
                             .get("version")
                             .cloned()
-                            .unwrap_or(Value::Nil));
+                            .unwrap_or(Value::NIL));
                     }
                     // Rakudo exposes a handle object that can answer .globalish-package.
                     // For mutsu, the handle carries the symbols this CompUnit loaded so
@@ -689,7 +698,7 @@ impl Interpreter {
                 );
             }
             if class_name == "Stash" && method == "merge-symbols" {
-                let pkg = args.first().cloned().unwrap_or(Value::Nil);
+                let pkg = args.first().cloned().unwrap_or(Value::NIL);
                 return Ok(self.merge_global_symbols(&pkg));
             }
             if method == "can" {
@@ -772,11 +781,12 @@ impl Interpreter {
                 );
             }
             if method == "isa" {
-                let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                    Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name.to_string(),
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    other => other.to_string_value(),
+                let isa_arg = args.first().cloned().unwrap_or(Value::NIL);
+                let target_name = match isa_arg.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => isa_arg.to_string_value(),
                 };
                 // isa only matches classes, not roles. If the target is a role
                 // that has NOT been punned to a class, return False (use .does
@@ -784,9 +794,9 @@ impl Interpreter {
                 if self.registry().roles.contains_key(&target_name)
                     && !self.registry().classes.contains_key(&target_name)
                 {
-                    return Ok(Value::Bool(false));
+                    return Ok(Value::FALSE);
                 }
-                return Ok(Value::Bool(
+                return Ok(Value::truth(
                     self.class_mro(&class_name.resolve()).contains(&target_name),
                 ));
             }
@@ -838,11 +848,11 @@ impl Interpreter {
             let has_coercion_gist = target.does_check("Real")
                 || target.does_check("Numeric")
                 || target.does_check("Stringy")
-                || matches!(&target, Value::Instance { class_name, .. }
+                || matches!(target.view(), ValueView::Instance { class_name, .. }
                     if self.has_user_method(&class_name.resolve(), "Bridge"));
             // Callable instances (Method/Sub/…) gist by name (`foo`), not as
             // `Method.new(...)`, so keep their built-in gist.
-            let is_callable_instance = matches!(&target, Value::Instance { class_name, .. }
+            let is_callable_instance = matches!(target.view(), ValueView::Instance { class_name, .. }
                 if matches!(class_name.resolve().as_str(),
                     "Method" | "Submethod" | "Sub" | "Routine"
                         | "Block" | "Code" | "WhateverCode" | "Callable"));
@@ -851,8 +861,8 @@ impl Interpreter {
                 && args.is_empty()
                 && !self.has_user_method(&class_name.resolve(), method)
             {
-                if *class_name == Symbol::intern("ObjAt")
-                    || *class_name == Symbol::intern("ValueObjAt")
+                if class_name == Symbol::intern("ObjAt")
+                    || class_name == Symbol::intern("ValueObjAt")
                 {
                     let which = attributes
                         .as_map()
@@ -909,7 +919,7 @@ impl Interpreter {
                     .as_map()
                     .get("name")
                     .cloned()
-                    .unwrap_or(Value::Nil));
+                    .unwrap_or(Value::NIL));
             }
             if method == "clone" {
                 let mut attrs: HashMap<String, Value> = attributes.to_map();
@@ -921,15 +931,15 @@ impl Interpreter {
                     .collect();
                 let cn = class_name.resolve();
                 for arg in &args {
-                    if let Value::Pair(key, boxed) = arg
+                    if let ValueView::Pair(key, boxed) = arg.view()
                         && self.is_attribute_buildable(&cn, key)
                     {
                         let sigil = sigil_map.get(key.as_str()).copied().unwrap_or('$');
-                        let coerced = Self::coerce_attr_value_by_sigil(*boxed.clone(), sigil);
+                        let coerced = Self::coerce_attr_value_by_sigil(boxed.clone(), sigil);
                         attrs.insert(key.clone(), coerced);
                     }
                 }
-                return Ok(Value::make_instance(*class_name, attrs));
+                return Ok(Value::make_instance(class_name, attrs));
             }
             if method == "Bool"
                 && args.is_empty()
@@ -939,7 +949,7 @@ impl Interpreter {
                     .call_method_with_values(target.clone(), "Numeric", vec![])
                     .or_else(|_| self.call_method_with_values(target.clone(), "Bridge", vec![]))
             {
-                return Ok(Value::Bool(coerced.truthy()));
+                return Ok(Value::truth(coerced.truthy()));
             }
             if method == "Bridge"
                 && args.is_empty()
@@ -972,7 +982,7 @@ impl Interpreter {
                 && let Ok(bridged) = self.call_method_with_values(target.clone(), "Bridge", vec![])
             {
                 let base = if let Some(arg) = args.first() {
-                    if matches!(arg, Value::Instance { class_name, .. }
+                    if matches!(arg.view(), ValueView::Instance { class_name, .. }
                         if self.has_user_method(&class_name.resolve(), "Bridge"))
                     {
                         self.call_method_with_values(arg.clone(), "Numeric", vec![])
@@ -984,7 +994,7 @@ impl Interpreter {
                         arg.clone()
                     }
                 } else {
-                    Value::Nil
+                    Value::NIL
                 };
                 return self.call_method_with_values(bridged, "log", vec![base]);
             }
@@ -1000,14 +1010,14 @@ impl Interpreter {
                 attributes.commit_attrs(updated.clone());
                 // Auto-FETCH if the method returned a Proxy
                 if !self.in_lvalue_assignment
-                    && let Value::Proxy { ref fetcher, .. } = result
+                    && let ValueView::Proxy { fetcher, .. } = result.view()
                 {
                     return self.proxy_fetch(
                         fetcher,
                         None,
                         &class_name.resolve(),
                         &updated,
-                        *target_id,
+                        target_id,
                     );
                 }
                 return Ok(result);
@@ -1044,11 +1054,11 @@ impl Interpreter {
                                 .as_map()
                                 .get(method)
                                 .cloned()
-                                .unwrap_or(Value::Nil);
+                                .unwrap_or(Value::NIL);
                             // For typed @/% attributes, register type metadata on the
                             // returned value so push/insert type enforcement works.
                             if (*sigil == '@' || *sigil == '%')
-                                && !matches!(val, Value::Nil)
+                                && !val.is_nil()
                                 && self.container_type_metadata(&val).is_none()
                                 && let Some(tc) =
                                     self.get_attr_type_constraint(&cn, method.as_ref())
@@ -1080,11 +1090,11 @@ impl Interpreter {
                         // Get the stored enum value from the instance attribute
                         let map = attributes.as_map();
                         let stored = map.get(enum_name);
-                        if let Some(Value::Enum { key, .. }) = stored {
-                            return Ok(Value::Bool(key.resolve() == method));
+                        if let Some(ValueView::Enum { key, .. }) = stored.map(Value::view) {
+                            return Ok(Value::truth(key.resolve() == method));
                         }
                         // No enum value set
-                        return Ok(Value::Bool(false));
+                        return Ok(Value::FALSE);
                     }
                 }
             }
@@ -1092,7 +1102,7 @@ impl Interpreter {
 
         // For user-defined numeric/real-like objects, delegate unknown methods through
         // their coercion bridge so default Real behavior is available.
-        if matches!(target, Value::Instance { ref class_name, .. }
+        if matches!(target.view(), ValueView::Instance { class_name, .. }
             if (target.does_check("Real") || target.does_check("Numeric"))
                 || self.has_user_method(&class_name.resolve(), "Bridge")
                 || self.has_user_method(&class_name.resolve(), "Numeric"))
@@ -1111,7 +1121,7 @@ impl Interpreter {
             // code). A class that `does Real` with no custom `Str` keeps
             // bridging `.Str`/`.gist` to its number (e.g. `class P does Real
             // { method Bridge { $!n.Num } }` → `P.new(n=>7).gist` is "7").
-            let has_user_str = matches!(target, Value::Instance { class_name, .. }
+            let has_user_str = matches!(target.view(), ValueView::Instance { class_name, .. }
                 if self.has_user_method(&class_name.resolve(), "Str"));
             let is_numeric_coercion = matches!(method, "Numeric" | "Real" | "Bridge");
             let is_own_stringify = has_user_str && matches!(method, "Str" | "Stringy");
@@ -1124,7 +1134,7 @@ impl Interpreter {
                 && let Ok(result) = {
                     let mut delegated_args = Vec::with_capacity(args.len());
                     for arg in &args {
-                        let coerced_arg = if matches!(arg, Value::Instance { class_name, .. }
+                        let coerced_arg = if matches!(arg.view(), ValueView::Instance { class_name, .. }
                             if self.has_user_method(&class_name.resolve(), "Bridge")
                                 || arg.does_check("Real")
                                 || arg.does_check("Numeric"))
@@ -1172,7 +1182,7 @@ impl Interpreter {
         }
 
         // Package (type object) dispatch -- private method call
-        if let Value::Package(ref name) = target {
+        if let ValueView::Package(name) = target.view() {
             let normalized_method: String = method
                 .chars()
                 .map(|ch| {
@@ -1185,16 +1195,20 @@ impl Interpreter {
                 .collect();
             if name == "Instant"
                 && normalized_method == "from_posix"
-                && let Some(result) = Self::try_native_builtin_class_method(*name, method, &args)
+                && let Some(result) = Self::try_native_builtin_class_method(name, method, &args)
             {
                 // Shared with the VM's native class-method fast path.
                 return result;
             }
             if name == "Supply" && method == "interval" {
-                let seconds = args.first().map_or(1.0, |value| match value {
-                    Value::Int(i) => *i as f64,
-                    Value::Num(n) => *n,
-                    other => other.to_string_value().parse::<f64>().unwrap_or(1.0),
+                let seconds = args.first().map_or(1.0, |value| {
+                    if let Some(i) = value.as_int() {
+                        i as f64
+                    } else if let Some(n) = value.as_num() {
+                        n
+                    } else {
+                        value.to_string_value().parse::<f64>().unwrap_or(1.0)
+                    }
                 });
                 let period_secs = if seconds.is_finite() && seconds > 0.0 {
                     seconds
@@ -1202,10 +1216,14 @@ impl Interpreter {
                     0.001 // minimum timer resolution
                 };
                 // Second argument: initial delay before first emission (default 0)
-                let initial_delay = args.get(1).map_or(0.0, |value| match value {
-                    Value::Int(i) => *i as f64,
-                    Value::Num(n) => *n,
-                    other => other.to_string_value().parse::<f64>().unwrap_or(0.0),
+                let initial_delay = args.get(1).map_or(0.0, |value| {
+                    if let Some(i) = value.as_int() {
+                        i as f64
+                    } else if let Some(n) = value.as_num() {
+                        n
+                    } else {
+                        value.to_string_value().parse::<f64>().unwrap_or(0.0)
+                    }
                 });
                 let initial_delay = if initial_delay.is_finite() && initial_delay >= 0.0 {
                     initial_delay
@@ -1223,10 +1241,10 @@ impl Interpreter {
                     let mut attrs = HashMap::new();
                     attrs.insert("values".to_string(), Value::array(Vec::new()));
                     attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                    attrs.insert("live".to_string(), Value::Bool(false));
+                    attrs.insert("live".to_string(), Value::FALSE);
                     attrs.insert("scheduler".to_string(), sched);
-                    attrs.insert("scheduler_interval".to_string(), Value::Num(period_secs));
-                    attrs.insert("scheduler_delay".to_string(), Value::Num(initial_delay));
+                    attrs.insert("scheduler_interval".to_string(), Value::num(period_secs));
+                    attrs.insert("scheduler_delay".to_string(), Value::num(initial_delay));
                     return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
                 }
 
@@ -1245,7 +1263,7 @@ impl Interpreter {
                     }
                     loop {
                         if tx
-                            .send(super::native_methods::SupplyEvent::Emit(Value::Int(tick)))
+                            .send(super::native_methods::SupplyEvent::Emit(Value::int(tick)))
                             .is_err()
                         {
                             break;
@@ -1258,8 +1276,8 @@ impl Interpreter {
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
-                attrs.insert("live".to_string(), Value::Bool(false));
+                attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
+                attrs.insert("live".to_string(), Value::FALSE);
                 return Ok(Value::make_instance(Symbol::intern("Supply"), attrs));
             }
             if let Some(private_rest) = method.strip_prefix('!') {
@@ -1345,19 +1363,22 @@ impl Interpreter {
 
         // Value-type dispatch for user-defined methods (e.g. `augment class Array/Hash/List`).
         // Non-instance values still need to find methods declared on their type object.
-        if !matches!(target, Value::Instance { .. } | Value::Package(_)) {
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
             let class_name = crate::runtime::utils::value_type_name(&target);
             let dispatch_class = if self.has_user_method(class_name, method) {
                 Some(class_name)
-            } else if matches!(target, Value::Array(_, kind) if !kind.is_itemized())
+            } else if matches!(target.view(), ValueView::Array(_, kind) if !kind.is_itemized())
                 && self.has_user_method("Array", method)
             {
                 // @-sigiled values are list-like internally, but augmenting Array methods
                 // should still apply to them.
                 Some("Array")
             } else if matches!(
-                target,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                target.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             ) {
                 // Callables follow the MRO Sub -> Routine -> Block -> Code -> Callable.
                 // A method augmented onto any ancestor (e.g. `augment class Block`)
@@ -1381,7 +1402,7 @@ impl Interpreter {
             }
         }
 
-        if let Value::Package(type_name) = &target {
+        if let ValueView::Package(type_name) = target.view() {
             match (type_name.resolve().as_str(), method) {
                 ("CompUnit", "handle") => {
                     return Ok(Value::make_instance(
@@ -1390,7 +1411,7 @@ impl Interpreter {
                     ));
                 }
                 ("CompUnit", "globalish-package") | ("CompUnit::Handle", "globalish-package") => {
-                    return Ok(Value::Package(Symbol::intern("GLOBAL")));
+                    return Ok(Value::package(Symbol::intern("GLOBAL")));
                 }
                 _ => {}
             }
@@ -1399,7 +1420,7 @@ impl Interpreter {
         // .can for Package values
         if method == "can"
             && !args.is_empty()
-            && let Value::Package(ref class_name) = target
+            && let ValueView::Package(class_name) = target.view()
         {
             let method_name = args[0].to_string_value();
             if (self.class_has_method(&class_name.resolve(), &method_name)
@@ -1414,15 +1435,15 @@ impl Interpreter {
         // Wildcard delegation (`handles *`) and FALLBACK method dispatch.
         // Dispatch order: wildcard delegation -> FALLBACK -> built-in fallbacks -> error.
         {
-            let fallback_class = match &target {
-                Value::Instance { class_name, .. } => Some(*class_name),
-                Value::Package(name) => Some(*name),
+            let fallback_class = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(name) => Some(name),
                 _ => None,
             };
             if let Some(ref class_name) = fallback_class {
                 // Try wildcard delegation: forward to delegate attribute's object
                 let wildcard_attrs = self.collect_wildcard_handles(&class_name.resolve());
-                if let Value::Instance { attributes, .. } = &target {
+                if let ValueView::Instance { attributes, .. } = target.view() {
                     for attr_var in &wildcard_attrs {
                         // Check for regex delegation pattern: "attr_var:regex:pattern"
                         if let Some(regex_idx) = attr_var.find(":regex:") {
@@ -1479,9 +1500,9 @@ impl Interpreter {
         // type objects (Foo.bar) and instances ($obj.bar).
         // A per-instance attribute with the same name hides the class-level one.
         {
-            let class_name_for_lookup = match &target {
-                Value::Package(name) => Some(name.resolve()),
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
+            let class_name_for_lookup = match target.view() {
+                ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name_for_lookup
@@ -1496,8 +1517,8 @@ impl Interpreter {
 
         if let Some(callable) = self.env.get(&format!("&{}", method)).cloned()
             && matches!(
-                callable,
-                Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                callable.view(),
+                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
             )
         {
             return self.call_sub_value(callable, args, true);
@@ -1505,12 +1526,12 @@ impl Interpreter {
 
         // Fallback methods
         match method {
-            "DUMP" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::str(format!("{}()", name))),
-                other => Ok(Value::str(other.to_string_value())),
+            "DUMP" if args.is_empty() => match target.view() {
+                ValueView::Package(name) => Ok(Value::str(format!("{}()", name))),
+                _ => Ok(Value::str(target.to_string_value())),
             },
-            "gist" if args.is_empty() => match target {
-                Value::Package(name) => {
+            "gist" if args.is_empty() => match target.view() {
+                ValueView::Package(name) => {
                     if crate::value::is_internal_anon_type_name(&name.resolve()) {
                         return Ok(Value::str_from("()"));
                     }
@@ -1518,12 +1539,12 @@ impl Interpreter {
                     let short = resolved.split("::").last().unwrap_or(&resolved);
                     Ok(Value::str(format!("({})", short)))
                 }
-                other => Ok(Value::str(other.to_string_value())),
+                _ => Ok(Value::str(target.to_string_value())),
             },
             "WHERE" if args.is_empty() => {
-                let type_obj_name = match &target {
-                    Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.to_string()),
+                let type_obj_name = match target.view() {
+                    ValueView::Package(name) => Some(name.resolve()),
+                    ValueView::Str(name) => Some(name.to_string()),
                     _ => None,
                 };
                 if let Some(name) = type_obj_name {
@@ -1541,9 +1562,9 @@ impl Interpreter {
                     )))
                 }
             }
-            "raku" | "perl" if args.is_empty() => match target {
-                Value::Package(name) => Ok(Value::str(name.resolve())),
-                Value::Junction { kind, values } => {
+            "raku" | "perl" if args.is_empty() => match target.view() {
+                ValueView::Package(name) => Ok(Value::str(name.resolve())),
+                ValueView::Junction { kind, values } => {
                     let kind_name = match kind {
                         JunctionKind::Any => "any",
                         JunctionKind::All => "all",
@@ -1552,11 +1573,11 @@ impl Interpreter {
                     };
                     let mut parts = Vec::with_capacity(values.len());
                     for value in values.iter() {
-                        if let Value::Instance {
+                        if let ValueView::Instance {
                             class_name,
                             attributes,
                             ..
-                        } = value
+                        } = value.view()
                             && self
                                 .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
                                 .is_some()
@@ -1580,10 +1601,10 @@ impl Interpreter {
                     }
                     Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))))
                 }
-                other => Ok(Value::str(other.to_string_value())),
+                _ => Ok(Value::str(target.to_string_value())),
             },
-            "name" if args.is_empty() => match target {
-                Value::Routine { name, .. } => {
+            "name" if args.is_empty() => match target.view() {
+                ValueView::Routine { name, .. } => {
                     Ok(Value::str(format_operator_name(&name.resolve())))
                 }
                 // `.name` on a *type object* whose class declares its own public
@@ -1591,35 +1612,36 @@ impl Interpreter {
                 // instance attribute off a type object is an error (raku). Only
                 // divert when the class actually has a `name` attribute; otherwise
                 // keep the type-name introspection behaviour.
-                Value::Package(name) if self.has_public_accessor(&name.resolve(), "name") => {
+                ValueView::Package(name) if self.has_public_accessor(&name.resolve(), "name") => {
                     Err(RuntimeError::new(format!(
                         "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
                         name.resolve()
                     )))
                 }
-                Value::Package(name) => Ok(Value::str(name.resolve())),
-                Value::Str(name) => Ok(Value::Str(name.clone())),
-                Value::Sub(data) => Ok(Value::str(format_operator_name(&data.name.resolve()))),
-                _ => Ok(Value::Nil),
+                ValueView::Package(name) => Ok(Value::str(name.resolve())),
+                ValueView::Str(name) => Ok(Value::str_arc(name.clone())),
+                ValueView::Sub(data) => Ok(Value::str(format_operator_name(&data.name.resolve()))),
+                _ => Ok(Value::NIL),
             },
-            "package" if args.is_empty() => match target {
-                Value::Sub(data) => Ok(Value::Package(data.package)),
-                Value::Routine { package, .. } => Ok(Value::Package(package)),
-                _ => Ok(Value::Nil),
+            "package" if args.is_empty() => match target.view() {
+                ValueView::Sub(data) => Ok(Value::package(data.package)),
+                ValueView::Routine { package, .. } => Ok(Value::package(package)),
+                _ => Ok(Value::NIL),
             },
-            "isa" if args.len() == 1 && matches!(&target, Value::Package(_)) => {
-                let pkg_name = match &target {
-                    Value::Package(name) => name.resolve(),
+            "isa" if args.len() == 1 && matches!(target.view(), ValueView::Package(_)) => {
+                let pkg_name = match target.view() {
+                    ValueView::Package(name) => name.resolve(),
                     _ => unreachable!(),
                 };
-                let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                    Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name.to_string(),
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    other => other.to_string_value(),
+                let isa_arg = args.first().cloned().unwrap_or(Value::NIL);
+                let target_name = match isa_arg.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => isa_arg.to_string_value(),
                 };
                 if pkg_name == target_name {
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 if let Some(mut base) = self
                     .registry()
@@ -1629,7 +1651,7 @@ impl Interpreter {
                 {
                     loop {
                         if base == target_name {
-                            return Ok(Value::Bool(true));
+                            return Ok(Value::TRUE);
                         }
                         let Some(parent_base) =
                             self.registry().subsets.get(&base).map(|s| s.base.clone())
@@ -1642,7 +1664,7 @@ impl Interpreter {
                         base = parent_base;
                     }
                 }
-                Ok(Value::Bool(
+                Ok(Value::truth(
                     self.class_mro(&pkg_name).contains(&target_name),
                 ))
             }
@@ -1655,9 +1677,9 @@ impl Interpreter {
                     Ok(Value::str_from("P6opaque"))
                 }
             }
-            "Str" | "Stringy" if args.is_empty() => match &target {
-                Value::Package(_) => Ok(Value::str(String::new())),
-                Value::Instance { class_name, .. } => {
+            "Str" | "Stringy" if args.is_empty() => match target.view() {
+                ValueView::Package(_) => Ok(Value::str(String::new())),
+                ValueView::Instance { class_name, .. } => {
                     // When Stringy is requested but only Str is user-defined (or
                     // vice versa), delegate to the available user method so that
                     // custom stringification works through `~$obj`.
@@ -1675,9 +1697,9 @@ impl Interpreter {
                 _ => Ok(Value::str(target.to_string_value())),
             },
             "Numeric" | "Real" if args.is_empty() => {
-                let num_name = match &target {
-                    Value::Package(name) => Some(name.resolve()),
-                    Value::Str(name) => Some(name.to_string()),
+                let num_name = match target.view() {
+                    ValueView::Package(name) => Some(name.resolve()),
+                    ValueView::Str(name) => Some(name.to_string()),
                     _ => None,
                 };
                 if let Some(name) = num_name {
@@ -1686,13 +1708,13 @@ impl Interpreter {
                     // Mu's coercion: warn "uninitialized ... in numeric context" and
                     // return 0. Roles keep their existing silent 0 for back-compat.
                     if self.registry().roles.contains_key(&name) {
-                        Ok(Value::Int(0))
+                        Ok(Value::int(0))
                     } else {
                         let msg = format!(
                             "Use of uninitialized value of type {} in numeric context",
                             name
                         );
-                        Err(RuntimeError::warn_signal_with_resume(msg, Value::Int(0)))
+                        Err(RuntimeError::warn_signal_with_resume(msg, Value::int(0)))
                     }
                 } else {
                     Err(RuntimeError::new(format!(
@@ -1706,7 +1728,7 @@ impl Interpreter {
                 self.call_function("EVAL", vec![target])
             }
             // Metamodel::*HOW methods
-            "new_type" if matches!(&target, Value::Package(n) if n.resolve().starts_with("Metamodel::")) =>
+            "new_type" if matches!(target.view(), ValueView::Package(n) if n.resolve().starts_with("Metamodel::")) =>
             {
                 // Metamodel::PackageHOW.new_type(name => 'Foo')
                 // Returns a type object (Package) with the given name
@@ -1714,7 +1736,7 @@ impl Interpreter {
                 let name = args
                     .iter()
                     .find_map(|a| {
-                        if let Value::Pair(k, v) = a {
+                        if let ValueView::Pair(k, v) = a.view() {
                             if k == "name" {
                                 Some(v.to_string_value())
                             } else {
@@ -1732,31 +1754,31 @@ impl Interpreter {
                         .classes
                         .insert(name.clone(), Default::default());
                 }
-                Ok(Value::Package(Symbol::intern(&name)))
+                Ok(Value::package(Symbol::intern(&name)))
             }
             // Metamodel::Primitives static methods
-            _ if matches!(&target, Value::Package(n) if n == "Metamodel::Primitives") => {
+            _ if matches!(target.view(), ValueView::Package(n) if n == "Metamodel::Primitives") => {
                 self.metamodel_primitives_dispatch(method, args)
             }
             _ => {
                 // Method calls on callables compose by applying the method to the
                 // callable's return value, e.g. `(*-*).abs`.
-                if matches!(&target, Value::Sub(_) | Value::WeakSub(_)) {
+                if matches!(target.view(), ValueView::Sub(_) | ValueView::WeakSub(_)) {
                     use crate::ast::{Expr, Stmt};
                     use std::sync::atomic::{AtomicU64, Ordering};
 
                     static COMPOSE_METHOD_ID: AtomicU64 = AtomicU64::new(2_000_000);
 
-                    let callable = match target {
-                        Value::Sub(data) => Value::Sub(data),
-                        Value::WeakSub(weak) => weak
+                    let callable = match target.view() {
+                        ValueView::Sub(data) => Value::sub_value(data.clone()),
+                        ValueView::WeakSub(weak) => weak
                             .upgrade()
-                            .map(Value::Sub)
+                            .map(Value::sub_value)
                             .ok_or_else(|| RuntimeError::new("Callable has been freed"))?,
-                        _ => Value::Nil,
+                        _ => Value::NIL,
                     };
-                    let params = match &callable {
-                        Value::Sub(data) if !data.params.is_empty() => data.params.clone(),
+                    let params = match callable.view() {
+                        ValueView::Sub(data) if !data.params.is_empty() => data.params.clone(),
                         _ => vec!["_".to_string()],
                     };
 
@@ -1792,7 +1814,7 @@ impl Interpreter {
                 if matches!(
                     method,
                     "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
-                ) && matches!(&target, Value::Array(..))
+                ) && matches!(target.view(), ValueView::Array(..))
                     && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
                 {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
@@ -1803,9 +1825,9 @@ impl Interpreter {
                 if let Some(result) = self.try_method_fallback(&target, method, &args) {
                     return result;
                 }
-                let type_name = match &target {
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    Value::Package(name) => name.resolve(),
+                let type_name = match target.view() {
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    ValueView::Package(name) => name.resolve(),
                     _ => crate::runtime::utils::value_type_name(&target).to_string(),
                 };
                 Err(make_method_not_found_error(method, &type_name, false))
@@ -1826,9 +1848,9 @@ impl Interpreter {
         if self.method_fallbacks.is_empty() {
             return None;
         }
-        let type_name = match target {
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            Value::Package(name) => name.resolve(),
+        let type_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => name.resolve(),
             _ => crate::runtime::utils::value_type_name(target).to_string(),
         };
         // Consult the class itself first, then its ancestors (MRO).
@@ -1885,7 +1907,7 @@ impl Interpreter {
         let arr = attrs
             .entry(attr_name.to_string())
             .or_insert_with(|| Value::real_array(Vec::new()));
-        if let Value::Array(items, _) = arr {
+        if let Some(result) = arr.with_array_mut(|items, _| -> Result<Value, RuntimeError> {
             let items = crate::gc::Gc::make_mut(items);
             match method {
                 "push" => {
@@ -1897,7 +1919,7 @@ impl Interpreter {
                     if items.is_empty() {
                         return Ok(make_empty_array_failure("pop"));
                     }
-                    return Ok(items.pop().unwrap_or(Value::Nil));
+                    return Ok(items.pop().unwrap_or(Value::NIL));
                 }
                 "shift" => {
                     return Ok(if items.is_empty() {
@@ -1917,9 +1939,9 @@ impl Interpreter {
                 "prepend" => {
                     let mut new_items: Vec<Value> = Vec::new();
                     for arg in args {
-                        match arg {
-                            Value::Array(vals, _) => new_items.extend(vals.iter().cloned()),
-                            other => new_items.push(other.clone()),
+                        match arg.view() {
+                            ValueView::Array(vals, _) => new_items.extend(vals.iter().cloned()),
+                            _ => new_items.push(arg.clone()),
                         }
                     }
                     new_items.append(items);
@@ -1928,6 +1950,8 @@ impl Interpreter {
                 _ => {}
             }
             Ok(Value::real_array(items.clone().items))
+        }) {
+            result
         } else {
             Err(RuntimeError::new(format!(
                 "Cannot call '{}' on non-Array attribute",
@@ -1945,7 +1969,7 @@ impl Interpreter {
         match args {
             [] => {
                 if values.is_empty() {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 }
                 let candidates = self.are_candidate_type_names(&values);
                 for candidate in candidates {
@@ -1953,10 +1977,10 @@ impl Interpreter {
                         .iter()
                         .all(|value| self.are_value_matches_type(value, &candidate))
                     {
-                        return Ok(Value::Package(Symbol::intern(&candidate)));
+                        return Ok(Value::package(Symbol::intern(&candidate)));
                     }
                 }
-                Ok(Value::Package(Symbol::intern("Any")))
+                Ok(Value::package(Symbol::intern("Any")))
             }
             [expected] => {
                 let expected_type = self.are_expected_type_name(expected);
@@ -1982,7 +2006,7 @@ impl Interpreter {
                         ));
                     }
                 }
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             _ => Err(RuntimeError::new(
                 "Method 'are' accepts zero or one argument",
@@ -2009,18 +2033,18 @@ impl Interpreter {
     }
 
     fn are_specific_candidate_type_names(&mut self, value: &Value) -> Vec<String> {
-        match value {
-            Value::Package(name) => vec![name.resolve()],
-            Value::Instance { class_name, .. } => self.class_mro(&class_name.resolve()),
+        match value.view() {
+            ValueView::Package(name) => vec![name.resolve()],
+            ValueView::Instance { class_name, .. } => self.class_mro(&class_name.resolve()),
             _ => vec![crate::runtime::utils::value_type_name(value).to_string()],
         }
     }
 
     fn are_expected_type_name(&self, value: &Value) -> String {
-        match value {
-            Value::Package(name) => name.resolve(),
-            Value::Str(name) => name.to_string(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
+        match value.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Str(name) => name.to_string(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => value.to_string_value(),
         }
     }
@@ -2028,19 +2052,22 @@ impl Interpreter {
     fn are_value_matches_type(&mut self, value: &Value, expected_type: &str) -> bool {
         if expected_type == "Cool" {
             // `Cool` in are() should accept list/type-object values except clearly non-Cool ones.
-            if let Value::Instance { class_name, .. } = value {
+            if let ValueView::Instance { class_name, .. } = value.view() {
                 let cls = class_name.resolve();
                 if cls == "Date" || cls == "DateTime" || cls == "Mu" {
                     return false;
                 }
             }
-            if let Value::Package(name) = value {
+            if let ValueView::Package(name) = value.view() {
                 let cls = name.resolve();
                 if cls == "Date" || cls == "DateTime" || cls == "Mu" {
                     return false;
                 }
             }
-            if matches!(value, Value::Array(_, _) | Value::Seq(_) | Value::Slip(_)) {
+            if matches!(
+                value.view(),
+                ValueView::Array(_, _) | ValueView::Seq(_) | ValueView::Slip(_)
+            ) {
                 return true;
             }
         }
@@ -2048,9 +2075,9 @@ impl Interpreter {
     }
 
     fn are_actual_type_name(value: &Value) -> String {
-        match value {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
+        match value.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => crate::runtime::utils::value_type_name(value).to_string(),
         }
     }

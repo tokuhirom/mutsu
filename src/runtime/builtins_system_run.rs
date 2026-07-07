@@ -18,18 +18,20 @@ impl Interpreter {
         let mut positional: Vec<String> = Vec::new();
         let mut first_arg_io_path = false;
         for (idx, arg) in args.iter().enumerate() {
-            let arg = match arg {
-                Value::Capture { named, .. }
-                    if matches!(named.get("__mutsu_varref_name"), Some(Value::Str(_)))
-                        && named.contains_key("__mutsu_varref_value") =>
+            let arg = match arg.view() {
+                ValueView::Capture { named, .. }
+                    if matches!(
+                        named.get("__mutsu_varref_name").map(Value::view),
+                        Some(ValueView::Str(_))
+                    ) && named.contains_key("__mutsu_varref_value") =>
                 {
                     named.get("__mutsu_varref_value").unwrap_or(arg)
                 }
                 _ => arg,
             };
-            match arg {
-                Value::Hash(_) | Value::Pair(_, _) => {}
-                Value::Instance {
+            match arg.view() {
+                ValueView::Hash(_) | ValueView::Pair(_, _) => {}
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -42,7 +44,7 @@ impl Interpreter {
                         positional.push(arg.to_string_value());
                     }
                 }
-                Value::Array(elems, _) => {
+                ValueView::Array(elems, _) => {
                     for elem in elems.iter() {
                         positional.push(Value::to_string_value(elem));
                     }
@@ -182,20 +184,20 @@ impl Interpreter {
                             );
                         }
                         let mut in_attrs = HashMap::new();
-                        in_attrs.insert("proc-pid".to_string(), Value::Int(pid));
+                        in_attrs.insert("proc-pid".to_string(), Value::int(pid));
                         Value::make_instance(Symbol::intern("IO::Pipe"), in_attrs)
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     let mut attrs = HashMap::new();
-                    attrs.insert("exitcode".to_string(), Value::Int(-1));
-                    attrs.insert("signal".to_string(), Value::Int(0));
-                    attrs.insert("pid".to_string(), Value::Int(pid));
+                    attrs.insert("exitcode".to_string(), Value::int(-1));
+                    attrs.insert("signal".to_string(), Value::int(0));
+                    attrs.insert("pid".to_string(), Value::int(pid));
                     attrs.insert("command".to_string(), command_val);
                     attrs.insert("in".to_string(), in_pipe);
-                    attrs.insert("live".to_string(), Value::Bool(true));
+                    attrs.insert("live".to_string(), Value::TRUE);
                     if opts.bin {
-                        attrs.insert("bin".to_string(), Value::Bool(true));
+                        attrs.insert("bin".to_string(), Value::TRUE);
                     }
                     let proc = Value::make_instance(Symbol::intern("Proc"), attrs);
                     if let Ok(mut map) = proc_by_pid_map().lock() {
@@ -355,7 +357,7 @@ impl Interpreter {
     /// `X::Proc::Unsuccessful.message` can report it (e.g. command-not-found
     /// produces "exit code: -1, ... OS error = No such file or directory").
     fn attach_proc_os_error(proc: &mut Value, os_error: &str) {
-        if let Value::Instance { attributes, .. } = proc {
+        if let ValueView::Instance { attributes, .. } = proc.view() {
             attributes.insert("os-error".to_string(), Value::str(os_error.to_string()));
         }
     }

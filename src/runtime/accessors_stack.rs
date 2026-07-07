@@ -96,8 +96,8 @@ impl Interpreter {
 
     /// Stringify a value, calling the `.Str` method for Instance and Package types.
     pub(crate) fn stringify_value(&mut self, value: Value) -> Result<String, RuntimeError> {
-        match &value {
-            Value::Instance { .. } | Value::Package(_) => {
+        match value.view() {
+            ValueView::Instance { .. } | ValueView::Package(_) => {
                 let result = self.call_method_with_values(value, "Str", vec![])?;
                 Ok(result.to_string_value())
             }
@@ -114,7 +114,7 @@ impl Interpreter {
             return true;
         }
         // For instances, check class methods
-        if let Value::Instance { class_name, .. } = value
+        if let ValueView::Instance { class_name, .. } = value.view()
             && self.class_has_method(&class_name.resolve(), method)
         {
             return true;

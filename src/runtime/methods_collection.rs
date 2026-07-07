@@ -11,16 +11,16 @@ impl Interpreter {
 
     /// Check if a value is lazy/infinite and cannot be coerced to a QuantHash.
     pub(crate) fn is_lazy_for_coerce(value: &Value) -> bool {
-        match value {
-            Value::LazyList(_) => true,
-            Value::Array(_, kind) if kind.is_lazy() => true,
-            Value::GenericRange { start, end, .. } => {
+        match value.view() {
+            ValueView::LazyList(_) => true,
+            ValueView::Array(_, kind) if kind.is_lazy() => true,
+            ValueView::GenericRange { start, end, .. } => {
                 Self::is_infinite_endpoint(start) || Self::is_infinite_endpoint(end)
             }
-            Value::Range(_, end)
-            | Value::RangeExcl(_, end)
-            | Value::RangeExclStart(_, end)
-            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+            ValueView::Range(_, end)
+            | ValueView::RangeExcl(_, end)
+            | ValueView::RangeExclStart(_, end)
+            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
             _ => false,
         }
     }
@@ -51,17 +51,17 @@ impl Interpreter {
     /// and continuation of an existing lazy pipeline (chained `.map`/`.grep`).
     /// Gathers / sequence / scan lists keep their current dispatch unchanged.
     pub(crate) fn is_lazy_pipe_source(target: &Value) -> bool {
-        match target {
-            Value::Range(_, end)
-            | Value::RangeExcl(_, end)
-            | Value::RangeExclStart(_, end)
-            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
+        match target.view() {
+            ValueView::Range(_, end)
+            | ValueView::RangeExcl(_, end)
+            | ValueView::RangeExclStart(_, end)
+            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
             // An exclusive/whatever infinite range (`^Inf`, `0..^Inf`) is stored
             // as a GenericRange with an infinite end — also a lazy pipe source.
             // A non-finite *start* (`-Inf..0`, `NaN..NaN`, `Inf..Inf`) is too:
             // it cannot be eagerly materialized and `.map`/`.grep` must pull it
             // (`-Inf`/`NaN` yield their start ad infinitum; `+Inf` yields none).
-            Value::GenericRange { start, end, .. } => {
+            ValueView::GenericRange { start, end, .. } => {
                 let end_f = end.to_f64();
                 (end_f.is_infinite() && end_f.is_sign_positive()) || !start.to_f64().is_finite()
             }
@@ -76,7 +76,7 @@ impl Interpreter {
             // trailing side effects the consumer never asked for). This holds for a
             // *plain* gather too — in Rakudo `gather { … }.grep(…)[^3]` pulls only
             // the elements the slice needs and never runs the gather's tail.
-            Value::LazyList(ll) => ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch(),
+            ValueView::LazyList(ll) => ll.lazy_pipe.is_some() || ll.needs_vm_lazy_dispatch(),
             _ => false,
         }
     }
@@ -92,7 +92,7 @@ impl Interpreter {
         // cannot reproduce; defer those to the eager path (unchanged behaviour).
         // Other signature features (types, defaults, where, …) still bind one
         // element per call in `eval_map_over_items`, so they stay eligible.
-        if let Value::Sub(data) = &func {
+        if let ValueView::Sub(data) = func.view() {
             let arity = data
                 .params
                 .len()
@@ -102,16 +102,16 @@ impl Interpreter {
                 return None;
             }
         }
-        Some(Value::LazyList(crate::gc::Gc::new(
+        Some(Value::lazy_list(crate::gc::Gc::new(
             crate::value::LazyList::new_pipe(target, func, is_grep),
         )))
     }
 
     fn is_infinite_endpoint(v: &Value) -> bool {
-        match v {
-            Value::Num(n) => n.is_infinite(),
-            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
-            Value::Whatever | Value::HyperWhatever => true,
+        match v.view() {
+            ValueView::Num(n) => n.is_infinite(),
+            ValueView::Rat(_, d) | ValueView::FatRat(_, d) => d == 0,
+            ValueView::Whatever | ValueView::HyperWhatever => true,
             _ => false,
         }
     }
@@ -126,14 +126,14 @@ impl Interpreter {
 
     /// Check if a value is a lazy iterable (infinite range, lazy list, etc.)
     pub(crate) fn is_lazy_for_set_ops(v: &Value) -> bool {
-        match v {
-            Value::LazyList(_) => true,
-            Value::Array(_, kind) if kind.is_lazy() => true,
-            Value::Range(_, end)
-            | Value::RangeExcl(_, end)
-            | Value::RangeExclStart(_, end)
-            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-            Value::GenericRange { end, .. } => {
+        match v.view() {
+            ValueView::LazyList(_) => true,
+            ValueView::Array(_, kind) if kind.is_lazy() => true,
+            ValueView::Range(_, end)
+            | ValueView::RangeExcl(_, end)
+            | ValueView::RangeExclStart(_, end)
+            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+            ValueView::GenericRange { end, .. } => {
                 let end_f = end.to_f64();
                 end_f.is_infinite() && end_f.is_sign_positive()
             }

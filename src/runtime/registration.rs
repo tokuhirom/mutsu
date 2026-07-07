@@ -794,7 +794,7 @@ impl Interpreter {
         for stmt in stmts {
             match stmt {
                 Stmt::Return(expr) => {
-                    if !matches!(expr, Expr::Literal(Value::Nil)) {
+                    if !matches!(expr, Expr::Literal(lit) if lit.is_nil()) {
                         return true;
                     }
                 }

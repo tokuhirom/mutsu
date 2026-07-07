@@ -3,21 +3,19 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(crate) fn as_exception_value(value: Value) -> Value {
-        match value {
-            Value::Instance { class_name, .. }
+        if matches!(
+            value.view(),
+            ValueView::Instance { class_name, .. }
                 if class_name.resolve().contains("Exception")
-                    || class_name.resolve().starts_with("X::") =>
-            {
-                value
-            }
-            other => {
-                let msg = other.to_string_value();
-                let mut attrs = HashMap::new();
-                attrs.insert("payload".to_string(), Value::str(msg.clone()));
-                attrs.insert("message".to_string(), Value::str(msg));
-                Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-            }
+                    || class_name.resolve().starts_with("X::")
+        ) {
+            return value;
         }
+        let msg = value.to_string_value();
+        let mut attrs = HashMap::new();
+        attrs.insert("payload".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
     }
 
     fn channel_send_closed_error() -> RuntimeError {
@@ -73,12 +71,12 @@ impl Interpreter {
     ) -> Value {
         let orig = shared.clone();
         let new_promise = SharedPromise::new_with_class(shared.class_name());
-        let ret = Value::Promise(new_promise.clone());
+        let ret = Value::promise(new_promise.clone());
         if orig.is_resolved() {
             let (result, output, stderr) = orig.wait();
             let status = orig.status();
             if should_run(&status) {
-                let promise_val = Value::Promise(orig.clone());
+                let promise_val = Value::promise(orig.clone());
                 let cb_result = self.call_sub_value(block, vec![promise_val], true);
                 Self::resolve_promise_callback(&new_promise, cb_result, output, stderr);
             } else if propagate_kept {
@@ -101,7 +99,7 @@ impl Interpreter {
             // depended on OS scheduling and could reorder under load.
             orig.on_resolve(Box::new(move |status, result, output, stderr| {
                 if should_run(&status) {
-                    let promise_val = Value::Promise(orig_for_waiter);
+                    let promise_val = Value::promise(orig_for_waiter);
                     let cb_result = thread_interp.call_sub_value(block, vec![promise_val], true);
                     let out = std::mem::take(&mut thread_interp.output_sink_mut().output);
                     let err = std::mem::take(&mut thread_interp.output_sink_mut().stderr_output);
@@ -152,11 +150,11 @@ impl Interpreter {
                     Err(err)
                 } else {
                     // Replay deferred taps for Proc::Async results
-                    if let Value::Instance {
-                        ref class_name,
-                        ref attributes,
+                    if let ValueView::Instance {
+                        class_name,
+                        attributes,
                         ..
-                    } = result
+                    } = result.view()
                         && class_name == "Proc"
                     {
                         self.replay_proc_taps(attributes);
@@ -166,22 +164,22 @@ impl Interpreter {
             }
             "status" => Ok(Value::str(shared.status())),
             "then" => {
-                let block = args.into_iter().next().unwrap_or(Value::Nil);
+                let block = args.into_iter().next().unwrap_or(Value::NIL);
                 // .then always runs the callback regardless of Kept/Broken
                 Ok(self.promise_chain_method(shared, block, |_| true, true))
             }
             "andthen" => {
-                let block = args.into_iter().next().unwrap_or(Value::Nil);
+                let block = args.into_iter().next().unwrap_or(Value::NIL);
                 // .andthen runs callback only if Kept; propagates Broken
                 Ok(self.promise_chain_method(shared, block, |s| s == "Kept", false))
             }
             "orelse" => {
-                let block = args.into_iter().next().unwrap_or(Value::Nil);
+                let block = args.into_iter().next().unwrap_or(Value::NIL);
                 // .orelse runs callback only if Broken; propagates Kept
                 Ok(self.promise_chain_method(shared, block, |s| s == "Broken", true))
             }
             "keep" => {
-                let value = args.into_iter().next().unwrap_or(Value::Bool(true));
+                let value = args.into_iter().next().unwrap_or(Value::TRUE);
                 if let Err(_status) = shared.try_keep(value) {
                     let mut attrs = HashMap::new();
                     attrs.insert(
@@ -197,7 +195,7 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
-                    Ok(Value::Nil)
+                    Ok(Value::NIL)
                 }
             }
             "break" => {
@@ -220,7 +218,7 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     Err(err)
                 } else {
-                    Ok(Value::Nil)
+                    Ok(Value::NIL)
                 }
             }
             "cause" => {
@@ -249,47 +247,42 @@ impl Interpreter {
                     // Broken
                     let (result, _, _) = shared.wait();
                     // Wrap in X::AdHoc if it's a plain string
-                    let cause = match &result {
-                        Value::Instance { class_name, .. }
+                    let is_exc = matches!(
+                        result.view(),
+                        ValueView::Instance { class_name, .. }
                             if class_name.resolve().contains("Exception")
-                                || class_name.resolve().starts_with("X::") =>
-                        {
-                            result
-                        }
-                        _ => {
-                            let mut attrs = HashMap::new();
-                            attrs.insert(
-                                "payload".to_string(),
-                                Value::str(result.to_string_value()),
-                            );
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(result.to_string_value()),
-                            );
-                            Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-                        }
+                                || class_name.resolve().starts_with("X::")
+                    );
+                    let cause = if is_exc {
+                        result
+                    } else {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("payload".to_string(), Value::str(result.to_string_value()));
+                        attrs.insert("message".to_string(), Value::str(result.to_string_value()));
+                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                     };
                     Ok(cause)
                 }
             }
-            "Bool" => Ok(Value::Bool(shared.is_resolved())),
+            "Bool" => Ok(Value::truth(shared.is_resolved())),
             "vow" => {
                 // Return a simple Vow object
                 let mut attrs = HashMap::new();
                 attrs.insert("promise".to_string(), target.clone());
                 Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
             }
-            "WHAT" => Ok(Value::Package(shared.class_name())),
+            "WHAT" => Ok(Value::package(shared.class_name())),
             "raku" | "perl" => Ok(Value::str(format!(
                 "Promise.new(status => {})",
                 shared.status()
             ))),
             "Str" | "gist" => Ok(Value::str(format!("Promise({})", shared.status()))),
             "isa" => {
-                let target_name = match args.first().cloned().unwrap_or(Value::Nil) {
-                    Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name.to_string(),
-                    other => other.to_string_value(),
+                let arg = args.first().cloned().unwrap_or(Value::NIL);
+                let target_name = match arg.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    _ => arg.to_string_value(),
                 };
                 let cn = shared.class_name().resolve();
                 let is_match = cn == target_name
@@ -297,7 +290,7 @@ impl Interpreter {
                     || target_name == "Any"
                     || target_name == "Mu"
                     || self.class_mro(&cn).contains(&target_name);
-                Ok(Value::Bool(is_match))
+                Ok(Value::truth(is_match))
             }
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on Promise",
@@ -316,7 +309,7 @@ impl Interpreter {
             .get("promise")
             .cloned()
             .ok_or_else(|| RuntimeError::new("Promise::Vow has no backing promise"))?;
-        let Value::Promise(shared) = promise else {
+        let ValueView::Promise(shared) = promise.view() else {
             return Err(RuntimeError::new(
                 "Promise::Vow backing value is not a Promise",
             ));
@@ -324,7 +317,7 @@ impl Interpreter {
         match method {
             "keep" | "break" => {
                 let value = if method == "keep" {
-                    args.into_iter().next().unwrap_or(Value::Bool(true))
+                    args.into_iter().next().unwrap_or(Value::TRUE)
                 } else {
                     args.into_iter()
                         .next()
@@ -336,7 +329,7 @@ impl Interpreter {
                     shared.try_break(value)
                 };
                 match res {
-                    Ok(()) => Ok(Value::Nil),
+                    Ok(()) => Ok(Value::NIL),
                     Err(status) => {
                         let msg = format!(
                             "Cannot keep/break a Promise more than once (status: {})",
@@ -344,7 +337,7 @@ impl Interpreter {
                         );
                         let mut attrs = HashMap::new();
                         attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        attrs.insert("promise".to_string(), Value::Promise(shared.clone()));
+                        attrs.insert("promise".to_string(), Value::promise(shared.clone()));
                         let ex =
                             Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
                         let mut err = RuntimeError::new(msg);
@@ -353,7 +346,7 @@ impl Interpreter {
                     }
                 }
             }
-            "WHAT" => Ok(Value::Package(Symbol::intern("Promise::Vow"))),
+            "WHAT" => Ok(Value::package(Symbol::intern("Promise::Vow"))),
             "Str" | "gist" => Ok(Value::str("(Vow)".to_string())),
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on Promise::Vow",
@@ -373,7 +366,7 @@ impl Interpreter {
                 if !ch.can_send() {
                     return Err(Self::channel_send_closed_error());
                 }
-                let value = args.into_iter().next().unwrap_or(Value::Nil);
+                let value = args.into_iter().next().unwrap_or(Value::NIL);
                 let sids = ch.supplier_ids();
                 for sid in &sids {
                     use crate::runtime::native_methods::state::supplier_emit;
@@ -390,10 +383,10 @@ impl Interpreter {
                     }
                 }
                 ch.send(value);
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "receive" => match ch.receive_result() {
-                Ok(Value::Nil) => Err(Self::channel_receive_closed_error()),
+                Ok(v) if v.is_nil() => Err(Self::channel_receive_closed_error()),
                 Ok(value) => Ok(value),
                 Err(cause) => {
                     let ex = Self::as_exception_value(cause);
@@ -404,8 +397,8 @@ impl Interpreter {
             },
             "poll" => match ch.poll_result() {
                 Ok(Some(value)) => Ok(value),
-                Ok(None) => Ok(Value::Nil),
-                Err(_) => Ok(Value::Nil),
+                Ok(None) => Ok(Value::NIL),
+                Err(_) => Ok(Value::NIL),
             },
             "close" => {
                 let sids = ch.supplier_ids();
@@ -416,7 +409,7 @@ impl Interpreter {
                     }
                 }
                 ch.close();
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "fail" => {
                 let reason = args
@@ -424,14 +417,14 @@ impl Interpreter {
                     .next()
                     .unwrap_or_else(|| Value::str_from("Died"));
                 ch.fail(Self::as_exception_value(reason));
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "list" | "List" | "Array" | "Seq" => {
                 // Drain the channel into a list (blocks until closed)
                 let mut items = Vec::new();
                 loop {
                     match ch.receive_result() {
-                        Ok(Value::Nil) => break,
+                        Ok(v) if v.is_nil() => break,
                         Ok(value) => items.push(value),
                         Err(cause) => {
                             let ex = Self::as_exception_value(cause);
@@ -443,7 +436,7 @@ impl Interpreter {
                 }
                 Ok(Value::array(items))
             }
-            "closed" => Ok(Value::Promise(ch.closed_promise())),
+            "closed" => Ok(Value::promise(ch.closed_promise())),
             "elems" => Err(RuntimeError::new(
                 "Cannot call '.elems' on a Channel instance".to_string(),
             )),
@@ -454,12 +447,12 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("supplier_id".to_string(), Value::Int(sid as i64));
-                attrs.insert("live".to_string(), Value::Bool(true));
+                attrs.insert("supplier_id".to_string(), Value::int(sid as i64));
+                attrs.insert("live".to_string(), Value::TRUE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            "Bool" => Ok(Value::Bool(true)),
-            "WHAT" => Ok(Value::Package(Symbol::intern("Channel"))),
+            "Bool" => Ok(Value::TRUE),
+            "WHAT" => Ok(Value::package(Symbol::intern("Channel"))),
             "Str" | "gist" => Ok(Value::str_from("Channel")),
             _ => Err(RuntimeError::new(format!(
                 "No method '{}' on Channel",

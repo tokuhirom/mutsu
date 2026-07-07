@@ -35,7 +35,7 @@ impl Interpreter {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
         };
-        let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+        let bound_val = self.env.get(&pd.name).cloned().unwrap_or(Value::NIL);
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), bound_val.clone());
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
@@ -138,8 +138,8 @@ impl Interpreter {
 
     fn normalize_coercion_binding_error(err: RuntimeError) -> RuntimeError {
         if matches!(
-            err.exception.as_deref(),
-            Some(Value::Instance { class_name, .. }) if class_name.resolve() == "X::Coerce::Impossible"
+            err.exception.as_deref().map(Value::view),
+            Some(ValueView::Instance { class_name, .. }) if class_name.resolve() == "X::Coerce::Impossible"
         ) {
             err
         } else {
@@ -186,10 +186,9 @@ impl Interpreter {
         // Skip the insert when args are empty and @_ is already empty,
         // to avoid triggering Arc::make_mut deep clone on the CoW env.
         let skip_at_underscore = plain_args.is_empty()
-            && self
-                .env
-                .get("@_")
-                .is_some_and(|v| matches!(v, Value::Array(elems, _) if elems.is_empty()));
+            && self.env.get("@_").is_some_and(
+                |v| matches!(v.view(), ValueView::Array(elems, _) if elems.is_empty()),
+            );
         if !skip_at_underscore {
             self.env
                 .insert("@_".to_string(), Value::array(plain_args.clone()));
@@ -200,7 +199,12 @@ impl Interpreter {
         let filtered_args: Vec<Value> = {
             let positional_count = filtered_args
                 .iter()
-                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .filter(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                })
                 .count();
             let required_positional_count = param_defs
                 .iter()
@@ -218,18 +222,26 @@ impl Interpreter {
                 .count();
             if positional_count == 1 && required_positional_count >= 2 {
                 // Check if the single positional arg is a Seq or non-itemized Array/List
-                let single_pos = filtered_args
-                    .iter()
-                    .find(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)));
+                let single_pos = filtered_args.iter().find(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                });
                 let named_args: Vec<Value> = filtered_args
                     .iter()
-                    .filter(|a| matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                    .filter(|a| {
+                        matches!(
+                            unwrap_varref_value((*a).clone()).view(),
+                            ValueView::Pair(..)
+                        )
+                    })
                     .cloned()
                     .collect();
                 if let Some(single) = single_pos {
                     let unwrapped = unwrap_varref_value(single.clone());
-                    match unwrapped {
-                        Value::Seq(items) => {
+                    match unwrapped.view() {
+                        ValueView::Seq(items) => {
                             let mut expanded = items.to_vec();
                             expanded.extend(named_args);
                             expanded
@@ -238,8 +250,8 @@ impl Interpreter {
                         // it does NOT auto-flatten to fill several scalar params
                         // (`sub f($x,$y,$z){}; f(@a)` is a too-few-arguments error —
                         // only `f(|@a)` flattens). So an Array is left intact here;
-                        // explicit slips arrive as `Value::Slip` and still flatten.
-                        Value::Slip(items) => {
+                        // explicit slips arrive as `Slip` and still flatten.
+                        ValueView::Slip(items) => {
                             let mut expanded = items.to_vec();
                             expanded.extend(named_args);
                             expanded
@@ -305,9 +317,9 @@ impl Interpreter {
             let promote_valuepair_positional = legacy_has_plain_positional_param(params);
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| match a {
-                    Value::Pair(..) => false,
-                    Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(..)) => {
+                .filter(|a| match a.view() {
+                    ValueView::Pair(..) => false,
+                    ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(..)) => {
                         promote_valuepair_positional
                     }
                     _ => true,
@@ -317,14 +329,14 @@ impl Interpreter {
             let named_args: Vec<(String, Value)> = plain_args
                 .iter()
                 .filter_map(|a| {
-                    if let Value::Pair(key, val) = a {
-                        Some((key.clone(), *val.clone()))
-                    } else if let Value::ValuePair(key, val) = a {
+                    if let ValueView::Pair(key, val) = a.view() {
+                        Some((key.clone(), val.clone()))
+                    } else if let ValueView::ValuePair(key, val) = a.view() {
                         if promote_valuepair_positional {
                             return None;
                         }
-                        if let Value::Str(name) = key.as_ref() {
-                            Some((name.to_string(), *val.clone()))
+                        if let ValueView::Str(name) = key.view() {
+                            Some((name.to_string(), val.clone()))
                         } else {
                             None
                         }
@@ -453,7 +465,12 @@ impl Interpreter {
                 // Otherwise, collect remaining args like *@ (flattening slurpy).
                 let remaining_positional: Vec<_> = args[positional_idx..]
                     .iter()
-                    .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                    .filter(|a| {
+                        !matches!(
+                            unwrap_varref_value((*a).clone()).view(),
+                            ValueView::Pair(..)
+                        )
+                    })
                     .cloned()
                     .collect();
                 // Type preservation under the single-argument rule for a single
@@ -462,8 +479,8 @@ impl Interpreter {
                 // List (`@a.WHAT === List`). Captured before `items` consumes the
                 // borrow; `None` for every other shape (→ plain Array as before).
                 let single_seq = if remaining_positional.len() == 1 {
-                    match unwrap_varref_value(remaining_positional[0].clone()) {
-                        Value::Seq(arr) => Some(arr),
+                    match unwrap_varref_value(remaining_positional[0].clone()).view() {
+                        ValueView::Seq(arr) => Some(arr.clone()),
                         _ => None,
                     }
                 } else {
@@ -471,22 +488,22 @@ impl Interpreter {
                 };
                 let items = if remaining_positional.len() == 1 {
                     let single = unwrap_varref_value(remaining_positional[0].clone());
-                    match single {
-                        Value::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
-                        Value::Slip(arr) => arr.to_vec(),
-                        Value::Seq(arr) => arr.to_vec(),
-                        single @ (Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. }) => {
+                    match single.view() {
+                        ValueView::Array(arr, kind) if !kind.is_itemized() => arr.to_vec(),
+                        ValueView::Slip(arr) => arr.to_vec(),
+                        ValueView::Seq(arr) => arr.to_vec(),
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => {
                             // A single iterable argument is used as the argument
                             // list: a finite range flattens to its elements.
                             let mut items = Vec::new();
-                            flatten_into_slurpy(&[single], &mut items);
+                            flatten_into_slurpy(std::slice::from_ref(&single), &mut items);
                             items
                         }
-                        other => vec![other],
+                        _ => vec![single.clone()],
                     }
                 } else {
                     // Multiple top-level args: the single-argument rule does NOT
@@ -496,13 +513,13 @@ impl Interpreter {
                     let mut items = Vec::new();
                     for val in remaining_positional {
                         let val = unwrap_varref_value(val);
-                        match val {
-                            Value::Pair(..) => {} // skip named args
-                            Value::Slip(arr) => {
-                                flatten_into_slurpy(&arr, &mut items);
+                        match val.view() {
+                            ValueView::Pair(..) => {} // skip named args
+                            ValueView::Slip(arr) => {
+                                flatten_into_slurpy(arr, &mut items);
                             }
-                            other => {
-                                items.push(other);
+                            _ => {
+                                items.push(val.clone());
                             }
                         }
                     }
@@ -512,7 +529,7 @@ impl Interpreter {
                 let slurpy_value = if let Some(seq_arc) = &single_seq {
                     if pd.sigilless {
                         // `+a` binding a lone Seq: keep it a Seq.
-                        Value::Seq(seq_arc.clone())
+                        Value::seq_arc(seq_arc.clone())
                     } else {
                         // `+@a` binding a lone Seq: a re-iterable List.
                         Value::array(items)
@@ -525,7 +542,7 @@ impl Interpreter {
                     // read-only List under the bare name, with no `@` sigil.
                     if !pd.name.is_empty() {
                         self.env
-                            .insert(sigilless_readonly_key(&pd.name), Value::Bool(true));
+                            .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
                         self.env.remove(&sigilless_alias_key(&pd.name));
                         self.bind_param_value(&pd.name, slurpy_value.clone());
                     }
@@ -553,22 +570,22 @@ impl Interpreter {
                     // First, collect remaining args from positional_idx
                     for arg in args[positional_idx..].iter().cloned() {
                         let arg = unwrap_varref_value(arg);
-                        if let Value::Pair(key, val) = arg {
-                            if !explicit_named_keys.contains(&key) {
-                                named.insert(key, *val);
+                        if let ValueView::Pair(key, val) = arg.view() {
+                            if !explicit_named_keys.contains(key) {
+                                named.insert(key.clone(), val.clone());
                             }
                         } else {
-                            positional.push(arg);
+                            positional.push(arg.clone());
                         }
                     }
                     // Also collect Pair args that were skipped before positional_idx
                     // (e.g., named args that appeared between positional args)
                     for arg in args[..positional_idx].iter().cloned() {
                         let arg = unwrap_varref_value(arg);
-                        if let Value::Pair(key, val) = arg
-                            && !explicit_named_keys.contains(&key)
+                        if let ValueView::Pair(key, val) = arg.view()
+                            && !explicit_named_keys.contains(key)
                         {
-                            named.insert(key, *val);
+                            named.insert(key.clone(), val.clone());
                         }
                     }
                     let capture_value = Value::capture(positional, named);
@@ -622,10 +639,10 @@ impl Interpreter {
                     let mut hash_items = std::collections::HashMap::new();
                     for arg in args.iter() {
                         let arg = unwrap_varref_value(arg.clone());
-                        if let Value::Pair(k, v) = arg
-                            && !explicit_named_keys.contains(&k)
+                        if let ValueView::Pair(k, v) = arg.view()
+                            && !explicit_named_keys.contains(k)
                         {
-                            hash_items.insert(k.clone(), *v.clone());
+                            hash_items.insert(k.clone(), v.clone());
                         }
                     }
                     if !pd.name.is_empty() {
@@ -637,7 +654,7 @@ impl Interpreter {
                     let mut items = Vec::new();
                     while positional_idx < args.len() {
                         let val = unwrap_varref_value(args[positional_idx].clone());
-                        if !matches!(&val, Value::Pair(..)) {
+                        if !matches!(val.view(), ValueView::Pair(..)) {
                             items.push(val);
                         }
                         positional_idx += 1;
@@ -658,12 +675,12 @@ impl Interpreter {
                     // are skipped so they fall through to a *%_ slurpy. With no
                     // positional left it binds an undefined value (slurpy is
                     // always optional).
-                    let mut value = Value::Nil;
+                    let mut value = Value::NIL;
                     while positional_idx < args.len() {
                         let raw_arg = args[positional_idx].clone();
                         positional_idx += 1;
                         let arg = unwrap_varref_value(raw_arg);
-                        if matches!(&arg, Value::Pair(..)) {
+                        if matches!(arg.view(), ValueView::Pair(..)) {
                             // Named arg -- leave for *%_ slurpy; keep scanning.
                             continue;
                         }
@@ -702,17 +719,22 @@ impl Interpreter {
                         let rest: Vec<Value> = args[positional_idx..]
                             .iter()
                             .map(|a| unwrap_varref_value(a.clone()))
-                            .filter(|a| !matches!(a, Value::Pair(..)))
+                            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                             .collect();
                         match rest.as_slice() {
-                            [Value::LazyList(ll)] if ll.is_genuinely_lazy() => {
-                                Some(Value::LazyList(crate::gc::Gc::new(ll.with_array_context())))
-                            }
-                            // A bare infinite range (`f(1..Inf)` / `f(1..*)`) also
-                            // stays lazy: convert it to the same reify-on-index lazy
-                            // array `my @a = 1..*` produces.
-                            [other] => {
-                                crate::runtime::utils::infinite_int_range_to_lazy_array(other)
+                            [only] => {
+                                if let ValueView::LazyList(ll) = only.view()
+                                    && ll.is_genuinely_lazy()
+                                {
+                                    Some(Value::lazy_list(crate::gc::Gc::new(
+                                        ll.with_array_context(),
+                                    )))
+                                } else {
+                                    // A bare infinite range (`f(1..Inf)` / `f(1..*)`)
+                                    // also stays lazy: convert it to the same
+                                    // reify-on-index lazy array `my @a = 1..*` produces.
+                                    crate::runtime::utils::infinite_int_range_to_lazy_array(only)
+                                }
                             }
                             _ => None,
                         }
@@ -747,7 +769,10 @@ impl Interpreter {
                         if is_alias_slurpy
                             && let Some(source_name) =
                                 varref.as_ref().map(|(n, _, _)| n.clone()).or(arg_source)
-                            && !matches!(unwrap_varref_value(raw_arg.clone()), Value::Pair(..))
+                            && !matches!(
+                                unwrap_varref_value(raw_arg.clone()).view(),
+                                ValueView::Pair(..)
+                            )
                         {
                             let source_value = match &varref {
                                 Some((_, v, _)) => v.clone(),
@@ -755,7 +780,7 @@ impl Interpreter {
                             };
                             let source_index = varref.as_ref().and_then(|(_, _, i)| *i);
                             if !pd.double_slurpy
-                                && let Value::Array(arr, kind) = &source_value
+                                && let ValueView::Array(arr, kind) = source_value.view()
                                 && !kind.is_itemized()
                             {
                                 // An array source (`incr(@arr)`): each element of
@@ -782,28 +807,29 @@ impl Interpreter {
                         // *@ (flattening slurpy): recursively flatten list args
                         // but preserve itemized Arrays ($[...] / .item) as single values.
                         // Skip Pair values -- they are named args for *%_ or will be rejected
-                        match unwrap_varref_value(raw_arg) {
-                            Value::Pair(..) => {
+                        let arg = unwrap_varref_value(raw_arg);
+                        match arg.view() {
+                            ValueView::Pair(..) => {
                                 // Named arg -- leave for *%_ slurpy or post-loop check
                             }
-                            Value::Array(arr, kind) => {
+                            ValueView::Array(arr, kind) => {
                                 if kind.is_itemized() {
-                                    items.push(Value::Array(arr.clone(), kind));
+                                    items.push(Value::array_with_kind(arr.clone(), kind));
                                 } else {
-                                    flatten_into_slurpy(&arr, &mut items);
+                                    flatten_into_slurpy(arr, &mut items);
                                 }
                             }
-                            val @ (Value::Range(..)
-                            | Value::RangeExcl(..)
-                            | Value::RangeExclStart(..)
-                            | Value::RangeExclBoth(..)
-                            | Value::GenericRange { .. }
-                            | Value::Seq(..)
-                            | Value::Slip(..)) => {
-                                flatten_into_slurpy(&[val], &mut items);
+                            ValueView::Range(..)
+                            | ValueView::RangeExcl(..)
+                            | ValueView::RangeExclStart(..)
+                            | ValueView::RangeExclBoth(..)
+                            | ValueView::GenericRange { .. }
+                            | ValueView::Seq(..)
+                            | ValueView::Slip(..) => {
+                                flatten_into_slurpy(std::slice::from_ref(&arg), &mut items);
                             }
-                            other => {
-                                items.push(other);
+                            _ => {
+                                items.push(arg.clone());
                             }
                         }
                         positional_idx += 1;
@@ -898,16 +924,16 @@ impl Interpreter {
                 // when the same key is provided multiple times.
                 for (arg_idx, raw_arg) in args.iter().enumerate().rev() {
                     let arg = unwrap_varref_value(raw_arg.clone());
-                    if let Value::Pair(key, val) = arg
+                    if let ValueView::Pair(key, val) = arg.view()
                         && key == match_key
                     {
                         if let Some((sig_params, sig_ret)) = &pd.code_signature
-                            && !code_signature_matches_value(self, sig_params, sig_ret, &val)
+                            && !code_signature_matches_value(self, sig_params, sig_ret, val)
                         {
                             let mut err = RuntimeError::new(format!(
                                 "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected Callable with matching signature, got {}",
                                 pd.name,
-                                crate::runtime::value_type_name(&val)
+                                crate::runtime::value_type_name(val)
                             ));
                             let mut ex_attrs = std::collections::HashMap::new();
                             ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
@@ -929,9 +955,12 @@ impl Interpreter {
                         // (named scalar params are readonly). A `$`-scalar source
                         // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
                         // by reference already, like the positional scalar source.
-                        let mut bound_value = *val.clone();
+                        let mut bound_value = val.clone();
                         if self.named_scalar_container_share_eligible(pd)
-                            && matches!(bound_value, Value::Array(..) | Value::Hash(..))
+                            && matches!(
+                                bound_value.view(),
+                                ValueView::Array(..) | ValueView::Hash(..)
+                            )
                             && let Some(source_name) = arg_sources
                                 .as_ref()
                                 .and_then(|names| names.get(arg_idx))
@@ -941,7 +970,7 @@ impl Interpreter {
                                 })
                                 .filter(|s| s.starts_with('@') || s.starts_with('%'))
                         {
-                            bound_value = Value::ContainerRef(crate::gc::Gc::new(
+                            bound_value = Value::container_ref(crate::gc::Gc::new(
                                 std::sync::Mutex::new(bound_value),
                             ));
                             rw_bindings.push((pd.name.clone(), source_name));
@@ -949,7 +978,7 @@ impl Interpreter {
                         self.bind_param_value(&pd.name, bound_value);
                         self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                         if let Some(sub_params) = &pd.sub_signature {
-                            bind_named_rename_sub_signature(self, sub_params, &val)?;
+                            bind_named_rename_sub_signature(self, sub_params, val)?;
                         }
                         found = true;
                         break;
@@ -967,15 +996,15 @@ impl Interpreter {
                         let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
                         for arg in args.iter().rev() {
                             let arg = unwrap_varref_value(arg.clone());
-                            if let Value::Pair(key, inner_val) = arg
+                            if let ValueView::Pair(key, inner_val) = arg.view()
                                 && key == inner_key
                             {
-                                self.bind_param_value(&pd.name, *inner_val.clone());
+                                self.bind_param_value(&pd.name, inner_val.clone());
                                 self.bind_param_type_constraint(
                                     &pd.name,
                                     pd.type_constraint.clone(),
                                 );
-                                bind_named_rename_sub_signature(self, sub_params, &inner_val)?;
+                                bind_named_rename_sub_signature(self, sub_params, inner_val)?;
                                 found = true;
                                 break;
                             }
@@ -1069,11 +1098,11 @@ impl Interpreter {
                 positional_idx = args.len();
                 continue;
             } else {
-                // Positional param -- skip over Value::Pair entries (named args)
+                // Positional param -- skip over Pair entries (named args)
                 while positional_idx < args.len()
                     && matches!(
-                        unwrap_varref_value(args[positional_idx].clone()),
-                        Value::Pair(..)
+                        unwrap_varref_value(args[positional_idx].clone()).view(),
+                        ValueView::Pair(..)
                     )
                 {
                     positional_idx += 1;
@@ -1098,7 +1127,8 @@ impl Interpreter {
                             // caller's variable.
                             let alias_key = format!("__mutsu_sigilless_alias::{}", pd.name);
                             self.env.insert(alias_key, Value::str(source_name));
-                        } else if matches!(&args[positional_idx], Value::ContainerRef(_)) {
+                        } else if matches!(args[positional_idx].view(), ValueView::ContainerRef(_))
+                        {
                             // A bare `ContainerRef` cell (e.g. the leaf container
                             // `deepmap`/hyper passes by reference) IS a writable
                             // lvalue even without a source variable name: the raw
@@ -1179,8 +1209,8 @@ impl Interpreter {
                             .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
                         && source_name.is_some()
                         && matches!(
-                            unwrap_varref_value(raw_arg.clone()),
-                            Value::Array(..) | Value::Hash(..)
+                            unwrap_varref_value(raw_arg.clone()).view(),
+                            ValueView::Array(..) | ValueView::Hash(..)
                         );
                     let source_type_constraint = source_name.as_deref().and_then(|source_name| {
                         self.var_type_constraint(source_name).or_else(|| {
@@ -1196,7 +1226,7 @@ impl Interpreter {
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
-                        if matches!(&value, Value::ContainerRef(_)) {
+                        if matches!(value.view(), ValueView::ContainerRef(_)) {
                             // A multi-dimensional subscript lvalue (`@a[0;1;2]`)
                             // arrives as a shared `ContainerRef` cell aliasing the
                             // real array/hash element. Bind the raw `\target` param
@@ -1204,13 +1234,13 @@ impl Interpreter {
                             // `target = v` writes through to the underlying
                             // container (and is visible immediately).
                             self.env.remove(&alias_key);
-                            self.env.insert(readonly_key, Value::Bool(false));
+                            self.env.insert(readonly_key, Value::FALSE);
                         } else if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);
                             value = inner;
                             self.env.insert(alias_key, Value::str(resolved_source));
-                            self.env.insert(readonly_key, Value::Bool(false));
+                            self.env.insert(readonly_key, Value::FALSE);
                         } else if let Some(source_name) = arg_sources
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
@@ -1226,19 +1256,19 @@ impl Interpreter {
                                 self.resolve_sigilless_alias_source_name(&source_name);
                             if is_compile_time_pseudo {
                                 self.env.remove(&alias_key);
-                                self.env.insert(readonly_key, Value::Bool(true));
+                                self.env.insert(readonly_key, Value::TRUE);
                             } else if let Some(source_val) = self.env.get(&resolved_source).cloned()
                             {
                                 value = source_val;
                                 self.env.insert(alias_key, Value::str(resolved_source));
-                                self.env.insert(readonly_key, Value::Bool(false));
+                                self.env.insert(readonly_key, Value::FALSE);
                             } else {
                                 self.env.remove(&alias_key);
-                                self.env.insert(readonly_key, Value::Bool(true));
+                                self.env.insert(readonly_key, Value::TRUE);
                             }
                         } else {
                             self.env.remove(&alias_key);
-                            self.env.insert(readonly_key, Value::Bool(true));
+                            self.env.insert(readonly_key, Value::TRUE);
                         }
                     }
                     if let Some(constraint) = &pd.type_constraint
@@ -1330,7 +1360,7 @@ impl Interpreter {
                             // A Failure from coercion is passed through as-is
                             // (it will throw when sunk or used). Only check
                             // type match for non-Failure results.
-                            if !matches!(&value, Value::Instance { class_name, .. } if class_name.resolve() == "Failure")
+                            if !matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Failure")
                                 && !self.type_matches_value(target, &value)
                             {
                                 return Err(coerce_impossible_error(
@@ -1369,12 +1399,12 @@ impl Interpreter {
                             }
                         } else if resolved_constraint == "Num"
                             && matches!(
-                                value,
-                                Value::Int(_)
-                                    | Value::Num(_)
-                                    | Value::Rat(_, _)
-                                    | Value::FatRat(_, _)
-                                    | Value::BigRat(_, _)
+                                value.view(),
+                                ValueView::Int(_)
+                                    | ValueView::Num(_)
+                                    | ValueView::Rat(_, _)
+                                    | ValueView::FatRat(_, _)
+                                    | ValueView::BigRat(_, _)
                             )
                         {
                             // Binding accepts numeric widening into Num parameters.
@@ -1386,7 +1416,7 @@ impl Interpreter {
                                 && self.type_matches_value(base_type, &value)
                             {
                                 let should_be_concrete = smiley == Some(":D");
-                                let got_type = if let Value::Package(pkg) = &value {
+                                let got_type = if let ValueView::Package(pkg) = value.view() {
                                     pkg.resolve().to_string()
                                 } else {
                                     crate::runtime::value_type_name(&value).to_string()
@@ -1427,12 +1457,14 @@ impl Interpreter {
                         }
                         if (resolved_constraint.starts_with("Associative[")
                             || resolved_constraint.starts_with("Hash["))
-                            && let Value::Array(items, ..) = &value
+                            && matches!(value.view(), ValueView::Array(..))
                         {
                             let mut map = std::collections::HashMap::new();
-                            for item in items.iter() {
-                                if let Value::Pair(k, v) = item {
-                                    map.insert(k.clone(), *v.clone());
+                            if let ValueView::Array(items, ..) = value.view() {
+                                for item in items.iter() {
+                                    if let ValueView::Pair(k, v) = item.view() {
+                                        map.insert(k.clone(), v.clone());
+                                    }
                                 }
                             }
                             value = Value::hash(map);
@@ -1642,12 +1674,12 @@ impl Interpreter {
                         && !pd.name.starts_with("__type_capture__")
                     {
                         if pd.name.starts_with('%')
-                            && let Value::Array(items, ..) = &value
+                            && let ValueView::Array(items, ..) = value.view()
                         {
                             let mut map = std::collections::HashMap::new();
                             for item in items.iter() {
-                                if let Value::Pair(k, v) = item {
-                                    map.insert(k.clone(), *v.clone());
+                                if let ValueView::Pair(k, v) = item.view() {
+                                    map.insert(k.clone(), v.clone());
                                 }
                             }
                             self.bind_param_value(&pd.name, Value::hash(map));
@@ -1656,7 +1688,7 @@ impl Interpreter {
                                 bound_type_constraint.clone(),
                             );
                             if let Some(sub_params) = &pd.sub_signature {
-                                let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+                                let target = self.env.get(&pd.name).cloned().unwrap_or(Value::NIL);
                                 bind_sub_signature_from_value(self, sub_params, &target)?;
                             }
                             positional_idx += 1;
@@ -1675,13 +1707,13 @@ impl Interpreter {
                         // reference, so promoting it would wrongly turn `$aref` into
                         // a cell and break `$aref[0]++` (S06 named-parameters 68-69).
                         if scalar_container_share
-                            && matches!(value, Value::Array(..) | Value::Hash(..))
+                            && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
                             && let Some(source_name) = &source_name
                             && (source_name.starts_with('@') || source_name.starts_with('%'))
                         {
-                            value = Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(
-                                value,
-                            )));
+                            value = Value::container_ref(crate::gc::Gc::new(
+                                std::sync::Mutex::new(value),
+                            ));
                             rw_bindings.push((pd.name.clone(), source_name.clone()));
                         }
                         self.bind_param_value(&pd.name, value);
@@ -1710,7 +1742,7 @@ impl Interpreter {
                         self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                     }
                     if let Some(sub_params) = &pd.sub_signature {
-                        let target = self.env.get(&pd.name).cloned().unwrap_or(Value::Nil);
+                        let target = self.env.get(&pd.name).cloned().unwrap_or(Value::NIL);
                         bind_sub_signature_from_value(self, sub_params, &target)?;
                     }
                 } else if !pd.optional_marker && !pd.name.is_empty() {
@@ -1728,7 +1760,12 @@ impl Interpreter {
                         .count();
                     let positional_arg_count = args
                         .iter()
-                        .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                        .filter(|a| {
+                            !matches!(
+                                unwrap_varref_value((*a).clone()).view(),
+                                ValueView::Pair(..)
+                            )
+                        })
                         .count();
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} argument{} but got {}",
@@ -1754,7 +1791,7 @@ impl Interpreter {
         if !has_hash_slurpy && !has_positional_sub_sig {
             for arg in plain_args.iter() {
                 let arg = unwrap_varref_value(arg.clone());
-                if let Value::Pair(key, _) = arg {
+                if let ValueView::Pair(key, _) = arg.view() {
                     // Empty-string named args (e.g. from `'' => val` in a hash) are
                     // silently ignored -- they cannot bind to any named parameter.
                     if key.is_empty() {
@@ -1762,7 +1799,7 @@ impl Interpreter {
                     }
                     // Check if this named arg was consumed by a named param or colon placeholder
                     let consumed = param_defs.iter().any(|pd| {
-                        if (pd.named && pd.name == key)
+                        if (pd.named && pd.name == *key)
                             || pd.name == format!(":{}", key)
                             || pd.name == format!("@:{}", key)
                             || pd.name == format!("%:{}", key)
@@ -1774,7 +1811,7 @@ impl Interpreter {
                         // Also check inner named aliases from sub-signatures
                         if let Some(sub_params) = &pd.sub_signature {
                             for sp in sub_params {
-                                if sp.named && sp.name == key {
+                                if sp.named && sp.name == *key {
                                     return true;
                                 }
                             }
@@ -1803,7 +1840,12 @@ impl Interpreter {
                 .count();
             let positional_arg_count = plain_args
                 .iter()
-                .filter(|a| !matches!(unwrap_varref_value((*a).clone()), Value::Pair(..)))
+                .filter(|a| {
+                    !matches!(
+                        unwrap_varref_value((*a).clone()).view(),
+                        ValueView::Pair(..)
+                    )
+                })
                 .count();
             if positional_arg_count > positional_param_count {
                 return Err(RuntimeError::new(format!(

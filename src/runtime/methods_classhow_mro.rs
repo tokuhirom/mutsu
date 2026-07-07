@@ -3,10 +3,10 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
-        let class_name = match invocant {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            other => value_type_name(other).to_string(),
+        let class_name = match invocant.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => value_type_name(invocant).to_string(),
         };
         let mut mro = if self.registry().classes.contains_key(&class_name) {
             self.class_mro(&class_name)
@@ -52,10 +52,10 @@ impl Interpreter {
         invocant: &Value,
         _concretizations: bool,
     ) -> Vec<Value> {
-        let class_name = match invocant {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            other => value_type_name(other).to_string(),
+        let class_name = match invocant.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => value_type_name(invocant).to_string(),
         };
         let base_mro = self.classhow_mro_names(invocant);
         let mut result: Vec<Value> = Vec::new();
@@ -74,14 +74,14 @@ impl Interpreter {
             {
                 // This is a role in the class's parent list - include it with base name
                 if seen.insert(base_entry.to_string()) {
-                    result.push(Value::Package(Symbol::intern(base_entry)));
+                    result.push(Value::package(Symbol::intern(base_entry)));
                     // Also add the role's parent classes that aren't already in base MRO
                     self.add_role_parents_to_mro(base_entry, &base_mro, &mut result, &mut seen);
                 }
             } else {
                 // This is a class
                 if seen.insert(entry.clone()) {
-                    result.push(Value::Package(Symbol::intern(entry)));
+                    result.push(Value::package(Symbol::intern(entry)));
                     // Insert composed roles for this class
                     let composed = self
                         .registry()
@@ -95,7 +95,7 @@ impl Interpreter {
                             .map(|(b, _)| b)
                             .unwrap_or(role_name.as_str());
                         if seen.insert(base_role.to_string()) {
-                            result.push(Value::Package(Symbol::intern(base_role)));
+                            result.push(Value::package(Symbol::intern(base_role)));
                             // Add role's sub-roles (from `does` inside the role)
                             self.add_role_parents_to_mro(
                                 base_role,
@@ -126,7 +126,7 @@ impl Interpreter {
                     .map(|(b, _)| b)
                     .unwrap_or(parent.as_str());
                 if self.registry().roles.contains_key(base) && seen.insert(base.to_string()) {
-                    result.push(Value::Package(Symbol::intern(base)));
+                    result.push(Value::package(Symbol::intern(base)));
                     self.add_role_parents_to_mro(base, _base_mro, result, seen);
                 }
                 // Parent classes from roles are handled by the class MRO
@@ -136,10 +136,10 @@ impl Interpreter {
 
     /// Filter MRO to remove hidden classes and their associated roles.
     pub(super) fn filter_mro_unhidden(&self, invocant: &Value, mro: Vec<Value>) -> Vec<Value> {
-        let class_name = match invocant {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            other => value_type_name(other).to_string(),
+        let class_name = match invocant.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => value_type_name(invocant).to_string(),
         };
         // Collect hidden parent names for this class
         let hidden_parents: HashSet<String> = self
@@ -195,7 +195,7 @@ impl Interpreter {
         }
         mro.into_iter()
             .filter(|v| {
-                if let Value::Package(name) = v {
+                if let ValueView::Package(name) = v.view() {
                     !to_hide.contains(&name.resolve())
                 } else {
                     true

@@ -9,14 +9,14 @@ impl Interpreter {
         let has_flag = |name: &str| -> bool {
             args[1..]
                 .iter()
-                .any(|a| matches!(a, Value::Pair(k, v) if k == name && v.truthy()))
+                .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == name && v.truthy()))
         };
         let local = has_flag("local");
         let all = has_flag("all");
         let tree = has_flag("tree");
-        let class_name = match &args[0] {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
+        let class_name = match args[0].view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => value_type_name(&args[0]).to_string(),
         };
         if tree {
@@ -32,16 +32,16 @@ impl Interpreter {
                 .map(|cd| cd.parents.clone())
                 .unwrap_or_default()
                 .iter()
-                .map(|p| Value::Package(Symbol::intern(p)))
+                .map(|p| Value::package(Symbol::intern(p)))
                 .collect()
         } else if all {
             parents_iter
-                .map(|p| Value::Package(Symbol::intern(&p)))
+                .map(|p| Value::package(Symbol::intern(&p)))
                 .collect()
         } else {
             parents_iter
                 .filter(|p| p != "Any" && p != "Mu")
-                .map(|p| Value::Package(Symbol::intern(&p)))
+                .map(|p| Value::package(Symbol::intern(&p)))
                 .collect()
         };
         Ok(Value::real_array(parents))
@@ -61,16 +61,16 @@ impl Interpreter {
             .iter()
             .map(|parent| {
                 let subtree = self.parents_tree(parent);
-                let mut entry = vec![Value::Package(Symbol::intern(parent))];
+                let mut entry = vec![Value::package(Symbol::intern(parent))];
                 if !subtree.is_empty() {
                     entry.extend(subtree);
                 } else if parent != "Mu" {
                     let any_subtree = self.parents_tree("Any");
-                    let mut any_entry = vec![Value::Package(Symbol::intern("Any"))];
+                    let mut any_entry = vec![Value::package(Symbol::intern("Any"))];
                     if !any_subtree.is_empty() {
                         any_entry.extend(any_subtree);
                     } else {
-                        any_entry.push(Value::real_array(vec![Value::Package(Symbol::intern(
+                        any_entry.push(Value::real_array(vec![Value::package(Symbol::intern(
                             "Mu",
                         ))]));
                     }
@@ -85,27 +85,30 @@ impl Interpreter {
         // Detect whether the invocant is an instance (Mixin or Instance) vs a
         // type object (Package). For punned role instances, the role itself
         // should be included in the result.
-        let is_instance = matches!(&args[0], Value::Instance { .. } | Value::Mixin(_, _));
-        let class_name = match &args[0] {
-            Value::Package(name) => name.resolve(),
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            Value::Mixin(inner, _) => match inner.as_ref() {
-                Value::Instance { class_name, .. } => class_name.resolve(),
+        let is_instance = matches!(
+            args[0].view(),
+            ValueView::Instance { .. } | ValueView::Mixin(_, _)
+        );
+        let class_name = match args[0].view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => value_type_name(&args[0]).to_string(),
             },
             _ => value_type_name(&args[0]).to_string(),
         };
         let local = args[1..]
             .iter()
-            .any(|a| matches!(a, Value::Pair(k, v) if k == "local" && v.truthy()));
+            .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "local" && v.truthy()));
         let non_transitive = args[1..]
             .iter()
-            .any(|a| matches!(a, Value::Pair(k, v) if k == "transitive" && !v.truthy()));
+            .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "transitive" && !v.truthy()));
         let roles = self.collect_roles_for_class(&class_name, local, non_transitive, is_instance);
         Ok(Value::array(
             roles
                 .into_iter()
-                .map(|r| Value::Package(Symbol::intern(&r)))
+                .map(|r| Value::package(Symbol::intern(&r)))
                 .collect(),
         ))
     }
