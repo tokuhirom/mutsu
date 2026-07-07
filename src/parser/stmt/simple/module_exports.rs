@@ -228,6 +228,23 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
         *s.borrow_mut() = saved_scopes;
     });
     set_current_language_version(&saved_language_version);
+    // Register the module's declared type names (classes/roles/enums/grammars)
+    // into the importer's scope. A `use`d module makes its `our`-scoped and
+    // exported types visible to the importer, but mutsu loads modules at run
+    // time, so without this the parser treats those imported types as
+    // undeclared. That in turn misfires heuristics like the `when X::Foo {}`
+    // undeclared-exception gobble check (see `given_when::when_stmt`), breaking
+    // valid code such as `when X::Zef::UnsatisfiableDependency { ... }` in a
+    // file that `use Zef`. Registration happens after the scope restore above so
+    // the names land in the importer's current scope, not the module's discarded
+    // parse scope.
+    {
+        let mut type_names: Vec<String> = Vec::new();
+        collect_module_type_names(&stmts, &mut type_names);
+        for name in &type_names {
+            register_user_type(name);
+        }
+    }
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     for stmt in &stmts {
         match stmt {
@@ -298,6 +315,31 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
     let mut result: Vec<InlineModuleExport> = exports.into_values().collect();
     result.sort_by(|a, b| a.name.cmp(&b.name));
     result
+}
+
+/// Recursively collect the names of type declarations (class/role/enum/grammar)
+/// found in a parsed module's statement list. Descends into `package`/`module`/
+/// `grammar` bodies (whose members are `our`-scoped) so nested type names are
+/// captured too. These names are registered into the importer's scope so the
+/// parser knows they are declared types rather than undeclared barewords.
+fn collect_module_type_names(stmts: &[Stmt], out: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::ClassDecl { name, .. }
+            | Stmt::RoleDecl { name, .. }
+            | Stmt::EnumDecl { name, .. } => {
+                out.push(name.resolve());
+            }
+            Stmt::Package { name, body, .. } => {
+                // `grammar Foo { ... }` is a Package with kind Grammar; its name
+                // is itself a type. `module`/`package` names are namespaces, but
+                // registering them is harmless and covers grammar declarations.
+                out.push(name.resolve());
+                collect_module_type_names(body, out);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn extract_exported_names_fallback(source: &str) -> Vec<(String, bool)> {
