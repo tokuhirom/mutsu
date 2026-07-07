@@ -249,12 +249,13 @@ mod tests {
     use super::*;
     use crate::ast::{Expr, Stmt};
     use crate::value::Value;
+    use crate::value::ValueView;
     use std::io::Write;
 
     #[test]
     fn roundtrip_simple_ast() {
         let stmts = vec![
-            Stmt::Say(vec![Expr::Literal(Value::Int(42))]),
+            Stmt::Say(vec![Expr::Literal(Value::int(42))]),
             Stmt::Expr(Expr::Literal(Value::str("hello".to_string()))),
         ];
 
@@ -277,7 +278,7 @@ mod tests {
         assert!(matches!(&loaded[0], Stmt::Say(args) if args.len() == 1));
         assert!(matches!(
             &loaded[1],
-            Stmt::Expr(Expr::Literal(Value::Str(_)))
+            Stmt::Expr(Expr::Literal(lit)) if matches!(lit.view(), ValueView::Str(_))
         ));
 
         // Clean up
@@ -286,7 +287,7 @@ mod tests {
 
     #[test]
     fn cache_invalidated_on_mtime_change() {
-        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::Int(1))])];
+        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::int(1))])];
 
         let dir = tempdir("mtime");
         let source = dir.join("test2.rakumod");
@@ -335,7 +336,7 @@ mod tests {
         // interpreter_version() (as happens when the binary is rebuilt with
         // different parse/injection logic) must be rejected even when the
         // source file is byte-for-byte unchanged.
-        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::Int(7))])];
+        let stmts = vec![Stmt::Say(vec![Expr::Literal(Value::int(7))])];
 
         let dir = tempdir("version");
         let source = dir.join("test3.rakumod");

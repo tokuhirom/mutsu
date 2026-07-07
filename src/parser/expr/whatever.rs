@@ -6,7 +6,7 @@
 
 use crate::ast::Expr;
 use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::value::ValueView;
 
 pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
     if !contains_whatever(expr) || is_whatever(expr) {
@@ -164,7 +164,9 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             op: TokenKind::FatArrow,
             left,
             ..
-        } if matches!(left.as_ref(), Expr::Literal(Value::Str(_))) => false,
+        } if matches!(left.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(_))) => {
+            false
+        }
         // Composition operators `o` and `∘` never auto-curry: their operands are
         // always treated as callables, so `(* + 1) o (* * 2)` should compose
         // two WhateverCodes rather than becoming a WhateverCode itself.

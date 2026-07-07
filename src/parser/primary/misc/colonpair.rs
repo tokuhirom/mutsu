@@ -8,6 +8,7 @@ use crate::parser::primary::var::parse_ident_with_hyphens;
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::value::ValueView;
 use crate::value::signature::{make_signature_value, param_defs_to_sig_info};
 use std::collections::HashMap;
 
@@ -190,7 +191,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 let (r_args, mut args) = parse_call_arg_list(r_args)?;
                 let (r_args, _) = ws(r_args)?;
                 let (r_args, _) = parse_char(r_args, ')')?;
-                let mut call_args = vec![Expr::Literal(Value::Int(base as i64))];
+                let mut call_args = vec![Expr::Literal(Value::int(base as i64))];
                 call_args.append(&mut args);
                 return Ok((
                     r_args,
@@ -222,7 +223,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     }
                     let (r_items, _) = parse_char(r_items, ']')?;
                     let base_expr = if let Ok(b) = i64::try_from(base) {
-                        Expr::Literal(Value::Int(b))
+                        Expr::Literal(Value::int(b))
                     } else {
                         Expr::Literal(Value::bigint(num_bigint::BigInt::from(base)))
                     };
@@ -284,12 +285,12 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     if let Ok(n) = digit_string.parse::<num_bigint::BigInt>() {
                         Value::bigint(n)
                     } else {
-                        Value::Int(0)
+                        Value::int(0)
                     }
                 } else if numeric_value.is_some() {
-                    Value::Int(numeric_value.unwrap())
+                    Value::int(numeric_value.unwrap())
                 } else {
-                    Value::Int(0)
+                    Value::int(0)
                 };
                 // Numeric adverb can't have an extra value: :69th($_) is an error
                 if rest.starts_with('(') {
@@ -326,7 +327,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::Literal(Value::Bool(false))),
+                right: Box::new(Expr::Literal(Value::FALSE)),
             },
         ));
     }
@@ -591,7 +592,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::Bool(true))),
+            right: Box::new(Expr::Literal(Value::TRUE)),
         },
     ))
 }
@@ -618,7 +619,8 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
     }
     if let Expr::Binary { left, op, right } = &expr
         && *op == crate::token_kind::TokenKind::FatArrow
-        && let Expr::Literal(Value::Str(key)) = left.as_ref()
+        && let Expr::Literal(lit) = left.as_ref()
+        && let ValueView::Str(key) = lit.view()
     {
         // Only a constant-valued colonpair carries a fully-known value; a
         // non-literal value (`:foo($x)`) stays a `Binary` and renders via the
@@ -627,7 +629,7 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
             Expr::Literal(v) | Expr::LiteralSrc(v, _) => v.clone(),
             _ => return expr,
         };
-        let pair = Value::Pair((**key).clone(), Box::new(val));
+        let pair = Value::pair((**key).clone(), val);
         return Expr::LiteralSrc(pair, trimmed.into());
     }
     expr
@@ -640,18 +642,22 @@ fn render_signature_item(expr: &Expr) -> String {
         Expr::ArrayVar(name) => format!("@{}", name),
         Expr::HashVar(name) => format!("%{}", name),
         Expr::Binary { left, op, right } if *op == crate::token_kind::TokenKind::FatArrow => {
-            if let Expr::Literal(Value::Str(name)) = left.as_ref() {
+            if let Expr::Literal(lit) = left.as_ref()
+                && let ValueView::Str(name) = lit.view()
+            {
                 match right.as_ref() {
                     Expr::Var(v) if v.as_str() == name.as_str() => format!(":${}", name),
-                    Expr::Literal(Value::Bool(true)) => format!(":${}", name),
+                    Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => {
+                        format!(":${}", name)
+                    }
                     other => format!(":${} = {}", name, render_signature_item(other)),
                 }
             } else {
                 "...".to_string()
             }
         }
-        Expr::Literal(v) => match v {
-            Value::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+        Expr::Literal(v) => match v.view() {
+            ValueView::Str(s) => format!("\"{}\"", s.replace('"', "\\\"")),
             _ => v.to_string_value(),
         },
         Expr::AnonSub { .. } => "{ ... }".to_string(),

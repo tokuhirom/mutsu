@@ -140,13 +140,13 @@ fn typed_default_expr(type_name: &str) -> Expr {
         || base == "atomicint"
         || base == "byte"
     {
-        Expr::Literal(Value::Int(0))
+        Expr::Literal(Value::int(0))
     } else if base == "num" || base == "num32" || base == "num64" {
-        Expr::Literal(Value::Num(0.0))
+        Expr::Literal(Value::num(0.0))
     } else if base == "str" {
         Expr::Literal(Value::str("".to_string()))
     } else {
-        Expr::Literal(Value::Nil)
+        Expr::Literal(Value::NIL)
     }
 }
 
@@ -167,7 +167,7 @@ pub(in crate::parser::stmt) fn default_decl_expr(
     } else if let Some(tc) = type_constraint {
         typed_default_expr(tc)
     } else {
-        Expr::Literal(Value::Nil)
+        Expr::Literal(Value::NIL)
     }
 }
 

@@ -2,7 +2,7 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::expr::expression;
 use crate::parser::parse_result::PError;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Assemble interpolation parts into a final expression.
 pub(crate) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr {
@@ -13,7 +13,9 @@ pub(crate) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr 
         if !current.is_empty() {
             parts.push(Expr::Literal(Value::str(current)));
         }
-        if parts.len() == 1 && matches!(&parts[0], Expr::Literal(Value::Str(_))) {
+        if parts.len() == 1
+            && matches!(&parts[0], Expr::Literal(v) if matches!(v.view(), ValueView::Str(_)))
+        {
             return parts.into_iter().next().unwrap();
         }
         Expr::StringInterpolation(parts)

@@ -483,11 +483,11 @@ fn parse_variable_traits<'a>(
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert(
                         "outer".to_string(),
-                        crate::value::Value::Package(crate::symbol::Symbol::intern(outer)),
+                        crate::value::Value::package(crate::symbol::Symbol::intern(outer)),
                     );
                     attrs.insert(
                         "inner".to_string(),
-                        crate::value::Value::Package(crate::symbol::Symbol::intern(&trait_name)),
+                        crate::value::Value::package(crate::symbol::Symbol::intern(&trait_name)),
                     );
                     let msg = format!(
                         "{} not allowed here; variable list already declared with type {}",
@@ -610,11 +610,11 @@ fn parse_variable_traits<'a>(
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "outer".to_string(),
-                crate::value::Value::Package(crate::symbol::Symbol::intern(outer)),
+                crate::value::Value::package(crate::symbol::Symbol::intern(outer)),
             );
             attrs.insert(
                 "inner".to_string(),
-                crate::value::Value::Package(crate::symbol::Symbol::intern(&tc)),
+                crate::value::Value::package(crate::symbol::Symbol::intern(&tc)),
             );
             let msg = format!(
                 "{} not allowed here; variable list already declared with type {}",

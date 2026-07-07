@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::ast::{CallArg, Expr};
-use crate::value::Value;
+use crate::value::ValueView;
 
 #[test]
 fn assign_expr_parses_reverse_bracket_metaop_assign() {
@@ -21,7 +21,9 @@ fn assign_expr_parses_reverse_bracket_metaop_assign() {
                     assert_eq!(meta, "R");
                     assert_eq!(op, "/");
                     assert!(matches!(*left, Expr::Var(ref n) if n == "y"));
-                    assert!(matches!(*right, Expr::Literal(Value::Int(1))));
+                    assert!(
+                        matches!(&*right, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
+                    );
                 }
                 other => panic!("expected meta-op assignment expr, got {other:?}"),
             }
@@ -69,7 +71,9 @@ fn assign_expr_parses_unbracketed_cross_metaop_assign() {
                     assert_eq!(meta, "X");
                     assert_eq!(op, "*");
                     assert!(matches!(*left, Expr::ArrayVar(ref n) if n == "a"));
-                    assert!(matches!(*right, Expr::Literal(Value::Int(10))));
+                    assert!(
+                        matches!(&*right, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(10)))
+                    );
                 }
                 other => panic!("expected meta-op assignment expr, got {other:?}"),
             }
@@ -147,7 +151,7 @@ fn expr_stmt_parses_reverse_assignment_into_var_decl() {
     match stmt {
         Stmt::VarDecl { name, expr, .. } => {
             assert_eq!(name, "x");
-            assert!(matches!(expr, Expr::Literal(Value::Int(1))));
+            assert!(matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1))));
         }
         other => panic!("expected VarDecl, got {other:?}"),
     }
@@ -236,7 +240,8 @@ fn known_call_stmt_keeps_chained_assignment_as_single_argument() {
             ));
             assert!(matches!(
                 args.get(1),
-                Some(CallArg::Positional(Expr::Literal(Value::Int(18))))
+                Some(CallArg::Positional(Expr::Literal(lit)))
+                    if matches!(lit.view(), ValueView::Int(18))
             ));
         }
         other => panic!("expected known call statement, got {other:?}"),
@@ -260,13 +265,13 @@ fn known_call_stmt_splits_assignment_from_following_test_args() {
             ));
             assert!(matches!(
                 args.get(1),
-                Some(CallArg::Positional(Expr::Literal(Value::Str(expected))))
-                    if **expected == "NoModule::bar"
+                Some(CallArg::Positional(Expr::Literal(lit)))
+                    if matches!(lit.view(), ValueView::Str(expected) if **expected == "NoModule::bar")
             ));
             assert!(matches!(
                 args.get(2),
-                Some(CallArg::Positional(Expr::Literal(Value::Str(expected))))
-                    if **expected == "can import symbol not inside module"
+                Some(CallArg::Positional(Expr::Literal(lit)))
+                    if matches!(lit.view(), ValueView::Str(expected) if **expected == "can import symbol not inside module")
             ));
         }
         other => panic!("expected known call statement, got {other:?}"),

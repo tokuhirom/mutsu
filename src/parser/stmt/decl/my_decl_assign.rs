@@ -346,7 +346,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         let mut feed = expr;
         {
             let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
-            let mut source = std::mem::replace(slot, Expr::Literal(crate::value::Value::Nil));
+            let mut source = std::mem::replace(slot, Expr::Literal(crate::value::Value::NIL));
             if let Some(dims) = s.shape_dims.clone() {
                 source = shaped_array_new_with_data_expr(dims, source);
             }

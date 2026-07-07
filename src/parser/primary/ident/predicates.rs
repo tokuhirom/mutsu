@@ -451,13 +451,13 @@ pub(crate) fn keyword_as_function_error(word: &str) -> PError {
     );
     let mut sorrow_attrs = std::collections::HashMap::new();
     sorrow_attrs.insert("word".to_string(), Value::str(word.to_string()));
-    sorrow_attrs.insert("needparens".to_string(), Value::Bool(false));
+    sorrow_attrs.insert("needparens".to_string(), Value::FALSE);
     sorrow_attrs.insert("message".to_string(), Value::str(msg.clone()));
     let sorrow = Value::make_instance(Symbol::intern("X::Syntax::KeywordAsFunction"), sorrow_attrs);
     let mut group_attrs = std::collections::HashMap::new();
     group_attrs.insert("sorrows".to_string(), Value::array(vec![sorrow]));
     group_attrs.insert("worries".to_string(), Value::array(vec![]));
-    group_attrs.insert("panic".to_string(), Value::Nil);
+    group_attrs.insert("panic".to_string(), Value::NIL);
     group_attrs.insert("message".to_string(), Value::str(msg.clone()));
     let exception = Value::make_instance(Symbol::intern("X::Comp::Group"), group_attrs);
     PError::fatal_with_exception(msg, Box::new(exception))

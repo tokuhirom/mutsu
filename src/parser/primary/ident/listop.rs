@@ -17,14 +17,14 @@ pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<E
                 TEST_CALLSITE_LINE_KEY.to_string(),
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+            right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
         });
     }
     if name == "callframe" || name == "caller" {
         args.push(Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+            right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
         });
     }
     args

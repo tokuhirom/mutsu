@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Monotonic, process-global flag: set at compile time when any compiled code
 /// contains an op that can read a *caller frame's* lexical by dynamic name --
@@ -274,7 +274,7 @@ pub(crate) enum OpCode {
     BoolBitNeg, // ?^ prefix: boolean bitwise negation
     StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
-    Decont,     // strip ONE level of Value::Scalar for slurpy flattening (NOT the
+    Decont,     // strip ONE level of Scalar for slurpy flattening (NOT the
     // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
     /// Itemize (containerize) an Array/List value so it behaves as a single
     /// item in list context. Emitted when `$` variable values are used inside
@@ -289,7 +289,7 @@ pub(crate) enum OpCode {
     /// container, so `@a = $bound` must flatten (matching Raku). The argument is
     /// the constant-pool index of the variable name. Emitted for `@a = $var`.
     ItemizeVar(u32),
-    /// Wrap the top-of-stack value in a Value::Scalar container.
+    /// Wrap the top-of-stack value in a Scalar container.
     /// Used for `my $ = expr` (anonymous scalar) in argument position,
     /// so the anonymous container is preserved in immutable List contexts.
     WrapScalar,
@@ -420,7 +420,7 @@ pub(crate) enum OpCode {
         /// True when the LHS is a literal (non-lvalue). A destructive `s///`/`tr///`
         /// that matches against a literal must throw X::Assignment::RO.
         lhs_is_literal: bool,
-        /// True when the RHS is a plain `Value::Regex` literal. Compile-time half
+        /// True when the RHS is a plain `Regex` literal. Compile-time half
         /// of the Slice 6.3 step 2 gate that lets the smartmatch op skip its
         /// conservative post-match `env_dirty` re-sync (the runtime half checks
         /// `pending_local_updates` / `$/`-as-local). Excludes RegexWithAdverbs,
@@ -649,7 +649,7 @@ pub(crate) enum OpCode {
         arity: u32,
         arg_sources_idx: Option<u32>,
     },
-    /// Statement-level call with positional/named values encoded as Value::Pair.
+    /// Statement-level call with positional/named values encoded as Pair.
     ExecCallPairs {
         name_idx: u32,
         arity: u32,
@@ -721,7 +721,7 @@ pub(crate) enum OpCode {
         body_end: u32,
         label: Option<String>,
         scope_isolate: bool,
-        /// Constant-pool index of a `Value::Array` of the scalar/array variable
+        /// Constant-pool index of a `Array` of the scalar/array variable
         /// names the block declares with `my`/`state` (sigil-keyed as stored in
         /// env). On a `scope_isolate` exit those names revert to their pre-block
         /// values (block-local declarations don't leak), while mutations of OUTER
@@ -917,7 +917,7 @@ pub(crate) enum OpCode {
     /// Deep nested index assignment (3+ levels): @a[i][j][k]... = val
     /// Stack: [value, idx_n (outermost), idx_n-1, ..., idx_1 (innermost)]
     /// `depth` is the total number of subscript levels.
-    /// `positional_flags_idx` is a constant index holding a Value::Array of booleans
+    /// `positional_flags_idx` is a constant index holding a Array of booleans
     /// encoding is_positional for each level from innermost to outermost.
     IndexAssignDeepNested {
         name_idx: u32,
@@ -1674,7 +1674,8 @@ impl CompiledCode {
                 _ => None,
             };
             if let Some(idx) = name_idx
-                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
             {
                 let name = name.as_str();
                 if locals_set.contains(name) {
@@ -1774,7 +1775,8 @@ impl CompiledCode {
                 _ => None,
             };
             if let Some(idx) = name_idx
-                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
                 && let Some(&slot) = locals_map.get(name.as_str())
             {
                 self.needs_env_sync[slot] = true;
@@ -1802,8 +1804,8 @@ impl CompiledCode {
                 | OpCode::IndirectCodeLookup(_) => true,
                 OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncSlip { name_idx, .. } => {
                     matches!(
-                        self.constants.get(*name_idx as usize),
-                        Some(Value::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
+                        self.constants.get(*name_idx as usize).map(Value::view),
+                        Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
                     )
                 }
                 _ => false,
@@ -1931,7 +1933,8 @@ impl CompiledCode {
                 target_name_idx,
                 ..
             } => {
-                if let Some(Value::Str(method)) = self.constants.get(*name_idx as usize)
+                if let Some(ValueView::Str(method)) =
+                    self.constants.get(*name_idx as usize).map(Value::view)
                     && Self::is_mutating_container_method(method)
                 {
                     Some(*target_name_idx)
@@ -2007,7 +2010,8 @@ impl CompiledCode {
         for op in &self.ops {
             // Read+write free-var set (names referenced from an enclosing scope).
             if let Some(idx) = Self::op_name_const_idx(op)
-                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
                 && !own.contains(name.as_str())
             {
                 free.insert(Symbol::intern(name));
@@ -2015,7 +2019,8 @@ impl CompiledCode {
             // Free-var container in-place mutation (push/append/element-assign):
             // NOT a name-write, so tracked separately for cell boxing.
             if let Some(idx) = self.op_container_mutate_const_idx(op)
-                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
                 && (name.starts_with('@') || name.starts_with('%'))
                 && !own.contains(name.as_str())
             {
@@ -2032,7 +2037,8 @@ impl CompiledCode {
             }
             // Name-based writes: either a free-var write or an own-local mutation.
             if let Some(idx) = Self::op_name_write_const_idx(op)
-                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
             {
                 if own.contains(name.as_str()) {
                     self_mutated.insert(Symbol::intern(name));
@@ -2095,9 +2101,9 @@ impl CompiledCode {
         // scan every regex constant for sigil'd variable references and treat them
         // as free vars (unless this body declares them).
         for c in &self.constants {
-            let pattern = match c {
-                Value::Regex(s) => Some(s.as_str()),
-                Value::RegexWithAdverbs(a) => Some(a.pattern.as_str()),
+            let pattern = match c.view() {
+                ValueView::Regex(s) => Some(s.as_str()),
+                ValueView::RegexWithAdverbs(a) => Some(a.pattern.as_str()),
                 _ => None,
             };
             if let Some(pattern) = pattern {
@@ -2331,7 +2337,8 @@ impl CompiledCode {
         let mut rewrites: Vec<(usize, u32, u32)> = Vec::new();
         for (op_pos, op) in self.ops.iter().enumerate() {
             if let Some(idx) = Self::op_upvalue_read_const_idx(op)
-                && let Some(Value::Str(name)) = self.constants.get(idx as usize)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
             {
                 let sym = Symbol::intern(name);
                 if eligible.contains(&sym) {
@@ -2880,8 +2887,11 @@ impl CompiledFunction {
         // Scan opcodes for SetVarDynamic which marks `my` declarations
         for op in &self.code.ops {
             if let OpCode::SetVarDynamic { name_idx, .. } = op
-                && let Some(crate::value::Value::Str(name)) =
-                    self.code.constants.get(*name_idx as usize)
+                && let Some(crate::value::ValueView::Str(name)) = self
+                    .code
+                    .constants
+                    .get(*name_idx as usize)
+                    .map(crate::value::Value::view)
             {
                 declared.insert(name.to_string());
             }

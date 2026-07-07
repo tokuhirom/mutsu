@@ -470,7 +470,7 @@ pub(crate) fn parse_list_infix_loop<'a>(
                     let mut iter = args.into_iter().rev();
                     let mut acc = iter
                         .next()
-                        .unwrap_or(Expr::Literal(crate::value::Value::Nil));
+                        .unwrap_or(Expr::Literal(crate::value::Value::NIL));
                     for lhs in iter {
                         acc = Expr::InfixFunc {
                             name: name.clone(),

@@ -9,8 +9,8 @@
 //!   `Value` reachable from execution state (§11 steps 1-2).
 //! - [`gc_ptr`] — [`Gc<T>`], its Bacon-Rajan node header, the [`Trace`] trait,
 //!   and the process-global cycle-candidate buffer (§11 step 4). The first wave
-//!   is migrated to `Gc<_>`: `Value::Hash` (5b), `Value::Array` (5c),
-//!   `Value::ContainerRef` (5d).
+//!   is migrated to `Gc<_>`: `Hash` (5b), `Array` (5c),
+//!   `ContainerRef` (5d).
 //! - [`collect`] — the synchronous Bacon-Rajan trial-deletion collector (§11
 //!   step 8) that reclaims cycles from the candidate buffer.
 //! - [`safepoint`] — the trigger policy and the `gc_safepoint` entry point the

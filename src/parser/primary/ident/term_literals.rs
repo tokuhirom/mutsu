@@ -164,7 +164,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
         } else if let Ok((r2, part)) = crate::parser::stmt::ident_pub(r2) {
             if let Some(ref mut dyn_expr) = dynamic_expr {
                 // Append static segment to the dynamic expression
-                let old = std::mem::replace(dyn_expr, Expr::Literal(Value::Nil));
+                let old = std::mem::replace(dyn_expr, Expr::Literal(Value::NIL));
                 *dyn_expr = Expr::Binary {
                     left: Box::new(old),
                     op: crate::token_kind::TokenKind::Tilde,
@@ -257,19 +257,19 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         Ok((rest, Expr::Literal(val)))
     };
 
-    if let Ok(r) = try_kw("True", Value::Bool(true)) {
+    if let Ok(r) = try_kw("True", Value::TRUE) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("False", Value::Bool(false)) {
+    if let Ok(r) = try_kw("False", Value::FALSE) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("Nil", Value::Nil) {
+    if let Ok(r) = try_kw("Nil", Value::NIL) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("Empty", Value::Slip(std::sync::Arc::new(vec![]))) {
+    if let Ok(r) = try_kw("Empty", Value::slip_arc(std::sync::Arc::new(vec![]))) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("Any", Value::Package(Symbol::intern("Any"))) {
+    if let Ok(r) = try_kw("Any", Value::package(Symbol::intern("Any"))) {
         return Ok(r);
     }
     // Unicode: ∅ (U+2205 EMPTY SET)
@@ -279,22 +279,22 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             Expr::Literal(Value::set(std::collections::HashSet::new())),
         ));
     }
-    if let Ok(r) = try_kw("Inf", Value::Num(f64::INFINITY)) {
+    if let Ok(r) = try_kw("Inf", Value::num(f64::INFINITY)) {
         return Ok(r);
     }
     // ∞ (U+221E INFINITY).
     if input.starts_with('\u{221E}') {
         return Ok((
             &input['\u{221E}'.len_utf8()..],
-            Expr::Literal(Value::Num(f64::INFINITY)),
+            Expr::Literal(Value::num(f64::INFINITY)),
         ));
     }
-    if let Ok(r) = try_kw("-Inf", Value::Num(f64::NEG_INFINITY)) {
+    if let Ok(r) = try_kw("-Inf", Value::num(f64::NEG_INFINITY)) {
         return Ok(r);
     }
     // Note: -∞ is handled by prefix negation + ∞ literal, not as a special case,
     // so that -∞² parses correctly as -(∞²) not (-∞)².
-    if let Ok(r) = try_kw("NaN", Value::Num(f64::NAN)) {
+    if let Ok(r) = try_kw("NaN", Value::num(f64::NAN)) {
         return Ok(r);
     }
     // CORE-SETTING-REV — a compile-time constant equal to the language revision
@@ -438,22 +438,22 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
-    if let Ok(r) = try_kw("pi", Value::Num(std::f64::consts::PI)) {
+    if let Ok(r) = try_kw("pi", Value::num(std::f64::consts::PI)) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("π", Value::Num(std::f64::consts::PI)) {
+    if let Ok(r) = try_kw("π", Value::num(std::f64::consts::PI)) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("tau", Value::Num(std::f64::consts::TAU)) {
+    if let Ok(r) = try_kw("tau", Value::num(std::f64::consts::TAU)) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("τ", Value::Num(std::f64::consts::TAU)) {
+    if let Ok(r) = try_kw("τ", Value::num(std::f64::consts::TAU)) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("e", Value::Num(std::f64::consts::E)) {
+    if let Ok(r) = try_kw("e", Value::num(std::f64::consts::E)) {
         return Ok(r);
     }
-    if let Ok(r) = try_kw("\u{1D452}", Value::Num(std::f64::consts::E)) {
+    if let Ok(r) = try_kw("\u{1D452}", Value::num(std::f64::consts::E)) {
         return Ok(r);
     }
 

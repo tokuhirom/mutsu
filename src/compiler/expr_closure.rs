@@ -1,6 +1,5 @@
 use super::*;
 use crate::symbol::Symbol;
-use std::sync::Arc;
 
 impl Compiler {
     /// Build an `X::Placeholder::Mainline` (`kind == "mainline"`) or
@@ -325,8 +324,11 @@ impl Compiler {
         // shapes; anything else stays a plain copy).
         let single_subscript = match index {
             Expr::Literal(v) => matches!(
-                v,
-                Value::Int(_) | Value::Str(_) | Value::Num(_) | Value::Bool(_)
+                v.view(),
+                crate::value::ValueView::Int(_)
+                    | crate::value::ValueView::Str(_)
+                    | crate::value::ValueView::Num(_)
+                    | crate::value::ValueView::Bool(_)
             ),
             Expr::Var(_) | Expr::Binary { .. } | Expr::Unary { .. } => true,
             _ => false,
@@ -419,7 +421,7 @@ impl Compiler {
                     target: Box::new(Expr::Var("_".to_string())),
                     name: Symbol::intern("subst"),
                     args: vec![
-                        Expr::Literal(Value::Regex(Arc::new(pattern))),
+                        Expr::Literal(Value::regex(pattern)),
                         Expr::AnonSub {
                             body: vec![Stmt::Expr(value.clone())],
                             is_rw: false,
@@ -436,13 +438,12 @@ impl Compiler {
         }
         if let Expr::PseudoStash(stash_name) = target
             && (stash_name == "MY::" || stash_name == "PROCESS::")
-            && let Expr::Literal(Value::Str(key_name)) = index
+            && let Expr::Literal(lit) = index
+            && let Some(key_name) = lit.as_str()
         {
             self.compile_expr(value);
             let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
-            let key_name_idx = self
-                .code
-                .add_constant(Value::str(key_name.as_ref().clone()));
+            let key_name_idx = self.code.add_constant(Value::str(key_name.to_string()));
             self.code.emit(OpCode::IndexAssignPseudoStashNamed {
                 stash_name_idx,
                 key_name_idx,
@@ -476,9 +477,9 @@ impl Compiler {
             // We also have the IndexAssign's own (index, outer_positional) as the final level.
             let depth = (chain.len() + 1) as u32; // +1 for the outermost from IndexAssign
             // Build positional flags array: innermost to outermost
-            let mut flags: Vec<Value> = chain.iter().map(|(_, p)| Value::Bool(*p)).collect();
-            flags.push(Value::Bool(outer_positional));
-            let positional_flags_idx = self.code.add_constant(Value::Array(
+            let mut flags: Vec<Value> = chain.iter().map(|(_, p)| Value::truth(*p)).collect();
+            flags.push(Value::truth(outer_positional));
+            let positional_flags_idx = self.code.add_constant(Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(flags)),
                 crate::value::ArrayKind::Array,
             ));
@@ -657,12 +658,14 @@ impl Compiler {
     /// for `ArrayLiteral([Literal(Int(i)), Literal(Int(j)), ...])`.
     fn extract_literal_int_indices(index: &Expr) -> Option<Vec<i64>> {
         match index {
-            Expr::Literal(Value::Int(i)) => Some(vec![*i]),
+            Expr::Literal(lit) => lit.as_int().map(|i| vec![i]),
             Expr::ArrayLiteral(items) => {
                 let mut result = Vec::with_capacity(items.len());
                 for item in items {
-                    if let Expr::Literal(Value::Int(i)) = item {
-                        result.push(*i);
+                    if let Expr::Literal(lit) = item
+                        && let Some(i) = lit.as_int()
+                    {
+                        result.push(i);
                     } else {
                         return None;
                     }
@@ -702,7 +705,7 @@ impl Compiler {
                 {
                     // Dup the value array, index into it, assign to var
                     self.code.emit(OpCode::Dup);
-                    let idx = self.code.add_constant(Value::Int(pos as i64));
+                    let idx = self.code.add_constant(Value::int(pos as i64));
                     self.code.emit(OpCode::LoadConst(idx));
                     self.code.emit(OpCode::Index {
                         is_positional: true,

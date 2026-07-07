@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::ast::Expr;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 #[test]
 fn parse_class_decl_with_also_is_rw_trait() {
@@ -243,7 +243,7 @@ fn parse_my_no_space() {
     if let Stmt::VarDecl { name, expr, .. } = &stmts[0] {
         assert_eq!(name, "a");
         assert!(
-            matches!(expr, Expr::Literal(Value::Int(0))),
+            matches!(expr, Expr::Literal(v) if matches!(v.view(), ValueView::Int(0))),
             "Expected Int(0), got {:?}",
             expr
         );
@@ -288,7 +288,7 @@ fn merge_expected_messages_strips_prefix_consistently() {
 
 #[test]
 fn statement_modifier_reports_missing_condition() {
-    let base = Stmt::Expr(Expr::Literal(Value::Int(1)));
+    let base = Stmt::Expr(Expr::Literal(Value::int(1)));
     let err = parse_statement_modifier(" if ", base).unwrap_err();
     assert!(err.message().contains("after 'if'"));
 }
@@ -331,9 +331,9 @@ fn assign_stmt_scalar_item_assignment_stops_at_comma() {
             assert!(matches!(
                 &items[0],
                 Expr::AssignExpr { name, expr, .. }
-                    if name == "x" && matches!(expr.as_ref(), Expr::Literal(Value::Int(1)))
+                    if name == "x" && matches!(expr.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Int(1)))
             ));
-            assert!(matches!(&items[1], Expr::Literal(Value::Int(2))));
+            assert!(matches!(&items[1], Expr::Literal(v) if matches!(v.view(), ValueView::Int(2))));
         }
         other => panic!("expected comma-list expr statement, got {:?}", other),
     }
@@ -347,7 +347,7 @@ fn assign_stmt_scalar_plain_assignment_has_no_comma() {
     assert!(matches!(
         stmt,
         Stmt::Assign { name, expr, .. }
-            if name == "x" && matches!(expr, Expr::Literal(Value::Int(1)))
+            if name == "x" && matches!(&expr, Expr::Literal(v) if matches!(v.view(), ValueView::Int(1)))
     ));
 }
 

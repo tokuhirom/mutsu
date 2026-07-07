@@ -3,7 +3,7 @@ use crate::parser::helpers::is_non_breaking_space;
 use crate::parser::parse_result::PError;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Check if an expression is a negative integer literal (e.g., `-(1)` from `-1`).
 /// Returns the negative value string (e.g., "-1") if so.
@@ -12,11 +12,12 @@ pub(crate) fn extract_negative_literal(expr: &Expr) -> Option<String> {
         op: TokenKind::Minus,
         expr: inner,
     } = expr
+        && let Expr::Literal(lit) = inner.as_ref()
     {
-        if let Expr::Literal(Value::Int(n)) = inner.as_ref() {
+        if let ValueView::Int(n) = lit.view() {
             return Some(format!("-{}", n));
         }
-        if let Expr::Literal(Value::BigInt(n)) = inner.as_ref() {
+        if let ValueView::BigInt(n) = lit.view() {
             return Some(format!("-{}", n));
         }
     }
@@ -122,7 +123,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
 /// Wrap the last expression statement in a list of statements with a unary operator.
 pub(crate) fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
     if let Some(Stmt::Expr(expr)) = stmts.last_mut() {
-        let inner = std::mem::replace(expr, Expr::Literal(Value::Nil));
+        let inner = std::mem::replace(expr, Expr::Literal(Value::NIL));
         *expr = Expr::Unary {
             op,
             expr: Box::new(inner),

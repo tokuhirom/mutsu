@@ -26,7 +26,7 @@ impl Compiler {
     }
 
     pub(super) fn emit_nil_value(&mut self) {
-        let nil_idx = self.code.add_constant(Value::Nil);
+        let nil_idx = self.code.add_constant(Value::NIL);
         self.code.emit(OpCode::LoadConst(nil_idx));
     }
 
@@ -423,7 +423,7 @@ impl Compiler {
                                         value: None,
                                     } => {
                                         self.compile_expr(&Expr::Literal(Value::str(n.clone())));
-                                        self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                        self.compile_expr(&Expr::Literal(Value::TRUE));
                                         self.code.emit(OpCode::MakePair);
                                         regular_count += 1;
                                         stack_idx += 1;
@@ -455,7 +455,7 @@ impl Compiler {
                                 }
                                 CallArg::Named { name, value: None } => {
                                     self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                                    self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                    self.compile_expr(&Expr::Literal(Value::TRUE));
                                     self.code.emit(OpCode::MakePair);
                                 }
                                 CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),

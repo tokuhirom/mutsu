@@ -1,6 +1,6 @@
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Extract the writeback variable name from a declaration used in expression
 /// position as an lvalue-method target, e.g. `(my $o = $s).substr-rw(...) = ...`.
@@ -40,7 +40,7 @@ pub(super) fn method_lvalue_assign_expr(
     ];
     args.push(match target_var_name {
         Some(name) => Expr::Literal(Value::str(name)),
-        None => Expr::Literal(Value::Nil),
+        None => Expr::Literal(Value::NIL),
     });
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
@@ -85,8 +85,11 @@ pub(super) fn bind_source_name(expr: &Expr) -> Option<String> {
                 _ => None,
             }?;
             let idx_str = match index.as_ref() {
-                Expr::Literal(Value::Int(n)) => n.to_string(),
-                Expr::Literal(Value::Str(s)) => s.to_string(),
+                Expr::Literal(lit) => match lit.view() {
+                    ValueView::Int(n) => n.to_string(),
+                    ValueView::Str(s) => s.to_string(),
+                    _ => return None,
+                },
                 _ => return None,
             };
             Some(format!("{}\x00idx\x00{}", target_name, idx_str))
@@ -115,7 +118,7 @@ pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
                     if let Some(name) = bind_source_name(item) {
                         Expr::Literal(Value::str(name))
                     } else {
-                        Expr::Literal(Value::Nil)
+                        Expr::Literal(Value::NIL)
                     }
                 })
                 .collect(),
@@ -124,7 +127,7 @@ pub(crate) fn bind_source_metadata_expr(rhs: &Expr) -> Expr {
             if let Some(name) = bind_source_name(other) {
                 Expr::ArrayLiteral(vec![Expr::Literal(Value::str(name))])
             } else {
-                Expr::ArrayLiteral(vec![Expr::Literal(Value::Nil)])
+                Expr::ArrayLiteral(vec![Expr::Literal(Value::NIL)])
             }
         }
     }
@@ -150,7 +153,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
     // Extract the element at position `pos` from the RHS list for scalar targets
     let extracted_rhs = Expr::Index {
         target: Box::new(rhs.clone()),
-        index: Box::new(Expr::Literal(Value::Int(pos as i64))),
+        index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
     };
     Some(match target {
@@ -169,7 +172,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                 Expr::MethodCall {
                     target: Box::new(rhs),
                     name: Symbol::intern("skip"),
-                    args: vec![Expr::Literal(Value::Int(pos as i64))],
+                    args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
                 }

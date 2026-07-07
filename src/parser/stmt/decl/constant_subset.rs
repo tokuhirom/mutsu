@@ -152,7 +152,9 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = ws(rest)?;
         let (rest, expr) = parse_comma_or_expr(rest)?;
         // Track compile-time string constants for operator name resolution
-        if let crate::ast::Expr::Literal(crate::value::Value::Str(ref s)) = expr {
+        if let crate::ast::Expr::Literal(v) = &expr
+            && let crate::value::ValueView::Str(s) = v.view()
+        {
             super::super::simple::register_compile_time_constant(&name, s.to_string());
         }
         let (rest, _) = ws(rest)?;

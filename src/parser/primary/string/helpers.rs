@@ -42,10 +42,10 @@ pub(crate) fn make_word_result_expr(items: Vec<Expr>) -> Expr {
 }
 
 pub(crate) fn quotewords_literal_marker(s: String) -> Expr {
-    Expr::Literal(Value::Scalar(Box::new(Value::Pair(
+    Expr::Literal(Value::scalar(Value::pair(
         "__mutsu_qw_literal".to_string(),
-        Box::new(Value::str(s)),
-    ))))
+        Value::str(s),
+    )))
 }
 
 pub(crate) fn quotewords_atom_expr(atom_expr: Expr) -> Expr {
@@ -56,9 +56,14 @@ pub(crate) fn quotewords_atom_expr_allomorphic(atom_expr: Expr, allomorphic: boo
     let args = match atom_expr {
         Expr::StringInterpolation(parts) => parts
             .into_iter()
-            .map(|part| match part {
-                Expr::Literal(Value::Str(s)) => quotewords_literal_marker(s.to_string()),
-                other => other,
+            .map(|part| {
+                if let Expr::Literal(lit) = &part
+                    && let Some(s) = lit.as_str()
+                {
+                    quotewords_literal_marker(s.to_string())
+                } else {
+                    part
+                }
             })
             .collect(),
         other => vec![other],

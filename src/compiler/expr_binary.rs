@@ -1,7 +1,8 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Compiler {
-    /// Whether a smartmatch RHS is a plain `Value::Regex` literal (a bare `/…/`
+    /// Whether a smartmatch RHS is a plain `Regex` literal (a bare `/…/`
     /// or adverb-less `m/…/`). This is the *compile-time* half of the Slice 6.3
     /// step 2 gate that lets the smartmatch op skip its conservative post-match
     /// `env_dirty` re-sync: a plain regex match writes only `$/`/captures, never
@@ -12,10 +13,10 @@ impl Compiler {
     /// substitution, transliteration, and non-regex smartmatch — all of which
     /// keep the conservative mark.
     pub(super) fn rhs_is_plain_regex_literal(expr: &Expr) -> bool {
-        matches!(
-            expr,
-            Expr::Literal(Value::Regex(_)) | Expr::MatchRegex(Value::Regex(_))
-        )
+        match expr {
+            Expr::Literal(v) | Expr::MatchRegex(v) => matches!(v.view(), ValueView::Regex(_)),
+            _ => false,
+        }
     }
 
     /// The chain's root lvalue variable name (`x` / `@a` / `%h`), if the leftmost
@@ -194,11 +195,12 @@ impl Compiler {
             }
         }
         if matches!(op, TokenKind::Ident(name) if name == "xx")
-            && let Expr::Literal(Value::Int(n)) = right
+            && let Expr::Literal(n_lit) = right
+            && let ValueView::Int(n) = n_lit.view()
             && let Expr::Call { name, .. } = left
             && name == "start"
         {
-            let count = (*n).max(0) as usize;
+            let count = n.max(0) as usize;
             for _ in 0..count {
                 self.compile_expr(left);
             }

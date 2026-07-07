@@ -221,7 +221,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             modifier: _,
             quoted: _,
         } if name == "AT-POS" && args.len() == 1 => {
-            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::Nil));
+            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             build_compound_assign_target_expr(
                 Expr::Index {
                     target,

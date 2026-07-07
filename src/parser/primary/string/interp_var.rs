@@ -114,7 +114,7 @@ pub(crate) fn try_interpolate_var<'a>(
             let parse_one = |s: &str| -> Expr {
                 let s = s.trim();
                 if let Ok(n) = s.parse::<i64>() {
-                    Expr::Literal(Value::Int(n))
+                    Expr::Literal(Value::int(n))
                 } else if let Ok((_, expr)) = crate::parser::expr::expression(s) {
                     expr
                 } else {
@@ -238,7 +238,7 @@ pub(crate) fn try_interpolate_var<'a>(
             let index_val: i64 = digits.parse().unwrap_or(0);
             let expr = Expr::Index {
                 target: Box::new(Expr::Var("/".to_string())),
-                index: Box::new(Expr::Literal(Value::Int(index_val))),
+                index: Box::new(Expr::Literal(Value::int(index_val))),
                 is_positional: true,
             };
             let (expr, var_rest) = try_parse_interp_method_call(&var_rest[end..], expr);

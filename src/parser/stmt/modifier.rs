@@ -128,7 +128,7 @@ fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
                 expr: if idx == 0 {
                     cond.clone()
                 } else {
-                    Expr::Literal(Value::Nil)
+                    Expr::Literal(Value::NIL)
                 },
                 type_constraint: None,
                 is_state: false,

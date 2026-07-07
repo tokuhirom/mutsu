@@ -5,7 +5,7 @@ use crate::parser::helpers::split_angle_words;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::primary::string::{double_quoted_string, single_quoted_string};
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Parse hash literal body: key => val, :name(val), ... }
 pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
@@ -170,7 +170,7 @@ fn hash_args_from_pairs(pairs: Vec<(String, Option<Expr>)>) -> Vec<Expr> {
         .map(|(key, val_opt)| Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(key))),
             op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(val_opt.unwrap_or(Expr::Literal(Value::Nil))),
+            right: Box::new(val_opt.unwrap_or(Expr::Literal(Value::NIL))),
         })
         .collect()
 }
@@ -179,15 +179,19 @@ fn parse_simple_hash_key(input: &str) -> PResult<'_, String> {
     if let Ok((r, name)) = crate::parser::stmt::ident_pub(input) {
         return Ok((r, name));
     }
-    if let Ok((r, Expr::Literal(Value::Int(n)))) = crate::parser::primary::number::integer(input) {
-        return Ok((r, n.to_string()));
-    }
-    if let Ok((r, Expr::Literal(Value::BigInt(n)))) = crate::parser::primary::number::integer(input)
+    if let Ok((r, Expr::Literal(lit))) = crate::parser::primary::number::integer(input)
+        && let ValueView::Int(n) = lit.view()
     {
         return Ok((r, n.to_string()));
     }
-    if let Ok((r, Expr::Literal(Value::Str(s)))) =
+    if let Ok((r, Expr::Literal(lit))) = crate::parser::primary::number::integer(input)
+        && let ValueView::BigInt(n) = lit.view()
+    {
+        return Ok((r, n.to_string()));
+    }
+    if let Ok((r, Expr::Literal(lit))) =
         single_quoted_string(input).or_else(|_| double_quoted_string(input))
+        && let ValueView::Str(s) = lit.view()
     {
         return Ok((r, s.to_string()));
     }
@@ -247,7 +251,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
     // :!name
     if let Some(r) = r.strip_prefix('!') {
         let (r, name) = crate::parser::stmt::ident_pub(r)?;
-        return Ok((r, (name, Some(Expr::Literal(Value::Bool(false))))));
+        return Ok((r, (name, Some(Expr::Literal(Value::FALSE)))));
     }
 
     // :Nname — numeric colon pair, e.g., :1status means status => 1
@@ -259,7 +263,7 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         let after_digits = &r[digit_end..];
         if let Ok((r, name)) = crate::parser::stmt::ident_pub(after_digits) {
             let num: i64 = digits.parse().unwrap_or(0);
-            return Ok((r, (name, Some(Expr::Literal(Value::Int(num))))));
+            return Ok((r, (name, Some(Expr::Literal(Value::int(num))))));
         }
     }
 

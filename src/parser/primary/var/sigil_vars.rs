@@ -59,7 +59,7 @@ fn parse_leading_colon_qualified(input: &str) -> Option<(&str, String, Option<Ex
             r = r3;
         } else if let Ok((r2b, part)) = parse_ident_with_hyphens(r2) {
             if let Some(dyn_expr) = dynamic.as_mut() {
-                let old = std::mem::replace(dyn_expr, Expr::Literal(Value::Nil));
+                let old = std::mem::replace(dyn_expr, Expr::Literal(Value::NIL));
                 *dyn_expr = Expr::Binary {
                     left: Box::new(old),
                     op: crate::token_kind::TokenKind::Tilde,

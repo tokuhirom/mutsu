@@ -1,7 +1,7 @@
 use super::super::parse_result::{PError, PResult, parse_char, parse_tag};
 
 use crate::ast::Expr;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 fn decimal_digit_value(c: char) -> Option<u32> {
     crate::builtins::unicode::unicode_decimal_digit_value(c)
@@ -31,7 +31,7 @@ fn make_radix_digit_error(base: u32, body: &str, pos: usize) -> PError {
         base, body
     );
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    attrs.insert("pos".to_string(), Value::int(pos as i64));
     attrs.insert("message".to_string(), Value::str(message.clone()));
     attrs.insert("source".to_string(), Value::str(body.to_string()));
     attrs.insert(
@@ -210,7 +210,10 @@ fn parse_prefixed_radix<'a>(
 /// literals are wrapped; everything else passes through untouched.
 pub(crate) fn wrap_divergent_literal(expr: Expr, source: &str) -> Expr {
     if let Expr::Literal(v) = &expr
-        && matches!(v, Value::Int(_) | Value::BigInt(_) | Value::Num(_))
+        && matches!(
+            v.view(),
+            ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Num(_)
+        )
     {
         let trimmed = source.trim();
         // Only preserve the format of a *bare* literal token. A parenthesized
@@ -236,11 +239,11 @@ pub(crate) fn wrap_divergent_literal(expr: Expr, source: &str) -> Expr {
 /// Parse an integer string with given radix, using BigInt for overflow.
 pub(super) fn parse_int_radix(clean: &str, radix: u32) -> Expr {
     if let Ok(n) = i64::from_str_radix(clean, radix) {
-        Expr::Literal(Value::Int(n))
+        Expr::Literal(Value::int(n))
     } else if let Some(n) = num_bigint::BigInt::parse_bytes(clean.as_bytes(), radix) {
         Expr::Literal(Value::bigint(n))
     } else {
-        Expr::Literal(Value::Int(0))
+        Expr::Literal(Value::int(0))
     }
 }
 
@@ -310,23 +313,23 @@ pub(super) fn integer(input: &str) -> PResult<'_, Expr> {
             let n: f64 = full.parse().unwrap_or(0.0);
             // Check for imaginary suffix
             if let Some(r3) = strip_imaginary_suffix(r2) {
-                return Ok((r3, Expr::Literal(Value::Complex(0.0, n))));
+                return Ok((r3, Expr::Literal(Value::complex(0.0, n))));
             }
-            return Ok((r2, Expr::Literal(Value::Num(n))));
+            return Ok((r2, Expr::Literal(Value::num(n))));
         }
     }
     // Check for imaginary suffix: 4i / 4\i
     if let Some(r) = strip_imaginary_suffix(rest) {
         let n: i64 = clean.parse().unwrap_or(0);
-        return Ok((r, Expr::Literal(Value::Complex(0.0, n as f64))));
+        return Ok((r, Expr::Literal(Value::complex(0.0, n as f64))));
     }
     // Try i64 first, fall back to BigInt for large integers
     if let Ok(n) = clean.parse::<i64>() {
-        Ok((rest, Expr::Literal(Value::Int(n))))
+        Ok((rest, Expr::Literal(Value::int(n))))
     } else if let Ok(n) = clean.parse::<num_bigint::BigInt>() {
         Ok((rest, Expr::Literal(Value::bigint(n))))
     } else {
-        Ok((rest, Expr::Literal(Value::Int(0))))
+        Ok((rest, Expr::Literal(Value::int(0))))
     }
 }
 
@@ -370,14 +373,14 @@ pub(super) fn decimal(input: &str) -> PResult<'_, Expr> {
         let full = format!("{}{}", num_str, exp);
         let n: f64 = full.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
+            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
         }
-        Ok((rest, Expr::Literal(Value::Num(n))))
+        Ok((rest, Expr::Literal(Value::num(n))))
     } else {
         // Check for imaginary suffix first
         let n: f64 = num_str.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
+            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
         }
         // Produce Rat: numerator = int_part * 10^frac_digits + frac_part, denominator = 10^frac_digits
         let frac_digits = frac_clean.len() as u32;
@@ -451,13 +454,13 @@ pub(super) fn dot_decimal(input: &str) -> PResult<'_, Expr> {
         let full = format!("{}{}", num_str, exp);
         let n: f64 = full.parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
+            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
         }
-        Ok((rest, Expr::Literal(Value::Num(n))))
+        Ok((rest, Expr::Literal(Value::num(n))))
     } else {
         let n: f64 = format!("0.{}", frac_clean).parse().unwrap_or(0.0);
         if let Some(r) = strip_imaginary_suffix(rest) {
-            return Ok((r, Expr::Literal(Value::Complex(0.0, n))));
+            return Ok((r, Expr::Literal(Value::complex(0.0, n))));
         }
         let frac_digits = frac_clean.len() as u32;
         let denom = 10i64.pow(frac_digits);
@@ -656,7 +659,7 @@ pub(super) fn unicode_numeric_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Literal(crate::value::make_rat(n, d))));
     }
     if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(first) {
-        return Ok((rest, Expr::Literal(Value::Int(n))));
+        return Ok((rest, Expr::Literal(Value::int(n))));
     }
     Err(PError::expected("unicode numeric literal"))
 }

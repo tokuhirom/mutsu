@@ -197,12 +197,15 @@ impl Compiler {
                 } else {
                     // For `our` redeclarations with no initializer (expr is Nil),
                     // load the existing package variable value instead of Nil.
-                    let is_our_redecl_nil = *is_our && matches!(expr, Expr::Literal(Value::Nil));
+                    let is_our_redecl_nil =
+                        *is_our && matches!(expr, Expr::Literal(lit) if lit.is_nil());
                     if is_our_redecl_nil {
                         let qualified = self.qualify_variable_name(name);
                         let idx = self.code.add_constant(Value::str(qualified));
                         self.code.emit(OpCode::GetOurVar(idx));
-                    } else if name.starts_with('&') && matches!(expr, Expr::Literal(Value::Nil)) {
+                    } else if name.starts_with('&')
+                        && matches!(expr, Expr::Literal(lit) if lit.is_nil())
+                    {
                         // An uninitialized `&`-sigil var (`(my &)` / `(my &foo)`)
                         // defaults to the Callable type object, not Any/Nil.
                         self.compile_expr(&Expr::BareWord("Callable".to_string()));
@@ -246,7 +249,7 @@ impl Compiler {
                             self.code.emit(OpCode::Dup);
                             self.emit_set_named_var(name);
                         } else {
-                            let is_nil_literal = matches!(expr, Expr::Literal(Value::Nil));
+                            let is_nil_literal = matches!(expr, Expr::Literal(lit) if lit.is_nil());
                             if let Some(tc) = type_constraint
                                 && is_nil_literal
                             {
@@ -368,7 +371,7 @@ impl Compiler {
                 // so a real initializer (`my $d is default(42) = "foo"`) still
                 // returns its assigned value.
                 let has_default_trait = custom_traits.iter().any(|(t, _)| t == "default");
-                let is_nil_init = matches!(expr, Expr::Literal(Value::Nil));
+                let is_nil_init = matches!(expr, Expr::Literal(lit) if lit.is_nil());
                 if has_default_trait
                     && is_nil_init
                     && !name.starts_with('@')

@@ -17,8 +17,8 @@
 //!   with surviving handles records it as a possible cycle root (§4.2 / §5.2).
 //!
 //! State of the migration (§11 step 5):
-//! - The whole first wave is migrated to `Gc<_>`: `Value::Hash` → `Gc<HashData>`
-//!   (5b), `Value::Array` → `Gc<ArrayData>` (5c), `Value::ContainerRef` →
+//! - The whole first wave is migrated to `Gc<_>`: `Hash` → `Gc<HashData>`
+//!   (5b), `Array` → `Gc<ArrayData>` (5c), `ContainerRef` →
 //!   `Gc<Mutex<Value>>` (5d). So `Gc`'s `Clone`/`Drop`/`make_mut`/... run in
 //!   production. Candidate buffering still only happens under `MUTSU_GC=on`
 //!   (default off), so ordinary runs pay just an atomic refcount op per
@@ -167,7 +167,7 @@ pub(crate) struct Gc<T: Trace + 'static> {
 }
 
 /// A non-owning handle to a `Gc` node — the `Gc` analogue of `std::sync::Weak`,
-/// backing `Value::WeakSub`. Does not keep the node alive; `upgrade` returns a
+/// backing `WeakSub`. Does not keep the node alive; `upgrade` returns a
 /// live [`Gc`] handle (a new strong reference) only while the node still exists.
 pub(crate) struct WeakGc<T: Trace + 'static> {
     inner: std::sync::Weak<GcBox<T>>,
@@ -188,7 +188,7 @@ impl<T: Trace + 'static> WeakGc<T> {
     }
 
     /// Whether two weak handles point at the same node (`Weak::ptr_eq`), for
-    /// `Value::WeakSub` identity comparison.
+    /// `WeakSub` identity comparison.
     pub(crate) fn ptr_eq(a: &WeakGc<T>, b: &WeakGc<T>) -> bool {
         std::sync::Weak::ptr_eq(&a.inner, &b.inner)
     }
@@ -239,7 +239,7 @@ impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for WeakGc<T> {
 }
 
 // A weak handle carries no `T` by value, so it is `Send + Sync` on the backing
-// `Weak`'s own guarantees (mirroring `Value::WeakSub`'s old `Weak<SubData>`).
+// `Weak`'s own guarantees (mirroring `WeakSub`'s old `Weak<SubData>`).
 unsafe impl<T: Trace + 'static> Send for WeakGc<T> {}
 unsafe impl<T: Trace + 'static> Sync for WeakGc<T> {}
 
@@ -255,7 +255,7 @@ impl<T: Trace + 'static> Gc<T> {
     }
 
     /// A non-owning [`WeakGc`] handle to this node (the `Gc` analogue of
-    /// `Arc::downgrade`), for `Value::WeakSub`. A weak handle does not count
+    /// `Arc::downgrade`), for `WeakSub`. A weak handle does not count
     /// toward the node staying alive, so a reference made weak (rather than a
     /// [`Gc`] clone) breaks any cycle it would otherwise close.
     pub(crate) fn downgrade(this: &Gc<T>) -> WeakGc<T> {

@@ -26,7 +26,7 @@ use crate::parser::parse_result::{PError, PResult, parse_char, take_while1};
 use crate::parser::primary::{colonpair_expr, parse_block_body, parse_call_arg_list, primary};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Parse the operand of a `lazy`/`eager`/`hyper` statement prefix: like
 /// `return`'s `parse_comma_or_expr`, these bind looser than the comma
@@ -354,7 +354,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             .or_else(|_| prefix_expr(rest));
         if let Ok((rest, expr)) = parsed_operand {
             let mut node = Expr::Binary {
-                left: Box::new(Expr::Literal(Value::Int(0))),
+                left: Box::new(Expr::Literal(Value::int(0))),
                 op: TokenKind::DotDotCaret,
                 right: Box::new(expr.clone()),
             };
@@ -424,7 +424,7 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
 
     // Type smiley: Any:U, Int:D, Str:D etc.
     // Consume and ignore — runtime doesn't use definedness constraints yet.
-    let rest = if matches!(expr, Expr::Literal(Value::Package(_)))
+    let rest = if matches!(expr, Expr::Literal(ref lit) if matches!(lit.view(), ValueView::Package(_)))
         && (rest.starts_with(":U") || rest.starts_with(":D") || rest.starts_with(":_"))
     {
         let after = &rest[2..];
@@ -497,7 +497,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: crate::token_kind::TokenKind::StarStar,
-                right: Box::new(Expr::Literal(Value::Int(exp))),
+                right: Box::new(Expr::Literal(Value::int(exp))),
             };
             continue;
         }
@@ -514,11 +514,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             if after_dot_raw.starts_with(' ') || after_dot_raw.starts_with('\t') {
                 if matches!(
                     expr,
-                    Expr::Literal(
-                        crate::value::Value::Int(_)
-                            | crate::value::Value::Num(_)
-                            | crate::value::Value::Rat(..)
-                            | crate::value::Value::Complex(..),
+                    Expr::Literal(ref lit) if matches!(
+                        lit.view(),
+                        ValueView::Int(_)
+                            | ValueView::Num(_)
+                            | ValueView::Rat(..)
+                            | ValueView::Complex(..),
                     )
                 ) {
                     return Err(PError::fatal(
@@ -1231,13 +1232,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     // A zen slice carrying an adverb behaves like the whatever
                     // slice for VALUES (all keys/values), so model the empty
                     // subscript as a Whatever index. Use a `Literal(Whatever)`
-                    // (which evaluates to the same `Value::Whatever`) rather than
+                    // (which evaluates to the same `Whatever`) rather than
                     // bare `Expr::Whatever` so the X::Adverb error path can tell a
                     // *zen* slice (`@a[]` → ".what" = "zen slice") apart from a
                     // *whatever* slice (`@a[*]` → "whatever slice").
                     expr = Expr::Index {
                         target: Box::new(expr),
-                        index: Box::new(Expr::Literal(Value::Whatever)),
+                        index: Box::new(Expr::Literal(Value::WHATEVER)),
                         is_positional: true,
                     };
                     rest = after;
@@ -1704,7 +1705,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     && *name == Symbol::intern("__mutsu_subscript_adverb")
                     && args.len() >= 3
                 {
-                    let first_adv = if let Expr::Literal(Value::Str(s)) = &args[2] {
+                    let first_adv = if let Expr::Literal(lit) = &args[2]
+                        && let ValueView::Str(s) = lit.view()
+                    {
                         s.to_string()
                     } else {
                         String::new()
@@ -1712,7 +1715,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let var_name = args
                         .get(3)
                         .and_then(|a| {
-                            if let Expr::Literal(Value::Str(s)) = a {
+                            if let Expr::Literal(lit) = a
+                                && let ValueView::Str(s) = lit.view()
+                            {
                                 Some(s.to_string())
                             } else {
                                 None
@@ -1740,7 +1745,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     && *name == Symbol::intern("__mutsu_subscript_adverb")
                     && args.len() >= 3
                 {
-                    let first_adv = if let Expr::Literal(Value::Str(s)) = &args[2] {
+                    let first_adv = if let Expr::Literal(lit) = &args[2]
+                        && let ValueView::Str(s) = lit.view()
+                    {
                         s.to_string()
                     } else {
                         String::new()
@@ -1748,7 +1755,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     let var_name = args
                         .get(3)
                         .and_then(|a| {
-                            if let Expr::Literal(Value::Str(s)) = a {
+                            if let Expr::Literal(lit) = a
+                                && let ValueView::Str(s) = lit.view()
+                            {
                                 Some(s.to_string())
                             } else {
                                 None
@@ -1815,10 +1824,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         } else if let Expr::Call { name, mut args } = expr {
                             if name == "__mutsu_subscript_adverb" {
                                 // Inject delete flag into the subscript adverb call
-                                args.push(Expr::Literal(Value::Pair(
-                                    "delete".into(),
-                                    Box::new(Value::Bool(true)),
-                                )));
+                                args.push(Expr::Literal(Value::pair("delete".into(), Value::TRUE)));
                                 expr = Expr::Call { name, args };
                             } else if name == "__mutsu_multidim_subscript_adverb" {
                                 // `@a[i;j;k]:k:delete` (static delete combined with a
@@ -1837,7 +1843,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 let mut new_args = vec![
                                     Expr::Literal(Value::str(var_name_str)),
                                     adverb_name,
-                                    Expr::Literal(Value::Bool(true)),
+                                    Expr::Literal(Value::TRUE),
                                 ];
                                 new_args.extend(dims);
                                 expr = Expr::Call {
@@ -1886,10 +1892,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         {
                             // Inject conditional delete into subscript adverb call
                             if let Expr::Call { name, mut args } = original_expr.clone() {
-                                args.push(Expr::Literal(Value::Pair(
-                                    "delete".into(),
-                                    Box::new(Value::Bool(true)),
-                                )));
+                                args.push(Expr::Literal(Value::pair("delete".into(), Value::TRUE)));
                                 let delete_expr = Expr::Call { name, args };
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
@@ -1913,7 +1916,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                                 let mut new_args = vec![
                                     Expr::Literal(Value::str(var_name_str)),
                                     adverb_name,
-                                    Expr::Literal(Value::Bool(true)),
+                                    Expr::Literal(Value::TRUE),
                                 ];
                                 new_args.extend(dims);
                                 let delete_expr = Expr::Call {
@@ -2046,7 +2049,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         let dims = dims.clone();
                         let mut new_args = vec![
                             Expr::Literal(Value::str(var_name)),
-                            Expr::Literal(Value::Bool(negated_val)),
+                            Expr::Literal(Value::truth(negated_val)),
                             Expr::Var(adverb_var.to_string()),
                             Expr::Literal(Value::str(adverb_str.to_string())),
                         ];
@@ -2163,7 +2166,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 expr = Expr::HyperOp {
                     op: "**".to_string(),
                     left: Box::new(expr),
-                    right: Box::new(Expr::Literal(Value::Int(exp))),
+                    right: Box::new(Expr::Literal(Value::int(exp))),
                     dwim_left: false,
                     dwim_right: true,
                 };
@@ -2795,7 +2798,7 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             expr = Expr::Binary {
                 left: Box::new(expr),
                 op: crate::token_kind::TokenKind::StarStar,
-                right: Box::new(Expr::Literal(Value::Int(exp))),
+                right: Box::new(Expr::Literal(Value::int(exp))),
             };
             continue;
         }

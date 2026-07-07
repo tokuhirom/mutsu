@@ -2,7 +2,7 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Parse Q quoting with arbitrary delimiters: Q!...!, Q{...}, Q/.../, etc.
 /// Q means no interpolation and no escape processing — content is taken verbatim.
@@ -95,14 +95,17 @@ pub(crate) fn apply_post_processing<'a>(
 
     // Handle :w/:ww word splitting
     if flags.quotewords
-        && let Expr::Literal(Value::Str(ref s)) = expr
+        && let Expr::Literal(ref lit) = expr
+        && let ValueView::Str(s) = lit.view()
     {
         let items = parse_quotewords_items(s, flags)?;
         return Ok((after, make_word_result_expr(items)));
     }
 
     if flags.words || flags.quotewords {
-        if let Expr::Literal(Value::Str(ref s)) = expr {
+        if let Expr::Literal(ref lit) = expr
+            && let ValueView::Str(s) = lit.view()
+        {
             let words: Vec<Expr> = if flags.val {
                 s.split_whitespace()
                     .map(|w| {

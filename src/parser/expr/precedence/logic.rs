@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = assign_or_and_expr(input, mode)?;
@@ -238,8 +239,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
-                && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
-                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode.as_str() == "kv" || mode.as_str() == "not-kv")
+                && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
+                && matches!(&args[2], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(mode) if mode.as_str() == "kv" || mode.as_str() == "not-kv"))
             {
                 return Ok((
                     r,

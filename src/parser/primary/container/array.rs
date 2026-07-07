@@ -5,6 +5,7 @@ use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use crate::value::ValueView;
 
 /// Parse an array literal [...].
 pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
@@ -134,7 +135,7 @@ pub(crate) fn fail_goal_error_at(dba: &str, goal: &str, pos: Option<&str>) -> PE
     attrs.insert("goal".to_string(), Value::str(goal.to_string()));
     if let Some(pos) = pos {
         let line = crate::parser::primary::current_line_number(pos);
-        attrs.insert("line".to_string(), Value::Int(line));
+        attrs.insert("line".to_string(), Value::int(line));
     }
     let exception = Value::make_instance(Symbol::intern("X::Comp::FailGoal"), attrs);
     PError::fatal_with_exception(message, Box::new(exception))
@@ -196,8 +197,11 @@ pub(crate) fn percent_hash_literal(input: &str) -> PResult<'_, Expr> {
                 right,
             } => {
                 let key = match *left {
-                    Expr::Literal(Value::Str(s)) => s.to_string(),
-                    Expr::Literal(Value::Int(i)) => i.to_string(),
+                    Expr::Literal(lit) => match lit.view() {
+                        ValueView::Str(s) => s.to_string(),
+                        ValueView::Int(i) => i.to_string(),
+                        _ => return Err(PError::expected("hash pair key")),
+                    },
                     _ => return Err(PError::expected("hash pair key")),
                 };
                 (key, Some(*right))

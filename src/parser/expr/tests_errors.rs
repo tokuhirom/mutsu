@@ -233,7 +233,7 @@ fn parse_postfix_call_adverb_block_as_arg() {
             assert!(args.iter().any(|arg| matches!(
                 arg,
                 Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
-                if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "__mutsu_test_callsite_line")
+                if matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), crate::value::ValueView::Str(s) if s.as_str() == "__mutsu_test_callsite_line"))
             )));
         }
         _ => panic!("expected call expression"),
@@ -257,7 +257,7 @@ fn parse_postfix_call_adverb_colonpairs_as_args() {
             assert!(args.iter().any(|arg| matches!(
                 arg,
                 Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
-                if matches!(left.as_ref(), Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "__mutsu_test_callsite_line")
+                if matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), crate::value::ValueView::Str(s) if s.as_str() == "__mutsu_test_callsite_line"))
             )));
         }
         _ => panic!("expected call expression"),

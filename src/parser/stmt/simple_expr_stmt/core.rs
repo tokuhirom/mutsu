@@ -17,6 +17,7 @@ use crate::parser::stmt::simple::{
 };
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::value::ValueView;
 
 use super::lvalue::{
     bind_source_metadata_expr, callable_lvalue_assign_expr, decl_target_var_name,
@@ -532,8 +533,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             if let Expr::Call { name, args } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
-                && matches!(index.as_ref(), Expr::Literal(Value::Int(1)))
-                && matches!(&args[2], Expr::Literal(Value::Str(mode)) if mode.as_str() == "kv" || mode.as_str() == "not-kv")
+                && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
+                && matches!(&args[2], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(mode) if mode.as_str() == "kv" || mode.as_str() == "not-kv"))
             {
                 let stmt = Stmt::Expr(Expr::IndexAssign {
                     target: Box::new(args[0].clone()),
@@ -1025,7 +1026,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     if let Some(map) = static_named.as_ref() {
                         match map.get(&key) {
                             Some(e) => e.clone(),
-                            None => Expr::Literal(Value::Nil),
+                            None => Expr::Literal(Value::NIL),
                         }
                     } else {
                         // Runtime: $tmp.hash{key}
@@ -1046,7 +1047,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     pos_index += 1;
                     Expr::Index {
                         target: Box::new(Expr::Var(tmp_name.clone())),
-                        index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                        index: Box::new(Expr::Literal(Value::int(i as i64))),
                         is_positional: true,
                     }
                 };
@@ -1071,7 +1072,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 std::collections::HashMap::from([
                     (
                         "type".to_string(),
-                        crate::value::Value::Package(crate::symbol::Symbol::intern(type_name)),
+                        crate::value::Value::package(crate::symbol::Symbol::intern(type_name)),
                     ),
                     (
                         "message".to_string(),

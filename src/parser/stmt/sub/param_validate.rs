@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 /// Known valid parameter traits for `is <trait>` in signatures.
 /// `encoded` is a NativeCall string-marshalling trait (`Str $s is encoded('utf8')`)
@@ -79,27 +80,32 @@ pub(crate) fn validate_param_trait<'a>(
 }
 
 pub(crate) fn static_default_type(expr: &Expr) -> Option<String> {
+    if let Expr::Literal(v) = expr {
+        return match v.view() {
+            ValueView::Int(_) => Some("Int".to_string()),
+            ValueView::Num(_) => Some("Num".to_string()),
+            ValueView::Rat(_, _) => Some("Rat".to_string()),
+            ValueView::Bool(_) => Some("Bool".to_string()),
+            ValueView::Str(_) => Some("Str".to_string()),
+            ValueView::Package(name) => Some(name.resolve()),
+            _ => None,
+        };
+    }
     match expr {
-        Expr::Literal(Value::Int(_)) => Some("Int".to_string()),
-        Expr::Literal(Value::Num(_)) => Some("Num".to_string()),
-        Expr::Literal(Value::Rat(_, _)) => Some("Rat".to_string()),
-        Expr::Literal(Value::Bool(_)) => Some("Bool".to_string()),
-        Expr::Literal(Value::Str(_)) => Some("Str".to_string()),
-        Expr::Literal(Value::Package(name)) => Some(name.resolve()),
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
         _ => None,
     }
 }
 
 pub(crate) fn negate_literal_value(value: &Value) -> Option<Value> {
-    match value {
-        Value::Int(n) => Some(Value::Int(-n)),
-        Value::BigInt(n) => Some(Value::bigint(-n.as_ref())),
-        Value::Num(n) => Some(Value::Num(-n)),
-        Value::Rat(n, d) => Some(crate::value::make_rat(-n, *d)),
-        Value::FatRat(n, d) => Some(Value::FatRat(-n, *d)),
-        Value::BigRat(n, d) => Some(crate::value::make_big_rat(-(**n).clone(), (**d).clone())),
-        Value::Complex(re, im) => Some(Value::Complex(-re, -im)),
+    match value.view() {
+        ValueView::Int(n) => Some(Value::int(-n)),
+        ValueView::BigInt(n) => Some(Value::bigint(-n.as_ref())),
+        ValueView::Num(n) => Some(Value::num(-n)),
+        ValueView::Rat(n, d) => Some(crate::value::make_rat(-n, d)),
+        ValueView::FatRat(n, d) => Some(Value::fat_rat_raw(-n, d)),
+        ValueView::BigRat(n, d) => Some(crate::value::make_big_rat(-(n.clone()), d.clone())),
+        ValueView::Complex(re, im) => Some(Value::complex(-re, -im)),
         _ => None,
     }
 }
@@ -153,9 +159,9 @@ pub(crate) fn default_type_matches_constraint(
     }
     if base == "UInt" {
         if let Some(value) = default_value {
-            return Some(match value {
-                Value::Int(n) => *n >= 0,
-                Value::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
+            return Some(match value.view() {
+                ValueView::Int(n) => n >= 0,
+                ValueView::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
                 _ => false,
             });
         }
@@ -424,7 +430,7 @@ pub(crate) fn placeholder_overrides_signature_error(
             );
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("placeholder".to_string(), Value::str(ph));
-            attrs.insert("line".to_string(), Value::Int(line));
+            attrs.insert("line".to_string(), Value::int(line));
             attrs.insert("message".to_string(), Value::str(message.clone()));
             let ex = Value::make_instance(Symbol::intern("X::Signature::Placeholder"), attrs);
             return Some(PError::fatal_with_exception(message, Box::new(ex)));

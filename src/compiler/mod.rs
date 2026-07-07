@@ -619,7 +619,7 @@ impl Compiler {
                 right,
             } => {
                 let key = match left.as_ref() {
-                    Expr::Literal(Value::Str(s)) => Some(s.as_str()),
+                    Expr::Literal(lit) => lit.as_str(),
                     Expr::BareWord(s) => Some(s.as_str()),
                     _ => None,
                 };
@@ -675,16 +675,16 @@ impl Compiler {
                     // the name from either shape, so existing consumers are unchanged.
                     match self.local_map.get(&name) {
                         Some(&slot) if !name.contains('=') => {
-                            Value::Pair(name, Box::new(Value::Int(slot as i64)))
+                            Value::pair(name, Value::int(slot as i64))
                         }
                         _ => Value::str(name),
                     }
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             })
             .collect();
-        if entries.iter().all(|v| matches!(v, Value::Nil)) {
+        if entries.iter().all(|v| v.is_nil()) {
             None
         } else {
             Some(self.code.add_constant(Value::array(entries)))
@@ -791,7 +791,7 @@ impl Compiler {
                     let slice_expr = Expr::Index {
                         target: Box::new(Expr::Var(target_name.clone())),
                         index: Box::new(Expr::Binary {
-                            left: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                            left: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                             op: crate::token_kind::TokenKind::DotDot,
                             right: Box::new(Expr::Whatever),
                         }),
@@ -808,7 +808,7 @@ impl Compiler {
                         sub.name.clone(),
                         Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
-                            index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                            index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                             is_positional: false,
                         },
                     ));
@@ -855,7 +855,7 @@ impl Compiler {
                     cond: Expr::Binary {
                         left: Box::new(chunk_elems()),
                         op: crate::token_kind::TokenKind::Lt,
-                        right: Box::new(Expr::Literal(Value::Int(required_arity as i64))),
+                        right: Box::new(Expr::Literal(Value::int(required_arity as i64))),
                     },
                     then_branch: vec![Stmt::Die(msg)],
                     else_branch: Vec::new(),
@@ -876,7 +876,7 @@ impl Compiler {
             // but undefined element is still bound, matching Raku.
             let element_expr = Expr::Index {
                 target: Box::new(Expr::Var("_".to_string())),
-                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                index: Box::new(Expr::Literal(Value::int(i as i64))),
                 is_positional: false,
             };
             let value_expr = match params_def.get(i).and_then(|d| d.default.as_ref()) {
@@ -884,7 +884,7 @@ impl Compiler {
                     cond: Box::new(Expr::Binary {
                         left: Box::new(chunk_elems()),
                         op: crate::token_kind::TokenKind::Gt,
-                        right: Box::new(Expr::Literal(Value::Int(i as i64))),
+                        right: Box::new(Expr::Literal(Value::int(i as i64))),
                     }),
                     then_expr: Box::new(element_expr),
                     else_expr: Box::new(default_expr.clone()),
@@ -1273,7 +1273,7 @@ impl Compiler {
                     // Compile so the body's final statement leaves its value on the
                     // stack, then move it onto the ENTER-result stack.
                     if body.is_empty() {
-                        self.compile_expr(&Expr::Literal(Value::Nil));
+                        self.compile_expr(&Expr::Literal(Value::NIL));
                     } else {
                         for (j, inner) in body.iter().enumerate() {
                             if j == body.len() - 1 {
@@ -1281,7 +1281,7 @@ impl Compiler {
                                     Stmt::Expr(expr) => self.compile_expr(expr),
                                     _ => {
                                         self.compile_stmt(inner);
-                                        self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                        self.compile_expr(&Expr::Literal(Value::TRUE));
                                     }
                                 }
                             } else {

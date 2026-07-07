@@ -129,7 +129,7 @@ pub(super) fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
     let shape_value = if dims.len() == 1 {
         dims.into_iter()
             .next()
-            .unwrap_or(Expr::Literal(Value::Int(0)))
+            .unwrap_or(Expr::Literal(Value::int(0)))
     } else {
         Expr::ArrayLiteral(dims)
     };
@@ -151,7 +151,7 @@ pub(super) fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Ex
     let shape_value = if dims.len() == 1 {
         dims.into_iter()
             .next()
-            .unwrap_or(Expr::Literal(Value::Int(0)))
+            .unwrap_or(Expr::Literal(Value::int(0)))
     } else {
         Expr::ArrayLiteral(dims)
     };

@@ -45,7 +45,7 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Block(vec![
                 Stmt::VarDecl {
                     name: param,
-                    expr: Expr::Literal(crate::value::Value::Nil),
+                    expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,
@@ -112,7 +112,7 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Block(vec![
                 Stmt::VarDecl {
                     name: param,
-                    expr: Expr::Literal(crate::value::Value::Nil),
+                    expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
                     is_state: false,
                     is_our: false,

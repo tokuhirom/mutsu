@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Compiler {
     fn topic_subst_pattern_from_index_with_groups(expr: &Expr, top_level: bool) -> Option<String> {
@@ -20,7 +21,10 @@ impl Compiler {
             }
             Expr::BareWord(name) if name.len() == 1 => Some(format!("\\{name}")),
             Expr::BareWord(name) => Some(name.clone()),
-            Expr::Literal(Value::Str(s)) => Some(s.as_ref().clone()),
+            Expr::Literal(v) => match v.view() {
+                ValueView::Str(s) => Some(s.as_ref().clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -36,10 +40,12 @@ impl Compiler {
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::CodeVar(name) => Some(format!("&{}", name)),
             Expr::Index { target, index, .. }
-                if matches!(target.as_ref(), Expr::PseudoStash(_))
-                    && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
+                if matches!(target.as_ref(), Expr::PseudoStash(_)) =>
             {
-                let Expr::Literal(Value::Str(raw)) = index.as_ref() else {
+                let Expr::Literal(lit) = index.as_ref() else {
+                    return None;
+                };
+                let ValueView::Str(raw) = lit.view() else {
                     return None;
                 };
                 let mut name = raw.as_ref().clone();
@@ -242,8 +248,10 @@ impl Compiler {
                 // If target is an ArrayLiteral and index is a literal Int,
                 // resolve the element at that index.
                 if let Expr::ArrayLiteral(elements) = target.as_ref() {
-                    if let Expr::Literal(Value::Int(i)) = index.as_ref() {
-                        let i = *i as usize;
+                    if let Expr::Literal(lit) = index.as_ref()
+                        && let ValueView::Int(i) = lit.view()
+                    {
+                        let i = i as usize;
                         if i < elements.len() {
                             return Self::resolve_container_var_name(&elements[i]);
                         }
@@ -269,13 +277,15 @@ impl Compiler {
                 } = target.as_ref()
                     && let Expr::ArrayLiteral(elements) = inner_target.as_ref()
                     && let Expr::ArrayLiteral(indices) = inner_index.as_ref()
-                    && let Expr::Literal(Value::Int(outer_i)) = index.as_ref()
+                    && let Expr::Literal(outer_lit) = index.as_ref()
+                    && let ValueView::Int(outer_i) = outer_lit.view()
                 {
-                    let outer_i = *outer_i as usize;
+                    let outer_i = outer_i as usize;
                     if outer_i < indices.len()
-                        && let Expr::Literal(Value::Int(inner_i)) = &indices[outer_i]
+                        && let Expr::Literal(inner_lit) = &indices[outer_i]
+                        && let ValueView::Int(inner_i) = inner_lit.view()
                     {
-                        let inner_i = *inner_i as usize;
+                        let inner_i = inner_i as usize;
                         if inner_i < elements.len() {
                             return Self::resolve_container_var_name(&elements[inner_i]);
                         }
@@ -298,8 +308,11 @@ impl Compiler {
                 _ => None,
             }?;
             let idx_str = match index.as_ref() {
-                Expr::Literal(Value::Int(n)) => n.to_string(),
-                Expr::Literal(Value::Str(s)) => s.to_string(),
+                Expr::Literal(lit) => match lit.view() {
+                    ValueView::Int(n) => n.to_string(),
+                    ValueView::Str(s) => s.to_string(),
+                    _ => return None,
+                },
                 _ => return None,
             };
             Some(format!("{}\x00idx\x00{}", target_name, idx_str))
@@ -565,7 +578,7 @@ impl Compiler {
         }
         // $?DISTRIBUTION resolves to the current distribution context, or Nil
         else if name == "?DISTRIBUTION" {
-            let dist = self.current_distribution.clone().unwrap_or(Value::Nil);
+            let dist = self.current_distribution.clone().unwrap_or(Value::NIL);
             let idx = self.code.add_constant(dist);
             self.code.emit(OpCode::LoadConst(idx));
         }
@@ -577,7 +590,7 @@ impl Compiler {
                 .unwrap_or(&self.current_package);
             let idx = self
                 .code
-                .add_constant(Value::Package(crate::symbol::Symbol::intern(pkg)));
+                .add_constant(Value::package(crate::symbol::Symbol::intern(pkg)));
             self.code.emit(OpCode::LoadConst(idx));
         } else if (name == "?CLASS" || name == "?ROLE") && !self.local_map.contains_key(name) {
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
@@ -614,10 +627,10 @@ impl Compiler {
             .add_constant(Value::str(self.qualify_variable_name("_")));
         self.code.emit(OpCode::GetGlobal(name_idx));
         // SmartMatchExpr will set $_ to LHS, run RHS, then smartmatch
-        // Plain Value::Regex literal: compile-time half of the Slice 6.3 step 2
+        // Plain Regex literal: compile-time half of the Slice 6.3 step 2
         // gate (the runtime half — pending_local_updates / `$/`-as-local — is in
         // the smartmatch op).
-        let rhs_pure_regex = matches!(v, Value::Regex(_));
+        let rhs_pure_regex = matches!(v.view(), ValueView::Regex(_));
         let lhs_slot = lhs_var
             .as_ref()
             .and_then(|name| self.local_map.get(name).copied());

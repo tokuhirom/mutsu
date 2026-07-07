@@ -12,11 +12,11 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("return", input).ok_or_else(|| PError::expected("return statement"))?;
     let (rest, _) = ws(rest)?;
     if is_stmt_modifier_keyword(rest) {
-        return parse_statement_modifier(rest, Stmt::Return(Expr::Literal(Value::Nil)));
+        return parse_statement_modifier(rest, Stmt::Return(Expr::Literal(Value::NIL)));
     }
     if rest.starts_with(';') || rest.is_empty() || rest.starts_with('}') {
         let (rest, _) = opt_char(rest, ';');
-        return Ok((rest, Stmt::Return(Expr::Literal(Value::Nil))));
+        return Ok((rest, Stmt::Return(Expr::Literal(Value::NIL))));
     }
     let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
         messages: merge_expected_messages("expected return value expression", &err.messages),
@@ -261,11 +261,7 @@ fn fold_compile_time_version(expr: &Expr) -> Option<Value> {
             }
         })
         .collect();
-    Some(Value::Version {
-        parts,
-        plus: false,
-        minus: false,
-    })
+    Some(Value::version(parts, false, false))
 }
 
 /// Parse `subtest` declaration.
@@ -469,7 +465,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     if is_test_assertion_callable(&name) {
         args.push(crate::ast::CallArg::Named {
             name: "__mutsu_test_callsite_line".to_string(),
-            value: Some(Expr::Literal(Value::Int(
+            value: Some(Expr::Literal(Value::int(
                 crate::parser::primary::current_line_number(input),
             ))),
         });

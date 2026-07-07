@@ -5,7 +5,7 @@ use super::super::{ident, keyword, qualified_ident};
 use super::helpers::normalize_language_version;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Parse a `use` statement.
 pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
@@ -187,7 +187,9 @@ fn parse_use_smiley_pragma<'a>(input: &'a str, pragma_name: &'a str) -> PResult<
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(pragma_name.to_string()));
         // Try to extract string value from the expression
-        let arg_val = if let Expr::Literal(Value::Str(ref s)) = arg_expr {
+        let arg_val = if let Expr::Literal(ref lit) = arg_expr
+            && let ValueView::Str(s) = lit.view()
+        {
             s.to_string()
         } else {
             arg_str
@@ -307,9 +309,11 @@ fn parse_use_attributes_pragma(input: &str) -> PResult<'_, Stmt> {
     let result = parse_use_smiley_pragma(input, "attributes")?;
     // Set the parse-time attributes pragma so has_decl can check it
     if let Stmt::Use {
-        arg: Some(Expr::Literal(Value::Str(ref s))),
+        arg: Some(arg_expr),
         ..
-    } = result.1
+    } = &result.1
+        && let Expr::Literal(lit) = arg_expr
+        && let ValueView::Str(s) = lit.view()
     {
         super::super::simple::set_attributes_pragma(s);
     }

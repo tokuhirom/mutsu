@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Compiler {
     /// Compile AssignExpr: assignment as expression.
@@ -137,9 +138,11 @@ impl Compiler {
                 Expr::Index {
                     target: t, index, ..
                 } if matches!(t.as_ref(), Expr::HashVar(name) if name == "*ENV")
-                    && matches!(index.as_ref(), Expr::Literal(Value::Str(_))) =>
+                    && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(_))) =>
                 {
-                    if let Expr::Literal(Value::Str(key)) = index.as_ref() {
+                    if let Expr::Literal(lit) = index.as_ref()
+                        && let ValueView::Str(key) = lit.view()
+                    {
                         let key_idx = self.code.add_constant(Value::str((**key).clone()));
                         self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                         return;
@@ -178,7 +181,7 @@ impl Compiler {
             // Build args: target, negated_bool, adverb_name, dim0, dim1, ...
             let mut call_args = vec![
                 mdtarget.as_ref().clone(),
-                Expr::Literal(Value::Bool(negated)),
+                Expr::Literal(Value::truth(negated)),
                 Expr::Literal(Value::str(adverb_str.to_string())),
             ];
             call_args.extend(dimensions.iter().cloned());
@@ -356,7 +359,8 @@ impl Compiler {
         if let Expr::PseudoStash(stash) = target
             && let Some((rest, depth)) = Self::parse_caller_prefix(stash)
             && rest.is_empty()
-            && let Expr::Literal(Value::Str(key)) = index
+            && let Expr::Literal(lit) = index
+            && let ValueView::Str(key) = lit.view()
         {
             let bare: String = match key.chars().next() {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
@@ -374,8 +378,10 @@ impl Compiler {
         // Special case: %*ENV<key> compiles to GetEnvIndex
         if let Expr::HashVar(name) = target {
             if name == "*ENV" {
-                if let Expr::Literal(Value::Str(key)) = index {
-                    let key_idx = self.code.add_constant(Value::Str(key.clone()));
+                if let Expr::Literal(lit) = index
+                    && let ValueView::Str(key) = lit.view()
+                {
+                    let key_idx = self.code.add_constant(Value::str_arc(key.clone()));
                     self.code.emit(OpCode::GetEnvIndex(key_idx));
                 } else {
                     self.compile_expr(target);

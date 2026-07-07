@@ -183,7 +183,7 @@ impl Compiler {
                 iterable,
                 Expr::ArrayLiteral(items)
                     if items.len() == 1
-                        && matches!(items[0], Expr::Literal(Value::Nil))
+                        && matches!(&items[0], Expr::Literal(lit) if lit.is_nil())
             )
         {
             self.compile_do_block_expr(body, label);
@@ -285,10 +285,10 @@ impl Compiler {
                     stmts[idx] = AStmt::Take(expr, false);
                 } else {
                     // Wrap non-expr last stmt in Take(Nil) since we need a take
-                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil), false));
+                    stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::NIL), false));
                 }
             } else {
-                stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::Nil), false));
+                stmts.push(AStmt::Take(AExpr::Literal(crate::value::Value::NIL), false));
             }
             stmts
         };

@@ -352,7 +352,7 @@ pub(crate) fn lower_if_chain(
         // An explicit `else {}` with an empty body should evaluate to Nil,
         // not be indistinguishable from a missing else clause.
         if body.is_empty() {
-            body.push(Stmt::Expr(Expr::Literal(crate::value::Value::Nil)));
+            body.push(Stmt::Expr(Expr::Literal(crate::value::Value::NIL)));
         }
         body
     } else {

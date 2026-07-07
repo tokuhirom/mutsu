@@ -3,6 +3,7 @@ use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::value::ValueView;
 
 pub(crate) fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
     let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
@@ -207,7 +208,9 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
 
         // Apply word splitting if :w
         let expr = if flags.words {
-            if let Expr::Literal(Value::Str(ref s)) = expr {
+            if let Expr::Literal(lit) = &expr
+                && let ValueView::Str(s) = lit.view()
+            {
                 let words: Vec<Expr> = s
                     .split_whitespace()
                     .map(|w| Expr::Literal(Value::str(w.to_string())))
