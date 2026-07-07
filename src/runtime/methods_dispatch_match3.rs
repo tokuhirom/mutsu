@@ -49,7 +49,7 @@ impl Interpreter {
                             new_args,
                         ));
                     }
-                    if matches!(name.as_str(), "site" | "home" | "vendor" | "perl")
+                    if matches!(name.as_str(), "site" | "home" | "vendor" | "perl" | "core")
                         && let Some(dir) = Self::default_repo_dir(&name)
                     {
                         let new_args = vec![Value::pair(
