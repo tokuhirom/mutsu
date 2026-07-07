@@ -14,6 +14,22 @@ impl Interpreter {
             return None;
         };
 
+        // A `$` attribute whose Scalar *container* did a role (`$attr.container
+        // .VAR does Role`) is represented as a mixin marked
+        // `__mutsu_scalar_container_mixin`. `.VAR`/`.self`/`.item` on the
+        // accessor result must return the container mixin itself so
+        // `$o.a.VAR.role_method` reaches the mixed-in role, matching Raku's
+        // container-vs-value distinction (a plain value mixin decontainerizes
+        // on `.VAR`).
+        if args.is_empty()
+            && matches!(method, "VAR" | "self" | "item")
+            && mixins
+                .get("__mutsu_scalar_container_mixin")
+                .is_some_and(|v| v.truthy())
+        {
+            return Some(Ok(target.clone()));
+        }
+
         if args.is_empty() {
             if let Some(mixin_val) = mixins.get(method) {
                 return Some(Ok(mixin_val.clone()));

@@ -124,9 +124,9 @@
 
 ## 3. 第一級コンテナ / container identity
 
-`S32-array/splice.t` の self-splice、`S02-types/whatever.t` の container preservation、
-`S14-traits/attributes.t` の per-attribute Scalar container など、
-element/attribute slot の書き戻しが未整備な項目が集まっている。
+`S32-array/splice.t` の self-splice や `S02-types/whatever.t` の container preservation など、
+element/attribute slot の書き戻しが未整備な項目が集まっている
+（`S14-traits/attributes.t` の per-attribute container mixin は DONE・§3.1 参照）。
 すでに whitelist 済みの項目（`temp.t`、`adverbs.t` の typed-hash default、`capture.t`、
 `is_default.t`、`walk.t` など）は `news/2026-06.md` を参照。
 
@@ -147,12 +147,19 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
     in-place で動く。CHECK/INIT を持つブロックは従来挙動（全 BEGIN を先頭 bucket へ）を維持。
   回帰テスト＝`t/begin-nested-block.t`（`t/begin-compile-time.t` も回帰なし）。test 32-34（escaped `our sub`）・
   37-38（X::Redeclaration::Outer）・39（`$OUTER::_`）は #4235/#4305 等で既に解消済みだった。
-- `S14-traits/attributes.t`（4/8、bad plan：8 planned に対し 4 で中断）
-  — `Attribute.container.VAR does Role` に必要な「scalar 属性が Scalar コンテナを VAR として
-  持ち、合成時に role を mixin し、それがインスタンスの per-attribute コンテナに伝播する」
-  という深いコンテナ表現。mutsu の scalar 属性は値を直接保持し VAR は Any を返すため、
-  属性 slot の cell 化（本項の Primary files 参照）待ち。`$my_ref := $obj.attr`
-  （scalar accessor への `:=` 束縛）も同根の残課題。
+- ~~`S14-traits/attributes.t`（4/8、bad plan：8 planned に対し 4 で中断）~~ —
+  **DONE・whitelist 済み（2026-07-08）**。`Attribute.container.VAR does Role(arg)` の
+  container-level role mixin を実装。root-cause＝`.container` が Nil を返し、trait 内の
+  `does` が捨て値へ mixin されて per-instance コンテナに届かなかったこと。実装:
+  ①`.container` が (owner, name, sigil) を担う proxy Instance を返す（`.VAR`/`.self`/`.item`
+  は proxy を返し、他メソッドは内包する実コンテナへ委譲）。②proxy 相手の `does Role(arg)`
+  を `eval_does_values` で捕捉し、compose 済み role state（`__mutsu_attr__*`）を新レジストリ
+  `class_attribute_container_mixins` に (class, attr)→(sigil, mixins) で記録。③構築時
+  `apply_attribute_container_mixins` が MRO 越しに mixin を適用——`@`/`%` は値＝コンテナなので
+  直接 mixin、`$` は `__mutsu_scalar_container_mixin` マーカー付き mixin にして `.VAR` が
+  自身を返す（Raku の container-vs-value 区別を再現）。回帰テスト＝
+  `t/attribute-container-role-mixin.t`。残課題（別軸）: `$my_ref := $obj.attr`
+  （scalar accessor への `:=` 束縛）と `$obj.attr.VAR.role = v`（mixin accessor への rw 書込）。
 - ~~`S12-subset/subtypes.t`（83/90、7 失敗）~~ — **DONE・whitelist 済み（2026-07-03 再検証）**。
   現状 92/92、唯一の `not ok 92` は `# TODO custom type checking on hashes NYI`（期待失敗）。
 - ~~`S02-types/whatever.t`（122/130、8 失敗: test 111, 119-124, 126）~~ — **DONE（#4067、131/131）**。
@@ -213,7 +220,9 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
    - 完了条件: element bind / take-rw / deep nested write が post-call writeback なしで成立
 2. **属性 accessor を value copy ではなく slot 経由にする**
    - 変更レイヤ: attribute read/write path、instance attr storage
-   - 対象: `S14-traits/attributes.t` の残り（`Attribute.container.VAR does Role`）
+   - 対象: `Attribute.container.VAR does Role` は DONE（§3.1 参照）。残りは
+     `$my_ref := $obj.attr`（scalar accessor への `:=` 束縛）・`$obj.attr.VAR.role = v`
+     （mixin accessor への rw 書込）
 3. **BEGIN/EVAL/lexical 配列変更の永続化** — **DONE**。
    - top-level BEGIN 版（`S26-documentation/12-non-breaking-space.t`、`run_toplevel_begin_phasers`）・
      nested-block BEGIN 版（`S02-names-vars/variables-and-packages.t`、`reorder_at_level`）とも
@@ -228,7 +237,7 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 - **Next slice**: `splice.t` の self-splice ケースから、配列 write を helper 経由へさらに
   寄せて post-call writeback 依存を 1 段減らす。
-- **Canary tests**: `roast/S32-array/splice.t`, `roast/S14-traits/attributes.t`,
+- **Canary tests**: `roast/S32-array/splice.t`,
   `roast/S02-names-vars/variables-and-packages.t`
 
 ---
@@ -415,7 +424,8 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
 「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
 
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
-   attributes.t / multislice hash 側の slot identity を前に進める。
+   multislice hash 側の slot identity を前に進める（`attributes.t` の container mixin は
+   DONE・§3.1 参照）。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
    **進捗（2026-07-05）**: whole-container 代入の container-identity（`@a = ...` の
    in-place 化＋`=` コピーの fresh-`Gc` detach）は完了し `splice.t` は whitelist 済み

@@ -32,6 +32,11 @@ use crate::value::{EnumValue, RuntimeError, Value};
 
 use super::{ClassDef, MethodDef, RoleCandidateDef, RoleDef, SubsetDef};
 
+/// A recorded container-level role mixin for one attribute: the attribute's
+/// sigil plus the composed role mixin map (`__mutsu_role__*`/`__mutsu_attr__*`
+/// keys). Applied to the per-instance container at construction.
+pub(crate) type AttrContainerMixin = (char, std::sync::Arc<HashMap<String, Value>>);
+
 /// Program declaration registry. See module docs.
 ///
 /// Fields are migrated here group-by-group (PLAN.md PR-A). Fields are
@@ -108,6 +113,15 @@ pub(crate) struct Registry {
     /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
     /// value at construction so `$o.x` does the role.
     pub(crate) class_attribute_does_roles: HashMap<(String, String), Vec<String>>,
+    /// Per-attribute container-level role mixin recorded by a user `trait_mod`
+    /// that mutates `$attr.container.VAR does Role(arg)`: (class, attr) ->
+    /// (sigil, full mixin map). Unlike `class_attribute_does_roles` this carries
+    /// the composed role *state* (`__mutsu_attr__*` values), so a parameterized
+    /// role (`doc('barks')`) reaches the per-instance container. Applied at
+    /// construction: for `@`/`%` the value carries the mixin directly; for `$`
+    /// the value becomes a marked Scalar-container mixin whose `.VAR` is itself.
+    pub(crate) class_attribute_container_mixins:
+        HashMap<(String, String), AttrContainerMixin>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
     pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
 

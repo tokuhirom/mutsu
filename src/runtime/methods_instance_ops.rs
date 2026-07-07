@@ -396,18 +396,59 @@ impl Interpreter {
                         return Ok(Value::Package(crate::symbol::Symbol::intern(&owner)));
                     }
                     "container" => {
-                        // TODO: Return the actual container descriptor
-                        // For now, return a basic array/hash container or Nil
+                        // Return a container-descriptor proxy tagged with the
+                        // attribute's (owner, name, sigil). A user `trait_mod`
+                        // may write `$attr.container.VAR does Role(arg)`; the
+                        // proxy's `.VAR` returns itself and the intercepted
+                        // `does` records the composed role mixin onto the class
+                        // attribute so per-instance containers inherit it (see
+                        // `record_attr_container_mixin`). `.container.^name`
+                        // reports Any/Array/Hash by sigil to match Raku, but the
+                        // proxy is what carries the write-back coordinates.
                         let sigil = attributes
                             .as_map()
                             .get("sigil")
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "$".to_string());
-                        return match sigil.as_str() {
-                            "@" => Ok(Value::array(Vec::new())),
-                            "%" => Ok(Value::hash(std::collections::HashMap::new())),
-                            _ => Ok(Value::Nil),
+                        let owner = attributes
+                            .as_map()
+                            .get("__mutsu_attr_owner")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let attr_name = attributes
+                            .as_map()
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let mut meta = HashMap::new();
+                        meta.insert(
+                            "__mutsu_attr_container_proxy".to_string(),
+                            Value::truth(true),
+                        );
+                        meta.insert(
+                            "__mutsu_attr_container_owner".to_string(),
+                            Value::str(owner),
+                        );
+                        meta.insert(
+                            "__mutsu_attr_container_name".to_string(),
+                            Value::str(attr_name),
+                        );
+                        meta.insert(
+                            "__mutsu_attr_container_sigil".to_string(),
+                            Value::str(sigil.clone()),
+                        );
+                        let (proxy_class, inner) = match sigil.as_str() {
+                            "@" => ("Array", Value::array(Vec::new())),
+                            "%" => ("Hash", Value::hash(std::collections::HashMap::new())),
+                            _ => ("Scalar", Value::NIL),
                         };
+                        // Carry a real container so introspection methods other
+                        // than `.VAR`/`does` (`.shape`, `.of`, …) still resolve.
+                        meta.insert("__mutsu_attr_container_inner".to_string(), inner);
+                        return Ok(Value::make_instance(
+                            crate::symbol::Symbol::intern(proxy_class),
+                            meta,
+                        ));
                     }
                     _ => {}
                 }

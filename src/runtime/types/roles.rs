@@ -155,11 +155,63 @@ impl Interpreter {
         None
     }
 
+    /// Whether `value` is the container-descriptor proxy returned by
+    /// `Attribute.container` (tagged so a subsequent `does Role(arg)` records a
+    /// per-attribute container mixin instead of mixing into a throwaway value).
+    pub(crate) fn is_attr_container_proxy(value: &Value) -> bool {
+        matches!(
+            value.view(),
+            crate::value::ValueView::Instance { attributes, .. }
+                if attributes
+                    .as_map()
+                    .get("__mutsu_attr_container_proxy")
+                    .is_some_and(|v| v.truthy())
+        )
+    }
+
+    /// Read the `(owner, attr_name, sigil)` coordinates off a container proxy.
+    fn attr_container_proxy_coords(value: &Value) -> Option<(String, String, char)> {
+        let crate::value::ValueView::Instance { attributes, .. } = value.view() else {
+            return None;
+        };
+        let map = attributes.as_map();
+        if !map
+            .get("__mutsu_attr_container_proxy")
+            .is_some_and(|v| v.truthy())
+        {
+            return None;
+        }
+        let owner = map.get("__mutsu_attr_container_owner")?.to_string_value();
+        let name = map.get("__mutsu_attr_container_name")?.to_string_value();
+        let sigil = map
+            .get("__mutsu_attr_container_sigil")
+            .map(|v| v.to_string_value())
+            .and_then(|s| s.chars().next())
+            .unwrap_or('$');
+        Some((owner, name, sigil))
+    }
+
     pub(crate) fn eval_does_values(
         &mut self,
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // `$attr.container.VAR does Role(arg)` inside a user `trait_mod`: the
+        // left is the container proxy. Compose the role to capture its state,
+        // then record the mixin so `T.new`'s per-instance container inherits it.
+        if let Some((owner, name, sigil)) = Self::attr_container_proxy_coords(&left)
+            && let Some((role_name, args)) = self.extract_role_application(&right)
+        {
+            let composed = self.compose_role_on_value(left.clone(), &role_name, &args)?;
+            let composed = self.call_role_build_submethods(composed, &role_name)?;
+            if let crate::value::ValueView::Mixin(_, mixins) = composed.view() {
+                self.registry_mut().class_attribute_container_mixins.insert(
+                    (owner, name),
+                    (sigil, std::sync::Arc::new((**mixins).clone())),
+                );
+            }
+            return Ok(composed);
+        }
         if let Some((role_name, args)) = self.extract_role_application(&right) {
             let result = self.compose_role_on_value(left.clone(), &role_name, &args)?;
             // Call BUILD submethods from the composed role

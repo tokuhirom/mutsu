@@ -300,6 +300,48 @@ impl Interpreter {
             }
             attrs.insert(attr_name, Value::mixin(base, mixins));
         }
+        self.apply_attribute_container_mixins(class_key, attrs);
+    }
+
+    /// Apply container-level role mixins recorded by a user `trait_mod` that
+    /// wrote `$attr.container.VAR does Role(arg)` (see
+    /// `class_attribute_container_mixins`). For `@`/`%` attributes the value is
+    /// the container, so the mixin (carrying the composed role state) is applied
+    /// to it directly — `$o.a.role_method` then dispatches into the role. For a
+    /// `$` attribute Raku mixes into the *Scalar container*, not the value, so
+    /// the value becomes a marked Scalar-container mixin whose `.VAR` returns
+    /// itself (`$o.a.VAR.role_method`).
+    pub(crate) fn apply_attribute_container_mixins(
+        &mut self,
+        class_key: &str,
+        attrs: &mut HashMap<String, Value>,
+    ) {
+        // Hot-path guard: nearly all classes have no container mixins, so avoid
+        // the `class_mro` clone unless at least one attribute recorded one.
+        if self.registry().class_attribute_container_mixins.is_empty() {
+            return;
+        }
+        let mro = self.class_mro(class_key);
+        let container_mixins: Vec<(String, crate::runtime::registry::AttrContainerMixin)> = self
+            .registry()
+            .class_attribute_container_mixins
+            .iter()
+            .filter(|((c, _), _)| mro.contains(c))
+            .map(|((_, a), m)| (a.clone(), m.clone()))
+            .collect();
+        for (attr_name, (sigil, mixins)) in container_mixins {
+            let base = attrs.get(&attr_name).cloned().unwrap_or(Value::NIL);
+            let mut mixins = (*mixins).clone();
+            if sigil == '$' {
+                // Mark so `.VAR` on the accessor result returns the mixin itself,
+                // mimicking a Scalar container that does the role.
+                mixins.insert(
+                    "__mutsu_scalar_container_mixin".to_string(),
+                    Value::truth(true),
+                );
+            }
+            attrs.insert(attr_name, Value::mixin(base, mixins));
+        }
     }
 
     /// The `is Type` trait declared on an `@`/`%` attribute (`has @.a is Buf`),

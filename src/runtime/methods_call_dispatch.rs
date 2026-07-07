@@ -17,6 +17,22 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // An attribute-container proxy (returned by `$attr.container`) carries
+        // the (owner, name, sigil) coordinates so a subsequent `does Role(arg)`
+        // records the container mixin against the class attribute. `.VAR`/
+        // `.self`/`.item` return the proxy itself (so the tag survives to the
+        // `does`); every other method delegates to the real container the proxy
+        // wraps so introspection (`.shape`, `.of`, …) still resolves.
+        if Self::is_attr_container_proxy(&target) {
+            if args.is_empty() && matches!(method, "VAR" | "self" | "item") {
+                return Ok(target);
+            }
+            if let crate::value::ValueView::Instance { attributes, .. } = target.view()
+                && let Some(inner) = attributes.as_map().get("__mutsu_attr_container_inner")
+            {
+                return self.call_method_with_values(inner.clone(), method, args);
+            }
+        }
         // .emit on any value: push to the supply emit buffer if inside a
         // supply block, otherwise raise CX::Emit like the `emit` sub.
         if method == "emit"
