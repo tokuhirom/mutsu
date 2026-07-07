@@ -25,7 +25,7 @@ fn next_temp_name() -> String {
 /// - INIT/CHECK PhaserExpr (rvalue) inside closures are extracted to the
 ///   enclosing scope so they run once, not per-call.
 pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) {
-    reorder_recursive(stmts);
+    reorder_recursive(stmts, true);
 }
 
 /// EVAL-specific phaser reordering.  In addition to the standard
@@ -38,7 +38,7 @@ pub(crate) fn reorder_phasers(stmts: &mut Vec<Stmt>) {
 /// declared subs from a parent scope (the EVAL scope is already the
 /// outermost scope), so lifting BEGIN from them is safe.
 pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
-    reorder_recursive(stmts);
+    reorder_recursive(stmts, true);
     // Second pass: lift BEGIN from closure bodies to the top level.
     let mut extra_begin: Vec<Stmt> = Vec::new();
     for stmt in stmts.iter_mut() {
@@ -67,7 +67,7 @@ pub(crate) fn reorder_phasers_for_eval(stmts: &mut Vec<Stmt>) {
             stmts.insert(insert_pos + i, s);
         }
         // Re-run reorder to properly sort the newly inserted phasers
-        reorder_recursive(stmts);
+        reorder_recursive(stmts, true);
     }
 }
 
@@ -98,7 +98,7 @@ fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
     }
 }
 
-fn reorder_recursive(stmts: &mut Vec<Stmt>) {
+fn reorder_recursive(stmts: &mut Vec<Stmt>, is_top: bool) {
     // Flatten SyntheticBlocks so VarDecls get hoisted properly.
     flatten_synthetic_blocks(stmts);
 
@@ -114,7 +114,7 @@ fn reorder_recursive(stmts: &mut Vec<Stmt>) {
     );
 
     // Per-block reordering at this level.
-    reorder_at_level(stmts, lifted_begin, lifted_check, lifted_init);
+    reorder_at_level(stmts, lifted_begin, lifted_check, lifted_init, is_top);
 
     // Recurse into child statements.
     for stmt in stmts.iter_mut() {
@@ -672,6 +672,7 @@ fn reorder_at_level(
     extra_begin: Vec<Stmt>,
     extra_check: Vec<Stmt>,
     extra_init: Vec<Stmt>,
+    is_top: bool,
 ) {
     let mut var_decls: Vec<Stmt> = Vec::new();
     let mut use_stmts: Vec<Stmt> = Vec::new();
@@ -680,7 +681,18 @@ fn reorder_at_level(
     let mut init: Vec<Vec<Stmt>> = Vec::new();
     let mut rest: Vec<Stmt> = Vec::new();
 
-    let has_phasers = stmts.iter().any(|s| {
+    // A statement-level BEGIN phaser in a *nested* block must also trigger
+    // reordering so the BEGIN is hoisted ahead of the block's plain code — its
+    // side effects have to be visible to reads that textually precede it (Raku
+    // runs BEGIN at compile time). Top-level BEGINs are handled separately by
+    // `run_toplevel_begin_phasers` before this pass, so a bare top-level BEGIN
+    // is deliberately left in place here (it either already ran at compile time
+    // or is non-hoistable and must run at its original source position).
+    //
+    // These are the phaser conditions that already triggered reordering before
+    // nested-BEGIN hoisting was added; when any hold, BEGINs keep their old
+    // behavior (all hoisted into the `begin` bucket, ahead of CHECK/INIT).
+    let has_other_phasers = stmts.iter().any(|s| {
         matches!(
             s,
             Stmt::Phaser {
@@ -693,11 +705,36 @@ fn reorder_at_level(
         || !extra_init.is_empty()
         || stmts.iter().any(stmt_has_phaser_expr);
 
-    if !has_phasers {
+    // A nested BEGIN is hoisted only to make its compile-time side effects
+    // visible to a *read that textually precedes it* — Raku runs BEGIN at
+    // compile time. It must NOT be hoisted above a declaration, assignment, or
+    // variable initializer it might depend on (those share the source/compile
+    // ordering, e.g. `class Foo; BEGIN {...Foo...}`, `has $.a; BEGIN
+    // {...set_build...}`, `my $x = 42; BEGIN {...}; constant c = $x`), and there
+    // is no point hoisting when every read already follows it (a read-after
+    // BEGIN works in place). `first_barrier_idx` is the first such non-hoistable
+    // statement; `first_read_idx` is the first read. A BEGIN hoists iff it sits
+    // after a read and before the first barrier. Top-level BEGINs are handled
+    // separately by `run_toplevel_begin_phasers` and left in place here. Other
+    // phasers (CHECK/INIT) are never barriers — BEGINs always run before them.
+    let first_barrier_idx = stmts
+        .iter()
+        .position(|s| !stmt_is_hoist_safe(s) && !matches!(s, Stmt::Phaser { .. }))
+        .unwrap_or(usize::MAX);
+    let first_read_idx = stmts.iter().position(is_read_stmt).unwrap_or(usize::MAX);
+    let nested_begin_hoistable = |idx: usize| first_read_idx < idx && idx < first_barrier_idx;
+    let has_nested_begin = !is_top
+        && !has_other_phasers
+        && stmts
+            .iter()
+            .enumerate()
+            .any(|(i, s)| is_begin_phaser(s) && nested_begin_hoistable(i));
+
+    if !has_other_phasers && !has_nested_begin {
         return;
     }
 
-    for stmt in stmts.drain(..) {
+    for (idx, stmt) in stmts.drain(..).enumerate() {
         if let Stmt::Phaser { kind, body } = &stmt {
             match kind {
                 PhaserKind::Begin => {
@@ -706,8 +743,16 @@ fn reorder_at_level(
                     // slot allocation for array/hash container assignments.
                     // They are placed in a separate bucket so they run before
                     // CHECK blocks (BEGIN runs first in forward order, then
-                    // CHECK runs in reverse order).
-                    begin.push(stmt);
+                    // CHECK runs in reverse order). With CHECK/INIT present (or
+                    // at top level) all BEGINs hoist as before; a bare-BEGIN
+                    // nested block only hoists a BEGIN that sits after a read and
+                    // before the first barrier, leaving the rest in place.
+                    let hoist = is_top || has_other_phasers || nested_begin_hoistable(idx);
+                    if hoist {
+                        begin.push(stmt);
+                    } else {
+                        rest.push(stmt);
+                    }
                     continue;
                 }
                 PhaserKind::Check => {
@@ -801,6 +846,64 @@ fn reorder_at_level(
     stmts.extend(rest);
 }
 
+/// True if `stmt` is a statement-level `BEGIN` phaser.
+fn is_begin_phaser(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Phaser {
+            kind: PhaserKind::Begin,
+            ..
+        }
+    )
+}
+
+/// True if `stmt` is a "read": a statement that observes program state and
+/// would miss a later BEGIN's compile-time side effects if the BEGIN ran after
+/// it. Used to decide whether hoisting a nested BEGIN above it is worthwhile.
+fn is_read_stmt(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => true,
+        Stmt::Call { .. } => true,
+        Stmt::Expr(e) => !matches!(e, Expr::AssignExpr { .. }),
+        _ => false,
+    }
+}
+
+/// True if a nested `BEGIN` phaser may be hoisted above `stmt`. Only pure reads
+/// and bare (uninitialized) declarations qualify: a BEGIN runs at compile time
+/// and its effects should be visible to such reads that textually precede it.
+/// Anything that declares a compile-time entity (`class`/`sub`/`has`/...),
+/// assigns, or initializes a variable is a *barrier* — those are part of the
+/// same source/compile-time ordering the BEGIN must not jump over.
+fn stmt_is_hoist_safe(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => true,
+        // A bare routine call (including test-function listops like `is`/`ok`)
+        // is a runtime read the BEGIN may run before.
+        Stmt::Call { .. } => true,
+        Stmt::SetLine(_) => true,
+        Stmt::Use { .. } => true,
+        // A bare declaration (no initializer) creates a container but performs
+        // no runtime work, so a BEGIN may safely run before it.
+        Stmt::VarDecl { expr, .. } => is_empty_vardecl_init(expr),
+        // A plain expression statement is a read unless it is an assignment.
+        Stmt::Expr(e) => !matches!(e, Expr::AssignExpr { .. }),
+        _ => false,
+    }
+}
+
+/// True if a `VarDecl` initializer is the synthesized empty/absent default
+/// (`my $x;` / `my @a;` / `my %h;`), i.e. the declaration has no real init.
+fn is_empty_vardecl_init(expr: &Expr) -> bool {
+    use crate::value::ValueView;
+    match expr {
+        Expr::Literal(v) if v.is_nil() => true,
+        Expr::Literal(v) => matches!(v.view(), ValueView::Array(items, _) if items.is_empty()),
+        Expr::Hash(items) => items.is_empty(),
+        _ => false,
+    }
+}
+
 /// True if a statement declares a variable, either directly (`VarDecl`) or
 /// nested inside a `SyntheticBlock` (as produced by `will <phaser>` traits).
 fn stmt_declares_var(stmt: &Stmt) -> bool {
@@ -838,10 +941,10 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
         | Stmt::RoleDecl { body, .. }
         | Stmt::Subtest { body, .. }
         | Stmt::Package { body, .. } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::Phaser { body, .. } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::If {
             cond,
@@ -850,27 +953,27 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
             ..
         } => {
             recurse_into_expr(cond);
-            reorder_recursive(then_branch);
-            reorder_recursive(else_branch);
+            reorder_recursive(then_branch, false);
+            reorder_recursive(else_branch, false);
         }
         Stmt::While { cond, body, .. } | Stmt::When { cond, body } => {
             recurse_into_expr(cond);
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::For { iterable, body, .. } => {
             recurse_into_expr(iterable);
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::Given { topic, body } => {
             recurse_into_expr(topic);
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::Whenever { supply, body, .. } => {
             recurse_into_expr(supply);
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::Expr(e) | Stmt::Return(e) | Stmt::Die(e) | Stmt::Fail(e) | Stmt::Take(e, _) => {
             recurse_into_expr(e);
@@ -881,7 +984,7 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
         Stmt::SubDecl { body, .. }
         | Stmt::MethodDecl { body, .. }
         | Stmt::ProtoDecl { body, .. } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Stmt::Label { stmt: inner, .. } => {
             recurse_into_stmt(inner);
@@ -897,15 +1000,15 @@ fn recurse_into_expr(expr: &mut Expr) {
         | Expr::AnonSubParams { body: stmts, .. }
         | Expr::Gather(stmts)
         | Expr::DoBlock { body: stmts, .. } => {
-            reorder_recursive(stmts);
+            reorder_recursive(stmts, false);
         }
         Expr::Lambda { body, .. } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         Expr::Try { body, catch } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
             if let Some(c) = catch {
-                reorder_recursive(c);
+                reorder_recursive(c, false);
             }
         }
         Expr::Binary { left, right, .. }
@@ -938,7 +1041,7 @@ fn recurse_into_expr(expr: &mut Expr) {
             recurse_into_expr(else_expr);
         }
         Expr::PhaserExpr { body, .. } => {
-            reorder_recursive(body);
+            reorder_recursive(body, false);
         }
         _ => {}
     }

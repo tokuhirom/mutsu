@@ -132,33 +132,21 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 
 ### 3.1 残っている対象
 
-- `S02-names-vars/variables-and-packages.t`（32/39、7 失敗: test 29-34, 39）
-  — 残り 7 失敗が独立した深い lexical/scoping/BEGIN 問題。2026-07-02 に各グループを root-cause 精査した結果:
-  - **test 29-31（BEGIN block init）**: `{ baz(); ...; my $a; BEGIN { $a = 3 }; sub baz { $a++ } }` が
-    3,4,5 でなく **0,1,2**。`BEGIN { $a = 3 }` が compile-time に走らないため `$a` が 3 に初期化されない。
-    → BEGIN compile-time execution（declaration model 再設計・medium-large）。
-  - **test 32-34（escaped `our sub`）**: `{ my $a = 3; our sub grtz { $a++ } }; &OUR::grtz()` が
-    3,4,5 でなく **0,1** / **0,0,1**。★**block 内で呼べば 3,4 で正しい**が、block 退出後は 0。
-    根因＝`escaped_our_lexical_cells["a"]` が **0-seed** の cell を保持（0→1 と increment するので cell 自体は
-    persist されている）。`my $a=3` を実行する code frame の `needs_cell_escaping_our_sub` に "a" が入って
-    おらず（nested block/closure の **code レベルで cell 分類が別 frame に落ちている**＝`nceos` vs `nceos_free` の
-    own/free 判定、opcode.rs:2129-2147）、assignment 時 boxing の persist branch（vm_var_assign_set_local.rs:54）
-    が発火しない。hoisted RegisterSub が `my $a=3` 前に空 cell を persist し、in-place persist が cell(3) で
-    上書きできていない。★assignment 時に persist を足す fix（試行済）は branch 非発火で**無効**＝
-    `collect_escaping_our_lexical_names`（accessors_state.rs:137・`_free` を読まない）と box_decl 両方の
-    code-level 分類を直す必要。
-  - ~~**test 37-38（X::Redeclaration::Outer）**~~ — **DONE（post-parse scope walker）**。
-    `sub s($i is copy){ for ...{ @a.push($i); my $i=1 } }` が silent だった。新設
-    `src/parser/outer_redecl.rs` が「あるスコープで outer binding を **参照した後に** 同名を
-    `my`/`state` 再宣言する」場合に compile-time `X::Redeclaration::Outer` を投げる（同一スコープ
-    での参照→再宣言のときのみ発火。redecl-before-use・deeper-nested-ref・sibling-block は非発火）。
-    回帰テスト＝`t/outer-redeclaration.t`。
-  - **test 39（`$OUTER::_`）**: `for "a" { $t = sub { $OUTER::_ } }; $t()` が 'a' でなく **Nil**。
-    **2 バグ**: ①`$OUTER::x` は `GetOuterVar`→`get_outer_var`（vm_var_get_ops.rs:357）が closure の captured
-    env でなく `outer_scope_locals`（lexical block nesting 用）を見るため closure 呼び出し時に空→Nil
-    （skip-own-scope セマンティクスも要）②`for "a" { sub {$_} }` 自体が topic `$_` を capture できず `(Any)`。
-  - ★全て load-bearing な closure-capture / declaration-model に触る高リスク変更。盲目的な部分 fix は避け、
-    1 グループずつ専用セッションで攻めること。最も infra が揃うのは 32-34（`escaped_our_lexical_cells` 機構）。
+- ~~`S02-names-vars/variables-and-packages.t`~~ — **DONE・whitelist 済み（2026-07-07）**。
+  最後まで残っていた nested-block BEGIN（test 29-31: `{ is baz(),3; ...; my $a; BEGIN { $a = 3 }; sub baz { $a++ } }`
+  が 3,4,5 でなく 0,1,2）を解消。root-cause＝ネストした bare block 内の `BEGIN` が compile-time に走らず
+  source 順（reads の後）で実行されるため、BEGIN より前に textual に出る read（forward-declared sub 経由）が
+  初期化を観測できない。修正（`src/runtime/phasers.rs::reorder_at_level`）は AST 再配置で BEGIN をブロック内の
+  reads より前へ hoist するが、宣言/代入/初期化を跨がないよう厳しく gate する:
+  - `reorder_recursive`/`reorder_at_level` に `is_top` を追加。top-level は従来どおり
+    `run_toplevel_begin_phasers` に任せ、この pass では hoist しない。
+  - ネスト BEGIN は「その BEGIN より前に read（Say/Call/…）があり、かつ barrier（宣言・代入・初期化子）が
+    無い」場合のみ hoist（`first_read_idx < idx < first_barrier_idx`）。これで `class C; BEGIN {…C…}`
+    （begin.t 7）・`has $.a; BEGIN {…set_build…}`（S12 defaults）・`my $x=42; BEGIN {…}; constant c=$x`
+    （constant.t 27）の in-source 順序を壊さず、read-after BEGIN（begin-compile-time.t 11）も従来どおり
+    in-place で動く。CHECK/INIT を持つブロックは従来挙動（全 BEGIN を先頭 bucket へ）を維持。
+  回帰テスト＝`t/begin-nested-block.t`（`t/begin-compile-time.t` も回帰なし）。test 32-34（escaped `our sub`）・
+  37-38（X::Redeclaration::Outer）・39（`$OUTER::_`）は #4235/#4305 等で既に解消済みだった。
 - `S14-traits/attributes.t`（4/8、bad plan：8 planned に対し 4 で中断）
   — `Attribute.container.VAR does Role` に必要な「scalar 属性が Scalar コンテナを VAR として
   持ち、合成時に role を mixin し、それがインスタンスの per-attribute コンテナに伝播する」
@@ -212,9 +200,9 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
      意味論が乖離するため、シンボル解決や例外を起こしうる BEGIN（class 参照 / forward sub 呼び / `1/0.Int`）は
      hoist せず in-place 経路（`X::Comp::BeginTime` ラップ込み）に任せる。純粋な値代入 BEGIN のみ hoist。
   回帰テスト＝`t/begin-compile-time.t`（`t/begin-phaser-begintime.t` も回帰なし）。
-  **残る別スライス（nested-block BEGIN）**: `variables-and-packages.t` test 29-31（下記）は
-  bare block **内**の BEGIN で、この top-level 専用機構では拾えない。`[[project_begin_compile_time_timing]]`
-  の深い declaration-model 層が別途必要。
+  **nested-block BEGIN（`variables-and-packages.t` test 29-31）も DONE・whitelist 済み（2026-07-07）**：
+  bare block **内**の BEGIN を、read の後・barrier（宣言/代入/初期化）の前という条件でのみ hoist する
+  AST 再配置で解消（`reorder_at_level`、§3.1 参照）。
 
 ### 3.2 サブキャンペーンと choke point
 
@@ -226,11 +214,10 @@ element/attribute slot の書き戻しが未整備な項目が集まっている
 2. **属性 accessor を value copy ではなく slot 経由にする**
    - 変更レイヤ: attribute read/write path、instance attr storage
    - 対象: `S14-traits/attributes.t` の残り（`Attribute.container.VAR does Role`）
-3. **BEGIN/EVAL/lexical 配列変更の永続化**
-   - 変更レイヤ: env/local coherence、block escape、BEGIN 実行時 lexical carrier
-   - 対象: `S02-names-vars/variables-and-packages.t`（nested-block BEGIN, test 29-31）。
-     top-level BEGIN 版（`S26-documentation/12-non-breaking-space.t`）は DONE・whitelist 済み
-     （§3.1 参照、`run_toplevel_begin_phasers`）。残るは bare block **内**の BEGIN。
+3. **BEGIN/EVAL/lexical 配列変更の永続化** — **DONE**。
+   - top-level BEGIN 版（`S26-documentation/12-non-breaking-space.t`、`run_toplevel_begin_phasers`）・
+     nested-block BEGIN 版（`S02-names-vars/variables-and-packages.t`、`reorder_at_level`）とも
+     whitelist 済み（§3.1 参照）。
 
 コード choke point:
 

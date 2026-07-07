@@ -102,6 +102,7 @@ roast/S02-names-vars/fmt.t
 roast/S02-names-vars/list_array_perl.t
 roast/S02-names-vars/perl.t
 roast/S02-names-vars/signature.t
+roast/S02-names-vars/variables-and-packages.t
 roast/S02-names-vars/varnames.t
 roast/S02-names/SETTING-6e.t
 roast/S02-names/bare-sigil.t
