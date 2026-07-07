@@ -210,10 +210,17 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 残るのは multi-dispatch の fallback 除去のみ:
 
 - [ ] default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクがあるため意図的に除外を維持中）。
-- [ ] モジュール sub OTF に残る interpreter 結合構文: `state` / `EVAL` / `EVALFILE` / `start` /
+- [ ] モジュール sub OTF に残る interpreter 結合構文: `EVAL` / `EVALFILE` / `start` /
       `CATCH` / `CONTROL` / phaser / ネスト宣言 / subtest / sigilless scalar（`\x`）/ 戻り型 coercion /
       `is encoded(...)`（NativeCall marshalling）
       （ゲート実体 = `def_is_otf_compilable_module_single`、`vm/vm_call_func_ops.rs`）。
+      **★compiled_fns 拡充 slice 1（#4312）で `state` は解決**: `use`d モジュールの compiled sub body を
+      fingerprint キーで `imported_compiled_fns` に捕捉→スレッドクローンへ Arc 共有→`state` 持ちモジュール
+      sub を共有ボディ経由で dispatch（`state_scope_id` を None リセット）。`await (^N).map:{start f()}` の
+      並行 state が 0→N に修正（担保 = `t/module-state-sub-shared-cell.t`）。**★拡充の限界**: 残除外の
+      EVAL(CALLER context)/戻り型 coercion は「共有問題」でなく「compiled 経路の再現問題」なので捕捉共有
+      ボディでも直らない（捕捉も `compile_block_raw` = OTF 相当）。ゲート完全退役には EVAL/coercion の
+      compiled 経路 correctness という別軸作業が必要。詳細 = memory `project-compiled-fns-expansion`。
       標準 param trait（`is copy`/`is rw`/`is raw`/`is readonly`/`is required`）はゲートから外れた
       （旧 `pd.traits.is_empty()` の一律除外を解除。compiled binding は元々これらを処理していた＝
       builtin-shadow ゲート `def_is_otf_compilable` は trait 未チェック。加えて tree-walk fallback が
