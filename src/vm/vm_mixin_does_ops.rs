@@ -238,6 +238,43 @@ impl Interpreter {
 
     /// Interpreter-native `does` check. Inlines the pure `does_check` path and
     /// only falls back to the interpreter for actual role composition.
+    /// If `value` is a per-attribute container descriptor produced by
+    /// `Attribute.container` (tagged with `__mutsu_attr_container_owner`), return
+    /// its `(owner, attr_name)` so a `does` applied to it can be recorded.
+    fn attr_container_target(value: &Value) -> Option<(String, String)> {
+        let ValueView::Instance { attributes, .. } = value.view() else {
+            return None;
+        };
+        let map = attributes.as_map();
+        let owner = map.get("__mutsu_attr_container_owner")?.to_string_value();
+        let attr = map.get("__mutsu_attr_container_name")?.to_string_value();
+        if owner.is_empty() || attr.is_empty() {
+            return None;
+        }
+        Some((owner, attr))
+    }
+
+    /// Record the role-mixin overrides produced by `$attr.container.VAR does
+    /// Role(...)` so instance construction mixes the role into the attribute's
+    /// value (see `apply_attribute_does_role_mixins`).
+    fn record_attr_container_mixin(&mut self, owner: &str, attr: &str, result: &Value) {
+        let ValueView::Mixin(_, overrides) = result.view() else {
+            return;
+        };
+        // Drop the sentinel descriptor's own tag keys; keep only the role/
+        // attribute mixin keys that apply to a real attribute value.
+        let clean: std::collections::HashMap<String, Value> = overrides
+            .iter()
+            .filter(|(k, _)| !k.starts_with("__mutsu_attr_container_"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        self.registry_mut()
+            .class_attribute_container_mixins
+            .entry((owner.to_string(), attr.to_string()))
+            .or_default()
+            .push(clean);
+    }
+
     fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
         // `does`/`but` on a type-object invocant (undefined scalars are stored
         // as Nil and act as the `Any` type object) is illegal *when composing a
@@ -309,7 +346,14 @@ impl Interpreter {
         // Snapshot for the precise BUILD/TWEAK captured-outer writeback (see
         // exec_does_var_op).
         let pre_env = self.snapshot_carrier_overwritable_env(code);
+        // `$a.container.VAR does Role(...)` inside a custom `trait_mod:<is>`:
+        // record the role mixin against the owning attribute so construction
+        // applies it to each instance's attribute value.
+        let attr_container = Self::attr_container_target(&left);
         let result = self.vm_does_values(left, right)?;
+        if let Some((owner, attr_name)) = attr_container {
+            self.record_attr_container_mixin(&owner, &attr_name, &result);
+        }
         // Sync back: BUILD submethods may have modified closure variables, so the
         // captured-outer writes reach the caller's slots.
         self.carrier_writeback_changed_aggregates(code, &pre_env);

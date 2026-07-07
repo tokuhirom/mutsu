@@ -300,6 +300,35 @@ impl Interpreter {
             }
             attrs.insert(attr_name, Value::mixin(base, mixins));
         }
+        // Container role mixins recorded by a custom `trait_mod:<is>` that did
+        // `$attr.container.VAR does Role(...)`. Each recorded override map already
+        // carries `__mutsu_role__X` / `__mutsu_attr__X` keys; overlay them onto
+        // the attribute value so `$o.attr.VAR does Role` (and the role's
+        // accessors) resolve on the instance.
+        let container_mixins: Vec<(String, Vec<HashMap<String, Value>>)> = self
+            .registry()
+            .class_attribute_container_mixins
+            .iter()
+            .filter(|((c, _), _)| mro.contains(c))
+            .map(|((_, a), maps)| (a.clone(), maps.clone()))
+            .collect();
+        for (attr_name, override_maps) in container_mixins {
+            let Some(base) = attrs.get(&attr_name).cloned() else {
+                continue;
+            };
+            let (inner, mut mixins) = match base.view() {
+                crate::value::ValueView::Mixin(inner, existing) => {
+                    (inner.as_ref().clone(), (**existing).clone())
+                }
+                _ => (base.clone(), HashMap::new()),
+            };
+            for map in &override_maps {
+                for (k, v) in map {
+                    mixins.insert(k.clone(), v.clone());
+                }
+            }
+            attrs.insert(attr_name, Value::mixin(inner, mixins));
+        }
     }
 
     /// The `is Type` trait declared on an `@`/`%` attribute (`has @.a is Buf`),

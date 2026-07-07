@@ -108,6 +108,13 @@ pub(crate) struct Registry {
     /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
     /// value at construction so `$o.x` does the role.
     pub(crate) class_attribute_does_roles: HashMap<(String, String), Vec<String>>,
+    /// Per-attribute container role mixins recorded by a custom `trait_mod:<is>`
+    /// that mixes a role into `$attr.container.VAR` (e.g.
+    /// `$a.container.VAR does doc($arg)`): (class, attr) -> list of mixin-override
+    /// maps (each holding `__mutsu_role__X` / `__mutsu_attr__X` keys). Applied to
+    /// the attribute's value at construction so `$o.attr.VAR` does the role.
+    pub(crate) class_attribute_container_mixins:
+        HashMap<(String, String), Vec<HashMap<String, Value>>>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
     pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
 

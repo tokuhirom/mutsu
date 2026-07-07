@@ -22,6 +22,31 @@ impl Interpreter {
             id: target_id,
         } = &target
         {
+            // A per-attribute container descriptor produced by `Attribute.container`
+            // (tagged with `__mutsu_attr_container_owner`). `.VAR` returns the
+            // descriptor itself so a subsequent `does Role(...)` can be recorded
+            // against the owning attribute (see `exec_does_op`); every other method
+            // delegates to a plain empty container of the attribute's sigil so
+            // introspection (`.container.shape`, ...) keeps working.
+            if attributes
+                .as_map()
+                .contains_key("__mutsu_attr_container_owner")
+            {
+                if method == "VAR" {
+                    return Ok(target.clone());
+                }
+                let sigil = attributes
+                    .as_map()
+                    .get("__mutsu_attr_container_sigil")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "$".to_string());
+                let base = match sigil.as_str() {
+                    "@" => Value::array(Vec::new()),
+                    "%" => Value::hash(std::collections::HashMap::new()),
+                    _ => Value::Nil,
+                };
+                return self.call_method_with_values(base, method, args);
+            }
             // `Duration` does `Real`: delegate numeric methods (e.g.
             // `(now - now).abs`) to its underlying numeric value. `.Str` / `.gist`
             // / `.raku` and other identity methods keep Duration's own behaviour.
@@ -396,18 +421,40 @@ impl Interpreter {
                         return Ok(Value::Package(crate::symbol::Symbol::intern(&owner)));
                     }
                     "container" => {
-                        // TODO: Return the actual container descriptor
-                        // For now, return a basic array/hash container or Nil
-                        let sigil = attributes
-                            .as_map()
+                        // Return a per-attribute container descriptor tagged with
+                        // the owning class + attribute name so that a custom
+                        // `trait_mod:<is>` can mix a role into it via
+                        // `$a.container.VAR does Role(...)`. The recorded mixin is
+                        // applied to each instance's attribute value at
+                        // construction (see `apply_attribute_does_role_mixins`).
+                        let map = attributes.as_map();
+                        let sigil = map
                             .get("sigil")
                             .map(|v| v.to_string_value())
                             .unwrap_or_else(|| "$".to_string());
-                        return match sigil.as_str() {
-                            "@" => Ok(Value::array(Vec::new())),
-                            "%" => Ok(Value::hash(std::collections::HashMap::new())),
-                            _ => Ok(Value::Nil),
-                        };
+                        let owner = map
+                            .get("__mutsu_attr_owner")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let attr_name = map
+                            .get("__mutsu_attr_name")
+                            .or_else(|| map.get("name"))
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        let mut cmeta = HashMap::new();
+                        cmeta.insert(
+                            "__mutsu_attr_container_owner".to_string(),
+                            Value::str(owner),
+                        );
+                        cmeta.insert(
+                            "__mutsu_attr_container_name".to_string(),
+                            Value::str(attr_name),
+                        );
+                        cmeta.insert(
+                            "__mutsu_attr_container_sigil".to_string(),
+                            Value::str(sigil),
+                        );
+                        return Ok(Value::make_instance(Symbol::intern("Scalar"), cmeta));
                     }
                     _ => {}
                 }
