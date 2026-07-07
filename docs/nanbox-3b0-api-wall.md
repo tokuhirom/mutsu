@@ -1,6 +1,10 @@
 # 3b-0: the `Value` API wall (NaN-boxing enabler)
 
-Status: In progress (slice a landed)
+Status: **COMPLETE (2026-07-07).** Direct `Value::<Variant>` uses outside
+`src/value/` = **0** (ratchet baseline 0, enforced by `make test`). Landed as
+slices a–e: a (#4287 exemplars) · b (#4301 `src/vm/`) · c (#4308 `src/builtins/`)
+· d (#4315 `src/runtime/`) · e (#4316 `src/compiler/` + `src/parser/` +
+stragglers). Next: **variant-privacy seal → 3b-1** (see §7).
 Related: [ADR-0001](adr/0001-gc-strategy-and-phasing.md) §3-6,
 [gc-post-3a-roadmap.md](gc-post-3a-roadmap.md) §3.3, [PLAN.md](../PLAN.md) §5 Lever 2
 
@@ -116,7 +120,7 @@ any regression shows up in `benchmarks/` (fib / int-arith) immediately.
   each updates the ratchet baseline downward.
 - **final**: baseline hits 0 outside `src/value/`; add the variant-privacy
   seal (rename variants or make the enum private) so no new direct use can
-  land; then 3b-1 can start.
+  land; then 3b-1 can start. **All slices a–e landed 2026-07-07 — baseline is 0.**
 
 **Ratchet**: `scripts/check-value-wall.sh` counts direct variant mentions
 outside `src/value/` and fails if the count *rises* above
@@ -132,3 +136,46 @@ new number; `scripts/check-value-wall.sh --update` rewrites it).
   by int-arith bench at flip time (roadmap §3.2).
 - Whether `ArrayKind` / the Set/Bag/Mix mutability bool live in spare tag
   bits or inside the pointee.
+
+## 7. Next-session kickoff: variant-privacy seal → 3b-1
+
+The wall is at 0 but not yet *sealed* — nothing stops a future PR from writing
+`Value::Int(3)` again (the ratchet would catch it in `make test`, but only
+after the fact). The next unit of work, in order:
+
+### 7.1 Variant-privacy seal (small, mechanical, do first)
+Goal: make direct external variant construction/matching a **compile error**, so
+the ratchet becomes belt-and-suspenders instead of the only guard.
+Two viable mechanisms (pick one, ideally in a Proposed ADR or a short PR
+description):
+- **Make the enum private**: rename `pub enum Value` → keep `Value` public but
+  move the variant list behind a private inner type, or mark the variants
+  `pub(crate)` won't help (same crate). The real lever is a **module boundary**:
+  move the enum into a private submodule of `src/value/` and only re-export the
+  constructors/`view()`/`ValueView`. Callers in other crates-modules already use
+  only those, so this should compile with ~zero churn (that's what slices a–e
+  bought). Verify by building after the visibility change.
+- **Rename variants** (e.g. `Value::Int` → `Value::__Int`) so any stray direct
+  use fails to resolve. Uglier; prefer the module-boundary approach.
+Either way: keep `scripts/check-value-wall.sh` in `make test` as a cheap
+regression net even after the seal.
+
+### 7.2 3b-1 representation switch (the big one — write a Proposed ADR first)
+`Value` 48 → 8 bytes (NaN-boxed). The one blocking design decision is the
+**encoding** (§6, roadmap §3.2), because it changes the `ValueView` field types:
+- **pointer-favored** (pointers stored as raw low-48-bit, doubles offset-encoded):
+  `&self.0` transmutes to `&Arc<T>`/`&Gc<T>`, so view keeps `&'a Arc<T>` /
+  `&'a Gc<T>` fields **unchanged** — cheapest migration.
+- **NaN-favored** (tag bits inside the u64): view fields for pointer variants
+  become by-value guard types `ArcRef<'a,T>`/`GcRef<'a,T>` (a `ManuallyDrop`
+  reconstruction that `Deref`s without touching the refcount). The wall already
+  chose payload reference kinds so BOTH exits stay open (§2), but the call sites
+  must be deref-compatible (they are, per the migration rule).
+Deliverable to start the next session: **a Proposed ADR** (`docs/adr/000N-...`)
+choosing the encoding, with an int-arith/fib micro-bench plan to settle
+small-int width (48/32-bit inline vs `Gc<i64>`) and the `ArrayKind`/mutability
+bool placement. Only after the ADR is Accepted does the representation edit
+(rewriting `src/value/` internals + `view()`/constructors) begin — call sites
+outside `src/value/` should not need to change at all if the wall held.
+
+GC/JIT sequencing unchanged: 3b-1 → 3b-2 (traffic pruning) → JIT J1 (ADR-0004).

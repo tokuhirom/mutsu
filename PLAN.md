@@ -283,10 +283,17 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。スライス計画
       （3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）とゲートは
       [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3。
-      **3b-0 着手済み**: 壁 API（`ValueView`/`view()`/accessor/constructor、
-      [docs/nanbox-3b0-api-wall.md](docs/nanbox-3b0-api-wall.md)）と ratchet
-      （`scripts/check-value-wall.sh`・`make test` 組込・baseline 17757）が landed。
-      残り = 直接 variant 参照の機械的移行（ディレクトリ単位スライス・並列可）→ 0 で封印 → 3b-1。
+      **★3b-0 完了（2026-07-07・#4315 slice d + #4316 slice e）**: `src/value/` 外の直接
+      `Value::<Variant>` 参照が **0**（ratchet baseline 0・`make test` 組込）。全構築/マッチが
+      `ValueView`/`view()`/accessor/constructor 経由に統一
+      （[docs/nanbox-3b0-api-wall.md](docs/nanbox-3b0-api-wall.md)）。
+      **次の着手単位 = variant-privacy seal → 3b-1**:
+      (1) **seal**: `Value` enum の variant を src/value/ private 化（or リネーム）し、
+          外部からの直接構築を型で不可能にする（wall constructor 強制）。ratchet は seal 後も残置。
+      (2) **3b-1 表現スイッチ**: `Value` 48→8 bytes。未決の設計判断＝**エンコーディング選択**
+          （pointer-favored か NaN-favored か。view の `&Arc<T>`/`&Gc<T>` フィールドが参照のままか
+          `ArcRef`/`GcRef` guard type になるかを決める。roadmap §3.2 / wall doc §6）→ **Proposed ADR** を先に書く。
+          小整数幅（48/32-bit inline vs `Gc<i64>`）は int-arith bench で flip 時に決定。
 - **Lever 3: threaded dispatch — 凍結**（2026-07-06 ユーザー承認・[ADR-0004](docs/adr/0004-jit-strategy.md) §2.5 J0）:
       JIT Tier A が dispatch ループ除去で同じ利得をより大きく取るため二重投資を避ける。
       JIT が頓挫した場合のみ復活。
