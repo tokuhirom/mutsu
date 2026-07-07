@@ -25,13 +25,27 @@ impl Interpreter {
             // A per-attribute container descriptor produced by `Attribute.container`
             // (tagged with `__mutsu_attr_container_owner`). `.VAR` returns the
             // descriptor itself so a subsequent `does Role(...)` can be recorded
-            // against the owning attribute (see `exec_does_op`).
+            // against the owning attribute (see `exec_does_op`); every other method
+            // delegates to a plain empty container of the attribute's sigil so
+            // introspection (`.container.shape`, ...) keeps working.
             if attributes
                 .as_map()
                 .contains_key("__mutsu_attr_container_owner")
-                && method == "VAR"
             {
-                return Ok(target.clone());
+                if method == "VAR" {
+                    return Ok(target.clone());
+                }
+                let sigil = attributes
+                    .as_map()
+                    .get("__mutsu_attr_container_sigil")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_else(|| "$".to_string());
+                let base = match sigil.as_str() {
+                    "@" => Value::array(Vec::new()),
+                    "%" => Value::hash(std::collections::HashMap::new()),
+                    _ => Value::Nil,
+                };
+                return self.call_method_with_values(base, method, args);
             }
             // `Duration` does `Real`: delegate numeric methods (e.g.
             // `(now - now).abs`) to its underlying numeric value. `.Str` / `.gist`
