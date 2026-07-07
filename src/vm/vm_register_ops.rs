@@ -358,6 +358,15 @@ impl Interpreter {
                     flat.remove_sym(Symbol::intern(name));
                 }
             }
+            // `__mutsu_callable_type` is closure-IDENTITY metadata (e.g. the
+            // WhateverCode marker), set on the genuine closure's own env AFTER
+            // capture (see the `is_whatever_code` insert in the caller). It must
+            // never be inherited: an ordinary inner block created inside a
+            // WhateverCode body would otherwise capture the marker and be
+            // mis-treated as a WhateverCode itself — e.g. the `.map` loop would
+            // then hold `$_` at the outer topic instead of binding it to the
+            // element (`*.map({ $_ })` saw the whole list, not each item).
+            flat.remove_sym(Symbol::intern("__mutsu_callable_type"));
             return flat;
         }
         let free: std::collections::HashSet<Symbol> = cc.free_var_syms.iter().copied().collect();
@@ -374,6 +383,13 @@ impl Interpreter {
         let flat = self.clone_env();
         let mut map: std::collections::HashMap<Symbol, Value> = std::collections::HashMap::new();
         for (k, v) in flat.iter() {
+            // `__mutsu_callable_type` is closure-identity metadata (the
+            // WhateverCode marker), (re)installed on the genuine closure's own env
+            // after capture. Never inherit it, or an ordinary inner block would be
+            // mis-detected as a WhateverCode (see the by-name path above).
+            if k.with_str(|s| s == "__mutsu_callable_type") {
+                continue;
+            }
             let keep = free.contains(k)
                 || k.with_str(|s| !crate::env::is_plain_user_lexical(s) && !own_locals.contains(s));
             if keep {
