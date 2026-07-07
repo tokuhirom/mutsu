@@ -4,7 +4,9 @@ Status: **COMPLETE (2026-07-07).** Direct `Value::<Variant>` uses outside
 `src/value/` = **0** (ratchet baseline 0, enforced by `make test`). Landed as
 slices a–e: a (#4287 exemplars) · b (#4301 `src/vm/`) · c (#4308 `src/builtins/`)
 · d (#4315 `src/runtime/`) · e (#4316 `src/compiler/` + `src/parser/` +
-stragglers). Next: **variant-privacy seal → 3b-1** (see §7).
+stragglers). Next: **3b-1 (encoding decided by [ADR-0005](adr/0005-nanbox-representation-encoding.md),
+Proposed)** — the variant-privacy seal is folded into it, not a standalone step
+(the §7.1 "module-boundary seal" turned out infeasible; see §7).
 Related: [ADR-0001](adr/0001-gc-strategy-and-phasing.md) §3-6,
 [gc-post-3a-roadmap.md](gc-post-3a-roadmap.md) §3.3, [PLAN.md](../PLAN.md) §5 Lever 2
 
@@ -137,30 +139,35 @@ new number; `scripts/check-value-wall.sh --update` rewrites it).
 - Whether `ArrayKind` / the Set/Bag/Mix mutability bool live in spare tag
   bits or inside the pointee.
 
-## 7. Next-session kickoff: variant-privacy seal → 3b-1
+## 7. Next-session kickoff: 3b-1 (seal folded in)
 
 The wall is at 0 but not yet *sealed* — nothing stops a future PR from writing
-`Value::Int(3)` again (the ratchet would catch it in `make test`, but only
-after the fact). The next unit of work, in order:
+`Value::Int(3)` again (the ratchet catches it in `make test`, but only after the
+fact). **Decision (2026-07-07, [ADR-0005](adr/0005-nanbox-representation-encoding.md)
+Proposed): the seal is NOT a standalone step — it is folded into 3b-1 step A.**
 
-### 7.1 Variant-privacy seal (small, mechanical, do first)
-Goal: make direct external variant construction/matching a **compile error**, so
-the ratchet becomes belt-and-suspenders instead of the only guard.
-Two viable mechanisms (pick one, ideally in a Proposed ADR or a short PR
-description):
-- **Make the enum private**: rename `pub enum Value` → keep `Value` public but
-  move the variant list behind a private inner type, or mark the variants
-  `pub(crate)` won't help (same crate). The real lever is a **module boundary**:
-  move the enum into a private submodule of `src/value/` and only re-export the
-  constructors/`view()`/`ValueView`. Callers in other crates-modules already use
-  only those, so this should compile with ~zero churn (that's what slices a–e
-  bought). Verify by building after the visibility change.
-- **Rename variants** (e.g. `Value::Int` → `Value::__Int`) so any stray direct
-  use fails to resolve. Uglier; prefer the module-boundary approach.
-Either way: keep `scripts/check-value-wall.sh` in `make test` as a cheap
-regression net even after the seal.
+### 7.1 Why the standalone "module-boundary seal" was dropped (verified)
+The original plan here assumed a **~zero-churn** seal via a module boundary
+(move the enum into a private submodule, `pub use` only the constructors/`view()`).
+**This does not seal** — verified empirically: `pub use repr::Value;` re-exports
+the *type*, and Rust enum variants inherit the enum's visibility, so external
+modules can still write `Value::Int(3)`. `#[non_exhaustive]` is a no-op within the
+same crate. The **only** compile-time seal is a **newtype wrapper**
+`struct Value(ValueRepr)` (private field, private `ValueRepr`), which requires
+rewriting the **1293** direct variant sites *inside* `src/value/` to go through
+`.0`. That is not "small/mechanical" — and it is exactly the structural first half
+of the 3b-1 representation switch (roadmap §3.3 step 2 makes `Value` a newtype
+anyway). Doing it standalone would touch those 1293 sites twice. So:
+- **Seal = 3b-1 step A** (byte-identical newtype-ization; `ValueRepr` stays the
+  current 48B enum → behavior and size unchanged, variants become compile-time
+  private as a side effect).
+- **Representation flip = 3b-1 step B** (pointer-favored NaN-box behind the newtype).
+- The ratchet (`scripts/check-value-wall.sh` in `make test`) stays as the interim
+  guard until step A lands, and remains afterward as a cheap regression net.
 
-### 7.2 3b-1 representation switch (the big one — write a Proposed ADR first)
+See ADR-0005 §2.2/§2.3 for the full rationale and slice plan.
+
+### 7.2 3b-1 representation switch — encoding decided in ADR-0005 (Proposed)
 `Value` 48 → 8 bytes (NaN-boxed). The one blocking design decision is the
 **encoding** (§6, roadmap §3.2), because it changes the `ValueView` field types:
 - **pointer-favored** (pointers stored as raw low-48-bit, doubles offset-encoded):
@@ -171,11 +178,16 @@ regression net even after the seal.
   reconstruction that `Deref`s without touching the refcount). The wall already
   chose payload reference kinds so BOTH exits stay open (§2), but the call sites
   must be deref-compatible (they are, per the migration rule).
-Deliverable to start the next session: **a Proposed ADR** (`docs/adr/000N-...`)
-choosing the encoding, with an int-arith/fib micro-bench plan to settle
-small-int width (48/32-bit inline vs `Gc<i64>`) and the `ArrayKind`/mutability
-bool placement. Only after the ADR is Accepted does the representation edit
-(rewriting `src/value/` internals + `view()`/constructors) begin — call sites
-outside `src/value/` should not need to change at all if the wall held.
+
+**[ADR-0005](adr/0005-nanbox-representation-encoding.md) (Proposed) recommends
+pointer-favored** — mutsu's hot path is pointer-dominated, so raw-pointer deref +
+`&Arc<T>` view fields unchanged (minimal `view.rs`/zero call-site churn) beats
+NaN-favored's native-double win (Num is secondary here). NaN-favored is kept as a
+documented fall-back (guard types) if a Num-heavy micro-bench regresses. The ADR
+also fixes the slice plan (step A newtype seal → step B representation flip), the
+int-arith/fib bench gates, small-int width (decided at flip), and the
+`ArrayKind`/mutability-bool placement. Only after the ADR is **Accepted** does the
+representation edit begin — call sites outside `src/value/` should not need to
+change at all if the wall held.
 
 GC/JIT sequencing unchanged: 3b-1 → 3b-2 (traffic pruning) → JIT J1 (ADR-0004).

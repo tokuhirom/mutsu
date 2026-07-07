@@ -287,13 +287,17 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       `Value::<Variant>` 参照が **0**（ratchet baseline 0・`make test` 組込）。全構築/マッチが
       `ValueView`/`view()`/accessor/constructor 経由に統一
       （[docs/nanbox-3b0-api-wall.md](docs/nanbox-3b0-api-wall.md)）。
-      **次の着手単位 = variant-privacy seal → 3b-1**:
-      (1) **seal**: `Value` enum の variant を src/value/ private 化（or リネーム）し、
-          外部からの直接構築を型で不可能にする（wall constructor 強制）。ratchet は seal 後も残置。
-      (2) **3b-1 表現スイッチ**: `Value` 48→8 bytes。未決の設計判断＝**エンコーディング選択**
-          （pointer-favored か NaN-favored か。view の `&Arc<T>`/`&Gc<T>` フィールドが参照のままか
-          `ArcRef`/`GcRef` guard type になるかを決める。roadmap §3.2 / wall doc §6）→ **Proposed ADR** を先に書く。
-          小整数幅（48/32-bit inline vs `Gc<i64>`）は int-arith bench で flip 時に決定。
+      **次の着手単位 = 3b-1（seal は統合）**: エンコーディングは
+      **[ADR-0005](docs/adr/0005-nanbox-representation-encoding.md)（Proposed・pointer-favored 推奨）**で決定。
+      variant-privacy seal は単独ステップにしない（wall doc §7.1 の module-boundary 方式は seal に
+      ならないと実証・真の seal=newtype=3b-1 の構造前半なので統合）。スライス:
+      (A) **newtype seal（byte-identical）**: `pub enum Value`→`struct Value(ValueRepr)`。
+          `src/value/` 内部 1293 サイトを `.0` 経由へ機械変換。`ValueRepr` は現行 48B enum のまま＝
+          挙動・サイズ不変、variant が compile-time seal される。
+      (B) **表現差し替え**: `ValueRepr` を pointer-favored NaN-box（8B）へ置換。`view()`/constructor/
+          accessor の中身のみ変更。小整数幅（48/32-bit inline vs `Gc<i64>`）は int-arith bench で決定。
+          ゲート＝make test＋roast＋gc-stress green・§3.2 マイクロベンチ。ratchet は seal 後も残置。
+          着手は **ADR-0005 が Accepted になってから**。
 - **Lever 3: threaded dispatch — 凍結**（2026-07-06 ユーザー承認・[ADR-0004](docs/adr/0004-jit-strategy.md) §2.5 J0）:
       JIT Tier A が dispatch ループ除去で同じ利得をより大きく取るため二重投資を避ける。
       JIT が頓挫した場合のみ復活。
