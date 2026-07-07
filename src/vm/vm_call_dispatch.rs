@@ -61,6 +61,13 @@ impl Interpreter {
         if !self.is_interpreter_handled_function(name)
             && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
         {
+            // Prefer the cross-thread shared captured body for a `state`-bearing
+            // module sub so its `state` cell stays shared across threads (the
+            // per-call OTF recompile below gives each thread a distinct cell).
+            if let Some(shared) = self.imported_state_body_for_def(&def) {
+                let pkg = self.current_package().to_string();
+                return self.call_shared_state_body(&shared, args, compiled_fns, &pkg, name);
+            }
             return self.compile_and_call_function_def(&def, args, compiled_fns);
         }
         // Dispatch Test functions straight to their typed handler (lever A).

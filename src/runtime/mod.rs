@@ -1554,6 +1554,17 @@ pub struct Interpreter {
     pub(crate) pending_caller_var_writeback: Vec<String>,
     pub(crate) local_bind_pairs: Vec<(usize, usize)>,
     pub(crate) otf_compile_cache: HashMap<u64, CompiledFunction>,
+    /// Compiled bodies of subs defined in `use`d modules, captured at module-load
+    /// time and keyed by the sub's body/signature fingerprint. Unlike the per-call
+    /// `otf_compile_cache` (which a worker thread starts *empty* — every thread
+    /// re-OTF-compiles a module sub into a *distinct* body, giving distinct `state`
+    /// cells), this map is a snapshot shared by value into every spawned thread's
+    /// clone. A module sub routed through the same captured body across threads
+    /// reaches its `state` variable under a stable cross-thread key, so
+    /// `await (^N).map: { start f() }` accumulates into one shared cell — the piece
+    /// the per-thread OTF path could not provide. Populated by `load_module`; read
+    /// via `imported_state_body_for_def`. Empty for programs that `use` nothing.
+    pub(crate) imported_compiled_fns: HashMap<u64, std::sync::Arc<CompiledFunction>>,
     pub(crate) state_scope_id: Option<u64>,
     #[allow(clippy::type_complexity)]
     pub(crate) fn_resolve_cache: HashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,

@@ -757,7 +757,20 @@ impl Interpreter {
             if !self.has_proto(&name)
                 && !self.has_multi_candidates_cached(&name)
                 && let Some(def) = loan_env!(self, resolve_function_with_types(&name, &args))
-                && if crate::runtime::Interpreter::is_builtin_function(&name) {
+            {
+                let is_builtin = crate::runtime::Interpreter::is_builtin_function(&name);
+                if !is_builtin && let Some(shared) = self.imported_state_body_for_def(&def) {
+                    // Cross-thread shared captured body for a `state`-bearing module
+                    // sub (compiled_fns expansion) — keeps its `state` cell shared
+                    // across threads, unlike the per-call OTF recompile below.
+                    let pkg = self.current_package().to_string();
+                    let result =
+                        self.call_shared_state_body(&shared, args, compiled_fns, &pkg, &name)?;
+                    let result = loan_env!(self, maybe_fetch_rw_proxy(result, !shared.is_raw))?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                let gate_ok = if is_builtin {
                     // Genuine builtin shadow: strict gate (no default param —
                     // name-cache pollution hazard, PR #3546).
                     Self::def_is_otf_compilable(&def)
@@ -766,16 +779,17 @@ impl Interpreter {
                     // name-cache-safe here (no builtin to mis-bind); interpreter-
                     // coupled bodies/signatures stay excluded.
                     Self::def_is_otf_compilable_module_single(&def)
+                };
+                if gate_ok {
+                    let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                    self.stack.push(result);
+                    return Ok(());
                 }
-            {
-                let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                self.stack.push(result);
-            } else {
-                crate::vm::vm_stats::record_function_fallback(&name);
-                let result = self.vm_call_function_fallback(&name, &args)?;
-                let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
-                self.stack.push(result);
             }
+            crate::vm::vm_stats::record_function_fallback(&name);
+            let result = self.vm_call_function_fallback(&name, &args)?;
+            let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
+            self.stack.push(result);
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             self.stack.push(native_result?);
         } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) {
@@ -1166,7 +1180,25 @@ impl Interpreter {
                     if !self.has_proto(name)
                         && !self.has_multi_candidates_cached(name)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
-                        && if crate::runtime::Interpreter::is_builtin_function(name) {
+                    {
+                        let is_builtin = crate::runtime::Interpreter::is_builtin_function(name);
+                        // Prefer the cross-thread shared captured body for a
+                        // `state`-bearing module sub (compiled_fns expansion): one
+                        // shared body across threads keeps its `state` cell shared,
+                        // which the per-call OTF recompile below cannot.
+                        if !is_builtin && let Some(shared) = self.imported_state_body_for_def(&def)
+                        {
+                            let pkg = self.current_package().to_string();
+                            let result = self.call_shared_state_body(
+                                &shared,
+                                args,
+                                compiled_fns,
+                                &pkg,
+                                name,
+                            )?;
+                            return loan_env!(self, maybe_fetch_rw_proxy(result, !shared.is_raw));
+                        }
+                        let gate_ok = if is_builtin {
                             // Genuine builtin shadow: strict gate (no default —
                             // name-cache pollution hazard, PR #3546).
                             Self::def_is_otf_compilable(&def)
@@ -1175,17 +1207,17 @@ impl Interpreter {
                             // name-cache-safe here (no builtin to mis-bind), but
                             // interpreter-coupled bodies/signatures stay excluded.
                             Self::def_is_otf_compilable_module_single(&def)
+                        };
+                        if gate_ok {
+                            return self.compile_and_call_function_def(&def, args, compiled_fns);
                         }
-                    {
-                        self.compile_and_call_function_def(&def, args, compiled_fns)
-                    } else {
-                        crate::vm::vm_stats::record_function_fallback(name);
-                        self.set_pending_call_arg_sources(arg_sources);
-                        let result = self.vm_call_function_fallback(name, &args);
-                        self.set_pending_call_arg_sources(None);
-                        let result = result?;
-                        loan_env!(self, maybe_fetch_rw_proxy(result, true))
                     }
+                    crate::vm::vm_stats::record_function_fallback(name);
+                    self.set_pending_call_arg_sources(arg_sources);
+                    let result = self.vm_call_function_fallback(name, &args);
+                    self.set_pending_call_arg_sources(None);
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else if let Some(native_result) =
                     self.try_native_function(Symbol::intern(name), &args)
                 {
@@ -1734,6 +1766,74 @@ impl Interpreter {
     /// test-assertion line context, so an assertion failing inside an OTF-compiled
     /// helper reports the same caller line the interpreter path would (whatever
     /// the parser stamped on the call's caller-line marker).
+    /// The signature/body gates a module single sub must pass to be run as
+    /// compiled bytecode, EXCLUDING the `state` check. Factored out of
+    /// `def_is_otf_compilable_module_single` so the shared-captured-body path
+    /// (`imported_state_body_for_def`) can admit a `state`-bearing module sub —
+    /// which the per-call OTF path excludes (a per-thread recompile severs the
+    /// shared `state` cell), but which the cross-thread shared captured body
+    /// handles correctly.
+    fn def_module_single_sig_body_ok_ignoring_state(def: &crate::ast::FunctionDef) -> bool {
+        def.return_type.as_ref().is_none_or(|rt| !rt.contains('('))
+            && def.param_defs.iter().all(|pd| {
+                let is_capture = pd.slurpy && pd.sigilless;
+                let traits_otf_safe = pd
+                    .traits
+                    .iter()
+                    .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
+                (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
+            })
+            && !Self::module_otf_body_needs_interpreter(&def.body)
+    }
+
+    /// Return the shared captured body for a resolved module sub def IF routing it
+    /// through that body (instead of a per-call OTF recompile) is both safe and
+    /// beneficial. Currently narrowed to `state`-declaring module subs: the shared
+    /// body — snapshotted into every thread's clone — lets `await (^N).map: { start
+    /// f() }` accumulate `f`'s `state` into one cross-thread cell (the per-thread
+    /// OTF path gives each thread its own body and its own cell). Non-`state` subs
+    /// keep their existing OTF/tree-walk routing unchanged (zero blast radius). The
+    /// body must already be captured (`imported_compiled_fns`) and must clear the
+    /// same signature/body gate the OTF path requires (minus the `state` exclusion).
+    pub(super) fn imported_state_body_for_def(
+        &self,
+        def: &crate::ast::FunctionDef,
+    ) -> Option<std::sync::Arc<CompiledFunction>> {
+        if self.imported_compiled_fns.is_empty()
+            || !Self::function_body_declares_state(&def.body)
+            || !Self::def_module_single_sig_body_ok_ignoring_state(def)
+        {
+            return None;
+        }
+        let fp = crate::ast::function_body_fingerprint(&def.params, &def.param_defs, &def.body);
+        self.imported_compiled_fns.get(&fp).cloned()
+    }
+
+    /// Invoke a shared captured module-sub body (`imported_state_body_for_def`)
+    /// with `state_scope_id` reset to `None` for the duration of the body. A named
+    /// routine's `state` is scoped to the *routine* (one cell keyed by the body's
+    /// compiled position), NOT to any enclosing closure instance. When such a sub
+    /// is called from inside a `start { … }` block, the ambient `state_scope_id`
+    /// is the enclosing closure's id; letting it leak into the body would append a
+    /// per-closure `#c<id>` suffix to the `state` key that `normalize_state_key`
+    /// does not strip, giving each thread (and the parent) a *distinct* cross-thread
+    /// cell — the exact reason `await (^N).map: { start f() }` failed to accumulate.
+    /// Resetting to `None` makes every caller reach the same normalized key, so the
+    /// shared cell accumulates (matching how a same-unit compiled `sub` is called).
+    pub(super) fn call_shared_state_body(
+        &mut self,
+        shared: &CompiledFunction,
+        args: Vec<Value>,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+        pkg: &str,
+        name: &str,
+    ) -> Result<Value, RuntimeError> {
+        let saved_scope = self.state_scope_id.take();
+        let result = self.call_compiled_function_named(shared, args, compiled_fns, pkg, name);
+        self.state_scope_id = saved_scope;
+        result
+    }
+
     pub(super) fn def_is_otf_compilable_module_single(def: &crate::ast::FunctionDef) -> bool {
         // §2 (multi-dispatch VM-ization): `is rw`/`is raw` no longer force the
         // interpreter fallback. The non-module gate (`def_is_otf_compilable`) already
@@ -1752,33 +1852,22 @@ impl Interpreter {
         // module-private sibling) OTF-compile (PR closure-env #3899/#3902
         // made module-level lexical + private-sibling reads work under OTF;
         // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
-        def.return_type.as_ref().is_none_or(|rt| !rt.contains('('))
-            && def.param_defs.iter().all(|pd| {
-                // A capture parameter (`|c` / `|c($a, $b)`) is sigilless + slurpy and
-                // binds the argument list read-only (its sub-signature only
-                // destructures that capture), so it does NOT alias-write back to the
-                // caller the way a sigilless *scalar* (`\x`) does — it OTF-compiles
-                // exactly as it does at top level. A sigilless scalar and a
-                // non-capture sub-signature stay excluded (caller-alias writeback
-                // across an EVAL boundary — see the doc comment above).
-                let is_capture = pd.slurpy && pd.sigilless;
-                // Standard binding-time param traits (`is copy`/`is rw`/`is raw`/
-                // `is readonly`/`is required`) are OTF-safe: the compiled binding
-                // path already honors them for builtin-shadow subs (the non-module
-                // gate `def_is_otf_compilable` never checked `traits`), and the
-                // rw/raw caller writeback carries a compile-time caller slot (#4091)
-                // that refreshes the caller variable identically to the interpreter,
-                // including across an EVAL call boundary. Only a NativeCall
-                // marshalling trait (`is encoded('utf8')`) stays excluded here
-                // (interpreter-coupled string marshalling).
-                let traits_otf_safe = pd
-                    .traits
-                    .iter()
-                    .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
-                (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
-            })
+        // Signature/body gates (shared with the cross-thread shared-body path):
+        //   - a *coercion* return (`--> Foo:D()`, the parens) drives extra
+        //     return-time COERCE dispatch the standalone OTF compile does not
+        //     reproduce identically (roast/S12-coercion/coercion-return.t);
+        //   - a capture parameter (`|c`) binds read-only and is fine, but a
+        //     sigilless *scalar* (`\x`) / non-capture sub-signature stays excluded
+        //     (caller-alias writeback across an EVAL boundary — see the doc above);
+        //   - standard binding-time traits (`is copy`/`is rw`/`is raw`/`is
+        //     readonly`/`is required`) are OTF-safe (compiled binding honors them,
+        //     rw/raw writeback carries the #4091 caller slot); only NativeCall
+        //     marshalling (`is encoded('utf8')`) stays excluded.
+        // Plus the `state` exclusion: a per-call OTF recompile would sever a
+        // module sub's shared `state` cell (the cross-thread shared captured body,
+        // `imported_state_body_for_def`, is the path that admits `state`).
+        Self::def_module_single_sig_body_ok_ignoring_state(def)
             && !Self::function_body_declares_state(&def.body)
-            && !Self::module_otf_body_needs_interpreter(&def.body)
     }
 
     /// Recursively detect interpreter-coupled statements/expressions in a module
@@ -1853,7 +1942,7 @@ impl Interpreter {
 
     /// True if the body declares a `state` variable anywhere (recursing through
     /// nested blocks).
-    pub(super) fn function_body_declares_state(body: &[crate::ast::Stmt]) -> bool {
+    pub(crate) fn function_body_declares_state(body: &[crate::ast::Stmt]) -> bool {
         body.iter().any(Self::stmt_declares_state)
     }
 

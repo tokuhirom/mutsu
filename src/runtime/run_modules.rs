@@ -419,6 +419,12 @@ impl Interpreter {
             };
             let before_function_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.registry().functions.keys().copied().collect();
+            // Capture the module's compiled sub bodies (keyed by fingerprint) so a
+            // caller can dispatch a `state`-bearing module sub through one shared
+            // body across threads instead of re-OTF-compiling it per thread (which
+            // severs the shared `state` cell). Compiled under GLOBAL, matching the
+            // package the module body runs under here.
+            self.capture_module_compiled_fns(&stmts);
             let result = self.run_block(&stmts);
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
@@ -439,5 +445,46 @@ impl Interpreter {
         crate::parser::set_current_language_version(&saved_language_version);
         self.current_distribution = saved_distribution;
         Ok(())
+    }
+
+    /// Compile a module's statements and record each resulting compiled sub body
+    /// into `imported_compiled_fns`, keyed by its body/signature fingerprint. A
+    /// caller resolving one of these subs (via the registry `FunctionDef`, which
+    /// carries the same fingerprint) can then run the *shared* captured body
+    /// instead of OTF-recompiling it — the key to cross-thread `state` sharing for
+    /// module subs (see `imported_compiled_fns`). Pure compilation: runs no user
+    /// code and touches no `env`. Compiles under the current package (GLOBAL, set
+    /// by the caller) so the bodies match the module's own execution.
+    ///
+    /// The shared body is only *consulted* for a `state`-declaring module sub
+    /// (`imported_state_body_for_def`), so a module with no such sub gains nothing
+    /// from capture. Skip the whole (double-)compile in that common case — the vast
+    /// majority of modules declare no `state` sub, and the scan is a cheap AST walk.
+    fn capture_module_compiled_fns(&mut self, stmts: &[crate::ast::Stmt]) {
+        if !Self::module_has_state_sub(stmts) {
+            return;
+        }
+        let (_code, compiled_fns) = self.compile_block_raw(stmts);
+        for cf in compiled_fns.into_values() {
+            self.imported_compiled_fns
+                .entry(cf.fingerprint)
+                .or_insert_with(|| std::sync::Arc::new(cf));
+        }
+    }
+
+    /// True if `stmts` declares at least one `sub`/`proto`/`multi` whose body
+    /// declares a `state` variable (recursing through nested package blocks). Used
+    /// to skip the shared-body capture compile for modules that cannot benefit.
+    fn module_has_state_sub(stmts: &[crate::ast::Stmt]) -> bool {
+        use crate::ast::Stmt;
+        stmts.iter().any(|stmt| match stmt {
+            Stmt::SubDecl { body, .. } | Stmt::ProtoDecl { body, .. } => {
+                crate::runtime::Interpreter::function_body_declares_state(body)
+            }
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
+                Self::module_has_state_sub(body)
+            }
+            _ => false,
+        })
     }
 }
