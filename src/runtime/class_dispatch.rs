@@ -19,7 +19,7 @@ impl Interpreter {
         let inv_value = if let Some(inv) = &invocant {
             inv.clone()
         } else if attributes.is_empty() {
-            Value::Package(crate::symbol::Symbol::intern(receiver_class_name))
+            Value::package(crate::symbol::Symbol::intern(receiver_class_name))
         } else {
             Value::make_instance(
                 crate::symbol::Symbol::intern(receiver_class_name),
@@ -103,7 +103,7 @@ impl Interpreter {
                 if let Some(inv) = invocant {
                     inv.clone()
                 } else if attributes.is_empty() {
-                    Value::Package(Symbol::intern(receiver_class_name))
+                    Value::package(Symbol::intern(receiver_class_name))
                 } else {
                     Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
                 }
@@ -134,10 +134,7 @@ impl Interpreter {
                 });
             }
             let mut orig_env = crate::env::Env::new();
-            orig_env.insert(
-                "__mutsu_method_wrap_original".to_string(),
-                Value::Bool(true),
-            );
+            orig_env.insert("__mutsu_method_wrap_original".to_string(), Value::TRUE);
             let original_sub = Value::make_sub(
                 Symbol::intern(&owner_class),
                 Symbol::intern(method_name),
@@ -160,7 +157,7 @@ impl Interpreter {
                 remaining: wrap_remaining,
                 args: call_args.clone(),
             };
-            let wrapper_id = if let Value::Sub(ref wd) = outermost {
+            let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
                 Some(wd.id)
             } else {
                 None
@@ -246,7 +243,7 @@ impl Interpreter {
     /// `submethod` that `fail`ed comes back as an unhandled Failure *value*; re-raise it
     /// as `Err(is_fail)` so the construction sites' fail-to-Failure handling is unchanged
     /// (a non-submethod keeps a Failure as a legitimate return). Attributes are committed
-    /// from the live cell (unwrapping a `Value::Mixin` self to its inner instance) unless
+    /// from the live cell (unwrapping a `Mixin` self to its inner instance) unless
     /// `:=`-adjusted.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn run_resolved_method_compiled_or_treewalk(
@@ -283,7 +280,7 @@ impl Interpreter {
         // runs compiled instead of tree-walked. Only a genuinely body-less method
         // (stub / delegation forwarder) then stays on the tree-walk path. The
         // compiled-execution Mixin/instance attribute writeback is handled by
-        // `self_instance_attrs` (unwraps a `Value::Mixin` self to the inner cell) in
+        // `self_instance_attrs` (unwraps a `Mixin` self to the inner cell) in
         // the attr ops and the `final_attrs` commit below.
         let mut method_def = method_def;
         if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
@@ -340,7 +337,7 @@ impl Interpreter {
                     return Err(err);
                 }
                 // Read the committed attribute map from the live cell of `self`,
-                // unwrapping a `Value::Mixin` invocant to its inner instance (so a
+                // unwrapping a `Mixin` invocant to its inner instance (so a
                 // runtime-`does` mixin method's attribute mutations are captured, not
                 // the stale pre-call `updated` map). `adjusted` keeps the `:=`-recovered
                 // snapshot.
@@ -384,7 +381,7 @@ impl Interpreter {
                 let invocant_val = if let Some(ref inv) = invocant {
                     inv.clone()
                 } else if attributes.is_empty() {
-                    Value::Package(Symbol::intern(receiver_class_name))
+                    Value::package(Symbol::intern(receiver_class_name))
                 } else {
                     Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
                 };
@@ -393,25 +390,25 @@ impl Interpreter {
                 let attr_key = attr_var_name
                     .trim_start_matches('.')
                     .trim_start_matches('!');
-                attributes.get(attr_key).cloned().unwrap_or(Value::Nil)
+                attributes.get(attr_key).cloned().unwrap_or(Value::NIL)
             };
             let is_method_based = attr_var_name.starts_with('&');
             let attr_key = attr_var_name
                 .trim_start_matches('&')
                 .trim_start_matches('.')
                 .trim_start_matches('!');
-            if delegate == Value::Nil {
+            if delegate == Value::NIL {
                 return Err(RuntimeError::new(format!(
                     "No such method '{}' for invocant of type '{}'",
                     target_method, receiver_class_name
                 )));
             }
-            let delegate_id = match &delegate {
-                Value::Instance { id, .. } => Some(*id),
+            let delegate_id = match delegate.view() {
+                ValueView::Instance { id, .. } => Some(id),
                 _ => None,
             };
-            let delegate_class = match &delegate {
-                Value::Instance { class_name, .. } => Some(*class_name),
+            let delegate_class = match delegate.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
                 _ => None,
             };
             let result = self.call_method_with_values(delegate, target_method, args)?;
@@ -423,9 +420,9 @@ impl Interpreter {
                 // Look for the updated delegate in env bindings
                 let mut updated_delegate = None;
                 for val in self.env.values() {
-                    if let Value::Instance { class_name, id, .. } = val
-                        && *class_name == dcn
-                        && *id == did
+                    if let ValueView::Instance { class_name, id, .. } = val.view()
+                        && class_name == dcn
+                        && id == did
                     {
                         updated_delegate = Some(val.clone());
                         break;

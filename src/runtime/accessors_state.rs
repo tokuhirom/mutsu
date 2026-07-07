@@ -5,9 +5,9 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(crate) fn callable_signature(&self, callable: &Value) -> (Vec<String>, Vec<ParamDef>) {
-        match callable {
-            Value::Sub(data) => (data.params.clone(), data.param_defs.clone()),
-            Value::Routine { name, .. } => {
+        match callable.view() {
+            ValueView::Sub(data) => (data.params.clone(), data.param_defs.clone()),
+            ValueView::Routine { name, .. } => {
                 if let Some(def) = self.resolve_function(&name.resolve()) {
                     return (def.params.clone(), def.param_defs.clone());
                 }
@@ -165,7 +165,7 @@ impl Interpreter {
             self.escaped_our_lexical_cells
                 .get(name)
                 .cloned()
-                .unwrap_or(Value::Nil),
+                .unwrap_or(Value::NIL),
         )
     }
 
@@ -263,7 +263,7 @@ impl Interpreter {
         // ever been spawned (deterministic: `%h<k>++` returned 1,1,1... —
         // t/state-aggregate-shared-cell.t). Writing a cell over a cell (the
         // StateVarInit path itself) keeps the plain insert.
-        if let Some(Value::ContainerRef(cell)) = self.state_vars.get(&key)
+        if let Some(ValueView::ContainerRef(cell)) = self.state_vars.get(&key).map(Value::view)
             && !value.is_container_ref()
         {
             *cell.lock().unwrap_or_else(|e| e.into_inner()) = value;
@@ -282,7 +282,7 @@ impl Interpreter {
     pub(crate) fn get_or_init_shared_state_cell(&self, key: &str, initial: Value) -> Value {
         let mut sv = self.shared_vars.write().unwrap();
         if let Some(existing) = sv.get(key)
-            && matches!(existing, Value::ContainerRef(_))
+            && matches!(existing.view(), ValueView::ContainerRef(_))
         {
             return existing.clone();
         }
@@ -323,8 +323,8 @@ impl Interpreter {
         // specific closure clone.  This must take priority over the
         // once_scope_stack so that `once` blocks inside closures called from
         // EVAL (where the stack depth > 1) still get a per-clone scope.
-        match self.env.get("__mutsu_callable_id") {
-            Some(Value::Int(id)) if *id >= 0 => Some(*id as u64),
+        match self.env.get("__mutsu_callable_id").map(Value::view) {
+            Some(ValueView::Int(id)) if id >= 0 => Some(id as u64),
             _ => self.once_scope_stack.last().copied(),
         }
     }

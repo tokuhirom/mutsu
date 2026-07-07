@@ -27,10 +27,10 @@ const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 
 #[inline]
 fn is_internal_named_arg(arg: &Value) -> bool {
-    match arg {
-        Value::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
-        Value::ValuePair(key, _) => {
-            matches!(key.as_ref(), Value::Str(s) if s.as_str() == TEST_CALLSITE_LINE_KEY)
+    match arg.view() {
+        ValueView::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
+        ValueView::ValuePair(key, _) => {
+            matches!(key.view(), ValueView::Str(s) if s.as_str() == TEST_CALLSITE_LINE_KEY)
         }
         _ => false,
     }
@@ -97,19 +97,19 @@ pub(crate) fn split_object_hash_constraint(constraint: &str) -> (&str, Option<&s
 /// Check if a value is "defined" in the Raku sense.
 /// Type objects (Package) are undefined; concrete values and instances are defined.
 pub(crate) fn value_is_defined(value: &Value) -> bool {
-    match value {
-        Value::Nil | Value::Package(_) => false,
-        Value::Slip(items) if items.is_empty() => false,
-        Value::Instance { class_name, .. } if class_name == "Failure" => false,
+    match value.view() {
+        ValueView::Nil | ValueView::Package(_) => false,
+        ValueView::Slip(items) if items.is_empty() => false,
+        ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
         // An unmaterialized deferred bind token reads as undefined until it is
         // written THROUGH (a later external write to the path does not retro-bind
         // it — see `t/phantom-entry-bind.t`), so do not read through here.
-        Value::HashEntryRef { .. } => false,
+        ValueView::HashEntryRef { .. } => false,
         // A `ContainerRef` cell (`:=`-alias, take-rw, promoted element) is
         // transparent to definedness: `$x // …` / `take-rw …[i] // next` must
         // test the *inner* value, not the wrapper, so an undefined element still
         // triggers the `//` fallback even when it has been promoted to a cell.
-        Value::ContainerRef(arc) => value_is_defined(&arc.lock().unwrap()),
+        ValueView::ContainerRef(arc) => value_is_defined(&arc.lock().unwrap()),
         _ => true,
     }
 }
@@ -212,8 +212,8 @@ impl Interpreter {
             // back to its caller source — a scalar (`$a`) or an array element
             // (`@arr[idx]`).
             if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
-                let Some(elem) = self.env.get(slurpy_key).and_then(|v| match v {
-                    Value::Array(arr, _) => arr.items.get(elem_idx).cloned(),
+                let Some(elem) = self.env.get(slurpy_key).and_then(|v| match v.view() {
+                    ValueView::Array(arr, _) => arr.items.get(elem_idx).cloned(),
                     _ => None,
                 }) else {
                     continue;
@@ -222,14 +222,17 @@ impl Interpreter {
                     Some(i) => {
                         // Array source: replace element `i` in the caller's array,
                         // preserving the rest of the container's metadata.
-                        if let Some(Value::Array(arr, kind)) = target_env.get(source_name).cloned()
+                        if let Some((arr, kind)) = target_env
+                            .get(source_name)
+                            .cloned()
+                            .and_then(Value::into_array)
                         {
                             let mut data = (*arr).clone();
                             if i < data.items.len() {
                                 data.items[i] = elem;
                                 target_env.insert(
                                     source_name.clone(),
-                                    Value::Array(crate::gc::Gc::new(data), kind),
+                                    Value::array_with_kind(crate::gc::Gc::new(data), kind),
                                 );
                             }
                         }
@@ -237,7 +240,8 @@ impl Interpreter {
                     None => {
                         // Scalar source: write through a shared cell if one exists
                         // (preserving aliases), else replace the value.
-                        if let Some(Value::ContainerRef(arc)) = target_env.get(source_name)
+                        if let Some(ValueView::ContainerRef(arc)) =
+                            target_env.get(source_name).map(Value::view)
                             && !elem.is_container_ref()
                         {
                             *arc.lock().unwrap() = elem;
@@ -256,7 +260,8 @@ impl Interpreter {
                 // snapshot the value and sever every alias of that cell. Only the
                 // value flows back; the cell identity (shared with `$a`) survives,
                 // so post-return `$val++` / `$a = …` keep observing one container.
-                if let Some(Value::ContainerRef(arc)) = target_env.get(source_name)
+                if let Some(ValueView::ContainerRef(arc)) =
+                    target_env.get(source_name).map(Value::view)
                     && !updated.is_container_ref()
                 {
                     *arc.lock().unwrap() = updated;
@@ -283,23 +288,24 @@ impl Interpreter {
             // Also set the canonical !attr env key so write-back finds it
             self.env.insert(format!("!{}", attr_name), value.clone());
             self.env.insert(format!(".{}", attr_name), value.clone());
-            if let Some(Value::Instance {
-                class_name,
-                attributes,
-                id,
-            }) = self.env.get("self").cloned()
+            if let Some(self_val) = self.env.get("self").cloned()
+                && let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    id,
+                } = self_val.view()
             {
                 let mut updated_attrs = attributes.to_map();
                 updated_attrs.insert(attr_name.to_string(), value.clone());
                 self.env.insert(
                     "self".to_string(),
-                    Value::write_back_sharing(&attributes, class_name, updated_attrs, id),
+                    Value::write_back_sharing(attributes, class_name, updated_attrs, id),
                 );
             }
         }
         if matches!(
-            value,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            value.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) && !name.starts_with('&')
         {
             self.env.insert(format!("&{}", name), value.clone());
@@ -314,12 +320,12 @@ impl Interpreter {
     }
 
     pub(crate) fn captured_type_object(value: &Value) -> Value {
-        match value {
-            Value::Package(name) => Value::Package(*name),
-            Value::ParametricRole { .. } => value.clone(),
-            Value::Instance { class_name, .. } => Value::Package(*class_name),
-            Value::Nil => Value::Package(Symbol::intern("Any")),
-            _ => Value::Package(Symbol::intern(super::value_type_name(value))),
+        match value.view() {
+            ValueView::Package(name) => Value::package(name),
+            ValueView::ParametricRole { .. } => value.clone(),
+            ValueView::Instance { class_name, .. } => Value::package(class_name),
+            ValueView::Nil => Value::package(Symbol::intern("Any")),
+            _ => Value::package(Symbol::intern(super::value_type_name(value))),
         }
     }
 
@@ -338,13 +344,15 @@ impl Interpreter {
                 .insert(format!("{}::{}", self.current_package(), name), captured);
         }
         self.env
-            .insert(Self::type_capture_marker_key(name), Value::Bool(true));
+            .insert(Self::type_capture_marker_key(name), Value::TRUE);
     }
 
     pub(crate) fn has_type_capture_binding(&self, name: &str) -> bool {
         matches!(
-            self.env.get(&Self::type_capture_marker_key(name)),
-            Some(Value::Bool(true))
+            self.env
+                .get(&Self::type_capture_marker_key(name))
+                .map(Value::view),
+            Some(ValueView::Bool(true))
         )
     }
 
@@ -367,9 +375,9 @@ impl Interpreter {
             return Value::hash(std::collections::HashMap::new());
         }
         if let Some(constraint) = &pd.type_constraint {
-            return Value::Package(Symbol::intern(&Self::optional_type_object_name(constraint)));
+            return Value::package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }
-        Value::Nil
+        Value::NIL
     }
 
     pub(crate) fn nominal_type_object_name_for_constraint(&self, constraint: &str) -> String {
@@ -379,14 +387,14 @@ impl Interpreter {
         }
         let base_name = Self::optional_type_object_name(base);
         if let Some(captured_name) = base_name.strip_prefix("::")
-            && let Some(Value::Package(bound)) = self.env.get(captured_name)
+            && let Some(ValueView::Package(bound)) = self.env.get(captured_name).map(Value::view)
         {
             let resolved = bound.resolve();
             if resolved != captured_name {
                 return self.nominal_type_object_name_for_constraint(&resolved);
             }
         }
-        if let Some(Value::Package(bound)) = self.env.get(&base_name) {
+        if let Some(ValueView::Package(bound)) = self.env.get(&base_name).map(Value::view) {
             let resolved = bound.resolve();
             if resolved != base_name {
                 return self.nominal_type_object_name_for_constraint(&resolved);
@@ -407,11 +415,11 @@ impl Interpreter {
 
     pub(in crate::runtime) fn resolve_constraint_alias(&self, constraint: &str) -> String {
         if let Some(captured) = constraint.strip_prefix("::")
-            && let Some(Value::Package(name)) = self.env.get(captured)
+            && let Some(ValueView::Package(name)) = self.env.get(captured).map(Value::view)
         {
             return name.resolve();
         }
-        if let Some(Value::Package(name)) = self.env.get(constraint) {
+        if let Some(ValueView::Package(name)) = self.env.get(constraint).map(Value::view) {
             return name.resolve();
         }
         constraint.to_string()
@@ -441,7 +449,7 @@ impl Interpreter {
         &mut self,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        let Value::Package(role_name) = &value else {
+        let ValueView::Package(role_name) = value.view() else {
             return Ok(value);
         };
         let role_name = role_name.resolve();
@@ -485,10 +493,10 @@ impl Interpreter {
             })
             .collect::<Vec<_>>();
         self.env = saved_env;
-        Ok(Value::ParametricRole {
-            base_name: Symbol::intern(&role_name),
+        Ok(Value::parametric_role(
+            Symbol::intern(&role_name),
             type_args,
-        })
+        ))
     }
 
     pub(in crate::runtime) fn parse_generic_constraint(constraint: &str) -> Option<(&str, &str)> {

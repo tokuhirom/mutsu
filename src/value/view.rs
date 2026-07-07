@@ -382,6 +382,12 @@ impl Value {
         Value::Version { parts, plus, minus }
     }
 
+    /// Construct a `CompUnitDepSpec` from its short name.
+    #[inline]
+    pub(crate) fn comp_unit_dep_spec(short_name: Symbol) -> Self {
+        Value::CompUnitDepSpec { short_name }
+    }
+
     /// Construct an inclusive integer `Range`.
     #[inline]
     pub fn range(start: i64, end: i64) -> Self {

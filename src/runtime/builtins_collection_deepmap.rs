@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// `cross(@a, @b, ...)` — Cartesian product of lists.
@@ -8,20 +9,20 @@ impl Interpreter {
         let mut with_func: Option<Value> = None;
 
         for arg in &args {
-            match arg {
-                Value::Pair(k, v) if k.as_str() == "with" => {
-                    with_func = Some(v.as_ref().clone());
+            match arg.view() {
+                ValueView::Pair(k, v) if k.as_str() == "with" => {
+                    with_func = Some(v.clone());
                 }
                 _ => {
                     let mut values = super::utils::value_to_list(arg);
                     if values.len() == 1
                         && let Some(single) = values.first()
                     {
-                        match single {
-                            Value::Array(items, _) => {
+                        match single.view() {
+                            ValueView::Array(items, _) => {
                                 values = items.as_ref().clone().items;
                             }
-                            Value::Seq(items) | Value::Slip(items) => {
+                            ValueView::Seq(items) | ValueView::Slip(items) => {
                                 values = items.as_ref().clone();
                             }
                             _ => {}
@@ -33,7 +34,7 @@ impl Interpreter {
         }
 
         if lists.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(vec![])));
+            return Ok(Value::seq(vec![]));
         }
 
         // Compute Cartesian product iteratively
@@ -59,26 +60,26 @@ impl Interpreter {
                 let val = self.call_sub_value(func.clone(), combo, false)?;
                 final_result.push(val);
             }
-            Ok(Value::Seq(std::sync::Arc::new(final_result)))
+            Ok(Value::seq(final_result))
         } else {
             // Return as list of lists (tuples)
             let tuples: Vec<Value> = result.into_iter().map(Value::array).collect();
-            Ok(Value::Seq(std::sync::Arc::new(tuples)))
+            Ok(Value::seq(tuples))
         }
     }
 
     pub(super) fn builtin_roundrobin(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
 
         // Implement Raku's single-arg rule (+@lol): when called with a single
         // iterable arg, iterate it to get the list of streams.
         let effective_args: Vec<Value> = if args.len() == 1 {
-            match &args[0] {
-                Value::Array(items, kind) if kind.is_itemized() => args.to_vec(),
-                Value::Array(items, _) => items.iter().cloned().collect(),
-                Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
+            match args[0].view() {
+                ValueView::Array(_items, kind) if kind.is_itemized() => args.to_vec(),
+                ValueView::Array(items, _) => items.iter().cloned().collect(),
+                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
                 _ => args.to_vec(),
             }
         } else {
@@ -86,24 +87,24 @@ impl Interpreter {
         };
 
         if effective_args.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
 
         let streams: Vec<Vec<Value>> = effective_args
             .iter()
-            .map(|arg| match arg {
-                Value::Capture { positional, named }
+            .map(|arg| match arg.view() {
+                ValueView::Capture { positional, named }
                     if named.is_empty() && positional.len() == 1 =>
                 {
                     vec![arg.clone()]
                 }
-                Value::Array(items, kind) if kind.is_itemized() => vec![arg.clone()],
-                Value::Array(items, _) => items.iter().cloned().collect(),
-                Value::Seq(items) | Value::Slip(items) => items.iter().cloned().collect(),
-                Value::Range(a, b) => (*a..=*b).map(Value::Int).collect(),
-                Value::RangeExcl(a, b) => (*a..*b).map(Value::Int).collect(),
-                v if v.is_range() => crate::runtime::utils::value_to_list(v),
-                other => vec![other.clone()],
+                ValueView::Array(_items, kind) if kind.is_itemized() => vec![arg.clone()],
+                ValueView::Array(items, _) => items.iter().cloned().collect(),
+                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                ValueView::Range(a, b) => (a..=b).map(Value::int).collect(),
+                ValueView::RangeExcl(a, b) => (a..b).map(Value::int).collect(),
+                _ if arg.is_range() => crate::runtime::utils::value_to_list(arg),
+                _ => vec![arg.clone()],
             })
             .collect();
 
@@ -125,7 +126,7 @@ impl Interpreter {
             rounds.push(Value::array(tuple));
         }
 
-        Ok(Value::Seq(std::sync::Arc::new(rounds)))
+        Ok(Value::seq(rounds))
     }
 
     /// `duckmap(&block, \obj)` — apply block to each element; on type mismatch
@@ -156,8 +157,8 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
-        match target {
-            Value::Array(items, kind) => {
+        match target.view() {
+            ValueView::Array(items, kind) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match self.duckmap_element(block, item) {
@@ -173,7 +174,7 @@ impl Interpreter {
                     Ok(Value::array(result))
                 }
             }
-            Value::Seq(items) => {
+            ValueView::Seq(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match self.duckmap_element(block, item) {
@@ -183,9 +184,9 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Seq(std::sync::Arc::new(result)))
+                Ok(Value::seq(result))
             }
-            Value::Hash(map) => {
+            ValueView::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
                     match self.duckmap_element(block, v) {
@@ -197,7 +198,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Hash(Value::hash_arc(result)))
+                Ok(Value::hash_with_data(Value::hash_arc(result)))
             }
             // Single non-iterable value: try the block on it directly
             _ => self.duckmap_element(block, target),
@@ -227,7 +228,7 @@ impl Interpreter {
         let cell = crate::gc::Gc::new(std::sync::Mutex::new(leaf.clone()));
         let res = self.call_sub_value(
             block.clone(),
-            vec![Value::ContainerRef(cell.clone())],
+            vec![Value::container_ref(cell.clone())],
             false,
         )?;
         let new_val = cell.lock().unwrap().clone();
@@ -242,10 +243,10 @@ impl Interpreter {
         target: &Value,
         itemize_result: bool,
     ) -> Result<Value, RuntimeError> {
-        match target {
+        match target.view() {
             // Type objects (e.g. Array, Hash) — return as-is to avoid hanging
-            Value::Package(_) => Ok(target.clone()),
-            Value::Array(items, kind) => {
+            ValueView::Package(_) => Ok(target.clone()),
+            ValueView::Array(items, kind) => {
                 // A sublist is itemized (wrapped in a Scalar container) only when
                 // its *parent* is a List, not when the parent is a real Array.
                 // Compare Rakudo: `(1,[2,3]).deepmap(*+1)` -> `(2, $[3, 4])` but
@@ -254,8 +255,11 @@ impl Interpreter {
                 let mut result = Vec::new();
                 for (idx, item) in items.iter().enumerate() {
                     let is_leaf = !matches!(
-                        item,
-                        Value::Package(_) | Value::Array(..) | Value::Seq(_) | Value::Hash(_)
+                        item.view(),
+                        ValueView::Package(_)
+                            | ValueView::Array(..)
+                            | ValueView::Seq(_)
+                            | ValueView::Hash(_)
                     );
                     if is_leaf {
                         match self.deepmap_leaf_call(block, item) {
@@ -303,12 +307,12 @@ impl Interpreter {
                 } else {
                     crate::value::ArrayKind::List
                 };
-                Ok(Value::Array(
+                Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(result)),
                     arr_kind,
                 ))
             }
-            Value::Seq(items) => {
+            ValueView::Seq(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match self.deepmap_iterate_inner(block, item, true) {
@@ -319,25 +323,32 @@ impl Interpreter {
                 }
                 if itemize_result {
                     // Itemize the result as a list
-                    Ok(Value::Array(
+                    Ok(Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(result)),
                         crate::value::ArrayKind::ItemList,
                     ))
                 } else {
-                    Ok(Value::Seq(std::sync::Arc::new(result)))
+                    Ok(Value::seq(result))
                 }
             }
-            Value::Hash(map) => {
+            ValueView::Hash(map) => {
                 let mut result = std::collections::HashMap::new();
                 for (k, v) in map.iter() {
                     let is_leaf = !matches!(
-                        v,
-                        Value::Package(_) | Value::Array(..) | Value::Seq(_) | Value::Hash(_)
+                        v.view(),
+                        ValueView::Package(_)
+                            | ValueView::Array(..)
+                            | ValueView::Seq(_)
+                            | ValueView::Hash(_)
                     );
                     if is_leaf {
                         match self.deepmap_leaf_call(block, v) {
-                            Ok((Value::Slip(items), _)) if items.is_empty() => continue,
                             Ok((val, new_src)) => {
+                                if let ValueView::Slip(items) = val.view()
+                                    && items.is_empty()
+                                {
+                                    continue;
+                                }
                                 if new_src != *v {
                                     // Write the mutated leaf back into the source
                                     // hash in place (see the Array arm).
@@ -357,19 +368,21 @@ impl Interpreter {
                         continue;
                     }
                     match self.deepmap_iterate_inner(block, v, true) {
-                        Ok(Value::Slip(items)) if items.is_empty() => {
+                        Ok(val) => {
                             // Empty slip means the block returned Empty;
                             // drop the key from the result hash.
-                            continue;
-                        }
-                        Ok(val) => {
+                            if let ValueView::Slip(items) = val.view()
+                                && items.is_empty()
+                            {
+                                continue;
+                            }
                             result.insert(k.clone(), val);
                         }
                         Err(e) if e.is_next() => continue,
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::Hash(Value::hash_arc(result)))
+                Ok(Value::hash_with_data(Value::hash_arc(result)))
             }
             // Leaf value: apply the block (through a transient container so
             // mutating callables write through to a bare top-level leaf too).
@@ -383,10 +396,10 @@ impl Interpreter {
         block: &Value,
         target: &Value,
     ) -> Result<Value, RuntimeError> {
-        match target {
+        match target.view() {
             // nodemap always returns a List, even from a real Array or a Seq.
             // Compare Rakudo: `[2,3].nodemap(*+1).WHAT` is `List`.
-            Value::Array(items, _kind) => {
+            ValueView::Array(items, _kind) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match self.call_sub_value(block.clone(), vec![item.clone()], false) {
@@ -397,7 +410,7 @@ impl Interpreter {
                 }
                 Ok(Value::array(result))
             }
-            Value::Seq(items) => {
+            ValueView::Seq(items) => {
                 let mut result = Vec::new();
                 for item in items.iter() {
                     match self.call_sub_value(block.clone(), vec![item.clone()], false) {
@@ -425,8 +438,8 @@ impl Interpreter {
             Err(_) => {
                 // Block rejected the value (type mismatch, etc.)
                 // Try to descend into iterable structures
-                match value {
-                    Value::Array(items, kind) => {
+                match value.view() {
+                    ValueView::Array(items, kind) => {
                         let mut result = Vec::new();
                         for item in items.iter() {
                             result.push(self.duckmap_element(block, item)?);
@@ -437,19 +450,19 @@ impl Interpreter {
                             Ok(Value::array(result))
                         }
                     }
-                    Value::Seq(items) => {
+                    ValueView::Seq(items) => {
                         let mut result = Vec::new();
                         for item in items.iter() {
                             result.push(self.duckmap_element(block, item)?);
                         }
-                        Ok(Value::Seq(std::sync::Arc::new(result)))
+                        Ok(Value::seq(result))
                     }
-                    Value::Hash(map) => {
+                    ValueView::Hash(map) => {
                         let mut result = std::collections::HashMap::new();
                         for (k, v) in map.iter() {
                             result.insert(k.clone(), self.duckmap_element(block, v)?);
                         }
-                        Ok(Value::Hash(Value::hash_arc(result)))
+                        Ok(Value::hash_with_data(Value::hash_arc(result)))
                     }
                     // Not iterable — return unchanged
                     _ => Ok(value.clone()),

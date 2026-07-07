@@ -1,6 +1,7 @@
 //! Filesystem builtins: `dir`, `copy`, `rename`, `chmod`, `mkdir`, `rmdir`.
 use super::builtins_io::{check_null_in_path, io_exception_error, io_exception_failure};
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn builtin_dir(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -8,18 +9,18 @@ impl Interpreter {
         let mut requested_cwd_opt: Option<String> = None;
         let mut test_opt: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, val) = arg
+            if let ValueView::Pair(key, val) = arg.view()
                 && key == "test"
             {
-                test_opt = Some((**val).clone());
+                test_opt = Some(val.clone());
                 continue;
             }
             if requested_opt.is_none() {
-                if let Value::Instance {
+                if let ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } = arg
+                } = arg.view()
                     && class_name == "IO::Path"
                 {
                     requested_opt = Some(
@@ -103,8 +104,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut createonly = false;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "createonly" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "createonly" => {
                     createonly = value.truthy();
                 }
                 _ => positional.push(arg),
@@ -152,7 +153,7 @@ impl Interpreter {
                 format!("Failed to copy '{}': {}", source, err),
             )
         })?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     pub(super) fn builtin_rename(&self, name: &str, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -164,8 +165,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut createonly = false;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "createonly" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "createonly" => {
                     createonly = value.truthy();
                 }
                 _ => positional.push(arg),
@@ -190,16 +191,13 @@ impl Interpreter {
             let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
             let mut failure_attrs = HashMap::new();
             failure_attrs.insert("exception".to_string(), ex);
-            failure_attrs.insert("handled".to_string(), Value::Bool(false));
+            failure_attrs.insert("handled".to_string(), Value::FALSE);
             failure_attrs.insert(
                 "message".to_string(),
-                Value::Str(
-                    format!(
-                        "Failed to {} '{}': source and destination are the same file",
-                        name, source
-                    )
-                    .into(),
-                ),
+                Value::str(format!(
+                    "Failed to {} '{}': source and destination are the same file",
+                    name, source
+                )),
             );
             return Ok(Value::make_instance(
                 Symbol::intern("Failure"),
@@ -218,7 +216,7 @@ impl Interpreter {
         fs::rename(&src_buf, &dest_buf).map_err(|err| {
             io_exception_error(ex_type, format!("Failed to {} '{}': {}", name, source, err))
         })?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     pub(super) fn builtin_chmod(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -226,16 +224,18 @@ impl Interpreter {
             .first()
             .cloned()
             .ok_or_else(|| RuntimeError::new("chmod requires a mode"))?;
-        let mode_int = match mode_value {
-            Value::Int(i) => i as u32,
+        let mode_int = match mode_value.view() {
+            ValueView::Int(i) => i as u32,
             // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
             // already-evaluated integer in the inner value; coerce through it.
-            Value::Mixin(..) | Value::BigInt(_) => crate::runtime::to_int(&mode_value) as u32,
-            Value::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-            other => {
+            ValueView::Mixin(..) | ValueView::BigInt(_) => {
+                crate::runtime::to_int(&mode_value) as u32
+            }
+            ValueView::Str(s) => u32::from_str_radix(s, 8).unwrap_or(0),
+            _ => {
                 return Err(RuntimeError::new(format!(
                     "Invalid mode: {}",
-                    other.to_string_value()
+                    mode_value.to_string_value()
                 )));
             }
         };
@@ -256,7 +256,7 @@ impl Interpreter {
             }
             changed.push(path_value.clone());
         }
-        Ok(Value::Array(
+        Ok(Value::array_with_kind(
             crate::value::Value::array_arc(changed),
             ArrayKind::List,
         ))
@@ -273,7 +273,7 @@ impl Interpreter {
         let path_buf = self.resolve_path(&path);
         fs::create_dir_all(&path_buf)
             .map_err(|err| RuntimeError::new(format!("Failed to mkdir '{}': {}", path, err)))?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     pub(super) fn builtin_rmdir(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -283,8 +283,8 @@ impl Interpreter {
             .ok_or_else(|| RuntimeError::new("rmdir requires a path"))?;
         let path_buf = self.resolve_path(&path);
         match fs::remove_dir(&path_buf) {
-            Ok(()) => Ok(Value::Bool(true)),
-            Err(_) => Ok(Value::Bool(false)),
+            Ok(()) => Ok(Value::TRUE),
+            Err(_) => Ok(Value::FALSE),
         }
     }
 }

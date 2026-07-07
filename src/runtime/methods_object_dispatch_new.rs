@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 fn is_datetime_constructor_named_arg(key: &str) -> bool {
     matches!(
@@ -10,14 +11,14 @@ fn is_datetime_constructor_named_arg(key: &str) -> bool {
 
 fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
     if !matches!(
-        args.first(),
-        Some(Value::Instance { class_name, .. }) if class_name == "DateTime"
+        args.first().map(Value::view),
+        Some(ValueView::Instance { class_name, .. }) if class_name == "DateTime"
     ) {
         return false;
     }
     args.iter()
         .skip(1)
-        .all(|arg| matches!(arg, Value::Pair(key, _) if !is_datetime_constructor_named_arg(key)))
+        .all(|arg| matches!(arg.view(), ValueView::Pair(key, _) if !is_datetime_constructor_named_arg(key)))
 }
 
 /// Build a typed `X::Constructor::Positional` for a default constructor that
@@ -32,7 +33,7 @@ fn constructor_positional_error(class_name: &str) -> RuntimeError {
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     attrs.insert(
         "type".to_string(),
-        Value::Package(Symbol::intern(class_name)),
+        Value::package(Symbol::intern(class_name)),
     );
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(Value::make_instance(
@@ -58,13 +59,16 @@ impl Interpreter {
         &mut self,
         result: Result<Value, RuntimeError>,
     ) -> Result<Value, RuntimeError> {
-        let Ok(Value::Instance {
-            class_name,
-            attributes,
-            id,
-        }) = result
-        else {
+        let Ok(inst) = result else {
             return result;
+        };
+        let (class_name, attributes, id) = match inst.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                id,
+            } => (class_name, attributes.clone(), id),
+            _ => return Ok(inst),
         };
         let cn = class_name.resolve();
         let is_exc = cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::");
@@ -72,17 +76,9 @@ impl Interpreter {
             || attributes.as_map().contains_key("message")
             || !self.has_user_method(&cn, "message")
         {
-            return Ok(Value::Instance {
-                class_name,
-                attributes,
-                id,
-            });
+            return Ok(Value::instance_parts(class_name, attributes, id));
         }
-        let instance = Value::Instance {
-            class_name,
-            attributes: attributes.clone(),
-            id,
-        };
+        let instance = Value::instance_parts(class_name, attributes.clone(), id);
         if let Ok(msg) = self.call_method_with_values(instance.clone(), "message", vec![]) {
             let msg_str = msg.to_string_value();
             if !msg_str.is_empty() {
@@ -99,31 +95,31 @@ impl Interpreter {
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Package(_) = &target {
+        if let ValueView::Package(_) = target.view() {
             let materialized = self.materialize_default_parametric_role(target.clone())?;
             if materialized != target {
                 return self.dispatch_new(materialized, args);
             }
         }
         // Collation.new — create a Collation instance with default settings
-        if let Value::Package(name) = &target
+        if let ValueView::Package(name) = target.view()
             && name == "Collation"
         {
             return Ok(Self::make_collation_instance(1, 1, 1, 1));
         }
         // Calling .new() on an instance delegates to the class constructor
-        if let Value::Instance { class_name, .. } = &target {
-            return self.dispatch_new(Value::Package(*class_name), args);
+        if let ValueView::Instance { class_name, .. } = target.view() {
+            return self.dispatch_new(Value::package(class_name), args);
         }
         // Calling .new() on a Mixin(Instance{..}, ..) delegates to the class constructor
-        if let Value::Mixin(inner, _) = &target
-            && let Value::Instance { class_name, .. } = inner.as_ref()
+        if let ValueView::Mixin(inner, _) = target.view()
+            && let ValueView::Instance { class_name, .. } = inner.as_ref().view()
         {
-            return self.dispatch_new(Value::Package(*class_name), args);
+            return self.dispatch_new(Value::package(class_name), args);
         }
         // Calling .new() on a concrete Array delegates to the type constructor.
         // If the array has type metadata (e.g. array[str]), use the declared type.
-        if let Value::Array(..) = &target {
+        if let ValueView::Array(..) = target.view() {
             let type_name = if let Some(info) = self.container_type_metadata(&target) {
                 if let Some(ref dt) = info.declared_type {
                     dt.clone()
@@ -136,12 +132,12 @@ impl Interpreter {
             } else {
                 "Array".to_string()
             };
-            return self.dispatch_new(Value::Package(Symbol::intern(&type_name)), args);
+            return self.dispatch_new(Value::package(Symbol::intern(&type_name)), args);
         }
         // Calling .new() on a concrete object hash (`%h{KeyType}`) produces a
         // new object hash of the same key/value type, not a plain Hash — mirror
         // the typed-Array `.new` path above.
-        if let Value::Hash(_) = &target
+        if let ValueView::Hash(_) = target.view()
             && let Some(info) = self.container_type_metadata(&target)
             && let Some(kt) = info.key_type.clone()
         {
@@ -151,21 +147,21 @@ impl Interpreter {
                 info.value_type.clone()
             };
             let pkg = format!("Hash[{},{}]", vt, kt);
-            return self.dispatch_new(Value::Package(Symbol::intern(&pkg)), args);
+            return self.dispatch_new(Value::package(Symbol::intern(&pkg)), args);
         }
         // Calling .new() on a concrete Hash/Bag/Mix delegates to the type constructor
         {
-            let type_pkg = match &target {
-                Value::Hash(_) => Some("Hash"),
-                Value::Bag(_, _) => Some("BagHash"),
-                Value::Mix(_, _) => Some("MixHash"),
+            let type_pkg = match target.view() {
+                ValueView::Hash(_) => Some("Hash"),
+                ValueView::Bag(_, _) => Some("BagHash"),
+                ValueView::Mix(_, _) => Some("MixHash"),
                 _ => None,
             };
             if let Some(type_name) = type_pkg {
-                return self.dispatch_new(Value::Package(Symbol::intern(type_name)), args);
+                return self.dispatch_new(Value::package(Symbol::intern(type_name)), args);
             }
         }
-        if let Value::Str(ref name) = target
+        if let ValueView::Str(name) = target.view()
             && self.registry().enum_types.contains_key(name.as_str())
         {
             let msg = format!(
@@ -185,24 +181,24 @@ impl Interpreter {
         // enum-name `Str` check above so a Str holding an enum type name still
         // throws X::Constructor::BadType rather than delegating to Str.new.
         {
-            let type_pkg = match &target {
-                Value::Pair(..) | Value::ValuePair(..) => Some("Pair"),
-                Value::Int(_) | Value::BigInt(_) => Some("Int"),
-                Value::Num(_) => Some("Num"),
-                Value::Rat(..) => Some("Rat"),
-                Value::FatRat(..) => Some("FatRat"),
-                Value::Complex(..) => Some("Complex"),
-                Value::Str(_) => Some("Str"),
+            let type_pkg = match target.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => Some("Pair"),
+                ValueView::Int(_) | ValueView::BigInt(_) => Some("Int"),
+                ValueView::Num(_) => Some("Num"),
+                ValueView::Rat(..) => Some("Rat"),
+                ValueView::FatRat(..) => Some("FatRat"),
+                ValueView::Complex(..) => Some("Complex"),
+                ValueView::Str(_) => Some("Str"),
                 _ => None,
             };
             if let Some(type_name) = type_pkg {
-                return self.dispatch_new(Value::Package(Symbol::intern(type_name)), args);
+                return self.dispatch_new(Value::package(Symbol::intern(type_name)), args);
             }
         }
-        if let Value::ParametricRole {
+        if let ValueView::ParametricRole {
             base_name,
             type_args,
-        } = &target
+        } = target.view()
         {
             let base_name_str = base_name.resolve();
             self.ensure_role_punned_to_class(&base_name_str);
@@ -302,15 +298,15 @@ impl Interpreter {
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
                 for arg in &args {
-                    if let Value::Pair(key, value) = arg {
-                        named_args.insert(key.clone(), *value.clone());
+                    if let ValueView::Pair(key, value) = arg.view() {
+                        named_args.insert(key.clone(), value.clone());
                     } else {
                         positional_args.push(arg.clone());
                     }
                 }
 
                 let mut mixins = HashMap::new();
-                mixins.insert(format!("__mutsu_role__{}", base_name), Value::Bool(true));
+                mixins.insert(format!("__mutsu_role__{}", base_name), Value::TRUE);
                 mixins.insert(
                     format!("__mutsu_role_typeargs__{}", base_name),
                     Value::array(type_args.clone()),
@@ -318,7 +314,7 @@ impl Interpreter {
                 if role_id != 0 {
                     mixins.insert(
                         format!("__mutsu_role_id__{}", base_name),
-                        Value::Int(role_id as i64),
+                        Value::int(role_id as i64),
                     );
                 }
                 for (param_name, type_arg) in selected_param_names.iter().zip(type_args.iter()) {
@@ -341,7 +337,7 @@ impl Interpreter {
                     } else if let Some(expr) = default_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
@@ -361,13 +357,14 @@ impl Interpreter {
                     );
                 }
                 return Ok(Value::mixin(
-                    Value::make_instance(*base_name, HashMap::new()),
+                    Value::make_instance(base_name, HashMap::new()),
                     mixins,
                 ));
             }
         }
 
-        if let Value::Package(class_name) = &target {
+        if let ValueView::Package(class_name) = target.view() {
+            let class_name = &class_name;
             let cn_resolved = class_name.resolve();
             // Fast path: user-defined class with no BUILD/TWEAK/custom new,
             // only simple parents (Any/Mu/Cool), only $-sigiled attributes,
@@ -421,37 +418,28 @@ impl Interpreter {
             if is_datetime_subclass && !is_normalized_datetime_subclass_ctor_args(&args) {
                 let positional_args: Vec<Value> = args
                     .iter()
-                    .filter(|arg| !matches!(arg, Value::Pair(_, _)))
+                    .filter(|arg| !matches!(arg.view(), ValueView::Pair(_, _)))
                     .cloned()
                     .collect();
                 let mut datetime_ctor_args = Vec::new();
                 if positional_args.len() >= 3 {
-                    datetime_ctor_args.push(Value::Pair(
-                        "year".to_string(),
-                        Box::new(positional_args[0].clone()),
-                    ));
-                    datetime_ctor_args.push(Value::Pair(
-                        "month".to_string(),
-                        Box::new(positional_args[1].clone()),
-                    ));
-                    datetime_ctor_args.push(Value::Pair(
-                        "day".to_string(),
-                        Box::new(positional_args[2].clone()),
-                    ));
+                    datetime_ctor_args
+                        .push(Value::pair("year".to_string(), positional_args[0].clone()));
+                    datetime_ctor_args
+                        .push(Value::pair("month".to_string(), positional_args[1].clone()));
+                    datetime_ctor_args
+                        .push(Value::pair("day".to_string(), positional_args[2].clone()));
                     if let Some(hour) = positional_args.get(3) {
-                        datetime_ctor_args
-                            .push(Value::Pair("hour".to_string(), Box::new(hour.clone())));
+                        datetime_ctor_args.push(Value::pair("hour".to_string(), hour.clone()));
                     }
                     if let Some(minute) = positional_args.get(4) {
-                        datetime_ctor_args
-                            .push(Value::Pair("minute".to_string(), Box::new(minute.clone())));
+                        datetime_ctor_args.push(Value::pair("minute".to_string(), minute.clone()));
                     }
                     if let Some(second) = positional_args.get(5) {
-                        datetime_ctor_args
-                            .push(Value::Pair("second".to_string(), Box::new(second.clone())));
+                        datetime_ctor_args.push(Value::pair("second".to_string(), second.clone()));
                     }
                     for arg in &args {
-                        if let Value::Pair(key, _) = arg
+                        if let ValueView::Pair(key, _) = arg.view()
                             && is_datetime_constructor_named_arg(key)
                         {
                             datetime_ctor_args.push(arg.clone());
@@ -461,12 +449,12 @@ impl Interpreter {
                     datetime_ctor_args = args.clone();
                 }
                 let datetime = self.dispatch_new(
-                    Value::Package(Symbol::intern("DateTime")),
+                    Value::package(Symbol::intern("DateTime")),
                     datetime_ctor_args,
                 )?;
                 let mut normalized_args = vec![datetime];
                 for arg in &args {
-                    if let Value::Pair(key, _) = arg
+                    if let ValueView::Pair(key, _) = arg.view()
                         && !is_datetime_constructor_named_arg(key)
                     {
                         normalized_args.push(arg.clone());
@@ -481,21 +469,21 @@ impl Interpreter {
             // Only delegate if the args don't already contain Date attrs
             // (prevents infinite recursion on second call)
             let has_date_named_args = args.iter().any(|a| {
-                matches!(a, Value::Pair(k, _) if k == "year" || k == "month" || k == "day" || k == "days")
+                matches!(a.view(), ValueView::Pair(k, _) if k == "year" || k == "month" || k == "day" || k == "days")
             });
             if is_date_subclass && !has_date_named_args && !self.has_user_method(class_key, "new") {
                 // Build Date first to extract year/month/day/days/formatter
                 let date =
-                    self.dispatch_new(Value::Package(Symbol::intern("Date")), args.clone())?;
-                if let Value::Instance { attributes, .. } = &date {
+                    self.dispatch_new(Value::package(Symbol::intern("Date")), args.clone())?;
+                if let ValueView::Instance { attributes, .. } = date.view() {
                     // Now build the subclass instance with all Date attrs plus any custom named attrs
                     let mut new_args = Vec::new();
                     for (k, v) in attributes.as_map().iter() {
-                        new_args.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                        new_args.push(Value::pair(k.clone(), v.clone()));
                     }
                     // Add any non-Date named args from the original call
                     for arg in &args {
-                        if let Value::Pair(key, _) = arg
+                        if let ValueView::Pair(key, _) = arg.view()
                             && !attributes.contains_key(key.as_str())
                         {
                             new_args.push(arg.clone());
@@ -557,7 +545,7 @@ impl Interpreter {
                     return Ok(self.try_native_seq_construct(&args));
                 }
                 "Version" => {
-                    let arg = args.first().cloned().unwrap_or(Value::Nil);
+                    let arg = args.first().cloned().unwrap_or(Value::NIL);
                     return Ok(Self::version_from_value(arg));
                 }
                 "Duration" => {
@@ -584,11 +572,11 @@ impl Interpreter {
                     // Callable); the common case is built natively.
                     let (dt, formatter) = Self::build_native_datetime(&args)?;
                     if let Some(formatter_value) = formatter
-                        && let Value::Instance {
+                        && let ValueView::Instance {
                             class_name,
-                            ref attributes,
+                            attributes,
                             id,
-                        } = dt
+                        } = dt.view()
                     {
                         let mut attrs = attributes.to_map();
                         attrs.insert("formatter".to_string(), formatter_value.clone());
@@ -601,20 +589,17 @@ impl Interpreter {
                             .to_string_value();
                         *self.env_mut() = saved_env;
                         self.restore_readonly_vars(saved_readonly);
-                        if let Value::Instance {
+                        if let ValueView::Instance {
                             class_name,
                             attributes,
                             id,
-                        } = dt_with_formatter
+                        } = dt_with_formatter.view()
                         {
                             let mut updated = attributes.to_map();
                             updated
                                 .insert("__formatter_rendered".to_string(), Value::str(rendered));
                             return Ok(Value::write_back_sharing(
-                                &attributes,
-                                class_name,
-                                updated,
-                                id,
+                                attributes, class_name, updated, id,
                             ));
                         }
                     }
@@ -629,12 +614,12 @@ impl Interpreter {
                 "Promise" => {
                     // Shared with the VM's native fast path
                     // (`try_native_builtin_construct`).
-                    return Ok(Value::Promise(SharedPromise::new()));
+                    return Ok(Value::promise(SharedPromise::new()));
                 }
                 "Channel" => {
                     // Shared with the VM's native fast path
                     // (`try_native_builtin_construct`).
-                    return Ok(Value::Channel(SharedChannel::new()));
+                    return Ok(Value::channel(SharedChannel::new()));
                 }
                 "Stash" => {
                     // Stash is essentially a Hash but with type Stash
@@ -649,10 +634,10 @@ impl Interpreter {
                     // (`try_native_builtin_construct`).
                     let mut attrs = HashMap::new();
                     attrs.insert("emitted".to_string(), Value::array(Vec::new()));
-                    attrs.insert("done".to_string(), Value::Bool(false));
+                    attrs.insert("done".to_string(), Value::FALSE);
                     attrs.insert(
                         "supplier_id".to_string(),
-                        Value::Int(super::native_methods::next_supplier_id() as i64),
+                        Value::int(super::native_methods::next_supplier_id() as i64),
                     );
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
@@ -673,10 +658,10 @@ impl Interpreter {
                     let mut version_matcher: Option<String> = None;
                     let mut api_matcher: Option<String> = None;
                     for arg in &args {
-                        if let Value::Pair(key, value) = arg {
+                        if let ValueView::Pair(key, value) = arg.view() {
                             match key.as_str() {
                                 "short-name" => {
-                                    if let Value::Str(s) = value.as_ref() {
+                                    if let ValueView::Str(s) = value.view() {
                                         short_name = Some(s.to_string());
                                     } else {
                                         return Err(RuntimeError::new(
@@ -685,16 +670,16 @@ impl Interpreter {
                                     }
                                 }
                                 "auth-matcher" => {
-                                    if !matches!(value.as_ref(), Value::Bool(true)) {
+                                    if !matches!(value.view(), ValueView::Bool(true)) {
                                         auth_matcher = Some(value.to_string_value());
                                     }
                                 }
                                 "version-matcher" => {
-                                    if !matches!(value.as_ref(), Value::Bool(true)) {
+                                    if !matches!(value.view(), ValueView::Bool(true)) {
                                         version_matcher = Some(value.to_string_value());
                                     }
                                 }
-                                "api-matcher" if !matches!(value.as_ref(), Value::Bool(true)) => {
+                                "api-matcher" if !matches!(value.view(), ValueView::Bool(true)) => {
                                     api_matcher = Some(value.to_string_value());
                                 }
                                 _ => {}
@@ -724,9 +709,7 @@ impl Interpreter {
                             attrs,
                         ));
                     }
-                    return Ok(Value::CompUnitDepSpec {
-                        short_name: Symbol::intern(&short_name),
-                    });
+                    return Ok(Value::comp_unit_dep_spec(Symbol::intern(&short_name)));
                 }
                 "Distribution::Path" => {
                     let dir_path = args
@@ -755,20 +738,20 @@ impl Interpreter {
                     ));
                 }
                 "Distribution::Hash" => {
-                    let mut meta_hash = Value::Nil;
+                    let mut meta_hash = Value::NIL;
                     let mut prefix = String::new();
                     for arg in &args {
-                        match arg {
-                            Value::Pair(key, value) if key == "prefix" => {
+                        match arg.view() {
+                            ValueView::Pair(key, value) if key == "prefix" => {
                                 prefix = value.to_string_value();
                             }
-                            Value::Hash(_) => {
-                                if meta_hash == Value::Nil {
+                            ValueView::Hash(_) => {
+                                if meta_hash == Value::NIL {
                                     meta_hash = arg.clone();
                                 }
                             }
                             _ => {
-                                if meta_hash == Value::Nil {
+                                if meta_hash == Value::NIL {
                                     meta_hash = arg.clone();
                                 }
                             }
@@ -787,7 +770,7 @@ impl Interpreter {
                 "CompUnit::Repository::Installation" => {
                     let mut prefix = String::new();
                     for arg in &args {
-                        if let Value::Pair(key, value) = arg
+                        if let ValueView::Pair(key, value) = arg.view()
                             && key == "prefix"
                         {
                             prefix = value.to_string_value();
@@ -804,7 +787,7 @@ impl Interpreter {
                 "CompUnit::Repository::FileSystem" => {
                     let mut prefix = ".".to_string();
                     for arg in &args {
-                        if let Value::Pair(key, value) = arg
+                        if let ValueView::Pair(key, value) = arg.view()
                             && key == "prefix"
                         {
                             prefix = value.to_string_value();
@@ -825,7 +808,7 @@ impl Interpreter {
                         self.make_io_path_instance(&canonical_prefix),
                     );
                     attrs.insert("short-id".to_string(), Value::str_from("file"));
-                    attrs.insert("__mutsu_precomp_enabled".to_string(), Value::Bool(false));
+                    attrs.insert("__mutsu_precomp_enabled".to_string(), Value::FALSE);
                     let repo = Value::make_instance(*class_name, attrs);
                     self.env.insert(cache_key, repo.clone());
                     return Ok(repo);
@@ -910,9 +893,9 @@ impl Interpreter {
                     // (`try_native_builtin_construct`).
                     let mut attrs = HashMap::new();
                     let lock_id = super::native_methods::next_lock_id() as i64;
-                    attrs.insert("lock-id".to_string(), Value::Int(lock_id));
+                    attrs.insert("lock-id".to_string(), Value::int(lock_id));
                     if class_name.resolve() == "Lock::Async" {
-                        attrs.insert("async".to_string(), Value::Bool(true));
+                        attrs.insert("async".to_string(), Value::TRUE);
                     }
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
@@ -938,7 +921,7 @@ impl Interpreter {
                     let mut type_str: Option<String> = None;
                     let mut positional: Vec<&Value> = Vec::new();
                     for arg in &args {
-                        if let Value::Pair(key, value) = arg {
+                        if let ValueView::Pair(key, value) = arg.view() {
                             if key == "type" {
                                 type_str = Some(value.to_string_value());
                             }
@@ -950,7 +933,7 @@ impl Interpreter {
                     let type_name = if let Some(t) = type_str {
                         t
                     } else if positional.len() >= 2 {
-                        if let Value::Str(s) = positional[0] {
+                        if let ValueView::Str(s) = positional[0].view() {
                             let name = s.to_string();
                             positional.remove(0);
                             name
@@ -968,9 +951,11 @@ impl Interpreter {
                     };
                     let values_arg = positional.first().copied();
                     let elems: Vec<Value> = match values_arg {
-                        Some(Value::Array(items, ..)) => items.to_vec(),
-                        Some(Value::Seq(items)) | Some(Value::Slip(items)) => items.to_vec(),
-                        Some(other) => vec![other.clone()],
+                        Some(v) => match v.view() {
+                            ValueView::Array(items, ..) => items.to_vec(),
+                            ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                            _ => vec![v.clone()],
+                        },
                         None => vec![],
                     };
                     return Ok(Value::junction(kind, elems));
@@ -981,17 +966,15 @@ impl Interpreter {
             if let Some(type_args) = type_args.as_ref() {
                 if matches!(base_class_name, "Array" | "List" | "Positional" | "array") {
                     if let Some(dims) = self.shaped_dims_from_new_args(&args)? {
-                        let data = args.iter().find_map(|arg| match arg {
-                            Value::Pair(name, value) if name == "data" => {
-                                Some(value.as_ref().clone())
-                            }
+                        let data = args.iter().find_map(|arg| match arg.view() {
+                            ValueView::Pair(name, value) if name == "data" => Some(value.clone()),
                             _ => None,
                         });
                         // If no :data, collect positional (non-Pair) args as data
                         let data = if data.is_none() {
                             let positional: Vec<Value> = args
                                 .iter()
-                                .filter(|arg| !matches!(arg, Value::Pair(..)))
+                                .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
                                 .cloned()
                                 .collect();
                             if positional.is_empty() {
@@ -1004,19 +987,20 @@ impl Interpreter {
                         };
                         let shaped = Self::make_shaped_array(&dims)?;
                         let mut result = if let Some(data_val) = data {
-                            let data_items = match data_val {
-                                Value::Array(items, ..) => items.to_vec(),
-                                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                                other => vec![other],
+                            let data_items = match data_val.view() {
+                                ValueView::Array(items, ..) => items.to_vec(),
+                                ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                                _ => vec![data_val.clone()],
                             };
-                            if let Value::Array(ref items, is_arr) = shaped {
+                            if let ValueView::Array(items, is_arr) = shaped.view() {
                                 let mut new_items = items.as_ref().clone();
                                 for (i, val) in data_items.into_iter().enumerate() {
                                     if i < new_items.len() {
                                         new_items[i] = val;
                                     }
                                 }
-                                let result = Value::Array(crate::gc::Gc::new(new_items), is_arr);
+                                let result =
+                                    Value::array_with_kind(crate::gc::Gc::new(new_items), is_arr);
                                 crate::runtime::utils::mark_shaped_array(&result, Some(&dims));
                                 result
                             } else {
@@ -1045,9 +1029,9 @@ impl Interpreter {
                     }
                     let mut items = Vec::new();
                     for arg in &args {
-                        match arg {
-                            Value::Slip(vals) => items.extend(vals.iter().cloned()),
-                            other => items.push(other.clone()),
+                        match arg.view() {
+                            ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
+                            _ => items.push(arg.clone()),
                         }
                     }
                     let mut result = if matches!(base_class_name, "Array" | "array") {
@@ -1081,16 +1065,16 @@ impl Interpreter {
                     let mut map = HashMap::new();
                     let mut iter = flat.into_iter();
                     while let Some(item) = iter.next() {
-                        match item {
-                            Value::Pair(k, v) => {
-                                map.insert(k, *v);
+                        match item.view() {
+                            ValueView::Pair(k, v) => {
+                                map.insert(k.clone(), v.clone());
                             }
-                            Value::ValuePair(k, v) => {
-                                map.insert(k.to_string_value(), *v);
+                            ValueView::ValuePair(k, v) => {
+                                map.insert(k.to_string_value(), v.clone());
                             }
-                            other => {
-                                let key = other.to_string_value();
-                                let value = iter.next().unwrap_or(Value::Nil);
+                            _ => {
+                                let key = item.to_string_value();
+                                let value = iter.next().unwrap_or(Value::NIL);
                                 map.insert(key, value);
                             }
                         }
@@ -1126,8 +1110,8 @@ impl Interpreter {
                 let mut named_args: HashMap<String, Value> = HashMap::new();
                 let mut positional_args: Vec<Value> = Vec::new();
                 for arg in &args {
-                    if let Value::Pair(key, value) = arg {
-                        named_args.insert(key.clone(), *value.clone());
+                    if let ValueView::Pair(key, value) = arg.view() {
+                        named_args.insert(key.clone(), value.clone());
                     } else {
                         positional_args.push(arg.clone());
                     }
@@ -1169,7 +1153,7 @@ impl Interpreter {
                 }
 
                 let mut mixins = HashMap::new();
-                mixins.insert(format!("__mutsu_role__{}", class_name), Value::Bool(true));
+                mixins.insert(format!("__mutsu_role__{}", class_name), Value::TRUE);
                 for (idx, (attr_name, _is_public, default_expr, _, _, _, _)) in
                     all_attributes.iter().enumerate()
                 {
@@ -1180,7 +1164,7 @@ impl Interpreter {
                     } else if let Some(expr) = default_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
                 }
@@ -1252,18 +1236,18 @@ impl Interpreter {
                 if class_key == "Semaphore" {
                     let permits = args
                         .first()
-                        .map(|v| match v {
-                            Value::Int(i) => *i,
-                            Value::Num(f) => *f as i64,
-                            other => other.to_string_value().parse::<i64>().unwrap_or(1),
+                        .map(|v| match v.view() {
+                            ValueView::Int(i) => i,
+                            ValueView::Num(f) => f as i64,
+                            _ => v.to_string_value().parse::<i64>().unwrap_or(1),
                         })
                         .unwrap_or(1)
                         .max(0);
                     let mut attrs = HashMap::new();
-                    attrs.insert("permits".to_string(), Value::Int(permits));
+                    attrs.insert("permits".to_string(), Value::int(permits));
                     attrs.insert(
                         "semaphore-id".to_string(),
-                        Value::Int(super::native_methods::next_semaphore_id(permits) as i64),
+                        Value::int(super::native_methods::next_semaphore_id(permits) as i64),
                     );
                     return Ok(Value::make_instance(*class_name, attrs));
                 }
@@ -1329,7 +1313,7 @@ impl Interpreter {
                             let cn = class_name.resolve();
                             if self.lookup_proto_method(&cn, "new").is_some() {
                                 if e.exception.as_deref().is_some_and(|ex| {
-                                    matches!(ex, Value::Instance { class_name, .. }
+                                    matches!(ex.view(), ValueView::Instance { class_name, .. }
                                         if class_name.resolve() == "X::Multi::NoMatch")
                                 }) {
                                     return Err(e);
@@ -1343,9 +1327,9 @@ impl Interpreter {
                             // Mu.new only accepts named arguments. If the call
                             // had positional args and no multi candidate matched,
                             // die like Raku does.
-                            let has_positional = args
-                                .iter()
-                                .any(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)));
+                            let has_positional = args.iter().any(|a| {
+                                !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                            });
                             if has_positional {
                                 // Check if this class composes Baggy/Setty role;
                                 // if so, redirect to Bag-like construction
@@ -1384,8 +1368,8 @@ impl Interpreter {
                 // (required attributes are checked before defaults run)
                 let provided_attr_names: std::collections::HashSet<String> = args
                     .iter()
-                    .filter_map(|v| match v {
-                        Value::Pair(k, _) => Some(k.clone()),
+                    .filter_map(|v| match v.view() {
+                        ValueView::Pair(k, _) => Some(k.clone()),
                         _ => None,
                     })
                     .collect();
@@ -1429,11 +1413,11 @@ impl Interpreter {
                             .is_some()
                 });
                 for val in &args {
-                    match val {
-                        Value::Pair(k, v) => {
+                    match val.view() {
+                        ValueView::Pair(k, v) => {
                             if !any_build && self.is_attribute_buildable(class_key, k) {
                                 let sigil = sigil_map.get(k).copied().unwrap_or('$');
-                                let mut value = *v.clone();
+                                let mut value = v.clone();
                                 // A coercion-typed attribute (`has Int() $.x`)
                                 // coerces its provided value through the target
                                 // type (built-in coercion or a user COERCE method).
@@ -1460,7 +1444,7 @@ impl Interpreter {
                             // When BUILD exists, named args are passed to BUILD
                             // which controls attribute initialization directly
                         }
-                        Value::Instance {
+                        ValueView::Instance {
                             class_name: src_class,
                             attributes: src_attrs,
                             ..
@@ -1500,9 +1484,10 @@ impl Interpreter {
                     &class_attrs_info
                 {
                     if *sigil == '@'
-                        && let Some(Value::Slip(items) | Value::Seq(items)) = attrs.get(attr_name)
+                        && let Some(ValueView::Slip(items) | ValueView::Seq(items)) =
+                            attrs.get(attr_name).map(Value::view)
                     {
-                        let flattened = Value::Array(
+                        let flattened = Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
                             ArrayKind::Array,
                         );
@@ -1517,27 +1502,30 @@ impl Interpreter {
                     if *sigil == '@'
                         && let Some(dims) = Self::extract_shape_from_default(default.as_ref())
                         && let Some(val) = attrs.get(attr_name)
-                        && !matches!(val, Value::Array(_, ArrayKind::Shaped))
+                        && !matches!(val.view(), ValueView::Array(_, ArrayKind::Shaped))
                     {
-                        let items = match val {
-                            Value::Array(items, _) => (**items).clone(),
+                        let items = match val.view() {
+                            ValueView::Array(items, _) => (**items).clone(),
                             _ => crate::value::ArrayData::new(vec![val.clone()]),
                         };
-                        let shaped = Value::Array(crate::gc::Gc::new(items), ArrayKind::Shaped);
+                        let shaped =
+                            Value::array_with_kind(crate::gc::Gc::new(items), ArrayKind::Shaped);
                         crate::runtime::utils::mark_shaped_array(&shaped, Some(&dims));
                         attrs.insert(attr_name.clone(), shaped);
                     }
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                 self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
-                let int_ctor_val =
-                    if matches!(positional_ctor_args.first(), Some(Value::Package(_))) {
-                        return Err(RuntimeError::new("Cannot convert type object to Int"));
-                    } else {
-                        positional_ctor_args
-                            .first()
-                            .map_or(0, crate::runtime::to_int)
-                    };
+                let int_ctor_val = if matches!(
+                    positional_ctor_args.first().map(Value::view),
+                    Some(ValueView::Package(_))
+                ) {
+                    return Err(RuntimeError::new("Cannot convert type object to Int"));
+                } else {
+                    positional_ctor_args
+                        .first()
+                        .map_or(0, crate::runtime::to_int)
+                };
                 if class_mro.iter().any(|name| name == "Array")
                     && !attrs.contains_key("__array_items")
                     && !positional_ctor_args.is_empty()
@@ -1550,7 +1538,7 @@ impl Interpreter {
                 if class_mro.iter().any(|name| name == "Int")
                     && !attrs.contains_key("__mutsu_int_value")
                 {
-                    attrs.insert("__mutsu_int_value".to_string(), Value::Int(int_ctor_val));
+                    attrs.insert("__mutsu_int_value".to_string(), Value::int(int_ctor_val));
                 }
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
@@ -1608,7 +1596,7 @@ impl Interpreter {
                             // `?CLASS`; bind it to the class being built.
                             let old_class = self.env.get("?CLASS").cloned();
                             self.env
-                                .insert("?CLASS".to_string(), Value::Package(*class_name));
+                                .insert("?CLASS".to_string(), Value::package(*class_name));
                             // Set !attr_name and .attr_name in env so that $!a / $.a
                             // references in default expressions resolve to already-
                             // initialized attributes (e.g. `has $.c = $!a + $!b`).
@@ -1680,7 +1668,7 @@ impl Interpreter {
                                         );
                                         arr
                                     } else {
-                                        let type_obj = Value::Package(
+                                        let type_obj = Value::package(
                                             crate::symbol::Symbol::intern(&type_name),
                                         );
                                         match self.call_method_with_values(type_obj, "new", vec![])
@@ -1720,7 +1708,7 @@ impl Interpreter {
                                     .cloned();
                                 if let Some(type_name) = is_type {
                                     let type_obj =
-                                        Value::Package(crate::symbol::Symbol::intern(&type_name));
+                                        Value::package(crate::symbol::Symbol::intern(&type_name));
                                     match self.call_method_with_values(type_obj, "new", vec![]) {
                                         Ok(v) => v,
                                         Err(_) => Value::hash(HashMap::new()),
@@ -1748,7 +1736,7 @@ impl Interpreter {
                                     }
                                 }
                             }
-                            _ => Value::Nil,
+                            _ => Value::NIL,
                         }
                     };
                     // A coercion-typed attribute (`has Int() $.x = "42"`) coerces
@@ -1920,7 +1908,8 @@ impl Interpreter {
                     {
                         if let Some(reason) = is_required {
                             let attr_val = attrs.get(attr_name.as_str());
-                            let is_set = !matches!(attr_val, Some(Value::Nil) | None);
+                            let is_set =
+                                !matches!(attr_val.map(Value::view), Some(ValueView::Nil) | None);
                             if !is_set {
                                 let attr_full_name = format!("$!{}", attr_name);
                                 return Err(RuntimeError::attribute_required(
@@ -2027,8 +2016,8 @@ impl Interpreter {
                     // already lives in the bare key, so reuse it.
                     let provided_keys: std::collections::HashSet<String> = args
                         .iter()
-                        .filter_map(|a| match a {
-                            Value::Pair(k, _) => Some(k.clone()),
+                        .filter_map(|a| match a.view() {
+                            ValueView::Pair(k, _) => Some(k.clone()),
                             _ => None,
                         })
                         .collect();
@@ -2074,7 +2063,7 @@ impl Interpreter {
                             }
                             match result {
                                 Ok(v) => Self::coerce_attr_value_by_sigil(v, sigil),
-                                Err(_) => Value::Nil,
+                                Err(_) => Value::NIL,
                             }
                         } else {
                             // Check for `is Type` trait on this attribute
@@ -2104,19 +2093,19 @@ impl Interpreter {
                                     arr
                                 } else {
                                     let type_obj =
-                                        Value::Package(crate::symbol::Symbol::intern(&type_name));
+                                        Value::package(crate::symbol::Symbol::intern(&type_name));
                                     self.call_method_with_values(type_obj, "new", vec![])
                                         .unwrap_or_else(|_| match sigil {
                                             '@' => Value::real_array(Vec::new()),
                                             '%' => Value::hash(HashMap::new()),
-                                            _ => Value::Nil,
+                                            _ => Value::NIL,
                                         })
                                 }
                             } else {
                                 match sigil {
                                     '@' => Value::real_array(Vec::new()),
                                     '%' => Value::hash(HashMap::new()),
-                                    _ => Value::Nil,
+                                    _ => Value::NIL,
                                 }
                             }
                         };
@@ -2204,50 +2193,50 @@ impl Interpreter {
             }
         }
         // Fallback .new on basic types
-        match target {
-            Value::Package(name) if name == "CallFrame" => {
+        match target.view() {
+            ValueView::Package(name) if name == "CallFrame" => {
                 // CallFrame.new(depth) — equivalent to callframe(depth)
                 let depth = args
                     .first()
-                    .and_then(|v| match v {
-                        Value::Int(i) => Some(*i as usize),
-                        Value::Num(f) => Some(*f as usize),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i as usize),
+                        ValueView::Num(f) => Some(f as usize),
                         _ => None,
                     })
                     .unwrap_or(0);
                 self.builtin_callframe(&args, depth)
             }
-            Value::Package(name) => {
+            ValueView::Package(name) => {
                 // Built-in type objects: .new creates a default defined instance
                 match name.resolve().as_str() {
                     // Shared with the VM's native fast path.
                     "Int" => Self::build_native_int_value(&args),
                     "Str" => Ok(Value::str(String::new())),
                     "Num" => Self::build_native_num_value(&args),
-                    "Bool" => Ok(Value::Bool(false)),
+                    "Bool" => Ok(Value::FALSE),
                     "Attribute" => {
                         // Attribute.new(:name<...>, :type(Int), :package<Foo>)
                         let mut attrs = HashMap::new();
                         for arg in &args {
-                            if let Value::Pair(key, value) = arg {
+                            if let ValueView::Pair(key, value) = arg.view() {
                                 match key.as_str() {
                                     "name" => {
                                         let n = value.to_string_value();
-                                        attrs.insert("name".to_string(), (**value).clone());
+                                        attrs.insert("name".to_string(), value.clone());
                                         attrs
                                             .insert("__mutsu_attr_name".to_string(), Value::str(n));
                                     }
                                     "type" => {
-                                        attrs.insert("type".to_string(), (**value).clone());
+                                        attrs.insert("type".to_string(), value.clone());
                                     }
                                     "package" => {
                                         attrs.insert(
                                             "__mutsu_attr_owner".to_string(),
-                                            (**value).clone(),
+                                            value.clone(),
                                         );
                                     }
                                     other => {
-                                        attrs.insert(other.to_string(), (**value).clone());
+                                        attrs.insert(other.to_string(), value.clone());
                                     }
                                 }
                             }
@@ -2257,18 +2246,18 @@ impl Interpreter {
                     "Semaphore" => {
                         let permits = args
                             .first()
-                            .map(|v| match v {
-                                Value::Int(i) => *i,
-                                Value::Num(f) => *f as i64,
-                                other => other.to_string_value().parse::<i64>().unwrap_or(1),
+                            .map(|v| match v.view() {
+                                ValueView::Int(i) => i,
+                                ValueView::Num(f) => f as i64,
+                                _ => v.to_string_value().parse::<i64>().unwrap_or(1),
                             })
                             .unwrap_or(1)
                             .max(0);
                         let mut attrs = HashMap::new();
-                        attrs.insert("permits".to_string(), Value::Int(permits));
+                        attrs.insert("permits".to_string(), Value::int(permits));
                         attrs.insert(
                             "semaphore-id".to_string(),
-                            Value::Int(super::native_methods::next_semaphore_id(permits) as i64),
+                            Value::int(super::native_methods::next_semaphore_id(permits) as i64),
                         );
                         Ok(Value::make_instance(name, attrs))
                     }
@@ -2278,11 +2267,11 @@ impl Interpreter {
                     ))),
                 }
             }
-            Value::Str(_) => Ok(Value::str(String::new())),
-            Value::Int(_) => Ok(Value::Int(0)),
-            Value::Num(_) => Ok(Value::Num(0.0)),
-            Value::Bool(_) => Ok(Value::Bool(false)),
-            Value::Nil => Ok(Value::Nil),
+            ValueView::Str(_) => Ok(Value::str(String::new())),
+            ValueView::Int(_) => Ok(Value::int(0)),
+            ValueView::Num(_) => Ok(Value::num(0.0)),
+            ValueView::Bool(_) => Ok(Value::FALSE),
+            ValueView::Nil => Ok(Value::NIL),
             _ => Err(RuntimeError::new(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): new",
             )),

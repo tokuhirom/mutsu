@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(in crate::runtime) fn role_is_subtype(&self, lhs_role: &str, rhs_role: &str) -> bool {
@@ -27,9 +28,9 @@ impl Interpreter {
     /// Check if `lhs` type arg is a subtype of `rhs` type arg for parametric role subtyping.
     /// E.g., Package("C2") subtypes Package("C1") if C2 isa C1.
     pub(in crate::runtime) fn parametric_arg_subtypes(&self, lhs: &Value, rhs: &Value) -> bool {
-        match (lhs, rhs) {
+        match (lhs.view(), rhs.view()) {
             // Both are packages (type objects): check class hierarchy
-            (Value::Package(l_name), Value::Package(r_name)) => {
+            (ValueView::Package(l_name), ValueView::Package(r_name)) => {
                 if l_name == r_name {
                     return true;
                 }
@@ -47,7 +48,7 @@ impl Interpreter {
                     // Transitive: check if any parent subtypes r_name
                     for parent in &class_def.parents {
                         if self
-                            .parametric_arg_subtypes(&Value::Package(Symbol::intern(parent)), rhs)
+                            .parametric_arg_subtypes(&Value::package(Symbol::intern(parent)), rhs)
                         {
                             return true;
                         }
@@ -57,11 +58,11 @@ impl Interpreter {
             }
             // Both are parametric roles: recursively check
             (
-                Value::ParametricRole {
+                ValueView::ParametricRole {
                     base_name: lb,
                     type_args: la,
                 },
-                Value::ParametricRole {
+                ValueView::ParametricRole {
                     base_name: rb,
                     type_args: ra,
                 },

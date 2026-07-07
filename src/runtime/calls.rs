@@ -22,8 +22,8 @@ impl Interpreter {
                 .unwrap_or_default();
             let line = callsite_line
                 .or_else(|| {
-                    self.env.get("?LINE").and_then(|v| match v {
-                        Value::Int(i) => Some(*i),
+                    self.env.get("?LINE").and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i),
                         _ => None,
                     })
                 })
@@ -61,8 +61,8 @@ impl Interpreter {
             .unwrap_or_default();
         let line = callsite_line
             .or_else(|| {
-                self.env.get("?LINE").and_then(|v| match v {
-                    Value::Int(i) => Some(*i),
+                self.env.get("?LINE").and_then(|v| match v.view() {
+                    ValueView::Int(i) => Some(i),
                     _ => None,
                 })
             })
@@ -130,7 +130,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         if let Some(line) = self.test_pending_callsite_line {
-            self.env.insert("?LINE".to_string(), Value::Int(line));
+            self.env.insert("?LINE".to_string(), Value::int(line));
         }
         self.push_caller_env();
         // Set current_package to the function's defining package so that default
@@ -218,9 +218,9 @@ impl Interpreter {
         // Set __mutsu_callable_id so blocks defined inside this routine
         // capture the correct target for non-local return.
         let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
-        if let Some(Value::Int(id)) = self.env.get(&callable_key).cloned() {
+        if let Some(id) = self.env.get(&callable_key).and_then(Value::as_int) {
             self.env
-                .insert("__mutsu_callable_id".to_string(), Value::Int(id));
+                .insert("__mutsu_callable_id".to_string(), Value::int(id));
         }
         self.prepare_definite_return_slot(return_spec.as_deref());
         let result = self.run_block(&def.body);
@@ -231,7 +231,7 @@ impl Interpreter {
         let effective_return_spec = return_spec
             .as_deref()
             .map(|spec| self.resolved_type_capture_name(spec));
-        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
+        let implicit_return = self.env.get("_").cloned().unwrap_or(Value::NIL);
         let mut restored_env = saved_env;
         self.pop_caller_env_with_writeback(&mut restored_env);
         let excluded_names = Self::routine_writeback_excluded_names(def);
@@ -240,19 +240,19 @@ impl Interpreter {
             let scalar_writeback = restored_env.contains_key_sym(*k)
                 && !excluded_names.contains(&k_str)
                 && !matches!(
-                    v,
-                    Value::Array(..)
-                        | Value::Hash(..)
-                        | Value::Sub(..)
-                        | Value::WeakSub(..)
-                        | Value::Routine { .. }
+                    v.view(),
+                    ValueView::Array(..)
+                        | ValueView::Hash(..)
+                        | ValueView::Sub(..)
+                        | ValueView::WeakSub(..)
+                        | ValueView::Routine { .. }
                 );
             if k != "_"
                 && k != "@_"
                 && k != "%_"
                 && ((restored_env.contains_key_sym(*k)
                     && !excluded_names.contains(&k_str)
-                    && matches!(v, Value::Array(..) | Value::Hash(..)))
+                    && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))
                     || scalar_writeback
                     || k.starts_with("__mutsu_var_meta::"))
             {
@@ -274,8 +274,8 @@ impl Interpreter {
         {
             // The callable_id for this function is resolved from env.
             let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
-            let my_id = self.env.get(&callable_key).and_then(|v| match v {
-                Value::Int(i) => Some(*i as u64),
+            let my_id = self.env.get(&callable_key).and_then(|v| match v.view() {
+                ValueView::Int(i) => Some(i as u64),
                 _ => None,
             });
             if my_id != e.return_target_callable_id() {
@@ -297,7 +297,7 @@ impl Interpreter {
         match name {
             "make" => {
                 let value = if args.is_empty() {
-                    Value::Nil
+                    Value::NIL
                 } else {
                     Self::positional_value_required(&args, 0, "make expects value")?.clone()
                 };
@@ -326,7 +326,7 @@ impl Interpreter {
                     let saved_env = self.env.clone();
                     let saved_readonly = self.save_readonly_vars();
                     if let Some(line) = self.test_pending_callsite_line {
-                        self.env.insert("?LINE".to_string(), Value::Int(line));
+                        self.env.insert("?LINE".to_string(), Value::int(line));
                     }
                     self.push_caller_env();
                     let saved_package = self.current_package().to_string();
@@ -376,7 +376,7 @@ impl Interpreter {
                     self.block_stack.pop();
                     self.pop_test_assertion_context(pushed_assertion);
                     self.set_current_package(saved_package);
-                    let implicit_return = self.env.get("_").cloned().unwrap_or(Value::Nil);
+                    let implicit_return = self.env.get("_").cloned().unwrap_or(Value::NIL);
                     let mut restored_env = saved_env;
                     self.pop_caller_env_with_writeback(&mut restored_env);
                     let excluded_names = Self::routine_writeback_excluded_names(&def);
@@ -385,18 +385,18 @@ impl Interpreter {
                         let scalar_writeback = restored_env.contains_key_sym(*k)
                             && !excluded_names.contains(&k_str)
                             && !matches!(
-                                v,
-                                Value::Array(..)
-                                    | Value::Hash(..)
-                                    | Value::Sub(..)
-                                    | Value::WeakSub(..)
-                                    | Value::Routine { .. }
+                                v.view(),
+                                ValueView::Array(..)
+                                    | ValueView::Hash(..)
+                                    | ValueView::Sub(..)
+                                    | ValueView::WeakSub(..)
+                                    | ValueView::Routine { .. }
                             );
                         if k != "_"
                             && k != "@_"
                             && k != "%_"
                             && ((restored_env.contains_key_sym(*k)
-                                && matches!(v, Value::Array(..) | Value::Hash(..)))
+                                && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))
                                 || scalar_writeback
                                 || k.starts_with("__mutsu_var_meta::"))
                         {
@@ -421,10 +421,12 @@ impl Interpreter {
                     // Build a detailed error with call profile and candidate signatures
                     let arg_types: Vec<String> = args
                         .iter()
-                        .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                        .filter(|a| {
+                            !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                        })
                         .map(|a| {
                             let tn = super::value_type_name(a);
-                            if !matches!(a, Value::Nil) {
+                            if !matches!(a.view(), ValueView::Nil) {
                                 format!("{}:D", tn)
                             } else {
                                 tn.to_string()
@@ -469,11 +471,11 @@ impl Interpreter {
         args.iter()
             .filter(|a| {
                 !matches!(
-                    a,
-                    Value::Pair(k, _) if k == "__mutsu_test_callsite_line"
+                    a.view(),
+                    ValueView::Pair(k, _) if k == "__mutsu_test_callsite_line"
                 )
             })
-            .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .map(|a| super::value_type_name(a).to_string())
             .collect()
     }
@@ -614,7 +616,7 @@ impl Interpreter {
             .iter()
             .any(|pd| pd.name.starts_with("::") || pd.name == "__type_capture__");
         let is_binding_param_exception = err.exception.as_ref().is_some_and(|ex| {
-            if let Value::Instance { class_name, .. } = ex.as_ref() {
+            if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                 class_name.resolve() == "X::TypeCheck::Binding::Parameter"
             } else {
                 false
@@ -673,11 +675,11 @@ impl Interpreter {
             )));
         } else if let Some(ex) = err.exception {
             // Update the exception object's message attribute so $! shows the enhanced message
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
-                ref attributes,
+                attributes,
                 ..
-            } = *ex
+            } = ex.view()
             {
                 let mut new_attrs: std::collections::HashMap<String, Value> = attributes
                     .as_map()

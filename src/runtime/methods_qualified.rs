@@ -13,8 +13,8 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let private_rest = method.strip_prefix('!')?;
         if matches!(
-            target,
-            Value::Instance { .. } | Value::Package(_) | Value::Mixin(..)
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_) | ValueView::Mixin(..)
         ) {
             return None;
         }
@@ -63,11 +63,11 @@ impl Interpreter {
         if method.starts_with('!') {
             return None;
         }
-        let Value::Instance {
+        let ValueView::Instance {
             class_name: inst_class,
             attributes,
             ..
-        } = target
+        } = target.view()
         else {
             return None;
         };
@@ -129,7 +129,7 @@ impl Interpreter {
                         .as_map()
                         .get(actual_method)
                         .cloned()
-                        .unwrap_or(Value::Nil)));
+                        .unwrap_or(Value::NIL)));
                 }
             }
         }
@@ -281,7 +281,7 @@ impl Interpreter {
             };
             attributes.commit_attrs(updated);
             if !self.in_lvalue_assignment
-                && let Value::Proxy { ref fetcher, .. } = result
+                && let ValueView::Proxy { fetcher, .. } = result.view()
             {
                 let _ = method_def;
                 return Some(self.proxy_fetch(fetcher, None, qualifier, &attributes.to_map(), 0));
@@ -466,7 +466,7 @@ impl Interpreter {
         BTreeSet::new()
     }
 
-    /// Handle qualified method names on a runtime-mixed-in value (Value::Mixin):
+    /// Handle qualified method names on a runtime-mixed-in value (a `Mixin`):
     /// e.g. after `self does Foo2`, calls like `self.Foo::foo`, `self.Foo1::foo`,
     /// `self.Foo2::foo` must still resolve through the inner instance's MRO/roles
     /// and through roles applied at run time.
@@ -481,7 +481,7 @@ impl Interpreter {
         if method.starts_with('!') {
             return None;
         }
-        let Value::Mixin(inner, mixins) = target else {
+        let ValueView::Mixin(inner, mixins) = target.view() else {
             return None;
         };
 
@@ -489,7 +489,7 @@ impl Interpreter {
         //    inner instance's class, or otherwise a known role. Dispatch directly to
         //    that role's method, keeping the mixin as self so any run-time mixin
         //    survives the call.
-        let inner_class = if let Value::Instance { class_name, .. } = inner.as_ref() {
+        let inner_class = if let ValueView::Instance { class_name, .. } = inner.as_ref().view() {
             Some(class_name.resolve())
         } else {
             None
@@ -529,7 +529,7 @@ impl Interpreter {
                 // roles whose state lives on the class), then layer mixin-stored
                 // role attributes on top (for run-time-applied roles).
                 let mut role_attrs: HashMap<String, Value> =
-                    if let Value::Instance { attributes, .. } = inner.as_ref() {
+                    if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
                         attributes.to_map()
                     } else {
                         HashMap::new()
@@ -568,10 +568,10 @@ impl Interpreter {
         //    through the inner instance's MRO. Resolve and run the qualified method,
         //    but keep the Mixin as the invocant so the run-time mixin survives the
         //    call (a plain-instance identity writeback would drop the mixin).
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name: inner_cn,
             ..
-        } = inner.as_ref()
+        } = inner.as_ref().view()
         {
             let inst_cn_str = inner_cn.resolve();
             let inst_mro = self.class_mro(&inst_cn_str);
@@ -600,11 +600,12 @@ impl Interpreter {
             {
                 // Use the inner instance's attributes so the method body can read
                 // attributes, but run with the Mixin target as the invocant.
-                let attrs_map = if let Value::Instance { attributes, .. } = inner.as_ref() {
-                    attributes.to_map()
-                } else {
-                    HashMap::new()
-                };
+                let attrs_map =
+                    if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
+                        attributes.to_map()
+                    } else {
+                        HashMap::new()
+                    };
                 let res = self.run_resolved_method_compiled_or_treewalk(
                     &inst_cn_str,
                     qualifier,
@@ -629,13 +630,16 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         let (qualifier, actual_method) = method.split_once("::")?;
-        if method.starts_with('!') || matches!(target, Value::Instance { .. }) {
+        if method.starts_with('!') || matches!(target.view(), ValueView::Instance { .. }) {
             return None;
         }
         // Let constructor dispatch handle qualified base-constructor calls like
         // `self.Mu::new(...)`. Routing this through unqualified `.new` re-enters
         // user-defined constructors and recurses indefinitely.
-        if matches!(target, Value::Package(_)) && qualifier == "Mu" && actual_method == "new" {
+        if matches!(target.view(), ValueView::Package(_))
+            && qualifier == "Mu"
+            && actual_method == "new"
+        {
             return None;
         }
         let type_name = super::utils::value_type_name(target);
@@ -656,10 +660,10 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Proxy {
+        let ValueView::Proxy {
             subclass: Some((subclass_name, subclass_attrs)),
             ..
-        } = target
+        } = target.view()
         else {
             return None;
         };
@@ -689,15 +693,15 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Proxy {
+        let ValueView::Proxy {
             fetcher,
             decontainerized,
             ..
-        } = target
+        } = target.view()
         else {
             return None;
         };
-        if *decontainerized {
+        if decontainerized {
             return None;
         }
         if matches!(
@@ -706,7 +710,7 @@ impl Interpreter {
         ) {
             return None;
         }
-        let fetched = match self.call_sub_value(*fetcher.clone(), vec![target.clone()], true) {
+        let fetched = match self.call_sub_value(fetcher.clone(), vec![target.clone()], true) {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
         };

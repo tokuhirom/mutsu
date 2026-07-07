@@ -12,7 +12,7 @@ impl Interpreter {
         if v.is_container_ref() {
             v
         } else {
-            Value::ContainerRef(crate::gc::Gc::new(std::sync::Mutex::new(v)))
+            Value::container_ref(crate::gc::Gc::new(std::sync::Mutex::new(v)))
         }
     }
 
@@ -47,31 +47,31 @@ impl Interpreter {
             .get(name)
             .cloned()
             .or_else(|| self.get_shared_var(name));
-        let celled = match base {
-            Some(Value::Hash(h)) => {
+        let celled = match base.as_ref().map(Value::view) {
+            Some(ValueView::Hash(h)) => {
                 let mut data = h.as_ref().clone();
                 for v in data.map.values_mut() {
-                    let taken = std::mem::replace(v, Value::Nil);
+                    let taken = std::mem::replace(v, Value::NIL);
                     *v = Self::boxed_elem_cell(taken);
                 }
-                Value::Hash(crate::gc::Gc::new(data))
+                Value::hash_with_data(crate::gc::Gc::new(data))
             }
-            Some(Value::Array(a, kind)) => {
+            Some(ValueView::Array(a, kind)) => {
                 let mut data = a.as_ref().clone();
                 for v in data.items.iter_mut() {
-                    let taken = std::mem::replace(v, Value::Nil);
+                    let taken = std::mem::replace(v, Value::NIL);
                     *v = Self::boxed_elem_cell(taken);
                 }
-                Value::Array(crate::gc::Gc::new(data), kind)
+                Value::array_with_kind(crate::gc::Gc::new(data), kind)
             }
             _ => {
                 if name.starts_with('@') {
-                    Value::Array(
+                    Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                         crate::value::ArrayKind::Array,
                     )
                 } else {
-                    Value::Hash(Value::hash_arc(HashMap::new()))
+                    Value::hash_with_data(Value::hash_arc(HashMap::new()))
                 }
             }
         };
@@ -101,32 +101,36 @@ impl Interpreter {
     ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
         {
             let shared = self.shared_vars.read().unwrap();
-            if let Some(Value::Hash(h)) = shared.get(atomic_key)
-                && let Some(Value::ContainerRef(c)) = h.get(key)
+            if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
+                && let Some(ValueView::ContainerRef(c)) = h.get(key).map(Value::view)
             {
                 return c.clone();
             }
         }
         let mut shared = self.shared_vars.write().unwrap();
         // Re-check under the write lock (a racer may have boxed it).
-        if let Some(Value::Hash(h)) = shared.get(atomic_key)
-            && let Some(Value::ContainerRef(c)) = h.get(key)
+        if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
+            && let Some(ValueView::ContainerRef(c)) = h.get(key).map(Value::view)
         {
             return c.clone();
         }
-        let mut data = match shared.get(atomic_key) {
-            Some(Value::Hash(h)) => h.as_ref().clone(),
+        let mut data = match shared.get(atomic_key).map(Value::view) {
+            Some(ValueView::Hash(h)) => h.as_ref().clone(),
             _ => crate::value::HashData::default(),
         };
         let seed = match data.map.get(key) {
-            Some(Value::ContainerRef(c)) => return c.clone(),
-            Some(v) => v.clone(),
-            None => Value::Int(0),
+            Some(v) => {
+                if let ValueView::ContainerRef(c) = v.view() {
+                    return c.clone();
+                }
+                v.clone()
+            }
+            None => Value::int(0),
         };
         let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
         data.map
-            .insert(key.to_string(), Value::ContainerRef(cell.clone()));
-        let updated = Value::Hash(crate::gc::Gc::new(data));
+            .insert(key.to_string(), Value::container_ref(cell.clone()));
+        let updated = Value::hash_with_data(crate::gc::Gc::new(data));
         shared.insert(atomic_key.to_string(), updated.clone());
         shared.insert(hash_name.to_string(), updated.clone());
         drop(shared);
@@ -144,13 +148,13 @@ impl Interpreter {
     ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
         let resolve =
             |arr: &Value, index: i64| -> (usize, Option<crate::gc::Gc<std::sync::Mutex<Value>>>) {
-                if let Value::Array(elements, _) = arr {
+                if let ValueView::Array(elements, _) = arr.view() {
                     let idx = if index < 0 {
                         (elements.len() as i64 + index).max(0) as usize
                     } else {
                         index as usize
                     };
-                    if let Some(Value::ContainerRef(c)) = elements.get(idx) {
+                    if let Some(ValueView::ContainerRef(c)) = elements.get(idx).map(Value::view) {
                         return (idx, Some(c.clone()));
                     }
                     (idx, None)
@@ -168,31 +172,37 @@ impl Interpreter {
             }
         }
         let mut shared = self.shared_vars.write().unwrap();
-        let arr = shared.get(atomic_key).cloned().unwrap_or(Value::Array(
-            crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-            crate::value::ArrayKind::Array,
-        ));
+        let arr = shared
+            .get(atomic_key)
+            .cloned()
+            .unwrap_or(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                crate::value::ArrayKind::Array,
+            ));
         let (idx, cell) = resolve(&arr, index);
         if let Some(c) = cell {
             return c;
         }
-        let (mut data, kind) = match arr {
-            Value::Array(a, kind) => (a.as_ref().clone(), kind),
+        let (mut data, kind) = match arr.view() {
+            ValueView::Array(a, kind) => (a.as_ref().clone(), kind),
             _ => (
                 crate::value::ArrayData::new(Vec::new()),
                 crate::value::ArrayKind::Array,
             ),
         };
         while data.items.len() <= idx {
-            data.items.push(Self::boxed_elem_cell(Value::Int(0)));
+            data.items.push(Self::boxed_elem_cell(Value::int(0)));
         }
-        let seed = match &data.items[idx] {
-            Value::ContainerRef(c) => return c.clone(),
-            v => v.clone(),
+        let seed = {
+            let v = &data.items[idx];
+            if let ValueView::ContainerRef(c) = v.view() {
+                return c.clone();
+            }
+            v.clone()
         };
         let cell = crate::gc::Gc::new(std::sync::Mutex::new(seed));
-        data.items[idx] = Value::ContainerRef(cell.clone());
-        let updated = Value::Array(crate::gc::Gc::new(data), kind);
+        data.items[idx] = Value::container_ref(cell.clone());
+        let updated = Value::array_with_kind(crate::gc::Gc::new(data), kind);
         shared.insert(atomic_key.to_string(), updated.clone());
         drop(shared);
         // Arrays deliberately skip the env mirror: GetLocal consults the
@@ -243,31 +253,44 @@ impl Interpreter {
             // local snapshot), preserving ArrayData metadata (default/
             // initialized/type). Afterwards the atomic entry is authoritative
             // and is mutated in place under the write lock.
-            if !matches!(shared.get(&atomic_key), Some(Value::Array(..))) {
-                let seed = match shared.get(arr_name).or_else(|| self.env.get(arr_name)) {
-                    Some(Value::Array(elems, _)) => elems.as_ref().clone(),
+            if !matches!(
+                shared.get(&atomic_key).map(Value::view),
+                Some(ValueView::Array(..))
+            ) {
+                let seed = match shared
+                    .get(arr_name)
+                    .or_else(|| self.env.get(arr_name))
+                    .map(Value::view)
+                {
+                    Some(ValueView::Array(elems, _)) => elems.as_ref().clone(),
                     _ => crate::value::ArrayData::default(),
                 };
                 shared.insert(
                     atomic_key.clone(),
-                    Value::Array(crate::gc::Gc::new(seed), crate::value::ArrayKind::Array),
+                    Value::array_with_kind(
+                        crate::gc::Gc::new(seed),
+                        crate::value::ArrayKind::Array,
+                    ),
                 );
             }
-            let Some(Value::Array(arc_items, kind)) = shared.get_mut(&atomic_key) else {
+            let Some(slot) = shared.get_mut(&atomic_key) else {
                 unreachable!("atomic array entry seeded just above");
             };
-            let elements = crate::gc::Gc::make_mut(arc_items);
-            if prepend {
-                for (i, it) in items.into_iter().enumerate() {
-                    elements.insert(i, it);
+            slot.with_array_mut(|arc_items, kind| {
+                let elements = crate::gc::Gc::make_mut(arc_items);
+                if prepend {
+                    for (i, it) in items.into_iter().enumerate() {
+                        elements.insert(i, it);
+                    }
+                } else {
+                    elements.extend(items);
                 }
-            } else {
-                elements.extend(items);
-            }
-            if *kind == crate::value::ArrayKind::List {
-                *kind = crate::value::ArrayKind::Array;
-            }
-            Value::Array(crate::gc::Gc::clone(arc_items), *kind)
+                if *kind == crate::value::ArrayKind::List {
+                    *kind = crate::value::ArrayKind::Array;
+                }
+                Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
+            })
+            .expect("atomic array entry seeded just above")
         };
         // Mark the user-visible name dirty so `sync_shared_vars_to_env`
         // propagates the merged array back to the parent thread.
@@ -277,7 +300,7 @@ impl Interpreter {
             let dirty_marker = format!("__mutsu_shared_dirty::{arr_name}");
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(arr_name);
-                self.env.insert(dirty_marker, Value::Bool(true));
+                self.env.insert(dirty_marker, Value::TRUE);
             }
         } else {
             self.mark_shared_var_dirty(arr_name);
@@ -307,8 +330,8 @@ impl Interpreter {
         // republish.
         {
             let shared = self.shared_vars.read().unwrap();
-            if let Some(Value::Array(elems, _)) = shared.get(&atomic_key)
-                && let Some(Value::ContainerRef(c)) = elems.get(idx)
+            if let Some(ValueView::Array(elems, _)) = shared.get(&atomic_key).map(Value::view)
+                && let Some(ValueView::ContainerRef(c)) = elems.get(idx).map(Value::view)
             {
                 let cell = c.clone();
                 drop(shared);
@@ -321,18 +344,22 @@ impl Interpreter {
         }
         let updated = {
             let mut shared = self.shared_vars.write().unwrap();
-            let mut elements: Vec<Value> = match shared.get(&atomic_key) {
-                Some(Value::Array(elems, _)) => elems.to_vec(),
-                _ => match shared.get(arr_name).or_else(|| self.env.get(arr_name)) {
-                    Some(Value::Array(elems, _)) => elems.to_vec(),
+            let mut elements: Vec<Value> = match shared.get(&atomic_key).map(Value::view) {
+                Some(ValueView::Array(elems, _)) => elems.to_vec(),
+                _ => match shared
+                    .get(arr_name)
+                    .or_else(|| self.env.get(arr_name))
+                    .map(Value::view)
+                {
+                    Some(ValueView::Array(elems, _)) => elems.to_vec(),
                     _ => Vec::new(),
                 },
             };
             if idx >= elements.len() {
-                elements.resize(idx + 1, Value::Nil);
+                elements.resize(idx + 1, Value::NIL);
             }
             elements[idx] = value.clone();
-            let new_arr = Value::Array(
+            let new_arr = Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(elements)),
                 crate::value::ArrayKind::Array,
             );
@@ -362,8 +389,8 @@ impl Interpreter {
         // Track B cell fast path — see `shared_array_elem_set`.
         {
             let shared = self.shared_vars.read().unwrap();
-            if let Some(Value::Hash(h)) = shared.get(&atomic_key)
-                && let Some(Value::ContainerRef(c)) = h.get(&elem_key)
+            if let Some(ValueView::Hash(h)) = shared.get(&atomic_key).map(Value::view)
+                && let Some(ValueView::ContainerRef(c)) = h.get(&elem_key).map(Value::view)
             {
                 let cell = c.clone();
                 drop(shared);
@@ -376,15 +403,19 @@ impl Interpreter {
         }
         let updated = {
             let mut shared = self.shared_vars.write().unwrap();
-            let mut map = match shared.get(&atomic_key) {
-                Some(Value::Hash(h)) => h.as_ref().clone(),
-                _ => match shared.get(hash_name).or_else(|| self.env.get(hash_name)) {
-                    Some(Value::Hash(h)) => h.as_ref().clone(),
+            let mut map = match shared.get(&atomic_key).map(Value::view) {
+                Some(ValueView::Hash(h)) => h.as_ref().clone(),
+                _ => match shared
+                    .get(hash_name)
+                    .or_else(|| self.env.get(hash_name))
+                    .map(Value::view)
+                {
+                    Some(ValueView::Hash(h)) => h.as_ref().clone(),
                     _ => crate::value::HashData::default(),
                 },
             };
             Value::hash_insert_through(&mut map.map, elem_key, value.clone());
-            let new_hash = Value::Hash(crate::gc::Gc::new(map));
+            let new_hash = Value::hash_with_data(crate::gc::Gc::new(map));
             shared.insert(atomic_key, new_hash.clone());
             new_hash
         };
@@ -407,12 +438,12 @@ impl Interpreter {
             ));
         }
         let arr_name = args[0].to_string_value();
-        let dims: Vec<i64> = match &args[1] {
-            Value::Array(elems, ..) => elems
+        let dims: Vec<i64> = match args[1].view() {
+            ValueView::Array(elems, ..) => elems
                 .iter()
-                .map(|v| match v {
-                    Value::Int(i) => *i,
-                    other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                .map(|v| match v.view() {
+                    ValueView::Int(i) => i,
+                    _ => v.to_string_value().parse::<i64>().unwrap_or(0),
                 })
                 .collect(),
             _ => vec![0],
@@ -427,10 +458,14 @@ impl Interpreter {
             let shared = self.shared_vars.read().unwrap();
             if !shared.contains_key(&atomic_key) {
                 drop(shared);
-                let arr = self.env.get(&arr_name).cloned().unwrap_or(Value::Array(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                    crate::value::ArrayKind::Array,
-                ));
+                let arr = self
+                    .env
+                    .get(&arr_name)
+                    .cloned()
+                    .unwrap_or(Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                        crate::value::ArrayKind::Array,
+                    ));
                 let mut shared = self.shared_vars.write().unwrap();
                 if !shared.contains_key(&atomic_key) {
                     shared.insert(atomic_key.clone(), arr);
@@ -442,10 +477,13 @@ impl Interpreter {
         let current;
         {
             let mut shared = self.shared_vars.write().unwrap();
-            let arr = shared.get(&atomic_key).cloned().unwrap_or(Value::Array(
-                crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                crate::value::ArrayKind::Array,
-            ));
+            let arr = shared
+                .get(&atomic_key)
+                .cloned()
+                .unwrap_or(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
+                    crate::value::ArrayKind::Array,
+                ));
             // Navigate to the element using the dimension indices
             current = Self::multidim_get(&arr, &dims);
             if Self::cas_retry_matches(&current, expected) {
@@ -465,15 +503,16 @@ impl Interpreter {
     fn multidim_get(arr: &Value, dims: &[i64]) -> Value {
         let mut current = arr.clone();
         for &dim in dims {
-            if let Value::Array(ref elements, ..) = current {
+            if let ValueView::Array(elements, ..) = current.view() {
                 let idx = if dim < 0 {
                     (elements.len() as i64 + dim) as usize
                 } else {
                     dim as usize
                 };
-                current = elements.get(idx).cloned().unwrap_or(Value::Int(0));
+                let next = elements.get(idx).cloned().unwrap_or(Value::int(0));
+                current = next;
             } else {
-                return Value::Int(0);
+                return Value::int(0);
             }
         }
         current
@@ -485,7 +524,7 @@ impl Interpreter {
         if dims.is_empty() {
             return value;
         }
-        if let Value::Array(elements, kind) = arr {
+        if let ValueView::Array(elements, kind) = arr.view() {
             let idx = if dims[0] < 0 {
                 (elements.len() as i64 + dims[0]) as usize
             } else {
@@ -493,14 +532,14 @@ impl Interpreter {
             };
             let mut new_elements = (**elements).clone();
             while new_elements.len() <= idx {
-                new_elements.push(Value::Int(0));
+                new_elements.push(Value::int(0));
             }
             if dims.len() == 1 {
                 new_elements[idx] = value;
             } else {
                 new_elements[idx] = Self::multidim_set(&new_elements[idx], &dims[1..], value);
             }
-            Value::Array(crate::gc::Gc::new(new_elements), *kind)
+            Value::array_with_kind(crate::gc::Gc::new(new_elements), kind)
         } else {
             arr.clone()
         }
@@ -527,7 +566,8 @@ impl Interpreter {
         {
             return None;
         }
-        let Some(Value::Instance { attributes, .. }) = self.env.get("self") else {
+        let Some(ValueView::Instance { attributes, .. }) = self.env.get("self").map(Value::view)
+        else {
             return None;
         };
         let attrs = attributes.clone();
@@ -572,7 +612,7 @@ impl Interpreter {
         let cell = self.celled_hash_elem(&atomic_key, &hash_name, &key);
 
         // Check if code is {.succ} or {.pred} for fast path
-        if let Value::Sub(ref sub) = code {
+        if let ValueView::Sub(sub) = code.view() {
             let effective_body: Vec<&Stmt> = sub
                 .body
                 .iter()
@@ -604,8 +644,8 @@ impl Interpreter {
                     // shares this cell).
                     let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                     let current = guard.clone();
-                    *guard = crate::builtins::arith_add(current, Value::Int(d))?;
-                    return Ok(Value::Nil);
+                    *guard = crate::builtins::arith_add(current, Value::int(d))?;
+                    return Ok(Value::NIL);
                 }
             }
         }
@@ -617,7 +657,7 @@ impl Interpreter {
         loop {
             let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let new_val = {
-                let call_args = if let Value::Sub(ref sub) = code {
+                let call_args = if let ValueView::Sub(sub) = code.view() {
                     if sub.params.is_empty() {
                         self.env.insert("_".to_string(), current.clone());
                         self.env.insert("$_".to_string(), current.clone());
@@ -633,7 +673,7 @@ impl Interpreter {
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             if Self::cas_retry_matches(&current, &guard) {
                 *guard = new_val;
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
         }
     }

@@ -21,11 +21,11 @@ pub(super) fn format_first_result(
     has_p: bool,
 ) -> Value {
     if has_k {
-        Value::Int(idx as i64)
+        Value::int(idx as i64)
     } else if has_kv {
-        Value::array(vec![Value::Int(idx as i64), value])
+        Value::array(vec![Value::int(idx as i64), value])
     } else if has_p {
-        Value::ValuePair(Box::new(Value::Int(idx as i64)), Box::new(value))
+        Value::value_pair(Value::int(idx as i64), value)
     } else {
         value
     }
@@ -35,11 +35,11 @@ pub(super) fn format_first_result(
 pub(crate) fn builtin_val(args: &[Value]) -> Value {
     let arg = match args.first() {
         Some(v) => v,
-        None => return Value::Nil,
+        None => return Value::NIL,
     };
     // val() on non-Str types (List, Slip, Array) returns the value unchanged.
-    match arg {
-        Value::Array(..) | Value::Seq(_) | Value::Slip(_) => return arg.clone(),
+    match arg.view() {
+        ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => return arg.clone(),
         _ => {}
     }
     let original = arg.to_string_value();
@@ -98,9 +98,9 @@ impl Interpreter {
             return Err(err);
         }
         let elems = self.builtin_elems(args)?;
-        match elems {
-            Value::Int(n) => Ok(Value::Int(n - 1)),
-            _ => Ok(Value::Int(0)),
+        match elems.view() {
+            ValueView::Int(n) => Ok(Value::int(n - 1)),
+            _ => Ok(Value::int(0)),
         }
     }
 
@@ -145,7 +145,7 @@ impl Interpreter {
             let key = val.to_string_value();
             if !elems.contains(&key) {
                 // Track original type for non-Str values
-                if !matches!(val, Value::Str(_)) {
+                if !matches!(val.view(), ValueView::Str(_)) {
                     original_keys.insert(key.clone(), val.clone());
                     *has_typed_keys = true;
                 }
@@ -154,33 +154,33 @@ impl Interpreter {
         };
 
         for arg in args {
-            match arg {
+            match arg.view() {
                 // Itemized arrays ($[...]) are treated as a single element
-                Value::Array(_, kind) if kind.is_itemized() => {
+                ValueView::Array(_, kind) if kind.is_itemized() => {
                     insert_value(arg, &mut elems, &mut original_keys, &mut has_typed_keys);
                 }
                 // Regular arrays are flattened
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     for item in items.iter() {
                         insert_value(item, &mut elems, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 // Hashes are decomposed into their pairs
-                Value::Hash(map) => {
+                ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
-                        let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+                        let pair = Value::pair(k.clone(), v.clone());
                         insert_value(&pair, &mut elems, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
-                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     for item in items.iter() {
                         insert_value(item, &mut elems, &mut original_keys, &mut has_typed_keys);
                     }
                 }
-                other => {
-                    insert_value(other, &mut elems, &mut original_keys, &mut has_typed_keys);
+                _ => {
+                    insert_value(arg, &mut elems, &mut original_keys, &mut has_typed_keys);
                 }
             }
         }
@@ -212,7 +212,7 @@ impl Interpreter {
             item: &Value,
         ) {
             let str_key = item.to_string_value();
-            if !matches!(item, Value::Str(_)) {
+            if !matches!(item.view(), ValueView::Str(_)) {
                 *has_non_str = true;
                 original_keys
                     .entry(str_key.clone())
@@ -222,21 +222,21 @@ impl Interpreter {
         }
 
         for arg in args {
-            match arg {
+            match arg.view() {
                 // Itemized arrays/hashes are single elements
-                Value::Array(_, kind) if kind.is_itemized() => {
+                ValueView::Array(_, kind) if kind.is_itemized() => {
                     add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                 }
                 // Regular arrays are flattened
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     for item in items.iter() {
                         add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
                     }
                 }
                 // Hashes are flattened into their pairs (each pair is a single element)
-                Value::Hash(map) => {
+                ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
-                        let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+                        let pair = Value::pair(k.clone(), v.clone());
                         add_item(
                             &mut counts,
                             &mut original_keys,
@@ -246,23 +246,18 @@ impl Interpreter {
                     }
                 }
                 // QuantHash types are single elements
-                Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _) => {
+                ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => {
                     add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
-                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     for item in items.iter() {
                         add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, item);
                     }
                 }
-                other => {
-                    add_item(
-                        &mut counts,
-                        &mut original_keys,
-                        &mut has_non_str_keys,
-                        other,
-                    );
+                _ => {
+                    add_item(&mut counts, &mut original_keys, &mut has_non_str_keys, arg);
                 }
             }
         }
@@ -290,7 +285,7 @@ impl Interpreter {
                             has_typed_keys: &mut bool| {
             let key = val.to_string_value();
             // Track original type for non-Str values
-            if !matches!(val, Value::Str(_)) {
+            if !matches!(val.view(), ValueView::Str(_)) {
                 original_keys.insert(key.clone(), val.clone());
                 *has_typed_keys = true;
             }
@@ -298,33 +293,33 @@ impl Interpreter {
         };
 
         for arg in args {
-            match arg {
+            match arg.view() {
                 // Itemized arrays ($[...]) are treated as a single element
-                Value::Array(_, kind) if kind.is_itemized() => {
+                ValueView::Array(_, kind) if kind.is_itemized() => {
                     insert_value(arg, &mut weights, &mut original_keys, &mut has_typed_keys);
                 }
                 // Regular arrays are flattened; each element becomes a key
-                Value::Array(items, ..) => {
+                ValueView::Array(items, ..) => {
                     for item in items.iter() {
                         insert_value(item, &mut weights, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 // Hashes are flattened into their pairs; each pair becomes a key
-                Value::Hash(map) => {
+                ValueView::Hash(map) => {
                     for (k, v) in map.iter() {
-                        let pair = Value::Pair(k.clone(), Box::new(v.clone()));
+                        let pair = Value::pair(k.clone(), v.clone());
                         insert_value(&pair, &mut weights, &mut original_keys, &mut has_typed_keys);
                     }
                 }
                 // A Seq (e.g. from `.map`/`.comb`) is a list of elements, not one
                 // opaque value — flatten it like a regular array.
-                Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => {
+                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                     for item in items.iter() {
                         insert_value(item, &mut weights, &mut original_keys, &mut has_typed_keys);
                     }
                 }
-                other => {
-                    insert_value(other, &mut weights, &mut original_keys, &mut has_typed_keys);
+                _ => {
+                    insert_value(arg, &mut weights, &mut original_keys, &mut has_typed_keys);
                 }
             }
         }
@@ -381,8 +376,8 @@ impl Interpreter {
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let val = args.get(1).cloned().unwrap_or(Value::Nil);
-        Ok(Value::Pair(key, Box::new(val)))
+        let val = args.get(1).cloned().unwrap_or(Value::NIL);
+        Ok(Value::pair(key, val))
     }
 
     pub(super) fn builtin_keys(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -406,7 +401,7 @@ impl Interpreter {
         args: &[Value],
         method: &str,
     ) -> Result<Value, RuntimeError> {
-        let target = args.first().cloned().unwrap_or(Value::Nil);
+        let target = args.first().cloned().unwrap_or(Value::NIL);
         crate::builtins::native_method_0arg(&target, crate::symbol::Symbol::intern(method))
             .unwrap_or_else(|| Ok(Value::array(Vec::new())))
     }

@@ -4,7 +4,7 @@
 //! and `methods_distribution` for the method dispatch entry points.
 
 use crate::runtime::Interpreter;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 use super::methods_distribution_helpers::{
@@ -26,13 +26,13 @@ impl Interpreter {
         for dir in [&dist_dir, &sources_dir, &resources_dir, &bin_dir] {
             std::fs::create_dir_all(dir).ok();
         }
-        let (meta, dist_prefix) = match dist {
-            Value::Instance { attributes, .. } => {
+        let (meta, dist_prefix) = match dist.view() {
+            ValueView::Instance { attributes, .. } => {
                 let m = attributes
                     .as_map()
                     .get("meta")
                     .cloned()
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 let p = attributes
                     .as_map()
                     .get("prefix")
@@ -40,7 +40,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 (m, p)
             }
-            _ => return Ok(Value::Bool(false)),
+            _ => return Ok(Value::FALSE),
         };
         // Reject re-installing an identical distribution (same name/ver/auth/api).
         let new_identity = dist_identity(&meta);
@@ -81,7 +81,7 @@ impl Interpreter {
         );
         let mut installed_provides = HashMap::new();
         if let Some(provides) = meta.hash_get_str("provides")
-            && let Value::Hash(map) = provides
+            && let ValueView::Hash(map) = provides.view()
         {
             for (k, v) in map.iter() {
                 let source_path_str = v.to_string_value();
@@ -93,12 +93,12 @@ impl Interpreter {
                 }
                 let mut inner = HashMap::new();
                 inner.insert("file".to_string(), Value::str(source_id));
-                installed_provides.insert(k.clone(), Value::Hash(Value::hash_arc(inner)));
+                installed_provides.insert(k.clone(), Value::hash_with_data(Value::hash_arc(inner)));
             }
         }
         let mut installed_resources = HashMap::new();
         if let Some(resources_val) = meta.hash_get_str("resources")
-            && let Value::Array(arr, _) = resources_val
+            && let ValueView::Array(arr, _) = resources_val.view()
         {
             for resource in arr.iter() {
                 let resource_str = resource.to_string_value();
@@ -143,28 +143,31 @@ impl Interpreter {
                 installed_bin.insert(format!("bin/{name}"), Value::str(bin_id));
             }
         }
-        let meta_inner = match &meta {
-            Value::Mixin(inner, _) => inner.as_ref(),
-            other => other,
+        let meta_inner: &Value = match meta.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref(),
+            _ => &meta,
         };
-        let mut meta_map = match meta_inner {
-            Value::Hash(map) => map.map.clone(),
+        let mut meta_map = match meta_inner.view() {
+            ValueView::Hash(map) => map.map.clone(),
             _ => HashMap::new(),
         };
         meta_map.insert(
             "provides".to_string(),
-            Value::Hash(Value::hash_arc(installed_provides)),
+            Value::hash_with_data(Value::hash_arc(installed_provides)),
         );
         let mut all_files = installed_resources;
         all_files.extend(installed_bin);
-        meta_map.insert("files".to_string(), Value::Hash(Value::hash_arc(all_files)));
+        meta_map.insert(
+            "files".to_string(),
+            Value::hash_with_data(Value::hash_arc(all_files)),
+        );
         meta_map.insert("dist-id".to_string(), Value::str(dist_id.clone()));
-        let meta_value = Value::Hash(Value::hash_arc(meta_map));
+        let meta_value = Value::hash_with_data(Value::hash_arc(meta_map));
         let json_str = value_to_json_string(&meta_value);
         let dist_file = dist_dir.join(format!("{dist_id}.json"));
         std::fs::write(&dist_file, json_str)
             .map_err(|e| RuntimeError::new(format!("Cannot write dist file: {e}")))?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     /// Uninstall a distribution.
@@ -173,23 +176,23 @@ impl Interpreter {
         prefix: &str,
         dist: &Value,
     ) -> Result<Value, RuntimeError> {
-        let dist_id = match dist {
-            Value::Instance { attributes, .. } => attributes
+        let dist_id = match dist.view() {
+            ValueView::Instance { attributes, .. } => attributes
                 .as_map()
                 .get("dist-id")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default(),
-            _ => return Ok(Value::Bool(false)),
+            _ => return Ok(Value::FALSE),
         };
         if dist_id.is_empty() {
-            return Ok(Value::Bool(false));
+            return Ok(Value::FALSE);
         }
         let prefix_path = std::path::Path::new(prefix);
         let dist_file = prefix_path.join("dist").join(format!("{dist_id}.json"));
         if dist_file.exists() {
             std::fs::remove_file(&dist_file).ok();
         }
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     /// Get installed distributions.
@@ -238,7 +241,7 @@ impl Interpreter {
         prefix: &str,
         depspec: Option<Value>,
     ) -> Result<Value, RuntimeError> {
-        let depspec = depspec.unwrap_or(Value::Nil);
+        let depspec = depspec.unwrap_or(Value::NIL);
         let (short_name, ..) = self.extract_depspec_fields(&depspec);
         if short_name.is_empty() {
             return Err(RuntimeError::new(
@@ -246,18 +249,18 @@ impl Interpreter {
             ));
         }
         // Find candidates and pick the highest matching version.
-        let candidates = match self.cur_inst_candidates(prefix, &depspec)? {
-            Value::Array(arr, _) => arr,
-            _ => crate::value::Value::array_arc(Vec::new()),
+        let candidates = match self.cur_inst_candidates(prefix, &depspec)?.into_array() {
+            Some((arr, _)) => arr,
+            None => crate::value::Value::array_arc(Vec::new()),
         };
         let dist_meta = |dist: &Value| -> Value {
-            match dist {
-                Value::Instance { attributes, .. } => attributes
+            match dist.view() {
+                ValueView::Instance { attributes, .. } => attributes
                     .as_map()
                     .get("meta")
                     .cloned()
-                    .unwrap_or(Value::Nil),
-                _ => Value::Nil,
+                    .unwrap_or(Value::NIL),
+                _ => Value::NIL,
             }
         };
         let best = candidates
@@ -289,12 +292,12 @@ impl Interpreter {
         let source_id = meta
             .hash_get_str("provides")
             .and_then(|p| p.hash_get_str(&short_name))
-            .map(|entry| match &entry {
-                Value::Hash(map) => map
+            .map(|entry| match entry.view() {
+                ValueView::Hash(map) => map
                     .get("file")
                     .map(|v| v.to_string_value())
                     .unwrap_or_default(),
-                other => other.to_string_value(),
+                _ => entry.to_string_value(),
             })
             .unwrap_or_default();
         let source_path = std::path::Path::new(prefix)

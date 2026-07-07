@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Track C: assign a single hash element (`%h{$k} = $v`) through the shared
@@ -45,7 +46,7 @@ impl Interpreter {
         // would discard accumulated element writes.
         {
             let sv = self.shared_vars.read().unwrap();
-            if !matches!(sv.get(key), Some(Value::Hash(_))) {
+            if !matches!(sv.get(key).map(|v| v.view()), Some(ValueView::Hash(_))) {
                 return None;
             }
         }
@@ -56,15 +57,15 @@ impl Interpreter {
             self.env.remove(key);
         }
         let mut sv = self.shared_vars.write().unwrap();
-        let Some(Value::Hash(arc)) = sv.get_mut(key) else {
-            return None;
-        };
-        Value::hash_insert_through(
-            &mut crate::gc::Gc::make_mut(arc).map,
-            elem_key,
-            value.clone(),
-        );
-        let result = Value::Hash(arc.clone());
+        let val = sv.get_mut(key)?;
+        let result = val.with_hash_mut(|arc| {
+            Value::hash_insert_through(
+                &mut crate::gc::Gc::make_mut(arc).map,
+                elem_key,
+                value.clone(),
+            );
+            Value::hash_with_data(arc.clone())
+        })?;
         drop(sv);
         if is_thread_clone {
             // Mark dirty once per key (a per-key env marker avoids re-locking the
@@ -72,7 +73,7 @@ impl Interpreter {
             let dirty_marker = format!("__mutsu_shared_dirty::{key}");
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(key);
-                self.env.insert(dirty_marker, Value::Bool(true));
+                self.env.insert(dirty_marker, Value::TRUE);
             }
         } else {
             self.mark_shared_var_dirty(key);
@@ -121,7 +122,7 @@ impl Interpreter {
         // dropping the local env copy.
         {
             let sv = self.shared_vars.read().unwrap();
-            if !matches!(sv.get(key), Some(Value::Array(..))) {
+            if !matches!(sv.get(key).map(|v| v.view()), Some(ValueView::Array(..))) {
                 return None;
             }
         }
@@ -132,24 +133,24 @@ impl Interpreter {
             self.env.remove(key);
         }
         let mut sv = self.shared_vars.write().unwrap();
-        let Some(Value::Array(arc, kind)) = sv.get_mut(key) else {
-            return None;
-        };
-        let data = crate::gc::Gc::make_mut(arc);
-        if idx >= data.items.len() {
-            data.items.resize(idx + 1, Value::Nil);
-        }
-        data.items[idx] = value.clone();
-        if *kind == ArrayKind::List {
-            *kind = ArrayKind::Array;
-        }
-        let result = Value::Array(crate::gc::Gc::clone(arc), *kind);
+        let val = sv.get_mut(key)?;
+        let result = val.with_array_mut(|arc, kind| {
+            let data = crate::gc::Gc::make_mut(arc);
+            if idx >= data.items.len() {
+                data.items.resize(idx + 1, Value::NIL);
+            }
+            data.items[idx] = value.clone();
+            if *kind == ArrayKind::List {
+                *kind = ArrayKind::Array;
+            }
+            Value::array_with_kind(crate::gc::Gc::clone(arc), *kind)
+        })?;
         drop(sv);
         if is_thread_clone {
             let dirty_marker = format!("__mutsu_shared_dirty::{key}");
             if !self.env.contains_key(&dirty_marker) {
                 self.mark_shared_var_dirty(key);
-                self.env.insert(dirty_marker, Value::Bool(true));
+                self.env.insert(dirty_marker, Value::TRUE);
             }
         } else {
             self.mark_shared_var_dirty(key);
@@ -284,12 +285,12 @@ impl Interpreter {
             // `set_env_with_main_alias` — even outside any actual threading —
             // so coercing there would silently corrupt List identity for
             // ordinary single-threaded code.
-            let value = if key.starts_with('@') {
-                match value {
-                    // Preserve Shaped arrays; only normalize List to Array.
-                    Value::Array(items, ArrayKind::List) => Value::Array(items, ArrayKind::Array),
-                    other => other,
-                }
+            // Preserve Shaped arrays; only normalize List to Array.
+            let value = if key.starts_with('@')
+                && matches!(value.view(), ValueView::Array(_, ArrayKind::List))
+            {
+                let (items, _) = value.into_array().unwrap();
+                Value::array_with_kind(items, ArrayKind::Array)
             } else {
                 value
             };
@@ -374,10 +375,13 @@ impl Interpreter {
                 // Atomic ops store the value under an internal shared key, while
                 // dirty tracking also marks the user-visible variable name.
                 let name_key = format!("__mutsu_atomic_name::{key}");
-                let value_key = match sv.get(&name_key).or_else(|| self.env.get(&name_key)) {
-                    Some(Value::Str(vk)) => Some(vk.as_ref().clone()),
-                    _ => None,
-                };
+                let value_key = sv
+                    .get(&name_key)
+                    .or_else(|| self.env.get(&name_key))
+                    .and_then(|v| match v.view() {
+                        ValueView::Str(vk) => Some(vk.as_ref().clone()),
+                        _ => None,
+                    });
                 if let Some(value_key) = value_key
                     && let Some(val) = sv.get(value_key.as_str())
                 {
@@ -445,7 +449,7 @@ impl Interpreter {
         let sv = self.shared_vars.read().unwrap();
         for name in names {
             if let Some(val) = sv.get(name) {
-                if matches!(val, Value::Array(..) | Value::Hash(..)) {
+                if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                     self.env.remove(name);
                 } else {
                     self.env.insert(name.to_string(), val.clone());
@@ -469,13 +473,20 @@ impl Interpreter {
         // reset clears the shared cell in that case too; otherwise a later
         // `atomic-fetch-add` reads the stale shared value instead of the
         // freshly-assigned one (roast S03-metaops/hyper.t test 408).
-        let value_key = match self.env.remove(&name_key) {
-            Some(Value::Str(vk)) => vk,
-            _ => {
+        let value_key: String = match self
+            .env
+            .remove(&name_key)
+            .and_then(|v| v.as_str().map(str::to_string))
+        {
+            Some(vk) => vk,
+            None => {
                 let shared = self.shared_vars.read().unwrap();
-                match shared.get(&name_key) {
-                    Some(Value::Str(vk)) => vk.clone(),
-                    _ => return,
+                match shared
+                    .get(&name_key)
+                    .and_then(|v| v.as_str().map(str::to_string))
+                {
+                    Some(vk) => vk,
+                    None => return,
                 }
             }
         };
@@ -488,8 +499,10 @@ impl Interpreter {
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
         let mut shared = self.shared_vars.write().unwrap();
-        if let Some(Value::Str(value_key)) = shared.remove(&name_key) {
-            shared.remove(value_key.as_str());
+        if let Some(v) = shared.remove(&name_key)
+            && let Some(value_key) = v.as_str()
+        {
+            shared.remove(value_key);
         }
     }
 
@@ -501,7 +514,7 @@ impl Interpreter {
             if !key.starts_with("__mutsu_sigilless_alias::!") {
                 continue;
             }
-            let Value::Str(alias_name) = alias else {
+            let ValueView::Str(alias_name) = alias.view() else {
                 continue;
             };
             if let Some(bare) = alias_name

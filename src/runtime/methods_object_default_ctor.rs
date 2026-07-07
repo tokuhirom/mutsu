@@ -14,7 +14,10 @@ impl Interpreter {
         // signature binding raises the proper error. (This also covers a BUILD
         // with a positional parameter: `.new` strips positionals before BUILD, so
         // `Foo.new('x', :y)` must die rather than feed 'x' to BUILD.)
-        if args.iter().any(|a| !matches!(a, Value::Pair(..))) {
+        if args
+            .iter()
+            .any(|a| !matches!(a.view(), ValueView::Pair(..)))
+        {
             return None;
         }
         let class_attrs = self.collect_class_attributes(cn_resolved);
@@ -51,7 +54,7 @@ impl Interpreter {
             if has_build {
                 break;
             }
-            if let Value::Pair(key, val) = arg
+            if let ValueView::Pair(key, val) = arg.view()
                 && self.is_attribute_buildable(cn_resolved, key)
             {
                 match sigil_of(key) {
@@ -60,7 +63,7 @@ impl Interpreter {
                         // (List/Range -> Array, array-of-Pairs -> Hash, …).
                         attrs.insert(
                             key.clone(),
-                            Self::coerce_attr_value_by_sigil(*val.clone(), sigil_of(key)),
+                            Self::coerce_attr_value_by_sigil(val.clone(), sigil_of(key)),
                         );
                     }
                     _ => {
@@ -80,7 +83,7 @@ impl Interpreter {
                         {
                             return None;
                         }
-                        attrs.insert(key.clone(), *val.clone());
+                        attrs.insert(key.clone(), val.clone());
                     }
                 }
             }
@@ -163,7 +166,7 @@ impl Interpreter {
                     let old_class = self.env.get("?CLASS").cloned();
                     self.env.insert(
                         "?CLASS".to_string(),
-                        Value::Package(crate::symbol::Symbol::intern(cn_resolved)),
+                        Value::package(crate::symbol::Symbol::intern(cn_resolved)),
                     );
                     self.env.insert("self".to_string(), temp_self.clone());
                     self.env.insert("__ANON_STATE__".to_string(), temp_self);
@@ -259,7 +262,7 @@ impl Interpreter {
                         _ => type_constraints
                             .get(attr_name)
                             .and_then(|c| Self::native_scalar_default(c))
-                            .unwrap_or(Value::Nil),
+                            .unwrap_or(Value::NIL),
                     };
                     attrs.insert(attr_name.clone(), empty);
                 }
@@ -306,8 +309,10 @@ impl Interpreter {
             if *sigil != '@' {
                 continue;
             }
-            if let Some(Value::Slip(items) | Value::Seq(items)) = attrs.get(attr_name) {
-                let flattened = Value::Array(
+            if let Some(ValueView::Slip(items) | ValueView::Seq(items)) =
+                attrs.get(attr_name).map(Value::view)
+            {
+                let flattened = Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
                     crate::value::ArrayKind::Array,
                 );
@@ -389,7 +394,10 @@ impl Interpreter {
             // `X::Attribute::Required` with the same message and reason.
             for (attr_name, _, _, _, is_required, _, _) in &class_attrs {
                 if let Some(reason) = is_required {
-                    let is_set = !matches!(attrs.get(attr_name), Some(Value::Nil) | None);
+                    let is_set = !matches!(
+                        attrs.get(attr_name).map(Value::view),
+                        Some(ValueView::Nil) | None
+                    );
                     if !is_set {
                         let attr_full_name = format!("$!{}", attr_name);
                         return Some(Err(RuntimeError::attribute_required(

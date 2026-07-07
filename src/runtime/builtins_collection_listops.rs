@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 use std::collections::HashMap as StdHashMap;
 
 impl Interpreter {
@@ -18,8 +19,8 @@ impl Interpreter {
                 args.len()
             )));
         }
-        Ok(match args.first().cloned() {
-            Some(Value::Array(mut items, ..)) => {
+        Ok(match args.first().cloned().and_then(|v| v.into_array()) {
+            Some((mut items, _)) => {
                 if items.is_empty() {
                     make_empty_array_failure("shift")
                 } else {
@@ -47,19 +48,19 @@ impl Interpreter {
                 args.len()
             )));
         }
-        match args.first() {
-            Some(Value::Array(_, kind)) if kind.is_lazy() => {
-                return Err(RuntimeError::cannot_lazy("pop"));
-            }
-            _ => {}
+        if let Some(v) = args.first()
+            && let ValueView::Array(_, kind) = v.view()
+            && kind.is_lazy()
+        {
+            return Err(RuntimeError::cannot_lazy("pop"));
         }
-        Ok(match args.first().cloned() {
-            Some(Value::Array(mut items, ..)) => {
+        Ok(match args.first().cloned().and_then(|v| v.into_array()) {
+            Some((mut items, _)) => {
                 let items_mut = crate::gc::Gc::make_mut(&mut items);
                 if items_mut.is_empty() {
                     make_empty_array_failure("pop")
                 } else {
-                    items_mut.pop().unwrap_or(Value::Nil)
+                    items_mut.pop().unwrap_or(Value::NIL)
                 }
             }
             _ => make_empty_array_failure("pop"),
@@ -80,7 +81,7 @@ impl Interpreter {
         // `args.get(1..)` (not `&args[1..]`) so bare `join()` / `join(sep)` with no
         // list args doesn't panic on an empty slice.
         for v in args.get(1..).unwrap_or(&[]) {
-            if let Value::LazyList(list) = v {
+            if let ValueView::LazyList(list) = v.view() {
                 // A genuinely-lazy `@`-array stays opaque (rendered `...` by
                 // `flat_val`) rather than forcing its capped prefix — this is the
                 // `"@a[]"` interpolation path (`join " ", @a`). (L2)
@@ -101,7 +102,7 @@ impl Interpreter {
     pub(super) fn builtin_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         // `list` on a single Seq is a no-op (returns the Seq as-is)
         if args.len() == 1
-            && let Value::Seq(_) = &args[0]
+            && let ValueView::Seq(_) = args[0].view()
         {
             return Ok(args[0].clone());
         }
@@ -134,23 +135,23 @@ impl Interpreter {
         } else {
             args.to_vec()
         };
-        let list = Value::Array(
+        let list = Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
             crate::value::ArrayKind::List,
         );
         let mut result = Vec::new();
         crate::builtins::flat_val(&list, &mut result, true);
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::seq(result))
     }
 
     pub(super) fn builtin_slip(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut items = Vec::new();
         for arg in args {
-            match arg {
-                Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
-                Value::Seq(elems) => items.extend(elems.iter().cloned()),
-                Value::Slip(elems) => items.extend(elems.iter().cloned()),
-                Value::LazyList(ll) => {
+            match arg.view() {
+                ValueView::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                ValueView::Seq(elems) => items.extend(elems.iter().cloned()),
+                ValueView::Slip(elems) => items.extend(elems.iter().cloned()),
+                ValueView::LazyList(ll) => {
                     if ll.scan_spec.is_some() {
                         items.extend(ll.force_scan_to(200_000));
                     } else {
@@ -158,7 +159,7 @@ impl Interpreter {
                         items.extend(cached);
                     }
                 }
-                other => items.push(other.clone()),
+                _ => items.push(arg.clone()),
             }
         }
         Ok(Value::slip(items))
@@ -171,21 +172,21 @@ impl Interpreter {
         if args.len() != 1 {
             let mut items: Vec<Value> = args.to_vec();
             items.reverse();
-            return Ok(Value::Seq(Arc::new(items)));
+            return Ok(Value::seq(items));
         }
         // LazyIoLines must be materialized by the interpreter (native bails).
-        if let Value::LazyIoLines { handle, .. } = &args[0] {
+        if let ValueView::LazyIoLines { handle, .. } = args[0].view() {
             let mut lines = Vec::new();
             while let Some(line) = self.read_line_from_handle_value(handle)? {
                 lines.push(Value::str(line));
             }
             lines.reverse();
-            return Ok(Value::Seq(Arc::new(lines)));
+            return Ok(Value::seq(lines));
         }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy
         // that lacked Range/Slip/shaped arms.
-        crate::builtins::native_function(Symbol::intern("reverse"), args).unwrap_or(Ok(Value::Nil))
+        crate::builtins::native_function(Symbol::intern("reverse"), args).unwrap_or(Ok(Value::NIL))
     }
 
     pub(super) fn builtin_sort(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -196,12 +197,12 @@ impl Interpreter {
         let mut positional: Vec<Value> = Vec::new();
 
         for arg in args {
-            match arg {
-                Value::Pair(key, val) if key == "k" => {
+            match arg.view() {
+                ValueView::Pair(key, val) if key == "k" => {
                     return_k = val.truthy();
                 }
-                Value::Pair(key, val) if key == "by" => {
-                    by_callable = Some(val.as_ref().clone());
+                ValueView::Pair(key, val) if key == "by" => {
+                    by_callable = Some(val.clone());
                 }
                 _ => positional.push(arg.clone()),
             }
@@ -217,7 +218,7 @@ impl Interpreter {
         // sort(comparator, list, ...) or sort(list, ...) or sort(items...)
         if positional.len() >= 2 {
             let first = &positional[0];
-            if matches!(first, Value::Sub(_) | Value::Routine { .. }) {
+            if matches!(first.view(), ValueView::Sub(_) | ValueView::Routine { .. }) {
                 callable = Some(first.clone());
                 positional.remove(0);
             }
@@ -234,17 +235,17 @@ impl Interpreter {
             if crate::runtime::utils::is_shaped_array(arg) {
                 items.extend(crate::runtime::utils::shaped_array_leaves(arg));
             } else {
-                match arg {
-                    Value::Array(elems, ..) => items.extend(elems.iter().cloned()),
-                    Value::Seq(elems) => items.extend(elems.iter().cloned()),
-                    Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. } => {
+                match arg.view() {
+                    ValueView::Array(elems, ..) => items.extend(elems.iter().cloned()),
+                    ValueView::Seq(elems) => items.extend(elems.iter().cloned()),
+                    ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. } => {
                         items.extend(Self::value_to_list(arg));
                     }
-                    other => items.push(other.clone()),
+                    _ => items.push(arg.clone()),
                 }
             }
         }
@@ -255,7 +256,7 @@ impl Interpreter {
             sort_args.push(c);
         }
         if return_k {
-            sort_args.push(Value::Pair("k".to_string(), Box::new(Value::Bool(true))));
+            sort_args.push(Value::pair("k".to_string(), Value::TRUE));
         }
 
         if items.is_empty() && positional.is_empty() {
@@ -278,8 +279,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut method_args = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, _) if key == "as" || key == "with" => {
+            match arg.view() {
+                ValueView::Pair(key, _) if key == "as" || key == "with" => {
                     method_args.push(arg.clone());
                 }
                 _ => positional.push(arg.clone()),
@@ -306,8 +307,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut method_args = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, _) if key == "as" || key == "with" => {
+            match arg.view() {
+                ValueView::Pair(key, _) if key == "as" || key == "with" => {
                     method_args.push(arg.clone());
                 }
                 _ => positional.push(arg.clone()),
@@ -334,8 +335,8 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut method_args = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, _) if key == "as" || key == "with" => {
+            match arg.view() {
+                ValueView::Pair(key, _) if key == "as" || key == "with" => {
                     method_args.push(arg.clone());
                 }
                 _ => positional.push(arg.clone()),

@@ -38,9 +38,9 @@ impl Interpreter {
     }
 
     pub(super) fn callable_produce_assoc(&self, callable: &Value) -> OpAssoc {
-        let callable_name: Option<String> = match callable {
-            Value::Sub(data) => Some(data.name.resolve()),
-            Value::Routine { name, .. } => Some(name.resolve()),
+        let callable_name: Option<String> = match callable.view() {
+            ValueView::Sub(data) => Some(data.name.resolve()),
+            ValueView::Routine { name, .. } => Some(name.resolve()),
             _ => None,
         };
         if let Some(name) = &callable_name
@@ -74,7 +74,7 @@ impl Interpreter {
         match assoc {
             OpAssoc::Right => {
                 let mut out = Vec::new();
-                let mut acc = items.last().cloned().unwrap_or(Value::Nil);
+                let mut acc = items.last().cloned().unwrap_or(Value::NIL);
                 out.push(acc.clone());
                 let mut right_edge = items.len().saturating_sub(1);
                 while right_edge >= step {
@@ -112,7 +112,7 @@ impl Interpreter {
 
         let mut items = Vec::new();
         for arg in args.iter().skip(1) {
-            if matches!(arg, Value::Hash(_)) {
+            if matches!(arg.view(), ValueView::Hash(_)) {
                 items.push(arg.clone());
             } else {
                 items.extend(crate::runtime::value_to_list(arg));
@@ -136,14 +136,14 @@ impl Interpreter {
         items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if items.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         if items.len() == 1 {
             // For numeric infix operators (e.g. `reduce &infix:<+>, "2"`), apply
             // the identity element + the single element so that coercions happen.
-            let op_name = match &callable {
-                Value::Sub(data) => Some(data.name.resolve()),
-                Value::Routine { name, .. } => Some(name.resolve()),
+            let op_name = match callable.view() {
+                ValueView::Sub(data) => Some(data.name.resolve()),
+                ValueView::Routine { name, .. } => Some(name.resolve()),
                 _ => None,
             };
             if let Some(ref op) = op_name {
@@ -158,7 +158,7 @@ impl Interpreter {
                 ) {
                     let elem = items.into_iter().next().unwrap();
                     // Validate non-numeric strings
-                    if let Value::Str(ref s) = elem
+                    if let ValueView::Str(s) = elem.view()
                         && crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_none()
                     {
                         return Err(RuntimeError::str_numeric(
@@ -214,7 +214,7 @@ impl Interpreter {
                         break;
                     }
                 }
-                Ok(Value::Bool(result))
+                Ok(Value::truth(result))
             }
             OpAssoc::Left => {
                 let mut acc = items[0].clone();
@@ -237,9 +237,9 @@ impl Interpreter {
     }
 
     fn is_thunky_reduce_op(callable: &Value) -> bool {
-        let name = match callable {
-            Value::Routine { name, .. } => name.resolve(),
-            Value::Sub(data) => data.name.resolve(),
+        let name = match callable.view() {
+            ValueView::Routine { name, .. } => name.resolve(),
+            ValueView::Sub(data) => data.name.resolve(),
             _ => return false,
         };
         matches!(
@@ -249,8 +249,8 @@ impl Interpreter {
     }
 
     fn dethunk(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        match val {
-            Value::Sub(_) | Value::WeakSub(_) => self.call_sub_value(val, vec![], false),
+        match val.view() {
+            ValueView::Sub(_) | ValueView::WeakSub(_) => self.call_sub_value(val, vec![], false),
             _ => Ok(val),
         }
     }
@@ -286,9 +286,9 @@ impl Interpreter {
 
     pub(super) fn callable_reduce_assoc(&self, callable: &Value) -> OpAssoc {
         // Check the name in the operator_assoc map first (handles `is assoc<...>` trait)
-        let name = match callable {
-            Value::Sub(data) => Some(data.name.resolve()),
-            Value::Routine { name, .. } => Some(name.resolve()),
+        let name = match callable.view() {
+            ValueView::Sub(data) => Some(data.name.resolve()),
+            ValueView::Routine { name, .. } => Some(name.resolve()),
             _ => None,
         };
         if let Some(ref name_str) = name {
@@ -318,8 +318,8 @@ impl Interpreter {
             .cloned()
             .ok_or_else(|| RuntimeError::new("produce expects a callable as first argument"))?;
         if !matches!(
-            callable,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            callable.view(),
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) {
             return Err(RuntimeError::new(
                 "produce expects a callable as first argument",
@@ -328,14 +328,14 @@ impl Interpreter {
 
         let mut items = Vec::new();
         for arg in args.iter().skip(1) {
-            if matches!(arg, Value::Hash(_)) {
+            if matches!(arg.view(), ValueView::Hash(_)) {
                 items.push(arg.clone());
             } else {
                 items.extend(crate::runtime::value_to_list(arg));
             }
         }
         let out = self.eval_produce_over_items(callable, items)?;
-        Ok(Value::Seq(std::sync::Arc::new(out)))
+        Ok(Value::seq(out))
     }
 
     /// zip:with — zip lists using a custom combining function.
@@ -343,22 +343,22 @@ impl Interpreter {
         let mut raw_inputs: Vec<&Value> = Vec::new();
         let mut with_fn: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, val) = arg
+            if let ValueView::Pair(key, val) = arg.view()
                 && key == "with"
             {
-                with_fn = Some((**val).clone());
+                with_fn = Some((*val).clone());
                 continue;
             }
             raw_inputs.push(arg);
         }
         let is_lazy_input = |v: &Value| -> bool {
-            matches!(v, Value::LazyList(_))
-                || matches!(v,
-                    Value::Range(_, end)
-                    | Value::RangeExcl(_, end)
-                    | Value::RangeExclStart(_, end)
-                    | Value::RangeExclBoth(_, end) if *end == i64::MAX)
-                || matches!(v, Value::GenericRange { end, .. } if {
+            matches!(v.view(), ValueView::LazyList(_))
+                || matches!(v.view(),
+                    ValueView::Range(_, end)
+                    | ValueView::RangeExcl(_, end)
+                    | ValueView::RangeExclStart(_, end)
+                    | ValueView::RangeExclBoth(_, end) if end == i64::MAX)
+                || matches!(v.view(), ValueView::GenericRange { end, .. } if {
                     let f = end.to_f64();
                     f.is_infinite() && f.is_sign_positive()
                 })
@@ -389,7 +389,7 @@ impl Interpreter {
         for i in 0..min_len {
             let elements: Vec<Value> = lists.iter().map(|l| l[i].clone()).collect();
             let combined = if elements.len() <= 1 {
-                elements.into_iter().next().unwrap_or(Value::Nil)
+                elements.into_iter().next().unwrap_or(Value::NIL)
             } else if elements.len() > 2 && use_multi_arg {
                 // Pass all elements at once for operators with special
                 // multi-arg semantics (e.g. set symmetric difference).
@@ -422,7 +422,7 @@ impl Interpreter {
                                 break;
                             }
                         }
-                        Value::Bool(all_true)
+                        Value::truth(all_true)
                     }
                     OpAssoc::Left => {
                         // Left-associative (default): fold from left
@@ -441,7 +441,7 @@ impl Interpreter {
             result.push(combined);
         }
         if all_lazy {
-            Ok(Value::LazyList(crate::gc::Gc::new(
+            Ok(Value::lazy_list(crate::gc::Gc::new(
                 crate::value::LazyList::new_cached(result),
             )))
         } else {
@@ -454,8 +454,8 @@ impl Interpreter {
     /// for set operators like (^)/⊖ where multi-arg behavior differs
     /// from left-fold.
     fn combiner_needs_multi_arg(func: &Value) -> bool {
-        let name_str = match func {
-            Value::Routine { name, .. } => name.resolve(),
+        let name_str = match func.view() {
+            ValueView::Routine { name, .. } => name.resolve(),
             _ => return false,
         };
         let op = name_str
@@ -470,8 +470,8 @@ impl Interpreter {
 
     /// Determine the associativity of an operator from its name.
     pub(super) fn op_associativity(func: &Value) -> OpAssoc {
-        let name_str = match func {
-            Value::Routine { name, .. } => name.resolve(),
+        let name_str = match func.view() {
+            ValueView::Routine { name, .. } => name.resolve(),
             _ => return OpAssoc::Left,
         };
         // Extract the operator from "infix:<op>"

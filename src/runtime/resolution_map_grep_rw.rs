@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn eval_map_over_items_rw(
@@ -7,7 +8,10 @@ impl Interpreter {
         list_items: &mut [Value],
     ) -> Result<Value, RuntimeError> {
         let topic_key = "__mutsu_rw_map_topic__";
-        if let Some(Value::Sub(data)) = func {
+        if let Some(func_ref) = func.as_ref()
+            && let ValueView::Sub(data) = func_ref.view()
+        {
+            let data = data.clone();
             let requires_full_binding = data.param_defs.iter().any(|pd| {
                 pd.named
                     || pd.slurpy
@@ -47,15 +51,17 @@ impl Interpreter {
                         list_items[i..i + arity].to_vec()
                     };
                     self.env.remove(topic_key);
-                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
+                    let value =
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
                     if arity == 1
                         && let Some(mutated) = self.env.get(topic_key).cloned()
                     {
                         list_items[i] = mutated;
                     }
-                    match value {
-                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                        v => result.push(v),
+                    if let ValueView::Slip(elems) = value.view() {
+                        result.extend(elems.iter().cloned());
+                    } else {
+                        result.push(value);
                     }
                     i += arity;
                 }
@@ -161,16 +167,17 @@ impl Interpreter {
                                 .last_stack_value()
                                 .cloned()
                                 .or_else(|| vm.env().get("_").cloned())
-                                .unwrap_or(Value::Nil);
+                                .unwrap_or(Value::NIL);
                             // Write back topic mutation if it happened
                             if arity == 1
                                 && let Some(mutated) = vm.env().get(topic_key).cloned()
                             {
                                 list_items[i] = mutated;
                             }
-                            match val {
-                                Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                                v => result.push(v),
+                            if let ValueView::Slip(elems) = val.view() {
+                                result.extend(elems.iter().cloned());
+                            } else {
+                                result.push(val);
                             }
                         }
                         Err(e) if e.is_next() => {
@@ -216,7 +223,10 @@ impl Interpreter {
         func: Option<Value>,
         mut list_items: Vec<Value>,
     ) -> Result<(Value, Vec<Value>), RuntimeError> {
-        if let Some(Value::Sub(data)) = func {
+        if let Some(func_ref) = func.as_ref()
+            && let ValueView::Sub(data) = func_ref.view()
+        {
+            let data = data.clone();
             let mut result = Vec::new();
             let arity = if !data.params.is_empty() {
                 let effective = data
@@ -241,7 +251,7 @@ impl Interpreter {
                         list_items[i..i + arity].to_vec()
                     };
                     let pred =
-                        self.call_sub_value(Value::Sub(data.clone()), chunk.clone(), false)?;
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk.clone(), false)?;
                     if pred.truthy() {
                         if arity == 1 {
                             result.push(chunk[0].clone());
@@ -347,7 +357,7 @@ impl Interpreter {
                                     .last_stack_value()
                                     .cloned()
                                     .or_else(|| vm.env().get("_").cloned())
-                                    .unwrap_or(Value::Nil);
+                                    .unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
                                     vm.env()
                                         .get(&topic_source_key)
@@ -404,7 +414,7 @@ impl Interpreter {
             return Ok((Value::array(result), list_items));
         }
         if let Some(pattern) = func {
-            if matches!(pattern, Value::Bool(_)) {
+            if matches!(pattern.view(), ValueView::Bool(_)) {
                 return Err(RuntimeError::new("X::Match::Bool"));
             }
             let mut result = Vec::new();

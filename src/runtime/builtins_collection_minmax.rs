@@ -22,7 +22,8 @@ impl Interpreter {
         let positional: Vec<Value> = args
             .iter()
             .filter(|arg| {
-                !matches!(arg, Value::Pair(_, _)) && !matches!(arg, Value::ValuePair(_, _))
+                !matches!(arg.view(), ValueView::Pair(_, _))
+                    && !matches!(arg.view(), ValueView::ValuePair(_, _))
             })
             .cloned()
             .collect();
@@ -39,7 +40,7 @@ impl Interpreter {
         };
 
         if items.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(vec![])));
+            return Ok(Value::seq(vec![]));
         }
 
         // Find all indices matching the extremum
@@ -55,30 +56,28 @@ impl Interpreter {
             "k" => {
                 let keys: Vec<Value> = matching_indices
                     .iter()
-                    .map(|&i| Value::Int(i as i64))
+                    .map(|&i| Value::int(i as i64))
                     .collect();
-                Ok(Value::Seq(std::sync::Arc::new(keys)))
+                Ok(Value::seq(keys))
             }
             "v" => {
                 let vals: Vec<Value> = matching_indices.iter().map(|&i| items[i].clone()).collect();
-                Ok(Value::Seq(std::sync::Arc::new(vals)))
+                Ok(Value::seq(vals))
             }
             "kv" => {
                 let mut kvs = Vec::new();
                 for &i in &matching_indices {
-                    kvs.push(Value::Int(i as i64));
+                    kvs.push(Value::int(i as i64));
                     kvs.push(items[i].clone());
                 }
-                Ok(Value::Seq(std::sync::Arc::new(kvs)))
+                Ok(Value::seq(kvs))
             }
             "p" => {
                 let pairs: Vec<Value> = matching_indices
                     .iter()
-                    .map(|&i| {
-                        Value::ValuePair(Box::new(Value::Int(i as i64)), Box::new(items[i].clone()))
-                    })
+                    .map(|&i| Value::value_pair(Value::int(i as i64), items[i].clone()))
                     .collect();
-                Ok(Value::Seq(std::sync::Arc::new(pairs)))
+                Ok(Value::seq(pairs))
             }
             _ => Ok(result),
         }
@@ -87,34 +86,34 @@ impl Interpreter {
     /// Whether a value is a Range (any exclusivity) or GenericRange.
     pub(crate) fn value_is_rangey(v: &Value) -> bool {
         matches!(
-            v,
-            Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. }
+            v.view(),
+            ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
         )
     }
 
     pub(crate) fn collect_minmax_candidates(value: &Value, out: &mut Vec<Value>) {
-        match value {
+        match value.view() {
             // Unwrap Scalar containers
-            Value::Scalar(inner) => Self::collect_minmax_candidates(inner, out),
+            ValueView::Scalar(inner) => Self::collect_minmax_candidates(inner, out),
             // Unwrap first-class element containers (`:=`-bound / grep rw alias).
-            Value::ContainerRef(cell) => {
+            ValueView::ContainerRef(cell) => {
                 Self::collect_minmax_candidates(&cell.lock().unwrap().clone(), out)
             }
-            Value::Range(a, b)
-            | Value::RangeExcl(a, b)
-            | Value::RangeExclStart(a, b)
-            | Value::RangeExclBoth(a, b) => {
-                out.push(Value::Int(*a));
-                out.push(Value::Int(*b));
+            ValueView::Range(a, b)
+            | ValueView::RangeExcl(a, b)
+            | ValueView::RangeExclStart(a, b)
+            | ValueView::RangeExclBoth(a, b) => {
+                out.push(Value::int(a));
+                out.push(Value::int(b));
             }
-            Value::GenericRange { start, end, .. } => {
+            ValueView::GenericRange { start, end, .. } => {
                 // Skip Inf..-Inf (identity for minmax combine from empty lists)
-                let is_start_inf = matches!(start.as_ref(), Value::Num(n) if n.is_infinite() && n.is_sign_positive());
-                let is_end_neg_inf = matches!(end.as_ref(), Value::Num(n) if n.is_infinite() && n.is_sign_negative());
+                let is_start_inf = matches!(start.as_ref().view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
+                let is_end_neg_inf = matches!(end.as_ref().view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_negative());
                 if is_start_inf && is_end_neg_inf {
                     return; // skip identity range
                 }
@@ -128,69 +127,57 @@ impl Interpreter {
                     Self::collect_minmax_candidates(item, out);
                 }
             }
-            other => out.push(other.clone()),
+            _ => out.push(value.clone()),
         }
     }
 
     pub(crate) fn make_inclusive_range_value(left: Value, right: Value) -> Value {
-        match (&left, &right) {
-            (Value::Int(a), Value::Int(b)) => Value::Range(*a, *b),
-            (Value::Int(a), Value::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
-                Value::Range(*a, i64::MAX)
+        match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => Value::range(a, b),
+            (ValueView::Int(a), ValueView::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
+                Value::range(a, i64::MAX)
             }
-            (Value::Int(a), Value::Whatever) => Value::Range(*a, i64::MAX),
-            (Value::Num(a), Value::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
-                Value::Range(i64::MIN, *b)
+            (ValueView::Int(a), ValueView::Whatever) => Value::range(a, i64::MAX),
+            (ValueView::Num(a), ValueView::Int(b)) if a.is_infinite() && a.is_sign_negative() => {
+                Value::range(i64::MIN, b)
             }
-            (Value::Str(a), Value::Str(b)) => Value::GenericRange {
-                start: Arc::new(Value::Str(a.clone())),
-                end: Arc::new(Value::Str(b.clone())),
-                excl_start: false,
-                excl_end: false,
-            },
-            (l, r) if l.is_numeric() && r.is_numeric() => Value::GenericRange {
-                start: Arc::new(l.clone()),
-                end: Arc::new(r.clone()),
-                excl_start: false,
-                excl_end: false,
-            },
-            (Value::Str(a), r) if r.is_numeric() => Value::GenericRange {
-                start: Arc::new(Value::Str(a.clone())),
-                end: Arc::new(r.clone()),
-                excl_start: false,
-                excl_end: false,
-            },
-            (l, Value::Str(b)) if l.is_numeric() => Value::GenericRange {
-                start: Arc::new(l.clone()),
-                end: Arc::new(Value::Str(b.clone())),
-                excl_start: false,
-                excl_end: false,
-            },
-            (_, Value::Sub(_)) | (Value::Sub(_), _) => Value::GenericRange {
-                start: Arc::new(left),
-                end: Arc::new(right),
-                excl_start: false,
-                excl_end: false,
-            },
-            _ => Value::Nil,
+            (ValueView::Str(a), ValueView::Str(b)) => Value::generic_range(
+                Value::str_arc(a.clone()),
+                Value::str_arc(b.clone()),
+                false,
+                false,
+            ),
+            (_, _) if left.is_numeric() && right.is_numeric() => {
+                Value::generic_range(left.clone(), right.clone(), false, false)
+            }
+            (ValueView::Str(a), _) if right.is_numeric() => {
+                Value::generic_range(Value::str_arc(a.clone()), right.clone(), false, false)
+            }
+            (_, ValueView::Str(b)) if left.is_numeric() => {
+                Value::generic_range(left.clone(), Value::str_arc(b.clone()), false, false)
+            }
+            (_, ValueView::Sub(_)) | (ValueView::Sub(_), _) => {
+                Value::generic_range(left, right, false, false)
+            }
+            _ => Value::NIL,
         }
     }
 
     pub(super) fn builtin_minmax(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let by = args.iter().find_map(|arg| match arg {
-            Value::Pair(name, value) if name == "by" => Some((**value).clone()),
-            Value::ValuePair(key, value)
-                if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by") =>
+        let by = args.iter().find_map(|arg| match arg.view() {
+            ValueView::Pair(name, value) if name == "by" => Some(value.clone()),
+            ValueView::ValuePair(key, value)
+                if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by") =>
             {
-                Some((**value).clone())
+                Some(value.clone())
             }
             _ => None,
         });
         let positional: Vec<Value> = args
             .iter()
             .filter(|arg| {
-                !matches!(arg, Value::Pair(name, _) if name == "by")
-                    && !matches!(arg, Value::ValuePair(key, _) if matches!(key.as_ref(), Value::Str(name) if name.as_str() == "by"))
+                !matches!(arg.view(), ValueView::Pair(name, _) if name == "by")
+                    && !matches!(arg.view(), ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(name) if name.as_str() == "by"))
             })
             .cloned()
             .collect();
@@ -221,19 +208,19 @@ impl Interpreter {
         if by.is_some() {
             // When a comparator is provided, enumerate ranges fully
             for arg in positional {
-                match arg {
-                    Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. } => {
+                match arg.view() {
+                    ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. } => {
                         let items = crate::runtime::utils::value_to_list(arg);
                         candidates.extend(items);
                     }
                     _ if arg.as_list_items().is_some() => {
                         candidates.extend(arg.as_list_items().unwrap().iter().cloned());
                     }
-                    other => candidates.push(other.clone()),
+                    _ => candidates.push(arg.clone()),
                 }
             }
         } else {
@@ -244,8 +231,8 @@ impl Interpreter {
         if candidates.is_empty() {
             // Return Inf..-Inf for empty list (Raku behavior)
             return Ok(Self::make_inclusive_range_value(
-                Value::Num(f64::INFINITY),
-                Value::Num(f64::NEG_INFINITY),
+                Value::num(f64::INFINITY),
+                Value::num(f64::NEG_INFINITY),
             ));
         }
 
@@ -295,18 +282,18 @@ impl Interpreter {
 
     /// Convert an Order/Int/Num value from a comparator callback to an integer.
     pub(super) fn order_to_int(result: &Value) -> i32 {
-        match result {
-            Value::Int(n) => (*n as i32).signum(),
-            Value::Num(n) => {
-                if *n < 0.0 {
+        match result.view() {
+            ValueView::Int(n) => (n as i32).signum(),
+            ValueView::Num(n) => {
+                if n < 0.0 {
                     -1
-                } else if *n > 0.0 {
+                } else if n > 0.0 {
                     1
                 } else {
                     0
                 }
             }
-            Value::Enum {
+            ValueView::Enum {
                 enum_type, value, ..
             } if enum_type.resolve() == "Order" => match value {
                 crate::value::EnumValue::Int(n) => (*n as i32).signum(),

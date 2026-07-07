@@ -19,7 +19,7 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
         CallArg::Named { name, value: None } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::Bool(true))),
+            right: Box::new(Expr::Literal(Value::TRUE)),
         },
         CallArg::Slip(e) => Expr::Unary {
             op: TokenKind::Pipe,
@@ -56,7 +56,7 @@ impl Interpreter {
         func: Option<Value>,
         list_items: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Some(Value::Sub(data)) = func {
+        if let Some(ValueView::Sub(data)) = func.as_ref().map(Value::view) {
             let requires_full_binding = data.param_defs.iter().any(|pd| {
                 pd.named
                     || pd.slurpy
@@ -113,10 +113,11 @@ impl Interpreter {
                     // A short final chunk of a required-arity block raises
                     // "Too few positionals" (matching raku); an optional trailing
                     // parameter binds the missing slot to its default / `Any`.
-                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
-                    match value {
-                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                        v => result.push(v),
+                    let value =
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                    match value.view() {
+                        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+                        _ => result.push(value),
                     }
                     i = end;
                 }
@@ -146,10 +147,11 @@ impl Interpreter {
                     } else {
                         list_items[i..i + arity].to_vec()
                     };
-                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
-                    match value {
-                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                        v => result.push(v),
+                    let value =
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                    match value.view() {
+                        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+                        _ => result.push(value),
                     }
                     i += arity;
                 }
@@ -169,10 +171,11 @@ impl Interpreter {
                     } else {
                         list_items[i..i + arity].to_vec()
                     };
-                    let value = self.call_sub_value(Value::Sub(data.clone()), chunk, false)?;
-                    match value {
-                        Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                        v => result.push(v),
+                    let value =
+                        self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                    match value.view() {
+                        ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+                        _ => result.push(value),
                     }
                     i += arity;
                 }
@@ -255,8 +258,8 @@ impl Interpreter {
             // param, so it must still receive the element — hence the
             // `_`-is-not-a-param guard.
             let is_whatever_code = matches!(
-                data.env.get("__mutsu_callable_type"),
-                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
             ) && !data.params.iter().any(|p| p == "_");
             let outer_topic = self.env.get("_").cloned();
 
@@ -318,10 +321,10 @@ impl Interpreter {
                                 .last_stack_value()
                                 .cloned()
                                 .or_else(|| vm.env().get("_").cloned())
-                                .unwrap_or(Value::Nil);
-                            match val {
-                                Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                                v => result.push(v),
+                                .unwrap_or(Value::NIL);
+                            match val.view() {
+                                ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+                                _ => result.push(val),
                             }
                         }
                         Err(e) if e.is_next() => {}
@@ -335,9 +338,10 @@ impl Interpreter {
                             // the enclosing routine has exited.
                             if e.is_return()
                                 && e.return_target_callable_id().is_none()
-                                && let Some(Value::Int(id)) = data.env.get("__mutsu_callable_id")
+                                && let Some(ValueView::Int(id)) =
+                                    data.env.get("__mutsu_callable_id").map(Value::view)
                             {
-                                e.set_return_target_callable_id(Some(*id as u64));
+                                e.set_return_target_callable_id(Some(id as u64));
                             }
                             return Err(e);
                         }
@@ -383,9 +387,9 @@ impl Interpreter {
             let mut result = Vec::new();
             for item in list_items {
                 let value = self.call_sub_value(func.clone(), vec![item], false)?;
-                match value {
-                    Value::Slip(elems) => result.extend(elems.iter().cloned()),
-                    v => result.push(v),
+                match value.view() {
+                    ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+                    _ => result.push(value),
                 }
             }
             return Ok(Value::array(result));
@@ -433,8 +437,8 @@ pub(crate) struct InterpFirstMatcher<'a>(pub(crate) &'a mut Interpreter);
 
 impl FirstMatcher for InterpFirstMatcher<'_> {
     fn item_matches(&mut self, pattern: &Value, item: &Value) -> Result<bool, RuntimeError> {
-        if matches!(pattern, Value::Sub(_)) {
-            // Pass the element positionally: a Hash-sourced `Value::Pair` would
+        if matches!(pattern.view(), ValueView::Sub(_)) {
+            // Pass the element positionally: a Hash-sourced `Pair` would
             // otherwise bind as a named arg, leaving the block with zero
             // positionals (`%h.first({ .value > 1 })`).
             let call_item = crate::runtime::utils::pair_as_positional(item);

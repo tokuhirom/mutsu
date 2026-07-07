@@ -139,7 +139,7 @@ impl Interpreter {
     pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
         let key = name;
         let meta_key = format!("__mutsu_type::{}", key);
-        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+        if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
             return Some(tc.to_string());
         }
         if let Some(tc) = self.var_type_constraints.get(key) {
@@ -215,22 +215,20 @@ impl Interpreter {
     /// embedded in the backing `ArrayData`/`HashData` so it travels with the
     /// container through copy-on-write; callers MUST store the returned value
     /// back into the slot it came from.
-    pub(crate) fn tag_container_default(&mut self, value: Value, default: Value) -> Value {
-        match value {
-            Value::Array(mut arc, kind) => {
-                if arc.default.as_deref() != Some(&default) {
-                    crate::gc::Gc::make_mut(&mut arc).default = Some(Box::new(default));
-                }
-                Value::Array(arc, kind)
+    pub(crate) fn tag_container_default(&mut self, mut value: Value, default: Value) -> Value {
+        if matches!(value.view(), ValueView::Array(..)) {
+            let (mut arc, kind) = value.into_array().unwrap();
+            if arc.default.as_deref() != Some(&default) {
+                crate::gc::Gc::make_mut(&mut arc).default = Some(Box::new(default));
             }
-            Value::Hash(mut map) => {
-                if map.default.as_deref() != Some(&default) {
-                    crate::gc::Gc::make_mut(&mut map).default = Some(Box::new(default));
-                }
-                Value::Hash(map)
-            }
-            other => other,
+            return Value::array_with_kind(arc, kind);
         }
+        value.with_hash_mut(|map| {
+            if map.default.as_deref() != Some(&default) {
+                crate::gc::Gc::make_mut(map).default = Some(Box::new(default));
+            }
+        });
+        value
     }
 
     /// Embed each `@`/`%` attribute's `is default(...)` element default (from
@@ -246,8 +244,8 @@ impl Interpreter {
         let names: Vec<String> = attributes.keys().cloned().collect();
         for attr_name in names {
             if !matches!(
-                attributes.get(&attr_name),
-                Some(Value::Array(..)) | Some(Value::Hash(_))
+                attributes.get(&attr_name).map(Value::view),
+                Some(ValueView::Array(..)) | Some(ValueView::Hash(_))
             ) {
                 continue;
             }
@@ -275,9 +273,9 @@ impl Interpreter {
 
     /// Get the element default for a container (Array/Hash).
     pub(crate) fn container_default<'v>(&'v self, value: &'v Value) -> Option<&'v Value> {
-        match value {
-            Value::Array(items, ..) => items.default.as_deref(),
-            Value::Hash(map) => map.default.as_deref(),
+        match value.view() {
+            ValueView::Array(items, ..) => items.default.as_deref(),
+            ValueView::Hash(map) => map.default.as_deref(),
             _ => None,
         }
     }
@@ -285,7 +283,7 @@ impl Interpreter {
     pub(crate) fn var_hash_key_constraint(&self, name: &str) -> Option<String> {
         let key = name;
         let meta_key = format!("__mutsu_hash_key_type::{}", key);
-        if let Some(Value::Str(tc)) = self.env.get(&meta_key) {
+        if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
             return Some(tc.to_string());
         }
         self.var_hash_key_constraints.get(key).cloned()

@@ -41,15 +41,12 @@ impl Interpreter {
         let path_buf = self.resolve_io_path_buf(attributes, &p);
         match method {
             "spurt" => {
-                let content_value = args
-                    .first()
-                    .cloned()
-                    .unwrap_or(Value::Str(String::new().into()));
+                let content_value = args.first().cloned().unwrap_or(Value::str(String::new()));
                 let mut append = false;
                 let mut createonly = false;
                 let mut enc: Option<String> = None;
                 for arg in args.iter().skip(1) {
-                    if let Value::Pair(key, val) = arg {
+                    if let ValueView::Pair(key, val) = arg.view() {
                         match key.as_str() {
                             "append" => append = val.truthy(),
                             "createonly" => createonly = val.truthy(),
@@ -117,7 +114,7 @@ impl Interpreter {
                     }
                 };
                 match write_result {
-                    Ok(()) => Ok(Value::Bool(true)),
+                    Ok(()) => Ok(Value::TRUE),
                     Err(err) => Ok(io_exception_failure(
                         "X::IO::Spurt",
                         format!("Failed to spurt '{}': {}", p, err),
@@ -147,7 +144,7 @@ impl Interpreter {
                 }
             },
             "rmdir" => match fs::remove_dir(&path_buf) {
-                Ok(()) => Ok(Value::Bool(true)),
+                Ok(()) => Ok(Value::TRUE),
                 Err(err) => {
                     let msg = format!("Failed to remove the directory '{}': {}", p, err);
                     let mut ex_attrs = HashMap::new();
@@ -163,8 +160,8 @@ impl Interpreter {
                 }
             },
             "unlink" => match fs::remove_file(&path_buf) {
-                Ok(()) => Ok(Value::Bool(true)),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::Bool(false)),
+                Ok(()) => Ok(Value::TRUE),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::FALSE),
                 Err(err) => Err(RuntimeError::new(format!(
                     "Failed to unlink '{}': {}",
                     p, err
@@ -175,18 +172,18 @@ impl Interpreter {
                     .first()
                     .cloned()
                     .ok_or_else(|| RuntimeError::new("chmod requires mode"))?;
-                let mode_int = match mode_value {
-                    Value::Int(i) => i as u32,
+                let mode_int = match mode_value.view() {
+                    ValueView::Int(i) => i as u32,
                     // An allomorph (e.g. IntStr from `:chmod<0o777>`) carries its
                     // already-evaluated integer in the inner value; coerce through it.
-                    Value::Mixin(..) | Value::BigInt(_) => {
+                    ValueView::Mixin(..) | ValueView::BigInt(_) => {
                         crate::runtime::to_int(&mode_value) as u32
                     }
-                    Value::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
-                    other => {
+                    ValueView::Str(s) => u32::from_str_radix(s, 8).unwrap_or(0),
+                    _ => {
                         return Err(RuntimeError::new(format!(
                             "Invalid mode: {}",
-                            other.to_string_value()
+                            mode_value.to_string_value()
                         )));
                     }
                 };
@@ -202,7 +199,7 @@ impl Interpreter {
                     let _ = mode_int;
                     return Err(RuntimeError::new("chmod not supported on this platform"));
                 }
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             _ => unreachable!("io_path_fs_mutate called with non-mutation method"),
         }
@@ -272,7 +269,7 @@ impl Interpreter {
                 }
                 fs::copy(&path_buf, &dest_buf)
                     .map_err(|err| RuntimeError::new(format!("Failed to copy '{}': {}", p, err)))?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "rename" | "move" => {
                 let ex_type = if method == "rename" {
@@ -296,16 +293,13 @@ impl Interpreter {
                     let ex = Value::make_instance(Symbol::intern(ex_type), HashMap::new());
                     let mut failure_attrs = HashMap::new();
                     failure_attrs.insert("exception".to_string(), ex);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    failure_attrs.insert("handled".to_string(), Value::FALSE);
                     failure_attrs.insert(
                         "message".to_string(),
-                        Value::Str(
-                            format!(
-                                "Failed to {} '{}': source and destination are the same file",
-                                verb, p
-                            )
-                            .into(),
-                        ),
+                        Value::str(format!(
+                            "Failed to {} '{}': source and destination are the same file",
+                            verb, p
+                        )),
                     );
                     return Ok(Value::make_instance(
                         Symbol::intern("Failure"),
@@ -321,7 +315,7 @@ impl Interpreter {
                 fs::rename(&path_buf, &dest_buf).map_err(|err| {
                     io_exception(ex_type, format!("Failed to {} '{}': {}", verb, p, err))
                 })?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "symlink" => {
                 // IO::Path.symlink($name, :$absolute = True)
@@ -343,7 +337,7 @@ impl Interpreter {
                 #[cfg(unix)]
                 {
                     match unix_fs::symlink(&target_for_symlink, &link_buf) {
-                        Ok(()) => Ok(Value::Bool(true)),
+                        Ok(()) => Ok(Value::TRUE),
                         Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
                     }
                 }
@@ -356,7 +350,7 @@ impl Interpreter {
                         windows_fs::symlink_file(&target_for_symlink, &link_buf)
                     };
                     match result {
-                        Ok(()) => Ok(Value::Bool(true)),
+                        Ok(()) => Ok(Value::TRUE),
                         Err(err) => Ok(Self::make_symlink_failure(&p, &link_name, &err)),
                     }
                 }
@@ -374,7 +368,7 @@ impl Interpreter {
                     .ok_or_else(|| RuntimeError::new("link requires a link name"))?;
                 let link_buf = self.resolve_path(&link_name);
                 match fs::hard_link(&path_buf, &link_buf) {
-                    Ok(()) => Ok(Value::Bool(true)),
+                    Ok(()) => Ok(Value::TRUE),
                     Err(err) => Ok(Self::make_link_failure(&p, &link_name, &err)),
                 }
             }

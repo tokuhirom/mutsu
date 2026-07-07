@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn call_function_fallback(
@@ -28,12 +29,12 @@ impl Interpreter {
                 return self.call_sub_value(callable, args.to_vec(), false);
             }
             if args.is_empty() {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             let arg = &args[0];
             let normalized = if op == "−" { "-" } else { op };
             return match op {
-                "!" => Ok(Value::Bool(!arg.truthy())),
+                "!" => Ok(Value::truth(!arg.truthy())),
                 "+" => Ok(crate::runtime::coerce_to_numeric(arg.clone())),
                 "-" | "−" => crate::builtins::arith_negate(arg.clone()),
                 "~" => {
@@ -42,11 +43,11 @@ impl Interpreter {
                     }
                     Ok(Value::str(crate::runtime::utils::coerce_to_str(arg)))
                 }
-                "?" => Ok(Value::Bool(arg.truthy())),
-                "so" => Ok(Value::Bool(arg.truthy())),
-                "not" => Ok(Value::Bool(!arg.truthy())),
-                "++" => crate::builtins::arith_add(arg.clone(), Value::Int(1)),
-                "--" => Ok(crate::builtins::arith_sub(arg.clone(), Value::Int(1))),
+                "?" => Ok(Value::truth(arg.truthy())),
+                "so" => Ok(Value::truth(arg.truthy())),
+                "not" => Ok(Value::truth(!arg.truthy())),
+                "++" => crate::builtins::arith_add(arg.clone(), Value::int(1)),
+                "--" => Ok(crate::builtins::arith_sub(arg.clone(), Value::int(1))),
                 _ => {
                     // Auto-generated reduction prefix: prefix:<[op]>
                     // e.g. prefix:<[**]>(2,3,4) is equivalent to [**] 2,3,4
@@ -106,8 +107,8 @@ impl Interpreter {
                         let mut results = Vec::with_capacity(items.len());
                         for item in &items {
                             let v = if matches!(
-                                item,
-                                Value::Array(..) | Value::Seq(_) | Value::Slip(_)
+                                item.view(),
+                                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
                             ) {
                                 self.call_function_fallback(name, std::slice::from_ref(item))?
                             } else {
@@ -115,7 +116,7 @@ impl Interpreter {
                             };
                             results.push(v);
                         }
-                        return Ok(Value::Array(
+                        return Ok(Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                             crate::value::ArrayKind::List,
                         ));
@@ -145,8 +146,10 @@ impl Interpreter {
                 match op {
                     "i" => {
                         // For Instance/Package types, try calling .Numeric method first
-                        let coerced = if matches!(arg, Value::Instance { .. } | Value::Package(..))
-                        {
+                        let coerced = if matches!(
+                            arg.view(),
+                            ValueView::Instance { .. } | ValueView::Package(..)
+                        ) {
                             self.call_method_with_values(arg.clone(), "Numeric", vec![])
                                 .unwrap_or_else(|_| arg.clone())
                         } else {
@@ -155,21 +158,21 @@ impl Interpreter {
                         // Applying `i` to an existing Complex (directly, or via a
                         // `.Numeric` coercion that returns one) rotates it 90°
                         // (multiplies by i): `(r+ei)\i == -e+ri`.
-                        if let Value::Complex(r, i) = coerced {
-                            return Ok(Value::Complex(-i, r));
+                        if let ValueView::Complex(r, i) = coerced.view() {
+                            return Ok(Value::complex(-i, r));
                         }
                         let n = crate::runtime::coerce_to_numeric(coerced);
-                        let num_val = match &n {
-                            Value::Int(i) => *i as f64,
-                            Value::Num(f) => *f,
-                            Value::Rat(n, d) => *n as f64 / *d as f64,
+                        let num_val = match n.view() {
+                            ValueView::Int(i) => i as f64,
+                            ValueView::Num(f) => f,
+                            ValueView::Rat(n, d) => n as f64 / d as f64,
                             _ => {
                                 return Err(RuntimeError::new(
                                     "Cannot coerce to Numeric for postfix:<i>".to_string(),
                                 ));
                             }
                         };
-                        return Ok(Value::Complex(0.0, num_val));
+                        return Ok(Value::complex(0.0, num_val));
                     }
                     _ => {
                         // Hyper postfix operator, e.g. postfix:<»i>: apply the
@@ -192,8 +195,8 @@ impl Interpreter {
                             let mut results = Vec::with_capacity(items.len());
                             for item in &items {
                                 let v = if matches!(
-                                    item,
-                                    Value::Array(..) | Value::Seq(_) | Value::Slip(_)
+                                    item.view(),
+                                    ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
                                 ) {
                                     self.call_function_fallback(name, std::slice::from_ref(item))?
                                 } else {
@@ -204,7 +207,7 @@ impl Interpreter {
                                 };
                                 results.push(v);
                             }
-                            return Ok(Value::Array(
+                            return Ok(Value::array_with_kind(
                                 crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                                 crate::value::ArrayKind::List,
                             ));
@@ -236,7 +239,7 @@ impl Interpreter {
         let variants = self.registry().enum_types.get(name).cloned();
         if let Some(variants) = variants {
             let Some(first) = args.first().cloned() else {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             };
             if let Some(enum_value) = self.coerce_to_enum_variant(name, &variants, first.clone()) {
                 return Ok(enum_value);
@@ -246,7 +249,7 @@ impl Interpreter {
             let msg = format!("No value '{}' found in enum {}", value_str, name);
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.clone()));
-            attrs.insert("type".to_string(), Value::Package(Symbol::intern(name)));
+            attrs.insert("type".to_string(), Value::package(Symbol::intern(name)));
             attrs.insert("value".to_string(), first);
             let ex = Value::make_instance(Symbol::intern("X::Enum::NoValue"), attrs);
             let mut failure_attrs = std::collections::HashMap::new();
@@ -264,34 +267,34 @@ impl Interpreter {
                 || self.registry().subsets.contains_key(name)
                 || self.registry().roles.contains_key(name))
         {
-            let source = match &args[0] {
-                Value::Package(sym) => Some(sym.resolve()),
-                Value::ParametricRole {
+            let source = match args[0].view() {
+                ValueView::Package(sym) => Some(sym.resolve()),
+                ValueView::ParametricRole {
                     base_name,
                     type_args,
                 } => {
                     let args_str = type_args
                         .iter()
-                        .map(|arg| match arg {
-                            Value::Package(n) => n.resolve(),
-                            other => other.to_string_value(),
+                        .map(|arg| match arg.view() {
+                            ValueView::Package(n) => n.resolve(),
+                            _ => arg.to_string_value(),
                         })
                         .collect::<Vec<_>>()
                         .join(",");
                     Some(format!("{}[{}]", base_name.resolve(), args_str))
                 }
-                Value::Nil => Some("Any".to_string()),
+                ValueView::Nil => Some("Any".to_string()),
                 _ => None,
             };
             if let Some(source) = source {
-                return Ok(Value::Package(Symbol::intern(&format!("{name}({source})"))));
+                return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
             }
         }
         // Handle zip:with — zip with a custom combining function
         if name == "zip"
             && args
                 .iter()
-                .any(|a| matches!(a, Value::Pair(k, _) if k == "with"))
+                .any(|a| matches!(a.view(), ValueView::Pair(k, _) if k == "with"))
         {
             return self.builtin_zip_with(args);
         }
@@ -338,12 +341,14 @@ impl Interpreter {
         }
         // Coerce user-defined types for builtin functions via .Numeric/.Bridge
         if Self::is_builtin_function(name)
-            && args.iter().any(|a| matches!(a, Value::Instance { .. }))
+            && args
+                .iter()
+                .any(|a| matches!(a.view(), ValueView::Instance { .. }))
         {
             let mut coerced_args: Vec<Value> = Vec::with_capacity(args.len());
             let mut all_ok = true;
             for arg in args {
-                if matches!(arg, Value::Instance { .. }) {
+                if matches!(arg.view(), ValueView::Instance { .. }) {
                     let coerced = self
                         .call_method_with_values(arg.clone(), "Numeric", vec![])
                         .or_else(|_| self.call_method_with_values(arg.clone(), "Bridge", vec![]));
@@ -370,13 +375,17 @@ impl Interpreter {
         // Check if there's a callable with CALL-ME override (from trait_mod mixin)
         // before proto dispatch, as CALL-ME takes precedence over multi dispatch.
         if let Some(callable) = self.env.get(&format!("&{}", name)).cloned()
-            && let Value::Mixin(_, ref mixins) = callable
+            && let ValueView::Mixin(_, mixins) = callable.view()
         {
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
                     && self.role_has_method(role_name, "CALL-ME")
                 {
-                    return self.call_method_with_values(callable, "CALL-ME", args.to_vec());
+                    return self.call_method_with_values(
+                        callable.clone(),
+                        "CALL-ME",
+                        args.to_vec(),
+                    );
                 }
             }
         }
@@ -425,7 +434,7 @@ impl Interpreter {
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             if let Some(line) = self.test_pending_callsite_line {
-                self.env.insert("?LINE".to_string(), Value::Int(line));
+                self.env.insert("?LINE".to_string(), Value::int(line));
             }
             self.push_caller_env();
             // When the function has where constraints and there is a &name Sub
@@ -438,7 +447,9 @@ impl Interpreter {
                 .any(|pd| pd.where_constraint.is_some())
             {
                 let ampname = format!("&{}", fn_name);
-                if let Some(Value::Sub(ref sub_data)) = self.env.get(&ampname).cloned() {
+                if let Some(sub_val) = self.env.get(&ampname).cloned()
+                    && let ValueView::Sub(sub_data) = sub_val.view()
+                {
                     for (k, v) in &sub_data.env {
                         if !k.starts_with("__mutsu_")
                             && !k.starts_with("?")
@@ -490,9 +501,11 @@ impl Interpreter {
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.
             let callable_key = format!("__mutsu_callable_id::{}::{}", def.package, def.name);
-            if let Some(Value::Int(id)) = self.env.get(&callable_key).cloned() {
+            if let Some(id_val) = self.env.get(&callable_key).cloned()
+                && let ValueView::Int(id) = id_val.view()
+            {
                 self.env
-                    .insert("__mutsu_callable_id".to_string(), Value::Int(id));
+                    .insert("__mutsu_callable_id".to_string(), Value::int(id));
             }
             // Set current_package to the function's defining package so that
             // unqualified function lookups inside the body resolve correctly
@@ -517,19 +530,19 @@ impl Interpreter {
                 let scalar_writeback = restored_env.contains_key_sym(*k)
                     && !excluded_names.contains(&k_str)
                     && !matches!(
-                        v,
-                        Value::Array(..)
-                            | Value::Hash(..)
-                            | Value::Sub(..)
-                            | Value::WeakSub(..)
-                            | Value::Routine { .. }
+                        v.view(),
+                        ValueView::Array(..)
+                            | ValueView::Hash(..)
+                            | ValueView::Sub(..)
+                            | ValueView::WeakSub(..)
+                            | ValueView::Routine { .. }
                     );
                 if k != "_"
                     && k != "@_"
                     && k != "%_"
                     && ((restored_env.contains_key_sym(*k)
                         && !excluded_names.contains(&k_str)
-                        && matches!(v, Value::Array(..) | Value::Hash(..)))
+                        && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))
                         || scalar_writeback
                         || k.starts_with("__mutsu_var_meta::"))
                 {
@@ -561,8 +574,8 @@ impl Interpreter {
                 && e.return_value.is_some()
                 && e.return_target_callable_id().is_some()
             {
-                let my_id = self.env.get(&callable_key).and_then(|v| match v {
-                    Value::Int(i) => Some(*i as u64),
+                let my_id = self.env.get(&callable_key).and_then(|v| match v.view() {
+                    ValueView::Int(i) => Some(i as u64),
                     _ => None,
                 });
                 if my_id != e.return_target_callable_id() {
@@ -574,19 +587,9 @@ impl Interpreter {
             return finalized.and_then(|v| {
                 let v = if def.is_raw {
                     // Mark Proxy as decontainerized so the VM's auto-FETCH doesn't strip it
-                    if let Value::Proxy {
-                        fetcher,
-                        storer,
-                        subclass,
-                        ..
-                    } = v
-                    {
-                        Value::Proxy {
-                            fetcher,
-                            storer,
-                            subclass,
-                            decontainerized: true,
-                        }
+                    if matches!(v.view(), ValueView::Proxy { .. }) {
+                        let (fetcher, storer, subclass, _) = v.into_proxy_parts().unwrap();
+                        Value::proxy_parts(fetcher, storer, subclass, true)
                     } else {
                         v
                     }
@@ -604,10 +607,18 @@ impl Interpreter {
         let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
-            .filter(|v| matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
+            .filter(|v| {
+                matches!(
+                    v.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                )
+            })
             .or_else(|| {
                 callable_from_plain.filter(|v| {
-                    matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+                    matches!(
+                        v.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
                 })
             })
         {
@@ -617,10 +628,10 @@ impl Interpreter {
             // Build call profile: name(Type1:D, Type2:D, ...)
             let arg_types: Vec<String> = args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
                 .map(|a| {
                     let tn = super::value_type_name(a);
-                    if !matches!(a, Value::Nil) {
+                    if !matches!(a.view(), ValueView::Nil) {
                         format!("{}:D", tn)
                     } else {
                         tn.to_string()
@@ -653,7 +664,7 @@ impl Interpreter {
             // If the role has CALL-ME, dispatch to it on the type object
             if self.role_has_method(name, "CALL-ME") {
                 return self.call_method_with_values(
-                    Value::Package(Symbol::intern(name)),
+                    Value::package(Symbol::intern(name)),
                     "CALL-ME",
                     args.to_vec(),
                 );
@@ -666,7 +677,7 @@ impl Interpreter {
                 // Try COERCE first, then fall back to new
                 if self.role_has_method(name, "COERCE") {
                     let coerce_result = self.call_method_with_values(
-                        Value::Package(Symbol::intern(name)),
+                        Value::package(Symbol::intern(name)),
                         "COERCE",
                         args.to_vec(),
                     );
@@ -677,7 +688,7 @@ impl Interpreter {
                 // Fall back to new
                 if self.role_has_method(name, "new") {
                     let new_result = self.call_method_with_values(
-                        Value::Package(Symbol::intern(name)),
+                        Value::package(Symbol::intern(name)),
                         "new",
                         args.to_vec(),
                     );
@@ -691,10 +702,7 @@ impl Interpreter {
             // Otherwise, throw X::Coerce::Impossible.
             if !args.is_empty() {
                 if self.in_does_rhs {
-                    return Ok(Value::Pair(
-                        name.to_string(),
-                        Box::new(Value::array(args.to_vec())),
-                    ));
+                    return Ok(Value::pair(name.to_string(), Value::array(args.to_vec())));
                 }
                 let source_type = crate::runtime::value_type_name(&args[0]).to_string();
                 let msg = format!(
@@ -710,13 +718,10 @@ impl Interpreter {
                     ]),
                 ));
             }
-            return Ok(Value::Pair(
-                name.to_string(),
-                Box::new(Value::array(args.to_vec())),
-            ));
+            return Ok(Value::pair(name.to_string(), Value::array(args.to_vec())));
         }
         if name.starts_with("X::") {
-            return Ok(Value::Package(Symbol::intern(name)));
+            return Ok(Value::package(Symbol::intern(name)));
         }
 
         // Check if multi candidates exist for this name (no matching arity/types)
@@ -724,10 +729,10 @@ impl Interpreter {
             // Build call profile: name(Type1:D, Type2:D, ...)
             let arg_types: Vec<String> = args
                 .iter()
-                .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
                 .map(|a| {
                     let tn = super::value_type_name(a);
-                    if !matches!(a, Value::Nil) {
+                    if !matches!(a.view(), ValueView::Nil) {
                         format!("{}:D", tn)
                     } else {
                         tn.to_string()
@@ -758,7 +763,7 @@ impl Interpreter {
 
         if matches!(name, "DateTime" | "Date") && args.len() == 1 {
             return self.call_method_with_values(
-                Value::Package(Symbol::intern(name)),
+                Value::package(Symbol::intern(name)),
                 "new",
                 args.to_vec(),
             );
@@ -772,7 +777,7 @@ impl Interpreter {
                 || (self.has_role(name) && self.role_has_method(name, "CALL-ME")))
         {
             return self.call_method_with_values(
-                Value::Package(Symbol::intern(name)),
+                Value::package(Symbol::intern(name)),
                 "CALL-ME",
                 args.to_vec(),
             );
@@ -785,7 +790,7 @@ impl Interpreter {
                 || self.registry().subsets.contains_key(name)
                 || self.registry().roles.contains_key(name))
         {
-            return Ok(Value::Package(Symbol::intern(&format!("{name}(Any)"))));
+            return Ok(Value::package(Symbol::intern(&format!("{name}(Any)"))));
         }
 
         // comb($matcher, $str) or comb($matcher, $str, $limit)

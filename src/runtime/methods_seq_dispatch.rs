@@ -11,7 +11,7 @@ impl Interpreter {
         let mut repeat = false;
 
         for arg in &args {
-            if let Value::Pair(name, value) = arg {
+            if let ValueView::Pair(name, value) = arg.view() {
                 if name == "label" {
                     label = Some(value.to_string_value());
                     continue;
@@ -22,8 +22,8 @@ impl Interpreter {
                 }
                 continue;
             }
-            if let Value::ValuePair(name, value) = arg {
-                if let Value::Str(key) = name.as_ref() {
+            if let ValueView::ValuePair(name, value) = arg.view() {
+                if let ValueView::Str(key) = name.view() {
                     if key.as_str() == "label" {
                         label = Some(value.to_string_value());
                         continue;
@@ -39,7 +39,7 @@ impl Interpreter {
         }
 
         let Some(body_callable) = positional.first().cloned() else {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq_arc(std::sync::Arc::new(Vec::new())));
         };
         let cond_callable = positional.get(1).cloned();
         let step_callable = positional.get(2).cloned();
@@ -50,14 +50,14 @@ impl Interpreter {
             // Create a lazy from-loop Seq: store the body callable in an Iterator instance
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("from_loop_body".to_string(), body_callable);
-            attrs.insert("from_loop_done".to_string(), Value::Bool(false));
+            attrs.insert("from_loop_done".to_string(), Value::FALSE);
             let iter =
                 Value::make_instance(crate::symbol::Symbol::intern("FromLoopIterator"), attrs);
             // Wrap in a deferred-iterator Seq
             let arc = std::sync::Arc::new(Vec::<Value>::new());
             crate::value::seq_register_deferred_iter(&arc, iter.clone());
             crate::value::seq_mark_lazy(&arc);
-            return Ok(Value::Seq(arc));
+            return Ok(Value::seq_arc(arc));
         }
 
         let label_matches = |error_label: &Option<String>| {
@@ -81,7 +81,7 @@ impl Interpreter {
             'body_redo: loop {
                 match self.call_sub_value(body_callable.clone(), vec![], true) {
                     Ok(value) => {
-                        if !matches!(value, Value::Nil) {
+                        if !value.is_nil() {
                             items.push(value);
                         }
                         break 'body_redo;
@@ -104,6 +104,6 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(std::sync::Arc::new(items)))
+        Ok(Value::seq(items))
     }
 }

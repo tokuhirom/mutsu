@@ -81,13 +81,13 @@ impl Interpreter {
                 meta.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
                 meta.insert(
                     "type".to_string(),
-                    Value::Package(Symbol::intern(type_name)),
+                    Value::package(Symbol::intern(type_name)),
                 );
                 meta.insert(
                     "__mutsu_attr_name".to_string(),
                     Value::str(attr_name.to_string()),
                 );
-                meta.insert("__mutsu_is_bootstrapattr".to_string(), Value::Bool(true));
+                meta.insert("__mutsu_is_bootstrapattr".to_string(), Value::TRUE);
                 Value::make_instance(Symbol::intern("Attribute"), meta)
             })
             .collect()
@@ -130,16 +130,16 @@ impl Interpreter {
             "__mutsu_attr_owner".to_string(),
             Value::str(owner.to_string()),
         );
-        meta.insert("is_public".to_string(), Value::Bool(is_public));
-        meta.insert("is_rw".to_string(), Value::Bool(is_rw));
+        meta.insert("is_public".to_string(), Value::truth(is_public));
+        meta.insert("is_rw".to_string(), Value::truth(is_rw));
         meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
         meta.insert(
             "type".to_string(),
-            Value::Package(Symbol::intern(&type_name)),
+            Value::package(Symbol::intern(&type_name)),
         );
-        meta.insert("has_accessor".to_string(), Value::Bool(is_public));
+        meta.insert("has_accessor".to_string(), Value::truth(is_public));
         if let Some(default_expr) = default {
-            meta.insert("__mutsu_has_build".to_string(), Value::Bool(true));
+            meta.insert("__mutsu_has_build".to_string(), Value::TRUE);
             if let crate::ast::Expr::Literal(v) = default_expr {
                 meta.insert("build".to_string(), v.clone());
             } else {
@@ -167,7 +167,7 @@ impl Interpreter {
                 };
                 meta.insert(
                     "build".to_string(),
-                    Value::Sub(crate::gc::Gc::new(sub_data)),
+                    Value::sub_value(crate::gc::Gc::new(sub_data)),
                 );
             }
         }
@@ -206,12 +206,12 @@ impl Interpreter {
             "__mutsu_attr_owner".to_string(),
             Value::str(owner.to_string()),
         );
-        meta.insert("is_public".to_string(), Value::Bool(is_public));
-        meta.insert("has_accessor".to_string(), Value::Bool(is_public));
+        meta.insert("is_public".to_string(), Value::truth(is_public));
+        meta.insert("has_accessor".to_string(), Value::truth(is_public));
         meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
         meta.insert(
             "type".to_string(),
-            Value::Package(Symbol::intern(&type_name)),
+            Value::package(Symbol::intern(&type_name)),
         );
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
@@ -264,10 +264,8 @@ impl Interpreter {
                         args.push(arg_val);
                     }
                 } else {
-                    let named_val = Value::Pair(
-                        trait_name.clone(),
-                        Box::new(trait_arg_val.unwrap_or(Value::Bool(true))),
-                    );
+                    let named_val =
+                        Value::pair(trait_name.clone(), trait_arg_val.unwrap_or(Value::TRUE));
                     args.push(named_val);
                 }
                 self.call_function(&trait_mod_name, args)?;

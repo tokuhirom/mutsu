@@ -34,9 +34,9 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
         // Only handle WALK on instances or type objects backed by a class def.
-        let receiver_class_name = match target {
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            Value::Package(name) => name.resolve(),
+        let receiver_class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => name.resolve(),
             _ => return Ok(None),
         };
         if !self.registry().classes.contains_key(&receiver_class_name) {
@@ -55,12 +55,12 @@ impl Interpreter {
         let mut omit_cb: Option<Value> = None;
         let mut include_cb: Option<Value> = None;
         for arg in args {
-            let named: Option<(String, &Value)> = match arg {
-                Value::Pair(k, v) => Some((k.clone(), v.as_ref())),
-                Value::ValuePair(k, v) => Some((k.to_string_value(), v.as_ref())),
-                other => {
+            let named: Option<(String, &Value)> = match arg.view() {
+                ValueView::Pair(k, v) => Some((k.clone(), v)),
+                ValueView::ValuePair(k, v) => Some((k.to_string_value(), v)),
+                _ => {
                     if method_name.is_none() {
-                        method_name = Some(other.to_string_value());
+                        method_name = Some(arg.to_string_value());
                     }
                     None
                 }
@@ -108,7 +108,7 @@ impl Interpreter {
                 // with the OWNER type object: keep the candidate only when
                 // include (if given) returns truthy AND omit (if given) does not.
                 if include_cb.is_some() || omit_cb.is_some() {
-                    let owner_type = Value::Package(Symbol::intern(owner));
+                    let owner_type = Value::package(Symbol::intern(owner));
                     if let Some(inc) = &include_cb {
                         let keep = self
                             .call_sub_value(inc.clone(), vec![owner_type.clone()], false)?
@@ -155,13 +155,13 @@ impl Interpreter {
         // Parse the method name (named `:name<...>` or first positional).
         let mut method_name: Option<String> = None;
         for arg in args {
-            match arg {
-                Value::Pair(k, v) if k == "name" => method_name = Some(v.to_string_value()),
-                Value::ValuePair(k, v) if k.to_string_value() == "name" => {
+            match arg.view() {
+                ValueView::Pair(k, v) if k == "name" => method_name = Some(v.to_string_value()),
+                ValueView::ValuePair(k, v) if k.to_string_value() == "name" => {
                     method_name = Some(v.to_string_value())
                 }
-                Value::Pair(..) | Value::ValuePair(..) => {}
-                other if method_name.is_none() => method_name = Some(other.to_string_value()),
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {}
+                _ if method_name.is_none() => method_name = Some(arg.to_string_value()),
                 _ => {}
             }
         }
@@ -237,8 +237,8 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("candidates".to_string(), Value::real_array(candidates));
         attrs.insert("invocant".to_string(), invocant);
-        attrs.insert("reversed".to_string(), Value::Bool(false));
-        attrs.insert("quiet".to_string(), Value::Bool(false));
+        attrs.insert("reversed".to_string(), Value::FALSE);
+        attrs.insert("quiet".to_string(), Value::FALSE);
         attrs.insert("targets".to_string(), Value::real_array(targets));
         attrs.insert(
             "receiver_class".to_string(),
@@ -260,18 +260,18 @@ impl Interpreter {
         walk_list: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let Value::Instance { attributes, .. } = walk_list else {
+        let ValueView::Instance { attributes, .. } = walk_list.view() else {
             return Ok(Value::real_array(Vec::new()));
         };
         let (targets, invocant, receiver_class, method_name, reversed, quiet) = {
             let map = attributes.as_map();
-            let targets: Vec<String> = match map.get("targets") {
-                Some(Value::Array(items, ..)) => {
+            let targets: Vec<String> = match map.get("targets").map(Value::view) {
+                Some(ValueView::Array(items, ..)) => {
                     items.iter().map(|v| v.to_string_value()).collect()
                 }
                 _ => Vec::new(),
             };
-            let invocant = map.get("invocant").cloned().unwrap_or(Value::Nil);
+            let invocant = map.get("invocant").cloned().unwrap_or(Value::NIL);
             let receiver_class = map
                 .get("receiver_class")
                 .map(|v| v.to_string_value())
@@ -280,8 +280,14 @@ impl Interpreter {
                 .get("method_name")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            let reversed = matches!(map.get("reversed"), Some(Value::Bool(true)));
-            let quiet = matches!(map.get("quiet"), Some(Value::Bool(true)));
+            let reversed = matches!(
+                map.get("reversed").map(Value::view),
+                Some(ValueView::Bool(true))
+            );
+            let quiet = matches!(
+                map.get("quiet").map(Value::view),
+                Some(ValueView::Bool(true))
+            );
             (
                 targets,
                 invocant,
@@ -291,8 +297,8 @@ impl Interpreter {
                 quiet,
             )
         };
-        let attributes_map = match &invocant {
-            Value::Instance { attributes, .. } => attributes.to_map(),
+        let attributes_map = match invocant.view() {
+            ValueView::Instance { attributes, .. } => attributes.to_map(),
             _ => std::collections::HashMap::new(),
         };
         let mut order: Vec<String> = targets;
@@ -314,7 +320,7 @@ impl Interpreter {
             quiet,
             idx: 0,
         }));
-        Ok(Value::LazyList(crate::gc::Gc::new(ll)))
+        Ok(Value::lazy_list(crate::gc::Gc::new(ll)))
     }
 
     /// Pull up to `needed` elements of a lazy `WALK(method)()` list by invoking
@@ -402,16 +408,19 @@ impl Interpreter {
     /// `reversed` the flag is toggled relative to the current value so chained
     /// `.reverse` calls compose correctly.
     fn walk_list_with_flag(walk_list: &Value, flag: &str, value: bool) -> Value {
-        let Value::Instance { attributes, .. } = walk_list else {
+        let ValueView::Instance { attributes, .. } = walk_list.view() else {
             return walk_list.clone();
         };
         let mut attrs = attributes.to_map();
         let new_val = if flag == "reversed" {
-            !matches!(attrs.get("reversed"), Some(Value::Bool(true)))
+            !matches!(
+                attrs.get("reversed").map(Value::view),
+                Some(ValueView::Bool(true))
+            )
         } else {
             value
         };
-        attrs.insert(flag.to_string(), Value::Bool(new_val));
+        attrs.insert(flag.to_string(), Value::truth(new_val));
         Value::make_instance(Symbol::intern("WalkList"), attrs)
     }
 

@@ -47,8 +47,9 @@ impl Interpreter {
             .type_metadata
             .get(name)
             .and_then(|meta| meta.get("language-revision"))
+            .map(Value::view)
         {
-            Some(Value::Str(rev)) => rev.as_str() >= "e",
+            Some(ValueView::Str(rev)) => rev.as_str() >= "e",
             _ => crate::parser::current_language_version().starts_with("6.e"),
         }
     }

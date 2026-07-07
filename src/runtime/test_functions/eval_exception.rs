@@ -6,8 +6,8 @@ impl Interpreter {
         let block = Self::positional_value_required(args, 0, "lives-ok expects block")?.clone();
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
-        let ok = match &block {
-            Value::Sub(data) => {
+        let ok = match block.view() {
+            ValueView::Sub(data) => {
                 self.push_caller_env();
                 // Save both "$_" (sigiled) and "_" (bare) since the block's
                 // eval_block_value sets "_" via SetTopic and we must restore it.
@@ -36,15 +36,15 @@ impl Interpreter {
             _ => true,
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_dies_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let block = Self::positional_value_required(args, 0, "dies-ok expects block")?.clone();
         let desc = Self::positional_string(args, 1);
         let todo = Self::named_bool(args, "todo");
-        let ok = match &block {
-            Value::Sub(data) => {
+        let ok = match block.view() {
+            ValueView::Sub(data) => {
                 self.push_caller_env();
                 // Save both "$_" (sigiled) and "_" (bare) since eval_block_value sets "_".
                 let saved_topic_sigil = self.env.get("$_").cloned();
@@ -79,7 +79,7 @@ impl Interpreter {
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_isa_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -90,12 +90,12 @@ impl Interpreter {
         let todo = Self::named_bool(args, "todo");
         let mut ok = value.isa_check(&type_name) || self.type_matches_value(&type_name, value);
         // For Package values, also check full MRO (handles grammar/class inheritance)
-        if !ok && let Value::Package(name) = value {
+        if !ok && let ValueView::Package(name) = value.view() {
             let mro = self.class_mro(&name.resolve());
             ok = mro.contains(&type_name);
         }
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     /// Extract (value, type_name, desc) for isa-ok from raw args.
@@ -110,24 +110,24 @@ impl Interpreter {
                 break;
             }
             // Only skip Pair args that look like named args (key is a known name)
-            if let Value::Pair(key, _) = arg
+            if let ValueView::Pair(key, _) = arg.view()
                 && matches!(key.as_str(), "todo")
             {
                 continue;
             }
             positionals.push(arg);
         }
-        let value = positionals.first().copied().unwrap_or(&Value::Nil);
-        let type_name = match positionals.get(1) {
-            Some(Value::Package(name)) => name.resolve(),
-            Some(Value::Nil) => "Nil".to_string(),
-            Some(Value::Str(s)) => s.to_string(),
-            Some(Value::Instance { class_name, .. }) => class_name.resolve(),
-            Some(v) => {
+        let value = positionals.first().copied().unwrap_or(&Value::NIL);
+        let type_name = match positionals.get(1).copied() {
+            Some(v) => match v.view() {
+                ValueView::Package(name) => name.resolve(),
+                ValueView::Nil => "Nil".to_string(),
+                ValueView::Str(s) => s.to_string(),
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
                 // For defined values (e.g., isa-ok $val, 3), extract the type
                 // name from the value's type. This matches Raku's behavior.
-                crate::value::types::what_type_name(v)
-            }
+                _ => crate::value::types::what_type_name(v),
+            },
             None => String::new(),
         };
         let desc = positionals
@@ -141,18 +141,18 @@ impl Interpreter {
     pub(crate) fn test_fn_force_todo(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut ranges = Vec::new();
         for arg in Self::positional_values(args) {
-            match arg {
-                Value::Int(i) if *i > 0 => {
-                    let n = *i as usize;
+            match arg.view() {
+                ValueView::Int(i) if i > 0 => {
+                    let n = i as usize;
                     ranges.push(TodoRange {
                         start: n,
                         end: n,
                         reason: String::new(),
                     });
                 }
-                Value::Range(a, b) => {
-                    let start = (*a).min(*b).max(1) as usize;
-                    let end = (*a).max(*b).max(1) as usize;
+                ValueView::Range(a, b) => {
+                    let start = a.min(b).max(1) as usize;
+                    let end = a.max(b).max(1) as usize;
                     ranges.push(TodoRange {
                         start,
                         end,
@@ -164,19 +164,19 @@ impl Interpreter {
         }
         let state = self.tap.ensure_state();
         state.force_todo.extend(ranges);
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     pub(crate) fn test_fn_eval_lives_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code_val = Self::positional_value_required(args, 0, "eval-lives-ok expects code")?;
         let desc = Self::positional_string(args, 1);
-        let code = match code_val {
-            Value::Str(s) => s.to_string(),
+        let code = match code_val.view() {
+            ValueView::Str(s) => s.to_string(),
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
         nested.strict_mode = self.strict_mode;
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
+        if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
@@ -200,7 +200,7 @@ impl Interpreter {
             if k.contains_str("::") {
                 continue;
             }
-            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+            if matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }) {
                 continue;
             }
             nested.env.insert_sym(*k, v.clone());
@@ -264,19 +264,19 @@ impl Interpreter {
                 eprint!("{}", diag);
             }
         }
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_eval_dies_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let code_val = Self::positional_value_required(args, 0, "eval-dies-ok expects code")?;
         let desc = Self::positional_string(args, 1);
-        let code = match code_val {
-            Value::Str(s) => s.to_string(),
+        let code = match code_val.view() {
+            ValueView::Str(s) => s.to_string(),
             _ => String::new(),
         };
         let mut nested = Interpreter::new();
         nested.strict_mode = self.strict_mode;
-        if let Some(Value::Int(pid)) = self.env.get("*PID") {
+        if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
             nested.set_pid(pid.saturating_add(1));
         }
         nested.lib_paths = self.lib_paths.clone();
@@ -300,33 +300,33 @@ impl Interpreter {
             if k.contains_str("::") {
                 continue;
             }
-            if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+            if matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }) {
                 continue;
             }
             nested.env.insert_sym(*k, v.clone());
         }
         let ok = nested.eval_eval_string(&code).is_err();
         self.test_ok(ok, &desc, false)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_warns_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "warns-like expects code")?;
         let test_pattern = Self::positional_value(args, 1)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let desc = Self::positional_string(args, 2);
-        let warn_message = match program_val {
-            Value::Str(program) => {
+        let warn_message = match program_val.view() {
+            ValueView::Str(program) => {
                 let mut nested = Interpreter::new();
-                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.set_program_path("<warns-like>");
                 let _ = nested.run(program);
                 nested.warn_output.clone()
             }
-            Value::Sub(data) => {
+            ValueView::Sub(data) => {
                 let saved_warn = std::mem::take(&mut self.warn_output);
                 self.push_caller_env();
                 let _ = self.eval_test_block_value(&data.body);
@@ -335,7 +335,7 @@ impl Interpreter {
                 self.warn_output = saved_warn;
                 warn_message
             }
-            Value::WeakSub(weak) => {
+            ValueView::WeakSub(weak) => {
                 let Some(data) = weak.upgrade() else {
                     return Err(RuntimeError::new("warns-like expects live callable"));
                 };
@@ -370,17 +370,17 @@ impl Interpreter {
         let matched = self.smart_match(&msg_val, &test_pattern);
         self.test_ok(matched, "warning message passes test", false)?;
         self.finish_subtest(ctx, &label, Ok(()))?;
-        Ok(Value::Bool(did_warn && matched))
+        Ok(Value::truth(did_warn && matched))
     }
 
     pub(crate) fn test_fn_doesnt_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let program_val = Self::positional_value_required(args, 0, "doesn't-warn expects code")?;
         let desc = Self::positional_string(args, 1);
-        match program_val {
-            Value::Str(s) => {
+        match program_val.view() {
+            ValueView::Str(s) => {
                 let program = s.to_string();
                 let mut nested = Interpreter::new();
-                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.set_program_path("<doesn't-warn>");
@@ -395,9 +395,9 @@ impl Interpreter {
                     self.emit_output(&format!("# {}\n", diag_msg));
                 }
                 self.test_ok(!did_warn, &desc, false)?;
-                Ok(Value::Bool(!did_warn))
+                Ok(Value::truth(!did_warn))
             }
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
                 let saved_warn = std::mem::take(&mut self.warn_output);
                 let _ = self.call_sub_value(program_val.clone(), vec![], false);
                 let warn_message = std::mem::replace(&mut self.warn_output, saved_warn);
@@ -410,7 +410,7 @@ impl Interpreter {
                     self.emit_output(&format!("# {}\n", diag_msg));
                 }
                 self.test_ok(!did_warn, &desc, false)?;
-                Ok(Value::Bool(!did_warn))
+                Ok(Value::truth(!did_warn))
             }
             _ => Err(RuntimeError::new(
                 "doesn't-warn expects string code or callable",
@@ -437,19 +437,19 @@ impl Interpreter {
             }
         }
         self.test_ok(found, &desc, todo)?;
-        Ok(Value::Bool(found))
+        Ok(Value::truth(found))
     }
 
     pub(crate) fn test_fn_does_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = Self::positional_value(args, 0)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let role_val = Self::positional_value(args, 1)
             .cloned()
-            .unwrap_or_else(|| Value::Package(Symbol::intern(&Self::positional_string(args, 1))));
-        let role_name = match &role_val {
-            Value::Package(name) => name.resolve(),
-            other => other.to_string_value(),
+            .unwrap_or_else(|| Value::package(Symbol::intern(&Self::positional_string(args, 1))));
+        let role_name = match role_val.view() {
+            ValueView::Package(name) => name.resolve(),
+            _ => role_val.to_string_value(),
         };
         let desc = {
             let explicit = Self::positional_string(args, 2);
@@ -462,13 +462,13 @@ impl Interpreter {
         let todo = Self::named_bool(args, "todo");
         let ok = self.smart_match(&value, &role_val);
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_can_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let value = Self::positional_value(args, 0)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let method_name = Self::positional_string(args, 1);
         let desc = {
             let explicit = Self::positional_string(args, 2);
@@ -481,6 +481,6 @@ impl Interpreter {
         let todo = Self::named_bool(args, "todo");
         let ok = self.value_can_method(&value, &method_name);
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 }

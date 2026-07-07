@@ -31,9 +31,9 @@ impl Interpreter {
             .env
             .get("%*SUB-MAIN-OPTS")
             .cloned()
-            .unwrap_or(Value::Nil);
-        let items = match hash {
-            Value::Hash(h) => h,
+            .unwrap_or(Value::NIL);
+        let items = match hash.view() {
+            ValueView::Hash(h) => h.clone(),
             _ => return opts,
         };
         for (key, value) in items.iter() {
@@ -42,8 +42,8 @@ impl Interpreter {
                 "bundling" => opts.bundling = value.truthy(),
                 "allow-no" => opts.allow_no = value.truthy(),
                 "coerce-allomorphs-to" => {
-                    let name = match value {
-                        Value::Package(n) => n.resolve().to_string(),
+                    let name = match value.view() {
+                        ValueView::Package(n) => n.resolve().to_string(),
                         _ => value.to_string_value(),
                     };
                     opts.coerce_allomorphs_to = Some(name);
@@ -73,7 +73,7 @@ impl Interpreter {
             .get("@*ARGS")
             .cloned()
             .unwrap_or_else(|| Value::array(Vec::new()));
-        let raw_args: Vec<String> = if let Value::Array(items, ..) = args_val {
+        let raw_args: Vec<String> = if let Some((items, ..)) = args_val.into_array() {
             items.iter().map(|v| v.to_string_value()).collect()
         } else {
             Vec::new()
@@ -312,7 +312,7 @@ impl Interpreter {
                 continue;
             }
             if let Some(rest) = arg.strip_prefix("--/") {
-                named.push((rest.to_string(), Value::Bool(false)));
+                named.push((rest.to_string(), Value::FALSE));
                 i += 1;
                 continue;
             }
@@ -320,7 +320,7 @@ impl Interpreter {
                 && let Some(rest) = arg.strip_prefix("--no-")
                 && !rest.is_empty()
             {
-                named.push((rest.to_string(), Value::Bool(false)));
+                named.push((rest.to_string(), Value::FALSE));
                 i += 1;
                 continue;
             }
@@ -339,8 +339,8 @@ impl Interpreter {
                         && ni.is_array
                     {
                         if let Some(existing) = named.iter_mut().find(|(n, _)| n == key) {
-                            let old = std::mem::replace(&mut existing.1, Value::Nil);
-                            if let Value::Array(items, ..) = old {
+                            let old = std::mem::replace(&mut existing.1, Value::NIL);
+                            if let Some((items, ..)) = old.into_array() {
                                 let mut v: Vec<Value> = items.to_vec();
                                 v.push(Value::str(val.to_string()));
                                 existing.1 = Value::array(v);
@@ -364,7 +364,7 @@ impl Interpreter {
                     .find(|ni| ni.names.iter().any(|n| n == key));
                 if let Some(ni) = info {
                     if ni.is_bool {
-                        named.push((key.to_string(), Value::Bool(true)));
+                        named.push((key.to_string(), Value::TRUE));
                         i += 1;
                         continue;
                     }
@@ -374,7 +374,7 @@ impl Interpreter {
                         continue;
                     }
                 }
-                named.push((key.to_string(), Value::Bool(true)));
+                named.push((key.to_string(), Value::TRUE));
                 i += 1;
                 continue;
             }
@@ -398,7 +398,7 @@ impl Interpreter {
                         mixins.insert("Str".to_string(), Value::str(suffix.to_string()));
                         named.push((
                             first_char.to_string(),
-                            Value::mixin(Value::Int(int_val), mixins),
+                            Value::mixin(Value::int(int_val), mixins),
                         ));
                         i += 1;
                         continue;
@@ -407,7 +407,7 @@ impl Interpreter {
                 if opts.bundling && rest.len() >= 2 && rest.chars().all(|c| c.is_ascii_alphabetic())
                 {
                     for ch in rest.chars() {
-                        named.push((ch.to_string(), Value::Bool(true)));
+                        named.push((ch.to_string(), Value::TRUE));
                     }
                     i += 1;
                     continue;
@@ -418,7 +418,7 @@ impl Interpreter {
                     .find(|ni| ni.names.iter().any(|n| n == key));
                 if let Some(ni) = info {
                     if ni.is_bool {
-                        named.push((key.to_string(), Value::Bool(true)));
+                        named.push((key.to_string(), Value::TRUE));
                         i += 1;
                         continue;
                     }
@@ -428,7 +428,7 @@ impl Interpreter {
                         continue;
                     }
                 }
-                named.push((key.to_string(), Value::Bool(true)));
+                named.push((key.to_string(), Value::TRUE));
                 i += 1;
                 continue;
             }
@@ -474,7 +474,7 @@ impl Interpreter {
                 .find(|pd| Self::param_all_names(pd).iter().any(|n| n == name))
                 .map(|pd| self.coerce_cli_arg(value, pd))
                 .unwrap_or_else(|| value.clone());
-            args.push(Value::Pair(name.clone(), Box::new(coerced)));
+            args.push(Value::pair(name.clone(), coerced));
         }
         let all_candidates = self.collect_main_candidates();
         let usage_text = self.generate_usage_from_candidates(&all_candidates);
@@ -585,15 +585,15 @@ impl Interpreter {
     /// string is an unambiguous value name of a known enum. Used for MAIN
     /// parameters without a type constraint (e.g. slurpy `*@a`).
     fn autoconvert_cli_enum_value(&mut self, arg: &Value) -> Value {
-        let name = match arg {
-            Value::Str(s) => s.to_string(),
+        let name = match arg.view() {
+            ValueView::Str(s) => s.to_string(),
             _ => return arg.clone(),
         };
         // Bool is a core enum but is represented natively rather than in
         // `enum_types`; convert its value names directly.
         match name.as_str() {
-            "True" => return Value::Bool(true),
-            "False" => return Value::Bool(false),
+            "True" => return Value::TRUE,
+            "False" => return Value::FALSE,
             _ => {}
         }
         let matching: Vec<String> = self
@@ -629,15 +629,15 @@ impl Interpreter {
         match tc {
             "Int" => s
                 .parse::<i64>()
-                .map(Value::Int)
+                .map(Value::int)
                 .unwrap_or_else(|_| arg.clone()),
             "Num" => s
                 .parse::<f64>()
-                .map(Value::Num)
+                .map(Value::num)
                 .unwrap_or_else(|_| arg.clone()),
             "Rat" => s
                 .parse::<f64>()
-                .map(Value::Num)
+                .map(Value::num)
                 .unwrap_or_else(|_| arg.clone()),
             _ => {
                 // If the parameter is typed with an enum, coerce the CLI string to
@@ -663,11 +663,11 @@ impl Interpreter {
             "Str" => Value::str(s),
             "Int" => s
                 .parse::<i64>()
-                .map(Value::Int)
+                .map(Value::int)
                 .unwrap_or_else(|_| val.clone()),
             "Num" => s
                 .parse::<f64>()
-                .map(Value::Num)
+                .map(Value::num)
                 .unwrap_or_else(|_| val.clone()),
             _ => val.clone(),
         }

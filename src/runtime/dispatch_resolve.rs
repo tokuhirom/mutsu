@@ -76,7 +76,7 @@ impl Interpreter {
         // Arity counts only positional args, excluding named args (Pair values)
         let arity = arg_values
             .iter()
-            .filter(|v| !matches!(v, Value::Pair(..)))
+            .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
             .count();
         if name.contains("::") {
             if let Some(def) = self

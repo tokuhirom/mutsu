@@ -35,11 +35,11 @@ impl Interpreter {
             // A successful open returns an `IO::Handle` instance carrying the new
             // handle id; an error returns a `Failure`. Only mutate the receiver on
             // success — on failure the handle stays unopened (as in Raku).
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes: new_attrs,
                 ..
-            } = &result
+            } = result.view()
                 && class_name == "IO::Handle"
             {
                 let updated = new_attrs.as_map().clone();
@@ -76,7 +76,7 @@ impl Interpreter {
                 if !is_std {
                     let _ = self.close_handle_value(&target_val)?;
                 }
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "path" | "IO" => {
                 // For standard handles ($*IN, $*OUT, $*ERR), return IO::Special
@@ -94,20 +94,20 @@ impl Interpreter {
                     }
                 }
                 if let Some(path_val) = target.get("path") {
-                    let io_path = match path_val {
-                        Value::Instance { class_name, .. } if class_name == "IO::Path" => {
+                    let io_path = match path_val.view() {
+                        ValueView::Instance { class_name, .. } if class_name == "IO::Path" => {
                             path_val.clone()
                         }
                         _ => self.make_io_path_instance(&path_val.to_string_value()),
                     };
                     return Ok(io_path);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "Str" | "gist" => {
                 if let Some(path_val) = target.get("path") {
-                    let path = match path_val {
-                        Value::Instance {
+                    let path = match path_val.view() {
+                        ValueView::Instance {
                             class_name,
                             attributes,
                             ..
@@ -172,8 +172,8 @@ impl Interpreter {
                 // Merge instance attributes with open args (args override instance attrs)
                 let path_str = target
                     .get("path")
-                    .map(|v| match v {
-                        Value::Instance {
+                    .map(|v| match v.view() {
+                        ValueView::Instance {
                             class_name,
                             attributes,
                             ..
@@ -193,7 +193,7 @@ impl Interpreter {
                 let mut explicit_keys: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
                 for arg in &args {
-                    if let Value::Pair(name, _) = arg {
+                    if let ValueView::Pair(name, _) = arg.view() {
                         explicit_keys.insert(name.clone());
                     }
                 }
@@ -203,7 +203,7 @@ impl Interpreter {
                         continue;
                     }
                     if !explicit_keys.contains(key) {
-                        merged_args.push(Value::Pair(key.clone(), Box::new(value.clone())));
+                        merged_args.push(Value::pair(key.clone(), value.clone()));
                     }
                 }
                 merged_args.extend(args.iter().cloned());
@@ -242,8 +242,10 @@ impl Interpreter {
                         let class_name = err
                             .exception
                             .as_deref()
-                            .and_then(|ex| match ex {
-                                Value::Instance { class_name, .. } => Some(class_name.to_string()),
+                            .and_then(|ex| match ex.view() {
+                                ValueView::Instance { class_name, .. } => {
+                                    Some(class_name.to_string())
+                                }
                                 _ => None,
                             })
                             .unwrap_or_else(|| "X::AdHoc".to_string());
@@ -260,8 +262,8 @@ impl Interpreter {
             "nl-in" => {
                 if let Some(arg) = args.first() {
                     let _ = self.with_handle_mut_opt(&target_val, |state| {
-                        match arg {
-                            Value::Array(items, ..) => {
+                        match arg.view() {
+                            ValueView::Array(items, ..) => {
                                 let seps: Vec<Vec<u8>> = items
                                     .iter()
                                     .map(|v: &Value| v.to_string_value().into_bytes())
@@ -312,18 +314,18 @@ impl Interpreter {
                 let set = args.first().map(|a| a.truthy());
                 let chomp =
                     self.with_handle_mut(&target_val, |state| Ok(state.chomp_setting(set)))?;
-                Ok(Value::Bool(chomp))
+                Ok(Value::truth(chomp))
             }
             "print-nl" => {
                 let nl = self.with_handle_mut(&target_val, |state| Ok(state.nl_out.clone()))?;
                 self.write_to_handle_value(&target_val, &nl, false)?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
-            "close" => Ok(Value::Bool(self.close_handle_value(&target_val)?)),
+            "close" => Ok(Value::truth(self.close_handle_value(&target_val)?)),
             "get" => Ok(self
                 .read_line_from_handle_value(&target_val)?
                 .map(Value::str)
-                .unwrap_or(Value::Nil)),
+                .unwrap_or(Value::NIL)),
             "getc" => {
                 let encoding =
                     self.with_handle_mut(&target_val, |state| Ok(state.encoding.clone()))?;
@@ -335,7 +337,7 @@ impl Interpreter {
                     // For single-byte encodings, read 1 byte and decode
                     let bytes = self.read_bytes_from_handle_value(&target_val, 1)?;
                     if bytes.is_empty() {
-                        Ok(Value::Nil)
+                        Ok(Value::NIL)
                     } else {
                         let decoded = self.decode_with_encoding(&bytes, &encoding)?;
                         Ok(Value::str(decoded))
@@ -346,12 +348,12 @@ impl Interpreter {
                     // the grapheme path; other targets fall back to a single
                     // codepoint.
                     match self.read_grapheme_from_handle_value(&target_val, 1)? {
-                        Some(s) if s.is_empty() => Ok(Value::Nil), // EOF
+                        Some(s) if s.is_empty() => Ok(Value::NIL), // EOF
                         Some(s) => Ok(Value::str(s)),
                         None => {
                             let s = self.read_chars_from_handle_value(&target_val, Some(1))?;
                             if s.is_empty() {
-                                Ok(Value::Nil)
+                                Ok(Value::NIL)
                             } else {
                                 Ok(Value::str(s))
                             }
@@ -388,8 +390,8 @@ impl Interpreter {
                 let mut limit: Option<usize> = None;
                 let mut close_after = false;
                 for arg in &args {
-                    match arg {
-                        Value::Pair(k, v) if k == "close" => {
+                    match arg.view() {
+                        ValueView::Pair(k, v) if k == "close" => {
                             close_after = v.truthy();
                         }
                         // Any numeric (incl. allomorphs) is a row limit; named
@@ -415,24 +417,20 @@ impl Interpreter {
                     if close_after {
                         self.close_handle_value(&target_val)?;
                     }
-                    Ok(Value::Seq(std::sync::Arc::new(lines)))
+                    Ok(Value::seq(lines))
                 } else {
                     // No limit: return a lazy IO lines iterator so that
                     // consumers (e.g. for-loop) can read on demand and
                     // $fh.tell reflects the current position.
-                    Ok(Value::LazyIoLines {
-                        handle: Box::new(target_val.clone()),
-                        kv: false,
-                        words: false,
-                    })
+                    Ok(Value::lazy_io_lines(target_val.clone(), false, false))
                 }
             }
             "words" => {
                 let mut limit: Option<usize> = None;
                 let mut close_after = false;
                 for arg in &args {
-                    match arg {
-                        Value::Pair(k, v) if k == "close" => {
+                    match arg.view() {
+                        ValueView::Pair(k, v) if k == "close" => {
                             close_after = v.truthy();
                         }
                         // Any numeric (incl. allomorphs) is a word limit; named
@@ -454,11 +452,7 @@ impl Interpreter {
                             Ok(())
                         })?;
                     }
-                    return Ok(Value::LazyIoLines {
-                        handle: Box::new(target_val.clone()),
-                        kv: false,
-                        words: true,
-                    });
+                    return Ok(Value::lazy_io_lines(target_val.clone(), false, true));
                 }
                 let mut words = Vec::new();
                 'outer: while let Some(word) = self.read_word_from_handle_value(&target_val)? {
@@ -472,14 +466,14 @@ impl Interpreter {
                 if close_after {
                     self.close_handle_value(&target_val)?;
                 }
-                Ok(Value::Seq(std::sync::Arc::new(words)))
+                Ok(Value::seq(words))
             }
             "read" => {
                 // .read() always returns a Buf (Buf[uint8]) in Raku
                 let count = args
                     .first()
-                    .and_then(|v| match v {
-                        Value::Int(i) if *i > 0 => Some(*i as usize),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) if i > 0 => Some(i as usize),
                         _ => None,
                     })
                     .unwrap_or(0);
@@ -500,8 +494,8 @@ impl Interpreter {
             "write" => {
                 let mut bytes = Vec::new();
                 for arg in &args {
-                    match arg {
-                        Value::Instance { class_name, .. }
+                    match arg.view() {
+                        ValueView::Instance { class_name, .. }
                             if {
                                 let cn = class_name.resolve();
                                 cn == "Buf"
@@ -522,7 +516,7 @@ impl Interpreter {
                 // Write raw bytes directly to avoid UTF-8 lossy conversion
                 // which corrupts non-UTF-8 binary data (e.g., ISO-8859-1 encoded bytes)
                 self.write_bytes_to_handle_value(&target_val, &bytes)?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "print" => {
                 let mut content = String::new();
@@ -530,17 +524,18 @@ impl Interpreter {
                     content.push_str(&self.render_str_value(arg));
                 }
                 self.write_to_handle_value_trying(&target_val, &content, false, "print")?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "printf" => {
                 // If the first arg is a Junction, thread through it
-                if let Some(Value::Junction { kind: _, values }) = args.first() {
+                if let Some(ValueView::Junction { kind: _, values }) = args.first().map(Value::view)
+                {
                     let mut content = String::new();
                     for v in values.iter() {
                         content.push_str(&self.render_str_value(v));
                     }
                     self.write_to_handle_value_trying(&target_val, &content, false, "printf")?;
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 } else {
                     let fmt = args
                         .first()
@@ -550,7 +545,7 @@ impl Interpreter {
                     super::sprintf::validate_sprintf_directives(&fmt, rest.len())?;
                     let content = super::sprintf::format_sprintf_args(&fmt, rest);
                     self.write_to_handle_value_trying(&target_val, &content, false, "printf")?;
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 }
             }
             "say" => {
@@ -559,7 +554,7 @@ impl Interpreter {
                     content.push_str(&self.render_gist_value(arg));
                 }
                 self.write_to_handle_value_trying(&target_val, &content, true, "say")?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "put" => {
                 let mut content = String::new();
@@ -567,14 +562,11 @@ impl Interpreter {
                     content.push_str(&self.render_str_value(arg));
                 }
                 self.write_to_handle_value_trying(&target_val, &content, true, "put")?;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "spurt" => {
                 // IO::Handle.spurt($data) -- write data to the handle
-                let content_value = args
-                    .first()
-                    .cloned()
-                    .unwrap_or(Value::Str(String::new().into()));
+                let content_value = args.first().cloned().unwrap_or(Value::str(String::new()));
                 let is_buf = crate::runtime::Interpreter::is_buf_value(&content_value);
                 if is_buf {
                     let bytes = crate::runtime::Interpreter::extract_buf_bytes(&content_value);
@@ -592,13 +584,13 @@ impl Interpreter {
                     };
                     self.write_bytes_to_handle_value(&target_val, &bytes)?;
                 }
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "flush" => {
                 let flushed =
                     self.with_handle_mut_opt(&target_val, |state| state.flush_for_method())?;
                 if flushed.is_some() {
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 } else {
                     let mut ex_attrs = HashMap::new();
                     ex_attrs.insert(
@@ -618,13 +610,13 @@ impl Interpreter {
                 let set = args.first().map(Self::parse_out_buffer_size);
                 let size =
                     self.with_handle_mut(&target_val, |state| state.out_buffer_setting(set))?;
-                Ok(Value::Int(size as i64))
+                Ok(Value::int(size as i64))
             }
             "seek" => {
                 let pos = args
                     .first()
-                    .and_then(|v| match v {
-                        Value::Int(i) => Some(*i),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i),
                         _ => None,
                     })
                     .unwrap_or(0);
@@ -640,54 +632,54 @@ impl Interpreter {
                     _ => 0,
                 };
                 let offset = self.seek_handle_value(&target_val, pos, seek_mode)?;
-                Ok(Value::Int(offset))
+                Ok(Value::int(offset))
             }
             "tell" => {
                 let position = self.tell_handle_value(&target_val)?;
-                Ok(Value::Int(position))
+                Ok(Value::int(position))
             }
             "lock" => {
-                let shared = args
-                    .iter()
-                    .any(|a| matches!(a, Value::Pair(k, v) if k == "shared" && v.truthy()));
+                let shared = args.iter().any(
+                    |a| matches!(a.view(), ValueView::Pair(k, v) if k == "shared" && v.truthy()),
+                );
                 let non_blocking = args
                     .iter()
-                    .any(|a| matches!(a, Value::Pair(k, v) if k == "non-blocking" && v.truthy()));
+                    .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "non-blocking" && v.truthy()));
                 self.lock_handle_value(&target_val, shared, non_blocking)
             }
             "unlock" => self.unlock_handle_value(&target_val),
             "eof" => {
                 let at_end = self.handle_eof_value(&target_val)?;
-                Ok(Value::Bool(at_end))
+                Ok(Value::truth(at_end))
             }
             "t" => {
                 let is_tty = self.with_handle_mut(&target_val, |state| Ok(state.is_tty()))?;
-                Ok(Value::Bool(is_tty))
+                Ok(Value::truth(is_tty))
             }
             "encoding" => {
                 if let Some(arg) = args.first() {
                     // Nil means switch to binary mode (no encoding)
-                    if matches!(arg, Value::Nil) {
+                    if arg.is_nil() {
                         self.set_handle_encoding(&target_val, Some("bin".to_string()))?;
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     let encoding = arg.to_string_value();
                     if encoding == "bin" {
                         self.set_handle_encoding(&target_val, Some("bin".to_string()))?;
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     self.set_handle_encoding(&target_val, Some(encoding.clone()))?;
                     return Ok(Value::str(encoding));
                 }
                 let current = self.set_handle_encoding(&target_val, None)?;
                 if current == "bin" {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 }
                 Ok(Value::str(current))
             }
             "opened" => {
                 let opened = self.with_handle_mut(&target_val, |state| Ok(state.is_opened()))?;
-                Ok(Value::Bool(opened))
+                Ok(Value::truth(opened))
             }
             "slurp" => {
                 let has_bin_arg = Self::named_bool(&args, "bin");
@@ -726,13 +718,13 @@ impl Interpreter {
             "split" => {
                 // Slurp the handle, optionally close it, then delegate to the
                 // generic Str.split implementation.
-                let close = args
-                    .iter()
-                    .any(|a| matches!(a, Value::Pair(k, v) if k == "close" && v.truthy()));
+                let close = args.iter().any(
+                    |a| matches!(a.view(), ValueView::Pair(k, v) if k == "close" && v.truthy()),
+                );
                 // Filter out :close from args before delegating to split.
                 let split_args: Vec<Value> = args
                     .iter()
-                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "close"))
                     .cloned()
                     .collect();
                 let mut all_bytes = Vec::new();
@@ -752,13 +744,13 @@ impl Interpreter {
             "comb" => {
                 // Slurp the handle, optionally close it, then delegate to the
                 // generic Str.comb implementation.
-                let close = args
-                    .iter()
-                    .any(|a| matches!(a, Value::Pair(k, v) if k == "close" && v.truthy()));
+                let close = args.iter().any(
+                    |a| matches!(a.view(), ValueView::Pair(k, v) if k == "close" && v.truthy()),
+                );
                 // Filter out :close from args before delegating to comb.
                 let comb_args: Vec<Value> = args
                     .iter()
-                    .filter(|a| !matches!(a, Value::Pair(k, _) if k == "close"))
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "close"))
                     .cloned()
                     .collect();
                 let mut all_bytes = Vec::new();
@@ -775,13 +767,13 @@ impl Interpreter {
                 }
                 match self.dispatch_comb_with_args(Value::str(text), &comb_args) {
                     Some(res) => res,
-                    None => Ok(Value::Seq(std::sync::Arc::new(Vec::new()))),
+                    None => Ok(Value::seq(Vec::new())),
                 }
             }
             "Supply" => self.handle_supply(target, &args),
             "native-descriptor" => {
                 let fd = self.with_handle_mut(&target_val, |state| state.native_descriptor())?;
-                Ok(Value::Int(fd))
+                Ok(Value::int(fd))
             }
             _ => Err(RuntimeError::new(format!(
                 "No native method '{}' on IO::Handle",
@@ -799,11 +791,11 @@ impl Interpreter {
         let size = args
             .iter()
             .find_map(|a| {
-                if let Value::Pair(name, val) = a
+                if let ValueView::Pair(name, val) = a.view()
                     && name == "size"
                 {
-                    match val.as_ref() {
-                        Value::Int(i) => Some(*i as usize),
+                    match val.view() {
+                        ValueView::Int(i) => Some(i as usize),
                         _ => None,
                     }
                 } else {
@@ -826,7 +818,7 @@ impl Interpreter {
                 }
                 for chunk in bytes.chunks(size) {
                     let byte_vals: Vec<Value> =
-                        chunk.iter().map(|b| Value::Int(*b as i64)).collect();
+                        chunk.iter().map(|b| Value::int(*b as i64)).collect();
                     let mut buf_attrs = HashMap::new();
                     buf_attrs.insert("bytes".to_string(), Value::array(byte_vals));
                     values.push(Value::make_instance(
@@ -861,7 +853,7 @@ impl Interpreter {
         }
 
         let mut supply_attrs = HashMap::new();
-        supply_attrs.insert("live".to_string(), Value::Bool(false));
+        supply_attrs.insert("live".to_string(), Value::FALSE);
         supply_attrs.insert("values".to_string(), Value::array(values));
         Ok(Value::make_instance(Symbol::intern("Supply"), supply_attrs))
     }

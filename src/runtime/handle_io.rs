@@ -5,9 +5,9 @@ use num_traits::ToPrimitive;
 
 impl Interpreter {
     pub(crate) fn parse_out_buffer_size(value: &Value) -> Option<usize> {
-        match value {
-            Value::Int(i) if *i >= 0 => Some(*i as usize),
-            Value::BigInt(i) if i.sign() != num_bigint::Sign::Minus => i.to_usize(),
+        match value.view() {
+            ValueView::Int(i) if i >= 0 => Some(i as usize),
+            ValueView::BigInt(i) if i.sign() != num_bigint::Sign::Minus => i.to_usize(),
             _ => None,
         }
     }
@@ -31,8 +31,8 @@ impl Interpreter {
     }
 
     pub(super) fn parse_nl_in_value(value: &Value) -> Vec<Vec<u8>> {
-        match value {
-            Value::Array(items, _) => items
+        match value.view() {
+            ValueView::Array(items, _) => items
                 .iter()
                 .map(|item| item.to_string_value().into_bytes())
                 .collect(),
@@ -86,16 +86,16 @@ impl Interpreter {
     }
 
     pub(crate) fn handle_id_from_value(value: &Value) -> Option<usize> {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
             && (class_name == "IO::Handle" || class_name == "IO::Socket::INET")
-            && let Some(Value::Int(id)) = attributes.as_map().get("handle")
-            && *id >= 0
+            && let Some(ValueView::Int(id)) = attributes.as_map().get("handle").map(Value::view)
+            && id >= 0
         {
-            return Some(*id as usize);
+            return Some(id as usize);
         }
         None
     }

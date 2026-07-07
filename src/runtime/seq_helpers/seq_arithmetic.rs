@@ -2,25 +2,25 @@ use super::super::*;
 
 impl Interpreter {
     pub(in crate::runtime) fn seq_value_to_f64(v: &Value) -> Option<f64> {
-        match v {
-            Value::Int(i) => Some(*i as f64),
-            Value::Num(f) => Some(*f),
-            Value::Rat(n, d) => {
-                if *d != 0 {
-                    Some(*n as f64 / *d as f64)
+        match v.view() {
+            ValueView::Int(i) => Some(i as f64),
+            ValueView::Num(f) => Some(f),
+            ValueView::Rat(n, d) => {
+                if d != 0 {
+                    Some(n as f64 / d as f64)
                 } else {
                     None
                 }
             }
-            Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
+            ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
             _ => None,
         }
     }
 
     pub(in crate::runtime) fn seq_value_to_rat(v: &Value) -> Option<(i64, i64)> {
-        match v {
-            Value::Int(i) => Some((*i, 1)),
-            Value::Rat(n, d) if *d != 0 => Some((*n, *d)),
+        match v.view() {
+            ValueView::Int(i) => Some((i, 1)),
+            ValueView::Rat(n, d) if d != 0 => Some((n, d)),
             _ => None,
         }
     }
@@ -90,25 +90,25 @@ impl Interpreter {
         }
         // Special case: Num values with non-integer values match "Rat"
         if type_name == "Rat"
-            && let Value::Num(f) = val
+            && let ValueView::Num(f) = val.view()
         {
-            return *f != f.floor(); // non-integer Num matches Rat
+            return f != f.floor(); // non-integer Num matches Rat
         }
         false
     }
 
     pub(in crate::runtime) fn seq_values_equal(a: &Value, b: &Value) -> bool {
         // Junction endpoint: check if a matches any junction value
-        if let Value::Junction { values, .. } = b {
+        if let ValueView::Junction { values, .. } = b.view() {
             return values.iter().any(|v| Self::seq_values_equal(a, v));
         }
-        if let Value::Junction { values, .. } = a {
+        if let ValueView::Junction { values, .. } = a.view() {
             return values.iter().any(|v| Self::seq_values_equal(v, b));
         }
-        match (a, b) {
-            (Value::Int(x), Value::Int(y)) => x == y,
-            (Value::Str(x), Value::Str(y)) => x == y,
-            (Value::Bool(x), Value::Bool(y)) => x == y,
+        match (a.view(), b.view()) {
+            (ValueView::Int(x), ValueView::Int(y)) => x == y,
+            (ValueView::Str(x), ValueView::Str(y)) => x == y,
+            (ValueView::Bool(x), ValueView::Bool(y)) => x == y,
             _ => {
                 if let (Some(fa), Some(fb)) = (Self::seq_value_to_f64(a), Self::seq_value_to_f64(b))
                 {
@@ -239,23 +239,23 @@ impl Interpreter {
 
     // Add step to a sequence value, preserving type where possible
     pub(in crate::runtime) fn seq_add(val: &Value, step: f64) -> Value {
-        match val {
-            Value::Int(i) => {
+        match val.view() {
+            ValueView::Int(i) => {
                 if step == step.floor() && step.abs() < i64::MAX as f64 {
-                    Value::Int(*i + step as i64)
+                    Value::int(i + step as i64)
                 } else {
-                    Value::Num(*i as f64 + step)
+                    Value::num(i as f64 + step)
                 }
             }
-            Value::Num(f) => Value::Num(*f + step),
-            Value::Rat(n, d) => {
-                if *d != 0 && step == step.floor() && step.abs() < i64::MAX as f64 {
-                    make_rat(*n + step as i64 * *d, *d)
+            ValueView::Num(f) => Value::num(f + step),
+            ValueView::Rat(n, d) => {
+                if d != 0 && step == step.floor() && step.abs() < i64::MAX as f64 {
+                    make_rat(n + step as i64 * d, d)
                 } else {
-                    Value::Num(*n as f64 / *d as f64 + step)
+                    Value::num(n as f64 / d as f64 + step)
                 }
             }
-            _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) + step),
+            _ => Value::num(Self::seq_value_to_f64(val).unwrap_or(0.0) + step),
         }
     }
 
@@ -302,54 +302,54 @@ impl Interpreter {
     /// counterpart of [`seq_add`], used for arithmetic sequences whose step is a
     /// genuine fraction so exactness is not lost to float accumulation.
     pub(in crate::runtime) fn seq_add_rat(val: &Value, num: i64, den: i64) -> Value {
-        match val {
-            Value::Int(i) => {
+        match val.view() {
+            ValueView::Int(i) => {
                 // i + num/den = (i*den + num) / den
                 if let Some(nn) = i.checked_mul(den).and_then(|x| x.checked_add(num)) {
                     make_rat(nn, den)
                 } else {
-                    Value::Num(*i as f64 + num as f64 / den as f64)
+                    Value::num(i as f64 + num as f64 / den as f64)
                 }
             }
-            Value::Rat(n, d) => {
+            ValueView::Rat(n, d) => {
                 // n/d + num/den = (n*den + num*d) / (d*den)
                 if let (Some(a), Some(b), Some(dd)) =
-                    (n.checked_mul(den), num.checked_mul(*d), d.checked_mul(den))
+                    (n.checked_mul(den), num.checked_mul(d), d.checked_mul(den))
                     && let Some(nn) = a.checked_add(b)
                 {
                     make_rat(nn, dd)
                 } else {
-                    Value::Num(*n as f64 / *d as f64 + num as f64 / den as f64)
+                    Value::num(n as f64 / d as f64 + num as f64 / den as f64)
                 }
             }
-            Value::Num(f) => Value::Num(*f + num as f64 / den as f64),
-            _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) + num as f64 / den as f64),
+            ValueView::Num(f) => Value::num(f + num as f64 / den as f64),
+            _ => Value::num(Self::seq_value_to_f64(val).unwrap_or(0.0) + num as f64 / den as f64),
         }
     }
 
     // Multiply a sequence value by a rational ratio (num/den), preserving Rat type
     pub(in crate::runtime) fn seq_mul_rat(val: &Value, num: i64, den: i64) -> Value {
-        match val {
-            Value::Int(i) => {
+        match val.view() {
+            ValueView::Int(i) => {
                 if let Some(product) = i.checked_mul(num) {
                     if den == 1 {
-                        Value::Int(product)
+                        Value::int(product)
                     } else {
                         make_rat(product, den)
                     }
                 } else {
-                    Value::Num(*i as f64 * num as f64 / den as f64)
+                    Value::num(i as f64 * num as f64 / den as f64)
                 }
             }
-            Value::Num(f) => {
-                let result = *f * num as f64 / den as f64;
-                Value::Num(result)
+            ValueView::Num(f) => {
+                let result = f * num as f64 / den as f64;
+                Value::num(result)
             }
-            Value::Rat(n, d) => {
+            ValueView::Rat(n, d) => {
                 if let (Some(new_num), Some(new_den)) = (n.checked_mul(num), d.checked_mul(den)) {
                     make_rat(new_num, new_den)
                 } else {
-                    Value::Num(*n as f64 / *d as f64 * num as f64 / den as f64)
+                    Value::num(n as f64 / d as f64 * num as f64 / den as f64)
                 }
             }
             _ => Self::seq_mul(val, num as f64 / den as f64),
@@ -358,24 +358,24 @@ impl Interpreter {
 
     // Multiply a sequence value by ratio, preserving type where possible
     pub(in crate::runtime) fn seq_mul(val: &Value, ratio: f64) -> Value {
-        match val {
-            Value::Int(i) => {
-                let result = *i as f64 * ratio;
+        match val.view() {
+            ValueView::Int(i) => {
+                let result = i as f64 * ratio;
                 if ratio == ratio.floor() && result.abs() < i64::MAX as f64 {
-                    Value::Int(result as i64)
+                    Value::int(result as i64)
                 } else {
-                    Value::Num(result)
+                    Value::num(result)
                 }
             }
-            Value::Num(f) => Value::Num(*f * ratio),
-            Value::Rat(n, d) => {
-                if *d != 0 && ratio == ratio.floor() && ratio.abs() < i64::MAX as f64 {
-                    make_rat(*n * ratio as i64, *d)
+            ValueView::Num(f) => Value::num(f * ratio),
+            ValueView::Rat(n, d) => {
+                if d != 0 && ratio == ratio.floor() && ratio.abs() < i64::MAX as f64 {
+                    make_rat(n * ratio as i64, d)
                 } else {
-                    Value::Num(*n as f64 / *d as f64 * ratio)
+                    Value::num(n as f64 / d as f64 * ratio)
                 }
             }
-            _ => Value::Num(Self::seq_value_to_f64(val).unwrap_or(0.0) * ratio),
+            _ => Value::num(Self::seq_value_to_f64(val).unwrap_or(0.0) * ratio),
         }
     }
 }

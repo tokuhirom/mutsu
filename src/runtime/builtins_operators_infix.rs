@@ -5,6 +5,7 @@
 // without splitting the function body itself.
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn call_infix_routine(
@@ -70,13 +71,11 @@ impl Interpreter {
         // 1-arg Iterable gets flattened (like +@foo slurpy), but not for set operators
         // which coerce their single argument to a QuantHash instead
         let args: Vec<Value> = if args.len() == 1 && !is_set_op {
-            match &args[0] {
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Hash(map) if matches!(op, "andthen" | "notandthen" | "orelse") => map
+            match args[0].view() {
+                ValueView::Array(items, ..) => items.to_vec(),
+                ValueView::Hash(map) if matches!(op, "andthen" | "notandthen" | "orelse") => map
                     .iter()
-                    .map(|(k, v)| {
-                        Value::ValuePair(Box::new(Value::str(k.clone())), Box::new(v.clone()))
-                    })
+                    .map(|(k, v)| Value::value_pair(Value::str(k.clone()), v.clone()))
                     .collect(),
                 _ => args.to_vec(),
             }
@@ -92,15 +91,15 @@ impl Interpreter {
         if !args.is_empty() && args[0].to_string_value() == "method" {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("name".to_string(), Value::str(op.to_string()));
-            attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+            attrs.insert("is_dispatcher".to_string(), Value::FALSE);
             let mut sig_attrs = std::collections::HashMap::new();
             sig_attrs.insert("params".to_string(), Value::array(Vec::new()));
             attrs.insert(
                 "signature".to_string(),
                 Value::make_instance(Symbol::intern("Signature"), sig_attrs),
             );
-            attrs.insert("returns".to_string(), Value::Package(Symbol::intern("Mu")));
-            attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+            attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
+            attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
             return Ok(Value::make_instance(Symbol::intern("Method"), attrs));
         }
         if args.is_empty() {
@@ -108,19 +107,19 @@ impl Interpreter {
         }
         if args.len() == 1 {
             if op == "(|)" || op == "∪" {
-                let arg0 = match &args[0] {
-                    Value::Scalar(inner) => inner.as_ref(),
-                    other => other,
+                let arg0 = match args[0].view() {
+                    ValueView::Scalar(inner) => inner,
+                    _ => &args[0],
                 };
-                let is_lazy_union_input = |value: &Value| match value {
-                    Value::LazyList(_) => true,
-                    Value::GenericRange { start, end, .. } => {
-                        let is_infinite = |bound: &Value| match bound {
-                            Value::Num(n) => n.is_infinite(),
-                            Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
-                            Value::Mixin(inner, _) => match inner.as_ref() {
-                                Value::Num(n) => n.is_infinite(),
-                                Value::Rat(_, d) | Value::FatRat(_, d) => *d == 0,
+                let is_lazy_union_input = |value: &Value| match value.view() {
+                    ValueView::LazyList(_) => true,
+                    ValueView::GenericRange { start, end, .. } => {
+                        let is_infinite = |bound: &Value| match bound.view() {
+                            ValueView::Num(n) => n.is_infinite(),
+                            ValueView::Rat(_, d) | ValueView::FatRat(_, d) => d == 0,
+                            ValueView::Mixin(inner, _) => match inner.view() {
+                                ValueView::Num(n) => n.is_infinite(),
+                                ValueView::Rat(_, d) | ValueView::FatRat(_, d) => d == 0,
                                 _ => false,
                             },
                             _ => false,
@@ -129,7 +128,8 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-                if matches!(arg0, Value::Instance { class_name, .. } if class_name == "Failure") {
+                if matches!(arg0.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                {
                     return Err(RuntimeError::new("Exception"));
                 }
                 if is_lazy_union_input(arg0) {
@@ -138,11 +138,11 @@ impl Interpreter {
                 return Ok(coerce_value_to_quanthash(arg0));
             }
             if is_chain_comparison_op(op) {
-                return Ok(Value::Bool(true));
+                return Ok(Value::TRUE);
             }
             if op == "~" {
                 // Buf/Blob: arity-1 infix:<~> is identity (returns the same Buf/Blob)
-                if let Value::Instance { class_name, .. } = &args[0]
+                if let ValueView::Instance { class_name, .. } = args[0].view()
                     && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
                 {
                     return Ok(args[0].clone());
@@ -151,22 +151,25 @@ impl Interpreter {
             }
             // Set operators with single arg: coerce to appropriate set type
             if matches!(op, "(.)" | "⊍" | "(+)" | "⊎") {
-                let mut arg0 = match &args[0] {
-                    Value::Scalar(inner) => inner.as_ref().clone(),
-                    other => (*other).clone(),
+                let mut arg0 = match args[0].view() {
+                    ValueView::Scalar(inner) => inner.clone(),
+                    _ => args[0].clone(),
                 };
                 // De-itemize arrays for set operator coercion (e.g. [(+)] @a
                 // passes .item-wrapped list, which should be coerced as elements)
-                if let Value::Array(items, kind) = &arg0
-                    && kind.is_itemized()
-                {
-                    arg0 = Value::Array(items.clone(), crate::value::ArrayKind::List);
+                let relist = if let ValueView::Array(items, kind) = arg0.view() {
+                    kind.is_itemized().then(|| items.clone())
+                } else {
+                    None
+                };
+                if let Some(items) = relist {
+                    arg0 = Value::array_with_kind(items, crate::value::ArrayKind::List);
                 }
                 // Single-arg multiply preserves the operand's mutability
                 // (`[(.)] SetHash` -> BagHash); single-arg addition does not
                 // (`[(+)] SetHash` -> Bag).
                 let mutable = matches!(op, "(.)" | "⊍") && set_result_mutability(&arg0);
-                let coerced = if matches!(arg0, Value::Mix(_, _)) {
+                let coerced = if matches!(arg0.view(), ValueView::Mix(..)) {
                     self.dispatch_to_mix(arg0)?
                 } else {
                     self.dispatch_to_bag_with_what(arg0, "Bag")?
@@ -201,31 +204,34 @@ impl Interpreter {
                     self.eval_chained_sequence(&args, exclude_end)?
                 } else {
                     let left = args[0].clone();
-                    let right = args.last().cloned().unwrap_or(Value::Nil);
+                    let right = args.last().cloned().unwrap_or(Value::NIL);
                     self.eval_sequence(left, right, exclude_end)?
                 };
 
                 if exclude_start {
                     // Remove the first element
-                    match &result {
-                        Value::Array(items, kind) if !items.is_empty() => {
+                    let new_result = match result.view() {
+                        ValueView::Array(items, kind) if !items.is_empty() => {
                             let new_items = items[1..].to_vec();
-                            result = if kind.is_real_array() {
+                            Some(if kind.is_real_array() {
                                 Value::real_array(new_items)
                             } else {
                                 Value::array(new_items)
-                            };
+                            })
                         }
-                        Value::LazyList(ll) => {
+                        ValueView::LazyList(ll) => {
                             let mut items = ll.cache.lock().unwrap().clone().unwrap_or_default();
                             if !items.is_empty() {
                                 items.remove(0);
                             }
-                            result = Value::LazyList(crate::gc::Gc::new(
+                            Some(Value::lazy_list(crate::gc::Gc::new(
                                 crate::value::LazyList::new_cached(items),
-                            ));
+                            )))
                         }
-                        _ => {}
+                        _ => None,
+                    };
+                    if let Some(new_result) = new_result {
+                        result = new_result;
                     }
                 }
                 return Ok(result);
@@ -239,7 +245,7 @@ impl Interpreter {
                 for rhs in &args[1..] {
                     if !crate::runtime::types::value_is_defined(&acc) {
                         // Return Empty (empty Slip) when LHS is not defined
-                        return Ok(Value::Slip(std::sync::Arc::new(vec![])));
+                        return Ok(Value::slip_arc(std::sync::Arc::new(vec![])));
                     }
                     acc = rhs.clone();
                 }
@@ -249,7 +255,7 @@ impl Interpreter {
                 let mut acc = args[0].clone();
                 for rhs in &args[1..] {
                     if crate::runtime::types::value_is_defined(&acc) {
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     }
                     acc = rhs.clone();
                 }
@@ -272,7 +278,7 @@ impl Interpreter {
                         return Ok(acc);
                     }
                     // When RHS is a Sub, invoke it (thunking behavior)
-                    acc = if let Value::Sub(_) = rhs {
+                    acc = if let ValueView::Sub(_) = rhs.view() {
                         self.call_sub_value(rhs.clone(), vec![], false)?
                     } else {
                         rhs.clone()
@@ -285,34 +291,34 @@ impl Interpreter {
                 let mut truthy_val: Option<Value> = None;
                 for arg in &args {
                     // Invoke Sub operands (thunking behavior)
-                    let val = if let Value::Sub(_) = arg {
+                    let val = if let ValueView::Sub(_) = arg.view() {
                         self.call_sub_value(arg.clone(), vec![], false)?
                     } else {
                         arg.clone()
                     };
                     if val.truthy() {
                         if truthy_val.is_some() {
-                            return Ok(Value::Nil);
+                            return Ok(Value::NIL);
                         }
                         truthy_val = Some(val);
                     }
                 }
-                return Ok(truthy_val.unwrap_or(Value::Nil));
+                return Ok(truthy_val.unwrap_or(Value::NIL));
             }
             _ => {}
         }
         // Set operators: check for Failure and lazy list values
         if is_set_op {
             let is_lazy_value = |v: &Value| -> bool {
-                match v {
-                    Value::LazyList(_) => true,
-                    Value::Range(_, end)
-                    | Value::RangeExcl(_, end)
-                    | Value::RangeExclStart(_, end)
-                    | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-                    Value::GenericRange { end, .. } => match end.as_ref() {
-                        Value::HyperWhatever => true,
-                        Value::Num(n) => n.is_infinite() && n.is_sign_positive(),
+                match v.view() {
+                    ValueView::LazyList(_) => true,
+                    ValueView::Range(_, end)
+                    | ValueView::RangeExcl(_, end)
+                    | ValueView::RangeExclStart(_, end)
+                    | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+                    ValueView::GenericRange { end, .. } => match end.view() {
+                        ValueView::HyperWhatever => true,
+                        ValueView::Num(n) => n.is_infinite() && n.is_sign_positive(),
                         _ => {
                             let n = end.to_f64();
                             n.is_infinite() && n.is_sign_positive()
@@ -322,7 +328,7 @@ impl Interpreter {
                 }
             };
             for arg in &args {
-                if let Value::Instance { class_name, .. } = arg
+                if let ValueView::Instance { class_name, .. } = arg.view()
                     && class_name == "Failure"
                 {
                     return Err(RuntimeError::new("Exception"));
@@ -347,9 +353,9 @@ impl Interpreter {
         // In Raku, infix:<(-)>(Set, Set, Mix) promotes all to Mix before reducing.
         let args = if is_set_op && args.len() > 2 {
             let set_level = |v: &Value| -> u8 {
-                match v {
-                    Value::Mix(_, _) => 2,
-                    Value::Bag(_, _) => 1,
+                match v.view() {
+                    ValueView::Mix(..) => 2,
+                    ValueView::Bag(..) => 1,
                     _ => 0,
                 }
             };
@@ -398,8 +404,11 @@ impl Interpreter {
             }
             if let Some(callable) = self.env.get(&format!("&{}", infix_name)).cloned()
                 && matches!(
-                    callable,
-                    Value::Sub(_) | Value::WeakSub(_) | Value::Instance { .. } | Value::Mixin(..)
+                    callable.view(),
+                    ValueView::Sub(_)
+                        | ValueView::WeakSub(_)
+                        | ValueView::Instance { .. }
+                        | ValueView::Mixin(..)
                 )
             {
                 crate::trace::trace_log!(
@@ -417,11 +426,11 @@ impl Interpreter {
             );
             // Smart match needs the full interpreter for regex dispatch
             if op == "~~" {
-                acc = Value::Bool(self.smart_match(&acc, rhs));
+                acc = Value::truth(self.smart_match(&acc, rhs));
                 continue;
             }
             if op == "!~~" {
-                acc = Value::Bool(!self.smart_match(&acc, rhs));
+                acc = Value::truth(!self.smart_match(&acc, rhs));
                 continue;
             }
             let mut lhs = acc.clone();
@@ -460,11 +469,11 @@ impl Interpreter {
                 }
                 if let Some(callable) = self.env.get(&format!("&{}", expr_infix_name)).cloned()
                     && matches!(
-                        callable,
-                        Value::Sub(_)
-                            | Value::WeakSub(_)
-                            | Value::Instance { .. }
-                            | Value::Mixin(..)
+                        callable.view(),
+                        ValueView::Sub(_)
+                            | ValueView::WeakSub(_)
+                            | ValueView::Instance { .. }
+                            | ValueView::Mixin(..)
                     )
                 {
                     crate::trace::trace_log!(

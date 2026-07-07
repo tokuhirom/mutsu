@@ -1,9 +1,10 @@
 use super::*;
+use crate::value::ValueView;
 use num_traits::ToPrimitive;
 
 /// Check if a Value is a Failure instance.
 fn is_failure_value(value: &Value) -> bool {
-    matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
+    matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
 }
 
 /// Parse a coercion type like "Int()" or "Int(Rat)".
@@ -55,43 +56,43 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
         target
     };
     match base_target {
-        "Int" => match &value {
-            Value::Int(_) => value,
-            Value::Num(n) => Value::Int(*n as i64),
-            Value::Rat(_, d) if *d == 0 => {
+        "Int" => match value.view() {
+            ValueView::Int(_) => value,
+            ValueView::Num(n) => Value::int(n as i64),
+            ValueView::Rat(_, 0) => {
                 RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
             }
-            Value::Rat(n, d) => Value::Int(n / d),
-            Value::FatRat(_, d) if *d == 0 => {
+            ValueView::Rat(n, d) => Value::int(n / d),
+            ValueView::FatRat(_, 0) => {
                 RuntimeError::divide_by_zero_failure_for_method("Int", "Rational")
             }
-            Value::FatRat(n, d) => Value::Int(n / d),
-            Value::Str(s) => Value::Int(s.parse::<i64>().unwrap_or(0)),
-            Value::Bool(b) => Value::Int(if *b { 1 } else { 0 }),
+            ValueView::FatRat(n, d) => Value::int(n / d),
+            ValueView::Str(s) => Value::int(s.parse::<i64>().unwrap_or(0)),
+            ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
             _ => value,
         },
-        "Num" => match &value {
-            Value::Num(_) => value,
-            Value::Int(n) => Value::Num(*n as f64),
-            Value::Rat(n, d) => Value::Num(*n as f64 / *d as f64),
-            Value::Str(s) => Value::Num(s.parse::<f64>().unwrap_or(0.0)),
+        "Num" => match value.view() {
+            ValueView::Num(_) => value,
+            ValueView::Int(n) => Value::num(n as f64),
+            ValueView::Rat(n, d) => Value::num(n as f64 / d as f64),
+            ValueView::Str(s) => Value::num(s.parse::<f64>().unwrap_or(0.0)),
             _ => value,
         },
         "Str" => Value::str(crate::runtime::utils::coerce_to_str(&value)),
         "Array" | "List" => crate::runtime::utils::coerce_to_array(value),
         "Hash" => crate::runtime::utils::coerce_to_hash(value),
         "Rat" => {
-            match &value {
-                Value::Rat(_, _) => value,
-                Value::Int(n) => Value::Rat(*n, 1),
-                Value::Num(n) => {
+            match value.view() {
+                ValueView::Rat(_, _) => value,
+                ValueView::Int(n) => Value::rat_raw(n, 1),
+                ValueView::Num(n) => {
                     // Simple float to rat conversion
                     let denom = 1_000_000i64;
-                    let numer = (*n * denom as f64) as i64;
+                    let numer = (n * denom as f64) as i64;
                     let g = gcd_i64(numer.abs(), denom);
-                    Value::Rat(numer / g, denom / g)
+                    Value::rat_raw(numer / g, denom / g)
                 }
-                Value::Str(s) => {
+                ValueView::Str(s) => {
                     if s.contains('.') {
                         let trimmed = s.trim();
                         let negative = trimmed.starts_with('-');
@@ -104,39 +105,42 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
                             let numer = int_val * denom + frac_val;
                             let numer = if negative { -numer } else { numer };
                             let g = gcd_i64(numer.abs(), denom);
-                            Value::Rat(numer / g, denom / g)
+                            Value::rat_raw(numer / g, denom / g)
                         } else {
                             value
                         }
                     } else {
                         let n = s.trim().parse::<i64>().unwrap_or(0);
-                        Value::Rat(n, 1)
+                        Value::rat_raw(n, 1)
                     }
                 }
                 _ => value,
             }
         }
-        "Complex" => match &value {
-            Value::Complex(_, _) => value,
-            Value::Int(n) => Value::Complex(*n as f64, 0.0),
-            Value::Num(n) => Value::Complex(*n, 0.0),
-            Value::Rat(n, d) if *d != 0 => Value::Complex(*n as f64 / *d as f64, 0.0),
-            Value::FatRat(n, d) if *d != 0 => Value::Complex(*n as f64 / *d as f64, 0.0),
-            Value::BigInt(n) => Value::Complex(n.to_f64().unwrap_or(0.0), 0.0),
-            Value::BigRat(n, d) if d.as_ref() != &num_bigint::BigInt::from(0) => {
-                Value::Complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)
+        "Complex" => match value.view() {
+            ValueView::Complex(_, _) => value,
+            ValueView::Int(n) => Value::complex(n as f64, 0.0),
+            ValueView::Num(n) => Value::complex(n, 0.0),
+            ValueView::Rat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
+            ValueView::FatRat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
+            ValueView::BigInt(n) => Value::complex(n.to_f64().unwrap_or(0.0), 0.0),
+            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                Value::complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)
             }
-            Value::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
-                Some(Value::Complex(re, im)) => Value::Complex(re, im),
-                Some(Value::Int(n)) => Value::Complex(n as f64, 0.0),
-                Some(Value::Num(n)) => Value::Complex(n, 0.0),
-                Some(Value::Rat(n, d)) if d != 0 => Value::Complex(n as f64 / d as f64, 0.0),
-                Some(Value::FatRat(n, d)) if d != 0 => Value::Complex(n as f64 / d as f64, 0.0),
-                _ => value,
+            ValueView::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
+                Some(parsed) => match parsed.view() {
+                    ValueView::Complex(re, im) => Value::complex(re, im),
+                    ValueView::Int(n) => Value::complex(n as f64, 0.0),
+                    ValueView::Num(n) => Value::complex(n, 0.0),
+                    ValueView::Rat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
+                    ValueView::FatRat(n, d) if d != 0 => Value::complex(n as f64 / d as f64, 0.0),
+                    _ => value,
+                },
+                None => value,
             },
             _ => value,
         },
-        "Bool" => Value::Bool(value.truthy()),
+        "Bool" => Value::truth(value.truthy()),
         _ => value,
     }
 }
@@ -164,14 +168,16 @@ impl Interpreter {
         // declaration path can trigger on an already-coerced value). Returning it
         // directly avoids re-dispatching a coercion method that may not exist on
         // the native type via the slow path.
-        if matches!(value, Value::Instance { .. }) && self.type_matches_value(base_target, &value) {
+        if matches!(value.view(), ValueView::Instance { .. })
+            && self.type_matches_value(base_target, &value)
+        {
             return Ok(value);
         }
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &value
+        } = value.view()
             && self.class_has_method(&class_name.resolve(), base_target)
         {
             let (coerced, _) = self.run_instance_method(
@@ -186,17 +192,17 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &value
+        } = value.view()
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
                 .any(|c| c == "Str")
             && let Some(inner) = attributes.as_map().get("value").cloned()
-            && !matches!(inner, Value::Nil)
+            && !inner.is_nil()
             && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)
             && self.type_matches_value(base_target, &coerced)
         {
@@ -231,13 +237,13 @@ impl Interpreter {
             // Wrap Pair values in a Scalar container so they are passed as
             // positional arguments to COERCE/new rather than being flattened
             // into named arguments by the method dispatch logic.
-            let coerce_arg = match &value {
-                Value::Pair(..) | Value::ValuePair(..) => Value::Scalar(Box::new(value.clone())),
+            let coerce_arg = match value.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => Value::scalar(value.clone()),
                 _ => value.clone(),
             };
             // Try COERCE method first
             if let Ok(coerced) = self.call_method_with_values(
-                Value::Package(Symbol::intern(base_target)),
+                Value::package(Symbol::intern(base_target)),
                 "COERCE",
                 vec![coerce_arg.clone()],
             ) {
@@ -252,7 +258,7 @@ impl Interpreter {
             // constructor (named-only params) must NOT be used for coercion.
             if self.class_has_new_accepting_positional(base_target, &value)
                 && let Ok(coerced) = self.call_method_with_values(
-                    Value::Package(Symbol::intern(base_target)),
+                    Value::package(Symbol::intern(base_target)),
                     "new",
                     vec![coerce_arg],
                 )
@@ -273,19 +279,19 @@ impl Interpreter {
     /// Returns None if coercion is not possible or not applicable.
     pub(crate) fn try_coerce_str_to_type(&self, s: &str, type_name: &str) -> Option<Value> {
         match type_name {
-            "Int" => s.parse::<i64>().ok().map(Value::Int),
-            "Num" => s.parse::<f64>().ok().map(Value::Num),
+            "Int" => s.parse::<i64>().ok().map(Value::int),
+            "Num" => s.parse::<f64>().ok().map(Value::num),
             "Rat" => {
                 if let Ok(n) = s.parse::<i64>() {
-                    Some(Value::Rat(n, 1))
+                    Some(Value::rat_raw(n, 1))
                 } else {
                     None
                 }
             }
             "Str" => Some(Value::str(s.to_string())),
             "Bool" => match s {
-                "True" => Some(Value::Bool(true)),
-                "False" => Some(Value::Bool(false)),
+                "True" => Some(Value::TRUE),
+                "False" => Some(Value::FALSE),
                 _ => None,
             },
             _ => None,

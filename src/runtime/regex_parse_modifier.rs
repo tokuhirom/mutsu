@@ -215,25 +215,25 @@ impl Interpreter {
                                 .get(&sigiled_name)
                                 .cloned()
                                 .or_else(|| self.env.get(&bare_name).cloned())
-                                .unwrap_or(Value::Nil);
+                                .unwrap_or(Value::NIL);
                             let value = value.into_deref();
-                            let entries: Vec<String> = match value {
-                                Value::Array(items, ..) => items
+                            let entries: Vec<String> = match value.view() {
+                                ValueView::Array(items, ..) => items
                                     .iter()
                                     .map(|v| {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())
                                     })
                                     .collect(),
-                                Value::Seq(items) | Value::Slip(items) => items
+                                ValueView::Seq(items) | ValueView::Slip(items) => items
                                     .iter()
                                     .map(|v| {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())
                                     })
                                     .collect(),
-                                Value::Nil => Vec::new(),
-                                other => {
+                                ValueView::Nil => Vec::new(),
+                                _ => {
                                     vec![Self::escape_regex_scalar_literal(
-                                        &other.to_string_value(),
+                                        &value.to_string_value(),
                                     )]
                                 }
                             };
@@ -308,7 +308,7 @@ impl Interpreter {
                             .get(&name)
                             .cloned()
                             .or_else(|| self.env.get(&format!("${name}")).cloned())
-                            .unwrap_or(Value::Nil);
+                            .unwrap_or(Value::NIL);
                         let value = value.into_deref();
                         Self::check_hash_in_regex(&value)?;
                         Self::push_value_as_regex_pattern(&value, &mut out);
@@ -351,7 +351,7 @@ impl Interpreter {
                     let value = overlay_value
                         .or_else(|| self.env.get(&name).cloned())
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
-                        .unwrap_or(Value::Nil);
+                        .unwrap_or(Value::NIL);
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
                     Self::push_value_as_regex_pattern(&value, &mut out);
@@ -411,22 +411,22 @@ impl Interpreter {
                             .get(&bare_name)
                             .cloned()
                             .or_else(|| self.env.get(&format!("${bare_name}")).cloned())
-                            .unwrap_or(Value::Nil);
+                            .unwrap_or(Value::NIL);
                         let value = value.into_deref();
-                        let elements = match &value {
-                            Value::Array(arr, _) => arr.as_ref().clone(),
-                            Value::Seq(items) | Value::Slip(items) => {
+                        let elements = match value.view() {
+                            ValueView::Array(arr, _) => arr.as_ref().clone(),
+                            ValueView::Seq(items) | ValueView::Slip(items) => {
                                 crate::value::ArrayData::new((**items).clone())
                             }
                             _ => crate::value::ArrayData::new(vec![value]),
                         };
                         let mut alts = Vec::new();
                         for elt in &elements {
-                            match elt {
-                                Value::Regex(pat) => alts.push(pat.to_string()),
-                                Value::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
-                                other => alts.push(Self::escape_regex_scalar_literal(
-                                    &other.to_string_value(),
+                            match elt.view() {
+                                ValueView::Regex(pat) => alts.push(pat.to_string()),
+                                ValueView::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
+                                _ => alts.push(Self::escape_regex_scalar_literal(
+                                    &elt.to_string_value(),
                                 )),
                             }
                         }
@@ -449,25 +449,26 @@ impl Interpreter {
                         .get(&sigiled_name)
                         .cloned()
                         .or_else(|| self.env.get(&bare_name).cloned())
-                        .unwrap_or(Value::Nil);
+                        .unwrap_or(Value::NIL);
                     // Slice 2a: a `=`-array-shared source (`my $r = @var`) promotes
                     // `@var` to a `ContainerRef` cell; deref it so the array
                     // interpolates as alternation instead of stringifying the cell.
                     let value = value.into_deref();
-                    let elements = match &value {
-                        Value::Array(arr, _) => arr.as_ref().clone(),
-                        Value::Seq(items) | Value::Slip(items) => {
+                    let elements = match value.view() {
+                        ValueView::Array(arr, _) => arr.as_ref().clone(),
+                        ValueView::Seq(items) | ValueView::Slip(items) => {
                             crate::value::ArrayData::new((**items).clone())
                         }
                         _ => crate::value::ArrayData::new(vec![value]),
                     };
                     let mut alts = Vec::new();
                     for elt in &elements {
-                        match elt {
-                            Value::Regex(pat) => alts.push(pat.to_string()),
-                            Value::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
-                            other => alts
-                                .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
+                        match elt.view() {
+                            ValueView::Regex(pat) => alts.push(pat.to_string()),
+                            ValueView::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
+                            _ => {
+                                alts.push(Self::escape_regex_scalar_literal(&elt.to_string_value()))
+                            }
                         }
                     }
                     Self::push_regex_interpolated_alternation(&mut out, &alts);
@@ -490,20 +491,21 @@ impl Interpreter {
                     let expr_str: String = chars[expr_start..j].iter().collect();
                     j += 1; // skip closing ')'
                     let val = self.eval_string_as_source(&expr_str);
-                    let elements = match &val {
-                        Value::Array(arr, _) => arr.as_ref().clone(),
-                        Value::Seq(items) | Value::Slip(items) => {
+                    let elements = match val.view() {
+                        ValueView::Array(arr, _) => arr.as_ref().clone(),
+                        ValueView::Seq(items) | ValueView::Slip(items) => {
                             crate::value::ArrayData::new((**items).clone())
                         }
                         _ => crate::value::ArrayData::new(vec![val]),
                     };
                     let mut alts = Vec::new();
                     for elt in elements.iter() {
-                        match elt {
-                            Value::Regex(pat) => alts.push(pat.to_string()),
-                            Value::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
-                            other => alts
-                                .push(Self::escape_regex_scalar_literal(&other.to_string_value())),
+                        match elt.view() {
+                            ValueView::Regex(pat) => alts.push(pat.to_string()),
+                            ValueView::RegexWithAdverbs(a) => alts.push(a.pattern.to_string()),
+                            _ => {
+                                alts.push(Self::escape_regex_scalar_literal(&elt.to_string_value()))
+                            }
                         }
                     }
                     Self::push_regex_interpolated_alternation(&mut out, &alts);
@@ -563,33 +565,32 @@ impl Interpreter {
     }
 
     fn push_value_as_regex_pattern(value: &Value, out: &mut String) {
-        match value {
-            Value::Nil => out.push_str("<!>"),
-            Value::Regex(pat) => out.push_str(pat),
-            Value::RegexWithAdverbs(a) => out.push_str(&a.pattern),
-            Value::Junction { values, .. } => {
+        match value.view() {
+            ValueView::Nil => out.push_str("<!>"),
+            ValueView::Regex(pat) => out.push_str(pat),
+            ValueView::RegexWithAdverbs(a) => out.push_str(&a.pattern),
+            ValueView::Junction { values, .. } => {
                 // Expand junction values as alternation [v1|v2|...]
                 out.push('[');
                 for (idx, v) in values.iter().enumerate() {
                     if idx > 0 {
                         out.push('|');
                     }
-                    match v {
-                        Value::Regex(pat) => out.push_str(pat),
-                        Value::RegexWithAdverbs(a) => out.push_str(&a.pattern),
-                        other => out
-                            .push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+                    match v.view() {
+                        ValueView::Regex(pat) => out.push_str(pat),
+                        ValueView::RegexWithAdverbs(a) => out.push_str(&a.pattern),
+                        _ => out.push_str(&Self::escape_regex_scalar_literal(&v.to_string_value())),
                     }
                 }
                 out.push(']');
             }
-            other => out.push_str(&Self::escape_regex_scalar_literal(&other.to_string_value())),
+            _ => out.push_str(&Self::escape_regex_scalar_literal(&value.to_string_value())),
         }
     }
 
     /// Check if a value is a Hash and throw X::Syntax::Reserved if so.
     fn check_hash_in_regex(value: &Value) -> Result<(), RuntimeError> {
-        if matches!(value, Value::Hash(_)) {
+        if matches!(value.view(), ValueView::Hash(_)) {
             let msg = "The use of hashes in regexes is reserved";
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.to_string()));

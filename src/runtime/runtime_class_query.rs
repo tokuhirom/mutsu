@@ -21,7 +21,10 @@ impl Interpreter {
             return false;
         }
         self.chain_declared_packages.contains(name)
-            || matches!(self.env.get(name), Some(Value::Package(_)))
+            || matches!(
+                self.env.get(name).map(Value::view),
+                Some(ValueView::Package(_))
+            )
     }
 
     /// Check if a class name refers to a user-defined class that inherits from

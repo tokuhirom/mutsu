@@ -80,7 +80,7 @@ pub(super) fn make_method_not_found_error(
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("method".to_string(), Value::str(method_name.to_string()));
     attrs.insert("typename".to_string(), Value::str(type_name.to_string()));
-    attrs.insert("private".to_string(), Value::Bool(private));
+    attrs.insert("private".to_string(), Value::truth(private));
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Method::NotFound"), attrs);
     let mut err = RuntimeError::new(&msg);
