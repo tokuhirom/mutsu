@@ -10,11 +10,11 @@ impl Interpreter {
         if let Some(seq) = crate::builtins::seq_coerce::to_seq_structural(&target) {
             return Ok(seq);
         }
-        Ok(match target {
-            Value::Seq(_) => target,
-            Value::Array(items, ..) => Value::Seq(std::sync::Arc::new(items.to_vec())),
-            Value::Slip(items) => Value::Seq(items),
-            Value::Instance {
+        Ok(match target.view() {
+            ValueView::Seq(_) => target.clone(),
+            ValueView::Array(items, ..) => Value::seq(items.to_vec()),
+            ValueView::Slip(items) => Value::seq_arc(items.clone()),
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -24,7 +24,7 @@ impl Interpreter {
                         let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                             let mut a = HashMap::new();
                             a.insert("emitted".to_string(), Value::array(Vec::new()));
-                            a.insert("done".to_string(), Value::Bool(false));
+                            a.insert("done".to_string(), Value::FALSE);
                             a
                         });
                         self.supply_emit_buffer.push(Vec::new());
@@ -35,21 +35,21 @@ impl Interpreter {
                     } else {
                         Vec::new()
                     };
-                Value::Seq(std::sync::Arc::new(values))
+                Value::seq(values)
             }
-            Value::LazyList(ll) => {
-                let items = self.force_lazy_list_bridge(&ll)?;
-                Value::Seq(std::sync::Arc::new(items))
+            ValueView::LazyList(ll) => {
+                let items = self.force_lazy_list_bridge(ll)?;
+                Value::seq(items)
             }
-            other @ (Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }) => {
-                let items = Self::value_to_list(&other);
-                Value::Seq(std::sync::Arc::new(items))
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => {
+                let items = Self::value_to_list(&target);
+                Value::seq(items)
             }
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -65,13 +65,15 @@ impl Interpreter {
                     || cn.starts_with("blob")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                    Value::Seq(std::sync::Arc::new(items.clone().to_vec()))
+                if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+                {
+                    Value::seq(items.clone().to_vec())
                 } else {
-                    Value::Seq(std::sync::Arc::new(Vec::new()))
+                    Value::seq(Vec::new())
                 }
             }
-            other => Value::Seq(std::sync::Arc::new(vec![other])),
+            _ => Value::seq(vec![target.clone()]),
         })
     }
 

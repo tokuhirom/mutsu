@@ -42,7 +42,7 @@ impl Interpreter {
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let encoding_val = args.first().cloned().unwrap_or(Value::Nil);
+        let encoding_val = args.first().cloned().unwrap_or(Value::NIL);
         // The encoding is a type object (Package) or class instance.
         // We need to call .name and .alternative-names on it to get registration info.
         let enc_name = self.call_method_with_values(encoding_val.clone(), "name", vec![])?;
@@ -51,9 +51,9 @@ impl Interpreter {
         let alt_names_val = self
             .call_method_with_values(encoding_val.clone(), "alternative-names", vec![])
             .unwrap_or(Value::array(Vec::new()));
-        let alt_names: Vec<String> = match alt_names_val {
-            Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
-            Value::Slip(items) => items.iter().map(|v| v.to_string_value()).collect(),
+        let alt_names: Vec<String> = match alt_names_val.view() {
+            ValueView::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
+            ValueView::Slip(items) => items.iter().map(|v| v.to_string_value()).collect(),
             _ => Vec::new(),
         };
 
@@ -64,7 +64,7 @@ impl Interpreter {
         };
 
         match self.register_encoding(entry) {
-            Ok(()) => Ok(Value::Nil),
+            Ok(()) => Ok(Value::NIL),
             Err(conflicting_name) => {
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert("name".to_string(), Value::str(conflicting_name.clone()));
@@ -89,7 +89,7 @@ impl Interpreter {
         let msg =
             format!("Batching sublist length is out of range. Is: {count}, should be in 1..^Inf");
         let mut attrs = HashMap::new();
-        attrs.insert("got".to_string(), Value::Int(count));
+        attrs.insert("got".to_string(), Value::int(count));
         attrs.insert("range".to_string(), Value::str("1..^Inf".to_string()));
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
@@ -109,8 +109,8 @@ impl Interpreter {
         let mut partial = false;
         let mut positional_args: Vec<Value> = Vec::new();
         for arg in args {
-            match arg {
-                Value::Pair(key, val) if key == "partial" => {
+            match arg.view() {
+                ValueView::Pair(key, val) if key == "partial" => {
                     partial = val.truthy();
                 }
                 _ => positional_args.push(arg.clone()),
@@ -120,11 +120,11 @@ impl Interpreter {
         // Build spec list from positional args
         // If single arg is a list/array, use its elements as specs
         let specs = if positional_args.len() == 1 {
-            match &positional_args[0] {
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Seq(items) => items.to_vec(),
-                Value::LazyList(_) => Self::value_to_list(&positional_args[0]),
-                other => vec![other.clone()],
+            match positional_args[0].view() {
+                ValueView::Array(items, ..) => items.to_vec(),
+                ValueView::Seq(items) => items.to_vec(),
+                ValueView::LazyList(_) => Self::value_to_list(&positional_args[0]),
+                _ => vec![positional_args[0].clone()],
             }
         } else {
             positional_args
@@ -149,26 +149,26 @@ impl Interpreter {
         let mut flat_specs: Vec<Value> = Vec::new();
         let mut to_process: std::collections::VecDeque<Value> = specs.into();
         while let Some(spec) = to_process.pop_front() {
-            match &spec {
-                Value::Seq(items) => {
-                    for item in items.iter() {
-                        to_process.push_back(item.clone());
+            let nested = match spec.view() {
+                ValueView::Seq(items) => Some(items.to_vec()),
+                ValueView::Array(items, ..) => Some(items.to_vec()),
+                _ => None,
+            };
+            match nested {
+                Some(items) => {
+                    for item in items {
+                        to_process.push_back(item);
                     }
                 }
-                Value::Array(items, ..) => {
-                    for item in items.iter() {
-                        to_process.push_back(item.clone());
-                    }
-                }
-                _ => flat_specs.push(spec),
+                None => flat_specs.push(spec),
             }
         }
 
         let mut rotor_specs: Vec<RotorSpec> = Vec::new();
         for spec in &flat_specs {
-            match spec {
-                Value::Int(n) => {
-                    let count = *n;
+            match spec.view() {
+                ValueView::Int(n) => {
+                    let count = n;
                     // A negative batching sublist length is out of range. A length
                     // of 0 is allowed: it yields an empty sublist `()` (roast
                     // S32-list/rotor.t exercises `(0..5).rotor(0, 1, *)`). The
@@ -182,68 +182,70 @@ impl Interpreter {
                         gap: 0,
                     });
                 }
-                Value::Whatever => {
+                ValueView::Whatever => {
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Inf,
                         gap: 0,
                     });
                 }
-                Value::Num(n) if n.is_infinite() && n.is_sign_positive() => {
+                ValueView::Num(n) if n.is_infinite() && n.is_sign_positive() => {
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Inf,
                         gap: 0,
                     });
                 }
-                Value::Num(n) => {
+                ValueView::Num(n) => {
                     rotor_specs.push(RotorSpec {
-                        count: RotorCount::Fixed(*n as usize),
+                        count: RotorCount::Fixed(n as usize),
                         gap: 0,
                     });
                 }
-                Value::Rat(n, d) => {
-                    let count = if *d != 0 { n / d } else { 0 };
+                ValueView::Rat(n, d) => {
+                    let count = if d != 0 { n / d } else { 0 };
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Fixed(count as usize),
                         gap: 0,
                     });
                 }
-                Value::Pair(..) | Value::ValuePair(..) => {
-                    let (count_val, gap_val) = match spec {
-                        Value::Pair(k, v) => (Value::str(k.clone()), v.as_ref().clone()),
-                        Value::ValuePair(k, v) => (k.as_ref().clone(), v.as_ref().clone()),
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    let (count_val, gap_val) = match spec.view() {
+                        ValueView::Pair(k, v) => (Value::str(k.clone()), v.clone()),
+                        ValueView::ValuePair(k, v) => (k.clone(), v.clone()),
                         _ => unreachable!(),
                     };
-                    let count = match &count_val {
-                        Value::Int(n) => RotorCount::Fixed(*n as usize),
-                        Value::Num(n) => RotorCount::Fixed(*n as usize),
-                        Value::Rat(n, d) => {
-                            RotorCount::Fixed(if *d != 0 { (n / d) as usize } else { 0 })
+                    let count = match count_val.view() {
+                        ValueView::Int(n) => RotorCount::Fixed(n as usize),
+                        ValueView::Num(n) => RotorCount::Fixed(n as usize),
+                        ValueView::Rat(n, d) => {
+                            RotorCount::Fixed(if d != 0 { (n / d) as usize } else { 0 })
                         }
-                        Value::Str(s) => RotorCount::Fixed(s.parse::<i64>().unwrap_or(0) as usize),
+                        ValueView::Str(s) => {
+                            RotorCount::Fixed(s.parse::<i64>().unwrap_or(0) as usize)
+                        }
                         _ => RotorCount::Fixed(0),
                     };
-                    let gap = match &gap_val {
-                        Value::Int(n) => *n,
-                        Value::Num(n) => *n as i64,
-                        Value::Rat(n, d) if *d != 0 => n / d,
-                        Value::Rat(..) => 0,
+                    let gap = match gap_val.view() {
+                        ValueView::Int(n) => n,
+                        ValueView::Num(n) => n as i64,
+                        ValueView::Rat(n, d) if d != 0 => n / d,
+                        ValueView::Rat(..) => 0,
                         _ => 0,
                     };
                     rotor_specs.push(RotorSpec { count, gap });
                 }
-                Value::HyperWhatever => {
+                ValueView::HyperWhatever => {
                     rotor_specs.push(RotorSpec {
                         count: RotorCount::Whatever,
                         gap: 0,
                     });
                 }
-                Value::Range(start, end) | Value::RangeExcl(start, end) => {
-                    let is_excl = matches!(spec, Value::RangeExcl(..));
-                    let end_val = if is_excl { *end - 1 } else { *end };
-                    if end_val == i64::MAX || *end == i64::MAX {
+                ValueView::Range(start, end) | ValueView::RangeExcl(start, end) => {
+                    let is_excl = matches!(spec.view(), ValueView::RangeExcl(..));
+                    let end_val = if is_excl { end - 1 } else { end };
+                    if end_val == i64::MAX || end == i64::MAX {
                         // 1..* — infinite range, treated like cycling counts
                         let mut counts = Vec::new();
-                        for i in *start.. {
+                        for i in start.. {
                             counts.push(i);
                             if counts.len() > 10000 {
                                 break; // safety limit
@@ -255,7 +257,7 @@ impl Interpreter {
                         });
                     } else {
                         let mut counts = Vec::new();
-                        for i in *start..=end_val {
+                        for i in start..=end_val {
                             counts.push(i);
                         }
                         rotor_specs.push(RotorSpec {
@@ -284,14 +286,18 @@ impl Interpreter {
         }
 
         if rotor_specs.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
 
         // Get the items to rotor over (force LazyList if needed)
-        let target = if let Value::LazyList(ll) = &target {
-            Value::array(self.force_lazy_list_bridge(ll)?)
+        let lazy_forced = if let ValueView::LazyList(ll) = target.view() {
+            Some(self.force_lazy_list_bridge(ll)?)
         } else {
-            target
+            None
+        };
+        let target = match lazy_forced {
+            Some(items) => Value::array(items),
+            None => target,
         };
         let items = if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
@@ -300,7 +306,7 @@ impl Interpreter {
         };
 
         if items.is_empty() {
-            return Ok(Value::Seq(Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
 
         let mut result: Vec<Value> = Vec::new();
@@ -369,7 +375,7 @@ impl Interpreter {
             if new_pos < 0 {
                 // Negative gap past start of list
                 let mut attrs = HashMap::new();
-                attrs.insert("got".to_string(), Value::Int(new_pos));
+                attrs.insert("got".to_string(), Value::int(new_pos));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(
@@ -399,7 +405,7 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(Arc::new(result)))
+        Ok(Value::seq(result))
     }
 
     /// Implements the `.toggle` method.
@@ -421,8 +427,8 @@ impl Interpreter {
         let mut conditions: Vec<Value> = Vec::new();
 
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "off" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "off" => {
                     start_off = value.truthy();
                 }
                 _ => {
@@ -432,18 +438,18 @@ impl Interpreter {
         }
 
         // Get items to iterate over
-        let items = match &target {
+        let items = match target.view() {
             // Non-iterable scalar: treat as a single-element list
-            Value::Int(_)
-            | Value::Num(_)
-            | Value::Str(_)
-            | Value::Bool(_)
-            | Value::Rat(..)
-            | Value::FatRat(..)
-            | Value::BigInt(_)
-            | Value::BigRat(..)
-            | Value::Complex(..)
-            | Value::Nil => vec![target.clone()],
+            ValueView::Int(_)
+            | ValueView::Num(_)
+            | ValueView::Str(_)
+            | ValueView::Bool(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigInt(_)
+            | ValueView::BigRat(..)
+            | ValueView::Complex(..)
+            | ValueView::Nil => vec![target.clone()],
             _ => crate::runtime::utils::value_to_list(&target),
         };
 
@@ -473,6 +479,6 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Seq(Arc::new(result)))
+        Ok(Value::seq(result))
     }
 }

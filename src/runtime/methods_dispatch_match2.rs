@@ -22,7 +22,7 @@ impl Interpreter {
             } else {
                 crate::value::ArrayKind::List
             };
-            return Some(Ok(Value::Array(
+            return Some(Ok(Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(flat)),
                 kind,
             )));
@@ -30,15 +30,15 @@ impl Interpreter {
         match method {
             "Seq" if args.is_empty() => Some(self.dispatch_seq_coercion(target)),
             "list" | "Array" if args.is_empty() => {
-                if let Value::Instance {
+                if let ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                } = &target
+                } = target.view()
                     && class_name == "Supply"
                 {
                     return Some(
-                        self.supply_list_values(&(attributes).as_map(), true)
+                        self.supply_list_values(&attributes.as_map(), true)
                             .map(Value::array),
                     );
                 }
@@ -46,28 +46,24 @@ impl Interpreter {
             }
             "List" if args.is_empty() => Some(self.dispatch_list_coercion(target)),
             "Set" | "SetHash" if args.is_empty() => {
-                let result = match self.dispatch_to_set_with_what(target, method) {
+                let mut result = match self.dispatch_to_set_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
                 // If SetHash, ensure the mutable flag is set
-                if method == "SetHash"
-                    && let Value::Set(items, _) = result
-                {
-                    return Some(Ok(Value::Set(items, true)));
+                if method == "SetHash" {
+                    result.with_set_mut(|_, is_mut| *is_mut = true);
                 }
                 Some(Ok(result))
             }
             "Bag" | "BagHash" if args.is_empty() => {
-                let result = match self.dispatch_to_bag_with_what(target, method) {
+                let mut result = match self.dispatch_to_bag_with_what(target, method) {
                     Ok(r) => r,
                     Err(e) => return Some(Err(e)),
                 };
                 // If BagHash, ensure the mutable flag is set
-                if method == "BagHash"
-                    && let Value::Bag(items, _) = result
-                {
-                    return Some(Ok(Value::Bag(items, true)));
+                if method == "BagHash" {
+                    result.with_bag_mut(|_, is_mut| *is_mut = true);
                 }
                 Some(Ok(result))
             }

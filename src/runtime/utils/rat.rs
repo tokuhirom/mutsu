@@ -9,7 +9,7 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
     );
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("source".to_string(), Value::str(source.to_string()));
-    attrs.insert("pos".to_string(), Value::Int(pos as i64));
+    attrs.insert("pos".to_string(), Value::int(pos as i64));
     attrs.insert("reason".to_string(), Value::str(reason.to_string()));
     attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
     attrs.insert(
@@ -33,10 +33,10 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
 pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
     // Hot path: only a bare or Mixin-wrapped Str can fail; everything else
     // (Int/Num/Rat/...) returns immediately without cloning or parsing.
-    let s = match value {
-        Value::Str(s) => s,
-        Value::Mixin(inner, _) => match inner.as_ref() {
-            Value::Str(s) => s,
+    let s = match value.view() {
+        ValueView::Str(s) => s,
+        ValueView::Mixin(inner, _) => match inner.view() {
+            ValueView::Str(s) => s,
             _ => return Ok(()),
         },
         _ => return Ok(()),
@@ -51,54 +51,62 @@ pub(crate) fn coerce_numeric(left: Value, right: Value) -> (Value, Value) {
     // Unwrap allomorphic types (Mixin) to their inner numeric value
     let left = unwrap_mixin(left);
     let right = unwrap_mixin(right);
-    let l = match &left {
-        Value::Int(_)
-        | Value::BigInt(_)
-        | Value::Num(_)
-        | Value::Rat(_, _)
-        | Value::FatRat(_, _)
-        | Value::BigRat(_, _)
-        | Value::Complex(_, _) => left,
-        _ => coerce_to_numeric(left),
+    let l = if matches!(
+        left.view(),
+        ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(_, _)
+            | ValueView::FatRat(_, _)
+            | ValueView::BigRat(_, _)
+            | ValueView::Complex(_, _)
+    ) {
+        left
+    } else {
+        coerce_to_numeric(left)
     };
-    let r = match &right {
-        Value::Int(_)
-        | Value::BigInt(_)
-        | Value::Num(_)
-        | Value::Rat(_, _)
-        | Value::FatRat(_, _)
-        | Value::BigRat(_, _)
-        | Value::Complex(_, _) => right,
-        _ => coerce_to_numeric(right),
+    let r = if matches!(
+        right.view(),
+        ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(_, _)
+            | ValueView::FatRat(_, _)
+            | ValueView::BigRat(_, _)
+            | ValueView::Complex(_, _)
+    ) {
+        right
+    } else {
+        coerce_to_numeric(right)
     };
     (l, r)
 }
 
 /// Unwrap a Mixin (allomorphic type) to its inner value.
 pub(crate) fn unwrap_mixin(val: Value) -> Value {
-    match val {
-        Value::Mixin(inner, _) => inner.as_ref().clone(),
-        other => other,
+    if let ValueView::Mixin(inner, _) = val.view() {
+        return inner.as_ref().clone();
     }
+    val
 }
 
 pub(crate) fn to_rat_parts(val: &Value) -> Option<(i64, i64)> {
-    match val {
-        Value::Mixin(inner, _) => to_rat_parts(inner),
-        Value::Int(i) => Some((*i, 1)),
-        Value::Rat(n, d) => Some((*n, *d)),
-        Value::FatRat(n, d) => Some((*n, *d)),
+    match val.view() {
+        ValueView::Mixin(inner, _) => to_rat_parts(inner),
+        ValueView::Int(i) => Some((i, 1)),
+        ValueView::Rat(n, d) => Some((n, d)),
+        ValueView::FatRat(n, d) => Some((n, d)),
         _ => None,
     }
 }
 
 pub(crate) fn to_big_rat_parts(val: &Value) -> Option<(BigInt, BigInt)> {
-    match val {
-        Value::Mixin(inner, _) => to_big_rat_parts(inner),
-        Value::Int(i) => Some((BigInt::from(*i), BigInt::from(1))),
-        Value::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
-        Value::Rat(n, d) | Value::FatRat(n, d) => Some((BigInt::from(*n), BigInt::from(*d))),
-        Value::BigRat(n, d) => Some(((**n).clone(), (**d).clone())),
+    match val.view() {
+        ValueView::Mixin(inner, _) => to_big_rat_parts(inner),
+        ValueView::Int(i) => Some((BigInt::from(i), BigInt::from(1))),
+        ValueView::BigInt(i) => Some(((**i).clone(), BigInt::from(1))),
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => Some((BigInt::from(n), BigInt::from(d))),
+        ValueView::BigRat(n, d) => Some((n.clone(), d.clone())),
         _ => None,
     }
 }

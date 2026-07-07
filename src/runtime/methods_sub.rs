@@ -23,20 +23,20 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        match target {
-            Value::Routine { name, package, .. } => self.dispatch_routine_method(
+        match target.view() {
+            ValueView::Routine { name, package, .. } => self.dispatch_routine_method(
                 target,
                 &name.resolve(),
                 &package.resolve(),
                 method,
                 args.to_vec(),
             ),
-            Value::Sub(data) => {
+            ValueView::Sub(data) => {
                 let data = data.clone();
                 self.dispatch_sub_method(target, &data, method, args.to_vec())
             }
-            Value::WeakSub(weak) => weak.upgrade().map(|strong| {
-                self.call_method_with_values(Value::Sub(strong), method, args.to_vec())
+            ValueView::WeakSub(weak) => weak.upgrade().map(|strong| {
+                self.call_method_with_values(Value::sub_value(strong), method, args.to_vec())
             }),
             _ => None,
         }
@@ -82,16 +82,16 @@ impl Interpreter {
             );
             // Apply assumed args
             for arg in &args {
-                if let Value::Pair(key, boxed) = arg {
+                if let ValueView::Pair(key, boxed) = arg.view() {
                     if key == "__mutsu_test_callsite_line" {
                         continue;
                     }
-                    sub_data.assumed_named.insert(key.clone(), *boxed.clone());
+                    sub_data.assumed_named.insert(key.clone(), boxed.clone());
                 } else {
                     sub_data.assumed_positional.push(arg.clone());
                 }
             }
-            return Some(Ok(Value::Sub(crate::gc::Gc::new(sub_data))));
+            return Some(Ok(Value::sub_value(crate::gc::Gc::new(sub_data))));
         }
         if method == "candidates" && args.is_empty() {
             return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
@@ -164,17 +164,15 @@ impl Interpreter {
                     Err(e) => return Some(Err(e)),
                 }
             }
-            return Some(Ok(Value::Junction {
-                kind: JunctionKind::Any,
-                values: std::sync::Arc::new(signatures),
-            }));
+            return Some(Ok(Value::junction(JunctionKind::Any, signatures)));
         }
         if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
             // For Routine handles, render using the first candidate's signature
             let candidates = self.routine_candidate_subs(package, name);
             let sig_gist = if !candidates.is_empty() {
-                if let Ok(Value::Instance { attributes, .. }) =
+                if let Ok(sig) =
                     self.call_method_with_values(candidates[0].clone(), "signature", Vec::new())
+                    && let ValueView::Instance { attributes, .. } = sig.view()
                 {
                     attributes
                         .as_map()
@@ -216,7 +214,7 @@ impl Interpreter {
                 };
                 let info = param_defs_to_sig_info(&defs, None);
                 let sig = make_signature_value(info);
-                if let Value::Instance { attributes, .. } = &sig {
+                if let ValueView::Instance { attributes, .. } = sig.view() {
                     attributes
                         .as_map()
                         .get("gist")
@@ -234,18 +232,18 @@ impl Interpreter {
         if method == "dispatcher" && args.is_empty() {
             let qualified = format!("{}::{}", package, name);
             if self.resolve_proto_function(&qualified).is_some() {
-                return Some(Ok(Value::Routine {
-                    package: Symbol::intern(package),
-                    name: Symbol::intern(name),
-                    is_regex: false,
-                }));
+                return Some(Ok(Value::routine_parts(
+                    Symbol::intern(package),
+                    Symbol::intern(name),
+                    false,
+                )));
             }
             if self.resolve_proto_function_with_alias(name).is_some() {
-                return Some(Ok(Value::Routine {
-                    package: Symbol::intern(package),
-                    name: Symbol::intern(name),
-                    is_regex: false,
-                }));
+                return Some(Ok(Value::routine_parts(
+                    Symbol::intern(package),
+                    Symbol::intern(name),
+                    false,
+                )));
             }
             return Some(Ok(target.clone()));
         }
@@ -271,22 +269,22 @@ impl Interpreter {
                     | "can"
                     | "dispatcher"
             );
-            return Some(Ok(Value::Bool(can)));
+            return Some(Ok(Value::truth(can)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
             let candidates = self.routine_candidate_subs(package, name);
             if !candidates.is_empty() {
                 let mut infos = Vec::new();
                 for candidate in candidates {
-                    if let Value::Sub(data) = candidate {
-                        let sig = self.sub_signature_value(&data);
+                    if let ValueView::Sub(data) = candidate.view() {
+                        let sig = self.sub_signature_value(data);
                         if let Some(info) = extract_sig_info(&sig) {
                             infos.push(info);
                         }
                     }
                 }
                 if infos.is_empty() {
-                    return Some(Ok(Value::Int(0)));
+                    return Some(Ok(Value::int(0)));
                 }
                 return Some(Ok(if method == "arity" {
                     Self::candidate_arity_value(&infos)
@@ -326,7 +324,7 @@ impl Interpreter {
             };
             let info = param_defs_to_sig_info(&defs, None);
             return Some(Ok(if method == "arity" {
-                Value::Int(Self::signature_required_positional_count(&info))
+                Value::int(Self::signature_required_positional_count(&info))
             } else {
                 Self::signature_count_value(&info)
             }));
@@ -376,20 +374,28 @@ impl Interpreter {
                         Value::make_instance(Symbol::intern("X::TypeCheck::Binding"), ex_attrs);
                     let mut failure_attrs = std::collections::HashMap::new();
                     failure_attrs.insert("exception".to_string(), exception);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    failure_attrs.insert("handled".to_string(), Value::FALSE);
                     let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
                     let mut mixins = std::collections::HashMap::new();
                     mixins.insert("Failure".to_string(), failure);
-                    Value::mixin(Value::Sub(crate::gc::Gc::new(sub_data.clone())), mixins)
+                    Value::mixin(
+                        Value::sub_value(crate::gc::Gc::new(sub_data.clone())),
+                        mixins,
+                    )
                 };
             let mut incoming_named = std::collections::HashMap::new();
             for arg in args {
-                if let Value::Pair(key, boxed) = arg {
+                let pair = if let ValueView::Pair(key, boxed) = arg.view() {
+                    Some((key.clone(), boxed.clone()))
+                } else {
+                    None
+                };
+                if let Some((key, value)) = pair {
                     if key == "__mutsu_test_callsite_line" {
                         continue;
                     }
-                    incoming_named.insert(key.clone(), *boxed.clone());
-                    next.assumed_named.insert(key, *boxed);
+                    incoming_named.insert(key.clone(), value.clone());
+                    next.assumed_named.insert(key, value);
                 } else {
                     next.assumed_positional.push(arg);
                 }
@@ -421,7 +427,7 @@ impl Interpreter {
                 {
                     return Some(Ok(make_failure(
                         &next,
-                        Value::Package(Symbol::intern("X::TypeCheck::Assignment")),
+                        Value::package(Symbol::intern("X::TypeCheck::Assignment")),
                         format!("${}", pd.name),
                     )));
                 }
@@ -430,9 +436,9 @@ impl Interpreter {
             // not @- or %-sigil where the constraint applies to elements)
             {
                 let is_placeholder = |v: &Value| {
-                    matches!(v, Value::Whatever)
-                        || matches!(v, Value::Num(f) if f.is_infinite())
-                        || matches!(v, Value::Rat(_, 0))
+                    matches!(v.view(), ValueView::Whatever)
+                        || matches!(v.view(), ValueView::Num(f) if f.is_infinite())
+                        || matches!(v.view(), ValueView::Rat(_, 0))
                 };
                 for (pos_idx, pd) in next
                     .param_defs
@@ -444,7 +450,7 @@ impl Interpreter {
                         break;
                     }
                     let assumed = &next.assumed_positional[pos_idx];
-                    if is_placeholder(assumed) || matches!(assumed, Value::Nil) {
+                    if is_placeholder(assumed) || assumed.is_nil() {
                         continue;
                     }
                     // Skip type check for @-sigil and %-sigil params where the
@@ -467,7 +473,7 @@ impl Interpreter {
                         };
                         return Some(Ok(make_failure(
                             &next,
-                            Value::Package(Symbol::intern(constraint)),
+                            Value::package(Symbol::intern(constraint)),
                             symbol,
                         )));
                     }
@@ -507,21 +513,23 @@ impl Interpreter {
                     let exception = Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs);
                     let mut failure_attrs = std::collections::HashMap::new();
                     failure_attrs.insert("exception".to_string(), exception);
-                    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+                    failure_attrs.insert("handled".to_string(), Value::FALSE);
                     let failure = Value::make_instance(Symbol::intern("Failure"), failure_attrs);
                     let mut mixins = std::collections::HashMap::new();
                     mixins.insert("Failure".to_string(), failure);
                     return Some(Ok(Value::mixin(
-                        Value::Sub(crate::gc::Gc::new(next)),
+                        Value::sub_value(crate::gc::Gc::new(next)),
                         mixins,
                     )));
                 }
             }
-            return Some(Ok(Value::Sub(crate::gc::Gc::new(next))));
+            return Some(Ok(Value::sub_value(crate::gc::Gc::new(next))));
         }
         if method == "candidates" && args.is_empty() {
             // Multi-dispatch dispatcher: try name-based lookup first (preserves doc comments)
-            if let Some(Value::Str(disp_name)) = data.env.get("__mutsu_multi_dispatch_name") {
+            if let Some(ValueView::Str(disp_name)) =
+                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+            {
                 let name_based =
                     self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
                 if !name_based.is_empty() {
@@ -529,12 +537,16 @@ impl Interpreter {
                 }
             }
             // Fall back to captured candidates (for out-of-scope multi subs)
-            if let Some(Value::Array(cands, _)) = data.env.get("__mutsu_multi_dispatch_candidates")
+            if let Some(ValueView::Array(cands, _)) = data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .map(Value::view)
             {
                 return Some(Ok(Value::array(cands.to_vec())));
             }
-            if let Some(Value::Str(cls)) = data.env.get("__mutsu_lookup_class")
-                && let Some(Value::Str(meth)) = data.env.get("__mutsu_lookup_method")
+            if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
+                && let Some(ValueView::Str(meth)) =
+                    data.env.get("__mutsu_lookup_method").map(Value::view)
             {
                 let candidates = self.classhow_lookup_all_candidates(cls, meth, data.package);
                 return Some(Ok(Value::array(candidates)));
@@ -543,7 +555,9 @@ impl Interpreter {
         }
         if method == "cando" && args.len() == 1 {
             // Multi-dispatch dispatcher: try name-based lookup first
-            if let Some(Value::Str(disp_name)) = data.env.get("__mutsu_multi_dispatch_name") {
+            if let Some(ValueView::Str(disp_name)) =
+                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+            {
                 let name_based =
                     self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
                 if !name_based.is_empty() {
@@ -556,7 +570,10 @@ impl Interpreter {
                 }
             }
             // Fall back to captured candidates
-            if let Some(Value::Array(cands, _)) = data.env.get("__mutsu_multi_dispatch_candidates")
+            if let Some(ValueView::Array(cands, _)) = data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .map(Value::view)
             {
                 let call_args = Self::capture_to_call_args(&args[0]);
                 let matches: Vec<Value> = cands
@@ -576,14 +593,16 @@ impl Interpreter {
         }
         if method == "signature" && args.is_empty() {
             // Multi-dispatch dispatcher: try name-based lookup first
-            if let Some(Value::Str(disp_name)) = data.env.get("__mutsu_multi_dispatch_name") {
+            if let Some(ValueView::Str(disp_name)) =
+                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+            {
                 let name_based =
                     self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
                 if !name_based.is_empty() {
                     let sigs: Vec<Value> = name_based
                         .iter()
                         .filter_map(|c| {
-                            if let Value::Sub(cd) = c {
+                            if let ValueView::Sub(cd) = c.view() {
                                 Some(self.sub_signature_value(cd))
                             } else {
                                 None
@@ -597,12 +616,15 @@ impl Interpreter {
                 }
             }
             // Fall back to captured candidates
-            if let Some(Value::Array(cands, _)) = data.env.get("__mutsu_multi_dispatch_candidates")
+            if let Some(ValueView::Array(cands, _)) = data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .map(Value::view)
             {
                 let sigs: Vec<Value> = cands
                     .iter()
                     .filter_map(|c| {
-                        if let Value::Sub(cd) = c {
+                        if let ValueView::Sub(cd) = c.view() {
                             Some(self.sub_signature_value(cd))
                         } else {
                             None
@@ -618,7 +640,7 @@ impl Interpreter {
         }
         if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
             let sig = self.sub_signature_value(data);
-            let sig_gist = if let Value::Instance { attributes, .. } = &sig {
+            let sig_gist = if let ValueView::Instance { attributes, .. } = sig.view() {
                 attributes
                     .as_map()
                     .get("gist")
@@ -656,38 +678,38 @@ impl Interpreter {
         if method == "line" && args.is_empty() {
             return Some(Ok(data
                 .source_line
-                .map(|l| Value::Int(l as i64))
-                .unwrap_or(Value::Nil)));
+                .map(|l| Value::int(l as i64))
+                .unwrap_or(Value::NIL)));
         }
         if method == "file" && args.is_empty() {
             return Some(Ok(data
                 .source_file
                 .as_ref()
                 .map(|f| Value::str(f.clone()))
-                .unwrap_or(Value::Nil)));
+                .unwrap_or(Value::NIL)));
         }
         if matches!(method, "of" | "returns") && args.is_empty() {
             let type_name = self
                 .callable_return_type(target)
                 .unwrap_or_else(|| "Mu".to_string());
-            return Some(Ok(Value::Package(Symbol::intern(&type_name))));
+            return Some(Ok(Value::package(Symbol::intern(&type_name))));
         }
         if method == "rw" && args.is_empty() {
-            return Some(Ok(Value::Bool(data.is_rw)));
+            return Some(Ok(Value::truth(data.is_rw)));
         }
         if method == "readonly" && args.is_empty() {
-            return Some(Ok(Value::Bool(!data.is_rw)));
+            return Some(Ok(Value::truth(!data.is_rw)));
         }
         if matches!(method, "arity" | "count") && args.is_empty() {
             let sig = self.sub_signature_value(data);
             if let Some(info) = extract_sig_info(&sig) {
                 return Some(Ok(if method == "arity" {
-                    Value::Int(Self::signature_required_positional_count(&info))
+                    Value::int(Self::signature_required_positional_count(&info))
                 } else {
                     Self::signature_count_value(&info)
                 }));
             }
-            return Some(Ok(Value::Int(0)));
+            return Some(Ok(Value::int(0)));
         }
         if method == "wrap" {
             // .wrap(&wrapper) — add a wrapper to this sub's wrap chain
@@ -700,18 +722,22 @@ impl Interpreter {
             let handle_id = self.wrap_handle_counter;
             // Method candidate wrap: if this Sub came from ^lookup().candidates[N],
             // store the wrap chain in method_wrap_chains instead.
-            if let Some(Value::Str(cls)) = data.env.get("__mutsu_lookup_class")
-                && let Some(Value::Str(meth)) = data.env.get("__mutsu_lookup_method")
-                && let Some(Value::Int(idx)) = data.env.get("__mutsu_lookup_candidate_idx")
+            if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
+                && let Some(ValueView::Str(meth)) =
+                    data.env.get("__mutsu_lookup_method").map(Value::view)
+                && let Some(ValueView::Int(idx)) = data
+                    .env
+                    .get("__mutsu_lookup_candidate_idx")
+                    .map(Value::view)
             {
-                let key = (cls.to_string(), meth.to_string(), *idx as usize);
+                let key = (cls.to_string(), meth.to_string(), idx as usize);
                 self.method_wrap_chains
                     .entry(key)
                     .or_default()
                     .push((handle_id, wrapper));
                 let mut attrs = std::collections::HashMap::new();
-                attrs.insert("sub-id".to_string(), Value::Int(data.id as i64));
-                attrs.insert("handle-id".to_string(), Value::Int(handle_id as i64));
+                attrs.insert("sub-id".to_string(), Value::int(data.id as i64));
+                attrs.insert("handle-id".to_string(), Value::int(handle_id as i64));
                 attrs.insert("wrapped-sub".to_string(), target.clone());
                 return Some(Ok(Value::make_instance(
                     Symbol::intern("Routine::WrapHandle"),
@@ -733,8 +759,8 @@ impl Interpreter {
                 self.env
                     .get(&key)
                     .and_then(|v| {
-                        if let Value::Int(n) = v {
-                            Some(*n)
+                        if let ValueView::Int(n) = v.view() {
+                            Some(n)
                         } else {
                             None
                         }
@@ -742,8 +768,8 @@ impl Interpreter {
                     .or_else(|| {
                         let key = format!("__mutsu_callable_id::GLOBAL::{}", func_name);
                         self.env.get(&key).and_then(|v| {
-                            if let Value::Int(n) = v {
-                                Some(*n)
+                            if let ValueView::Int(n) = v.view() {
+                                Some(n)
                             } else {
                                 None
                             }

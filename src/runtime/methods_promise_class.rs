@@ -8,17 +8,17 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if let Value::Instance { class_name, .. } = target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name == "Supply"
         {
             return Some(self.dispatch_supply_transform(target.clone(), "start", args));
         }
         if let Some(cls) = self.promise_class_name(target) {
-            let block = args.first().cloned().unwrap_or(Value::Nil);
+            let block = args.first().cloned().unwrap_or(Value::NIL);
             return Some(Ok(self.spawn_callable_promise(block, Symbol::intern(&cls))));
         }
         // Thread.start
-        if let Value::Package(class_name) = target
+        if let ValueView::Package(class_name) = target.view()
             && class_name == "Thread"
         {
             return Some(self.dispatch_thread_start(args));
@@ -35,12 +35,12 @@ impl Interpreter {
         if let Some(cls) = self.promise_class_name(target) {
             let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-            let ret = Value::Promise(promise.clone());
+            let ret = Value::promise(promise.clone());
             std::thread::spawn(move || {
                 if secs > 0.0 {
                     std::thread::sleep(Duration::from_secs_f64(secs));
                 }
-                promise.keep(Value::Bool(true), String::new(), String::new());
+                promise.keep(Value::TRUE, String::new(), String::new());
             });
             return Some(Ok(ret));
         }
@@ -56,12 +56,15 @@ impl Interpreter {
         if let Some(cls) = self.promise_class_name(target) {
             // at_time may be an Instant (TAI) or a plain numeric (POSIX).
             // Convert Instant values to POSIX for delay calculation.
-            let at_time = match args.first() {
-                Some(Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                }) if class_name == "Instant" => {
+            let at_time = match args.first().map(|v| (v, v.view())) {
+                Some((
+                    _,
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    },
+                )) if class_name == "Instant" => {
                     let tai = attributes
                         .as_map()
                         .get("value")
@@ -69,18 +72,18 @@ impl Interpreter {
                         .unwrap_or(0.0);
                     crate::builtins::methods_0arg::temporal::instant_to_posix(tai)
                 }
-                Some(v) => v.to_f64(),
+                Some((v, _)) => v.to_f64(),
                 None => 0.0,
             };
             let now = crate::value::current_time_secs_f64();
             let delay = (at_time - now).max(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
-            let ret = Value::Promise(promise.clone());
+            let ret = Value::promise(promise.clone());
             std::thread::spawn(move || {
                 if delay > 0.0 {
                     std::thread::sleep(Duration::from_secs_f64(delay));
                 }
-                promise.keep(Value::Bool(true), String::new(), String::new());
+                promise.keep(Value::TRUE, String::new(), String::new());
             });
             return Some(Ok(ret));
         }

@@ -1,53 +1,53 @@
 use super::*;
 
 pub(crate) fn value_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Int(_) => "Int",
-        Value::BigInt(_) => "Int",
-        Value::Num(_) => "Num",
-        Value::Str(_) => "Str",
-        Value::Bool(_) => "Bool",
-        Value::Array(_, kind) if kind.is_real_array() => "Array",
-        Value::Array(_, _) => "List",
-        Value::LazyList(_) => "Array",
-        Value::Hash(_) => "Hash",
-        Value::Range(_, _)
-        | Value::RangeExcl(_, _)
-        | Value::RangeExclStart(_, _)
-        | Value::RangeExclBoth(_, _)
-        | Value::GenericRange { .. } => "Range",
-        Value::Pair(_, _) | Value::ValuePair(_, _) => "Pair",
-        Value::Rat(_, _) => "Rat",
-        Value::FatRat(_, _) => "FatRat",
-        Value::BigRat(_, _) => "Rat",
-        Value::Complex(_, _) => "Complex",
-        Value::Set(_, is_mutable) => {
-            if *is_mutable {
+    match value.view() {
+        ValueView::Int(_) => "Int",
+        ValueView::BigInt(_) => "Int",
+        ValueView::Num(_) => "Num",
+        ValueView::Str(_) => "Str",
+        ValueView::Bool(_) => "Bool",
+        ValueView::Array(_, kind) if kind.is_real_array() => "Array",
+        ValueView::Array(_, _) => "List",
+        ValueView::LazyList(_) => "Array",
+        ValueView::Hash(_) => "Hash",
+        ValueView::Range(_, _)
+        | ValueView::RangeExcl(_, _)
+        | ValueView::RangeExclStart(_, _)
+        | ValueView::RangeExclBoth(_, _)
+        | ValueView::GenericRange { .. } => "Range",
+        ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => "Pair",
+        ValueView::Rat(_, _) => "Rat",
+        ValueView::FatRat(_, _) => "FatRat",
+        ValueView::BigRat(_, _) => "Rat",
+        ValueView::Complex(_, _) => "Complex",
+        ValueView::Set(_, is_mutable) => {
+            if is_mutable {
                 "SetHash"
             } else {
                 "Set"
             }
         }
-        Value::Bag(_, is_mutable) => {
-            if *is_mutable {
+        ValueView::Bag(_, is_mutable) => {
+            if is_mutable {
                 "BagHash"
             } else {
                 "Bag"
             }
         }
-        Value::Mix(_, is_mutable) => {
-            if *is_mutable {
+        ValueView::Mix(_, is_mutable) => {
+            if is_mutable {
                 "MixHash"
             } else {
                 "Mix"
             }
         }
-        Value::Nil => "Any",
-        Value::Sub(data) => match data.env.get("__mutsu_callable_type") {
-            Some(Value::Str(kind)) if kind.as_str() == "Method" => "Method",
-            Some(Value::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
-            Some(Value::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
-            Some(Value::Str(kind)) if kind.as_str() == "Block" => "Block",
+        ValueView::Nil => "Any",
+        ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
+            Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",
+            Some(ValueView::Str(kind)) if kind.as_str() == "Submethod" => "Submethod",
+            Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode" => "WhateverCode",
+            Some(ValueView::Str(kind)) if kind.as_str() == "Block" => "Block",
             _ => {
                 if data.is_bare_block {
                     "Block"
@@ -56,67 +56,69 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
                 }
             }
         },
-        Value::WeakSub(_) => "Sub",
-        Value::Routine { is_regex, .. } => {
-            if *is_regex {
+        ValueView::WeakSub(_) => "Sub",
+        ValueView::Routine { is_regex, .. } => {
+            if is_regex {
                 "Regex"
             } else {
                 "Routine"
             }
         }
-        Value::Package(_) => "Package",
-        Value::CompUnitDepSpec { .. } => "Any",
-        Value::Enum { .. } => "Int",
-        Value::Instance { .. } => "Any",
-        Value::Junction { .. } => "Junction",
-        Value::Regex(_) | Value::RegexWithAdverbs { .. } => "Regex",
-        Value::Version { .. } => "Version",
-        Value::Seq(_) => "Seq",
-        Value::HyperSeq(_) => "HyperSeq",
-        Value::RaceSeq(_) => "RaceSeq",
-        Value::Slip(_) => "Slip",
-        Value::Promise(_) => "Promise",
-        Value::Channel(_) => "Channel",
-        Value::Whatever => "Whatever",
-        Value::HyperWhatever => "HyperWhatever",
-        Value::Capture { positional, named } => {
+        ValueView::Package(_) => "Package",
+        ValueView::CompUnitDepSpec { .. } => "Any",
+        ValueView::Enum { .. } => "Int",
+        ValueView::Instance { .. } => "Any",
+        ValueView::Junction { .. } => "Junction",
+        ValueView::Regex(_) | ValueView::RegexWithAdverbs { .. } => "Regex",
+        ValueView::Version { .. } => "Version",
+        ValueView::Seq(_) => "Seq",
+        ValueView::HyperSeq(_) => "HyperSeq",
+        ValueView::RaceSeq(_) => "RaceSeq",
+        ValueView::Slip(_) => "Slip",
+        ValueView::Promise(_) => "Promise",
+        ValueView::Channel(_) => "Channel",
+        ValueView::Whatever => "Whatever",
+        ValueView::HyperWhatever => "HyperWhatever",
+        ValueView::Capture { positional, named } => {
             // Unwrap internal VarRef captures used by the VM for rw binding
             if positional.is_empty()
                 && named
                     .get("__mutsu_varref_name")
-                    .is_some_and(|v| matches!(v, Value::Str(_)))
+                    .is_some_and(|v| matches!(v.view(), ValueView::Str(_)))
                 && let Some(inner) = named.get("__mutsu_varref_value")
             {
                 return value_type_name(inner);
             }
             "Capture"
         }
-        Value::Uni(u) => match u.form.as_str() {
+        ValueView::Uni(u) => match u.form.as_str() {
             "NFC" => "NFC",
             "NFD" => "NFD",
             "NFKC" => "NFKC",
             "NFKD" => "NFKD",
             _ => "Uni",
         },
-        Value::Mixin(inner, mixins) => {
+        ValueView::Mixin(inner, mixins) => {
             if mixins.contains_key("Str") {
-                match inner.as_ref() {
-                    Value::Int(_) | Value::BigInt(_) => "IntStr",
-                    Value::Num(_) => "NumStr",
-                    Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => "RatStr",
-                    Value::Complex(_, _) => "ComplexStr",
+                match inner.view() {
+                    ValueView::Int(_) | ValueView::BigInt(_) => "IntStr",
+                    ValueView::Num(_) => "NumStr",
+                    ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
+                        "RatStr"
+                    }
+                    ValueView::Complex(_, _) => "ComplexStr",
                     _ => value_type_name(inner),
                 }
             } else {
                 value_type_name(inner)
             }
         }
-        Value::Proxy { .. } => "Proxy",
-        Value::ParametricRole { .. } => "Package",
-        Value::CustomType { .. } => "CustomType",
-        Value::CustomTypeInstance(_) => "CustomTypeInstance",
-        Value::Scalar(inner) => value_type_name(inner),
-        Value::LazyThunk(thunk_data) => {
+        ValueView::Proxy { .. } => "Proxy",
+        ValueView::ParametricRole { .. } => "Package",
+        ValueView::CustomType { .. } => "CustomType",
+        ValueView::CustomTypeInstance(_) => "CustomTypeInstance",
+        ValueView::Scalar(inner) => value_type_name(inner),
+        ValueView::LazyThunk(thunk_data) => {
             let cache = thunk_data.cache.lock().unwrap();
             if let Some(ref cached) = *cache {
                 // Leak the type name since we need a 'static str
@@ -125,9 +127,9 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
             }
             "Scalar"
         }
-        Value::LazyIoLines { .. } => "Seq",
-        Value::HashEntryRef { .. } => value_type_name(&value.hash_entry_read()),
-        Value::ContainerRef(_) => value.with_deref(value_type_name),
+        ValueView::LazyIoLines { .. } => "Seq",
+        ValueView::HashEntryRef { .. } => value_type_name(&value.hash_entry_read()),
+        ValueView::ContainerRef(_) => value.with_deref(value_type_name),
     }
 }
 
@@ -180,50 +182,41 @@ pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
 
 pub(crate) fn reduction_identity(op: &str) -> Value {
     if is_chain_comparison_op(op) {
-        return Value::Bool(true);
+        return Value::TRUE;
     }
     match op {
-        "+" | "-" | "+|" | "+^" => Value::Int(0),
-        "*" | "**" => Value::Int(1),
-        "+&" => Value::Int(-1), // +^0 (all bits set)
+        "+" | "-" | "+|" | "+^" => Value::int(0),
+        "*" | "**" => Value::int(1),
+        "+&" => Value::int(-1), // +^0 (all bits set)
         "~" | "~|" | "~^" => Value::str(String::new()),
-        "&&" | "and" | "?&" => Value::Bool(true),
-        "||" | "or" | "?|" | "^^" => Value::Bool(false),
-        "?^" => Value::Bool(false),
-        "//" | "orelse" => Value::Package(Symbol::intern("Any")),
-        "andthen" => Value::Bool(true),
-        "xor" => Value::Bool(false),
-        "min" => Value::Num(f64::INFINITY),
-        "max" => Value::Num(f64::NEG_INFINITY),
+        "&&" | "and" | "?&" => Value::TRUE,
+        "||" | "or" | "?|" | "^^" => Value::FALSE,
+        "?^" => Value::FALSE,
+        "//" | "orelse" => Value::package(Symbol::intern("Any")),
+        "andthen" => Value::TRUE,
+        "xor" => Value::FALSE,
+        "min" => Value::num(f64::INFINITY),
+        "max" => Value::num(f64::NEG_INFINITY),
         // Junction operators
-        "&" => Value::Junction {
-            kind: crate::value::JunctionKind::All,
-            values: std::sync::Arc::new(Vec::new()),
-        },
-        "|" => Value::Junction {
-            kind: crate::value::JunctionKind::Any,
-            values: std::sync::Arc::new(Vec::new()),
-        },
-        "^" => Value::Junction {
-            kind: crate::value::JunctionKind::One,
-            values: std::sync::Arc::new(Vec::new()),
-        },
+        "&" => Value::junction(crate::value::JunctionKind::All, Vec::new()),
+        "|" => Value::junction(crate::value::JunctionKind::Any, Vec::new()),
+        "^" => Value::junction(crate::value::JunctionKind::One, Vec::new()),
         // Set operators
         "(-)" | "∖" | "(|)" | "∪" | "(&)" | "∩" | "(^)" | "⊖" => Value::set(HashSet::new()),
         "(.)" | "⊍" | "(+)" | "⊎" => Value::bag(HashMap::new()),
         // Comma: empty list
-        "," => Value::Array(
+        "," => Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
             ArrayKind::List,
         ),
         // Zip: empty Seq (Raku returns a Seq for arity-0 Z)
-        "Z" => Value::Seq(std::sync::Arc::new(Vec::new())),
+        "Z" => Value::seq(Vec::new()),
         _ => {
             // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
             if let Some(inner) = strip_hyper_delimiters_for_identity(op) {
                 return reduction_identity(inner);
             }
-            Value::Nil
+            Value::NIL
         }
     }
 }

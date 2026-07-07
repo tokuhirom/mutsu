@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 use super::Interpreter;
 
@@ -41,13 +41,13 @@ fn positional_param(name: &str) -> ParamDef {
 impl Interpreter {
     /// True if `value` is a `Format` instance.
     pub(super) fn is_format_instance(value: &Value) -> bool {
-        matches!(value, Value::Instance { class_name, .. } if class_name.resolve() == "Format")
+        matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")
     }
 
     /// Read the format string out of a `Format` instance.
     fn format_string_of(value: &Value) -> Option<String> {
-        match value {
-            Value::Instance {
+        match value.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -101,8 +101,8 @@ impl Interpreter {
     /// Throw `X::Str::Sprintf::Directives::Count` for an arity mismatch during `.fmt`.
     fn format_throw_arity(fmt: &str, args_have: usize, args_used: usize) -> RuntimeError {
         let mut attrs = HashMap::new();
-        attrs.insert("args-have".to_string(), Value::Int(args_have as i64));
-        attrs.insert("args-used".to_string(), Value::Int(args_used as i64));
+        attrs.insert("args-have".to_string(), Value::int(args_have as i64));
+        attrs.insert("args-used".to_string(), Value::int(args_used as i64));
         attrs.insert("format".to_string(), Value::str(fmt.to_string()));
         let message = super::sprintf::directives_count_message(fmt, args_used, args_have);
         attrs.insert("message".to_string(), Value::str(message.clone()));
@@ -156,10 +156,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         // Format.new("...")
-        if method == "new" && matches!(target, Value::Package(name) if name.resolve() == "Format") {
+        if method == "new"
+            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Format")
+        {
             let fmt = args
                 .iter()
-                .find(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
                 .map(Value::to_string_value)
                 .unwrap_or_default();
             let mut attrs = HashMap::new();
@@ -171,7 +173,7 @@ impl Interpreter {
         let count = super::sprintf::sprintf_directive_count(&fmt);
         match method {
             "Str" | "gist" | "Stringy" => Some(Ok(Value::str(fmt))),
-            "arity" | "count" => Some(Ok(Value::Int(count as i64))),
+            "arity" | "count" => Some(Ok(Value::int(count as i64))),
             "Callable" => Some(Ok(self.format_callable(&fmt, count))),
             "raku" | "perl" => Some(Ok(Value::str(format!("Format.new(\"{}\")", fmt)))),
             "CALL-ME" => Some(self.format_render(&fmt, args)),
@@ -205,12 +207,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // Pair.fmt($format) -> $format($key, $value); no separator.
-        match target {
-            Value::Pair(k, v) => {
-                return self.format_render(fmt, &[Value::str(k.clone()), (**v).clone()]);
+        match target.view() {
+            ValueView::Pair(k, v) => {
+                return self.format_render(fmt, &[Value::str(k.clone()), v.clone()]);
             }
-            Value::ValuePair(k, v) => {
-                return self.format_render(fmt, &[(**k).clone(), (**v).clone()]);
+            ValueView::ValuePair(k, v) => {
+                return self.format_render(fmt, &[k.clone(), v.clone()]);
             }
             _ => {}
         }
@@ -231,16 +233,16 @@ impl Interpreter {
     /// The default separator for `.fmt(Format)`: " " for positional types, "\n"
     /// for associative types (Set/Bag/Mix/Hash/Map).
     fn default_fmt_separator(target: &Value) -> String {
-        match target {
-            Value::Array(..)
-            | Value::Seq(_)
-            | Value::Slip(_)
-            | Value::LazyList(_)
-            | Value::Range(_, _)
-            | Value::RangeExcl(_, _)
-            | Value::RangeExclStart(_, _)
-            | Value::RangeExclBoth(_, _)
-            | Value::GenericRange { .. } => " ".to_string(),
+        match target.view() {
+            ValueView::Array(..)
+            | ValueView::Seq(_)
+            | ValueView::Slip(_)
+            | ValueView::LazyList(_)
+            | ValueView::Range(_, _)
+            | ValueView::RangeExcl(_, _)
+            | ValueView::RangeExclStart(_, _)
+            | ValueView::RangeExclBoth(_, _)
+            | ValueView::GenericRange { .. } => " ".to_string(),
             _ => "\n".to_string(),
         }
     }
@@ -254,8 +256,8 @@ impl Interpreter {
         count: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
         let is_associative = matches!(
-            target,
-            Value::Hash(_) | Value::Set(_, _) | Value::Bag(_, _) | Value::Mix(_, _)
+            target.view(),
+            ValueView::Hash(_) | ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)
         );
         if is_associative {
             let method = if count == 1 { "keys" } else { "kv" };

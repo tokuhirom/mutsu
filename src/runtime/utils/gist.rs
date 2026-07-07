@@ -6,9 +6,9 @@ use super::*;
 /// `gist_value` (the fast say/gist path) and the `.gist` method dispatch so
 /// both render identically.
 pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
-    match value {
-        Value::Set(s, mutable) => {
-            let type_name = if *mutable { "SetHash" } else { "Set" };
+    match value.view() {
+        ValueView::Set(s, mutable) => {
+            let type_name = if mutable { "SetHash" } else { "Set" };
             let mut keys: Vec<&String> = s.iter().collect();
             keys.sort();
             // Render each element via its original type's gist (so a Pair element
@@ -21,8 +21,8 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
                 .join(" ");
             Some(format!("{}({})", type_name, inner))
         }
-        Value::Bag(b, mutable) => {
-            let type_name = if *mutable { "BagHash" } else { "Bag" };
+        ValueView::Bag(b, mutable) => {
+            let type_name = if mutable { "BagHash" } else { "Bag" };
             let mut keys: Vec<(&String, &BigInt)> = b.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let inner = keys
@@ -39,8 +39,8 @@ pub(crate) fn setbagmix_gist(value: &Value) -> Option<String> {
                 .join(" ");
             Some(format!("{}({})", type_name, inner))
         }
-        Value::Mix(m, mutable) => {
-            let type_name = if *mutable { "MixHash" } else { "Mix" };
+        ValueView::Mix(m, mutable) => {
+            let type_name = if mutable { "MixHash" } else { "Mix" };
             let mut keys: Vec<(&String, &f64)> = m.iter().collect();
             keys.sort_by_key(|(k, _)| (*k).clone());
             let inner = keys
@@ -82,10 +82,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
             s.remove(pos);
         }
     }
-    match value {
+    match value.view() {
         // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>, not as
         // the plain decoded text.
-        Value::Uni(u) => {
+        ValueView::Uni(u) => {
             let cps: Vec<String> = u
                 .text
                 .chars()
@@ -100,22 +100,22 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
         // value so a bound element gists like a plain one (Phase 5 leak).
-        Value::ContainerRef(cell) => gist_value(&cell.lock().unwrap()),
-        Value::Rat(_, _) | Value::FatRat(_, _) | Value::BigRat(_, _) => {
+        ValueView::ContainerRef(cell) => gist_value(&cell.lock().unwrap()),
+        ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
             // Rat.gist is identical to Rat.Str in Raku
             value.to_string_value()
         }
-        Value::Array(_, crate::value::ArrayKind::Lazy) => {
+        ValueView::Array(_, crate::value::ArrayKind::Lazy) => {
             // A lazy (infinite-backed) array renders a bounded placeholder
             // rather than materializing its capped backing (Rakudo: `[...]`).
             "[...]".to_string()
         }
-        Value::LazyList(ll) if ll.is_genuinely_lazy() => {
+        ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
             // A genuinely-lazy list renders raku's placeholder without forcing:
             // `[...]` held in `@` array context, `(...)` for a bare Seq.
             crate::value::lazy_list_placeholder("gist", ll.in_array_context())
         }
-        Value::Array(items, kind) => {
+        ValueView::Array(items, kind) => {
             let ptr = crate::gc::Gc::as_ptr(items) as usize;
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
             if is_cycle {
@@ -141,7 +141,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 }
             }
         }
-        Value::Hash(items) => {
+        ValueView::Hash(items) => {
             let ptr = crate::gc::Gc::as_ptr(items) as usize;
             let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
             if is_cycle {
@@ -156,47 +156,52 @@ pub(crate) fn gist_value(value: &Value) -> String {
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             format!("{{{}}}", parts.join(", "))
         }
-        Value::Set(..) | Value::Bag(..) | Value::Mix(..) => {
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
             // Set/Bag/Mix gist shows the type-name wrapper, e.g. `Set(a b c)`;
             // their `.Str` (the `_` fall-through) shows only the bare elements.
             setbagmix_gist(value).unwrap_or_else(|| value.to_string_value())
         }
-        Value::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
-        Value::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
-        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) | Value::Slip(items) => {
+        ValueView::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
+        ValueView::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
+        ValueView::Seq(items)
+        | ValueView::HyperSeq(items)
+        | ValueView::RaceSeq(items)
+        | ValueView::Slip(items) => {
             format!(
                 "({})",
                 items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
             )
         }
-        Value::Version { .. } => format!("v{}", value.to_string_value()),
-        Value::Nil => "Nil".to_string(),
+        ValueView::Version { .. } => format!("v{}", value.to_string_value()),
+        ValueView::Nil => "Nil".to_string(),
         // Range.gist is identical to Range.raku in Rakudo: it shows the range
         // notation (not the expanded elements), numeric endpoints render plainly,
         // string endpoints are quoted (`"a".."c"`), `i64::MAX`/Whatever endpoints
         // render as `Inf`/`-Inf`, and `0..^N` uses the `^N` short form. Delegate
         // to the raku renderer so all of this stays in sync.
-        Value::Range(..)
-        | Value::RangeExcl(..)
-        | Value::RangeExclStart(..)
-        | Value::RangeExclBoth(..)
-        | Value::GenericRange { .. } => crate::builtins::methods_0arg::raku_repr::raku_value(value),
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => {
+            crate::builtins::methods_0arg::raku_repr::raku_value(value)
+        }
         // A Match nested inside a container (e.g. the values of `$/.caps` or a
         // `m:g//` result list) must still gist as `｢matched｣` plus its sub-
         // captures, matching `Match.gist`. The generic Instance fall-through
         // below would otherwise stringify it to the bare matched text.
-        Value::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             ..
         } if class_name == "Match" => match_gist(&(attributes).as_map(), 0),
         // `$(...)` itemized container: `.gist` never shows the itemization sigil,
         // so it gists exactly like its inner value (`${a=>1}.gist` → `{a => 1}`).
-        Value::Scalar(inner) => gist_value(inner),
+        ValueView::Scalar(inner) => gist_value(inner),
         // An allomorph (IntStr/NumStr/…) gists as its preserved source string
         // (`<1e3>.gist` → `1e3`, not the inner Num's `1000`); a general mixin
         // gists via its inner value.
-        Value::Mixin(inner, mixins) => {
+        ValueView::Mixin(inner, mixins) => {
             if crate::value::types::allomorph_type_name(inner, mixins).is_some()
                 && let Some(str_val) = mixins.get("Str")
             {
@@ -207,10 +212,10 @@ pub(crate) fn gist_value(value: &Value) -> String {
         }
         // A WhateverCode (`*+1`, `*.abs`) gists as `WhateverCode.new`, not the
         // empty string its bare closure stringification would yield.
-        Value::Sub(data)
+        ValueView::Sub(data)
             if matches!(
-                data.env.get("__mutsu_callable_type"),
-                Some(Value::Str(kind)) if kind.as_str() == "WhateverCode"
+                data.env.get("__mutsu_callable_type").map(Value::view),
+                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
             ) =>
         {
             "WhateverCode.new".to_string()
@@ -248,8 +253,8 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
     // position (named and positional interleave by position).
     let mut entries: Vec<(i64, String, Value)> = Vec::new();
     let push_capture = |label: &str, value: &Value, entries: &mut Vec<(i64, String, Value)>| {
-        match value {
-            Value::Instance {
+        match value.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -261,13 +266,13 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                 ));
             }
             // Quantified capture: a list of Match values under one index.
-            Value::Array(items, _) => {
+            ValueView::Array(items, _) => {
                 for item in items.iter() {
-                    if let Value::Instance {
+                    if let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } = item
+                    } = item.view()
                         && class_name == "Match"
                     {
                         entries.push((
@@ -278,13 +283,13 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
                     }
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 for item in items.iter() {
-                    if let Value::Instance {
+                    if let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } = item
+                    } = item.view()
                         && class_name == "Match"
                     {
                         entries.push((
@@ -299,12 +304,12 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
         }
     };
 
-    if let Some(Value::Array(list, _)) = attributes.get("list") {
+    if let Some(ValueView::Array(list, _)) = attributes.get("list").map(Value::view) {
         for (i, cap) in list.iter().enumerate() {
             push_capture(&i.to_string(), cap, &mut entries);
         }
     }
-    if let Some(Value::Hash(named)) = attributes.get("named") {
+    if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
         let mut keys: Vec<&String> = named.keys().collect();
         keys.sort();
         for k in keys {
@@ -317,7 +322,7 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
 
     let indent = " ".repeat(depth + 1);
     for (_, label, val) in entries {
-        if let Value::Instance { attributes, .. } = &val {
+        if let ValueView::Instance { attributes, .. } = val.view() {
             out.push_str(&format!(
                 "\n{}{} => {}",
                 indent,
@@ -331,8 +336,8 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
 
 /// The `from` (start offset) of a Match's attributes, or 0 when absent.
 fn match_from(attributes: &HashMap<String, Value>) -> i64 {
-    match attributes.get("from") {
-        Some(Value::Int(n)) => *n,
+    match attributes.get("from").map(Value::view) {
+        Some(ValueView::Int(n)) => n,
         _ => 0,
     }
 }

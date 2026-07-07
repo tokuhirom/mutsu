@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
     if idx == 0 {
@@ -23,9 +24,9 @@ pub(crate) fn char_idx_to_byte(text: &str, idx: usize) -> usize {
 /// argument, leaving the block with zero positionals ("expected N got 0"). Map
 /// `Value::Pair` to `Value::ValuePair` so the element binds as `$_`/`$^a`.
 pub(crate) fn pair_as_positional(val: &Value) -> Value {
-    match val {
-        Value::Pair(k, v) => Value::ValuePair(Box::new(Value::str(k.clone())), v.clone()),
-        other => other.clone(),
+    match val.view() {
+        ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+        _ => val.clone(),
     }
 }
 
@@ -34,76 +35,81 @@ pub(crate) fn pair_as_positional(val: &Value) -> Value {
 /// shaped like a WalkList.
 pub(crate) fn walk_list_candidates(attributes: &crate::value::InstanceAttrs) -> Option<Vec<Value>> {
     let map = attributes.as_map();
-    let Some(Value::Array(items, ..)) = map.get("candidates") else {
+    let Some(ValueView::Array(items, ..)) = map.get("candidates").map(Value::view) else {
         return None;
     };
     let mut cands = items.to_vec();
-    if matches!(map.get("reversed"), Some(Value::Bool(true))) {
+    if matches!(
+        map.get("reversed").map(Value::view),
+        Some(ValueView::Bool(true))
+    ) {
         cands.reverse();
     }
     Some(cands)
 }
 
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
-    match val {
-        Value::Array(items, kind) if kind.is_itemized() => vec![val.clone()],
-        Value::Array(items, ..) => items.to_vec(),
-        Value::Seq(items) | Value::HyperSeq(items) | Value::RaceSeq(items) => items.to_vec(),
-        Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+    match val.view() {
+        ValueView::Array(_, kind) if kind.is_itemized() => vec![val.clone()],
+        ValueView::Array(items, ..) => items.to_vec(),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            items.to_vec()
+        }
+        ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
         // An itemized hash (`item %h` / `$(%h)`) is a single list element and does
         // NOT flatten to its pairs (mirrors the itemized-Array arm above).
-        Value::Hash(items) if items.itemized => vec![val.clone()],
+        ValueView::Hash(items) if items.itemized => vec![val.clone()],
         // `typed_pair` decontainerizes element cells so the pair value matches a
         // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
-        Value::Hash(items) => items
+        ValueView::Hash(items) => items
             .iter()
             .map(|(k, v)| items.typed_pair(k, v.clone()))
             .collect(),
-        Value::Range(a, b) => {
-            let end = (*b).min(*a + MAX_RANGE_EXPAND);
-            (*a..=end).map(Value::Int).collect()
+        ValueView::Range(a, b) => {
+            let end = b.min(a + MAX_RANGE_EXPAND);
+            (a..=end).map(Value::int).collect()
         }
-        Value::RangeExcl(a, b) => {
-            let end = (*b).min(*a + MAX_RANGE_EXPAND);
-            (*a..end).map(Value::Int).collect()
+        ValueView::RangeExcl(a, b) => {
+            let end = b.min(a + MAX_RANGE_EXPAND);
+            (a..end).map(Value::int).collect()
         }
-        Value::RangeExclStart(a, b) => {
-            let start = *a + 1;
-            let end = (*b).min(start + MAX_RANGE_EXPAND);
-            (start..=end).map(Value::Int).collect()
+        ValueView::RangeExclStart(a, b) => {
+            let start = a + 1;
+            let end = b.min(start + MAX_RANGE_EXPAND);
+            (start..=end).map(Value::int).collect()
         }
-        Value::RangeExclBoth(a, b) => {
-            let start = *a + 1;
-            let end = (*b).min(start + MAX_RANGE_EXPAND);
-            (start..end).map(Value::Int).collect()
+        ValueView::RangeExclBoth(a, b) => {
+            let start = a + 1;
+            let end = b.min(start + MAX_RANGE_EXPAND);
+            (start..end).map(Value::int).collect()
         }
-        Value::GenericRange {
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
         } => {
             let next_numeric = |v: &Value| -> Option<Value> {
-                match v {
-                    Value::Int(i) => Some(Value::Int(i + 1)),
-                    Value::BigInt(n) => Some(Value::bigint(n.as_ref() + 1)),
-                    Value::Num(f) => Some(Value::Num(*f + 1.0)),
-                    Value::Rat(n, d) => Some(crate::value::make_rat(n + d, *d)),
-                    Value::FatRat(n, d) => Some(Value::FatRat(n + d, *d)),
-                    Value::BigRat(n, d) => {
-                        Some(Value::bigrat(n.as_ref() + d.as_ref(), (**d).clone()))
-                    }
-                    other if other.is_numeric() => Some(Value::Num(other.to_f64() + 1.0)),
+                match v.view() {
+                    ValueView::Int(i) => Some(Value::int(i + 1)),
+                    ValueView::BigInt(n) => Some(Value::bigint(n.as_ref() + 1)),
+                    ValueView::Num(f) => Some(Value::num(f + 1.0)),
+                    ValueView::Rat(n, d) => Some(crate::value::make_rat(n + d, d)),
+                    ValueView::FatRat(n, d) => Some(Value::fat_rat_raw(n + d, d)),
+                    ValueView::BigRat(n, d) => Some(Value::bigrat(n + d, d.clone())),
+                    _ if v.is_numeric() => Some(Value::num(v.to_f64() + 1.0)),
                     _ => None,
                 }
             };
             // String ranges: expand as character sequences
-            if let (Value::Str(a), Value::Str(b)) = (start.as_ref(), end.as_ref()) {
+            if let (ValueView::Str(a), ValueView::Str(b)) =
+                (start.as_ref().view(), end.as_ref().view())
+            {
                 if a.chars().count() == 1 && b.chars().count() == 1 {
                     let s = a.chars().next().unwrap() as u32;
                     let e = b.chars().next().unwrap() as u32;
-                    let s = if *excl_start { s + 1 } else { s };
-                    if *excl_end {
+                    let s = if excl_start { s + 1 } else { s };
+                    if excl_end {
                         (s..e)
                             .filter_map(char::from_u32)
                             .map(|c| Value::str(c.to_string()))
@@ -145,7 +151,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                         && asuf == bsuf
                         && let (Ok(mut n), Ok(e)) = (an.parse::<i128>(), bn.parse::<i128>())
                     {
-                        if *excl_start {
+                        if excl_start {
                             n += 1;
                         }
                         if n > e {
@@ -156,7 +162,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                         let mut result = Vec::new();
                         let limit = MAX_RANGE_EXPAND as usize;
                         while n <= e && result.len() < limit {
-                            if *excl_end && n == e {
+                            if excl_end && n == e {
                                 break;
                             }
                             let digits = if pad {
@@ -171,14 +177,14 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     }
                     // Multi-char string ranges: use string succession
                     let mut result = Vec::new();
-                    let mut current = if *excl_start {
+                    let mut current = if excl_start {
                         crate::runtime::Interpreter::string_succ(a)
                     } else {
                         a.to_string()
                     };
                     let limit = MAX_RANGE_EXPAND as usize;
                     while current.as_str() <= b.as_str() && result.len() < limit {
-                        if *excl_end && current.as_str() == b.as_str() {
+                        if excl_end && current.as_str() == b.as_str() {
                             break;
                         }
                         result.push(Value::str(current.clone()));
@@ -186,11 +192,11 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     }
                     result
                 }
-            } else if let (Value::Str(a), Value::HyperWhatever | Value::Whatever) =
-                (start.as_ref(), end.as_ref())
+            } else if let (ValueView::Str(a), ValueView::HyperWhatever | ValueView::Whatever) =
+                (start.as_ref().view(), end.as_ref().view())
             {
                 let mut result = Vec::new();
-                let mut current = if *excl_start {
+                let mut current = if excl_start {
                     crate::runtime::Interpreter::string_succ(a)
                 } else {
                     a.to_string()
@@ -201,19 +207,22 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     current = crate::runtime::Interpreter::string_succ(&current);
                 }
                 result
-            } else if let Value::Str(a) = start.as_ref() {
+            } else if let ValueView::Str(a) = start.as_ref().view() {
                 // Start is a Str — iterate as strings (preserving type).
                 // In Raku, "1"..9 produces ("1", "2", ..., "9").
                 // When end is numeric, compare numerically to determine bounds.
                 let end_is_numeric = end.as_ref().is_numeric()
-                    || matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever);
-                let end_str = match end.as_ref() {
-                    Value::Str(s) => (**s).clone(),
-                    other => other.to_string_value(),
+                    || matches!(
+                        end.as_ref().view(),
+                        ValueView::Whatever | ValueView::HyperWhatever
+                    );
+                let end_str = match end.as_ref().view() {
+                    ValueView::Str(s) => (**s).clone(),
+                    _ => end.as_ref().to_string_value(),
                 };
                 let end_f64 = end.as_ref().to_f64();
                 let mut result = Vec::new();
-                let mut current = if *excl_start {
+                let mut current = if excl_start {
                     crate::runtime::Interpreter::string_succ(a)
                 } else {
                     a.to_string()
@@ -224,14 +233,14 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                         // Compare current string numerically against end
                         let cur_numeric = coerce_to_numeric(Value::str(current.clone()));
                         let cur_f64 = cur_numeric.to_f64();
-                        if *excl_end {
+                        if excl_end {
                             cur_f64 < end_f64
                         } else {
                             cur_f64 <= end_f64
                         }
                     } else {
                         // String comparison
-                        if *excl_end {
+                        if excl_end {
                             current.as_str() < end_str.as_str()
                         } else {
                             current.as_str() <= end_str.as_str()
@@ -251,11 +260,14 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 } else {
                     None
                 };
-                let end_num = if matches!(end.as_ref(), Value::Whatever | Value::HyperWhatever) {
-                    Some(Value::Num(f64::INFINITY))
+                let end_num = if matches!(
+                    end.as_ref().view(),
+                    ValueView::Whatever | ValueView::HyperWhatever
+                ) {
+                    Some(Value::num(f64::INFINITY))
                 } else if end.is_numeric() {
                     Some(end.as_ref().clone())
-                } else if let Value::Str(s) = end.as_ref() {
+                } else if let ValueView::Str(s) = end.as_ref().view() {
                     let coerced = coerce_to_numeric(Value::str((**s).clone()));
                     if coerced.is_numeric() {
                         Some(coerced)
@@ -270,7 +282,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     _ => {
                         // Check for Date-like instances with .succ support
                         let is_date_like = |v: &Value| -> bool {
-                            if let Value::Instance { attributes, .. } = v {
+                            if let ValueView::Instance { attributes, .. } = v.view() {
                                 attributes.contains_key("year")
                                     && attributes.contains_key("month")
                                     && attributes.contains_key("day")
@@ -284,28 +296,31 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                                 civil_to_epoch_days, date_attrs, epoch_days_to_civil,
                                 make_date_with_formatter,
                             };
-                            let (sy, sm, sd) =
-                                if let Value::Instance { attributes, .. } = start.as_ref() {
-                                    date_attrs(&(attributes).as_map())
-                                } else {
-                                    unreachable!()
-                                };
-                            let (ey, em, ed) =
-                                if let Value::Instance { attributes, .. } = end.as_ref() {
-                                    date_attrs(&(attributes).as_map())
-                                } else {
-                                    unreachable!()
-                                };
+                            let (sy, sm, sd) = if let ValueView::Instance { attributes, .. } =
+                                start.as_ref().view()
+                            {
+                                date_attrs(&(attributes).as_map())
+                            } else {
+                                unreachable!()
+                            };
+                            let (ey, em, ed) = if let ValueView::Instance { attributes, .. } =
+                                end.as_ref().view()
+                            {
+                                date_attrs(&(attributes).as_map())
+                            } else {
+                                unreachable!()
+                            };
                             let start_days = civil_to_epoch_days(sy, sm, sd);
                             let end_days = civil_to_epoch_days(ey, em, ed);
-                            let formatter =
-                                if let Value::Instance { attributes, .. } = start.as_ref() {
-                                    attributes.as_map().get("formatter").cloned()
-                                } else {
-                                    None
-                                };
+                            let formatter = if let ValueView::Instance { attributes, .. } =
+                                start.as_ref().view()
+                            {
+                                attributes.as_map().get("formatter").cloned()
+                            } else {
+                                None
+                            };
                             let mut result = Vec::new();
-                            let first_day = if *excl_start {
+                            let first_day = if excl_start {
                                 start_days + 1
                             } else {
                                 start_days
@@ -313,7 +328,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             let limit = MAX_RANGE_EXPAND as usize;
                             let mut d = first_day;
                             while result.len() < limit {
-                                if d > end_days || (*excl_end && d == end_days) {
+                                if d > end_days || (excl_end && d == end_days) {
                                     break;
                                 }
                                 let (y, m, dd) = epoch_days_to_civil(d);
@@ -350,7 +365,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     }
                 } else {
                     let mut result = Vec::new();
-                    let mut current = if *excl_start {
+                    let mut current = if excl_start {
                         next_numeric(&start_num).unwrap_or(start_num)
                     } else {
                         start_num
@@ -358,7 +373,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     let limit = MAX_RANGE_EXPAND as usize;
                     while result.len() < limit {
                         let cmp = compare_values(&current, &end_num);
-                        if cmp > 0 || (*excl_end && cmp == 0) {
+                        if cmp > 0 || (excl_end && cmp == 0) {
                             break;
                         }
                         result.push(current.clone());
@@ -374,20 +389,20 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 }
             }
         }
-        Value::Set(items, _) => items
+        ValueView::Set(items, _) => items
             .iter()
-            .map(|s| Value::Pair(s.clone(), Box::new(Value::Bool(true))))
+            .map(|s| Value::pair(s.clone(), Value::TRUE))
             .collect(),
-        Value::Bag(items, _) => items
+        ValueView::Bag(items, _) => items
             .iter()
-            .map(|(k, v)| Value::Pair(k.clone(), Box::new(Value::from_bigint(v.clone()))))
+            .map(|(k, v)| Value::pair(k.clone(), Value::from_bigint(v.clone())))
             .collect(),
-        Value::Mix(items, _) => items
+        ValueView::Mix(items, _) => items
             .iter()
-            .map(|(k, v)| Value::Pair(k.clone(), Box::new(crate::value::mix_weight_to_value(*v))))
+            .map(|(k, v)| Value::pair(k.clone(), crate::value::mix_weight_to_value(*v)))
             .collect(),
-        Value::Slip(items) => items.to_vec(),
-        Value::Instance {
+        ValueView::Slip(items) => items.to_vec(),
+        ValueView::Instance {
             class_name,
             attributes,
             ..
@@ -399,13 +414,15 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             {
                 return items;
             }
-            if let Some(Value::Array(items, ..)) = attributes.as_map().get("__array_items") {
+            if let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("__array_items").map(Value::view)
+            {
                 return items.to_vec();
             }
             vec![val.clone()]
         }
         // Nil is a single scalar item in list context (e.g. `for Nil { }` does
         // one iteration); it is not an empty list. Fall through to the scalar arm.
-        other => vec![other.clone()],
+        _ => vec![val.clone()],
     }
 }

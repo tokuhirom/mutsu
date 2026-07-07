@@ -18,9 +18,9 @@ impl Interpreter {
         // (that is `cmp`). This must run before the Instance check below so the
         // numeric comparison ops (`== != < > <= >= <=>`) see the elem count.
         if let Some(items) = value.as_list_items() {
-            return Ok(Value::Int(items.len() as i64));
+            return Ok(Value::int(items.len() as i64));
         }
-        if !matches!(value, Value::Instance { .. }) {
+        if !matches!(value.view(), ValueView::Instance { .. }) {
             return Ok(value);
         }
         // Unhandled Failure: throw the stored exception.
@@ -28,29 +28,29 @@ impl Interpreter {
             return Err(err);
         }
         // Match coerces to Numeric via its matched string.
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &value
+        } = value.view()
             && class_name == "Match"
             && let Some(str_val) = attributes.as_map().get("str")
         {
             let s = str_val.to_string_value();
             let s = s.trim();
             if let Ok(i) = s.parse::<i64>() {
-                return Ok(Value::Int(i));
+                return Ok(Value::int(i));
             }
             if let Ok(f) = s.parse::<f64>() {
-                return Ok(Value::Num(f));
+                return Ok(Value::num(f));
             }
-            return Ok(Value::Int(0));
+            return Ok(Value::int(0));
         }
         // Coerce when the type is known Real/Numeric OR the class defines a
         // user `Numeric` method (e.g. `class Blue { method Numeric { 3 } }`).
         let known_numeric =
             self.type_matches_value("Real", &value) || self.type_matches_value("Numeric", &value);
-        let has_numeric_method = if let Value::Instance { ref class_name, .. } = value {
+        let has_numeric_method = if let ValueView::Instance { class_name, .. } = value.view() {
             self.has_user_method(&class_name.to_string(), "Numeric")
         } else {
             false
@@ -214,12 +214,12 @@ impl Interpreter {
         let mut results = Vec::with_capacity(result_len);
         for i in 0..result_len {
             let l = if left_len == 0 {
-                Value::Int(0)
+                Value::int(0)
             } else {
                 left_list[i % left_len].clone()
             };
             let r = if right_len == 0 {
-                Value::Int(0)
+                Value::int(0)
             } else {
                 right_list[i % right_len].clone()
             };
@@ -236,10 +236,16 @@ impl Interpreter {
         // Preserve List kind when the inputs are Lists (not real Arrays), so the
         // function form `infix:<»+«>((1,2,3),(4,5,6))` returns a List just like
         // the operator form `(1,2,3) »+« (4,5,6)`.
-        let left_is_array = matches!(left, Value::Array(_, crate::value::ArrayKind::Array));
-        let right_is_array = matches!(right, Value::Array(_, crate::value::ArrayKind::Array));
+        let left_is_array = matches!(
+            left.view(),
+            ValueView::Array(_, crate::value::ArrayKind::Array)
+        );
+        let right_is_array = matches!(
+            right.view(),
+            ValueView::Array(_, crate::value::ArrayKind::Array)
+        );
         if !left_is_array && !right_is_array {
-            Ok(Value::Array(
+            Ok(Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(results)),
                 crate::value::ArrayKind::List,
             ))

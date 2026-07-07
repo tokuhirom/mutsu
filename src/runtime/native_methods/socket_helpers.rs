@@ -3,8 +3,8 @@ use crate::runtime::*;
 impl Interpreter {
     /// Extract bytes from a Buf/Blob instance or array
     pub(in crate::runtime) fn extract_bytes(val: &Value) -> Option<Vec<u8>> {
-        match val {
-            Value::Instance {
+        match val.view() {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
@@ -20,12 +20,14 @@ impl Interpreter {
                     || cn.starts_with("Blob[")
             } =>
             {
-                if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+                {
                     Some(
                         items
                             .iter()
-                            .map(|v| match v {
-                                Value::Int(i) => *i as u8,
+                            .map(|v| match v.view() {
+                                ValueView::Int(i) => i as u8,
                                 _ => 0,
                             })
                             .collect(),
@@ -34,11 +36,11 @@ impl Interpreter {
                     Some(Vec::new())
                 }
             }
-            Value::Array(elems, ..) => Some(
+            ValueView::Array(elems, ..) => Some(
                 elems
                     .iter()
-                    .map(|v| match v {
-                        Value::Int(i) => *i as u8,
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i as u8,
                         _ => 0,
                     })
                     .collect(),
@@ -239,7 +241,7 @@ impl Interpreter {
             }
         }
         if line_bytes.is_empty() {
-            Ok(Value::Nil)
+            Ok(Value::NIL)
         } else {
             Ok(Value::str(String::from_utf8_lossy(&line_bytes).to_string()))
         }
@@ -253,17 +255,17 @@ impl Interpreter {
         let mut lines = Vec::new();
         loop {
             let line = self.socket_get_line(handle_id)?;
-            if matches!(line, Value::Nil) {
+            if line.is_nil() {
                 break;
             }
             lines.push(line);
         }
-        Ok(Value::Seq(Arc::new(lines)))
+        Ok(Value::seq(lines))
     }
 
     /// Create a Buf instance from raw bytes
     pub(crate) fn make_buf(bytes: Vec<u8>) -> Value {
-        let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::Int(b as i64)).collect();
+        let byte_vals: Vec<Value> = bytes.into_iter().map(|b| Value::int(b as i64)).collect();
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(byte_vals));
         Value::make_instance(crate::symbol::Symbol::intern("Buf[uint8]"), attrs)

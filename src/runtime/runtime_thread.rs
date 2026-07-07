@@ -48,7 +48,7 @@ impl Interpreter {
             // instead of re-initializing from the declaration. Only seeds cells
             // that don't exist yet; the value becomes the cell's initial content.
             for (skey, sval) in &self.state_vars {
-                if matches!(sval, Value::ContainerRef(_)) {
+                if matches!(sval.view(), ValueView::ContainerRef(_)) {
                     continue;
                 }
                 let shared_key =
@@ -380,10 +380,10 @@ impl Interpreter {
             rw_map_topic_capture: None,
         };
         // Raku gives each start block fresh $/ and $! (they are lexically scoped).
-        cloned.env.insert("/".to_string(), Value::Nil);
-        cloned.env.insert("!".to_string(), Value::Nil);
-        cloned.env.insert("$/".to_string(), Value::Nil);
-        cloned.env.insert("$!".to_string(), Value::Nil);
+        cloned.env.insert("/".to_string(), Value::NIL);
+        cloned.env.insert("!".to_string(), Value::NIL);
+        cloned.env.insert("$/".to_string(), Value::NIL);
+        cloned.env.insert("$!".to_string(), Value::NIL);
         cloned.init_io_environment();
         cloned
     }
@@ -406,8 +406,10 @@ impl Interpreter {
             let in_shared = {
                 let sv = self.shared_vars.read().unwrap();
                 let atomic_key = format!("__mutsu_atomic_arr::{key}");
-                matches!(sv.get(&atomic_key), Some(Value::Array(..)))
-                    || matches!(sv.get(key), Some(Value::Array(..)))
+                matches!(
+                    sv.get(&atomic_key).map(Value::view),
+                    Some(ValueView::Array(..))
+                ) || matches!(sv.get(key).map(Value::view), Some(ValueView::Array(..)))
             };
             if in_shared {
                 return self.shared_array_extend(key, values, false);

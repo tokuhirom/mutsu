@@ -16,12 +16,13 @@ pub(in crate::runtime) fn get_uncaught_handler() -> Option<Value> {
     uncaught_handler_store().lock().unwrap().clone()
 }
 
-/// Set the uncaught_handler. Pass Value::Nil to clear it.
+/// Set the uncaught_handler. Pass Value::NIL to clear it.
 pub(in crate::runtime) fn set_uncaught_handler(handler: Value) {
     let mut guard = uncaught_handler_store().lock().unwrap();
-    match &handler {
-        Value::Nil => *guard = None,
-        _ => *guard = Some(handler),
+    if handler.is_nil() {
+        *guard = None;
+    } else {
+        *guard = Some(handler);
     }
 }
 

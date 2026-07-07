@@ -6,7 +6,10 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
     // A file-scoped `@a`/`%h` shared across frames (or a nested cell-promoted
     // element) is a `ContainerRef` cell; an itemized container is a `Scalar`.
     // Read through both so the Array/Hash navigation below sees the container.
-    if let Value::ContainerRef(_) | Value::Scalar(_) = target {
+    if matches!(
+        target.view(),
+        ValueView::ContainerRef(_) | ValueView::Scalar(_)
+    ) {
         return target.with_deref(|inner| {
             let inner = inner.descalarize();
             multidim_index(inner, indices)
@@ -17,8 +20,8 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
     }
     let head = &indices[0];
     // Whatever (*) means "all elements of this dimension"
-    if matches!(head, Value::Whatever) {
-        let Value::Array(items, ..) = target else {
+    if matches!(head.view(), ValueView::Whatever) {
+        let ValueView::Array(items, ..) = target.view() else {
             return Value::Nil;
         };
         let mut out = Vec::with_capacity(items.len());

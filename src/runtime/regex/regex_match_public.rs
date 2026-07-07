@@ -375,22 +375,16 @@ impl Interpreter {
                     .and_then(|s| s.strip_suffix("++"))
                     .map(str::trim)
                 {
-                    let cur = match self.env.get(name) {
-                        Some(Value::Int(i)) => *i,
-                        _ => 0,
-                    };
-                    self.env.insert(name.to_string(), Value::Int(cur + 1));
+                    let cur = self.env.get(name).and_then(Value::as_int).unwrap_or(0);
+                    self.env.insert(name.to_string(), Value::int(cur + 1));
                     handled_state_postfix = true;
                 } else if let Some(name) = state_src
                     .strip_prefix('$')
                     .and_then(|s| s.strip_suffix("--"))
                     .map(str::trim)
                 {
-                    let cur = match self.env.get(name) {
-                        Some(Value::Int(i)) => *i,
-                        _ => 0,
-                    };
-                    self.env.insert(name.to_string(), Value::Int(cur - 1));
+                    let cur = self.env.get(name).and_then(Value::as_int).unwrap_or(0);
+                    self.env.insert(name.to_string(), Value::int(cur - 1));
                     handled_state_postfix = true;
                 }
             }

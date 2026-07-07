@@ -30,7 +30,6 @@ use crate::value::{
     ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise,
     Value, make_rat, take_pending_instance_destroys,
 };
-use num_traits::Signed;
 
 /// Flatten arguments for `append` using Raku's "one-arg rule":
 /// if exactly one non-itemized Array/List argument is passed, its elements

@@ -9,7 +9,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // put and print thread through Junctions: each eigenstate is output individually
         if matches!(name, "put" | "print") {
-            let has_junctions = args.iter().any(|a| matches!(a, Value::Junction { .. }));
+            let has_junctions = args
+                .iter()
+                .any(|a| matches!(a.view(), ValueView::Junction { .. }));
             if has_junctions {
                 let mut flat = Vec::new();
                 for arg in args {
@@ -24,7 +26,7 @@ impl Interpreter {
                     let content = self.render_str_value(v);
                     self.write_to_named_handle(handle, &content, newline)?;
                 }
-                return Ok(Value::Bool(true));
+                return Ok(Value::TRUE);
             }
             // No junctions: regular put/print behavior
             let mut content = String::new();
@@ -37,7 +39,7 @@ impl Interpreter {
                 ("$*OUT", false)
             };
             self.write_to_named_handle(handle, &content, newline)?;
-            return Ok(Value::Bool(true));
+            return Ok(Value::TRUE);
         }
         let mut content = String::new();
         if args.is_empty() && name == "note" {
@@ -58,12 +60,12 @@ impl Interpreter {
             _ => ("$*ERR", true),
         };
         self.write_to_named_handle(handle, &content, newline)?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     /// Collect all non-junction eigenstates from a value, flattening junctions recursively.
     fn collect_junction_eigenstates(v: &Value, out: &mut Vec<Value>) {
-        if let Value::Junction { values, .. } = v {
+        if let ValueView::Junction { values, .. } = v.view() {
             for elem in values.iter() {
                 Self::collect_junction_eigenstates(elem, out);
             }
@@ -101,9 +103,9 @@ impl Interpreter {
             return Ok(self
                 .read_line_from_handle_value(&handle)?
                 .map(Value::str)
-                .unwrap_or(Value::Nil));
+                .unwrap_or(Value::NIL));
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     pub(super) fn builtin_getc(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -117,18 +119,18 @@ impl Interpreter {
             // targets fall back to a single codepoint.
             if let Some(g) = self.read_grapheme_from_handle_value(&handle, 1)? {
                 return Ok(if g.is_empty() {
-                    Value::Nil
+                    Value::NIL
                 } else {
                     Value::str(g)
                 });
             }
             let s = self.read_chars_from_handle_value(&handle, Some(1))?;
             if s.is_empty() {
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             return Ok(Value::str(s));
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -139,24 +141,24 @@ impl Interpreter {
             let mut limit: Option<usize> = None;
             let mut chomp = true;
             for arg in &args[1..] {
-                match arg {
-                    Value::Pair(key, value) if key == "chomp" => {
+                match arg.view() {
+                    ValueView::Pair(key, value) if key == "chomp" => {
                         chomp = value.truthy();
                     }
-                    Value::Int(i) => {
-                        limit = Some((*i).max(0) as usize);
+                    ValueView::Int(i) => {
+                        limit = Some(i.max(0) as usize);
                     }
-                    Value::BigInt(bi) => {
+                    ValueView::BigInt(bi) => {
                         use num_traits::ToPrimitive;
                         limit = Some(bi.to_usize().unwrap_or(usize::MAX));
                     }
-                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {
+                    ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
                         limit = None;
                     }
-                    Value::Num(f) if *f >= 0.0 => {
-                        limit = Some(*f as usize);
+                    ValueView::Num(f) if f >= 0.0 => {
+                        limit = Some(f as usize);
                     }
-                    Value::Rat(n, d) if *d == 0 && *n > 0 => {
+                    ValueView::Rat(n, d) if d == 0 && n > 0 => {
                         limit = None;
                     }
                     _ => {}
@@ -169,7 +171,7 @@ impl Interpreter {
             let values: Vec<Value> = lines.into_iter().map(Value::str).collect();
             // `lines` returns a Seq (so `.^name` is Seq), matching Rakudo and
             // the `Str.lines` method form.
-            return Ok(Value::Seq(std::sync::Arc::new(values)));
+            return Ok(Value::seq(values));
         }
 
         let handle = args
@@ -181,20 +183,20 @@ impl Interpreter {
             let mut close_after = false;
             let extra_args = if args.len() > 1 { &args[1..] } else { &[] };
             for arg in extra_args {
-                match arg {
-                    Value::Pair(k, v) if k == "close" => {
+                match arg.view() {
+                    ValueView::Pair(k, v) if k == "close" => {
                         close_after = v.truthy();
                     }
-                    Value::Pair(..) => {}
-                    Value::Int(i) => limit = Some((*i).max(0) as usize),
-                    Value::BigInt(bi) => {
+                    ValueView::Pair(..) => {}
+                    ValueView::Int(i) => limit = Some(i.max(0) as usize),
+                    ValueView::BigInt(bi) => {
                         use num_traits::ToPrimitive;
                         limit = Some(bi.to_usize().unwrap_or(usize::MAX));
                     }
-                    Value::Whatever => {}
-                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
-                    Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
-                    Value::Rat(n, d) if *d == 0 && *n > 0 => {}
+                    ValueView::Whatever => {}
+                    ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
+                    ValueView::Num(f) if f >= 0.0 => limit = Some(f as usize),
+                    ValueView::Rat(n, d) if d == 0 && n > 0 => {}
                     _ => {}
                 }
             }
@@ -203,11 +205,7 @@ impl Interpreter {
                 // consumers (e.g. for-loop) can read on demand.
                 // This allows `last` in `-ne` mode to exit without
                 // waiting for stdin EOF.
-                return Ok(Value::LazyIoLines {
-                    handle: Box::new(handle),
-                    kv: false,
-                    words: false,
-                });
+                return Ok(Value::lazy_io_lines(handle, false, false));
             }
             let mut lines = Vec::new();
             while let Some(line) = self.read_line_from_handle_value(&handle)? {
@@ -221,7 +219,7 @@ impl Interpreter {
             if close_after {
                 self.close_handle_value(&handle)?;
             }
-            return Ok(Value::Seq(std::sync::Arc::new(lines)));
+            return Ok(Value::seq(lines));
         }
         Ok(Value::array(Vec::new()))
     }
@@ -238,19 +236,19 @@ impl Interpreter {
             let mut limit: Option<usize> = None;
             let mut close_after = false;
             for arg in args.get(1..).unwrap_or(&[]) {
-                match arg {
-                    Value::Pair(k, v) if k == "close" => {
+                match arg.view() {
+                    ValueView::Pair(k, v) if k == "close" => {
                         close_after = v.truthy();
                     }
-                    Value::Pair(..) => {}
-                    Value::Int(i) => limit = Some((*i).max(0) as usize),
-                    Value::BigInt(bi) => {
+                    ValueView::Pair(..) => {}
+                    ValueView::Int(i) => limit = Some(i.max(0) as usize),
+                    ValueView::BigInt(bi) => {
                         use num_traits::ToPrimitive;
                         limit = Some(bi.to_usize().unwrap_or(usize::MAX));
                     }
-                    Value::Whatever => {}
-                    Value::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
-                    Value::Num(f) if *f >= 0.0 => limit = Some(*f as usize),
+                    ValueView::Whatever => {}
+                    ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {}
+                    ValueView::Num(f) if f >= 0.0 => limit = Some(f as usize),
                     _ => {}
                 }
             }
