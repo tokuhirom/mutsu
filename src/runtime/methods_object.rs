@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Returns `true` if `class_name` (and every user class in its MRO) can be
@@ -220,8 +221,8 @@ impl Interpreter {
     pub(crate) fn native_scalar_default(tc: &str) -> Option<Value> {
         match tc {
             "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
-            | "uint32" | "uint64" | "byte" | "atomicint" => Some(Value::Int(0)),
-            "num" | "num32" | "num64" => Some(Value::Num(0.0)),
+            | "uint32" | "uint64" | "byte" | "atomicint" => Some(Value::int(0)),
+            "num" | "num32" | "num64" => Some(Value::num(0.0)),
             "str" => Some(Value::str(String::new())),
             _ => None,
         }
@@ -296,7 +297,7 @@ impl Interpreter {
             };
             let mut mixins = HashMap::new();
             for role in &roles {
-                mixins.insert(format!("__mutsu_role__{}", role), Value::Bool(true));
+                mixins.insert(format!("__mutsu_role__{}", role), Value::TRUE);
             }
             attrs.insert(attr_name, Value::mixin(base, mixins));
         }
@@ -368,13 +369,15 @@ impl Interpreter {
             .and_then(|s| s.strip_suffix(']'))
         {
             let inner = inner.trim().to_string();
-            let items = match Self::coerce_attr_value_by_sigil(value, '@') {
-                Value::Array(items, _) => (*items).clone(),
-                other => crate::value::ArrayData::new(vec![other]),
+            let coerced = Self::coerce_attr_value_by_sigil(value, '@');
+            let items = if let ValueView::Array(items, _) = coerced.view() {
+                (**items).clone()
+            } else {
+                crate::value::ArrayData::new(vec![coerced])
             };
             if inner.starts_with(char::is_uppercase) {
                 for it in &items {
-                    if !matches!(it, Value::Nil) && !self.type_matches_value(&inner, it) {
+                    if !it.is_nil() && !self.type_matches_value(&inner, it) {
                         return Err(crate::runtime::utils::type_check_element_typed_error(
                             "", &inner, it,
                         ));
@@ -396,7 +399,7 @@ impl Interpreter {
             // `.new` with the provided (sigil-coerced) value, just like the
             // uninitialized `is Type` path builds an empty one with `.new`.
             let arg = Self::coerce_attr_value_by_sigil(value, sigil);
-            let type_obj = Value::Package(crate::symbol::Symbol::intern(type_name));
+            let type_obj = Value::package(crate::symbol::Symbol::intern(type_name));
             self.call_method_with_values(type_obj, "new", vec![arg])
         }
     }

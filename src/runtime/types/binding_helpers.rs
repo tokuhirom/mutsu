@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Whether a named parameter is a plain readonly scalar `$` param eligible
@@ -47,7 +48,7 @@ impl Interpreter {
                 .as_deref()
                 .filter(|c| !c.starts_with("::"))
                 .and_then(|c| self.resolve_type_object(c))
-                .unwrap_or(Value::Nil);
+                .unwrap_or(Value::NIL);
             self.env.insert(pd.name.clone(), shadow);
             Some(prev)
         } else {
@@ -90,18 +91,19 @@ impl Interpreter {
     pub(crate) fn implicit_method_named_slurpy(param_defs: &[ParamDef], args: &[Value]) -> Value {
         let mut implicit_named = std::collections::HashMap::new();
         for arg in args.iter() {
-            if let Value::Pair(key, val) = unwrap_varref_value(arg.clone()) {
+            let unwrapped = unwrap_varref_value(arg.clone());
+            if let ValueView::Pair(key, val) = unwrapped.view() {
                 if key.is_empty() {
                     continue;
                 }
                 let consumed = param_defs.iter().any(|pd| {
-                    (pd.named && pd.name == key)
+                    (pd.named && pd.name == *key)
                         || pd.name == format!(":{}", key)
                         || (pd.named
                             && (pd.name == format!("@{}", key) || pd.name == format!("%{}", key)))
                 });
                 if !consumed {
-                    implicit_named.insert(key.to_string(), *val);
+                    implicit_named.insert(key.to_string(), val.clone());
                 }
             }
         }
@@ -129,29 +131,29 @@ impl Interpreter {
                 }
                 _ => {
                     let dim_val = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
-                    match &dim_val {
-                        Value::Whatever | Value::HyperWhatever => {
+                    match dim_val.view() {
+                        ValueView::Whatever | ValueView::HyperWhatever => {
                             expected_dims.push(None);
                         }
-                        Value::Int(n) => {
-                            expected_dims.push(Some(*n as usize));
+                        ValueView::Int(n) => {
+                            expected_dims.push(Some(n as usize));
                         }
-                        Value::BigInt(n) => {
+                        ValueView::BigInt(n) => {
                             use num_traits::ToPrimitive;
                             expected_dims.push(Some(n.to_usize().unwrap_or(0)));
                         }
-                        Value::Num(n) if n.is_infinite() || n.is_nan() => {
+                        ValueView::Num(n) if n.is_infinite() || n.is_nan() => {
                             // Inf/NaN means wildcard (e.g. * coerced to Inf)
                             expected_dims.push(None);
                         }
-                        Value::Num(n) => {
-                            expected_dims.push(Some(*n as usize));
+                        ValueView::Num(n) => {
+                            expected_dims.push(Some(n as usize));
                         }
                         _ => {
                             let coerced = crate::runtime::utils::coerce_to_numeric(dim_val);
-                            match &coerced {
-                                Value::Int(n) => expected_dims.push(Some(*n as usize)),
-                                Value::Num(n) if n.is_infinite() || n.is_nan() => {
+                            match coerced.view() {
+                                ValueView::Int(n) => expected_dims.push(Some(n as usize)),
+                                ValueView::Num(n) if n.is_infinite() || n.is_nan() => {
                                     expected_dims.push(None);
                                 }
                                 _ => expected_dims.push(None),

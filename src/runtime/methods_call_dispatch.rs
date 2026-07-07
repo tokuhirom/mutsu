@@ -8,6 +8,7 @@ use super::methods_signature_errors::{
 };
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
 
 impl Interpreter {
@@ -22,13 +23,13 @@ impl Interpreter {
         if method == "emit"
             && args.is_empty()
             && !matches!(
-                &target,
-                Value::Instance { class_name, .. } if class_name == "Supplier"
+                target.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Supplier"
             )
         {
             if let Some(buf) = self.supply_emit_buffer.last_mut() {
                 buf.push(target);
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             return Err(RuntimeError::emit_signal(target));
         }
@@ -44,17 +45,17 @@ impl Interpreter {
             && !args.is_empty()
             && args
                 .iter()
-                .all(|a| matches!(a, Value::Pair(..) | Value::ValuePair(..)))
+                .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
         {
             return self.call_method_with_values(target, "sum", Vec::new());
         }
         // A Backtrace is a List of Backtrace::Frame: list-iteration methods
         // (grep/map/first/...) operate on its frames, not the Backtrace itself.
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name.resolve() == "Backtrace"
             && matches!(
                 method,
@@ -85,18 +86,18 @@ impl Interpreter {
         // `${:a(1)}`, `$[1,2].raku` → `$[1, 2]`); decontainerizing first would
         // strip it. `.gist` needs no special case — it never shows the sigil, so
         // gisting the inner value is already correct.
-        if let Value::Scalar(inner) = target {
+        if let ValueView::Scalar(inner) = target.view() {
             if method == "VAR" {
                 // Return an opaque Scalar type object so .^name returns "Scalar"
-                return Ok(Value::Package(Symbol::intern("Scalar")));
+                return Ok(Value::package(Symbol::intern("Scalar")));
             }
             if method == "raku" || method == "perl" {
-                let wrapped = Value::Scalar(inner);
                 return Ok(Value::str(
-                    crate::builtins::methods_0arg::raku_repr::raku_value(&wrapped),
+                    crate::builtins::methods_0arg::raku_repr::raku_value(&target),
                 ));
             }
-            return self.call_method_with_values(*inner, method, args);
+            let inner = inner.clone();
+            return self.call_method_with_values(inner, method, args);
         }
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
@@ -106,7 +107,7 @@ impl Interpreter {
         // `Rakudo::Internals.IS-WIN` / `.IS-MACOS`: platform predicates used by
         // low-level native modules (e.g. NativeLibs picks the library name by
         // `Rakudo::Internals.IS-WIN()`). Resolved from the host build target.
-        if matches!(&target, Value::Package(name) if name.resolve() == "Rakudo::Internals")
+        if matches!(target.view(), ValueView::Package(name) if name.resolve() == "Rakudo::Internals")
             && matches!(method, "IS-WIN" | "IS-MACOS")
         {
             let val = match method {
@@ -114,7 +115,7 @@ impl Interpreter {
                 "IS-MACOS" => cfg!(target_os = "macos"),
                 _ => unreachable!(),
             };
-            return Ok(Value::Bool(val));
+            return Ok(Value::truth(val));
         }
         // `Rakudo::Internals.REGISTER-DYNAMIC: '$*name', { ... }` installs a
         // default for a process dynamic variable by running the initializer
@@ -122,16 +123,21 @@ impl Interpreter {
         // it lazily on first access; running it eagerly here is sufficient for the
         // modules that use it (e.g. DBIish's `$*DBI-DEFS`).
         if method == "REGISTER-DYNAMIC"
-            && matches!(&target, Value::Package(name) if name.resolve() == "Rakudo::Internals")
+            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Rakudo::Internals")
         {
             let (clean_args, _) = self.sanitize_call_args(&args);
             let name = clean_args
                 .iter()
-                .find(|a| matches!(a, Value::Str(_)))
+                .find(|a| matches!(a.view(), ValueView::Str(_)))
                 .map(|v| v.to_string_value());
             let block = clean_args
                 .iter()
-                .find(|a| matches!(a, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }))
+                .find(|a| {
+                    matches!(
+                        a.view(),
+                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                    )
+                })
                 .cloned();
             if let Some(block) = block {
                 // Run the initializer block. Its `PROCESS::<$name> = ...` writes
@@ -150,7 +156,7 @@ impl Interpreter {
                     }
                 }
             }
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
@@ -165,7 +171,7 @@ impl Interpreter {
         // Seq deferred iterator handling: Seq.new(iterator) stores the iterator
         // without pulling. When a method is called on such a Seq, materialize the
         // items first by pulling from the iterator.
-        if let Value::Seq(items) = &target
+        if let ValueView::Seq(items) = target.view()
             && crate::value::seq_has_deferred_iter(items)
         {
             if method == "sink" && args.is_empty() && !crate::value::seq_is_cached(items) {
@@ -176,13 +182,13 @@ impl Interpreter {
                 let iter_val = iterator;
                 loop {
                     let val = self.call_method_with_values(iter_val.clone(), "pull-one", vec![])?;
-                    if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
-                        || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                    if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                        || matches!(val.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
                     {
                         break;
                     }
                 }
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
             // For methods other than .cache, .sink, .raku, .perl: materialize the
             // deferred iterator by pulling all items, then re-dispatch on the new Seq.
@@ -193,17 +199,17 @@ impl Interpreter {
                     loop {
                         let val =
                             self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                        if matches!(&val, Value::Str(s) if s.as_str() == "IterationEnd")
-                            || matches!(&val, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                        if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                            || matches!(val.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
                         {
                             break;
                         }
                         pulled_items.push(val);
                     }
-                    let new_seq = Value::Seq(std::sync::Arc::new(pulled_items));
+                    let new_seq = Value::seq_arc(std::sync::Arc::new(pulled_items));
                     // Transfer cached state from old Seq to new Seq
                     if crate::value::seq_is_cached(&items_arc)
-                        && let Value::Seq(new_items) = &new_seq
+                        && let ValueView::Seq(new_items) = new_seq.view()
                     {
                         crate::value::seq_mark_cached(new_items);
                     }
@@ -213,7 +219,7 @@ impl Interpreter {
         }
         // Consumed Seq guard: throw X::Seq::Consumed for iteration/coercion methods
         // when the Seq has been consumed and is not cached.
-        if let Value::Seq(items) = &target {
+        if let ValueView::Seq(items) = target.view() {
             let consumed_methods = [
                 "iterator", "list", "List", "eager", "Array", "flat", "Slip", "join", "is-lazy",
             ];
@@ -230,10 +236,10 @@ impl Interpreter {
         // treat a bare Seq as a single element), so a `.map(...).sum` chain
         // either threw "No such method" or returned the Seq itself. Re-dispatch
         // these on the Seq's elements as a List so they behave like an Array.
-        if let Value::Seq(items) = &target
+        if let ValueView::Seq(items) = target.view()
             && matches!(method, "sum" | "min" | "max" | "Int")
         {
-            let arr = Value::Array(
+            let arr = Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                 crate::value::ArrayKind::List,
             );
@@ -244,9 +250,9 @@ impl Interpreter {
         // The caller (VM) already prepends the type object to args.
         // Route through run_instance_method to execute the method body.
         if method.starts_with('^') && method.len() > 1 && !Self::is_classhow_method(&method[1..]) {
-            let class_name = match &target {
-                Value::Instance { class_name, .. } => Some(class_name.resolve()),
-                Value::Package(name) => Some(name.resolve()),
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             if let Some(cn) = class_name
@@ -262,7 +268,7 @@ impl Interpreter {
         // method on type objects: it warns about uninitialized use and calls `self.new`.
         if matches!(method, "Numeric" | "Real")
             && args.is_empty()
-            && let Value::Package(name) = &target
+            && let ValueView::Package(name) = target.view()
         {
             let type_name = name.resolve();
             let role_name = method;
@@ -295,11 +301,11 @@ impl Interpreter {
         // Failure by name).
         if matches!(method, "resume" | "throw" | "rethrow" | "fail")
             && args.is_empty()
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
         {
             let cn = class_name.resolve();
             let mro = self.class_mro(&cn);
@@ -350,7 +356,7 @@ impl Interpreter {
         // Methods on the WalkList result of `.WALK(...)`: batch-invoke the
         // matched candidates, reverse the order, switch on quiet mode, or
         // flatten the results to a List.
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "WalkList"
             && let Some(value) = self.try_walk_list_method(&target, method, args.clone())?
         {
@@ -365,7 +371,7 @@ impl Interpreter {
             return Ok(value);
         }
         // Unhandled Failure explosion
-        if let Value::Instance { class_name, .. } = &target
+        if let ValueView::Instance { class_name, .. } = target.view()
             && class_name.resolve() == "Failure"
             && !target.is_failure_handled()
             && !matches!(
@@ -398,46 +404,50 @@ impl Interpreter {
         }
         // Deprecation.report
         if method == "report"
-            && matches!(&target, Value::Package(name) if name.resolve() == "Deprecation")
+            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Deprecation")
         {
             return Ok(match super::deprecation::take_report() {
                 Some(report) => Value::str(report),
-                None => Value::Nil,
+                None => Value::NIL,
             });
         }
 
         // CompUnit::Loader.load-source(buf) -- minimal implementation
         // TODO: compile to bytecode -- this uses the interpreter's EVAL
         if method == "load-source"
-            && matches!(&target, Value::Package(name) if name.resolve() == "CompUnit::Loader")
+            && matches!(target.view(), ValueView::Package(name) if name.resolve() == "CompUnit::Loader")
         {
             let code_str = match args.first() {
-                Some(Value::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                }) if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(items, _)) = attributes.as_map().get("bytes") {
-                        let bytes: Vec<u8> = items
-                            .iter()
-                            .map(|v| match v {
-                                Value::Int(n) => *n as u8,
-                                _ => v.to_string_value().parse::<u8>().unwrap_or(0),
-                            })
-                            .collect();
-                        String::from_utf8_lossy(&bytes).to_string()
-                    } else {
-                        String::new()
+                Some(v) => match v.view() {
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                        if let Some(ValueView::Array(items, _)) =
+                            attributes.as_map().get("bytes").map(|b| b.view())
+                        {
+                            let bytes: Vec<u8> = items
+                                .iter()
+                                .map(|v| match v.view() {
+                                    ValueView::Int(n) => n as u8,
+                                    _ => v.to_string_value().parse::<u8>().unwrap_or(0),
+                                })
+                                .collect();
+                            String::from_utf8_lossy(&bytes).to_string()
+                        } else {
+                            String::new()
+                        }
                     }
-                }
-                Some(v) => v.to_string_value(),
+                    _ => v.to_string_value(),
+                },
                 None => String::new(),
             };
             let _ = self.eval_eval_string(&code_str);
             let mut unit_hash = std::collections::HashMap::new();
             unit_hash.insert(
                 "$?PACKAGE".to_string(),
-                Value::Package(crate::symbol::Symbol::intern("GLOBAL")),
+                Value::package(crate::symbol::Symbol::intern("GLOBAL")),
             );
             let mut handle_attrs = std::collections::HashMap::new();
             handle_attrs.insert("unit".to_string(), Value::hash(unit_hash));
@@ -449,7 +459,7 @@ impl Interpreter {
 
         // Junction auto-threading
         if Self::should_autothread_method(method)
-            && let Value::Junction { kind, values } = &target
+            && let ValueView::Junction { kind, values } = target.view()
         {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
@@ -459,10 +469,14 @@ impl Interpreter {
         }
         if Self::should_autothread_method(method)
             && let Some((idx, kind, values)) =
-                args.iter().enumerate().find_map(|(idx, arg)| match arg {
-                    Value::Junction { kind, values } => Some((idx, kind.clone(), values.clone())),
-                    _ => None,
-                })
+                args.iter()
+                    .enumerate()
+                    .find_map(|(idx, arg)| match arg.view() {
+                        ValueView::Junction { kind, values } => {
+                            Some((idx, kind.clone(), values.clone()))
+                        }
+                        _ => None,
+                    })
         {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
@@ -479,7 +493,7 @@ impl Interpreter {
         // Junction .raku/.perl/.gist/.Str rendering
         if args.is_empty()
             && matches!(method, "raku" | "perl" | "gist" | "Str")
-            && let Value::Junction { kind, values } = &target
+            && let ValueView::Junction { kind, values } = target.view()
         {
             let kind_name = match kind {
                 JunctionKind::Any => "any",
@@ -494,7 +508,7 @@ impl Interpreter {
             };
             let mut parts = Vec::with_capacity(values.len());
             for value in values.iter() {
-                if method == "gist" && matches!(value, Value::Nil) {
+                if method == "gist" && value.is_nil() {
                     parts.push("Nil".to_string());
                     continue;
                 }
@@ -505,7 +519,7 @@ impl Interpreter {
             return Ok(Value::str(format!("{}({})", kind_name, parts.join(", "))));
         }
         // Enum type collection methods
-        if let Value::Package(pkg_name) = &target
+        if let ValueView::Package(pkg_name) = target.view()
             && args.is_empty()
             && matches!(
                 method,
@@ -525,47 +539,50 @@ impl Interpreter {
         // For instances we mutate the underlying instance id so that any
         // bindings observing the same instance see the change.
         if crate::builtins::buf_write_num::write_num_size(method).is_some() {
-            let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) = match &target {
-                Value::Package(name) => {
-                    let cn = name.resolve();
-                    if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                        (false, Some(cn), Vec::new(), None, None, None)
-                    } else {
-                        (false, None, Vec::new(), None, None, None)
-                    }
-                }
-                Value::Instance {
-                    class_name,
-                    attributes,
-                    id,
-                } => {
-                    let cn = class_name.resolve();
-                    if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                        let mut v: Vec<u8> = Vec::new();
-                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                            v.reserve(items.len());
-                            for it in items.iter() {
-                                v.push(match it {
-                                    Value::Int(i) => (*i).clamp(0, 255) as u8,
-                                    Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
-                                    _ => 0,
-                                });
-                            }
+            let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) =
+                match target.view() {
+                    ValueView::Package(name) => {
+                        let cn = name.resolve();
+                        if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                            (false, Some(cn), Vec::new(), None, None, None)
+                        } else {
+                            (false, None, Vec::new(), None, None, None)
                         }
-                        (
-                            true,
-                            Some(cn),
-                            v,
-                            Some(*class_name),
-                            Some(*id),
-                            Some(attributes.clone()),
-                        )
-                    } else {
-                        (false, None, Vec::new(), None, None, None)
                     }
-                }
-                _ => (false, None, Vec::new(), None, None, None),
-            };
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        id,
+                    } => {
+                        let cn = class_name.resolve();
+                        if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                            let mut v: Vec<u8> = Vec::new();
+                            if let Some(ValueView::Array(items, ..)) =
+                                attributes.as_map().get("bytes").map(|b| b.view())
+                            {
+                                v.reserve(items.len());
+                                for it in items.iter() {
+                                    v.push(match it.view() {
+                                        ValueView::Int(i) => i.clamp(0, 255) as u8,
+                                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
+                                        _ => 0,
+                                    });
+                                }
+                            }
+                            (
+                                true,
+                                Some(cn),
+                                v,
+                                Some(class_name),
+                                Some(id),
+                                Some(attributes.clone()),
+                            )
+                        } else {
+                            (false, None, Vec::new(), None, None, None)
+                        }
+                    }
+                    _ => (false, None, Vec::new(), None, None, None),
+                };
             if let Some(cn) = cn_opt {
                 if is_inst && (cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob")) {
                     return Err(RuntimeError::new(format!(
@@ -580,9 +597,9 @@ impl Interpreter {
                         args.len()
                     )));
                 }
-                let offset_i64 = match &args[0] {
-                    Value::Int(i) => *i,
-                    Value::Num(f) => *f as i64,
+                let offset_i64 = match args[0].view() {
+                    ValueView::Int(i) => i,
+                    ValueView::Num(f) => f as i64,
                     _ => 0,
                 };
                 let endian_val = if args.len() == 3 {
@@ -601,7 +618,7 @@ impl Interpreter {
                     let mut updated_map = updated_cell.to_map();
                     updated_map.insert(
                         "bytes".to_string(),
-                        Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                        Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
                     );
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
@@ -622,47 +639,50 @@ impl Interpreter {
         // Handles both type object (e.g. `buf8.write-uint8(0, 42)`) and
         // instance form (e.g. `(my $b := buf8.new).write-uint8(0, 42)`).
         if crate::builtins::buf_write_int::write_int_info(method).is_some() {
-            let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) = match &target {
-                Value::Package(name) => {
-                    let cn = name.resolve();
-                    if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                        (false, Some(cn), Vec::new(), None, None, None)
-                    } else {
-                        (false, None, Vec::new(), None, None, None)
-                    }
-                }
-                Value::Instance {
-                    class_name,
-                    attributes,
-                    id,
-                } => {
-                    let cn = class_name.resolve();
-                    if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                        let mut v: Vec<u8> = Vec::new();
-                        if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                            v.reserve(items.len());
-                            for it in items.iter() {
-                                v.push(match it {
-                                    Value::Int(i) => (*i).clamp(0, 255) as u8,
-                                    Value::Num(f) => (*f as i64).clamp(0, 255) as u8,
-                                    _ => 0,
-                                });
-                            }
+            let (is_inst, cn_opt, base_bytes, class_sym_opt, id_opt, attrs_opt) =
+                match target.view() {
+                    ValueView::Package(name) => {
+                        let cn = name.resolve();
+                        if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                            (false, Some(cn), Vec::new(), None, None, None)
+                        } else {
+                            (false, None, Vec::new(), None, None, None)
                         }
-                        (
-                            true,
-                            Some(cn),
-                            v,
-                            Some(*class_name),
-                            Some(*id),
-                            Some(attributes.clone()),
-                        )
-                    } else {
-                        (false, None, Vec::new(), None, None, None)
                     }
-                }
-                _ => (false, None, Vec::new(), None, None, None),
-            };
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        id,
+                    } => {
+                        let cn = class_name.resolve();
+                        if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                            let mut v: Vec<u8> = Vec::new();
+                            if let Some(ValueView::Array(items, ..)) =
+                                attributes.as_map().get("bytes").map(|b| b.view())
+                            {
+                                v.reserve(items.len());
+                                for it in items.iter() {
+                                    v.push(match it.view() {
+                                        ValueView::Int(i) => i.clamp(0, 255) as u8,
+                                        ValueView::Num(f) => (f as i64).clamp(0, 255) as u8,
+                                        _ => 0,
+                                    });
+                                }
+                            }
+                            (
+                                true,
+                                Some(cn),
+                                v,
+                                Some(class_name),
+                                Some(id),
+                                Some(attributes.clone()),
+                            )
+                        } else {
+                            (false, None, Vec::new(), None, None, None)
+                        }
+                    }
+                    _ => (false, None, Vec::new(), None, None, None),
+                };
             if let Some(cn) = cn_opt {
                 if is_inst && (cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob")) {
                     return Err(RuntimeError::new(format!(
@@ -677,9 +697,9 @@ impl Interpreter {
                         args.len()
                     )));
                 }
-                let offset_i64 = match &args[0] {
-                    Value::Int(i) => *i,
-                    Value::Num(f) => *f as i64,
+                let offset_i64 = match args[0].view() {
+                    ValueView::Int(i) => i,
+                    ValueView::Num(f) => f as i64,
                     _ => 0,
                 };
                 let endian_val = if args.len() == 3 {
@@ -698,7 +718,7 @@ impl Interpreter {
                     let mut updated_map = updated_cell.to_map();
                     updated_map.insert(
                         "bytes".to_string(),
-                        Value::array(bytes.into_iter().map(|b| Value::Int(b as i64)).collect()),
+                        Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
                     );
                     return Ok(Value::write_back_sharing(
                         &updated_cell,
@@ -716,7 +736,7 @@ impl Interpreter {
         }
 
         // IterationBuffer dispatch
-        if matches!(&target, Value::Instance { class_name, .. } if class_name == "IterationBuffer")
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
             && matches!(
                 method,
                 "elems"
@@ -735,11 +755,11 @@ impl Interpreter {
             return self.dispatch_instance_and_fallback(target, method, args);
         }
         // Iterator predictive methods
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name == "Iterator"
         {
             match method {
@@ -771,12 +791,12 @@ impl Interpreter {
                 // pull-one on a temporary iterator (no variable): read from items at current index.
                 // Since the iterator is a temporary, index is always 0 or whatever is in attrs.
                 "pull-one" if args.is_empty() => {
-                    let items = match attributes.as_map().get("items") {
-                        Some(Value::Array(values, ..)) => values.to_vec(),
+                    let items = match attributes.as_map().get("items").map(|v| v.view()) {
+                        Some(ValueView::Array(values, ..)) => values.to_vec(),
                         _ => Vec::new(),
                     };
-                    let index = match attributes.as_map().get("index") {
-                        Some(Value::Int(i)) if *i >= 0 => *i as usize,
+                    let index = match attributes.as_map().get("index").map(|v| v.view()) {
+                        Some(ValueView::Int(i)) if i >= 0 => i as usize,
                         _ => 0,
                     };
                     if index < items.len() {
@@ -791,11 +811,11 @@ impl Interpreter {
         // DateTime/Date formatter rendering
         if args.is_empty()
             && matches!(method, "Str" | "gist")
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
@@ -814,18 +834,18 @@ impl Interpreter {
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
         ) {
-            let is_immutable = match &target {
-                Value::Array(_, kind) => !kind.is_real_array(),
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. } => true,
+            let is_immutable = match target.view() {
+                ValueView::Array(_, kind) => !kind.is_real_array(),
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => true,
                 _ => false,
             };
             if is_immutable {
-                let typename = match &target {
-                    Value::Array(..) => "List",
+                let typename = match target.view() {
+                    ValueView::Array(..) => "List",
                     _ => "Range",
                 };
                 return Err(make_x_immutable_error(method, typename));
@@ -834,8 +854,8 @@ impl Interpreter {
         // Any:U autovivification: calling push/append/unshift/prepend on an
         // undefined value (Nil or type object Any) creates a new Array.
         if matches!(method, "push" | "append" | "unshift" | "prepend")
-            && (matches!(&target, Value::Nil)
-                || matches!(&target, Value::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu"))
+            && (target.is_nil()
+                || matches!(target.view(), ValueView::Package(name) if name.resolve() == "Any" || name.resolve() == "Mu"))
         {
             let arr: Vec<Value> = if matches!(method, "unshift" | "prepend") {
                 args.to_vec()
@@ -852,13 +872,13 @@ impl Interpreter {
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
         ) && matches!(
-            &target,
-            Value::Int(_)
-                | Value::Num(_)
-                | Value::Str(_)
-                | Value::Bool(_)
-                | Value::Rat(..)
-                | Value::Complex(..)
+            target.view(),
+            ValueView::Int(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::Complex(..)
         ) {
             if matches!(method, "pop" | "shift") {
                 let type_name = crate::runtime::utils::value_type_name(&target);
@@ -866,11 +886,11 @@ impl Interpreter {
             }
             return Err(make_multi_no_match_error(method));
         }
-        // Mutating array methods on Value::Array (non-container path)
+        // Mutating array methods on Array values (non-container path)
         if matches!(
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        ) && matches!(&target, Value::Array(_, kind) if kind.is_real_array())
+        ) && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
         {
             // Check element type constraints from container metadata (e.g., typed attribute arrays)
             if matches!(method, "push" | "append" | "unshift" | "prepend") {
@@ -881,15 +901,15 @@ impl Interpreter {
         // push/append on Hash: merge Pairs into the hash.
         // In Raku, %h.push: (k => v) inserts the pair; if the key exists,
         // it creates an itemized array of both values.
-        if matches!(method, "push" | "append") && matches!(&target, Value::Hash(_)) {
+        if matches!(method, "push" | "append") && matches!(target.view(), ValueView::Hash(_)) {
             // Type check values being pushed against container type metadata
             if let Some(info) = self.container_type_metadata(&target) {
                 let constraint = &info.value_type.clone();
                 if constraint != "Mu" && constraint != "Any" {
                     for arg in &args {
-                        let val = match arg {
-                            Value::Pair(_, v) => v.as_ref().clone(),
-                            Value::ValuePair(_, v) => v.as_ref().clone(),
+                        let val = match arg.view() {
+                            ValueView::Pair(_, v) => v.clone(),
+                            ValueView::ValuePair(_, v) => v.clone(),
                             _ => continue,
                         };
                         if !self.type_matches_value(constraint, &val) {
@@ -903,7 +923,7 @@ impl Interpreter {
                 }
             }
             // Build the updated hash by merging pairs
-            let Value::Hash(ref arc) = target else {
+            let ValueView::Hash(arc) = target.view() else {
                 unreachable!()
             };
             // Check if we can mutate in-place (shared reference)
@@ -914,38 +934,40 @@ impl Interpreter {
                 // each insert.
                 let data = unsafe { crate::value::gc_contents_mut(arc) };
                 for arg in args {
-                    match arg {
-                        Value::Pair(k, v) => {
+                    match arg.view() {
+                        ValueView::Pair(k, v) => {
                             let key = k.as_str().to_string();
+                            let v = v.clone();
                             let map = &mut data.map;
                             if let Some(existing) = map.get(&key) {
                                 // Key exists: create itemized array
-                                let arr = Value::Array(
+                                let arr = Value::array_with_kind(
                                     crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                         existing.clone(),
-                                        *v,
+                                        v,
                                     ])),
                                     crate::value::ArrayKind::ItemArray,
                                 );
                                 map.insert(key, arr);
                             } else {
-                                map.insert(key, *v);
+                                map.insert(key, v);
                             }
                         }
-                        Value::ValuePair(k, v) => {
+                        ValueView::ValuePair(k, v) => {
                             let key = k.to_string_value();
+                            let v = v.clone();
                             let map = &mut data.map;
                             if let Some(existing) = map.get(&key) {
-                                let arr = Value::Array(
+                                let arr = Value::array_with_kind(
                                     crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                         existing.clone(),
-                                        *v,
+                                        v,
                                     ])),
                                     crate::value::ArrayKind::ItemArray,
                                 );
                                 map.insert(key, arr);
                             } else {
-                                map.insert(key, *v);
+                                map.insert(key, v);
                             }
                         }
                         _ => {}
@@ -956,51 +978,53 @@ impl Interpreter {
             // Not shared: build new hash
             let mut new_map = (**arc).clone();
             for arg in args {
-                match arg {
-                    Value::Pair(k, v) => {
+                match arg.view() {
+                    ValueView::Pair(k, v) => {
                         let key = k.as_str().to_string();
+                        let v = v.clone();
                         if let Some(existing) = new_map.get(&key) {
-                            let arr = Value::Array(
+                            let arr = Value::array_with_kind(
                                 crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                     existing.clone(),
-                                    *v,
+                                    v,
                                 ])),
                                 crate::value::ArrayKind::ItemArray,
                             );
                             new_map.insert(key, arr);
                         } else {
-                            new_map.insert(key, *v);
+                            new_map.insert(key, v);
                         }
                     }
-                    Value::ValuePair(k, v) => {
+                    ValueView::ValuePair(k, v) => {
                         let key = k.to_string_value();
+                        let v = v.clone();
                         if let Some(existing) = new_map.get(&key) {
-                            let arr = Value::Array(
+                            let arr = Value::array_with_kind(
                                 crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                     existing.clone(),
-                                    *v,
+                                    v,
                                 ])),
                                 crate::value::ArrayKind::ItemArray,
                             );
                             new_map.insert(key, arr);
                         } else {
-                            new_map.insert(key, *v);
+                            new_map.insert(key, v);
                         }
                     }
                     _ => {}
                 }
             }
-            return Ok(Value::Hash(Value::hash_arc(new_map)));
+            return Ok(Value::hash_with_data(Value::hash_arc(new_map)));
         }
         // IO::Special.new("<STDOUT>")
-        if let Value::Package(name) = &target
+        if let ValueView::Package(name) = target.view()
             && name.resolve() == "IO::Special"
             && method == "new"
         {
             return self.native_io_special(&HashMap::new(), "new", args);
         }
         // IO::Spec::* class methods
-        if let Value::Package(name) = &target {
+        if let ValueView::Package(name) = target.view() {
             let cn = name.resolve();
             if cn.starts_with("IO::Spec") {
                 let is_win32 = cn == "IO::Spec::Win32";
@@ -1010,7 +1034,7 @@ impl Interpreter {
                         let mut positional: Vec<&Value> = Vec::new();
                         let mut parent = false;
                         for a in &args {
-                            if let Value::Pair(k, v) = a {
+                            if let ValueView::Pair(k, v) = a.view() {
                                 if k == "parent" {
                                     parent = v.truthy();
                                 }
@@ -1019,8 +1043,10 @@ impl Interpreter {
                             }
                         }
                         let first = positional.first().copied();
-                        let is_undef =
-                            matches!(first, None | Some(Value::Nil) | Some(Value::Package(_)));
+                        let is_undef = matches!(
+                            first.map(|v| v.view()),
+                            None | Some(ValueView::Nil) | Some(ValueView::Package(_))
+                        );
                         if is_undef {
                             return Ok(Value::str_from(""));
                         }
@@ -1056,7 +1082,7 @@ impl Interpreter {
                         } else {
                             path.starts_with('/')
                         };
-                        return Ok(Value::Bool(abs));
+                        return Ok(Value::truth(abs));
                     }
                     "dir-sep" => {
                         return Ok(Value::str_from(if is_win32 { "\\" } else { "/" }));
@@ -1106,13 +1132,13 @@ impl Interpreter {
                     }
                     "path" => {
                         if is_win32 {
-                            return Ok(Value::Seq(
-                                std::sync::Arc::new(Self::win32_path_from_env()),
-                            ));
+                            return Ok(Value::seq_arc(std::sync::Arc::new(
+                                Self::win32_path_from_env(),
+                            )));
                         }
                         let path_env = std::env::var("PATH").unwrap_or_default();
                         if path_env.is_empty() {
-                            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+                            return Ok(Value::seq_arc(std::sync::Arc::new(Vec::new())));
                         }
                         let parts: Vec<Value> = path_env
                             .split(':')
@@ -1124,13 +1150,13 @@ impl Interpreter {
                                 }
                             })
                             .collect();
-                        return Ok(Value::Seq(std::sync::Arc::new(parts)));
+                        return Ok(Value::seq_arc(std::sync::Arc::new(parts)));
                     }
                     "splitpath" => {
                         let mut positional: Vec<&Value> = Vec::new();
                         let mut nofile = false;
                         for a in &args {
-                            if let Value::Pair(k, v) = a {
+                            if let ValueView::Pair(k, v) = a.view() {
                                 if k == "nofile" {
                                     nofile = v.truthy();
                                 }
@@ -1165,7 +1191,7 @@ impl Interpreter {
                                     (String::new(), after_vol.to_string())
                                 }
                             };
-                            return Ok(Value::Array(
+                            return Ok(Value::array_with_kind(
                                 crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                     Value::str(volume),
                                     Value::str(dir),
@@ -1187,7 +1213,7 @@ impl Interpreter {
                             } else {
                                 ("", path.as_str())
                             };
-                        return Ok(Value::Array(
+                        return Ok(Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                 Value::str_from(""),
                                 Value::str(dir.to_string()),
@@ -1365,7 +1391,7 @@ impl Interpreter {
                             .map(|v| v.to_string_value())
                             .unwrap_or_default();
                         if path.is_empty() {
-                            return Ok(Value::Array(
+                            return Ok(Value::array_with_kind(
                                 crate::gc::Gc::new(crate::value::ArrayData::new(vec![
                                     Value::str_from(""),
                                 ])),
@@ -1379,7 +1405,7 @@ impl Interpreter {
                         } else {
                             path.split('/').map(|s| Value::str(s.to_string())).collect()
                         };
-                        return Ok(Value::Array(
+                        return Ok(Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(parts)),
                             crate::value::ArrayKind::List,
                         ));
@@ -1563,7 +1589,7 @@ impl Interpreter {
         }
         // Buf/Blob.allocate
         if method == "allocate"
-            && let Value::Package(name) = &target
+            && let ValueView::Package(name) = target.view()
         {
             let cn = name.resolve();
             if cn == "Buf"
@@ -1575,32 +1601,32 @@ impl Interpreter {
                 || cn.starts_with("Buf[")
                 || cn.starts_with("Blob[")
             {
-                return self.buf_allocate(*name, &args);
+                return self.buf_allocate(name, &args);
             }
         }
         // Buf/Blob class-level and instance-level methods
         if method == "encoding" {
             // Package (type object) encoding
-            if let Value::Package(name) = &target {
+            if let ValueView::Package(name) = target.view() {
                 let cn = name.resolve();
                 if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                     // utf8 -> "utf-8", utf16 -> "utf-16", others -> Any type object
                     let enc = match cn.as_str() {
                         "utf8" => Value::str("utf-8".to_string()),
                         "utf16" => Value::str("utf-16".to_string()),
-                        _ => Value::Package(crate::symbol::Symbol::intern("Any")),
+                        _ => Value::package(crate::symbol::Symbol::intern("Any")),
                     };
                     return Ok(enc);
                 }
             }
             // Instance encoding
-            if let Value::Instance { class_name, .. } = &target {
+            if let ValueView::Instance { class_name, .. } = target.view() {
                 let cn = class_name.resolve();
                 if crate::runtime::utils::is_buf_or_blob_class(&cn) {
                     let enc = match cn.as_str() {
                         "utf8" => Value::str("utf-8".to_string()),
                         "utf16" => Value::str("utf-16".to_string()),
-                        _ => Value::Package(crate::symbol::Symbol::intern("Any")),
+                        _ => Value::package(crate::symbol::Symbol::intern("Any")),
                     };
                     return Ok(enc);
                 }
@@ -1608,11 +1634,11 @@ impl Interpreter {
         }
         // Buf/Blob .reallocate on non-variable targets (chained calls)
         if method == "reallocate"
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
@@ -1620,18 +1646,19 @@ impl Interpreter {
                     Some(v) => super::to_int(v) as usize,
                     None => 0,
                 };
-                let mut bytes =
-                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                        items.to_vec()
-                    } else {
-                        Vec::new()
-                    };
+                let mut bytes = if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(|b| b.view())
+                {
+                    items.to_vec()
+                } else {
+                    Vec::new()
+                };
                 // When growing, fill with zeros; when shrinking, truncate
                 // After reallocate(0).reallocate(N), the new bytes should be zeros
-                bytes.resize(new_size, Value::Int(0));
+                bytes.resize(new_size, Value::int(0));
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
-                return Ok(Value::make_instance(*class_name, attrs));
+                return Ok(Value::make_instance(class_name, attrs));
             }
         }
         // Buf/Blob push/append/unshift/prepend on non-variable (rvalue) targets,
@@ -1640,11 +1667,11 @@ impl Interpreter {
         // Buf. (The named-variable path goes through `buf_mutate_method`, which
         // additionally writes the result back into the variable.)
         if matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
@@ -1657,7 +1684,7 @@ impl Interpreter {
                 }
                 // Check for string args => X::TypeCheck
                 for a in &args {
-                    if matches!(a, Value::Str(_)) {
+                    if matches!(a.view(), ValueView::Str(_)) {
                         let msg =
                             "Type check failed in assignment; expected Int but got Str".to_string();
                         let mut ex_attrs = std::collections::HashMap::new();
@@ -1673,12 +1700,13 @@ impl Interpreter {
                         return Err(err);
                     }
                 }
-                let mut bytes =
-                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
-                        items.to_vec()
-                    } else {
-                        Vec::new()
-                    };
+                let mut bytes = if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(|b| b.view())
+                {
+                    items.to_vec()
+                } else {
+                    Vec::new()
+                };
                 let new_items = Self::flatten_buf_args(args);
                 match method {
                     "append" | "push" => bytes.extend(new_items),
@@ -1691,16 +1719,16 @@ impl Interpreter {
                 }
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("bytes".to_string(), Value::array(bytes));
-                return Ok(Value::make_instance(*class_name, attrs));
+                return Ok(Value::make_instance(class_name, attrs));
             }
         }
         // Buf/Blob pop/shift on non-variable targets (e.g. Buf.new.pop throws X::Cannot::Empty)
         if matches!(method, "pop" | "shift")
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
@@ -1710,7 +1738,8 @@ impl Interpreter {
                         cn, method
                     )));
                 }
-                let bytes = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+                let bytes = if let Some(ValueView::Array(items, ..)) =
+                    attributes.as_map().get("bytes").map(|b| b.view())
                 {
                     items.to_vec()
                 } else {
@@ -1742,7 +1771,7 @@ impl Interpreter {
         }
         // Buf/Blob .chars throws X::Buf::AsStr
         if (method == "chars" || method == "Str" || method == "chop" || method == "chomp")
-            && let Value::Instance { class_name, .. } = &target
+            && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
@@ -1764,7 +1793,7 @@ impl Interpreter {
         let mut args = args;
         if matches!(method, "log" | "exp" | "atan2") {
             for arg in &mut args {
-                if !matches!(arg, Value::Instance { .. }) {
+                if !matches!(arg.view(), ValueView::Instance { .. }) {
                     continue;
                 }
                 let original = arg.clone();
@@ -1782,7 +1811,7 @@ impl Interpreter {
             && let Some(sig_info) = extract_sig_info(&target)
         {
             return Ok(if method == "arity" {
-                Value::Int(Self::signature_required_positional_count(&sig_info))
+                Value::int(Self::signature_required_positional_count(&sig_info))
             } else {
                 Self::signature_count_value(&sig_info)
             });
@@ -1791,11 +1820,11 @@ impl Interpreter {
         // .throw on user-defined Exception subclasses
         if method == "throw"
             && args.is_empty()
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &target
+            } = target.view()
         {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"
@@ -1835,7 +1864,7 @@ impl Interpreter {
         // .Str identity for Str-inheriting instances
         if method == "Str"
             && args.is_empty()
-            && let Value::Instance { class_name, .. } = &target
+            && let ValueView::Instance { class_name, .. } = target.view()
         {
             let receiver = class_name.resolve();
             if !self.class_mro(&receiver).iter().any(|cn| cn == "Str") {
@@ -1860,7 +1889,7 @@ impl Interpreter {
             return result;
         }
 
-        // Qualified method on a runtime-mixed-in value (Value::Mixin): Class::method
+        // Qualified method on a runtime-mixed-in value (Mixin value): Class::method
         if let Some(result) = self.dispatch_qualified_mixin_method(&target, method, args.clone()) {
             return result;
         }
@@ -1885,21 +1914,11 @@ impl Interpreter {
         // DateTime.local — convert to $*TZ timezone
         if method == "local"
             && args.is_empty()
-            && matches!(&target, Value::Instance { attributes, .. }
+            && matches!(target.view(), ValueView::Instance { attributes, .. }
                 if attributes.contains_key("hour") && attributes.contains_key("timezone"))
         {
-            let tz = self
-                .env
-                .get("*TZ")
-                .and_then(|v| {
-                    if let Value::Int(n) = v {
-                        Some(*n)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(0i64);
-            return self.call_method_with_values(target, "in-timezone", vec![Value::Int(tz)]);
+            let tz = self.env.get("*TZ").and_then(|v| v.as_int()).unwrap_or(0i64);
+            return self.call_method_with_values(target, "in-timezone", vec![Value::int(tz)]);
         }
 
         // Dispatch temporal n-arg methods
@@ -1907,7 +1926,7 @@ impl Interpreter {
             super::methods_temporal::dispatch_temporal_method(&target, method, &args)
         {
             let val = result?;
-            if let Value::Instance { ref attributes, .. } = val
+            if let ValueView::Instance { attributes, .. } = val.view()
                 && attributes.contains_key("formatter")
                 && !attributes.contains_key("__formatter_rendered")
             {
@@ -1929,27 +1948,27 @@ impl Interpreter {
             return result;
         }
         // Match.make
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             id,
-        } = &target
+        } = target.view()
             && class_name == "Match"
             && method == "make"
         {
-            let value = args.first().cloned().unwrap_or(Value::Nil);
+            let value = args.first().cloned().unwrap_or(Value::NIL);
             let attrs = crate::value::InstanceAttrs::clone(attributes);
             attrs.insert("ast".to_string(), value.clone());
-            let updated = Value::Instance {
-                class_name: *class_name,
-                attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-                    *class_name,
+            let updated = Value::instance_parts(
+                class_name,
+                crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                    class_name,
                     (attrs).to_map(),
-                    *id,
+                    id,
                     false,
                 )),
-                id: *id,
-            };
+                id,
+            );
             self.env.insert("/".to_string(), updated);
             self.env.insert("made".to_string(), value.clone());
             self.action_made = Some(value.clone());
@@ -1957,28 +1976,22 @@ impl Interpreter {
         }
 
         // Routine::WrapHandle .restore()
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name.resolve() == "Routine::WrapHandle"
             && method == "restore"
         {
-            let sub_id = attributes.as_map().get("sub-id").and_then(|v| {
-                if let Value::Int(i) = v {
-                    Some(*i as u64)
-                } else {
-                    None
-                }
-            });
-            let handle_id = attributes.as_map().get("handle-id").and_then(|v| {
-                if let Value::Int(i) = v {
-                    Some(*i as u64)
-                } else {
-                    None
-                }
-            });
+            let sub_id = attributes
+                .as_map()
+                .get("sub-id")
+                .and_then(|v| v.as_int().map(|i| i as u64));
+            let handle_id = attributes
+                .as_map()
+                .get("handle-id")
+                .and_then(|v| v.as_int().map(|i| i as u64));
             if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
                 if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {
                     chain.retain(|(hid, _)| *hid != handle_id);
@@ -1988,7 +2001,7 @@ impl Interpreter {
                 }
                 // Invalidate light-call caches so the sub re-resolves (see wrap).
                 self.fn_resolve_gen += 1;
-                return Ok(Value::Bool(true));
+                return Ok(Value::TRUE);
             }
             return Err(RuntimeError::new(
                 "Invalid WrapHandle: missing sub-id or handle-id",
@@ -1997,25 +2010,25 @@ impl Interpreter {
         // .gist with Instance-containing collections
         if method == "gist" && args.is_empty() {
             fn collection_contains_instance(value: &Value) -> bool {
-                match value {
+                match value.view() {
                     // Values that may carry a user-defined `method gist`
                     // (instances, custom types, and type objects) must be rendered
                     // via method dispatch rather than the pure `gist_value` fast
                     // path. (Mixin is intentionally excluded: a Mixin wrapping a
                     // List/Array renders via its inner value, and routing it
                     // through `.gist` would add a spurious paren layer.)
-                    Value::Instance { .. }
-                    | Value::CustomType { .. }
-                    | Value::CustomTypeInstance(_)
-                    | Value::Package(..) => true,
+                    ValueView::Instance { .. }
+                    | ValueView::CustomType(_)
+                    | ValueView::CustomTypeInstance(_)
+                    | ValueView::Package(..) => true,
                     _ if value.as_list_items().is_some() => value
                         .as_list_items()
                         .unwrap()
                         .iter()
                         .any(collection_contains_instance),
-                    Value::Hash(map) => map.values().any(collection_contains_instance),
-                    Value::Pair(_, v) => collection_contains_instance(v),
-                    Value::ValuePair(k, v) => {
+                    ValueView::Hash(map) => map.values().any(collection_contains_instance),
+                    ValueView::Pair(_, v) => collection_contains_instance(v),
+                    ValueView::ValuePair(k, v) => {
                         collection_contains_instance(k) || collection_contains_instance(v)
                     }
                     _ => false,
@@ -2028,9 +2041,9 @@ impl Interpreter {
                 if !collection_contains_instance(value) {
                     return crate::runtime::gist_value(value);
                 }
-                match value {
-                    Value::Nil => "Nil".to_string(),
-                    Value::Array(items, kind) => {
+                match value.view() {
+                    ValueView::Nil => "Nil".to_string(),
+                    ValueView::Array(items, kind) => {
                         let inner = items
                             .iter()
                             .map(|item| gist_item(interp, item))
@@ -2052,7 +2065,7 @@ impl Interpreter {
                             .join(" ");
                         format!("({inner})")
                     }
-                    Value::Hash(map) => {
+                    ValueView::Hash(map) => {
                         let mut keys: Vec<&String> = map.keys().collect();
                         keys.sort();
                         let parts: Vec<String> = keys
@@ -2061,29 +2074,31 @@ impl Interpreter {
                             .collect();
                         format!("{{{}}}", parts.join(", "))
                     }
-                    Value::Pair(k, v) => format!("{} => {}", k, gist_item(interp, v)),
-                    Value::ValuePair(k, v) => {
+                    ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(interp, v)),
+                    ValueView::ValuePair(k, v) => {
                         format!("{} => {}", gist_item(interp, k), gist_item(interp, v))
                     }
-                    other => match interp.call_method_with_values(other.clone(), "gist", vec![]) {
-                        Ok(Value::Str(s)) => s.to_string(),
-                        Ok(v) => v.to_string_value(),
-                        Err(_) => crate::runtime::gist_value(other),
+                    _ => match interp.call_method_with_values(value.clone(), "gist", vec![]) {
+                        Ok(v) => match v.view() {
+                            ValueView::Str(s) => s.to_string(),
+                            _ => v.to_string_value(),
+                        },
+                        Err(_) => crate::runtime::gist_value(value),
                     },
                 }
             }
             // Render a collection that embeds a value with a custom gist via
             // method dispatch, preserving each container's bracket style.
             if matches!(
-                target,
-                Value::Array(..)
-                    | Value::Seq(..)
-                    | Value::HyperSeq(..)
-                    | Value::RaceSeq(..)
-                    | Value::Slip(..)
-                    | Value::Hash(..)
-                    | Value::Pair(..)
-                    | Value::ValuePair(..)
+                target.view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Slip(..)
+                    | ValueView::Hash(..)
+                    | ValueView::Pair(..)
+                    | ValueView::ValuePair(..)
             ) && collection_contains_instance(&target)
             {
                 return Ok(Value::str(gist_item(self, &target)));
@@ -2093,7 +2108,9 @@ impl Interpreter {
         // an X::Parameter::InvalidConcreteness (the invocant is `Supply:D`). These
         // ones otherwise fall through to the generic `Any` list methods (e.g.
         // `Supply.skip` would wrongly return a Seq).
-        if matches!(method, "skip") && matches!(&target, Value::Package(name) if name == "Supply") {
+        if matches!(method, "skip")
+            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
+        {
             return Err(RuntimeError::parameter_invalid_concreteness(
                 "Supply", "Supply", method, "self", true, true,
             ));
@@ -2120,7 +2137,7 @@ impl Interpreter {
                 | "snip"
                 | "minmax"
                 | "wait"
-        ) && matches!(&target, Value::Package(name) if name == "Supply")
+        ) && matches!(target.view(), ValueView::Package(name) if name == "Supply")
         {
             return Err(RuntimeError::new(format!(
                 "Cannot call .{} on a Supply type object",
@@ -2128,28 +2145,33 @@ impl Interpreter {
             )));
         }
         // Supply.merge/zip as class methods
-        if method == "merge" && matches!(&target, Value::Package(name) if name == "Supply") {
+        if method == "merge"
+            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
+        {
             return self.dispatch_supply_merge(&args);
         }
-        if method == "zip" && matches!(&target, Value::Package(name) if name == "Supply") {
+        if method == "zip" && matches!(target.view(), ValueView::Package(name) if name == "Supply")
+        {
             return self.dispatch_supply_zip_class(&args);
         }
-        if method == "zip-latest" && matches!(&target, Value::Package(name) if name == "Supply") {
+        if method == "zip-latest"
+            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
+        {
             return self.dispatch_supply_zip_latest_class(&args);
         }
         // Supply.delayed with non-positive delay
         if method == "delayed"
-            && matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
             && args.first().is_some_and(|delay| delay.to_f64() <= 0.0)
         {
             return Ok(target);
         }
         // Array-specific methods: EXISTS-POS, ASSIGN-POS, BIND-POS, DELETE-POS, clone
-        if let Value::Array(items, arr_kind) = &target {
+        if let ValueView::Array(items, arr_kind) = target.view() {
             // Detect shaped array and native typed array properties
             let shape = crate::runtime::utils::shaped_array_shape(&target);
             let is_native = self.env.iter().any(|(name, bound)| {
-                if let Value::Array(existing, ..) = bound
+                if let ValueView::Array(existing, ..) = bound.view()
                     && crate::gc::Gc::ptr_eq(existing, items)
                     && let Some(constraint) = self.var_type_constraint(&name.resolve())
                 {
@@ -2204,13 +2226,13 @@ impl Interpreter {
                     "EXISTS-POS" => {
                         if let Some(ref shape) = shape {
                             if is_native {
-                                return Ok(Value::Bool(multidim_exists_pos(&target, &args)));
+                                return Ok(Value::truth(multidim_exists_pos(&target, &args)));
                             }
-                            return Ok(Value::Bool(shaped_multidim_exists_pos(
+                            return Ok(Value::truth(shaped_multidim_exists_pos(
                                 &target, &args, shape,
                             )));
                         }
-                        return Ok(Value::Bool(multidim_exists_pos(&target, &args)));
+                        return Ok(Value::truth(multidim_exists_pos(&target, &args)));
                     }
                     "ASSIGN-POS" if args.len() >= 3 => {
                         if let Some(ref shape) = shape {
@@ -2260,27 +2282,27 @@ impl Interpreter {
             }
             match (method, args.as_slice()) {
                 ("EXISTS-POS", [idx]) => {
-                    let index = match idx {
-                        Value::Int(i) if *i >= 0 => Some(*i as usize),
-                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    let index = match idx.view() {
+                        ValueView::Int(i) if i >= 0 => Some(i as usize),
+                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     };
-                    return Ok(Value::Bool(index.is_some_and(|i| i < items.len())));
+                    return Ok(Value::truth(index.is_some_and(|i| i < items.len())));
                 }
                 ("ASSIGN-POS", [idx, value]) => {
-                    let index = match idx {
-                        Value::Int(i) if *i >= 0 => Some(*i as usize),
-                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    let index = match idx.view() {
+                        ValueView::Int(i) if i >= 0 => Some(i as usize),
+                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     };
                     let Some(index) = index else {
-                        return Ok(Value::Nil);
+                        return Ok(Value::NIL);
                     };
 
-                    if !matches!(value, Value::Nil)
+                    if !value.is_nil()
                         && let Some((var_name, constraint)) =
                             self.env.iter().find_map(|(name, bound)| {
-                                if let Value::Array(existing, ..) = bound
+                                if let ValueView::Array(existing, ..) = bound.view()
                                     && crate::gc::Gc::ptr_eq(existing, items)
                                     && let Some(constraint) =
                                         self.var_type_constraint(&name.resolve())
@@ -2309,16 +2331,18 @@ impl Interpreter {
                         )));
                     }
                     let mut updated = items.to_vec();
-                    if index < updated.len() && matches!(updated[index], Value::Scalar(_)) {
+                    if index < updated.len()
+                        && matches!(updated[index].view(), ValueView::Scalar(_))
+                    {
                         return Err(RuntimeError::assignment_ro(None));
                     }
                     if index >= updated.len() {
-                        updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
+                        updated.resize(index + 1, Value::package(Symbol::intern("Any")));
                     }
                     updated[index] = value.clone();
-                    let replacement = Value::Array(
+                    let replacement = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        *arr_kind,
+                        arr_kind,
                     );
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
@@ -2330,9 +2354,9 @@ impl Interpreter {
                     if is_native {
                         return Err(RuntimeError::new("Cannot bind to a natively typed array"));
                     }
-                    let index = match idx {
-                        Value::Int(i) if *i >= 0 => Some(*i as usize),
-                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    let index = match idx.view() {
+                        ValueView::Int(i) if i >= 0 => Some(i as usize),
+                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     };
                     let Some(index) = index else {
@@ -2340,12 +2364,12 @@ impl Interpreter {
                     };
                     let mut updated = items.to_vec();
                     if index >= updated.len() {
-                        updated.resize(index + 1, Value::Package(Symbol::intern("Any")));
+                        updated.resize(index + 1, Value::package(Symbol::intern("Any")));
                     }
-                    updated[index] = Value::Scalar(Box::new(value.clone()));
-                    let replacement = Value::Array(
+                    updated[index] = Value::scalar(value.clone());
+                    let replacement = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        *arr_kind,
+                        arr_kind,
                     );
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
@@ -2359,9 +2383,9 @@ impl Interpreter {
                             "Cannot delete from a natively typed array",
                         ));
                     }
-                    let index = match idx {
-                        Value::Int(i) if *i >= 0 => Some(*i as usize),
-                        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+                    let index = match idx.view() {
+                        ValueView::Int(i) if i >= 0 => Some(i as usize),
+                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
                         _ => None,
                     };
                     let Some(index) = index else {
@@ -2369,17 +2393,17 @@ impl Interpreter {
                     };
                     let mut updated = items.to_vec();
                     let deleted = if index < updated.len() {
-                        let old = std::mem::replace(&mut updated[index], Value::Nil);
-                        match old {
-                            Value::Scalar(inner) => *inner,
-                            v => v,
+                        let old = std::mem::replace(&mut updated[index], Value::NIL);
+                        match old.view() {
+                            ValueView::Scalar(inner) => inner.clone(),
+                            _ => old.clone(),
                         }
                     } else {
-                        Value::Nil
+                        Value::NIL
                     };
-                    let replacement = Value::Array(
+                    let replacement = Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        *arr_kind,
+                        arr_kind,
                     );
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
@@ -2389,9 +2413,9 @@ impl Interpreter {
                 }
                 ("clone", _) => {
                     let cloned = items.to_vec();
-                    return Ok(Value::Array(
+                    return Ok(Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(cloned)),
-                        *arr_kind,
+                        arr_kind,
                     ));
                 }
                 _ => {}
@@ -2399,7 +2423,7 @@ impl Interpreter {
         }
 
         // Mixin dispatch
-        if let Value::Mixin(..) = &target
+        if let ValueView::Mixin(..) = target.view()
             && let Some(result) = self.dispatch_mixin_method_call(&target, method, args.clone())
         {
             return result;
@@ -2409,7 +2433,7 @@ impl Interpreter {
 
         // Role type-object method punning
         if method != "new" {
-            if let Value::Package(role_name) = &target {
+            if let ValueView::Package(role_name) = target.view() {
                 // Decide under the guard, then drop it before re-entering.
                 let should_dispatch = self
                     .registry()
@@ -2427,10 +2451,10 @@ impl Interpreter {
                     let instance = self.dispatch_new(target.clone(), Vec::new())?;
                     return self.call_method_with_values(instance, method, args);
                 }
-            } else if let Value::ParametricRole {
+            } else if let ValueView::ParametricRole {
                 base_name,
                 type_args,
-            } = &target
+            } = target.view()
                 && let Some((role, _)) =
                     self.resolve_parametric_role_runtime(&base_name.resolve(), type_args)
             {
@@ -2499,7 +2523,7 @@ impl Interpreter {
         }
         if method == "tail"
             && !bypass_native_fastpath
-            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply")
+            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
         {
             return self.dispatch_tail(target, &args);
         }
@@ -2509,11 +2533,14 @@ impl Interpreter {
         if method == "head"
             && args.len() == 1
             && matches!(
-                &args[0],
-                Value::Whatever | Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                args[0].view(),
+                ValueView::Whatever
+                    | ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Routine { .. }
             )
             && !bypass_native_fastpath
-            && !matches!(&target, Value::Instance { .. })
+            && !matches!(target.view(), ValueView::Instance { .. })
             && !Self::is_lazy_tail_target(&target)
         {
             return self.dispatch_head(target, &args[0]);
@@ -2521,16 +2548,19 @@ impl Interpreter {
         // .raku/.perl on constrained Hash
         if matches!(method, "raku" | "perl")
             && args.is_empty()
-            && matches!(&target, Value::Hash(_))
+            && matches!(target.view(), ValueView::Hash(_))
             && let Some(info) = self.container_type_metadata(&target)
-            && let Value::Hash(map) = &target
+            && let ValueView::Hash(map) = target.view()
         {
             return self.dispatch_constrained_hash_raku(map, &info);
         }
         // .raku/.perl on native typed shaped array (e.g. array[int])
         if matches!(method, "raku" | "perl")
             && args.is_empty()
-            && matches!(&target, Value::Array(_, crate::value::ArrayKind::Shaped))
+            && matches!(
+                target.view(),
+                ValueView::Array(_, crate::value::ArrayKind::Shaped)
+            )
             && let Some(info) = self.container_type_metadata(&target)
             && info.value_type != "Any"
             && info.value_type != "Mu"
@@ -2547,7 +2577,7 @@ impl Interpreter {
             // 1-element list), then the data: the whole bracket for 1-D, or each
             // first-dimension slice as a separate positional arg for N-D.
             fn render_data(v: &Value) -> String {
-                if let Value::Array(items, _) = v {
+                if let ValueView::Array(items, _) = v.view() {
                     let inner = items.iter().map(render_data).collect::<Vec<_>>().join(", ");
                     format!("[{}]", inner)
                 } else {
@@ -2564,7 +2594,7 @@ impl Interpreter {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            let Value::Array(items, _) = &target else {
+            let ValueView::Array(items, _) = target.view() else {
                 unreachable!()
             };
             let data = if shape.len() <= 1 {
@@ -2580,11 +2610,11 @@ impl Interpreter {
         // .raku/.perl on constrained regular Array (e.g. Array[Int])
         if matches!(method, "raku" | "perl")
             && args.is_empty()
-            && matches!(&target, Value::Array(_, kind) if *kind != crate::value::ArrayKind::Shaped)
+            && matches!(target.view(), ValueView::Array(_, kind) if kind != crate::value::ArrayKind::Shaped)
             && let Some(info) = self.container_type_metadata(&target)
             && info.value_type != "Any"
             && info.value_type != "Mu"
-            && let Value::Array(items, _) = &target
+            && let ValueView::Array(items, _) = target.view()
         {
             let inner = items
                 .iter()
@@ -2602,10 +2632,10 @@ impl Interpreter {
         // pure builtin cannot call.
         // Allomorph ACCEPTS checks BOTH numeric and string parts match.
         if method == "ACCEPTS"
-            && matches!(&target, Value::Mixin(_, m) if m.contains_key("Str"))
+            && matches!(target.view(), ValueView::Mixin(_, m) if m.contains_key("Str"))
             && args.len() == 1
-            && matches!(&args[0], Value::Instance { .. })
-            && let Value::Mixin(target_inner, target_mixins) = &target
+            && matches!(args[0].view(), ValueView::Instance { .. })
+            && let ValueView::Mixin(target_inner, target_mixins) = target.view()
         {
             // Call .Numeric on the instance to get its numeric value
             let numeric_val = self.call_method_with_values(args[0].clone(), "Numeric", vec![])?;
@@ -2623,26 +2653,32 @@ impl Interpreter {
             let arg_str = str_val.to_string_value();
             let str_match = target_str == arg_str;
 
-            return Ok(Value::Bool(numeric_match && str_match));
+            return Ok(Value::truth(numeric_match && str_match));
         }
 
         // Pair.ACCEPTS for Package/Instance: call method named by key, compare result
         if method == "ACCEPTS"
-            && matches!(&target, Value::Pair(..) | Value::ValuePair(..))
+            && matches!(
+                target.view(),
+                ValueView::Pair(..) | ValueView::ValuePair(..)
+            )
             && args.len() == 1
-            && matches!(&args[0], Value::Instance { .. } | Value::Package(_))
+            && matches!(
+                args[0].view(),
+                ValueView::Instance { .. } | ValueView::Package(_)
+            )
         {
-            let (pair_key, pair_value) = match &target {
-                Value::Pair(k, v) => (k.to_string(), v.as_ref().clone()),
-                Value::ValuePair(k, v) => (k.to_string_value(), *v.clone()),
+            let (pair_key, pair_value) = match target.view() {
+                ValueView::Pair(k, v) => (k.to_string(), v.clone()),
+                ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
                 _ => unreachable!(),
             };
             let method_result = self.call_method_with_values(args[0].clone(), &pair_key, vec![])?;
             // Use smartmatch semantics: pair_value.ACCEPTS(method_result)
-            let result = match &pair_value {
+            let result = match pair_value.view() {
                 // Bool pair value: True matches any truthy result, False matches falsy
-                Value::Bool(expected) => {
-                    if *expected {
+                ValueView::Bool(expected) => {
+                    if expected {
                         method_result.truthy()
                     } else {
                         !method_result.truthy()
@@ -2651,14 +2687,18 @@ impl Interpreter {
                 // Otherwise: use equality
                 _ => method_result == pair_value,
             };
-            return Ok(Value::Bool(result));
+            return Ok(Value::truth(result));
         }
 
         if let Some(result) = native_result {
             if method == "decode" {
-                return result.map(|value| match value {
-                    Value::Str(decoded) => Value::str(self.translate_newlines_for_decode(&decoded)),
-                    other => other,
+                return result.map(|value| {
+                    if value.as_str().is_some() {
+                        let decoded = value.as_str().unwrap();
+                        Value::str(self.translate_newlines_for_decode(decoded))
+                    } else {
+                        value
+                    }
                 });
             }
             return result;
@@ -2667,63 +2707,65 @@ impl Interpreter {
         // STORE for BagHash/SetHash/MixHash: re-initialize the container
         if method == "STORE"
             && matches!(
-                &target,
-                Value::Bag(_, true) | Value::Set(_, true) | Value::Mix(_, true)
+                target.view(),
+                ValueView::Bag(_, true) | ValueView::Set(_, true) | ValueView::Mix(_, true)
             )
         {
             // STORE(@keys, @values) or STORE(@pairs)
             // First, flatten all args into a list of items
             let mut items: Vec<Value> = Vec::new();
             for arg in &args {
-                match arg {
-                    Value::Array(elems, _) => items.extend(elems.iter().cloned()),
-                    Value::Seq(elems) | Value::Slip(elems) => items.extend(elems.iter().cloned()),
-                    other => items.push(other.clone()),
+                match arg.view() {
+                    ValueView::Array(elems, _) => items.extend(elems.iter().cloned()),
+                    ValueView::Seq(elems) | ValueView::Slip(elems) => {
+                        items.extend(elems.iter().cloned())
+                    }
+                    _ => items.push(arg.clone()),
                 }
             }
             // If items are all non-Pair and there are exactly 2 array args,
             // zip them as keys => values
             let has_pairs = items
                 .iter()
-                .any(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)));
+                .any(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
             let pairs: Vec<(String, i64)> = if has_pairs {
                 items
                     .iter()
-                    .map(|v| match v {
-                        Value::Pair(k, v) => {
-                            let count = match v.as_ref() {
-                                Value::Int(i) => *i,
-                                Value::Num(f) => *f as i64,
+                    .map(|v| match v.view() {
+                        ValueView::Pair(k, v) => {
+                            let count = match v.view() {
+                                ValueView::Int(i) => i,
+                                ValueView::Num(f) => f as i64,
                                 _ => 1,
                             };
                             (k.clone(), count)
                         }
-                        Value::ValuePair(k, v) => {
-                            let count = match v.as_ref() {
-                                Value::Int(i) => *i,
-                                Value::Num(f) => *f as i64,
+                        ValueView::ValuePair(k, v) => {
+                            let count = match v.view() {
+                                ValueView::Int(i) => i,
+                                ValueView::Num(f) => f as i64,
                                 _ => 1,
                             };
                             (k.to_string_value(), count)
                         }
-                        other => (other.to_string_value(), 1),
+                        _ => (v.to_string_value(), 1),
                     })
                     .collect()
             } else if args.len() == 2
-                && matches!(&args[0], Value::Array(..))
-                && matches!(&args[1], Value::Array(..))
+                && matches!(args[0].view(), ValueView::Array(..))
+                && matches!(args[1].view(), ValueView::Array(..))
             {
                 // Zip keys and values
-                let keys = if let Value::Array(k, _) = &args[0] {
+                let keys = if let ValueView::Array(k, _) = args[0].view() {
                     k.iter().map(|v| v.to_string_value()).collect::<Vec<_>>()
                 } else {
                     vec![]
                 };
-                let values = if let Value::Array(v, _) = &args[1] {
+                let values = if let ValueView::Array(v, _) = args[1].view() {
                     v.iter()
-                        .map(|v| match v {
-                            Value::Int(i) => *i,
-                            Value::Num(f) => *f as i64,
+                        .map(|v| match v.view() {
+                            ValueView::Int(i) => i,
+                            ValueView::Num(f) => f as i64,
                             _ => 1,
                         })
                         .collect::<Vec<_>>()
@@ -2735,15 +2777,15 @@ impl Interpreter {
                 items.iter().map(|v| (v.to_string_value(), 1i64)).collect()
             };
 
-            match &target {
-                Value::Bag(_, _) => {
+            match target.view() {
+                ValueView::Bag(_, _) => {
                     let mut counts = std::collections::HashMap::new();
                     for (k, v) in pairs {
                         *counts.entry(k).or_insert(0i64) += v;
                     }
                     return Ok(Value::bag_hash(counts));
                 }
-                Value::Set(_, _) => {
+                ValueView::Set(_, _) => {
                     let mut elems = std::collections::HashSet::new();
                     for (k, v) in pairs {
                         if v > 0 {
@@ -2752,7 +2794,7 @@ impl Interpreter {
                     }
                     return Ok(Value::set_hash(elems));
                 }
-                Value::Mix(_, _) => {
+                ValueView::Mix(_, _) => {
                     let mut weights = std::collections::HashMap::new();
                     for (k, v) in pairs {
                         *weights.entry(k).or_insert(0f64) += v as f64;
@@ -2768,9 +2810,9 @@ impl Interpreter {
         // invoke the callable to get the actual count, then re-dispatch.
         // NOTE: Supply.grab takes a Callable that transforms values, so exclude Supplies.
         let is_supply_target = matches!(
-            &target,
-            Value::Instance { class_name, .. } if class_name == "Supply"
-        ) || matches!(&target, Value::Package(name) if name == "Supply");
+            target.view(),
+            ValueView::Instance { class_name, .. } if class_name == "Supply"
+        ) || matches!(target.view(), ValueView::Package(name) if name == "Supply");
         if matches!(method, "pick" | "roll" | "grab" | "grabpairs" | "pickpairs")
             && args.len() == 1
             && args[0].as_sub().is_some()
@@ -2783,24 +2825,24 @@ impl Interpreter {
                     // .elems
                     let method_sym = crate::symbol::Symbol::intern("elems");
                     crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::Int(0)))?
+                        .unwrap_or(Ok(Value::int(0)))?
                 }
                 _ => {
                     // .total
                     let method_sym = crate::symbol::Symbol::intern("total");
                     crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::Int(0)))?
+                        .unwrap_or(Ok(Value::int(0)))?
                 }
             };
             let count = self.call_sub_value(callable, vec![input], false)?;
             // Convert to Int
-            let count_int = match &count {
-                Value::Int(n) => Value::Int(*n),
-                Value::Num(f) => Value::Int(*f as i64),
-                Value::Rat(n, d) if *d != 0 => Value::Int(*n / *d),
-                other => {
+            let count_int = match count.view() {
+                ValueView::Int(n) => Value::int(n),
+                ValueView::Num(f) => Value::int(f as i64),
+                ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
+                _ => {
                     let method_sym = crate::symbol::Symbol::intern("Int");
-                    crate::builtins::native_method_0arg(other, method_sym)
+                    crate::builtins::native_method_0arg(&count, method_sym)
                         .unwrap_or(Ok(count.clone()))?
                 }
             };
@@ -2811,26 +2853,28 @@ impl Interpreter {
         // Skip for Supply (handled by Supply pipeline) and IO::Handle/IO::Pipe
         // (handled by native IO dispatch which reads the content first).
         if method == "split"
-            && !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
-            && !matches!(&target, Value::Package(name) if name.resolve().starts_with("IO::Spec"))
+            && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
+            && !matches!(target.view(), ValueView::Package(name) if name.resolve().starts_with("IO::Spec"))
         {
             return self.handle_split_method(target, args);
         }
 
         // .of on Array/Hash
-        if method == "of" && args.is_empty() && matches!(&target, Value::Array(..) | Value::Hash(_))
+        if method == "of"
+            && args.is_empty()
+            && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))
         {
             if let Some(info) = self.container_type_metadata(&target) {
-                return Ok(Value::Package(Symbol::intern(&info.value_type)));
+                return Ok(Value::package(Symbol::intern(&info.value_type)));
             }
-            return Ok(Value::Package(Symbol::intern("Mu")));
+            return Ok(Value::package(Symbol::intern("Mu")));
         }
 
         // .of on a parametric type object, e.g. `array[int]`, `Array[Int]`,
         // `Positional[Int]`. Returns the element type.
         if method == "of"
             && args.is_empty()
-            && let Value::Package(name) = &target
+            && let ValueView::Package(name) = target.view()
         {
             let resolved = name.resolve();
             if let Some(open) = resolved.find('[')
@@ -2844,27 +2888,27 @@ impl Interpreter {
                     let inner = &resolved[open + 1..resolved.len() - 1];
                     // Hash[ValueType, KeyType] -> .of is the value type.
                     let value_type = inner.split(',').next().unwrap_or(inner).trim();
-                    return Ok(Value::Package(Symbol::intern(value_type)));
+                    return Ok(Value::package(Symbol::intern(value_type)));
                 }
             }
         }
 
         // .keyof on Hash
-        if method == "keyof" && args.is_empty() && matches!(&target, Value::Hash(_)) {
+        if method == "keyof" && args.is_empty() && matches!(target.view(), ValueView::Hash(_)) {
             if let Some(info) = self.container_type_metadata(&target)
                 && let Some(ref key_type) = info.key_type
             {
-                return Ok(Value::Package(Symbol::intern(key_type)));
+                return Ok(Value::package(Symbol::intern(key_type)));
             }
-            return Ok(Value::Package(Symbol::intern("Str(Any)")));
+            return Ok(Value::package(Symbol::intern("Str(Any)")));
         }
 
         // .keyof on Mix/Set/Bag - check container type metadata for parameterized types
         if method == "keyof"
             && args.is_empty()
             && matches!(
-                &target,
-                Value::Mix(_, _) | Value::Set(_, _) | Value::Bag(_, _)
+                target.view(),
+                ValueView::Mix(_, _) | ValueView::Set(_, _) | ValueView::Bag(_, _)
             )
         {
             if let Some(info) = self.container_type_metadata(&target)
@@ -2872,23 +2916,26 @@ impl Interpreter {
                 && let Some(bracket_pos) = declared_type.find('[')
             {
                 let param = &declared_type[bracket_pos + 1..declared_type.len() - 1];
-                return Ok(Value::Package(Symbol::intern(param)));
+                return Ok(Value::package(Symbol::intern(param)));
             }
-            return Ok(Value::Package(Symbol::intern("Mu")));
+            return Ok(Value::package(Symbol::intern("Mu")));
         }
 
         // Complex->Num conversion
         if method == "Num"
             && args.is_empty()
-            && let Value::Complex(r, im) = &target
+            && let ValueView::Complex(r, im) = target.view()
         {
-            return self.dispatch_complex_to_num(*r, *im, &target);
+            return self.dispatch_complex_to_num(r, im, &target);
         }
 
         // Zero-denominator Rat/FatRat .Str
         if matches!(method, "Str" | "gist")
             && args.is_empty()
-            && matches!(&target, Value::Rat(_, 0) | Value::FatRat(_, 0))
+            && matches!(
+                target.view(),
+                ValueView::Rat(_, 0) | ValueView::FatRat(_, 0)
+            )
         {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
@@ -2907,9 +2954,9 @@ impl Interpreter {
             let mut batch_val: Option<i64> = None;
             let mut degree_val: Option<i64> = None;
             for arg in &args {
-                let (key, val) = match arg {
-                    Value::Pair(k, v) => (k.clone(), to_int(v)),
-                    Value::ValuePair(k, v) => (k.to_string_value(), to_int(v)),
+                let (key, val) = match arg.view() {
+                    ValueView::Pair(k, v) => (k.clone(), to_int(v)),
+                    ValueView::ValuePair(k, v) => (k.to_string_value(), to_int(v)),
                     _ => continue,
                 };
                 match key.as_str() {
@@ -2924,7 +2971,7 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("batch".to_string()));
-                attrs.insert("value".to_string(), Value::Int(b));
+                attrs.insert("value".to_string(), Value::int(b));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!("Invalid value '{}' for 'batch' on '{}'", b, method)),
@@ -2937,7 +2984,7 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("method".to_string(), Value::str(method.to_string()));
                 attrs.insert("name".to_string(), Value::str("degree".to_string()));
-                attrs.insert("value".to_string(), Value::Int(d));
+                attrs.insert("value".to_string(), Value::int(d));
                 attrs.insert(
                     "message".to_string(),
                     Value::str(format!(
@@ -2950,23 +2997,26 @@ impl Interpreter {
             let items = value_to_list(&target);
             let arc = std::sync::Arc::new(items);
             return Ok(if method == "hyper" {
-                Value::HyperSeq(arc)
+                Value::hyper_seq_arc(arc)
             } else {
-                Value::RaceSeq(arc)
+                Value::race_seq_arc(arc)
             });
         }
 
         // HyperSeq/RaceSeq: delegate to array for most methods
-        if matches!(&target, Value::HyperSeq(_) | Value::RaceSeq(_)) {
-            let is_hyper = matches!(&target, Value::HyperSeq(_));
-            let items = match &target {
-                Value::HyperSeq(items) | Value::RaceSeq(items) => items.clone(),
+        if matches!(
+            target.view(),
+            ValueView::HyperSeq(_) | ValueView::RaceSeq(_)
+        ) {
+            let is_hyper = matches!(target.view(), ValueView::HyperSeq(_));
+            let items = match target.view() {
+                ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                 _ => unreachable!(),
             };
             match method {
-                "hyper" => return Ok(Value::HyperSeq(items)),
-                "race" => return Ok(Value::RaceSeq(items)),
-                "is-lazy" => return Ok(Value::Bool(false)),
+                "hyper" => return Ok(Value::hyper_seq_arc(items)),
+                "race" => return Ok(Value::race_seq_arc(items)),
+                "is-lazy" => return Ok(Value::FALSE),
                 "iterator" if args.is_empty() => {
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
                     // a second `.iterator` throws X::Seq::Consumed. The consumed-state
@@ -2978,27 +3028,27 @@ impl Interpreter {
                     if crate::value::seq_consume(&items).is_err() {
                         return Err(crate::value::seq_consumed_error_for(type_name));
                     }
-                    let array_target = Value::Array(
+                    let array_target = Value::array_with_kind(
                         crate::value::Value::array_arc(items.to_vec()),
                         crate::value::ArrayKind::List,
                     );
                     return self.call_method_with_values(array_target, method, args);
                 }
                 "map" | "grep" => {
-                    let array_target = Value::Array(
+                    let array_target = Value::array_with_kind(
                         crate::value::Value::array_arc(items.to_vec()),
                         crate::value::ArrayKind::List,
                     );
                     let result = self.call_method_with_values(array_target, method, args)?;
                     let result_items = value_to_list(&result);
                     return Ok(if is_hyper {
-                        Value::HyperSeq(std::sync::Arc::new(result_items))
+                        Value::hyper_seq_arc(std::sync::Arc::new(result_items))
                     } else {
-                        Value::RaceSeq(std::sync::Arc::new(result_items))
+                        Value::race_seq_arc(std::sync::Arc::new(result_items))
                     });
                 }
                 _ => {
-                    let array_target = Value::Array(
+                    let array_target = Value::array_with_kind(
                         crate::value::Value::array_arc(items.to_vec()),
                         crate::value::ArrayKind::List,
                     );
@@ -3013,7 +3063,7 @@ impl Interpreter {
         // `...` for Str. (An eager gather has neither `sequence_spec` nor
         // `lazy_pipe` and falls through to the force-and-render path below,
         // which materializes its elements.)
-        if let Value::LazyList(ll) = &target
+        if let ValueView::LazyList(ll) = target.view()
             && matches!(method, "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
@@ -3025,7 +3075,7 @@ impl Interpreter {
         // Lazy `.pairs`/`.antipairs`/`.kv` over a genuinely-lazy source: build a
         // lazy index-pipe stage instead of forcing the source (mirrors the
         // CallMethodMut fast-path so a chained `.pairs` stays lazy too).
-        if let Value::LazyList(ll) = &target
+        if let ValueView::LazyList(ll) = target.view()
             && ll.is_genuinely_lazy()
             && args.is_empty()
             && matches!(method, "kv" | "pairs" | "antipairs")
@@ -3035,7 +3085,7 @@ impl Interpreter {
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
                 _ => crate::value::IndexTransform::Kv,
             };
-            return Ok(Value::LazyList(crate::gc::Gc::new(
+            return Ok(Value::lazy_list(crate::gc::Gc::new(
                 crate::value::LazyList::new_index_pipe(target.clone(), transform),
             )));
         }
@@ -3046,17 +3096,17 @@ impl Interpreter {
         // no-op that returns it unchanged. Forcing here would defeat e.g.
         // `(my $l = $cat.lines).cache` whose later `$l[2,3]` must reflect
         // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
-        if let Value::LazyList(ll) = &target
+        if let ValueView::LazyList(ll) = target.view()
             && method == "cache"
             && ll.is_genuinely_lazy()
         {
-            return Ok(Value::LazyList(crate::gc::Gc::new(
+            return Ok(Value::lazy_list(crate::gc::Gc::new(
                 ll.with_cached_no_sink(),
             )));
         }
 
         // Force LazyList and re-dispatch as Seq
-        if let Value::LazyList(ll) = &target
+        if let ValueView::LazyList(ll) = target.view()
             && Self::should_force_lazy_list(method)
             // A `.map`/`.grep` on a lazy map/grep pipeline, an infinite
             // sequence/closure spec, OR a gather coroutine appends another lazy
@@ -3073,14 +3123,14 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") {
                 self.env = saved_env;
             }
-            let seq = Value::Seq(std::sync::Arc::new(items));
+            let seq = Value::seq_arc(std::sync::Arc::new(items));
             return self.call_method_with_values(seq, method, args);
         }
 
         // Callable introspection
         if matches!(
-            &target,
-            Value::Routine { .. } | Value::Sub(_) | Value::WeakSub(_)
+            target.view(),
+            ValueView::Routine { .. } | ValueView::Sub(_) | ValueView::WeakSub(_)
         ) && let Some(result) = self.dispatch_callable_method(&target, method, &args)
         {
             return result;
@@ -3099,7 +3149,7 @@ impl Interpreter {
             && args.is_empty()
             && let Some(source_name) = Self::var_target_from_meta_value(&target)
         {
-            let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::Nil);
+            let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::NIL);
             let mut named = std::collections::HashMap::new();
             named.insert("__mutsu_varref_name".to_string(), Value::str(source_name));
             named.insert("__mutsu_varref_value".to_string(), source_value);
@@ -3108,7 +3158,7 @@ impl Interpreter {
 
         // .join on LazyList
         if method == "join"
-            && let Value::LazyList(list) = &target
+            && let ValueView::LazyList(list) = target.view()
         {
             let items = self.force_lazy_list_bridge(list)?;
             return self.call_method_with_values(Value::real_array(items), method, args);
@@ -3126,34 +3176,35 @@ impl Interpreter {
         }
 
         // ClassHOW/SubsetHOW/EnumHOW method dispatch
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
-            && Self::is_metamodel_how(class_name)
+        } = target.view()
+            && Self::is_metamodel_how(&class_name)
             && Self::is_classhow_method(method)
         {
             let mut how_args = args.to_vec();
             if !matches!(
-                how_args.first(),
-                Some(Value::Package(_))
-                    | Some(Value::Instance { .. })
-                    | Some(Value::ParametricRole { .. })
-                    | Some(Value::Mixin(_, _))
-            ) && let Some(Value::Str(type_name)) = attributes.as_map().get("name")
+                how_args.first().map(|v| v.view()),
+                Some(ValueView::Package(_))
+                    | Some(ValueView::Instance { .. })
+                    | Some(ValueView::ParametricRole { .. })
+                    | Some(ValueView::Mixin(_, _))
+            ) && let Some(ValueView::Str(type_name)) =
+                attributes.as_map().get("name").map(|v| v.view())
             {
-                how_args.insert(0, Value::Package(Symbol::intern(type_name)));
+                how_args.insert(0, Value::package(Symbol::intern(type_name)));
             }
             return self.dispatch_classhow_method(method, how_args);
         }
 
         // Archetypes.composable
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name == "Perl6::Metamodel::Archetypes"
             && method == "composable"
             && args.is_empty()
@@ -3162,7 +3213,7 @@ impl Interpreter {
                 .as_map()
                 .get("composable")
                 .cloned()
-                .unwrap_or(Value::Bool(false)));
+                .unwrap_or(Value::FALSE));
         }
 
         // CREATE method
@@ -3176,7 +3227,7 @@ impl Interpreter {
         // Type-object coercion
         if method == "coerce"
             && args.len() == 1
-            && let Value::Package(type_name) = &target
+            && let ValueView::Package(type_name) = target.view()
         {
             return self.try_coerce_value_for_constraint(&type_name.resolve(), args[0].clone());
         }
@@ -3212,7 +3263,7 @@ impl Interpreter {
                 vec![target.clone(), Value::str(method.to_string())],
             );
             if let Ok(callable) = found
-                && !matches!(callable, Value::Nil)
+                && !callable.is_nil()
             {
                 return self.eval_call_on_value(callable, vec![target.clone()]);
             }
@@ -3266,28 +3317,28 @@ impl Interpreter {
         }
 
         // SharedPromise dispatch
-        if let Value::Promise(ref shared) = target {
+        if let ValueView::Promise(shared) = target.view() {
             return self.dispatch_promise_method(shared, method, args, &target);
         }
 
         // SharedChannel dispatch
-        if let Value::Channel(ref ch) = target {
+        if let ValueView::Channel(ch) = target.view() {
             return self.dispatch_channel_method(ch, method, args);
         }
 
         // Promise::Vow forwards keep/break
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = &target
+        } = target.view()
             && class_name.resolve() == "Promise::Vow"
         {
             return self.dispatch_promise_vow_method(&(attributes).as_map(), method, args);
         }
 
         // Mixin fallback: check __mutsu_attr__ and delegate to inner
-        if let Value::Mixin(inner, mixins) = &target {
+        if let ValueView::Mixin(inner, mixins) = target.view() {
             if args.is_empty() {
                 let attr_key = format!("__mutsu_attr__{}", method);
                 if let Some(value) = mixins.get(&attr_key) {
@@ -3310,20 +3361,20 @@ impl Interpreter {
         &mut self,
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
-        match target {
-            Value::Channel(_) => Some(
+        match target.view() {
+            ValueView::Channel(_) => Some(
                 self.call_method_with_values(target.clone(), "list", vec![])
                     .and_then(|list| self.list_to_capture(&list)),
             ),
-            Value::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(
+            ValueView::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(
                 // `.Seq` taps the supply and collects its emissions (`.list` does
                 // not run an on-demand `supply { ... }` block).
                 self.call_method_with_values(target.clone(), "Seq", vec![])
                     .and_then(|seq| self.list_to_capture(&seq)),
             ),
-            Value::Array(..) | Value::Seq(_) | Value::Slip(_) => {
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
                 let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i, Value::ValuePair(k, _) if !matches!(k.as_ref(), Value::Str(_))),
+                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
                 );
                 needs_str_key.then(|| self.list_to_capture(target))
             }
@@ -3339,21 +3390,21 @@ impl Interpreter {
         let mut positional = Vec::new();
         let mut named = std::collections::HashMap::new();
         for item in items {
-            match item {
-                Value::Pair(k, v) => {
-                    named.insert(k, *v);
+            match item.view() {
+                ValueView::Pair(k, v) => {
+                    named.insert(k.clone(), v.clone());
                 }
-                Value::ValuePair(k, v) => {
-                    let key_str = match k.as_ref() {
-                        Value::Str(s) => s.to_string(),
-                        other => self
-                            .call_method_with_values(other.clone(), "Str", vec![])
+                ValueView::ValuePair(k, v) => {
+                    let key_str = match k.view() {
+                        ValueView::Str(s) => s.to_string(),
+                        _ => self
+                            .call_method_with_values(k.clone(), "Str", vec![])
                             .map(|s| s.to_string_value())
-                            .unwrap_or_else(|_| other.to_string_value()),
+                            .unwrap_or_else(|_| k.to_string_value()),
                     };
-                    named.insert(key_str, *v);
+                    named.insert(key_str, v.clone());
                 }
-                other => positional.push(other),
+                _ => positional.push(item.clone()),
             }
         }
         Ok(Value::capture(positional, named))

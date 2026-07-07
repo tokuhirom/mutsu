@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn role_def_for_mixin_role(
@@ -8,8 +9,8 @@ impl Interpreter {
     ) -> Option<RoleDef> {
         let role_id = mixins
             .get(&format!("__mutsu_role_id__{role_name}"))
-            .and_then(|value| match value {
-                Value::Int(id) if *id > 0 => Some(*id as u64),
+            .and_then(|value| match value.view() {
+                ValueView::Int(id) if id > 0 => Some(id as u64),
                 _ => None,
             });
         if let Some(role_id) = role_id
@@ -177,7 +178,7 @@ impl Interpreter {
             return Ok(result);
         }
         let role_name = right.to_string_value();
-        Ok(Value::Bool(left.does_check(&role_name)))
+        Ok(Value::truth(left.does_check(&role_name)))
     }
 
     /// Apply multiple roles at once: `$obj does (RoleA, RoleB)`
@@ -205,11 +206,15 @@ impl Interpreter {
     }
 
     fn var_target_name_from_value(value: &Value) -> Option<String> {
-        match value {
-            Value::Mixin(inner, _) => Self::var_target_name_from_value(inner),
-            Value::Instance { attributes, .. } => {
-                match attributes.as_map().get("__mutsu_var_target") {
-                    Some(Value::Str(name)) => Some(name.to_string()),
+        match value.view() {
+            ValueView::Mixin(inner, _) => Self::var_target_name_from_value(inner),
+            ValueView::Instance { attributes, .. } => {
+                match attributes
+                    .as_map()
+                    .get("__mutsu_var_target")
+                    .map(|v| v.view())
+                {
+                    Some(ValueView::Str(name)) => Some(name.to_string()),
                     _ => None,
                 }
             }
@@ -219,14 +224,18 @@ impl Interpreter {
 
     /// Check if a value is a HOW meta-object and return the target class name.
     fn how_target_from_value(value: &Value) -> Option<String> {
-        match value {
-            Value::Instance { attributes, .. } => {
-                match attributes.as_map().get("__mutsu_how_target") {
-                    Some(Value::Str(name)) => Some(name.to_string()),
+        match value.view() {
+            ValueView::Instance { attributes, .. } => {
+                match attributes
+                    .as_map()
+                    .get("__mutsu_how_target")
+                    .map(|v| v.view())
+                {
+                    Some(ValueView::Str(name)) => Some(name.to_string()),
                     _ => None,
                 }
             }
-            Value::Mixin(inner, _) => Self::how_target_from_value(inner),
+            ValueView::Mixin(inner, _) => Self::how_target_from_value(inner),
             _ => None,
         }
     }
@@ -238,24 +247,24 @@ impl Interpreter {
     }
 
     fn extract_role_application(&self, rhs: &Value) -> Option<(String, Vec<Value>)> {
-        match rhs {
-            Value::ParametricRole {
+        match rhs.view() {
+            ValueView::ParametricRole {
                 base_name,
                 type_args,
             } if self.registry().roles.contains_key(&base_name.resolve()) => {
                 Some((base_name.resolve(), type_args.clone()))
             }
-            Value::Pair(name, boxed) if self.registry().roles.contains_key(name) => {
-                if let Value::Array(args, ..) = boxed.as_ref() {
+            ValueView::Pair(name, boxed) if self.registry().roles.contains_key(name) => {
+                if let ValueView::Array(args, ..) = boxed.view() {
                     Some((name.clone(), args.as_ref().clone().items))
                 } else {
                     None
                 }
             }
-            Value::Package(name) if self.registry().roles.contains_key(&name.resolve()) => {
+            ValueView::Package(name) if self.registry().roles.contains_key(&name.resolve()) => {
                 Some((name.resolve(), Vec::new()))
             }
-            Value::Str(name) if self.registry().roles.contains_key(name.as_str()) => {
+            ValueView::Str(name) if self.registry().roles.contains_key(name.as_str()) => {
                 Some((name.to_string(), Vec::new()))
             }
             _ => None,
@@ -278,11 +287,12 @@ impl Interpreter {
             return Err(RuntimeError::new(format!("Unknown role: {}", role_name)));
         }
 
-        let (inner, mut mixins) = match left {
-            Value::Mixin(inner, existing) => (inner.as_ref().clone(), (*existing).clone()),
-            other => (other, HashMap::new()),
+        let (inner, mut mixins) = if let ValueView::Mixin(inner, existing) = left.view() {
+            (inner.as_ref().clone(), (**existing).clone())
+        } else {
+            (left, HashMap::new())
         };
-        mixins.insert(format!("__mutsu_role__{}", role_name), Value::Bool(true));
+        mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
         // Store the type arguments so that `.does(Role[args])` can check them.
         if !role_args.is_empty() {
             mixins.insert(
@@ -317,7 +327,7 @@ impl Interpreter {
         if role_id != 0 {
             mixins.insert(
                 format!("__mutsu_role_id__{}", role_name),
-                Value::Int(role_id as i64),
+                Value::int(role_id as i64),
             );
         }
 
@@ -365,8 +375,8 @@ impl Interpreter {
                     // Default value based on sigil: @ -> [], % -> {}, $ -> Nil
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
-                        '%' => Value::Hash(Value::hash_arc(HashMap::new())),
-                        _ => Value::Nil,
+                        '%' => Value::hash_with_data(Value::hash_arc(HashMap::new())),
+                        _ => Value::NIL,
                     }
                 };
                 mixins.insert(format!("__mutsu_attr__{}", attr_name), value);
@@ -433,7 +443,7 @@ impl Interpreter {
             .iter()
             .map(|(name, ..)| name.clone())
             .collect();
-        if let Value::Mixin(_, ref mixins) = target {
+        if let ValueView::Mixin(_, mixins) = target.view() {
             for attr_name in &attr_names {
                 let key = format!("__mutsu_attr__{}", attr_name);
                 if let Some(val) = mixins.get(&key) {
@@ -448,8 +458,8 @@ impl Interpreter {
         // variable mutations propagate to the outer scope.
         let _result = self.eval_block_value(&def.body)?;
         // Read back modified attribute values from env into the mixin map
-        let updated_target = if let Value::Mixin(inner, existing_mixins) = target {
-            let mut mixins = (*existing_mixins).clone();
+        let updated_target = if let ValueView::Mixin(inner, existing_mixins) = target.view() {
+            let mut mixins = (**existing_mixins).clone();
             for attr_name in &attr_names {
                 let env_key = format!("!{}", attr_name);
                 if let Some(val) = self.env.get(&env_key) {
@@ -460,7 +470,7 @@ impl Interpreter {
             for attr_name in &attr_names {
                 self.env.remove(&format!("!{}", attr_name));
             }
-            Value::mixin((*inner).clone(), mixins)
+            Value::mixin((**inner).clone(), mixins)
         } else {
             target
         };

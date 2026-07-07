@@ -1,4 +1,5 @@
 use crate::runtime::*;
+use crate::value::ValueView;
 use std::sync::OnceLock;
 
 use super::state::take_complete_lines_from_buffer;
@@ -215,7 +216,7 @@ pub(in crate::runtime) fn register_supplier_migrate_tap(master_sid: u64, downstr
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -255,7 +256,7 @@ fn register_supplier_forward_tap(inner_sid: u64, downstream_sid: u64) -> u64 {
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -355,7 +356,7 @@ pub(in crate::runtime) fn register_supplier_channel_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -778,7 +779,7 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     elems.last_reported_count = elems.emitted_count;
                     actions.push(SupplierEmitAction::Call(
                         tap.callback.clone(),
-                        Value::Int(elems.emitted_count),
+                        Value::int(elems.emitted_count),
                         tap.delay_seconds,
                     ));
                 }
@@ -823,10 +824,12 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
             } else if let Some(downstream_sid) = tap.flat_downstream {
                 // Flatten the emitted value and emit each element individually
                 // to the downstream supplier.
-                let items: Vec<Value> = match emitted_value {
-                    Value::Array(arr, kind) if !kind.is_itemized() => arr.iter().cloned().collect(),
-                    Value::Slip(arr) | Value::Seq(arr) => arr.iter().cloned().collect(),
-                    other => vec![other.clone()],
+                let items: Vec<Value> = match emitted_value.view() {
+                    ValueView::Array(arr, kind) if !kind.is_itemized() => {
+                        arr.iter().cloned().collect()
+                    }
+                    ValueView::Slip(arr) | ValueView::Seq(arr) => arr.iter().cloned().collect(),
+                    _ => vec![emitted_value.clone()],
                 };
                 actions.push(SupplierEmitAction::FlatEmit {
                     downstream_supplier_id: downstream_sid,
@@ -1013,7 +1016,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -1095,7 +1098,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -1378,7 +1381,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -1423,7 +1426,7 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -1509,7 +1512,7 @@ pub(in crate::runtime) fn register_supplier_zip_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -1549,7 +1552,7 @@ pub(in crate::runtime) fn register_supplier_zip_latest_tap(
             .or_default()
             .taps
             .push(SupplierTapSubscription {
-                callback: Value::Nil,
+                callback: Value::NIL,
                 line_mode: false,
                 line_chomp: true,
                 line_buffer: String::new(),
@@ -1780,7 +1783,7 @@ pub(in crate::runtime) fn zip_latest_state_info(zip_latest_state_id: u64) -> (u6
 fn visit_tap_roots(tap: &SupplierTapSubscription, visitor: &mut dyn crate::gc::RootVisitor) {
     visitor.visit_value(&tap.callback);
     if let Some(channel) = &tap.channel_sink {
-        visitor.visit_value(&Value::Channel(channel.clone()));
+        visitor.visit_value(&Value::channel(channel.clone()));
     }
     if let Some(uf) = &tap.unique_filter {
         if let Some(f) = &uf.as_fn {
@@ -1882,7 +1885,7 @@ mod gc_root_tests {
 
     impl crate::gc::RootVisitor for Collector {
         fn visit_value(&mut self, value: &Value) {
-            if let Value::Str(s) = value {
+            if let ValueView::Str(s) = value.view() {
                 self.seen.push(s.to_string());
             }
         }

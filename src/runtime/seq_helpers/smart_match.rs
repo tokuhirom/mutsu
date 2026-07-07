@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use crate::value::signature::{extract_sig_info, signature_smartmatch};
 
 impl Interpreter {
@@ -39,21 +40,21 @@ impl Interpreter {
         // A first-class element container on the LHS (`ContainerRef`, e.g. a
         // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
         // smartmatch — test the contained value (Raku container semantics).
-        if let Value::ContainerRef(cell) = left {
+        if let ValueView::ContainerRef(cell) = left.view() {
             let inner = cell.lock().unwrap().clone();
             return self.smart_match(&inner, right);
         }
-        match (left, right) {
+        match (left.view(), right.view()) {
             // Whatever on RHS always matches (ACCEPTS returns True for any value)
-            (_, Value::Whatever) => true,
+            (_, ValueView::Whatever) => true,
             // `$x ~~ $obj` where $obj's class defines a user `ACCEPTS` method
             // dispatches `$obj.ACCEPTS($x)` — the core smartmatch protocol.
             // Built-in types (IO::Path / Signature / Buf / Date…) carry native
             // ACCEPTS semantics in the specific arms below and report no *user*
             // method here, so they are unaffected. Junction LHS is excluded so
             // junction autothreading (the arm below) still wins.
-            (_, Value::Instance { class_name, .. })
-                if !matches!(left, Value::Junction { .. })
+            (_, ValueView::Instance { class_name, .. })
+                if !matches!(left.view(), ValueView::Junction { .. })
                     && self.has_user_method(&class_name.resolve(), "ACCEPTS") =>
             {
                 match self.call_method_with_values(right.clone(), "ACCEPTS", vec![left.clone()]) {
@@ -65,12 +66,12 @@ impl Interpreter {
                 }
             }
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name: left_class,
                     attributes: left_attrs,
                     ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     class_name: right_class,
                     attributes: right_attrs,
                     ..
@@ -82,13 +83,13 @@ impl Interpreter {
                     crate::builtins::methods_0arg::temporal::date_attrs(&(right_attrs).as_map());
                 y == ry && m == rm && d == rd
             }
-            (Value::Version { .. }, Value::Version { parts, plus, minus }) => {
-                Self::version_smart_match(left, parts, *plus, *minus)
+            (ValueView::Version { .. }, ValueView::Version { parts, plus, minus }) => {
+                Self::version_smart_match(left, parts, plus, minus)
             }
             // When RHS is a callable (Sub), invoke it with LHS as argument and
             // return truthiness of the result.  If the sub accepts no parameters,
             // call it with no arguments (simple closure truth).
-            (_, Value::Sub(data)) => {
+            (_, ValueView::Sub(data)) => {
                 let func = right.clone();
                 let _ = data; // keep pattern match shape explicit for callable RHS
                 if let Ok(result) = self.call_sub_value(func.clone(), vec![left.clone()], false) {
@@ -100,12 +101,12 @@ impl Interpreter {
                 }
             }
             // Junction ~~ Junction type: a Junction IS a Junction, don't autothread
-            (Value::Junction { .. }, Value::Package(name))
+            (ValueView::Junction { .. }, ValueView::Package(name))
                 if matches!(name.resolve().as_str(), "Junction" | "Mu") =>
             {
                 true
             }
-            (Value::Junction { kind, values }, _) => match kind {
+            (ValueView::Junction { kind, values }, _) => match kind {
                 crate::value::JunctionKind::Any => {
                     values.iter().any(|v| self.smart_match(v, right))
                 }
@@ -121,23 +122,23 @@ impl Interpreter {
             },
             // Smartmatch against a flip-flop matcher object produced by ff/fff
             // in SmartMatchExpr RHS context.
-            (_, Value::Hash(map))
-                if matches!(map.get("__mutsu_ff_matcher"), Some(Value::Bool(true))) =>
+            (_, ValueView::Hash(map))
+                if map.get("__mutsu_ff_matcher").and_then(Value::as_bool) == Some(true) =>
             {
                 let key = map
                     .get("key")
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| "__mutsu_ff_matcher::default".to_string());
-                let lhs_pat = map.get("lhs").cloned().unwrap_or(Value::Nil);
-                let rhs_pat = map.get("rhs").cloned().unwrap_or(Value::Nil);
-                let exclude_start = matches!(map.get("exclude_start"), Some(Value::Bool(true)));
-                let exclude_end = matches!(map.get("exclude_end"), Some(Value::Bool(true)));
-                let is_fff = matches!(map.get("is_fff"), Some(Value::Bool(true)));
+                let lhs_pat = map.get("lhs").cloned().unwrap_or(Value::NIL);
+                let rhs_pat = map.get("rhs").cloned().unwrap_or(Value::NIL);
+                let exclude_start = map.get("exclude_start").and_then(Value::as_bool) == Some(true);
+                let exclude_end = map.get("exclude_end").and_then(Value::as_bool) == Some(true);
+                let is_fff = map.get("is_fff").and_then(Value::as_bool) == Some(true);
 
                 let seq = self
                     .get_state_var(&key)
-                    .and_then(|v| match v {
-                        Value::Int(i) if *i > 0 => Some(*i),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) if i > 0 => Some(i),
                         _ => None,
                     })
                     .unwrap_or(0);
@@ -158,41 +159,41 @@ impl Interpreter {
                 let out = if seq > 0 {
                     let current = seq;
                     if rhs_hit {
-                        self.set_state_var(key.clone(), Value::Int(0));
+                        self.set_state_var(key.clone(), Value::int(0));
                         if exclude_end {
-                            Value::Nil
+                            Value::NIL
                         } else {
-                            Value::Int(current)
+                            Value::int(current)
                         }
                     } else {
-                        self.set_state_var(key.clone(), Value::Int(current + 1));
-                        Value::Int(current)
+                        self.set_state_var(key.clone(), Value::int(current + 1));
+                        Value::int(current)
                     }
                 } else if lhs_hit {
                     if !is_fff && rhs_hit {
-                        self.set_state_var(key.clone(), Value::Int(0));
+                        self.set_state_var(key.clone(), Value::int(0));
                         if exclude_start || exclude_end {
-                            Value::Nil
+                            Value::NIL
                         } else {
-                            Value::Int(1)
+                            Value::int(1)
                         }
                     } else {
-                        self.set_state_var(key.clone(), Value::Int(2));
+                        self.set_state_var(key.clone(), Value::int(2));
                         if exclude_start {
-                            Value::Nil
+                            Value::NIL
                         } else {
-                            Value::Int(1)
+                            Value::int(1)
                         }
                     }
                 } else {
-                    Value::Nil
+                    Value::NIL
                 };
                 out.truthy()
             }
             // Named regex/token used as smartmatch RHS -- perform regex match
             (
                 _,
-                Value::Routine {
+                ValueView::Routine {
                     is_regex: true,
                     name,
                     package,
@@ -252,7 +253,7 @@ impl Interpreter {
                 }
             }
             // Built-in routines used as callables in smartmatch
-            (_, Value::Routine { .. }) => {
+            (_, ValueView::Routine { .. }) => {
                 let func = right.clone();
                 match self.call_sub_value(func, vec![left.clone()], false) {
                     Ok(result) => result.truthy(),
@@ -260,7 +261,7 @@ impl Interpreter {
                 }
             }
             // :nth(...) and ordinal forms (:1st, :2nd, :3rd, :4th, ...)
-            (_, Value::RegexWithAdverbs(a)) if a.nth.is_some() => {
+            (_, ValueView::RegexWithAdverbs(a)) if a.nth.is_some() => {
                 let pattern = &a.pattern;
                 let raw_nth = a.nth.as_ref().unwrap();
                 let perl5 = &a.perl5;
@@ -291,14 +292,14 @@ impl Interpreter {
                         let resolved = match self.resolve_nth_indices(part, non_overlapping.len()) {
                             Ok(v) => v,
                             Err(_) => {
-                                junc_values.push(Value::Nil);
+                                junc_values.push(Value::NIL);
                                 continue;
                             }
                         };
                         if resolved.len() == 1 {
                             let idx = resolved[0];
                             if idx == 0 || idx > non_overlapping.len() {
-                                junc_values.push(Value::Nil);
+                                junc_values.push(Value::NIL);
                             } else {
                                 let cap = &non_overlapping[idx - 1];
                                 let match_obj = Value::make_match_object_with_captures(
@@ -311,7 +312,7 @@ impl Interpreter {
                                 junc_values.push(match_obj);
                             }
                         } else {
-                            junc_values.push(Value::Nil);
+                            junc_values.push(Value::NIL);
                         }
                     }
                     let junction = Value::junction(junc_kind.clone(), junc_values);
@@ -387,7 +388,7 @@ impl Interpreter {
                 true
             }
             // :c/:continue -- search from $/.to (or 0) onwards (non-anchored)
-            (_, Value::RegexWithAdverbs(a))
+            (_, ValueView::RegexWithAdverbs(a))
                 if a.continue_ && !a.global && !a.exhaustive && !a.overlap =>
             {
                 let pat = &a.pattern;
@@ -403,7 +404,7 @@ impl Interpreter {
                 false
             }
             // :pos/:p anchored match (non-exhaustive/non-global) -- match at $/.to (or 0)
-            (_, Value::RegexWithAdverbs(a))
+            (_, ValueView::RegexWithAdverbs(a))
                 if a.pos && !a.global && !a.exhaustive && !a.overlap =>
             {
                 let pat = &a.pattern;
@@ -419,7 +420,7 @@ impl Interpreter {
             }
             // :x(N) without :g/:ex/:ov -- require at least N non-overlapping matches,
             // return first N in $/.
-            (_, Value::RegexWithAdverbs(a))
+            (_, ValueView::RegexWithAdverbs(a))
                 if !a.global && !a.exhaustive && !a.overlap && a.repeat.is_some() =>
             {
                 let pattern = &a.pattern;
@@ -454,7 +455,7 @@ impl Interpreter {
                 true
             }
             // :g (global) -- find all non-overlapping matches
-            (_, Value::RegexWithAdverbs(a)) if a.global && !a.overlap && !a.exhaustive => {
+            (_, ValueView::RegexWithAdverbs(a)) if a.global && !a.overlap && !a.exhaustive => {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
                 let perl5 = &a.perl5;
@@ -482,7 +483,7 @@ impl Interpreter {
                 if non_overlapping.is_empty() {
                     self.env.insert(
                         "/".to_string(),
-                        Value::Array(
+                        Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                             crate::value::ArrayKind::List,
                         ),
@@ -493,7 +494,7 @@ impl Interpreter {
                     if non_overlapping.len() < needed {
                         self.env.insert(
                             "/".to_string(),
-                            Value::Array(
+                            Value::array_with_kind(
                                 crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                                 crate::value::ArrayKind::List,
                             ),
@@ -514,7 +515,7 @@ impl Interpreter {
                 true
             }
             // :ov (overlap) -- find longest match at each starting position
-            (_, Value::RegexWithAdverbs(a)) if a.overlap => {
+            (_, ValueView::RegexWithAdverbs(a)) if a.overlap => {
                 let pattern = &a.pattern;
                 let perl5 = &a.perl5;
                 let text = left.to_string_value();
@@ -556,7 +557,7 @@ impl Interpreter {
                 true
             }
             // :ex (exhaustive) -- find ALL possible matches
-            (_, Value::RegexWithAdverbs(a)) if a.exhaustive => {
+            (_, ValueView::RegexWithAdverbs(a)) if a.exhaustive => {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
                 let perl5 = &a.perl5;
@@ -600,7 +601,7 @@ impl Interpreter {
                 true
             }
             // Array/List ~~ Regex: iterate elements, match each individually
-            (Value::Array(items, ..), Value::Regex(_) | Value::RegexWithAdverbs(_)) => {
+            (ValueView::Array(items, ..), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for item in items.iter() {
                     if self.smart_match(item, right) {
                         return true;
@@ -610,8 +611,8 @@ impl Interpreter {
                 false
             }
             (
-                Value::Seq(items) | Value::Slip(items),
-                Value::Regex(_) | Value::RegexWithAdverbs(_),
+                ValueView::Seq(items) | ValueView::Slip(items),
+                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_),
             ) => {
                 for item in items.iter() {
                     if self.smart_match(item, right) {
@@ -622,7 +623,7 @@ impl Interpreter {
                 false
             }
             // Hash ~~ Regex: iterate keys, match each individually
-            (Value::Hash(map), Value::Regex(_) | Value::RegexWithAdverbs(_)) => {
+            (ValueView::Hash(map), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for key in map.keys() {
                     let key_val = Value::str(key.clone());
                     if self.smart_match(&key_val, right) {
@@ -633,17 +634,17 @@ impl Interpreter {
                 false
             }
             // Single match: plain Regex or RegexWithAdverbs without multi-match flags
-            (_, Value::Regex(_)) | (_, Value::RegexWithAdverbs(_))
-                if matches!(right, Value::Regex(_))
+            (_, ValueView::Regex(_)) | (_, ValueView::RegexWithAdverbs(_))
+                if matches!(right.view(), ValueView::Regex(_))
                     || matches!(
-                        right,
-                        Value::RegexWithAdverbs(a)
+                        right.view(),
+                        ValueView::RegexWithAdverbs(a)
                             if !a.global && !a.exhaustive && !a.overlap && !a.perl5
                     ) =>
             {
-                let pat: &str = match right {
-                    Value::Regex(p) => p,
-                    Value::RegexWithAdverbs(a) => &a.pattern,
+                let pat: &str = match right.view() {
+                    ValueView::Regex(p) => p,
+                    ValueView::RegexWithAdverbs(a) => &a.pattern,
                     _ => unreachable!(),
                 };
                 let text = left.to_string_value();
@@ -668,7 +669,7 @@ impl Interpreter {
                         .copied()
                         .collect();
                     for key in stale_numeric {
-                        self.env.insert_sym(key, Value::Nil);
+                        self.env.insert_sym(key, Value::NIL);
                     }
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
@@ -687,7 +688,7 @@ impl Interpreter {
                             named_with_hash.insert(hash_name.clone(), Vec::new());
                         }
                     }
-                    let mut match_obj = Value::make_match_object_full_q(
+                    let match_obj = Value::make_match_object_full_q(
                         captures.matched.clone(),
                         captures.from as i64,
                         captures.to as i64,
@@ -702,47 +703,42 @@ impl Interpreter {
                     );
                     // Apply hash captures: set named entries to Hash values
                     if !captures.hash_captures.is_empty()
-                        && let Value::Instance {
-                            ref mut attributes, ..
-                        } = match_obj
+                        && let ValueView::Instance { attributes, .. } = match_obj.view()
                     {
                         attributes.with_attr_mut("named", |named| {
-                            if let Value::Hash(named_hash) = named {
+                            named.with_hash_mut(|named_hash| {
                                 let named_hash = crate::gc::Gc::make_mut(named_hash);
                                 for (hash_name, entries) in &captures.hash_captures {
                                     let mut hash_map: HashMap<String, Value> = HashMap::new();
                                     for (key, value) in entries {
                                         let val = match value {
                                             Some(v) => Value::str(v.clone()),
-                                            None => Value::Nil,
+                                            None => Value::NIL,
                                         };
                                         hash_map.insert(key.clone(), val);
                                     }
                                     named_hash.insert(hash_name.clone(), Value::hash(hash_map));
                                 }
-                            }
+                            });
                         });
                     }
                     // If the original value is not a Str, store the original value
                     // as the `orig` attribute so .orig preserves the type
-                    if !matches!(left, Value::Str(_))
-                        && let Value::Instance {
-                            ref mut attributes, ..
-                        } = match_obj
+                    if left.as_str().is_none()
+                        && let ValueView::Instance { attributes, .. } = match_obj.view()
                     {
                         attributes.insert("orig".to_string(), left.clone());
                     }
                     // If `make` was called in a code block, set the ast attribute
                     if let Some(made_val) = self.env.get("made").cloned()
-                        && let Value::Instance {
-                            ref mut attributes, ..
-                        } = match_obj
+                        && let ValueView::Instance { attributes, .. } = match_obj.view()
                     {
                         attributes.insert("ast".to_string(), made_val);
                     }
                     // Upgrade positional capture env vars ($0, $1, ...) to Match objects
-                    if let Value::Instance { ref attributes, .. } = match_obj
-                        && let Some(Value::Array(list, _)) = attributes.as_map().get("list")
+                    if let ValueView::Instance { attributes, .. } = match_obj.view()
+                        && let Some(ValueView::Array(list, _)) =
+                            attributes.as_map().get("list").map(Value::view)
                     {
                         for (i, v) in list.iter().enumerate() {
                             self.env.insert(i.to_string(), v.clone());
@@ -750,8 +746,9 @@ impl Interpreter {
                     }
                     // Set named capture env vars from the match object's named hash
                     // so subcapture-aware Match objects are used (not plain strings)
-                    if let Value::Instance { ref attributes, .. } = match_obj
-                        && let Some(Value::Hash(named_hash)) = attributes.as_map().get("named")
+                    if let ValueView::Instance { attributes, .. } = match_obj.view()
+                        && let Some(ValueView::Hash(named_hash)) =
+                            attributes.as_map().get("named").map(Value::view)
                     {
                         for (k, v) in named_hash.iter() {
                             self.env.insert(format!("<{}>", k), v.clone());
@@ -764,7 +761,7 @@ impl Interpreter {
                 false
             }
             // P5 regex single match
-            (_, Value::RegexWithAdverbs(a))
+            (_, ValueView::RegexWithAdverbs(a))
                 if !a.global && !a.exhaustive && !a.overlap && a.perl5 =>
             {
                 let pat = &a.pattern;
@@ -781,7 +778,7 @@ impl Interpreter {
                 self.clear_match_state();
                 false
             }
-            (_, Value::Junction { kind, values }) => match kind {
+            (_, ValueView::Junction { kind, values }) => match kind {
                 crate::value::JunctionKind::Any => values.iter().any(|v| self.smart_match(left, v)),
                 crate::value::JunctionKind::All => values.iter().all(|v| self.smart_match(left, v)),
                 crate::value::JunctionKind::One => {
@@ -794,20 +791,20 @@ impl Interpreter {
             // IO::Path/Str ~~ Pair(:e), :d, :f, :r, :w, :x file tests
             // Also handles negated forms: :!e, :!d, :!f, :!r, :!w, :!x, :!s, :!z
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 },
-                Value::Pair(key, val),
+                ValueView::Pair(key, val),
             ) if class_name == "IO::Path"
-                && matches!(val.as_ref(), Value::Bool(_))
+                && val.as_bool().is_some()
                 && matches!(
                     key.as_str(),
                     "e" | "d" | "f" | "l" | "r" | "w" | "x" | "rw" | "rwx" | "s" | "z"
                 ) =>
             {
-                let negated = matches!(val.as_ref(), Value::Bool(false));
+                let negated = val.as_bool() == Some(false);
                 let path_str = attributes.as_map().get("path").map(|v| v.to_string_value());
                 if let Some(p) = path_str {
                     let path = std::path::Path::new(&p);
@@ -904,24 +901,24 @@ impl Interpreter {
             // Hash ~~ Pair: look up the pair's key and smartmatch the hash value
             // against the pair value. `key => val` literals build a `ValuePair`,
             // so accept both representations.
-            (Value::Hash(map), Value::Pair(key, val)) => {
+            (ValueView::Hash(map), ValueView::Pair(key, val)) => {
                 if let Some(hash_val) = map.get(key.as_str()) {
                     self.smart_match(hash_val, val)
                 } else {
                     // Key not in hash: compare against an undefined type object.
-                    self.smart_match(&Value::Package(Symbol::intern("Mu")), val)
+                    self.smart_match(&Value::package(Symbol::intern("Mu")), val)
                 }
             }
-            (Value::Hash(map), Value::ValuePair(key, val)) => {
+            (ValueView::Hash(map), ValueView::ValuePair(key, val)) => {
                 let key = key.to_string_value();
                 if let Some(hash_val) = map.get(&key) {
                     self.smart_match(hash_val, val)
                 } else {
-                    self.smart_match(&Value::Package(Symbol::intern("Mu")), val)
+                    self.smart_match(&Value::package(Symbol::intern("Mu")), val)
                 }
             }
             // Hash ~~ Hash: structural equality (eqv)
-            (Value::Hash(lmap), Value::Hash(rmap)) => {
+            (ValueView::Hash(lmap), ValueView::Hash(rmap)) => {
                 if lmap.len() != rmap.len() {
                     return false;
                 }
@@ -938,7 +935,7 @@ impl Interpreter {
                 true
             }
             // Set ~~ Mix: all set elements must exist in the Mix with unit weights.
-            (Value::Set(set, _), Value::Mix(mix, _)) => {
+            (ValueView::Set(set, _), ValueView::Mix(mix, _)) => {
                 set.len() == mix.len()
                     && set.iter().all(|key| {
                         mix.get(key)
@@ -946,40 +943,45 @@ impl Interpreter {
                     })
             }
             // Mix ~~ Set: all mix elements must have unit weights and exist in the set.
-            (Value::Mix(mix, _), Value::Set(set, _)) => {
+            (ValueView::Mix(mix, _), ValueView::Set(set, _)) => {
                 mix.len() == set.len()
                     && mix.iter().all(|(key, weight)| {
                         weight.is_finite() && *weight == 1.0 && set.contains(key)
                     })
             }
             // X ~~ Set: coerce LHS to a Set (using its elements) and compare
-            (_, Value::Set(rhs_set, _))
+            (_, ValueView::Set(rhs_set, _))
                 if matches!(
-                    left,
-                    Value::Array(..) | Value::Seq(_) | Value::Slip(_) | Value::Bag(..)
+                    left.view(),
+                    ValueView::Array(..)
+                        | ValueView::Seq(_)
+                        | ValueView::Slip(_)
+                        | ValueView::Bag(..)
                 ) =>
             {
                 // Collect LHS elements as string keys (same representation as Set uses)
-                let lhs_keys: std::collections::HashSet<String> = match left {
-                    Value::Array(items, ..) => items.iter().map(|v| v.to_string_value()).collect(),
-                    Value::Seq(items) | Value::Slip(items) => {
+                let lhs_keys: std::collections::HashSet<String> = match left.view() {
+                    ValueView::Array(items, ..) => {
                         items.iter().map(|v| v.to_string_value()).collect()
                     }
-                    Value::Bag(b, _) => b.keys().cloned().collect(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => {
+                        items.iter().map(|v| v.to_string_value()).collect()
+                    }
+                    ValueView::Bag(b, _) => b.keys().cloned().collect(),
                     _ => std::collections::HashSet::new(),
                 };
                 lhs_keys.len() == rhs_set.len() && lhs_keys.iter().all(|k| rhs_set.contains(k))
             }
             // Array ~~ Hash: check if any element exists as a key in the hash
-            (Value::Array(items, ..), Value::Hash(map)) => items.iter().any(|item| {
+            (ValueView::Array(items, ..), ValueView::Hash(map)) => items.iter().any(|item| {
                 let key = item.to_string_value();
                 map.contains_key(&key)
             }),
             // Regex ~~ Hash: check if any key matches the regex
-            (Value::Regex(_) | Value::RegexWithAdverbs(_), Value::Hash(map)) => {
-                let pat: &str = match left {
-                    Value::Regex(p) => p,
-                    Value::RegexWithAdverbs(a) => &a.pattern,
+            (ValueView::Regex(_) | ValueView::RegexWithAdverbs(_), ValueView::Hash(map)) => {
+                let pat: &str = match left.view() {
+                    ValueView::Regex(p) => p,
+                    ValueView::RegexWithAdverbs(a) => &a.pattern,
                     _ => unreachable!(),
                 };
                 for key in map.keys() {
@@ -990,12 +992,12 @@ impl Interpreter {
                 false
             }
             // Scalar ~~ Hash: check key existence
-            (_, Value::Hash(map)) => {
+            (_, ValueView::Hash(map)) => {
                 let key = left.to_string_value();
                 map.contains_key(&key)
             }
             // List/Array ~~ List/Array: element-wise smartmatch with ** support
-            (_, r) if Self::is_list_like(r) => {
+            (_, _) if Self::is_list_like(right) => {
                 // Non-iterable LHS: return False (don't treat scalars as a list)
                 if !Self::is_iterable(left) {
                     return false;
@@ -1014,11 +1016,11 @@ impl Interpreter {
             }
             // Parametric role smartmatch: R1[C2] ~~ R1[C1] (subtyping)
             (
-                Value::ParametricRole {
+                ValueView::ParametricRole {
                     base_name: lhs_base,
                     type_args: lhs_args,
                 },
-                Value::ParametricRole {
+                ValueView::ParametricRole {
                     base_name: rhs_base,
                     type_args: rhs_args,
                 },
@@ -1046,11 +1048,11 @@ impl Interpreter {
             }
             // Parametric role ~~ base role/class: R1[C1] ~~ R1, or R1[T] ~~ ParentClass
             (
-                Value::ParametricRole {
+                ValueView::ParametricRole {
                     base_name: lhs_base,
                     type_args: lhs_args,
                 },
-                Value::Package(rhs_name),
+                ValueView::Package(rhs_name),
             ) => {
                 let rhs_resolved = rhs_name.resolve();
                 let lhs_base_resolved = lhs_base.resolve();
@@ -1110,19 +1112,20 @@ impl Interpreter {
             }
             // Value instance/mixin ~~ parametric role: check composed role + type arguments.
             (
-                left_value,
-                Value::ParametricRole {
+                _,
+                ValueView::ParametricRole {
                     base_name: rhs_base,
                     type_args: rhs_args,
                 },
             ) => {
+                let left_value = left;
                 // For Package values (type objects), check class hierarchy
-                if let Value::Package(_) = left_value {
+                if let ValueView::Package(_) = left_value.view() {
                     let args_str = rhs_args
                         .iter()
-                        .map(|v| match v {
-                            Value::Package(n) => n.resolve(),
-                            other => other.to_string_value(),
+                        .map(|v| match v.view() {
+                            ValueView::Package(n) => n.resolve(),
+                            _ => v.to_string_value(),
                         })
                         .collect::<Vec<_>>()
                         .join(",");
@@ -1132,9 +1135,12 @@ impl Interpreter {
                 if !left_value.does_check(&rhs_base.resolve()) {
                     return false;
                 }
-                let lhs_args = if let Value::Mixin(_, mixins) = left_value {
-                    match mixins.get(&format!("__mutsu_role_typeargs__{}", rhs_base)) {
-                        Some(Value::Array(items, ..)) => Some(items.as_ref().clone()),
+                let lhs_args = if let ValueView::Mixin(_, mixins) = left_value.view() {
+                    match mixins
+                        .get(&format!("__mutsu_role_typeargs__{}", rhs_base))
+                        .map(Value::view)
+                    {
+                        Some(ValueView::Array(items, ..)) => Some(items.as_ref().clone()),
                         _ => None,
                     }
                 } else {
@@ -1143,7 +1149,7 @@ impl Interpreter {
                 // For Hash/Array values, also check container type metadata
                 let lhs_args = lhs_args.or_else(|| {
                     let rhs_base_resolved = rhs_base.resolve();
-                    if matches!(left_value, Value::Hash(_))
+                    if matches!(left_value.view(), ValueView::Hash(_))
                         && (rhs_base_resolved == "Hash" || rhs_base_resolved == "Associative")
                     {
                         if let Some(info) = self.container_type_metadata(left_value) {
@@ -1151,24 +1157,24 @@ impl Interpreter {
                             if let Some(ref kt) = info.key_type {
                                 if vt != "Any" || kt != "Str" {
                                     return Some(crate::value::ArrayData::new(vec![
-                                        Value::Package(crate::symbol::Symbol::intern(vt)),
-                                        Value::Package(crate::symbol::Symbol::intern(kt)),
+                                        Value::package(crate::symbol::Symbol::intern(vt)),
+                                        Value::package(crate::symbol::Symbol::intern(kt)),
                                     ]));
                                 }
                             } else if vt != "Any" && vt != "Mu" {
-                                return Some(crate::value::ArrayData::new(vec![Value::Package(
+                                return Some(crate::value::ArrayData::new(vec![Value::package(
                                     crate::symbol::Symbol::intern(vt),
                                 )]));
                             }
                         }
                         None
-                    } else if matches!(left_value, Value::Array(..))
+                    } else if matches!(left_value.view(), ValueView::Array(..))
                         && (rhs_base_resolved == "Array" || rhs_base_resolved == "Positional")
                     {
                         if let Some(info) = self.container_type_metadata(left_value) {
                             let vt = &info.value_type;
                             if vt != "Any" && vt != "Mu" {
-                                return Some(crate::value::ArrayData::new(vec![Value::Package(
+                                return Some(crate::value::ArrayData::new(vec![Value::package(
                                     crate::symbol::Symbol::intern(vt),
                                 )]));
                             }
@@ -1190,12 +1196,12 @@ impl Interpreter {
                     .all(|(lhs, rhs)| self.parametric_arg_subtypes(lhs, rhs))
             }
             // When RHS is a CustomType, use Raku type checking protocol
-            (_, Value::CustomType(c)) => self.custom_type_check(left, c.id, &c.how),
+            (_, ValueView::CustomType(c)) => self.custom_type_check(left, c.id, &c.how),
             // When LHS is a CustomType (type object), check type cache or HOW.type_check
-            (Value::CustomType(c), _) => {
+            (ValueView::CustomType(c), _) => {
                 let how = &c.how;
                 let id = &c.id;
-                if let Value::Package(_) = right {
+                if let ValueView::Package(_) = right.view() {
                     // After compose: check the type check cache
                     let data = self.custom_type_data.get(id).cloned();
                     if let Some(ref data) = data
@@ -1215,7 +1221,7 @@ impl Interpreter {
                     if let Ok(result) = self.call_how_method_recording_writeback(
                         *how.clone(),
                         "type_check",
-                        vec![Value::Nil, right.clone()],
+                        vec![Value::NIL, right.clone()],
                     ) {
                         result.truthy()
                     } else {
@@ -1226,7 +1232,7 @@ impl Interpreter {
                 }
             }
             // When RHS is a type/Package, check type membership
-            (_, Value::Package(type_name)) => {
+            (_, ValueView::Package(type_name)) => {
                 // Handle type smileys (:U, :D, :_)
                 let type_name_resolved = type_name.resolve();
                 let (base_type, smiley) =
@@ -1234,8 +1240,10 @@ impl Interpreter {
 
                 // Enum type object smartmatch against enum values.
                 if self.registry().enum_types.contains_key(base_type) {
-                    let enum_match =
-                        matches!(left, Value::Enum { enum_type, .. } if enum_type == base_type);
+                    let enum_match = matches!(
+                        left.view(),
+                        ValueView::Enum { enum_type, .. } if enum_type == base_type
+                    );
                     return match smiley {
                         Some(":U") => false,
                         Some(":D") => enum_match,
@@ -1245,7 +1253,7 @@ impl Interpreter {
 
                 // A Package on the LHS is a type object - check type hierarchy
                 // LHS ~~ RHS checks: is LHS a subtype of RHS?
-                if let Value::Package(lhs_name) = left {
+                if let ValueView::Package(lhs_name) = left.view() {
                     let lhs_resolved = lhs_name.resolve();
                     let mut type_ok = self.type_matches_value(base_type, left);
                     // type_matches treats "Any" as a universal match, but a
@@ -1275,7 +1283,7 @@ impl Interpreter {
                 // In Raku, an untyped hash does NOT match Hash[Int] even if all
                 // values happen to be Int. This differs from parameter binding
                 // where Associative[Int] checks element types.
-                if matches!(left, Value::Hash(_))
+                if matches!(left.view(), ValueView::Hash(_))
                     && let Some((hash_base, _)) =
                         Self::parse_generic_constraint(&type_name_resolved)
                     && (hash_base == "Hash" || hash_base == "Associative")
@@ -1286,26 +1294,29 @@ impl Interpreter {
                 self.type_matches_value(&type_name_resolved, left)
             }
             // Backward-compatibility: enum type objects may still arrive as Str values.
-            (_, Value::Str(type_name))
+            (_, ValueView::Str(type_name))
                 if self.registry().enum_types.contains_key(type_name.as_str()) =>
             {
-                matches!(left, Value::Enum { enum_type, .. } if enum_type.resolve() == **type_name)
+                matches!(
+                    left.view(),
+                    ValueView::Enum { enum_type, .. } if enum_type.resolve() == **type_name
+                )
             }
             // Mu instances smartmatch only the Mu type object (Mu ~~ Mu.new is True).
             (
-                Value::Package(lhs_type),
-                Value::Instance {
+                ValueView::Package(lhs_type),
+                ValueView::Instance {
                     class_name: rhs_class,
                     ..
                 },
             ) if rhs_class == "Mu" => lhs_type == "Mu",
             // When LHS is a type object (Package), only match same type or type hierarchy
-            (Value::Package(_), _) => false,
+            (ValueView::Package(_), _) => false,
             // When RHS is NaN, check if LHS is also NaN
-            (_, Value::Num(b)) if b.is_nan() => Self::value_is_nan(left),
-            (Value::Num(a), _) if a.is_nan() => Self::value_is_nan(right),
+            (_, ValueView::Num(b)) if b.is_nan() => Self::value_is_nan(left),
+            (ValueView::Num(a), _) if a.is_nan() => Self::value_is_nan(right),
             // Complex comparison (NaN-aware: any NaN component means NaN smartmatch)
-            (Value::Complex(ar, ai), Value::Complex(br, bi)) => {
+            (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) => {
                 let a_nan = ar.is_nan() || ai.is_nan();
                 let b_nan = br.is_nan() || bi.is_nan();
                 if a_nan && b_nan {
@@ -1316,75 +1327,75 @@ impl Interpreter {
                     ar == br && ai == bi
                 }
             }
-            (Value::Int(a), Value::Complex(br, bi)) => (*a as f64) == *br && *bi == 0.0,
-            (Value::Complex(ar, ai), Value::Int(b)) => *ar == (*b as f64) && *ai == 0.0,
-            (Value::Num(a), Value::Complex(br, bi)) => {
+            (ValueView::Int(a), ValueView::Complex(br, bi)) => (a as f64) == br && bi == 0.0,
+            (ValueView::Complex(ar, ai), ValueView::Int(b)) => ar == (b as f64) && ai == 0.0,
+            (ValueView::Num(a), ValueView::Complex(br, bi)) => {
                 if a.is_nan() && (br.is_nan() || bi.is_nan()) {
                     true
                 } else {
-                    *a == *br && *bi == 0.0
+                    a == br && bi == 0.0
                 }
             }
-            (Value::Complex(ar, ai), Value::Num(b)) => {
+            (ValueView::Complex(ar, ai), ValueView::Num(b)) => {
                 if b.is_nan() && (ar.is_nan() || ai.is_nan()) {
                     true
                 } else {
-                    *ar == *b && *ai == 0.0
+                    ar == b && ai == 0.0
                 }
             }
-            (Value::Complex(ar, ai), Value::Rat(n, d)) => {
-                if *d != 0 {
-                    *ar == (*n as f64 / *d as f64) && *ai == 0.0
+            (ValueView::Complex(ar, ai), ValueView::Rat(n, d)) => {
+                if d != 0 {
+                    ar == (n as f64 / d as f64) && ai == 0.0
                 } else {
                     false
                 }
             }
-            (Value::Rat(n, d), Value::Complex(br, bi)) => {
-                if *d != 0 {
-                    (*n as f64 / *d as f64) == *br && *bi == 0.0
+            (ValueView::Rat(n, d), ValueView::Complex(br, bi)) => {
+                if d != 0 {
+                    (n as f64 / d as f64) == br && bi == 0.0
                 } else {
                     false
                 }
             }
-            (Value::Int(a), Value::Int(b)) => a == b,
-            (Value::Num(a), Value::Num(b)) => a == b,
-            (Value::Int(a), Value::Num(b)) => (*a as f64) == *b,
-            (Value::Num(a), Value::Int(b)) => *a == (*b as f64),
-            (Value::Rat(an, ad), Value::Rat(bn, bd)) => an * bd == bn * ad,
-            (Value::Int(a), Value::Rat(n, d)) => *a * d == *n,
-            (Value::Rat(n, d), Value::Int(b)) => *n == *b * d,
-            (Value::Str(a), Value::Str(b)) => a == b,
+            (ValueView::Int(a), ValueView::Int(b)) => a == b,
+            (ValueView::Num(a), ValueView::Num(b)) => a == b,
+            (ValueView::Int(a), ValueView::Num(b)) => (a as f64) == b,
+            (ValueView::Num(a), ValueView::Int(b)) => a == (b as f64),
+            (ValueView::Rat(an, ad), ValueView::Rat(bn, bd)) => an * bd == bn * ad,
+            (ValueView::Int(a), ValueView::Rat(n, d)) => a * d == n,
+            (ValueView::Rat(n, d), ValueView::Int(b)) => n == b * d,
+            (ValueView::Str(a), ValueView::Str(b)) => a == b,
             // Str ~~ Numeric: numify LHS and compare
-            (Value::Str(a), Value::Int(b)) => a.trim().parse::<f64>() == Ok(*b as f64),
-            (Value::Str(a), Value::Num(b)) => {
+            (ValueView::Str(a), ValueView::Int(b)) => a.trim().parse::<f64>() == Ok(b as f64),
+            (ValueView::Str(a), ValueView::Num(b)) => {
                 let trimmed = a.trim().replace('\u{2212}', "-");
                 trimmed.parse::<f64>().is_ok_and(|v| {
                     if v.is_nan() && b.is_nan() {
                         true
                     } else {
-                        v == *b
+                        v == b
                     }
                 })
             }
-            (Value::Str(a), Value::Rat(n, d)) => {
-                if *d != 0 {
+            (ValueView::Str(a), ValueView::Rat(n, d)) => {
+                if d != 0 {
                     a.trim()
                         .parse::<f64>()
-                        .is_ok_and(|v| v == *n as f64 / *d as f64)
+                        .is_ok_and(|v| v == n as f64 / d as f64)
                 } else {
                     false
                 }
             }
-            (Value::Int(a), Value::Str(b)) => b.trim().parse::<f64>() == Ok(*a as f64),
-            (Value::Nil, Value::Str(s)) => s.is_empty(),
+            (ValueView::Int(a), ValueView::Str(b)) => b.trim().parse::<f64>() == Ok(a as f64),
+            (ValueView::Nil, ValueView::Str(s)) => s.is_empty(),
             // IO::Path ~~ IO::Path: compare by cleanup.absolute
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_a,
                     attributes: attrs_a,
                     ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_b,
                     attributes: attrs_b,
                     ..
@@ -1398,22 +1409,22 @@ impl Interpreter {
             // Cool ~~ IO::Path: convert LHS to string, compare by cleanup.absolute
             (
                 _,
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_b,
                     attributes: attrs_b,
                     ..
                 },
             ) if cn_b == "IO::Path"
                 && !matches!(
-                    left,
-                    Value::Junction { .. }
-                        | Value::Sub(_)
-                        | Value::Regex(_)
-                        | Value::RegexWithAdverbs(_)
-                        | Value::Routine { .. }
-                        | Value::Package(_)
-                        | Value::CustomType(_)
-                        | Value::ParametricRole { .. }
+                    left.view(),
+                    ValueView::Junction { .. }
+                        | ValueView::Sub(_)
+                        | ValueView::Regex(_)
+                        | ValueView::RegexWithAdverbs(_)
+                        | ValueView::Routine { .. }
+                        | ValueView::Package(_)
+                        | ValueView::CustomType(_)
+                        | ValueView::ParametricRole { .. }
                 ) =>
             {
                 let lhs_str = left.to_string_value();
@@ -1426,12 +1437,12 @@ impl Interpreter {
             }
             // Signature ~~ Signature: s1 ACCEPTS s2
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_a,
                     id: id_a,
                     ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_b,
                     id: id_b,
                     ..
@@ -1446,7 +1457,7 @@ impl Interpreter {
                 }
             }
             // Value ~~ Signature: signature ACCEPTS value
-            (_, Value::Instance { class_name: cn, .. }) if cn == "Signature" => {
+            (_, ValueView::Instance { class_name: cn, .. }) if cn == "Signature" => {
                 if let Some(info) = extract_sig_info(right) {
                     self.signature_accepts_value(left, &info)
                 } else {
@@ -1455,10 +1466,10 @@ impl Interpreter {
             }
             // Buf/Blob ~~ Buf/Blob: compare byte contents
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_a, ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     class_name: cn_b, ..
                 },
             ) if {
@@ -1484,12 +1495,12 @@ impl Interpreter {
             // Instance ~~ Instance: value types (Date, DateTime) use eqv,
             // other classes use identity comparison
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name: lc,
                     id: id_a,
                     ..
                 },
-                Value::Instance {
+                ValueView::Instance {
                     class_name: rc,
                     id: id_b,
                     ..
@@ -1507,10 +1518,10 @@ impl Interpreter {
                 }
             }
             // When RHS is a Bool, result is that Bool
-            (_, Value::Bool(b)) => *b,
+            (_, ValueView::Bool(b)) => b,
             // X::AdHoc smartmatch: delegate to payload
             (
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -1526,16 +1537,17 @@ impl Interpreter {
             // IO::Path ~~ Str: compare path string representation with string.
             // In Raku, Str.ACCEPTS(IO::Path) stringifies the IO::Path and compares.
             // This handles cases like `dir().grep("filename")` after chdir.
-            (Value::Instance { class_name: cn, .. }, Value::Str(_)) if cn == "IO::Path" => {
+            (ValueView::Instance { class_name: cn, .. }, ValueView::Str(_)) if cn == "IO::Path" => {
                 left.to_string_value() == right.to_string_value()
             }
             // Instance ~~ Type or other: identity check (false)
-            (Value::Instance { .. }, _) | (_, Value::Instance { .. }) => false,
+            (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.
             // Uses raw bound values. Exclusivity is compared pairwise:
             // if RHS excludes a bound, LHS must either also exclude it
             // or have a strictly interior value.
-            (l, r) if l.is_range() && r.is_range() => {
+            (_, _) if left.is_range() && right.is_range() => {
+                let (l, r) = (left, right);
                 let r_str = Self::range_has_string_endpoints(r);
                 let (_, _, l_es, l_ee) = Self::range_exclusivity(l);
                 let (_, _, r_es, r_ee) = Self::range_exclusivity(r);
@@ -1574,13 +1586,13 @@ impl Interpreter {
                 }
             }
             // Range ~~ Numeric: numify range (element count) and compare with ==
-            (l, r) if l.is_range() && r.is_numeric() => {
-                let elems = Self::range_elems_f64(l);
-                let rval = r.to_f64();
+            (_, _) if left.is_range() && right.is_numeric() => {
+                let elems = Self::range_elems_f64(left);
+                let rval = right.to_f64();
                 elems == rval
             }
             // Value ~~ Range: check if value is contained in the range
-            (l, r) if r.is_range() => Self::value_in_range(l, r),
+            (_, _) if right.is_range() => Self::value_in_range(left, right),
             // Default: compare equality
             _ => left.to_string_value() == right.to_string_value(),
         }
@@ -1589,31 +1601,31 @@ impl Interpreter {
     /// Check if a value is list-like (Array, Seq, Slip).
     fn is_list_like(v: &Value) -> bool {
         matches!(
-            v,
-            Value::Array(..) | Value::Seq(_) | Value::Slip(_) | Value::LazyList(_)
+            v.view(),
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) | ValueView::LazyList(_)
         )
     }
 
     /// Check if a value is iterable (can be treated as a list in smartmatch).
     fn is_iterable(v: &Value) -> bool {
         matches!(
-            v,
-            Value::Array(..) | Value::Seq(_) | Value::Slip(_) | Value::LazyList(_)
+            v.view(),
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) | ValueView::LazyList(_)
         ) || v.is_range()
     }
 
     /// Check if a value is lazy.
     fn is_lazy(v: &Value) -> bool {
-        matches!(v, Value::LazyList(_))
+        matches!(v.view(), ValueView::LazyList(_))
     }
 
     /// Check if two values are the same object (pointer equality).
     fn same_object(a: &Value, b: &Value) -> bool {
-        match (a, b) {
-            (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-            (Value::Seq(a), Value::Seq(b)) => Arc::ptr_eq(a, b),
-            (Value::Slip(a), Value::Slip(b)) => Arc::ptr_eq(a, b),
-            (Value::LazyList(a), Value::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
+        match (a.view(), b.view()) {
+            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::Seq(a), ValueView::Seq(b)) => Arc::ptr_eq(a, b),
+            (ValueView::Slip(a), ValueView::Slip(b)) => Arc::ptr_eq(a, b),
+            (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -1638,7 +1650,7 @@ impl Interpreter {
             let mut result = Vec::new();
             let mut prev_was_hw = false;
             for v in rhs {
-                if matches!(v, Value::HyperWhatever) {
+                if matches!(v.view(), ValueView::HyperWhatever) {
                     if !prev_was_hw {
                         result.push(v);
                     }
@@ -1669,7 +1681,7 @@ impl Interpreter {
             return false;
         }
         // RHS has ** -- try matching 0..n elements from LHS
-        if matches!(rhs[ri], Value::HyperWhatever) {
+        if matches!(rhs[ri].view(), ValueView::HyperWhatever) {
             // Try consuming 0, 1, 2, ... elements from LHS
             for skip in 0..=(lhs.len() - li) {
                 if self.list_smartmatch_recursive(lhs, li + skip, rhs, ri + 1) {

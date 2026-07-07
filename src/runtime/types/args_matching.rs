@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Verify that every `is rw` positional parameter in a subsignature is
@@ -21,8 +22,8 @@ impl Interpreter {
             // Advance to the next positional (non-Pair) argument.
             while arg_idx < args.len()
                 && matches!(
-                    unwrap_varref_value(args[arg_idx].clone()),
-                    Value::Pair(..) | Value::ValuePair(..)
+                    unwrap_varref_value(args[arg_idx].clone()).view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..)
                 )
             {
                 arg_idx += 1;
@@ -90,8 +91,8 @@ impl Interpreter {
                 .iter()
                 .filter(|arg| {
                     !matches!(
-                        unwrap_varref_value((*arg).clone()),
-                        Value::Pair(..) | Value::ValuePair(..)
+                        unwrap_varref_value((*arg).clone()).view(),
+                        ValueView::Pair(..) | ValueView::ValuePair(..)
                     )
                 })
                 .count();
@@ -132,8 +133,8 @@ impl Interpreter {
                         let remaining = args.get(i..).unwrap_or(&[]);
                         for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
-                            if let Value::Pair(key, val) = arg {
-                                named.insert(key, *val);
+                            if let ValueView::Pair(key, val) = arg.view() {
+                                named.insert(key.clone(), val.clone());
                             } else {
                                 positional.push(arg);
                             }
@@ -147,21 +148,21 @@ impl Interpreter {
                         for arg in remaining {
                             let arg = unwrap_varref_value(arg.clone());
                             if !pd.double_slurpy {
-                                if let Value::Array(arr, kind) = &arg
+                                if let ValueView::Array(arr, kind) = arg.view()
                                     && !kind.is_itemized()
                                 {
                                     items.extend(arr.iter().cloned());
                                     continue;
                                 }
                                 if matches!(
-                                    &arg,
-                                    Value::Range(..)
-                                        | Value::RangeExcl(..)
-                                        | Value::RangeExclStart(..)
-                                        | Value::RangeExclBoth(..)
-                                        | Value::GenericRange { .. }
-                                        | Value::Seq(..)
-                                        | Value::Slip(..)
+                                    arg.view(),
+                                    ValueView::Range(..)
+                                        | ValueView::RangeExcl(..)
+                                        | ValueView::RangeExclStart(..)
+                                        | ValueView::RangeExclBoth(..)
+                                        | ValueView::GenericRange { .. }
+                                        | ValueView::Seq(..)
+                                        | ValueView::Slip(..)
                                 ) {
                                     flatten_into_slurpy(&[arg], &mut items);
                                     continue;
@@ -249,7 +250,7 @@ impl Interpreter {
                         };
                         if !self.type_matches_value(
                             &resolved_constraint,
-                            &Value::Package(Symbol::intern(&return_type)),
+                            &Value::package(Symbol::intern(&return_type)),
                         ) {
                             return false;
                         }
@@ -303,12 +304,12 @@ impl Interpreter {
                         }
                     } else if resolved_constraint == "Num"
                         && matches!(
-                            dispatch_arg,
-                            Value::Int(_)
-                                | Value::Num(_)
-                                | Value::Rat(_, _)
-                                | Value::FatRat(_, _)
-                                | Value::BigRat(_, _)
+                            dispatch_arg.view(),
+                            ValueView::Int(_)
+                                | ValueView::Num(_)
+                                | ValueView::Rat(..)
+                                | ValueView::FatRat(..)
+                                | ValueView::BigRat(..)
                         )
                     {
                         // Multi-dispatch numeric widening: Int/Rat/FatRat can satisfy Num.
@@ -343,7 +344,10 @@ impl Interpreter {
                     && !pd.slurpy
                     && pd.type_constraint.is_none()
                     && let Some(arg) = arg_for_checks.as_ref()
-                    && !matches!(arg, Value::Array(..) | Value::Slip(..) | Value::Nil)
+                    && !matches!(
+                        arg.view(),
+                        ValueView::Array(..) | ValueView::Slip(..) | ValueView::Nil
+                    )
                     && !self.type_matches_value("Positional", arg)
                 {
                     return false;
@@ -353,7 +357,7 @@ impl Interpreter {
                     && !pd.slurpy
                     && pd.type_constraint.is_none()
                     && let Some(arg) = arg_for_checks.as_ref()
-                    && !matches!(arg, Value::Hash(..) | Value::Nil)
+                    && !matches!(arg.view(), ValueView::Hash(..) | ValueView::Nil)
                     && !self.type_matches_value("Associative", arg)
                 {
                     return false;
@@ -472,7 +476,7 @@ impl Interpreter {
             if !has_named_slurpy {
                 for arg in args {
                     let arg = unwrap_varref_value(arg.clone());
-                    if let Value::Pair(key, _) = arg {
+                    if let ValueView::Pair(key, _) = arg.view() {
                         let consumed = param_defs.iter().any(|pd| {
                             if pd.named {
                                 let bare = pd.name.trim_start_matches(|c| "$@%&".contains(c));
@@ -492,8 +496,8 @@ impl Interpreter {
                 .iter()
                 .filter_map(|a| {
                     let a = unwrap_varref_value(a.clone());
-                    if let Value::Pair(key, val) = a {
-                        Some((key, *val))
+                    if let ValueView::Pair(key, val) = a.view() {
+                        Some((key.clone(), val.clone()))
                     } else {
                         None
                     }
@@ -521,12 +525,12 @@ impl Interpreter {
                     // constraint in multi dispatch.
                     let is_num_widening = resolved_constraint == "Num"
                         && matches!(
-                            val,
-                            Value::Int(_)
-                                | Value::Num(_)
-                                | Value::Rat(_, _)
-                                | Value::FatRat(_, _)
-                                | Value::BigRat(_, _)
+                            val.view(),
+                            ValueView::Int(_)
+                                | ValueView::Num(_)
+                                | ValueView::Rat(..)
+                                | ValueView::FatRat(..)
+                                | ValueView::BigRat(..)
                         );
                     if !is_num_widening && !self.type_matches_value(&resolved_constraint, val) {
                         return false;
@@ -595,10 +599,10 @@ impl Interpreter {
             // Hot path for methods like `method m { ... }` where only the implicit invocant
             // is present in signature metadata. Reject any explicit user arguments quickly.
             for arg in args {
-                match arg {
-                    Value::Pair(key, _) if key == TEST_CALLSITE_LINE_KEY => {}
-                    Value::ValuePair(key, _) => {
-                        if let Value::Str(name) = key.as_ref() {
+                match arg.view() {
+                    ValueView::Pair(key, _) if key == TEST_CALLSITE_LINE_KEY => {}
+                    ValueView::ValuePair(key, _) => {
+                        if let ValueView::Str(name) = key.view() {
                             if name.as_str() != TEST_CALLSITE_LINE_KEY {
                                 return false;
                             }
@@ -628,7 +632,7 @@ impl Interpreter {
             filtered_params.iter().filter(|p| !p.named).collect();
         let positional_arg_count = args
             .iter()
-            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
             .count();
         let mut required = 0usize;
         let mut has_positional_slurpy = false;
@@ -669,14 +673,14 @@ impl Interpreter {
                 })
                 .collect();
             for arg in args {
-                if let Value::Pair(key, _) = arg
+                if let ValueView::Pair(key, _) = arg.view()
                     && key != TEST_CALLSITE_LINE_KEY
                     && !named_params.contains(key.as_str())
                 {
                     return false;
                 }
-                if let Value::ValuePair(key, _) = arg
-                    && let Value::Str(name) = key.as_ref()
+                if let ValueView::ValuePair(key, _) = arg.view()
+                    && let ValueView::Str(name) = key.view()
                     && name.as_str() != TEST_CALLSITE_LINE_KEY
                     && !named_params.contains(name.as_str())
                 {
@@ -692,8 +696,8 @@ impl Interpreter {
 
     /// Create an error for calling a sub with empty signature `()` with arguments.
     pub(crate) fn reject_args_for_empty_sig(args: &[Value]) -> RuntimeError {
-        if let Some(k) = args.iter().find_map(|a| match a {
-            Value::Pair(key, _) if key != TEST_CALLSITE_LINE_KEY => Some(key.clone()),
+        if let Some(k) = args.iter().find_map(|a| match a.view() {
+            ValueView::Pair(key, _) if key != TEST_CALLSITE_LINE_KEY => Some(key.clone()),
             // ValuePair is a positional pair (parenthesized), not a named arg
             _ => None,
         }) {

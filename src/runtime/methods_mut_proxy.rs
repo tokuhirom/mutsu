@@ -1,6 +1,7 @@
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::InstanceAttrs;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn call_proxy_callback(
@@ -9,7 +10,7 @@ impl Interpreter {
         args: Vec<Value>,
         instance_attrs: &HashMap<String, Value>,
     ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
-        if let Value::Sub(data) = callback {
+        if let ValueView::Sub(data) = callback.view() {
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
             // Merge captured env. For user variables that already exist in the
@@ -78,7 +79,7 @@ impl Interpreter {
             let value = match result {
                 Err(e) if e.return_value.is_some() => Ok(e.return_value.unwrap()),
                 Err(e) => Err(e),
-                Ok(()) => Ok(implicit_return.unwrap_or(Value::Nil)),
+                Ok(()) => Ok(implicit_return.unwrap_or(Value::NIL)),
             }?;
             Ok((value, updated_attrs))
         } else {
@@ -97,12 +98,7 @@ impl Interpreter {
         attributes: &HashMap<String, Value>,
         target_id: u64,
     ) -> Result<Value, RuntimeError> {
-        let proxy_val = Value::Proxy {
-            fetcher: Box::new(fetcher.clone()),
-            storer: Box::new(Value::Nil),
-            subclass: None,
-            decontainerized: false,
-        };
+        let proxy_val = Value::proxy_parts(fetcher.clone(), Value::NIL, None, false);
         let (result, _updated) = self.call_proxy_callback(fetcher, vec![proxy_val], attributes)?;
         // For FETCH we don't propagate attribute changes (reads shouldn't mutate)
         let _ = target_var;
@@ -125,12 +121,7 @@ impl Interpreter {
         attrs_cell: &crate::gc::Gc<InstanceAttrs>,
         new_value: Value,
     ) -> Result<Value, RuntimeError> {
-        let proxy_val = Value::Proxy {
-            fetcher: Box::new(Value::Nil),
-            storer: Box::new(storer.clone()),
-            subclass: None,
-            decontainerized: false,
-        };
+        let proxy_val = Value::proxy_parts(Value::NIL, storer.clone(), None, false);
         let (_result, updated) =
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
         // Propagate attribute changes back to the instance's live cell.

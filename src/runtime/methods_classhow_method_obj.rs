@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn collect_class_methods(
@@ -84,7 +85,7 @@ impl Interpreter {
     pub(super) fn make_native_method_object(&self, name: &str) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
-        attrs.insert("is_dispatcher".to_string(), Value::Bool(false));
+        attrs.insert("is_dispatcher".to_string(), Value::FALSE);
         let sig_attrs = {
             let mut sa = std::collections::HashMap::new();
             sa.insert("params".to_string(), Value::array(Vec::new()));
@@ -94,8 +95,8 @@ impl Interpreter {
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Signature"), sig_attrs),
         );
-        attrs.insert("returns".to_string(), Value::Package(Symbol::intern("Mu")));
-        attrs.insert("of".to_string(), Value::Package(Symbol::intern("Mu")));
+        attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
+        attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
         Value::make_instance(Symbol::intern("Method"), attrs)
     }
 
@@ -129,7 +130,7 @@ impl Interpreter {
             name.to_string()
         };
         attrs.insert("name".to_string(), Value::str(display_name));
-        attrs.insert("is_dispatcher".to_string(), Value::Bool(is_dispatcher));
+        attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
 
         // Build a Signature object for this method, threading the return type
         // so that `.signature.returns` reflects a `--> Type` declaration.
@@ -143,8 +144,8 @@ impl Interpreter {
 
         // Return type
         let rt = return_type.unwrap_or_else(|| "Mu".to_string());
-        attrs.insert("returns".to_string(), Value::Package(Symbol::intern(&rt)));
-        attrs.insert("of".to_string(), Value::Package(Symbol::intern(&rt)));
+        attrs.insert("returns".to_string(), Value::package(Symbol::intern(&rt)));
+        attrs.insert("of".to_string(), Value::package(Symbol::intern(&rt)));
 
         // For a multi method dispatcher, attach one Method object per
         // candidate so that `.candidates` returns them. A non-multi (single)
@@ -188,10 +189,10 @@ impl Interpreter {
     /// Returns a list of callable Sub values, one per class in the MRO that
     /// defines the method. This implements `.can(method-name)`.
     pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
-        let class_name = match target {
-            Value::Instance { class_name, .. } => class_name.resolve(),
-            Value::Package(name) => name.resolve(),
-            Value::Enum { enum_type, .. } => enum_type.resolve(),
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Enum { enum_type, .. } => enum_type.resolve(),
             _ => utils::value_type_name(target).to_string(),
         };
         let mro = self.classhow_mro_unhidden_names(target);
@@ -249,11 +250,11 @@ impl Interpreter {
             let class_attrs = self.collect_class_attributes(&class_name);
             for (attr_name, is_public, _, is_rw, ..) in &class_attrs {
                 if *is_public && attr_name == method_name {
-                    results.push(Value::Routine {
-                        package: Symbol::intern(&class_name),
-                        name: Symbol::intern(method_name),
-                        is_regex: false,
-                    });
+                    results.push(Value::routine_parts(
+                        Symbol::intern(&class_name),
+                        Symbol::intern(method_name),
+                        false,
+                    ));
                     // Tag the routine with rw status if needed — currently Routine
                     // doesn't carry rw info, but we at least return a truthy result.
                     let _ = is_rw; // suppress unused warning
@@ -272,20 +273,20 @@ impl Interpreter {
                 || crate::builtins::native_method_1arg(
                     target,
                     method_sym,
-                    &Value::Nil,
+                    &Value::NIL,
                 )
                 .is_some()
                 // Check user-defined classes and their native_methods set
                 || {
-                    let pkg = Value::Package(Symbol::intern(&class_name));
+                    let pkg = Value::package(Symbol::intern(&class_name));
                     self.classhow_find_method(&pkg, method_name).is_some()
                 };
             if has_native {
-                results.push(Value::Routine {
-                    package: Symbol::intern(&class_name),
-                    name: Symbol::intern(method_name),
-                    is_regex: false,
-                });
+                results.push(Value::routine_parts(
+                    Symbol::intern(&class_name),
+                    Symbol::intern(method_name),
+                    false,
+                ));
             }
         }
         // Grammars inherit parse/subparse/parsefile from the built-in Grammar
@@ -295,43 +296,43 @@ impl Interpreter {
             && matches!(method_name, "parse" | "subparse" | "parsefile")
             && self.package_looks_like_grammar(&class_name)
         {
-            results.push(Value::Routine {
-                package: Symbol::intern(&class_name),
-                name: Symbol::intern(method_name),
-                is_regex: false,
-            });
+            results.push(Value::routine_parts(
+                Symbol::intern(&class_name),
+                Symbol::intern(method_name),
+                false,
+            ));
         }
         // Built-in exception instances (X::...) expose their attributes as
         // accessor methods (e.g. X::Undeclared.suggestions, .symbol). The HOW
         // metamodel has no user class def for these, so probe the instance's own
         // attribute map directly.
         if results.is_empty()
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name: cn,
                 attributes,
                 ..
-            } = target
+            } = target.view()
             && cn.resolve().starts_with("X::")
             && attributes.contains_key(method_name)
         {
-            results.push(Value::Routine {
-                package: Symbol::intern(&class_name),
-                name: Symbol::intern(method_name),
-                is_regex: false,
-            });
+            results.push(Value::routine_parts(
+                Symbol::intern(&class_name),
+                Symbol::intern(method_name),
+                false,
+            ));
         }
         // For enum values, also check enum-specific methods (key, value, Int, Str, etc.)
         if results.is_empty()
-            && matches!(target, Value::Enum { .. })
+            && matches!(target.view(), ValueView::Enum { .. })
             && self
                 .dispatch_enum_method(target, method_name, &[])
                 .is_some()
         {
-            results.push(Value::Routine {
-                package: Symbol::intern(&class_name),
-                name: Symbol::intern(method_name),
-                is_regex: false,
-            });
+            results.push(Value::routine_parts(
+                Symbol::intern(&class_name),
+                Symbol::intern(method_name),
+                false,
+            ));
         }
         results
     }

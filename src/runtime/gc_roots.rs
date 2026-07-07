@@ -236,9 +236,9 @@ mod tests {
     #[test]
     fn visit_roots_finds_vm_stack_and_locals() {
         let mut interp = Interpreter::new();
-        interp.stack.push(Value::Int(1));
-        interp.stack.push(Value::Int(2));
-        interp.locals.push(Value::Int(3));
+        interp.stack.push(Value::int(1));
+        interp.stack.push(Value::int(2));
+        interp.locals.push(Value::int(3));
 
         let mut visitor = CountingVisitor { count: 0 };
         interp.visit_roots(&mut visitor);
@@ -257,7 +257,7 @@ mod tests {
             .shared_vars
             .write()
             .unwrap()
-            .insert("x".to_string(), Value::Int(42));
+            .insert("x".to_string(), Value::int(42));
 
         let mut visitor = CountingVisitor { count: 0 };
         interp.visit_roots(&mut visitor);

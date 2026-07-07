@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// The container-type coercion calls `Array(...)` / `List(...)` / `Hash(...)`.
@@ -15,9 +16,9 @@ impl Interpreter {
         // `Array(Int)` etc.: a lone type-object argument is a parametric type,
         // not a value list. Render it like the scalar coercions do.
         if args.len() == 1
-            && let Value::Package(sym) = &args[0]
+            && let ValueView::Package(sym) = args[0].view()
         {
-            return Ok(Value::Package(Symbol::intern(&format!(
+            return Ok(Value::package(Symbol::intern(&format!(
                 "{name}({})",
                 sym.resolve()
             ))));
@@ -37,45 +38,47 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let Some(value) = args.first().cloned() else {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         };
-        if let Some(source) = match &value {
-            Value::Package(sym) => Some(sym.resolve()),
-            Value::Nil => Some("Any".to_string()),
+        if let Some(source) = match value.view() {
+            ValueView::Package(sym) => Some(sym.resolve()),
+            ValueView::Nil => Some("Any".to_string()),
             _ => None,
         } {
-            return Ok(Value::Package(Symbol::intern(&format!("{name}({source})"))));
+            return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
         }
         let coerced = match name {
-            "Int" => match value {
-                Value::Int(i) => Value::Int(i),
-                Value::Num(f) => Value::Int(f as i64),
-                Value::Rat(_, 0) => {
+            "Int" => match value.view() {
+                ValueView::Int(i) => Value::int(i),
+                ValueView::Num(f) => Value::int(f as i64),
+                ValueView::Rat(_, 0) => {
                     return Ok(RuntimeError::divide_by_zero_failure_for_method(
                         "Int", "Rational",
                     ));
                 }
-                Value::Rat(n, d) => Value::Int(n / d),
-                Value::FatRat(_, 0) => {
+                ValueView::Rat(n, d) => Value::int(n / d),
+                ValueView::FatRat(_, 0) => {
                     return Ok(RuntimeError::divide_by_zero_failure_for_method(
                         "Int", "Rational",
                     ));
                 }
-                Value::FatRat(n, d) => Value::Int(n / d),
-                Value::Complex(r, _) => Value::Int(r as i64),
+                ValueView::FatRat(n, d) => Value::int(n / d),
+                ValueView::Complex(r, _) => Value::int(r as i64),
                 // Delegate to `Str.Int` so an invalid string yields the same
                 // X::Str::Numeric Failure as the method form (`"abc".Int`),
                 // rather than silently coercing to 0.
-                Value::Str(s) => return self.call_method_with_values(Value::Str(s), name, vec![]),
-                Value::Bool(b) => Value::Int(if b { 1 } else { 0 }),
-                _ => Value::Int(0),
+                ValueView::Str(_) => {
+                    return self.call_method_with_values(value.clone(), name, vec![]);
+                }
+                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
+                _ => Value::int(0),
             },
-            "Num" => match value {
-                Value::Int(i) => Value::Num(i as f64),
-                Value::Num(f) => Value::Num(f),
-                Value::Rat(n, d) => {
+            "Num" => match value.view() {
+                ValueView::Int(i) => Value::num(i as f64),
+                ValueView::Num(f) => Value::num(f),
+                ValueView::Rat(n, d) => {
                     if d == 0 {
-                        Value::Num(if n == 0 {
+                        Value::num(if n == 0 {
                             f64::NAN
                         } else if n > 0 {
                             f64::INFINITY
@@ -83,17 +86,17 @@ impl Interpreter {
                             f64::NEG_INFINITY
                         })
                     } else {
-                        Value::Num(n as f64 / d as f64)
+                        Value::num(n as f64 / d as f64)
                     }
                 }
-                Value::Complex(r, im) => {
+                ValueView::Complex(r, im) => {
                     let tolerance = self
                         .get_dynamic_var("*TOLERANCE")
                         .ok()
-                        .and_then(|v| match v {
-                            Value::Num(n) => Some(n),
-                            Value::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
-                            Value::Int(n) => Some(n as f64),
+                        .and_then(|v| match v.view() {
+                            ValueView::Num(n) => Some(n),
+                            ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+                            ValueView::Int(n) => Some(n as f64),
                             _ => None,
                         })
                         .unwrap_or(1e-15);
@@ -108,7 +111,7 @@ impl Interpreter {
                         attrs.insert("message".to_string(), Value::str(msg.clone()));
                         attrs.insert(
                             "target".to_string(),
-                            Value::Package(crate::symbol::Symbol::intern("Num")),
+                            Value::package(crate::symbol::Symbol::intern("Num")),
                         );
                         attrs.insert("source".to_string(), value.clone());
                         let ex = Value::make_instance(
@@ -119,27 +122,29 @@ impl Interpreter {
                         err.exception = Some(Box::new(ex));
                         return Err(err);
                     }
-                    Value::Num(r)
+                    Value::num(r)
                 }
                 // Delegate to `Str.Num` so an invalid string yields the same
                 // X::Str::Numeric Failure as the method form, not a silent 0.
-                Value::Str(s) => return self.call_method_with_values(Value::Str(s), name, vec![]),
-                Value::Bool(b) => Value::Num(if b { 1.0 } else { 0.0 }),
-                _ => Value::Num(0.0),
+                ValueView::Str(_) => {
+                    return self.call_method_with_values(value.clone(), name, vec![]);
+                }
+                ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
+                _ => Value::num(0.0),
             },
             "Str" => self.call_method_with_values(value, "Str", vec![])?,
-            "Bool" => Value::Bool(value.truthy()),
+            "Bool" => Value::truth(value.truthy()),
             "Uni" => {
                 // Uni(codepoint) creates a Uni from a single codepoint value
-                let cp = match &value {
-                    Value::Int(i) => *i as u32,
-                    Value::Num(f) => *f as u32,
+                let cp = match value.view() {
+                    ValueView::Int(i) => i as u32,
+                    ValueView::Num(f) => f as u32,
                     _ => value.to_string_value().parse::<u32>().unwrap_or(0),
                 };
                 let text: String = char::from_u32(cp).into_iter().collect();
                 Value::uni(String::new(), text)
             }
-            _ => Value::Nil,
+            _ => Value::NIL,
         };
         Ok(coerced)
     }

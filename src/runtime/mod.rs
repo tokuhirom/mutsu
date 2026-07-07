@@ -25,6 +25,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFunction};
 use crate::parse_dispatch;
+use crate::value::ValueView;
 use crate::value::{
     ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise,
     Value, make_rat, take_pending_instance_destroys,
@@ -36,14 +37,14 @@ use num_traits::Signed;
 /// are flattened into the result. With multiple arguments, each is appended as-is.
 pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
     if args.len() == 1 {
-        match &args[0] {
-            Value::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
-            Value::Seq(vals) => vals.to_vec(),
-            Value::Hash(map) => {
+        match args[0].view() {
+            ValueView::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
+            ValueView::Seq(vals) => vals.to_vec(),
+            ValueView::Hash(map) => {
                 // Flatten hash into key-value pairs
                 let mut result = Vec::new();
                 for (k, v) in map.iter() {
-                    result.push(Value::Pair(k.clone(), Box::new(v.clone())));
+                    result.push(Value::pair(k.clone(), v.clone()));
                 }
                 result
             }
@@ -1760,14 +1761,14 @@ pub(crate) fn container_type_metadata_with(
             }
         };
     }
-    match value {
-        Value::Array(items, ..) => embedded_type_info!(items),
-        Value::Mix(items, _) => embedded_type_info!(items),
-        Value::Set(items, _) => embedded_type_info!(items),
-        Value::Bag(items, _) => embedded_type_info!(items),
-        Value::Hash(items) => Interpreter::hashdata_type_info(items),
-        Value::Instance { id, .. } => instance_meta.read().unwrap().get(id).cloned(),
-        Value::Mixin(inner, _) => container_type_metadata_with(inner, instance_meta),
+    match value.view() {
+        ValueView::Array(items, ..) => embedded_type_info!(items),
+        ValueView::Mix(items, _) => embedded_type_info!(items),
+        ValueView::Set(items, _) => embedded_type_info!(items),
+        ValueView::Bag(items, _) => embedded_type_info!(items),
+        ValueView::Hash(items) => Interpreter::hashdata_type_info(items),
+        ValueView::Instance { id, .. } => instance_meta.read().unwrap().get(&id).cloned(),
+        ValueView::Mixin(inner, _) => container_type_metadata_with(inner, instance_meta),
         _ => None,
     }
 }
@@ -1898,7 +1899,7 @@ mod tests {
         use crate::value::Value;
         let mut interp = Interpreter::new();
         interp.run("3 + 4").unwrap();
-        assert_eq!(interp.last_value, Some(Value::Int(7)));
+        assert_eq!(interp.last_value, Some(Value::int(7)));
     }
 
     #[test]
@@ -2063,10 +2064,10 @@ mod tests {
     #[test]
     fn protect_block_cache_tracks_only_captured_lexicals() {
         let mut env = Env::new();
-        env.insert("used".to_string(), Value::Int(1));
-        env.insert("unused".to_string(), Value::Int(2));
-        env.insert("$target".to_string(), Value::Int(0));
-        env.insert("@noise".to_string(), Value::array(vec![Value::Int(3)]));
+        env.insert("used".to_string(), Value::int(1));
+        env.insert("unused".to_string(), Value::int(2));
+        env.insert("$target".to_string(), Value::int(0));
+        env.insert("@noise".to_string(), Value::array(vec![Value::int(3)]));
 
         let mut compiled = CompiledCode::new();
         compiled.constants = vec![
@@ -2092,7 +2093,7 @@ mod tests {
             name: Symbol::intern("__protect_test__"),
             params: vec![],
             param_defs: vec![],
-            body: vec![Stmt::Expr(Expr::Literal(Value::Int(0)))],
+            body: vec![Stmt::Expr(Expr::Literal(Value::int(0)))],
             is_rw: false,
             is_raw: false,
             env,

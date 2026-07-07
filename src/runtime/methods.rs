@@ -1,12 +1,13 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use num_traits::ToPrimitive;
 
 /// Parse a non-negative integer index, returning None for negative or non-numeric.
 fn pos_index(v: &Value) -> Option<usize> {
-    match v {
-        Value::Int(i) if *i >= 0 => Some(*i as usize),
-        Value::Num(f) if *f >= 0.0 => Some(*f as usize),
+    match v.view() {
+        ValueView::Int(i) if i >= 0 => Some(i as usize),
+        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
         _ => None,
     }
 }
@@ -20,7 +21,7 @@ fn make_nonneg_failure() -> Value {
     let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
     let mut failure_attrs = std::collections::HashMap::new();
     failure_attrs.insert("exception".to_string(), exception);
-    failure_attrs.insert("handled".to_string(), Value::Bool(false));
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
@@ -35,9 +36,9 @@ pub(crate) fn multidim_at_pos(target: &Value, indices: &[Value]) -> Value {
             return make_nonneg_failure();
         };
         let Some(items) = cur.as_list_items() else {
-            return Value::Nil;
+            return Value::NIL;
         };
-        cur = items.get(i).cloned().unwrap_or(Value::Nil);
+        cur = items.get(i).cloned().unwrap_or(Value::NIL);
     }
     cur.into_descalarized()
 }
@@ -92,9 +93,9 @@ pub(crate) fn shaped_multidim_exists_pos(
 
 /// Check whether a value represents an assigned (non-default) cell.
 fn is_assigned_value(v: &Value) -> bool {
-    match v {
-        Value::Nil => false,
-        Value::Package(s) if s == "Any" => false,
+    match v.view() {
+        ValueView::Nil => false,
+        ValueView::Package(s) if s == "Any" => false,
         _ => true,
     }
 }
@@ -125,8 +126,8 @@ pub(crate) fn make_not_enough_dimensions_error(
 ) -> RuntimeError {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("operation".to_string(), Value::str(operation.to_string()));
-    attrs.insert("got-dimensions".to_string(), Value::Int(got as i64));
-    attrs.insert("needed-dimensions".to_string(), Value::Int(needed as i64));
+    attrs.insert("got-dimensions".to_string(), Value::int(got as i64));
+    attrs.insert("needed-dimensions".to_string(), Value::int(needed as i64));
     attrs.insert(
         "message".to_string(),
         Value::str(format!(
@@ -151,10 +152,10 @@ pub(crate) fn multidim_assign_pos(
 ) -> Result<Value, RuntimeError> {
     assert!(!indices.is_empty());
     // Unwrap any outer Scalar wrapper.
-    if let Value::Scalar(_) = target {
+    if let ValueView::Scalar(_) = target.view() {
         return Err(RuntimeError::assignment_ro(None));
     }
-    let Value::Array(items, arr_kind) = target else {
+    let ValueView::Array(items, arr_kind) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional ASSIGN-POS on non-Array",
         ));
@@ -165,11 +166,14 @@ pub(crate) fn multidim_assign_pos(
     let mut updated = items.to_vec();
     if indices.len() == 1 {
         // Check for bound slot (Scalar wrapper)
-        if let Some(Value::Scalar(_)) = updated.get(i) {
+        if updated
+            .get(i)
+            .is_some_and(|v| matches!(v.view(), ValueView::Scalar(_)))
+        {
             return Err(RuntimeError::assignment_ro(None));
         }
         if i >= updated.len() {
-            updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+            updated.resize(i + 1, Value::package(Symbol::intern("Any")));
         }
         updated[i] = value;
     } else {
@@ -183,21 +187,21 @@ pub(crate) fn multidim_assign_pos(
         }
         updated[i] = new_child;
     }
-    Ok(Value::Array(
+    Ok(Value::array_with_kind(
         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-        *arr_kind,
+        arr_kind,
     ))
 }
 
 /// Recursively bind value at indices. The innermost slot is stored as
-/// Value::Scalar(value) to mark it as bound (immutable).
+/// Value::scalar(value) to mark it as bound (immutable).
 pub(crate) fn multidim_bind_pos(
     target: &Value,
     indices: &[Value],
     value: Value,
 ) -> Result<Value, RuntimeError> {
     assert!(!indices.is_empty());
-    let Value::Array(items, arr_kind) = target else {
+    let ValueView::Array(items, arr_kind) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional BIND-POS on non-Array",
         ));
@@ -208,9 +212,9 @@ pub(crate) fn multidim_bind_pos(
     let mut updated = items.to_vec();
     if indices.len() == 1 {
         if i >= updated.len() {
-            updated.resize(i + 1, Value::Package(Symbol::intern("Any")));
+            updated.resize(i + 1, Value::package(Symbol::intern("Any")));
         }
-        updated[i] = Value::Scalar(Box::new(value));
+        updated[i] = Value::scalar(value);
     } else {
         let child = updated
             .get(i)
@@ -222,9 +226,9 @@ pub(crate) fn multidim_bind_pos(
         }
         updated[i] = new_child;
     }
-    Ok(Value::Array(
+    Ok(Value::array_with_kind(
         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-        *arr_kind,
+        arr_kind,
     ))
 }
 
@@ -234,7 +238,7 @@ pub(crate) fn multidim_delete_pos(
     indices: &[Value],
 ) -> Result<(Value, Value), RuntimeError> {
     assert!(!indices.is_empty());
-    let Value::Array(items, arr_kind) = target else {
+    let ValueView::Array(items, arr_kind) = target.view() else {
         return Err(RuntimeError::new(
             "Cannot use multi-dimensional DELETE-POS on non-Array",
         ));
@@ -246,13 +250,13 @@ pub(crate) fn multidim_delete_pos(
     let deleted;
     if indices.len() == 1 {
         if i < updated.len() {
-            let old = std::mem::replace(&mut updated[i], Value::Nil);
-            deleted = match old {
-                Value::Scalar(inner) => *inner,
-                v => v,
+            let old = std::mem::replace(&mut updated[i], Value::NIL);
+            deleted = match old.view() {
+                ValueView::Scalar(inner) => inner.clone(),
+                _ => old.clone(),
             };
         } else {
-            deleted = Value::Nil;
+            deleted = Value::NIL;
         }
     } else {
         let child = updated
@@ -267,9 +271,9 @@ pub(crate) fn multidim_delete_pos(
     }
     Ok((
         deleted,
-        Value::Array(
+        Value::array_with_kind(
             crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-            *arr_kind,
+            arr_kind,
         ),
     ))
 }
@@ -281,13 +285,13 @@ pub(crate) fn allomorph_numeric_equal(a: &Value, b: &Value) -> bool {
     match (a_f, b_f) {
         (Some(af), Some(bf)) => {
             // Handle Complex: both real and imaginary must match
-            if let (Value::Complex(ar, ai), Value::Complex(br, bi)) = (a, b) {
+            if let (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) = (a.view(), b.view()) {
                 return (ar - br).abs() < 1e-15 && (ai - bi).abs() < 1e-15;
             }
-            if let Value::Complex(ar, ai) = a {
+            if let ValueView::Complex(ar, ai) = a.view() {
                 return (ar - bf).abs() < 1e-15 && ai.abs() < 1e-15;
             }
-            if let Value::Complex(br, bi) = b {
+            if let ValueView::Complex(br, bi) = b.view() {
                 return (af - br).abs() < 1e-15 && bi.abs() < 1e-15;
             }
             (af - bf).abs() < 1e-15
@@ -297,15 +301,15 @@ pub(crate) fn allomorph_numeric_equal(a: &Value, b: &Value) -> bool {
 }
 
 fn allomorph_val_to_f64(v: &Value) -> Option<f64> {
-    match v {
-        Value::Int(i) => Some(*i as f64),
-        Value::BigInt(n) => n.to_f64(),
-        Value::Num(f) => Some(*f),
-        Value::Rat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-        Value::FatRat(n, d) if *d != 0 => Some(*n as f64 / *d as f64),
-        Value::Complex(r, _) => Some(*r),
-        Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
-        Value::Mixin(inner, _) => allomorph_val_to_f64(inner),
+    match v.view() {
+        ValueView::Int(i) => Some(i as f64),
+        ValueView::BigInt(n) => n.to_f64(),
+        ValueView::Num(f) => Some(f),
+        ValueView::Rat(n, d) if d != 0 => Some(n as f64 / d as f64),
+        ValueView::FatRat(n, d) if d != 0 => Some(n as f64 / d as f64),
+        ValueView::Complex(r, _) => Some(r),
+        ValueView::Bool(b) => Some(if b { 1.0 } else { 0.0 }),
+        ValueView::Mixin(inner, _) => allomorph_val_to_f64(inner),
         _ => None,
     }
 }

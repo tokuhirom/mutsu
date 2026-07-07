@@ -1,4 +1,5 @@
 use crate::runtime::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     // --- IO::Socket::INET ---
@@ -10,8 +11,8 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let handle_id = attributes.get("handle").and_then(|v| {
-            if let Value::Int(i) = v {
-                Some(*i as usize)
+            if let ValueView::Int(i) = v.view() {
+                Some(i as usize)
             } else {
                 None
             }
@@ -48,14 +49,14 @@ impl Interpreter {
                 state.closed = true;
                 state.socket = None;
                 state.listener = None;
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "localport" => {
                 // Return localport from attributes
                 Ok(attributes
                     .get("localport")
                     .cloned()
-                    .unwrap_or(Value::Int(0)))
+                    .unwrap_or(Value::int(0)))
             }
             "accept" => {
                 let id =
@@ -102,7 +103,7 @@ impl Interpreter {
                 };
                 let new_id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
-                attrs.insert("handle".to_string(), Value::Int(new_id as i64));
+                attrs.insert("handle".to_string(), Value::int(new_id as i64));
                 Ok(Value::make_instance(
                     crate::symbol::Symbol::intern("IO::Socket::INET"),
                     attrs,
@@ -131,7 +132,7 @@ impl Interpreter {
                     stream
                         .flush()
                         .map_err(|e| RuntimeError::new(format!("flush failed: {}", e)))?;
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 } else {
                     Err(RuntimeError::new("Socket not connected"))
                 }
@@ -158,7 +159,7 @@ impl Interpreter {
                     stream
                         .flush()
                         .map_err(|e| RuntimeError::new(format!("flush failed: {}", e)))?;
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 } else {
                     Err(RuntimeError::new("Socket not connected"))
                 }
@@ -170,10 +171,10 @@ impl Interpreter {
                 let mut bin_mode = false;
                 let mut max_chars: Option<usize> = None;
                 for arg in &args {
-                    match arg {
-                        Value::Int(n) => max_chars = Some(*n as usize),
-                        Value::Pair(key, value) if key.as_str() == "bin" => {
-                            bin_mode = value.as_ref().truthy();
+                    match arg.view() {
+                        ValueView::Int(n) => max_chars = Some(n as usize),
+                        ValueView::Pair(key, value) if key.as_str() == "bin" => {
+                            bin_mode = value.truthy();
                         }
                         _ => {}
                     }
@@ -185,8 +186,8 @@ impl Interpreter {
                     handle_id.ok_or_else(|| RuntimeError::new("IO::Socket::INET has no handle"))?;
                 let nbytes = args
                     .first()
-                    .map(|v| match v {
-                        Value::Int(i) => *i as usize,
+                    .map(|v| match v.view() {
+                        ValueView::Int(i) => i as usize,
                         _ => 0,
                     })
                     .unwrap_or(0);

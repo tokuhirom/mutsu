@@ -1,5 +1,6 @@
 use super::builtins_system::*;
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(super) fn builtin_gethost(&self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -20,11 +21,11 @@ impl Interpreter {
             .unwrap_or_else(|| ".".to_string());
         let path_buf = PathBuf::from(path_str.clone());
         if !path_buf.is_dir() {
-            return Ok(Value::Bool(false));
+            return Ok(Value::FALSE);
         }
         let canonical = path_buf.canonicalize().unwrap_or_else(|_| path_buf.clone());
         if std::env::set_current_dir(&canonical).is_err() {
-            return Ok(Value::Bool(false));
+            return Ok(Value::FALSE);
         }
         self.chroot_root = Some(canonical.clone());
         let repr = Self::stringify_path(&canonical);
@@ -35,7 +36,7 @@ impl Interpreter {
         let cwd_val = self.make_io_path_instance(&repr);
         self.env.insert("$*CWD".to_string(), cwd_val.clone());
         self.env.insert("*CWD".to_string(), cwd_val);
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 
     /// Helper to create a Proc instance from process execution results.
@@ -68,33 +69,29 @@ impl Interpreter {
         bin: bool,
     ) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("exitcode".to_string(), Value::Int(exitcode));
-        attrs.insert("signal".to_string(), Value::Int(signal));
-        attrs.insert("pid".to_string(), Value::Int(pid));
+        attrs.insert("exitcode".to_string(), Value::int(exitcode));
+        attrs.insert("signal".to_string(), Value::int(signal));
+        attrs.insert("pid".to_string(), Value::int(pid));
         attrs.insert("command".to_string(), command);
         if bin {
-            attrs.insert("bin".to_string(), Value::Bool(true));
+            attrs.insert("bin".to_string(), Value::TRUE);
         }
         let mut pipe_ids = Vec::new();
         if let Some(err_content) = captured_err {
             let pipe = Self::make_io_pipe_bin(err_content, bin);
-            if let Value::Instance {
-                attributes: ref a, ..
-            } = pipe
-                && let Some(Value::Int(id)) = a.as_map().get("pipe-id")
+            if let ValueView::Instance { attributes: a, .. } = pipe.view()
+                && let Some(id) = a.as_map().get("pipe-id").and_then(|v| v.as_int())
             {
-                pipe_ids.push(*id);
+                pipe_ids.push(id);
             }
             attrs.insert("err".to_string(), pipe);
         }
         if let Some(out_content) = captured_out {
             let pipe = Self::make_io_pipe_bin(out_content, bin);
-            if let Value::Instance {
-                attributes: ref a, ..
-            } = pipe
-                && let Some(Value::Int(id)) = a.as_map().get("pipe-id")
+            if let ValueView::Instance { attributes: a, .. } = pipe.view()
+                && let Some(id) = a.as_map().get("pipe-id").and_then(|v| v.as_int())
             {
-                pipe_ids.push(*id);
+                pipe_ids.push(id);
             }
             attrs.insert("out".to_string(), pipe);
         }
@@ -130,9 +127,9 @@ impl Interpreter {
         }
         let mut attrs = HashMap::new();
         attrs.insert("content".to_string(), Value::str(content));
-        attrs.insert("pipe-id".to_string(), Value::Int(id));
+        attrs.insert("pipe-id".to_string(), Value::int(id));
         if bin {
-            attrs.insert("bin".to_string(), Value::Bool(true));
+            attrs.insert("bin".to_string(), Value::TRUE);
         }
         Value::make_instance(Symbol::intern("IO::Pipe"), attrs)
     }
@@ -153,14 +150,14 @@ impl Interpreter {
             merge: false,
         };
         for value in args.iter().skip(skip) {
-            if let Value::Hash(map) = value {
+            if let ValueView::Hash(map) = value.view() {
                 for (key, inner) in map.iter() {
                     match key.as_str() {
                         "cwd" => {
                             opts.cwd = Some(inner.to_string_value());
                         }
                         "env" => {
-                            if let Value::Hash(env_map) = inner {
+                            if let ValueView::Hash(env_map) = inner.view() {
                                 for (ek, ev) in env_map.iter() {
                                     opts.env.insert(ek.clone(), ev.to_string_value());
                                 }
@@ -188,11 +185,11 @@ impl Interpreter {
                     }
                 }
             }
-            if let Value::Pair(key, inner) = value {
+            if let ValueView::Pair(key, inner) = value.view() {
                 match key.as_str() {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "env" => {
-                        if let Value::Hash(env_map) = inner.as_ref() {
+                        if let ValueView::Hash(env_map) = inner.view() {
                             for (ek, ev) in env_map.iter() {
                                 opts.env.insert(ek.clone(), ev.to_string_value());
                             }
@@ -212,25 +209,26 @@ impl Interpreter {
     }
 
     fn extract_in_option(value: &Value, opts: &mut ProcOptions) {
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
             && class_name.resolve() == "IO::Pipe"
         {
             opts.capture_in = true;
-            if let Some(Value::Int(pid)) = attributes.as_map().get("live-pid") {
-                opts.in_pipe_pid = Some(*pid);
+            if let Some(pid) = attributes.as_map().get("live-pid").and_then(|v| v.as_int()) {
+                opts.in_pipe_pid = Some(pid);
                 return;
             }
-            if let Some(Value::Int(pid)) = attributes.as_map().get("proc-pid") {
-                opts.in_pipe_pid = Some(*pid);
+            if let Some(pid) = attributes.as_map().get("proc-pid").and_then(|v| v.as_int()) {
+                opts.in_pipe_pid = Some(pid);
                 return;
             }
-            let content = if let Some(Value::Int(id)) = attributes.as_map().get("pipe-id")
+            let content = if let Some(id) =
+                attributes.as_map().get("pipe-id").and_then(|v| v.as_int())
                 && let Ok(mut map) = io_pipe_state_map().lock()
-                && let Some(state) = map.get_mut(id)
+                && let Some(state) = map.get_mut(&id)
             {
                 let c = state.content[state.cursor..].to_string();
                 state.cursor = state.content.len();
@@ -250,15 +248,15 @@ impl Interpreter {
 
     fn extract_out_option(value: &Value, opts: &mut ProcOptions) {
         // :out can be an IO::Handle (redirect stdout to that file handle)
-        if let Value::Instance {
+        if let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = value
+        } = value.view()
             && class_name.resolve() == "IO::Handle"
-            && let Some(Value::Int(id)) = attributes.as_map().get("handle")
+            && let Some(id) = attributes.as_map().get("handle").and_then(|v| v.as_int())
         {
-            opts.out_handle_id = Some(*id as usize);
+            opts.out_handle_id = Some(id as usize);
             return;
         }
         opts.capture_out = value.truthy();
@@ -291,12 +289,12 @@ impl Interpreter {
 
         let shell_args = vec![
             Value::str(command),
-            Value::Pair("out".to_string(), Box::new(Value::Bool(true))),
-            Value::Pair("err".to_string(), Box::new(Value::Bool(true))),
+            Value::pair("out".to_string(), Value::TRUE),
+            Value::pair("err".to_string(), Value::TRUE),
         ];
         let proc_value = self.builtin_shell(&shell_args)?;
 
-        if let Value::Instance { attributes, .. } = proc_value {
+        if let ValueView::Instance { attributes, .. } = proc_value.view() {
             if let Some(err_pipe) = attributes.as_map().get("err") {
                 let stderr = self.call_method_with_values(err_pipe.clone(), "slurp", vec![])?;
                 let stderr_text = stderr.to_string_value();
@@ -320,10 +318,7 @@ mod tests {
 
     #[test]
     fn extract_proc_options_reads_win_verbatim_pair() {
-        let args = vec![Value::Pair(
-            "win-verbatim-args".to_string(),
-            Box::new(Value::Bool(true)),
-        )];
+        let args = vec![Value::pair("win-verbatim-args".to_string(), Value::TRUE)];
         let opts = Interpreter::extract_proc_options(&args, 0);
         assert!(opts.win_verbatim_args);
     }
@@ -331,7 +326,7 @@ mod tests {
     #[test]
     fn extract_proc_options_reads_win_verbatim_hash() {
         let mut map = HashMap::new();
-        map.insert("win-verbatim-args".to_string(), Value::Bool(true));
+        map.insert("win-verbatim-args".to_string(), Value::TRUE);
         let args = vec![Value::hash(map)];
         let opts = Interpreter::extract_proc_options(&args, 0);
         assert!(opts.win_verbatim_args);

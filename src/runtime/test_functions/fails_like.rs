@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn test_fn_fails_like(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -9,14 +10,14 @@ impl Interpreter {
         let desc = Self::positional_string(args, 2);
         let mut named_matchers: Vec<(String, Value)> = Vec::new();
         for arg in args.iter().skip(2) {
-            if let Value::Pair(key, val) = arg {
-                named_matchers.push((key.clone(), *val.clone()));
+            if let ValueView::Pair(key, val) = arg.view() {
+                named_matchers.push((key.clone(), val.clone()));
             }
         }
 
         // Check for Bool matchers — Raku throws X::Match::Bool
         for (attr_name, val) in &named_matchers {
-            if matches!(val, Value::Bool(_)) {
+            if val.as_bool().is_some() {
                 let msg = format!(
                     "Cannot use Bool as Matcher with '.{}'. Did you mean to use $_ inside a block?",
                     attr_name
@@ -42,12 +43,12 @@ impl Interpreter {
         // into the caller's topic variable
         let saved_topic = self.env.get("_").cloned();
         let saved_dollar_topic = self.env.get("$_").cloned();
-        let result = match &code_val {
-            Value::Sub(data) => self.eval_test_block_value(&data.body),
-            Value::Str(code) => {
+        let result = match code_val.view() {
+            ValueView::Sub(data) => self.eval_test_block_value(&data.body),
+            ValueView::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;
-                if let Some(Value::Int(pid)) = self.env.get("*PID") {
+                if let Some(pid) = self.env.get("*PID").and_then(|v| v.as_int()) {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.lib_paths = self.lib_paths.clone();
@@ -76,14 +77,14 @@ impl Interpreter {
                     if k.contains_str("::") {
                         continue;
                     }
-                    if matches!(v, Value::Sub(_) | Value::Routine { .. }) {
+                    if matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }) {
                         continue;
                     }
                     nested.env.insert_sym(*k, v.clone());
                 }
                 nested.eval_eval_string(code)
             }
-            _ => Ok(Value::Nil),
+            _ => Ok(Value::NIL),
         };
         // Restore $_ to prevent leaking Failure values from the block
         if let Some(topic) = saved_topic {
@@ -98,8 +99,8 @@ impl Interpreter {
         }
 
         let is_failure_like = |value: &Value| {
-            matches!(value, Value::Instance { class_name, .. } if class_name == "Failure")
-                || matches!(value, Value::Mixin(_, mixins) if mixins.contains_key("Failure"))
+            matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                || matches!(value.view(), ValueView::Mixin(_, mixins) if mixins.contains_key("Failure"))
         };
 
         // Determine if the result is a Failure, and if so, sink it to get the error
@@ -119,7 +120,7 @@ impl Interpreter {
                     .exception
                     .as_ref()
                     .and_then(|ex| {
-                        if let Value::Instance { class_name, .. } = ex.as_ref() {
+                        if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                             Some(class_name.resolve())
                         } else {
                             None
@@ -146,7 +147,7 @@ impl Interpreter {
                 let ran = self.tap.state().map(|s| s.ran).unwrap_or(0);
                 self.emit_output(&format!("ok {} - # SKIP {}\n", ran, fail_msg));
                 self.finish_subtest(ctx, &label, Err(RuntimeError::new("")))?;
-                return Ok(Value::Bool(false));
+                return Ok(Value::FALSE);
             }
         };
 
@@ -179,7 +180,7 @@ impl Interpreter {
             match sink {
                 Err(err) => {
                     let ex_class = err.exception.as_ref().and_then(|ex| {
-                        if let Value::Instance { class_name, .. } = ex.as_ref() {
+                        if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
                             Some(class_name.resolve())
                         } else {
                             None
@@ -211,7 +212,7 @@ impl Interpreter {
 
         // Determine which named matchers to check
         let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
-            if let Value::Instance { class_name, .. } = ex {
+            if let ValueView::Instance { class_name, .. } = ex.view() {
                 let cn = class_name.resolve();
                 cn.starts_with("X::") && cn != "X::AdHoc"
             } else {
@@ -250,7 +251,7 @@ impl Interpreter {
             )?;
             for (attr_name, expected_val) in &named_checks {
                 let actual_val = exception_val.as_ref().and_then(|ex| {
-                    if let Value::Instance { attributes, .. } = ex {
+                    if let ValueView::Instance { attributes, .. } = ex.view() {
                         attributes.as_map().get(attr_name).cloned()
                     } else {
                         None
@@ -260,13 +261,13 @@ impl Interpreter {
                     .as_ref()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let matched = match expected_val {
-                    Value::Whatever => true,
-                    Value::Regex(pattern) => self
+                let matched = match expected_val.view() {
+                    ValueView::Whatever => true,
+                    ValueView::Regex(pattern) => self
                         .regex_match_with_captures(pattern, &actual_str)
                         .is_some(),
-                    Value::Sub(_) | Value::Routine { .. } => {
-                        let call_arg = actual_val.clone().unwrap_or(Value::Nil);
+                    ValueView::Sub(_) | ValueView::Routine { .. } => {
+                        let call_arg = actual_val.clone().unwrap_or(Value::NIL);
                         match self.call_sub_value(expected_val.clone(), vec![call_arg], false) {
                             Ok(result_val) => result_val.truthy(),
                             Err(_) => false,
@@ -274,9 +275,9 @@ impl Interpreter {
                     }
                     _ => actual_str == expected_val.to_string_value(),
                 };
-                let expected_display = match expected_val {
-                    Value::Regex(pattern) => format!("/{}/", pattern),
-                    Value::Sub(_) | Value::Routine { .. } => expected_val.to_string_value(),
+                let expected_display = match expected_val.view() {
+                    ValueView::Regex(pattern) => format!("/{}/", pattern),
+                    ValueView::Sub(_) | ValueView::Routine { .. } => expected_val.to_string_value(),
                     _ => expected_val.to_string_value(),
                 };
                 self.test_ok(
@@ -308,6 +309,6 @@ impl Interpreter {
                 Err(RuntimeError::new(""))
             },
         )?;
-        Ok(Value::Bool(all_ok))
+        Ok(Value::truth(all_ok))
     }
 }

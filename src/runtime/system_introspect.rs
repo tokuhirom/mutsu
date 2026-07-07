@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Build a CallFrame Instance for the given depth.
@@ -20,13 +21,13 @@ impl Interpreter {
             let code = self.current_routine_sub_value();
             let my_hash = self.build_lexical_hash(&self.env, None);
             let mut attrs = HashMap::new();
-            attrs.insert("line".to_string(), Value::Int(line));
+            attrs.insert("line".to_string(), Value::int(line));
             attrs.insert("file".to_string(), Value::str(file));
             Self::insert_callframe_code_attrs(&mut attrs, &code);
             attrs.insert("code".to_string(), code);
             attrs.insert("my".to_string(), my_hash);
-            attrs.insert("inline".to_string(), Value::Bool(false));
-            attrs.insert("__depth".to_string(), Value::Int(0));
+            attrs.insert("inline".to_string(), Value::FALSE);
+            attrs.insert("__depth".to_string(), Value::int(0));
             attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
             return Some(Value::make_instance(Symbol::intern("CallFrame"), attrs));
         }
@@ -37,16 +38,16 @@ impl Interpreter {
             return None;
         }
         let entry = &self.callframe_stack[stack_len - depth];
-        let code = entry.code.clone().unwrap_or(Value::Nil);
+        let code = entry.code.clone().unwrap_or(Value::NIL);
         let my_hash = self.build_lexical_hash(&entry.env, Some(depth));
         let mut attrs = HashMap::new();
-        attrs.insert("line".to_string(), Value::Int(entry.line));
+        attrs.insert("line".to_string(), Value::int(entry.line));
         attrs.insert("file".to_string(), Value::str(entry.file.clone()));
         Self::insert_callframe_code_attrs(&mut attrs, &code);
         attrs.insert("code".to_string(), code);
         attrs.insert("my".to_string(), my_hash);
-        attrs.insert("inline".to_string(), Value::Bool(false));
-        attrs.insert("__depth".to_string(), Value::Int(depth as i64));
+        attrs.insert("inline".to_string(), Value::FALSE);
+        attrs.insert("__depth".to_string(), Value::int(depth as i64));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
     }
@@ -54,8 +55,8 @@ impl Interpreter {
     /// Extract subname, package, subtype, and sub attributes from a code value
     /// and insert them into the CallFrame attributes map.
     fn insert_callframe_code_attrs(attrs: &mut HashMap<String, Value>, code: &Value) {
-        match code {
-            Value::Sub(sd) => {
+        match code.view() {
+            ValueView::Sub(sd) => {
                 let name = sd.name.resolve();
                 attrs.insert("subname".to_string(), Value::str(name.to_string()));
                 let pkg = sd.package.resolve();
@@ -67,7 +68,7 @@ impl Interpreter {
                 attrs.insert("subname".to_string(), Value::str(String::new()));
                 attrs.insert("package".to_string(), Value::str(String::new()));
                 attrs.insert("subtype".to_string(), Value::str(String::new()));
-                attrs.insert("sub".to_string(), Value::Nil);
+                attrs.insert("sub".to_string(), Value::NIL);
             }
         }
     }
@@ -75,7 +76,7 @@ impl Interpreter {
     fn current_routine_sub_value(&self) -> Value {
         // Try to find the current routine as a Sub value from the block stack
         for v in self.block_stack.iter().rev() {
-            if matches!(v, Value::Sub(_)) {
+            if matches!(v.view(), ValueView::Sub(_)) {
                 return v.clone();
             }
         }
@@ -85,7 +86,7 @@ impl Interpreter {
         {
             return code.clone();
         }
-        Value::Nil
+        Value::NIL
     }
 
     fn build_lexical_hash(&self, env: &Env, callframe_depth: Option<usize>) -> Value {
@@ -114,7 +115,7 @@ impl Interpreter {
         }
         // Store callframe depth so assignments can write back to the caller env
         if let Some(depth) = callframe_depth {
-            hash.insert("__callframe_depth".to_string(), Value::Int(depth as i64));
+            hash.insert("__callframe_depth".to_string(), Value::int(depth as i64));
         }
         Value::hash(hash)
     }

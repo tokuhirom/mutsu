@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// Dispatch methods on Collation instances (set, primary, secondary, tertiary, quaternary).
@@ -8,11 +9,11 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             id,
-        } = &target
+        } = target.view()
         else {
             return Err(RuntimeError::new(
                 "Collation method called on non-Collation value",
@@ -26,7 +27,7 @@ impl Interpreter {
                     .as_map()
                     .get(method)
                     .cloned()
-                    .unwrap_or(Value::Int(1)))
+                    .unwrap_or(Value::int(1)))
             }
             "set" => {
                 // .set accepts named arguments: primary, secondary, tertiary, quaternary
@@ -34,28 +35,28 @@ impl Interpreter {
                 let mut new_attrs = attributes.to_map();
 
                 for arg in args {
-                    if let Value::Pair(key, val) = arg {
-                        let int_val = match val.as_ref() {
-                            Value::Bool(b) => {
-                                if *b {
+                    if let ValueView::Pair(key, val) = arg.view() {
+                        let int_val = match val.view() {
+                            ValueView::Bool(b) => {
+                                if b {
                                     1
                                 } else {
                                     0
                                 }
                             }
-                            Value::Int(n) => *n,
-                            other => crate::runtime::utils::to_int(other),
+                            ValueView::Int(n) => n,
+                            _ => crate::runtime::utils::to_int(val),
                         };
                         match key.as_str() {
                             "primary" | "secondary" | "tertiary" | "quaternary" => {
-                                new_attrs.insert(key.clone(), Value::Int(int_val));
+                                new_attrs.insert(key.clone(), Value::int(int_val));
                             }
                             _ => {}
                         }
                     }
                 }
 
-                let result = Value::write_back_sharing(attributes, *class_name, new_attrs, *id);
+                let result = Value::write_back_sharing(attributes, class_name, new_attrs, id);
                 // Also update the target in-place (Collation.set mutates and returns self)
                 Ok(result)
             }
@@ -92,33 +93,30 @@ impl Interpreter {
             .map(|v| CollationSettings::from_value(&v))
             .unwrap_or_default();
 
-        match target {
-            Value::Package(class_name) if class_name == "Supply" => {
-                Ok(Value::Seq(Arc::new(vec![Value::Package(class_name)])))
+        match target.view() {
+            ValueView::Package(class_name) if class_name == "Supply" => {
+                Ok(Value::seq(vec![Value::package(class_name)]))
             }
-            Value::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
             } if class_name == "Supply" => {
-                let values = match attributes.as_map().get("values") {
-                    Some(Value::Array(items, ..)) => items.to_vec(),
+                let values = match attributes.as_map().get("values").map(|v| v.view()) {
+                    Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let sorted = collate_sort(values, &settings);
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(sorted));
                 attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert("live".to_string(), Value::Bool(false));
+                attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
             }
-            Value::Array(items, ..) => Ok(Value::Seq(Arc::new(collate_sort(
-                items.to_vec(),
-                &settings,
-            )))),
-            other => {
-                let values = Self::value_to_list(&other);
-                Ok(Value::Seq(Arc::new(collate_sort(values, &settings))))
+            ValueView::Array(items, ..) => Ok(Value::seq(collate_sort(items.to_vec(), &settings))),
+            _ => {
+                let values = Self::value_to_list(&target);
+                Ok(Value::seq(collate_sort(values, &settings)))
             }
         }
     }

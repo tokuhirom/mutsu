@@ -2,6 +2,7 @@
 //! routine-registry snapshot/restore, block-scope depth, and `let`-saves.
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn should_hide_from_my_global_stash(&self, key: &str) -> bool {
@@ -250,7 +251,9 @@ impl Interpreter {
         // captured-outer boxing (docs/captured-outer-cell-sharing.md). Gated on the
         // same toggle as the boxing it supports, so the default build is
         // byte-identical to before.
-        if let Some(Value::ContainerRef(arc)) = self.env.get(&name).cloned() {
+        if let Some(v) = self.env.get(&name).cloned()
+            && let ValueView::ContainerRef(arc) = v.view()
+        {
             arc.lock().unwrap().clone_from(&restored);
             return;
         }
@@ -276,19 +279,20 @@ impl Interpreter {
                 self.record_caller_var_writeback(&name);
             }
         }
-        if let Value::Instance {
+        if let ValueView::Instance {
             attributes: saved_attrs,
             ..
-        } = &restored
+        } = restored.view()
         {
             // The current binding for `name` holds the live instance (the same
             // shared cell that was mutated during the dynamic scope). Write the
             // saved snapshot straight back into that cell; the env binding already
             // aliases it, so no re-insert is needed.
-            if let Some(Value::Instance {
-                attributes: live_attrs,
-                ..
-            }) = self.env.get(&name)
+            if let Some(v) = self.env.get(&name)
+                && let ValueView::Instance {
+                    attributes: live_attrs,
+                    ..
+                } = v.view()
             {
                 live_attrs.commit_attrs(saved_attrs.to_map());
                 return;
@@ -306,7 +310,7 @@ impl Interpreter {
 
     /// Resolve the value to restore, applying `is default(...)` when restoring Nil.
     fn resolve_restore_value(&self, name: &str, val: &Value) -> Value {
-        if matches!(val, Value::Nil)
+        if val.is_nil()
             && let Some(default) = self.var_defaults.get(name)
         {
             return default.clone();

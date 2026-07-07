@@ -1,5 +1,6 @@
 //! Symbolic stash member lookup and package/indirect-type-name resolution.
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     fn stash_symbol_key_from_env_tail(rest: &str) -> String {
@@ -91,11 +92,11 @@ impl Interpreter {
     }
 
     fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
-        let Value::Instance {
+        let ValueView::Instance {
             class_name,
             attributes,
             ..
-        } = stash
+        } = stash.view()
         else {
             return None;
         };
@@ -103,7 +104,7 @@ impl Interpreter {
             return None;
         }
         let map = attributes.as_map();
-        let Value::Hash(symbols) = map.get("symbols")? else {
+        let ValueView::Hash(symbols) = map.get("symbols")?.view() else {
             return None;
         };
         if let Some(value) = symbols.get(key) {
@@ -134,7 +135,7 @@ impl Interpreter {
         let exception = Value::make_instance(Symbol::intern("X::NoSuchSymbol"), ex_attrs);
         let mut failure_attrs = HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
-        failure_attrs.insert("handled".to_string(), Value::Bool(false));
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
@@ -150,14 +151,14 @@ impl Interpreter {
         // Pseudo-package names like MY, CORE, OUTER, CALLER, etc. should
         // resolve to Package values so that .WHO can produce the stash.
         if Self::is_pseudo_package_name(name) {
-            return Value::Package(Symbol::intern(name));
+            return Value::package(Symbol::intern(name));
         }
         if let Some(code_name) = name.strip_prefix('&') {
             let val = self.resolve_code_var(code_name);
             // When the code variable is not found via ::('&name'), return a
             // Failure (like Raku's X::NoSuchSymbol) so that attempting to use
             // the result throws an exception.
-            if matches!(val, Value::Nil) {
+            if val.is_nil() {
                 return Self::no_such_symbol_failure(name);
             }
             return val;
@@ -165,12 +166,12 @@ impl Interpreter {
         // Scalars are stored without the `$` sigil in the env; strip it for lookup.
         if let Some(bare) = name.strip_prefix('$')
             && let Some(value) = self.env.get(bare)
-            && !matches!(value, Value::Nil)
+            && !value.is_nil()
         {
             return value.clone();
         }
         if let Some(value) = self.env.get(name)
-            && !matches!(value, Value::Nil)
+            && !value.is_nil()
             // Skip `my`-scoped package items for indirect type lookup (::())
             // since they should not be visible outside their declaring scope.
             && !self.is_my_scoped_package_item(name)
@@ -181,24 +182,24 @@ impl Interpreter {
         // which may have been removed from the lexical env by block-scope restoration.
         if let Some(bare) = name.strip_prefix('$')
             && let Some(value) = self.our_vars.get(bare)
-            && !matches!(value, Value::Nil)
+            && !value.is_nil()
         {
             return value.clone();
         }
         if let Some(value) = self.our_vars.get(name)
-            && !matches!(value, Value::Nil)
+            && !value.is_nil()
         {
             return value.clone();
         }
         // Look up well-known numerical constants
         match name {
-            "e" | "\u{1D452}" => return Value::Num(std::f64::consts::E),
-            "pi" => return Value::Num(std::f64::consts::PI),
-            "tau" | "\u{03C4}" => return Value::Num(std::f64::consts::TAU),
+            "e" | "\u{1D452}" => return Value::num(std::f64::consts::E),
+            "pi" => return Value::num(std::f64::consts::PI),
+            "tau" | "\u{03C4}" => return Value::num(std::f64::consts::TAU),
             _ => {}
         }
         if !self.method_class_stack.is_empty() && self.loaded_modules.contains(name) {
-            return Value::Package(Symbol::intern(name));
+            return Value::package(Symbol::intern(name));
         }
 
         // Check if the full compound name (e.g. "IO::Path") is a known type
@@ -208,7 +209,7 @@ impl Interpreter {
                 || self.has_class(name)
                 || self.is_role(name))
         {
-            return Value::Package(Symbol::intern(name));
+            return Value::package(Symbol::intern(name));
         }
 
         let mut parts = name.split("::").filter(|part| !part.is_empty());
@@ -217,7 +218,7 @@ impl Interpreter {
         };
 
         let mut current = if let Some(value) = self.env.get(first)
-            && !matches!(value, Value::Nil)
+            && !value.is_nil()
         {
             value.clone()
         } else if crate::runtime::utils::is_known_type_constraint(first)
@@ -226,14 +227,14 @@ impl Interpreter {
                     || self.has_class(first)
                     || self.is_role(first)))
         {
-            Value::Package(Symbol::intern(first))
+            Value::package(Symbol::intern(first))
         } else {
             return Self::no_such_symbol_failure(name);
         };
 
         for part in parts {
-            current = match &current {
-                Value::Package(package) => {
+            current = match current.view() {
+                ValueView::Package(package) => {
                     let stash = self.package_stash_value(&package.resolve());
                     if let Some(value) = Self::stash_lookup_symbol(&stash, part) {
                         value
@@ -241,7 +242,7 @@ impl Interpreter {
                         return Self::no_such_symbol_failure(name);
                     }
                 }
-                Value::Instance { class_name, .. } if class_name == "Stash" => {
+                ValueView::Instance { class_name, .. } if class_name == "Stash" => {
                     if let Some(value) = Self::stash_lookup_symbol(&current, part) {
                         value
                     } else {
@@ -309,7 +310,7 @@ impl Interpreter {
                         .get(&fq)
                         .cloned()
                         .or_else(|| self.env.get(name).cloned())
-                        .unwrap_or(Value::Nil);
+                        .unwrap_or(Value::NIL);
                     symbols.insert(name.clone(), val);
                 }
             }
@@ -332,7 +333,7 @@ impl Interpreter {
             for tag in tags {
                 symbols.insert(
                     tag.clone(),
-                    Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                    Value::package(Symbol::intern(&Self::qualify_stash_name(
                         &package_name,
                         &tag,
                     ))),
@@ -386,11 +387,7 @@ impl Interpreter {
             }
             symbols
                 .entry(format!("&{base}"))
-                .or_insert_with(|| Value::Routine {
-                    package: def.package,
-                    name: def.name,
-                    is_regex: false,
-                });
+                .or_insert_with(|| Value::routine_parts(def.package, def.name, false));
         }
 
         for class_name in self.registry().classes.keys() {
@@ -423,7 +420,7 @@ impl Interpreter {
             }
             if let Some((head, _)) = rest.split_once("::") {
                 symbols.entry(head.to_string()).or_insert_with(|| {
-                    Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                    Value::package(Symbol::intern(&Self::qualify_stash_name(
                         &package_name,
                         head,
                     )))
@@ -431,7 +428,7 @@ impl Interpreter {
                 continue;
             }
             symbols.entry(rest.to_string()).or_insert_with(|| {
-                Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                Value::package(Symbol::intern(&Self::qualify_stash_name(
                     &package_name,
                     rest,
                 )))
@@ -453,7 +450,7 @@ impl Interpreter {
             }
             if let Some((head, _)) = rest.split_once("::") {
                 symbols.entry(head.to_string()).or_insert_with(|| {
-                    Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                    Value::package(Symbol::intern(&Self::qualify_stash_name(
                         &package_name,
                         head,
                     )))
@@ -461,7 +458,7 @@ impl Interpreter {
                 continue;
             }
             symbols.entry(rest.to_string()).or_insert_with(|| {
-                Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                Value::package(Symbol::intern(&Self::qualify_stash_name(
                     &package_name,
                     rest,
                 )))
@@ -472,7 +469,7 @@ impl Interpreter {
             || self.exported_vars.contains_key(&package_name)
         {
             symbols.entry("EXPORT".to_string()).or_insert_with(|| {
-                Value::Package(Symbol::intern(&Self::qualify_stash_name(
+                Value::package(Symbol::intern(&Self::qualify_stash_name(
                     &package_name,
                     "EXPORT",
                 )))

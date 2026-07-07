@@ -1,14 +1,15 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(in crate::runtime) fn is_lazy_tail_target(target: &Value) -> bool {
-        match target {
-            Value::LazyList(_) => true,
-            Value::Range(_, end)
-            | Value::RangeExcl(_, end)
-            | Value::RangeExclStart(_, end)
-            | Value::RangeExclBoth(_, end) => *end == i64::MAX,
-            Value::GenericRange { start, end, .. } => {
+        match target.view() {
+            ValueView::LazyList(_) => true,
+            ValueView::Range(_, end)
+            | ValueView::RangeExcl(_, end)
+            | ValueView::RangeExclStart(_, end)
+            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+            ValueView::GenericRange { start, end, .. } => {
                 let start_f = start.to_f64();
                 let end_f = end.to_f64();
                 !start_f.is_finite() || !end_f.is_finite() || start_f.is_nan() || end_f.is_nan()
@@ -47,7 +48,7 @@ impl Interpreter {
             return Err(err);
         }
 
-        if let Value::Seq(items) = &target
+        if let ValueView::Seq(items) = target.view()
             && items.is_empty()
         {
             let seq_id = std::sync::Arc::as_ptr(items) as usize;
@@ -57,7 +58,7 @@ impl Interpreter {
                 let saved_iter = self.env.get(iter_slot).cloned();
                 self.env.insert(iter_slot.to_string(), iterator);
 
-                let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
+                let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::NIL);
                 let count_only = self
                     .call_method_mut_with_values(
                         iter_slot,
@@ -76,7 +77,7 @@ impl Interpreter {
                 };
                 let skip = total_len.saturating_sub(tail_count);
                 for _ in 0..skip {
-                    let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
+                    let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::NIL);
                     let skipped = self
                         .call_method_mut_with_values(
                             iter_slot,
@@ -93,7 +94,7 @@ impl Interpreter {
                 }
                 let mut pulled = Vec::with_capacity(tail_count);
                 for _ in 0..tail_count {
-                    let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::Nil);
+                    let current_iter = self.env.get(iter_slot).cloned().unwrap_or(Value::NIL);
                     let value = self
                         .call_method_mut_with_values(
                             iter_slot,
@@ -104,21 +105,21 @@ impl Interpreter {
                         .or_else(|_| {
                             self.call_method_with_values(current_iter, "pull-one", vec![])
                         })?;
-                    if matches!(&value, Value::Str(s) if s.as_str() == "IterationEnd")
-                        || matches!(&value, Value::Package(name) if *name == Symbol::intern("IterationEnd"))
+                    if matches!(value.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                        || matches!(value.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
                     {
                         break;
                     }
                     pulled.push(value);
                 }
                 if let Some(updated_iter) = self.env.get(iter_slot).cloned() {
-                    if let Value::Instance { attributes, .. } = &updated_iter {
+                    if let ValueView::Instance { attributes, .. } = updated_iter.view() {
                         for (meta_key, source_name) in attributes.as_map().iter() {
                             let Some(attr_name) = meta_key.strip_prefix("__mutsu_attr_alias::")
                             else {
                                 continue;
                             };
-                            let Value::Str(source_name) = source_name else {
+                            let ValueView::Str(source_name) = source_name.view() else {
                                 continue;
                             };
                             if let Some(attr_value) = attributes.as_map().get(attr_name).cloned() {
@@ -138,20 +139,20 @@ impl Interpreter {
                     self.env.remove(iter_slot);
                 }
                 if args.is_empty() {
-                    return Ok(pulled.pop().unwrap_or(Value::Nil));
+                    return Ok(pulled.pop().unwrap_or(Value::NIL));
                 }
-                return Ok(Value::Seq(std::sync::Arc::new(pulled)));
+                return Ok(Value::seq_arc(std::sync::Arc::new(pulled)));
             }
         }
 
         let items = crate::runtime::utils::value_to_list(&target);
         if args.is_empty() {
-            return Ok(items.last().cloned().unwrap_or(Value::Nil));
+            return Ok(items.last().cloned().unwrap_or(Value::NIL));
         }
 
         let tail_count = self.resolve_supply_tail_count(args.first(), items.len())?;
         let start = items.len().saturating_sub(tail_count);
-        Ok(Value::Seq(std::sync::Arc::new(items[start..].to_vec())))
+        Ok(Value::seq_arc(std::sync::Arc::new(items[start..].to_vec())))
     }
 
     /// Handle `.head(&callable)` / `.head(*)` where the argument is a
@@ -167,27 +168,27 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let items = crate::runtime::utils::value_to_list(&target);
         let len = items.len() as i64;
-        let count = match arg {
-            Value::Whatever => len,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
-                let computed = self.eval_call_on_value(arg.clone(), vec![Value::Int(0)])?;
-                let n = match &computed {
-                    Value::Whatever => len,
-                    Value::Int(i) => *i,
-                    Value::Num(f) => *f as i64,
-                    Value::Rat(num, den) if *den != 0 => *num / *den,
-                    other => other.to_string_value().parse::<i64>().unwrap_or(0),
+        let count = match arg.view() {
+            ValueView::Whatever => len,
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
+                let computed = self.eval_call_on_value(arg.clone(), vec![Value::int(0)])?;
+                let n = match computed.view() {
+                    ValueView::Whatever => len,
+                    ValueView::Int(i) => i,
+                    ValueView::Num(f) => f as i64,
+                    ValueView::Rat(num, den) if den != 0 => num / den,
+                    _ => computed.to_string_value().parse::<i64>().unwrap_or(0),
                 };
                 (len + n).clamp(0, len)
             }
             _ => len,
         };
         let count = count.clamp(0, len) as usize;
-        Ok(Value::Seq(std::sync::Arc::new(items[..count].to_vec())))
+        Ok(Value::seq_arc(std::sync::Arc::new(items[..count].to_vec())))
     }
 
     pub(in crate::runtime) fn callback_uses_supply_list(callback: &Value) -> bool {
-        if let Value::Sub(data) = callback {
+        if let ValueView::Sub(data) = callback.view() {
             let dbg = format!("{:?}", data.body);
             dbg.contains("\"Supply\"") && dbg.contains("\"list\"")
         } else {
@@ -228,8 +229,8 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // Multi-dim shaped arrays cannot be rotated
-        if let Value::Array(_, kind) = &target
-            && *kind == crate::value::ArrayKind::Shaped
+        if let ValueView::Array(_, kind) = target.view()
+            && kind == crate::value::ArrayKind::Shaped
             && let Some(shape) = crate::runtime::utils::shaped_array_shape(&target)
             && shape.len() > 1
         {
@@ -238,33 +239,35 @@ impl Interpreter {
         let items = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
         } else {
-            match target {
-                Value::Capture { positional, .. } => *positional,
-                Value::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
-                _ => return Ok(Value::Nil),
+            match target.view() {
+                ValueView::Capture { positional, .. } => positional.clone(),
+                ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
+                _ => return Ok(Value::NIL),
             }
         };
         if items.is_empty() {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq_arc(std::sync::Arc::new(Vec::new())));
         }
         let len = items.len() as i64;
         let by = match args.first() {
-            Some(Value::Int(i)) => *i,
-            Some(Value::Num(n)) => *n as i64,
-            Some(Value::Rat(n, d)) if *d != 0 => *n / *d,
-            Some(Value::BigRat(n, d)) if d.as_ref() != &num_bigint::BigInt::from(0) => {
-                use num_traits::ToPrimitive;
-                (n.as_ref() / d.as_ref()).to_i64().unwrap_or(1)
-            }
-            Some(other) => other.to_string_value().parse::<i64>().unwrap_or(1),
+            Some(v) => match v.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(n) => n as i64,
+                ValueView::Rat(n, d) if d != 0 => n / d,
+                ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
+                    use num_traits::ToPrimitive;
+                    (n / d).to_i64().unwrap_or(1)
+                }
+                _ => v.to_string_value().parse::<i64>().unwrap_or(1),
+            },
             None => 1,
         };
         let shift = ((by % len) + len) % len;
-        let mut out = vec![Value::Nil; items.len()];
+        let mut out = vec![Value::NIL; items.len()];
         for (i, item) in items.into_iter().enumerate() {
             let dst = ((i as i64 + len - shift) % len) as usize;
             out[dst] = item;
         }
-        Ok(Value::Seq(std::sync::Arc::new(out)))
+        Ok(Value::seq_arc(std::sync::Arc::new(out)))
     }
 }

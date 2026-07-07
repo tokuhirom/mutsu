@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn try_native_io_path_construct(
@@ -56,23 +57,23 @@ impl Interpreter {
         let mut cwd_attr: Option<String> = None;
         let mut spec_attr: Option<Value> = None;
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "CWD" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "CWD" => {
                     cwd_attr = Some(value.to_string_value());
                 }
-                Value::Pair(key, value) if key == "SPEC" => {
-                    spec_attr = Some((**value).clone());
+                ValueView::Pair(key, value) if key == "SPEC" => {
+                    spec_attr = Some(value.clone());
                 }
-                Value::Pair(key, value) if key == "basename" => {
+                ValueView::Pair(key, value) if key == "basename" => {
                     basename_part = Some(value.to_string_value());
                 }
-                Value::Pair(key, value) if key == "dirname" => {
+                ValueView::Pair(key, value) if key == "dirname" => {
                     dirname_part = Some(value.to_string_value());
                 }
-                Value::Pair(key, value) if key == "volume" => {
+                ValueView::Pair(key, value) if key == "volume" => {
                     volume_part = Some(value.to_string_value());
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -93,7 +94,7 @@ impl Interpreter {
                         cwd_attr = attributes.as_map().get("cwd").map(|v| v.to_string_value());
                     }
                 }
-                Value::Pair(_, _) => {}
+                ValueView::Pair(_, _) => {}
                 _ if positional_path.is_none() => {
                     positional_path = Some(arg.to_string_value());
                 }
@@ -104,9 +105,9 @@ impl Interpreter {
         let is_win32_spec = spec_attr
             .as_ref()
             .map(|s| {
-                let name = match s {
-                    Value::Package(n) => n.resolve().to_string(),
-                    Value::Instance { class_name, .. } => class_name.resolve().to_string(),
+                let name = match s.view() {
+                    ValueView::Package(n) => n.resolve().to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
                     _ => String::new(),
                 };
                 name == "IO::Spec::Win32" || name.ends_with("Win32")
@@ -158,7 +159,7 @@ impl Interpreter {
             let spec_name = format!("IO::Spec::{}", cn_resolved.trim_start_matches("IO::Path::"));
             attrs.insert(
                 "SPEC".to_string(),
-                Value::Package(Symbol::intern(&spec_name)),
+                Value::package(Symbol::intern(&spec_name)),
             );
         } else if let Some(spec) = spec_attr {
             attrs.insert("SPEC".to_string(), spec);
@@ -198,12 +199,12 @@ impl Interpreter {
         let mut w_flag = false;
         let mut enc = Value::str_from("utf-8");
         for arg in args {
-            match arg {
-                Value::Pair(key, value) if key == "w" => {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "w" => {
                     w_flag = value.truthy();
                 }
-                Value::Pair(key, _value) if key == "out" => {}
-                Value::Pair(key, value) if key == "enc" => {
+                ValueView::Pair(key, _value) if key == "out" => {}
+                ValueView::Pair(key, value) if key == "enc" => {
                     enc = Value::str(value.to_string_value());
                 }
                 _ => positional.push(arg.clone()),
@@ -217,29 +218,29 @@ impl Interpreter {
         let mut stdout_supply_attrs = HashMap::new();
         stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
         stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        stdout_supply_attrs.insert("supply_id".to_string(), Value::Int(stdout_id as i64));
+        stdout_supply_attrs.insert("supply_id".to_string(), Value::int(stdout_id as i64));
         stdout_supply_attrs.insert("enc".to_string(), enc.clone());
         stdout_supply_attrs.insert(
             "native_descriptor_promise".to_string(),
-            Value::Promise(stdout_descriptor),
+            Value::promise(stdout_descriptor),
         );
         let mut stderr_supply_attrs = HashMap::new();
         stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
         stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        stderr_supply_attrs.insert("supply_id".to_string(), Value::Int(stderr_id as i64));
+        stderr_supply_attrs.insert("supply_id".to_string(), Value::int(stderr_id as i64));
         stderr_supply_attrs.insert("enc".to_string(), enc.clone());
         stderr_supply_attrs.insert(
             "native_descriptor_promise".to_string(),
-            Value::Promise(stderr_descriptor),
+            Value::promise(stderr_descriptor),
         );
         let mut merged_supply_attrs = HashMap::new();
         merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
         merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-        merged_supply_attrs.insert("supply_id".to_string(), Value::Int(supply_id as i64));
+        merged_supply_attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
 
         let mut attrs = HashMap::new();
         attrs.insert("cmd".to_string(), Value::array(positional));
-        attrs.insert("started".to_string(), Value::Bool(false));
+        attrs.insert("started".to_string(), Value::FALSE);
         attrs.insert("enc".to_string(), enc);
         attrs.insert(
             "stdout".to_string(),
@@ -254,7 +255,7 @@ impl Interpreter {
             Value::make_instance(Symbol::intern("Supply"), merged_supply_attrs),
         );
         if w_flag {
-            attrs.insert("w".to_string(), Value::Bool(true));
+            attrs.insert("w".to_string(), Value::TRUE);
         }
         Value::make_instance(class_name, attrs)
     }
@@ -272,7 +273,7 @@ impl Interpreter {
             Some(Ok(Self::build_native_uni_value(args)))
         } else if cn == "Version" {
             Some(Ok(Self::version_from_value(
-                args.first().cloned().unwrap_or(Value::Nil),
+                args.first().cloned().unwrap_or(Value::NIL),
             )))
         } else if cn == "Complex" {
             Some(Ok(Self::build_native_complex_value(args)))
@@ -337,30 +338,30 @@ impl Interpreter {
             let mut attrs = HashMap::new();
             attrs.insert(
                 "lock-id".to_string(),
-                Value::Int(super::native_methods::next_lock_id() as i64),
+                Value::int(super::native_methods::next_lock_id() as i64),
             );
             if cn == "Lock::Async" {
-                attrs.insert("async".to_string(), Value::Bool(true));
+                attrs.insert("async".to_string(), Value::TRUE);
             }
             Some(Ok(Value::make_instance(class_name, attrs)))
         } else if cn == "Promise" {
             // A bare `Promise.new` is an empty planned promise — pure shared
             // state, no env / registry / user code. Shared with the interpreter's
             // `dispatch_new` arm.
-            Some(Ok(Value::Promise(crate::value::SharedPromise::new())))
+            Some(Ok(Value::promise(crate::value::SharedPromise::new())))
         } else if cn == "Channel" {
             // Likewise an empty channel.
-            Some(Ok(Value::Channel(crate::value::SharedChannel::new())))
+            Some(Ok(Value::channel(crate::value::SharedChannel::new())))
         } else if matches!(cn.as_str(), "Supplier" | "Supplier::Preserving") {
             // A supplier is pure data: an empty emission log, a not-done flag, and
             // a fresh process-global supplier id. Shared with the interpreter's
             // `dispatch_new` arm.
             let mut attrs = HashMap::new();
             attrs.insert("emitted".to_string(), Value::array(Vec::new()));
-            attrs.insert("done".to_string(), Value::Bool(false));
+            attrs.insert("done".to_string(), Value::FALSE);
             attrs.insert(
                 "supplier_id".to_string(),
-                Value::Int(super::native_methods::next_supplier_id() as i64),
+                Value::int(super::native_methods::next_supplier_id() as i64),
             );
             Some(Ok(Value::make_instance(class_name, attrs)))
         } else if cn == "Proc::Async" {
@@ -374,18 +375,18 @@ impl Interpreter {
             // are dropped (Capture has no buildable public attributes — `bless`
             // ignores them) and positional args are rejected (`Mu.new` is
             // named-only). A *populated* Capture is built with the `\(...)`
-            // literal, not `.new`. A named arg reaches here as `Value::Pair`;
+            // literal, not `.new`. A named arg reaches here as a `Pair`;
             // anything else (a literal, a positional `"a" => 1` `ValuePair`) is
             // positional and dies, exactly as raku does.
-            if args.iter().any(|a| !matches!(a, Value::Pair(..))) {
+            if args
+                .iter()
+                .any(|a| !matches!(a.view(), ValueView::Pair(..)))
+            {
                 Some(Err(RuntimeError::new(
                     "Default constructor for 'Capture' only takes named arguments",
                 )))
             } else {
-                Some(Ok(Value::Capture {
-                    positional: Box::new(Vec::new()),
-                    named: Box::new(HashMap::new()),
-                }))
+                Some(Ok(Value::capture(Vec::new(), HashMap::new())))
             }
         } else if cn == "FakeScheduler" {
             Some(Ok(Self::build_native_fakescheduler_value()))
@@ -425,7 +426,7 @@ impl Interpreter {
             let secs = args.first().and_then(to_float_value).unwrap_or(0.0);
             let tai = crate::builtins::methods_0arg::temporal::posix_to_instant(secs);
             let mut attrs = HashMap::new();
-            attrs.insert("value".to_string(), Value::Num(tai));
+            attrs.insert("value".to_string(), Value::num(tai));
             return Some(Ok(Value::make_instance(Symbol::intern("Instant"), attrs)));
         }
         None
@@ -437,15 +438,15 @@ impl Interpreter {
     /// silently eats — it does NOT become an element (`Bag.new(a => 1).elems`
     /// is 0, while `Bag.new("a" => 1).elems` is 1). mutsu keeps the
     /// named/positional distinction in the value form: a named argument reaches
-    /// here un-containerized as a `Value::Pair`, whereas a positional pair
-    /// literal (`(a => 1)`, `"a" => 1`) is a `Value::ValuePair`, and pairs
+    /// here un-containerized as a `Pair`, whereas a positional pair
+    /// literal (`(a => 1)`, `"a" => 1`) is a `ValuePair`, and pairs
     /// flattened out of an array/variable remain inside their `Array`. So
-    /// dropping top-level `Value::Pair`s strips exactly the named arguments
+    /// dropping top-level `Pair`s strips exactly the named arguments
     /// while preserving every positional pair.
     pub(super) fn strip_named_pair_args(args: Vec<Value>) -> Vec<Value> {
-        if args.iter().any(|a| matches!(a, Value::Pair(..))) {
+        if args.iter().any(|a| matches!(a.view(), ValueView::Pair(..))) {
             args.into_iter()
-                .filter(|a| !matches!(a, Value::Pair(..)))
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                 .collect()
         } else {
             args

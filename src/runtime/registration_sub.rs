@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use std::cell::RefCell;
 use std::collections::HashSet;
 
@@ -117,8 +118,8 @@ impl Interpreter {
         if !is_operator(name) {
             return None;
         }
-        match self.env.get(&format!("&{name}")) {
-            Some(Value::Routine { name: target, .. }) => {
+        match self.env.get(&format!("&{name}")).map(Value::view) {
+            Some(ValueView::Routine { name: target, .. }) => {
                 let target = target.resolve();
                 if target != name && is_operator(&target) {
                     Some(target.to_string())
@@ -217,7 +218,7 @@ impl Interpreter {
                 );
                 attrs.insert(
                     "type".to_string(),
-                    Value::Package(crate::symbol::Symbol::intern(base)),
+                    Value::package(crate::symbol::Symbol::intern(base)),
                 );
                 return Err(RuntimeError::typed("X::NotParametric", attrs));
             }
@@ -447,19 +448,25 @@ impl Interpreter {
         let Some(existing) = self.env.get(&code_var_key) else {
             return false;
         };
-        if matches!(existing, Value::Mixin(..)) {
+        if matches!(existing.view(), ValueView::Mixin(..)) {
             return false;
         }
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)))
             && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls"),
-                Some(Value::Bool(true))
+                self.env.get("__mutsu_in_eval").map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+            && !matches!(
+                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                Some(ValueView::Bool(true))
             );
         if allow_lexical_shadow {
             return false;
         }
-        let is_in_eval = matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)));
+        let is_in_eval = matches!(
+            self.env.get("__mutsu_in_eval").map(Value::view),
+            Some(ValueView::Bool(true))
+        );
         let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
         !shadows_outer_eval_name
     }
@@ -518,7 +525,7 @@ impl Interpreter {
                     format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                 self.env.insert(
                     callable_key,
-                    Value::Int(crate::value::next_instance_id() as i64),
+                    Value::int(crate::value::next_instance_id() as i64),
                 );
                 return Ok(SubRegisterOutcome::Unchanged);
             }
@@ -557,7 +564,7 @@ impl Interpreter {
                 let callable_key = format!("__mutsu_callable_id::{}::{}", pkg, name);
                 self.env.insert(
                     callable_key,
-                    Value::Int(crate::value::next_instance_id() as i64),
+                    Value::int(crate::value::next_instance_id() as i64),
                 );
                 return Ok(SubRegisterOutcome::Installed);
             }
@@ -673,10 +680,13 @@ impl Interpreter {
             .any(|k| k.resolve().starts_with(&multi_prefix));
         let has_proto = self.registry().proto_subs.contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
-            && !matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)))
             && !matches!(
-                self.env.get("__mutsu_eval_wrapped_decls"),
-                Some(Value::Bool(true))
+                self.env.get("__mutsu_in_eval").map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+            && !matches!(
+                self.env.get("__mutsu_eval_wrapped_decls").map(Value::view),
+                Some(ValueView::Bool(true))
             );
         let code_var_key = format!("&{}", name);
         // A sub declared inside `EVAL` is lexically scoped to that EVAL and its
@@ -685,11 +695,14 @@ impl Interpreter {
         // 'sub name {...}'`, where a previous iteration's binding or a forward
         // `my &name` placeholder still lingers in env). But a name declared
         // *inside* the same EVAL (`EVAL 'my &x; sub x {}'`) still conflicts.
-        let is_in_eval = matches!(self.env.get("__mutsu_in_eval"), Some(Value::Bool(true)));
+        let is_in_eval = matches!(
+            self.env.get("__mutsu_in_eval").map(Value::view),
+            Some(ValueView::Bool(true))
+        );
         let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration.
-            if !matches!(existing, Value::Mixin(..))
+            if !matches!(existing.view(), ValueView::Mixin(..))
                 && !shadows_outer_eval_name
                 && !allow_lexical_shadow
                 && !is_method_value_decl
@@ -714,7 +727,7 @@ impl Interpreter {
                     format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                 self.env.insert(
                     callable_key,
-                    Value::Int(crate::value::next_instance_id() as i64),
+                    Value::int(crate::value::next_instance_id() as i64),
                 );
                 return Ok(SubRegisterOutcome::Unchanged);
             }
@@ -732,7 +745,7 @@ impl Interpreter {
                         format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
                     self.env.insert(
                         callable_key,
-                        Value::Int(crate::value::next_instance_id() as i64),
+                        Value::int(crate::value::next_instance_id() as i64),
                     );
                     return Ok(SubRegisterOutcome::Unchanged);
                 }
@@ -879,7 +892,7 @@ impl Interpreter {
         let callable_key = format!("__mutsu_callable_id::{}::{}", self.current_package(), name);
         self.env.insert(
             callable_key,
-            Value::Int(crate::value::next_instance_id() as i64),
+            Value::int(crate::value::next_instance_id() as i64),
         );
         if is_method_value_decl {
             let sub_val = Value::make_sub(
@@ -893,7 +906,7 @@ impl Interpreter {
             );
             self.env.insert(format!("&{}", name), sub_val);
             self.env
-                .insert(format!("__mutsu_method_value::{}", name), Value::Bool(true));
+                .insert(format!("__mutsu_method_value::{}", name), Value::TRUE);
         }
         // Apply custom trait_mod:<is> for each non-builtin trait
         let has_trait_mod =
@@ -945,9 +958,9 @@ impl Interpreter {
                     self.call_function("trait_mod:<is>", args)
                 } else {
                     let named_val = if let Some(arg_val) = trait_arg_val {
-                        Value::Pair(trait_name.clone(), Box::new(arg_val))
+                        Value::pair(trait_name.clone(), arg_val)
                     } else {
-                        Value::Pair(trait_name.clone(), Box::new(Value::Bool(true)))
+                        Value::pair(trait_name.clone(), Value::TRUE)
                     };
                     args.push(named_val);
                     self.call_function("trait_mod:<is>", args)
@@ -959,7 +972,7 @@ impl Interpreter {
                 // inside the trait_mod and propagates it back to &name.
                 let code_var_key = format!("&{}", name);
                 if let Ok(ref result) = call_result
-                    && matches!(result, Value::Mixin(..))
+                    && matches!(result.view(), ValueView::Mixin(..))
                 {
                     self.env.insert(code_var_key, result.clone());
                 } else if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
@@ -978,10 +991,10 @@ impl Interpreter {
             || self.registry().roles.contains_key(name)
             || self.registry().roles.contains_key(fq_name.as_str())
         {
-            Some(Value::Package(Symbol::intern(name)))
+            Some(Value::package(Symbol::intern(name)))
         } else if let Some(val) = self.env.get(name) {
             // Also check env for type objects (e.g. lexical roles/classes)
-            if matches!(val, Value::Package(_)) {
+            if matches!(val.view(), ValueView::Package(_)) {
                 Some(val.clone())
             } else {
                 None
@@ -1246,7 +1259,7 @@ impl Interpreter {
         let callable_key = format!("__mutsu_callable_id::GLOBAL::{}", name);
         self.env.insert(
             callable_key,
-            Value::Int(crate::value::next_instance_id() as i64),
+            Value::int(crate::value::next_instance_id() as i64),
         );
         Ok(())
     }
@@ -1317,29 +1330,32 @@ impl Interpreter {
             if variants.len() == 1 && variants[0].0 == "__DYNAMIC__" && variants[0].1.is_some() {
                 let expr = variants[0].1.as_ref().unwrap();
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
-                let raw_items: Vec<Value> = match &v {
-                    Value::Array(items, _) => items.as_ref().clone().items,
-                    Value::Seq(items) | Value::Slip(items) => items.as_ref().clone(),
-                    Value::Hash(map) => map
+                let raw_items: Vec<Value> = match v.view() {
+                    ValueView::Array(items, _) => items.as_ref().clone().items,
+                    ValueView::Seq(items) | ValueView::Slip(items) => items.as_ref().clone(),
+                    ValueView::Hash(map) => map
                         .iter()
-                        .map(|(k, v)| Value::Pair(k.clone(), Box::new(v.clone())))
+                        .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                         .collect(),
                     _ => vec![v.clone()],
                 };
                 // Flatten any Slips in the list
                 let items: Vec<Value> = raw_items
                     .into_iter()
-                    .flat_map(|item| match item {
-                        Value::Slip(inner) => inner.as_ref().clone(),
-                        other => vec![other],
+                    .flat_map(|item| {
+                        if let ValueView::Slip(inner) = item.view() {
+                            inner.as_ref().clone()
+                        } else {
+                            vec![item]
+                        }
                     })
                     .collect();
                 expanded = items
                     .iter()
-                    .map(|item| match item {
-                        Value::Pair(k, v) => (k.clone(), Some(Expr::Literal(v.as_ref().clone()))),
-                        Value::ValuePair(k, v) => {
-                            (k.to_str_context(), Some(Expr::Literal(v.as_ref().clone())))
+                    .map(|item| match item.view() {
+                        ValueView::Pair(k, v) => (k.clone(), Some(Expr::Literal(v.clone()))),
+                        ValueView::ValuePair(k, v) => {
+                            (k.to_str_context(), Some(Expr::Literal(v.clone())))
                         }
                         _ => (item.to_str_context(), None::<Expr>),
                     })
@@ -1354,25 +1370,20 @@ impl Interpreter {
         for (key, value_expr) in variants {
             let val = if let Some(expr) = value_expr {
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
-                match v {
-                    Value::Int(i) => {
-                        next_str_value = None;
-                        EnumValue::Int(i)
-                    }
-                    Value::Bool(b) => {
-                        next_str_value = None;
-                        EnumValue::Int(if b { 1 } else { 0 })
-                    }
-                    Value::Str(s) => {
-                        let ev = EnumValue::Str(s.to_string());
-                        // Set up string increment for next auto-value
-                        next_str_value = Some(string_increment(&s));
-                        ev
-                    }
-                    other => {
-                        next_str_value = None;
-                        EnumValue::Generic(Box::new(other))
-                    }
+                if let ValueView::Int(i) = v.view() {
+                    next_str_value = None;
+                    EnumValue::Int(i)
+                } else if let ValueView::Bool(b) = v.view() {
+                    next_str_value = None;
+                    EnumValue::Int(if b { 1 } else { 0 })
+                } else if let ValueView::Str(s) = v.view() {
+                    let ev = EnumValue::Str(s.to_string());
+                    // Set up string increment for next auto-value
+                    next_str_value = Some(string_increment(s));
+                    ev
+                } else {
+                    next_str_value = None;
+                    EnumValue::Generic(Box::new(v))
                 }
             } else if let Some(ref s) = next_str_value {
                 let ev = EnumValue::Str(s.clone());
@@ -1413,7 +1424,9 @@ impl Interpreter {
                 let type_ok = match (bt, val) {
                     ("Int", EnumValue::Int(_)) => true,
                     ("Str", EnumValue::Str(_)) => true,
-                    ("Array", EnumValue::Generic(v)) => matches!(v.as_ref(), Value::Array(..)),
+                    ("Array", EnumValue::Generic(v)) => {
+                        matches!(v.as_ref().view(), ValueView::Array(..))
+                    }
                     ("Cool", _) => true, // Cool covers both Int and Str
                     _ => false,
                 };
@@ -1439,22 +1452,22 @@ impl Interpreter {
             .insert(enum_type_name.to_string(), enum_variants.clone());
         if !is_anonymous {
             self.env
-                .insert(name.to_string(), Value::Package(Symbol::intern(name)));
+                .insert(name.to_string(), Value::package(Symbol::intern(name)));
             // Also register with fully-qualified package name
             if self.current_package() != "GLOBAL" {
                 self.env.insert(
                     format!("{}::{}", self.current_package(), name),
-                    Value::Package(Symbol::intern(name)),
+                    Value::package(Symbol::intern(name)),
                 );
             }
         }
         for (index, (key, val)) in enum_variants.iter().enumerate() {
-            let enum_val = Value::Enum {
-                enum_type: Symbol::intern(enum_type_name),
-                key: Symbol::intern(key),
-                value: val.clone(),
+            let enum_val = Value::enum_parts(
+                Symbol::intern(enum_type_name),
+                Symbol::intern(key),
+                val.clone(),
                 index,
-            };
+            );
             if !is_anonymous {
                 self.env
                     .insert(format!("{}::{}", name, key), enum_val.clone());
@@ -1495,7 +1508,7 @@ impl Interpreter {
             }
             Ok(Value::hash(map))
         } else {
-            Ok(Value::Nil)
+            Ok(Value::NIL)
         }
     }
 }

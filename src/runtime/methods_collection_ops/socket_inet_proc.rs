@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     /// IO::Socket::INET.new — handles both :listen (server) and client modes.
@@ -18,15 +19,15 @@ impl Interpreter {
         let mut family: Option<i64> = None;
 
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "host" => host = value.to_string_value(),
                     "localhost" => localhost = value.to_string_value(),
                     "port" => {
-                        let raw = match value.as_ref() {
-                            Value::Int(i) => *i,
-                            Value::Num(f) => *f as i64,
-                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        let raw = match value.view() {
+                            ValueView::Int(i) => i,
+                            ValueView::Num(f) => f as i64,
+                            _ => value.to_string_value().parse::<i64>().unwrap_or(0),
                         };
                         if !(0..=65535).contains(&raw) {
                             return Err(RuntimeError::new(format!(
@@ -37,10 +38,10 @@ impl Interpreter {
                         port = raw as u16;
                     }
                     "localport" => {
-                        let raw = match value.as_ref() {
-                            Value::Int(i) => *i,
-                            Value::Num(f) => *f as i64,
-                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        let raw = match value.view() {
+                            ValueView::Int(i) => i,
+                            ValueView::Num(f) => f as i64,
+                            _ => value.to_string_value().parse::<i64>().unwrap_or(0),
                         };
                         if !(0..=65535).contains(&raw) {
                             return Err(RuntimeError::new(format!(
@@ -50,12 +51,12 @@ impl Interpreter {
                         }
                         localport = raw as u16;
                     }
-                    "listen" => listen = value.as_ref().truthy(),
+                    "listen" => listen = value.truthy(),
                     "family" => {
-                        family = Some(match value.as_ref() {
-                            Value::Int(i) => *i,
-                            Value::Enum { value: v, .. } => v.as_i64(),
-                            other => other.to_string_value().parse::<i64>().unwrap_or(0),
+                        family = Some(match value.view() {
+                            ValueView::Int(i) => i,
+                            ValueView::Enum { value: v, .. } => v.as_i64(),
+                            _ => value.to_string_value().parse::<i64>().unwrap_or(0),
                         });
                     }
                     _ => {}
@@ -131,8 +132,8 @@ impl Interpreter {
                 };
                 let id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
-                attrs.insert("handle".to_string(), Value::Int(id as i64));
-                attrs.insert("localport".to_string(), Value::Int(0i64));
+                attrs.insert("handle".to_string(), Value::int(id as i64));
+                attrs.insert("localport".to_string(), Value::int(0i64));
                 attrs.insert("localhost".to_string(), Value::str(path));
                 return Ok(Value::make_instance(
                     Symbol::intern("IO::Socket::INET"),
@@ -175,8 +176,8 @@ impl Interpreter {
             };
             let id = self.insert_handle_state(state);
             let mut attrs = HashMap::new();
-            attrs.insert("handle".to_string(), Value::Int(id as i64));
-            attrs.insert("localport".to_string(), Value::Int(actual_port as i64));
+            attrs.insert("handle".to_string(), Value::int(id as i64));
+            attrs.insert("localport".to_string(), Value::int(actual_port as i64));
             attrs.insert(
                 "localhost".to_string(),
                 Value::str(if localhost.is_empty() {
@@ -232,9 +233,9 @@ impl Interpreter {
                 };
                 let id = self.insert_handle_state(state);
                 let mut attrs = HashMap::new();
-                attrs.insert("handle".to_string(), Value::Int(id as i64));
+                attrs.insert("handle".to_string(), Value::int(id as i64));
                 attrs.insert("host".to_string(), Value::str(path));
-                attrs.insert("port".to_string(), Value::Int(port as i64));
+                attrs.insert("port".to_string(), Value::int(port as i64));
                 return Ok(Value::make_instance(
                     Symbol::intern("IO::Socket::INET"),
                     attrs,
@@ -243,7 +244,7 @@ impl Interpreter {
             if host.is_empty() {
                 host = "127.0.0.1".to_string();
             }
-            self.dispatch_socket_connect(&[Value::str(host), Value::Int(port as i64)])
+            self.dispatch_socket_connect(&[Value::str(host), Value::int(port as i64)])
         }
     }
 
@@ -253,55 +254,59 @@ impl Interpreter {
         &mut self,
         attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
     ) {
-        let mut stdout_taps = match attributes.as_map().get("stdout_taps") {
-            Some(Value::Array(taps, ..)) => taps.to_vec(),
+        let mut stdout_taps = match attributes.as_map().get("stdout_taps").map(Value::view) {
+            Some(ValueView::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        let mut stderr_taps = match attributes.as_map().get("stderr_taps") {
-            Some(Value::Array(taps, ..)) => taps.to_vec(),
+        let mut stderr_taps = match attributes.as_map().get("stderr_taps").map(Value::view) {
+            Some(ValueView::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        if let Some(Value::Int(sid)) = attributes.as_map().get("stdout_supply_id") {
-            let live = super::super::native_methods::get_supply_taps(*sid as u64);
+        if let Some(ValueView::Int(sid)) =
+            attributes.as_map().get("stdout_supply_id").map(Value::view)
+        {
+            let live = super::super::native_methods::get_supply_taps(sid as u64);
             if !live.is_empty() {
                 stdout_taps = live;
             }
         }
-        if let Some(Value::Int(sid)) = attributes.as_map().get("stderr_supply_id") {
-            let live = super::super::native_methods::get_supply_taps(*sid as u64);
+        if let Some(ValueView::Int(sid)) =
+            attributes.as_map().get("stderr_supply_id").map(Value::view)
+        {
+            let live = super::super::native_methods::get_supply_taps(sid as u64);
             if !live.is_empty() {
                 stderr_taps = live;
             }
         }
-        let collected_stdout = match attributes.as_map().get("collected_stdout") {
-            Some(Value::Str(s)) => s.to_string(),
+        let collected_stdout = match attributes.as_map().get("collected_stdout").map(Value::view) {
+            Some(ValueView::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let collected_stderr = match attributes.as_map().get("collected_stderr") {
-            Some(Value::Str(s)) => s.to_string(),
+        let collected_stderr = match attributes.as_map().get("collected_stderr").map(Value::view) {
+            Some(ValueView::Str(s)) => s.to_string(),
             _ => String::new(),
         };
-        let mut supply_taps = match attributes.as_map().get("supply_taps") {
-            Some(Value::Array(taps, ..)) => taps.to_vec(),
+        let mut supply_taps = match attributes.as_map().get("supply_taps").map(Value::view) {
+            Some(ValueView::Array(taps, ..)) => taps.to_vec(),
             _ => Vec::new(),
         };
-        if let Some(Value::Int(sid)) = attributes.as_map().get("supply_id") {
-            let live = super::super::native_methods::get_supply_taps(*sid as u64);
+        if let Some(ValueView::Int(sid)) = attributes.as_map().get("supply_id").map(Value::view) {
+            let live = super::super::native_methods::get_supply_taps(sid as u64);
             if !live.is_empty() {
                 supply_taps = live;
             }
         }
-        let collected_merged = match attributes.as_map().get("collected_merged") {
-            Some(Value::Str(s)) => s.to_string(),
+        let collected_merged = match attributes.as_map().get("collected_merged").map(Value::view) {
+            Some(ValueView::Str(s)) => s.to_string(),
             _ => format!("{}{}", collected_stdout, collected_stderr),
         };
 
-        let stdout_sid = match attributes.as_map().get("stdout_supply_id") {
-            Some(Value::Int(sid)) => Some(*sid as u64),
+        let stdout_sid = match attributes.as_map().get("stdout_supply_id").map(Value::view) {
+            Some(ValueView::Int(sid)) => Some(sid as u64),
             _ => None,
         };
-        let stderr_sid = match attributes.as_map().get("stderr_supply_id") {
-            Some(Value::Int(sid)) => Some(*sid as u64),
+        let stderr_sid = match attributes.as_map().get("stderr_supply_id").map(Value::view) {
+            Some(ValueView::Int(sid)) => Some(sid as u64),
             _ => None,
         };
 
@@ -386,8 +391,8 @@ impl Interpreter {
 
     /// Returns Some(class_name) if target is Promise or a Promise subclass package.
     pub(in crate::runtime) fn promise_class_name(&mut self, target: &Value) -> Option<String> {
-        match target {
-            Value::Package(name) => {
+        match target.view() {
+            ValueView::Package(name) => {
                 if name == "Promise" {
                     Some("Promise".to_string())
                 } else if self

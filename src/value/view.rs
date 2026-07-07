@@ -364,6 +364,24 @@ impl Value {
         Value::ContainerRef(cell)
     }
 
+    /// Construct a `Promise` value from its shared payload.
+    #[inline]
+    pub(crate) fn promise(p: SharedPromise) -> Self {
+        Value::Promise(p)
+    }
+
+    /// Construct a `Channel` value from its shared payload.
+    #[inline]
+    pub(crate) fn channel(c: SharedChannel) -> Self {
+        Value::Channel(c)
+    }
+
+    /// Construct a `Version` value from its parts.
+    #[inline]
+    pub(crate) fn version(parts: Vec<VersionPart>, plus: bool, minus: bool) -> Self {
+        Value::Version { parts, plus, minus }
+    }
+
     /// Construct an inclusive integer `Range`.
     #[inline]
     pub fn range(start: i64, end: i64) -> Self {

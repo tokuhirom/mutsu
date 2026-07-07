@@ -1,5 +1,6 @@
 //! Interpreter-side handle reading: records, lines, words, and raw bytes.
 use super::*;
+use crate::value::ValueView;
 
 impl Interpreter {
     pub(crate) fn read_record_bytes<R: Read>(
@@ -71,7 +72,7 @@ impl Interpreter {
             .env
             .get("@*ARGS")
             .and_then(|v| {
-                if let Value::Array(items, ..) = v {
+                if let ValueView::Array(items, ..) = v.view() {
                     Some(items.iter().map(|v| v.to_string_value()).collect())
                 } else {
                     None
@@ -276,7 +277,7 @@ impl Interpreter {
                     .env
                     .get("@*ARGS")
                     .and_then(|v| {
-                        if let Value::Array(items, ..) = v {
+                        if let ValueView::Array(items, ..) = v.view() {
                             Some(items.iter().map(|v| v.to_string_value()).collect())
                         } else {
                             None

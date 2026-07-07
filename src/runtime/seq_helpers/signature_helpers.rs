@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 use crate::value::signature::{SigInfo, SigParam};
 use std::collections::HashMap;
 
@@ -36,9 +37,9 @@ impl Interpreter {
             .collect();
         for parent in candidate.parents {
             let resolved_parent = if let Some(v) = param_map.get(&parent) {
-                match v {
-                    Value::Package(name) => name.resolve(),
-                    other => other
+                match v.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    _ => v
                         .to_string_value()
                         .trim_start_matches('(')
                         .trim_end_matches(')')
@@ -60,9 +61,9 @@ impl Interpreter {
                         .or_else(|| param_map.get(spec.trim_start_matches("::")).cloned())
                         .unwrap_or_else(|| {
                             if let Ok(i) = spec.parse::<i64>() {
-                                Value::Int(i)
+                                Value::int(i)
                             } else {
-                                Value::Package(Symbol::intern(spec))
+                                Value::package(Symbol::intern(spec))
                             }
                         })
                 })
@@ -75,57 +76,54 @@ impl Interpreter {
     pub(in crate::runtime) fn signature_capture_like(
         value: &Value,
     ) -> Option<(Vec<Value>, HashMap<String, Value>)> {
-        match value {
-            Value::Capture { positional, named } => {
-                Some(((**positional).clone(), (**named).clone()))
+        match value.view() {
+            ValueView::Capture { positional, named } => {
+                Some(((*positional).clone(), (*named).clone()))
             }
-            Value::Hash(map) => Some((Vec::new(), map.map.clone())),
-            Value::Set(items, _) => Some((
+            ValueView::Hash(map) => Some((Vec::new(), map.map.clone())),
+            ValueView::Set(items, _) => Some((
                 Vec::new(),
-                items
-                    .iter()
-                    .map(|k| (k.clone(), Value::Bool(true)))
-                    .collect(),
+                items.iter().map(|k| (k.clone(), Value::TRUE)).collect(),
             )),
-            Value::Bag(items, _) => Some((
+            ValueView::Bag(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()
                     .map(|(k, v)| (k.clone(), Value::from_bigint(v.clone())))
                     .collect(),
             )),
-            Value::Mix(items, _) => Some((
+            ValueView::Mix(items, _) => Some((
                 Vec::new(),
                 items
                     .iter()
                     .map(|(k, v)| (k.clone(), crate::value::mix_weight_to_value(*v)))
                     .collect(),
             )),
-            Value::Rat(n, d) | Value::FatRat(n, d) => {
+            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
                 let mut named = HashMap::new();
-                named.insert("numerator".to_string(), Value::Int(*n));
-                named.insert("denominator".to_string(), Value::Int(*d));
+                named.insert("numerator".to_string(), Value::int(n));
+                named.insert("denominator".to_string(), Value::int(d));
                 Some((Vec::new(), named))
             }
             _ if value.as_list_items().is_some() => {
                 let mut positional = Vec::new();
                 let mut named = HashMap::new();
                 for item in value.as_list_items().unwrap().iter() {
-                    if let Value::Pair(k, v) = item {
-                        named.insert(k.clone(), *v.clone());
+                    if let ValueView::Pair(k, v) = item.view() {
+                        named.insert(k.clone(), v.clone());
                     } else {
                         positional.push(item.clone());
                     }
                 }
                 Some((positional, named))
             }
-            Value::Pair(k, v) => {
+            ValueView::Pair(k, v) => {
                 let mut named = HashMap::new();
-                named.insert(k.clone(), *v.clone());
+                named.insert(k.clone(), v.clone());
                 Some((Vec::new(), named))
             }
-            Value::Instance { attributes, .. } => Some((Vec::new(), (attributes.to_map()))),
-            Value::Mixin(inner, _) => Self::signature_capture_like(inner),
+            ValueView::Instance { attributes, .. } => Some((Vec::new(), (attributes.to_map()))),
+            ValueView::Mixin(inner, _) => Self::signature_capture_like(inner),
             _ => None,
         }
     }
