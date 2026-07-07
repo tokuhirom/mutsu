@@ -57,7 +57,7 @@ impl Interpreter {
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
         self.env.insert("?FILE".to_string(), Value::str(file_name));
-        self.env.insert("?LINE".to_string(), Value::Int(1));
+        self.env.insert("?LINE".to_string(), Value::int(1));
         crate::parser::set_parser_lib_paths(self.lib_paths.clone());
         crate::parser::set_parser_program_path(self.program_path.clone());
         let parse_result = crate::parse_dispatch::parse_source(&preprocessed);
@@ -200,8 +200,8 @@ impl Interpreter {
         // Set $_ to the return value so POST can check it
         if !post_ph.is_empty() {
             let ret_val = match &body_result {
-                Ok(()) => self.env.get("_").cloned().unwrap_or(Value::Nil),
-                Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
+                Ok(()) => self.env.get("_").cloned().unwrap_or(Value::NIL),
+                Err(e) => e.return_value.clone().unwrap_or(Value::NIL),
             };
             let saved_topic = self.env.get("_").cloned();
             self.env.insert("_".to_string(), ret_val);
@@ -436,9 +436,9 @@ impl Interpreter {
         current_topic: Option<&Value>,
     ) -> bool {
         match body_result {
-            Ok(()) => current_topic.cloned().unwrap_or(Value::Nil).truthy(),
+            Ok(()) => current_topic.cloned().unwrap_or(Value::NIL).truthy(),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
-                e.return_value.clone().unwrap_or(Value::Nil).truthy()
+                e.return_value.clone().unwrap_or(Value::NIL).truthy()
             }
             Err(_) => false,
         }
@@ -452,10 +452,10 @@ impl Interpreter {
             Ok(value) => value
                 .clone()
                 .or_else(|| current_topic.cloned())
-                .unwrap_or(Value::Nil)
+                .unwrap_or(Value::NIL)
                 .truthy(),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
-                e.return_value.clone().unwrap_or(Value::Nil).truthy()
+                e.return_value.clone().unwrap_or(Value::NIL).truthy()
             }
             Err(_) => false,
         }

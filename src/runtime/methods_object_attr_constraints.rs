@@ -124,7 +124,7 @@ impl Interpreter {
             if let Some(constraint) = type_constraints.get(attr_name)
                 && (constraint.starts_with(char::is_uppercase) || constraint.starts_with("::"))
                 && let Some(value) = attrs.get(attr_name)
-                && !matches!(value, Value::Nil)
+                && !value.is_nil()
             {
                 // For array/hash attributes, the type constraint applies to
                 // elements/values, not to the container itself.
@@ -148,7 +148,7 @@ impl Interpreter {
             let Some(value) = attrs.get(attr_name) else {
                 continue;
             };
-            if matches!(value, Value::Nil) {
+            if value.is_nil() {
                 continue;
             }
             if !self.check_attribute_where_constraint(pred, value) {
@@ -267,17 +267,17 @@ impl Interpreter {
         class_name: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let mut fetcher = Value::Nil;
-        let mut storer = Value::Nil;
+        let mut fetcher = Value::NIL;
+        let mut storer = Value::NIL;
         let mut extra_attrs = HashMap::new();
 
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
-                    "FETCH" => fetcher = *value.clone(),
-                    "STORE" => storer = *value.clone(),
+                    "FETCH" => fetcher = value.clone(),
+                    "STORE" => storer = value.clone(),
                     _ => {
-                        extra_attrs.insert(key.clone(), *value.clone());
+                        extra_attrs.insert(key.clone(), value.clone());
                     }
                 }
             }
@@ -296,7 +296,7 @@ impl Interpreter {
                     match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash(HashMap::new()),
-                        _ => Value::Nil,
+                        _ => Value::NIL,
                     }
                 };
                 extra_attrs.insert(attr_name.clone(), default_val);
@@ -305,12 +305,12 @@ impl Interpreter {
         self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 
         let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
-        Ok(Value::Proxy {
-            fetcher: Box::new(fetcher),
-            storer: Box::new(storer),
-            subclass: Some((Symbol::intern(class_name), subclass_attrs)),
-            decontainerized: false,
-        })
+        Ok(Value::proxy_parts(
+            fetcher,
+            storer,
+            Some((Symbol::intern(class_name), subclass_attrs)),
+            false,
+        ))
     }
 
     /// Call a Date formatter and store the rendered result in `__formatter_rendered`.
@@ -319,12 +319,16 @@ impl Interpreter {
         date: Value,
         formatter_value: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Instance {
-            class_name,
-            ref attributes,
-            id,
-        } = date
-        {
+        let is_instance = matches!(date.view(), ValueView::Instance { .. });
+        if is_instance {
+            let ValueView::Instance {
+                class_name,
+                attributes,
+                id,
+            } = date.view()
+            else {
+                unreachable!()
+            };
             let saved_env = self.env().clone();
             let saved_readonly = self.save_readonly_vars();
             let rendered = self
@@ -350,10 +354,10 @@ impl Interpreter {
         quaternary: i64,
     ) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("primary".to_string(), Value::Int(primary));
-        attrs.insert("secondary".to_string(), Value::Int(secondary));
-        attrs.insert("tertiary".to_string(), Value::Int(tertiary));
-        attrs.insert("quaternary".to_string(), Value::Int(quaternary));
+        attrs.insert("primary".to_string(), Value::int(primary));
+        attrs.insert("secondary".to_string(), Value::int(secondary));
+        attrs.insert("tertiary".to_string(), Value::int(tertiary));
+        attrs.insert("quaternary".to_string(), Value::int(quaternary));
         Value::make_instance(Symbol::intern("Collation"), attrs)
     }
 
@@ -441,7 +445,7 @@ impl Interpreter {
         if is_setty {
             // Set-like construction: delegate to Set.new
             // TODO: properly track the subclass type on the resulting value
-            self.dispatch_new(Value::Package(Symbol::intern("Set")), args.to_vec())
+            self.dispatch_new(Value::package(Symbol::intern("Set")), args.to_vec())
         } else {
             // Bag-like construction: delegate to dispatch_to_bag_with_what for
             // proper handling (pairs, hashes, etc.), then wrap as an Instance

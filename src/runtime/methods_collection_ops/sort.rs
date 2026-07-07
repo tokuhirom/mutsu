@@ -9,34 +9,36 @@ use crate::token_kind::TokenKind;
 /// matching the real spaceship operator (`exec_spaceship_op`'s numeric bridge).
 fn coerces_to_numeric_length(v: &Value) -> bool {
     matches!(
-        v,
-        Value::Array(..)
-            | Value::Seq(_)
-            | Value::HyperSeq(_)
-            | Value::RaceSeq(_)
-            | Value::LazyList(_)
-            | Value::Hash(_)
-            | Value::Set(..)
-            | Value::Bag(..)
-            | Value::Mix(..)
-            | Value::Range(..)
-            | Value::RangeExcl(..)
-            | Value::RangeExclStart(..)
-            | Value::RangeExclBoth(..)
-            | Value::GenericRange { .. }
+        v.view(),
+        ValueView::Array(..)
+            | ValueView::Seq(_)
+            | ValueView::HyperSeq(_)
+            | ValueView::RaceSeq(_)
+            | ValueView::LazyList(_)
+            | ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
     )
 }
 
 pub(crate) fn inline_numeric_cmp(a: &Value, b: &Value) -> std::cmp::Ordering {
     use crate::runtime::utils::to_float_value;
-    match (a, b) {
-        (Value::Int(x), Value::Int(y)) => x.cmp(y),
-        (Value::Num(x), Value::Num(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Int(x), Value::Num(y)) => (*x as f64)
-            .partial_cmp(y)
+    match (a.view(), b.view()) {
+        (ValueView::Int(x), ValueView::Int(y)) => x.cmp(&y),
+        (ValueView::Num(x), ValueView::Num(y)) => {
+            x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
+        }
+        (ValueView::Int(x), ValueView::Num(y)) => (x as f64)
+            .partial_cmp(&y)
             .unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Num(x), Value::Int(y)) => x
-            .partial_cmp(&(*y as f64))
+        (ValueView::Num(x), ValueView::Int(y)) => x
+            .partial_cmp(&(y as f64))
             .unwrap_or(std::cmp::Ordering::Equal),
         // `<=>` is numeric: an Array/List/Set/…/Range operand is coerced to its
         // element count (`.Numeric`), not compared structurally. Coerce and
@@ -182,7 +184,7 @@ pub(crate) struct InterpCaller<'a>(pub(crate) &'a mut Interpreter);
 
 impl SortCaller for InterpCaller<'_> {
     fn call_callable(&mut self, callable: &Value, args: Vec<Value>) -> Value {
-        // Hash iteration yields `Value::Pair` elements; bind them positionally so
+        // Hash iteration yields `Pair` elements; bind them positionally so
         // a comparator/mapper block sees `$^a`/`$_` (not a named argument that
         // leaves the block with zero positionals). See `pair_as_positional`.
         let args = args
@@ -191,13 +193,13 @@ impl SortCaller for InterpCaller<'_> {
             .collect();
         self.0
             .eval_call_on_value(callable.clone(), args)
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::NIL)
     }
 
     fn call_method(&mut self, recv: Value, name: &str) -> Value {
         self.0
             .call_method_with_values(recv, name, vec![])
-            .unwrap_or(Value::Nil)
+            .unwrap_or(Value::NIL)
     }
 
     fn callable_arity(&self, callable: Option<&Value>) -> Result<usize, RuntimeError> {
@@ -246,12 +248,12 @@ where
 
 /// Map a comparator block's return value to an `Ordering`.
 pub(crate) fn sort_result_to_ordering(result: &Value) -> std::cmp::Ordering {
-    match result {
-        Value::Int(n) => n.cmp(&0),
+    match result.view() {
+        ValueView::Int(n) => n.cmp(&0),
         // Bool comparators: True means "swap" (a > b), False means "don't swap".
-        Value::Bool(true) => std::cmp::Ordering::Greater,
-        Value::Bool(false) => std::cmp::Ordering::Less,
-        Value::Enum {
+        ValueView::Bool(true) => std::cmp::Ordering::Greater,
+        ValueView::Bool(false) => std::cmp::Ordering::Less,
+        ValueView::Enum {
             enum_type, value, ..
         } if enum_type == "Order" => value.as_i64().cmp(&0),
         _ => std::cmp::Ordering::Equal,
@@ -278,7 +280,7 @@ pub(crate) fn sort_items_generic(
 ) {
     match callable {
         Some(c) if arity >= 2 => {
-            if let Value::Sub(data) = c {
+            if let ValueView::Sub(data) = c.view() {
                 // `{ $^a <=> $^b }` and friends: compare inline, no call at all.
                 if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
                     merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
@@ -321,7 +323,7 @@ pub(crate) fn sort_items_generic(
         Some(c) => {
             // arity <= 1: mapper. `{ .method }` is a Schwartzian over a 0-arg
             // method; any other 1-arity callable is a Schwartzian over the block.
-            if let Value::Sub(data) = c
+            if let ValueView::Sub(data) = c.view()
                 && let Some(method_name) = detect_simple_mapper_block(data)
             {
                 let keys: Vec<Value> = items
@@ -353,7 +355,7 @@ pub(crate) fn sort_indices_generic(
     let mut perm: Vec<usize> = (0..items.len()).collect();
     match callable {
         Some(c) if arity >= 2 => {
-            if let Value::Sub(data) = c {
+            if let ValueView::Sub(data) = c.view() {
                 if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
                     merge_sort_indices(&mut perm, items, &mut |a, b| {
                         let (l, r) = if reverse { (b, a) } else { (a, b) };
@@ -363,7 +365,7 @@ pub(crate) fn sort_indices_generic(
                             inline_numeric_cmp(l, r)
                         }
                     });
-                    return perm.into_iter().map(|i| Value::Int(i as i64)).collect();
+                    return perm.into_iter().map(|i| Value::int(i as i64)).collect();
                 }
                 if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(data) {
                     let keys: Vec<Value> = items
@@ -378,7 +380,7 @@ pub(crate) fn sort_indices_generic(
                             inline_numeric_cmp(&keys[l], &keys[r])
                         }
                     });
-                    return perm.into_iter().map(|i| Value::Int(i as i64)).collect();
+                    return perm.into_iter().map(|i| Value::int(i as i64)).collect();
                 }
             }
             let c = c.clone();
@@ -388,7 +390,7 @@ pub(crate) fn sort_indices_generic(
             });
         }
         Some(c) => {
-            let keys: Vec<Value> = if let Value::Sub(data) = c
+            let keys: Vec<Value> = if let ValueView::Sub(data) = c.view()
                 && let Some(method_name) = detect_simple_mapper_block(data)
             {
                 items
@@ -406,7 +408,7 @@ pub(crate) fn sort_indices_generic(
         }
         None => perm.sort_by(|&i, &j| compare_values(&items[i], &items[j]).cmp(&0)),
     }
-    perm.into_iter().map(|i| Value::Int(i as i64)).collect()
+    perm.into_iter().map(|i| Value::int(i as i64)).collect()
 }
 
 /// Stable merge sort over a permutation array, comparing the underlying values.
@@ -492,8 +494,8 @@ impl Interpreter {
         callable: Option<&Value>,
     ) -> Result<usize, RuntimeError> {
         let Some(c) = callable else { return Ok(0) };
-        match c {
-            Value::Sub(data) => {
+        match c.view() {
+            ValueView::Sub(data) => {
                 if data.empty_sig {
                     // Reject explicitly 0-arity named subs (e.g., `sub foo () { ... }`)
                     return Err(RuntimeError::new(
@@ -507,7 +509,7 @@ impl Interpreter {
                     data.params.len()
                 })
             }
-            Value::Routine { .. } => {
+            ValueView::Routine { .. } => {
                 let (params, _) = self.callable_signature(c);
                 if params.is_empty() {
                     return Err(RuntimeError::new(
@@ -543,12 +545,12 @@ pub(crate) fn sort_value_generic(
     let mut return_indices = false;
     let mut callable: Option<Value> = None;
     for arg in args {
-        match arg {
-            Value::Pair(key, val) if key == "k" => {
+        match arg.view() {
+            ValueView::Pair(key, val) if key == "k" => {
                 return_indices = val.truthy();
             }
-            Value::Pair(key, val) if key == "by" => {
-                callable = Some(val.as_ref().clone());
+            ValueView::Pair(key, val) if key == "by" => {
+                callable = Some(val.clone());
             }
             _ => {
                 callable = Some(arg.clone());
@@ -559,11 +561,13 @@ pub(crate) fn sort_value_generic(
     let arity = caller.callable_arity(callable.as_ref())?;
     let callable_ref = callable.as_ref();
 
-    match target {
-        Value::Array(ref items_arc, ref kind) => {
+    match target.view() {
+        ValueView::Array(items_arc, kind) => {
             // For multi-dim shaped arrays, sort over leaves
-            let use_leaves = *kind == crate::value::ArrayKind::Shaped
-                && items_arc.iter().any(|v| matches!(v, Value::Array(..)));
+            let use_leaves = kind == crate::value::ArrayKind::Shaped
+                && items_arc
+                    .iter()
+                    .any(|v| matches!(v.view(), ValueView::Array(..)));
             if use_leaves {
                 let mut leaves = crate::runtime::utils::shaped_array_leaves(&target);
                 if return_indices {
@@ -575,12 +579,10 @@ pub(crate) fn sort_value_generic(
                     )))
                 } else {
                     sort_items_generic(caller, &mut leaves, callable_ref, arity);
-                    Ok(Value::Seq(Arc::new(leaves)))
+                    Ok(Value::seq(leaves))
                 }
             } else {
-                let Value::Array(mut items, ..) = target else {
-                    unreachable!()
-                };
+                let mut items = items_arc.clone();
                 let items_mut = crate::gc::Gc::make_mut(&mut items);
                 if return_indices {
                     Ok(Value::array(sort_indices_generic(
@@ -591,11 +593,11 @@ pub(crate) fn sort_value_generic(
                     )))
                 } else {
                     sort_items_generic(caller, items_mut, callable_ref, arity);
-                    Ok(Value::Seq(Arc::new(items_mut.to_vec())))
+                    Ok(Value::seq(items_mut.to_vec()))
                 }
             }
         }
-        Value::Seq(items) | Value::Slip(items) => {
+        ValueView::Seq(items) | ValueView::Slip(items) => {
             let mut sorted = items.as_ref().clone();
             if return_indices {
                 Ok(Value::array(sort_indices_generic(
@@ -606,14 +608,14 @@ pub(crate) fn sort_value_generic(
                 )))
             } else {
                 sort_items_generic(caller, &mut sorted, callable_ref, arity);
-                Ok(Value::Seq(Arc::new(sorted)))
+                Ok(Value::seq(sorted))
             }
         }
-        Value::Range(..)
-        | Value::RangeExcl(..)
-        | Value::RangeExclStart(..)
-        | Value::RangeExclBoth(..)
-        | Value::GenericRange { .. } => {
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => {
             let mut sorted = Interpreter::value_to_list(&target);
             if return_indices {
                 Ok(Value::array(sort_indices_generic(
@@ -624,10 +626,10 @@ pub(crate) fn sort_value_generic(
                 )))
             } else {
                 sort_items_generic(caller, &mut sorted, callable_ref, arity);
-                Ok(Value::Seq(Arc::new(sorted)))
+                Ok(Value::seq(sorted))
             }
         }
-        Value::Hash(map) => {
+        ValueView::Hash(map) => {
             let items: Vec<Value> = map
                 .iter()
                 .map(|(k, v)| map.typed_pair(k, v.clone()))
@@ -638,21 +640,21 @@ pub(crate) fn sort_value_generic(
         // Set yields `key => True`), with the original key type preserved so the
         // ordering and `.gist` match Raku. Without this they fell through to
         // `other => Ok(other)` and `.sort` wrongly returned the container itself.
-        Value::Set(ref s, _) => {
+        ValueView::Set(s, _) => {
             let items: Vec<Value> = s
                 .iter()
-                .map(|k| setty_typed_pair(s.typed_key(k), k, Value::Bool(true)))
+                .map(|k| setty_typed_pair(s.typed_key(k), k, Value::TRUE))
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }
-        Value::Bag(ref b, _) => {
+        ValueView::Bag(b, _) => {
             let items: Vec<Value> = b
                 .iter()
                 .map(|(k, v)| setty_typed_pair(b.typed_key(k), k, Value::from_bigint(v.clone())))
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }
-        Value::Mix(ref m, _) => {
+        ValueView::Mix(m, _) => {
             let items: Vec<Value> = m
                 .iter()
                 .map(|(k, v)| {
@@ -661,16 +663,16 @@ pub(crate) fn sort_value_generic(
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }
-        other => Ok(other),
+        _ => Ok(target.clone()),
     }
 }
 
 /// Build a `key => weight` pair for a Set/Bag/Mix element, preserving the
 /// original key type (`ValuePair`) when it is not a plain string key.
 fn setty_typed_pair(typed_key: Value, str_key: &str, weight: Value) -> Value {
-    if matches!(&typed_key, Value::Str(sv) if sv.as_ref() == str_key) {
-        Value::Pair(str_key.to_string(), Box::new(weight))
+    if matches!(typed_key.view(), ValueView::Str(sv) if sv.as_ref() == str_key) {
+        Value::pair(str_key.to_string(), weight)
     } else {
-        Value::ValuePair(Box::new(typed_key), Box::new(weight))
+        Value::value_pair(typed_key, weight)
     }
 }

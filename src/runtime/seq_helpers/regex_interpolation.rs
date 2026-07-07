@@ -45,7 +45,7 @@ impl Interpreter {
                 && let Some(close_idx) = after_dollar.find('}')
             {
                 let name = &after_dollar[..close_idx];
-                let value = self.env.get(name).cloned().unwrap_or(Value::Nil);
+                let value = self.env.get(name).cloned().unwrap_or(Value::NIL);
                 out.push_str(&value.to_string_value());
                 i += 2 + close_idx + 1;
                 continue;
@@ -53,7 +53,7 @@ impl Interpreter {
             if let Some(after_dollar) = rest.strip_prefix('$')
                 && let Some((var_rest, name)) = take_regex_interpolation_name(after_dollar)
             {
-                let value = self.env.get(&name).cloned().unwrap_or(Value::Nil);
+                let value = self.env.get(&name).cloned().unwrap_or(Value::NIL);
                 out.push_str(&value.to_string_value());
                 i += 1 + after_dollar.len() - var_rest.len();
                 continue;

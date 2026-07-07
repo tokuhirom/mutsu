@@ -16,12 +16,9 @@
 use super::*;
 use std::collections::HashMap;
 
-/// Extract an integer from a `Value::Int` (allomorphs/strings yield `None`).
+/// Extract an integer from an `Int` value (allomorphs/strings yield `None`).
 fn val_int(v: &Value) -> Option<i64> {
-    match v {
-        Value::Int(i) => Some(*i),
-        _ => None,
-    }
+    v.as_int()
 }
 
 impl Interpreter {
@@ -29,50 +26,50 @@ impl Interpreter {
     /// `:chomp` / `:nl-in` / `:encoding` named args (the `.new` constructor).
     pub(crate) fn build_io_cathandle(&mut self, class_name: Symbol, args: &[Value]) -> Value {
         let mut sources: Vec<Value> = Vec::new();
-        let mut chomp = Value::Bool(true);
+        let mut chomp = Value::TRUE;
         let mut nl_in = Value::array(vec![
             Value::str("\n".to_string()),
             Value::str("\r\n".to_string()),
         ]);
         let mut encoding = Value::str("utf8".to_string());
-        let mut on_switch = Value::Nil;
+        let mut on_switch = Value::NIL;
         let mut bin = false;
         for arg in args {
-            match arg {
-                Value::Pair(k, v) => match k.as_str() {
-                    "chomp" => chomp = (**v).clone(),
-                    "nl-in" => nl_in = (**v).clone(),
-                    "encoding" | "enc" => encoding = (**v).clone(),
-                    "on-switch" => on_switch = (**v).clone(),
+            match arg.view() {
+                ValueView::Pair(k, v) => match k.as_str() {
+                    "chomp" => chomp = v.clone(),
+                    "nl-in" => nl_in = v.clone(),
+                    "encoding" | "enc" => encoding = v.clone(),
+                    "on-switch" => on_switch = v.clone(),
                     "bin" => bin = v.truthy(),
                     _ => {}
                 },
                 // A list/array/Seq argument is flattened into the source
                 // sequence. A Seq backed by a deferred (map) iterator carries no
                 // materialized items, so force it through `.list` first.
-                Value::Array(items, kind) if !kind.is_itemized() => {
+                ValueView::Array(items, kind) if !kind.is_itemized() => {
                     sources.extend(items.iter().cloned())
                 }
-                Value::Seq(_) | Value::LazyList(_) => {
+                ValueView::Seq(_) | ValueView::LazyList(_) => {
                     let listed = self
                         .call_method_with_values(arg.clone(), "list", vec![])
-                        .unwrap_or(Value::Nil);
+                        .unwrap_or(Value::NIL);
                     sources.extend(Self::value_to_list(&listed));
                 }
-                other => sources.push(other.clone()),
+                _ => sources.push(arg.clone()),
             }
         }
         let mut attrs: HashMap<String, Value> = HashMap::new();
         attrs.insert("sources".to_string(), Value::array(sources));
-        attrs.insert("pos".to_string(), Value::Int(0));
-        attrs.insert("active".to_string(), Value::Nil);
+        attrs.insert("pos".to_string(), Value::int(0));
+        attrs.insert("active".to_string(), Value::NIL);
         attrs.insert("chomp".to_string(), chomp);
         attrs.insert("nl-in".to_string(), nl_in);
         attrs.insert("encoding".to_string(), encoding);
-        attrs.insert("closed".to_string(), Value::Bool(false));
-        attrs.insert("bin".to_string(), Value::Bool(bin));
+        attrs.insert("closed".to_string(), Value::FALSE);
+        attrs.insert("bin".to_string(), Value::truth(bin));
         attrs.insert("on-switch".to_string(), on_switch);
-        attrs.insert("path".to_string(), Value::Nil);
+        attrs.insert("path".to_string(), Value::NIL);
         attrs.insert("nl-out".to_string(), Value::str("\n".to_string()));
         // Raku's `IO::CatHandle.new` immediately opens the first source handle
         // (via `.open` -> `.next-handle`), firing the `on-switch` callback once
@@ -87,17 +84,17 @@ impl Interpreter {
     /// `.count` (rakudo: `>=2` -> `($new, $old)`, `1` -> `($new)`, else `()`).
     fn cat_fire_on_switch(&mut self, on_switch: &Value, new: Value, old: Value) {
         if !matches!(
-            on_switch,
-            Value::Sub(_) | Value::Routine { .. } | Value::WeakSub(_)
+            on_switch.view(),
+            ValueView::Sub(_) | ValueView::Routine { .. } | ValueView::WeakSub(_)
         ) {
             return;
         }
         let count = self
             .call_method_with_values(on_switch.clone(), "count", vec![])
             .ok();
-        let n = match count {
-            Some(Value::Int(i)) => i,
-            Some(Value::Num(f)) if f.is_infinite() => i64::MAX,
+        let n = match count.as_ref().map(Value::view) {
+            Some(ValueView::Int(i)) => i,
+            Some(ValueView::Num(f)) if f.is_infinite() => i64::MAX,
             _ => 2,
         };
         let call_args = if n >= 2 {
@@ -112,8 +109,9 @@ impl Interpreter {
 
     /// The currently-open active `IO::Handle` value, if any.
     fn cat_active_handle(attrs: &HashMap<String, Value>) -> Option<Value> {
-        match attrs.get("active") {
-            Some(active @ Value::Instance { class_name, .. }) if class_name == "IO::Handle" => {
+        let active = attrs.get("active")?;
+        match active.view() {
+            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => {
                 Some(active.clone())
             }
             _ => None,
@@ -144,7 +142,7 @@ impl Interpreter {
     /// Open one source value into a read handle, applying the cat's `chomp` /
     /// `nl-in` / `encoding`. Returns `None` when the source cannot be opened.
     fn cat_open_source(&mut self, src: &Value, attrs: &HashMap<String, Value>) -> Option<Value> {
-        let chomp = attrs.get("chomp").cloned().unwrap_or(Value::Bool(true));
+        let chomp = attrs.get("chomp").cloned().unwrap_or(Value::TRUE);
         let nl_in = attrs
             .get("nl-in")
             .cloned()
@@ -153,8 +151,8 @@ impl Interpreter {
             .get("encoding")
             .map(|v| v.to_string_value())
             .unwrap_or_else(|| "utf8".to_string());
-        match src {
-            Value::Instance { class_name, .. } if class_name == "IO::Handle" => {
+        match src.view() {
+            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => {
                 // Already a handle: ensure it is opened, then push the cat's
                 // chomp / nl-in / encoding onto it.
                 let handle = src.clone();
@@ -168,9 +166,9 @@ impl Interpreter {
                     match self.native_io_handle_method(
                         &handle,
                         "open",
-                        vec![Value::Pair("r".to_string(), Box::new(Value::Bool(true)))],
+                        vec![Value::pair("r".to_string(), Value::TRUE)],
                     ) {
-                        Ok(v @ Value::Instance { .. }) => v,
+                        Ok(v) if matches!(v.view(), ValueView::Instance { .. }) => v,
                         _ => return None,
                     }
                 };
@@ -184,8 +182,8 @@ impl Interpreter {
             }
             _ => {
                 // IO::Path or Str source: open a fresh read handle.
-                let path_str = match src {
-                    Value::Instance {
+                let path_str = match src.view() {
+                    ValueView::Instance {
                         class_name,
                         attributes,
                         ..
@@ -200,13 +198,13 @@ impl Interpreter {
                 let mut h_attrs: HashMap<String, Value> = HashMap::new();
                 h_attrs.insert("path".to_string(), io_path);
                 let open_args = vec![
-                    Value::Pair("r".to_string(), Box::new(Value::Bool(true))),
-                    Value::Pair("chomp".to_string(), Box::new(chomp)),
-                    Value::Pair("nl-in".to_string(), Box::new(nl_in)),
-                    Value::Pair("enc".to_string(), Box::new(Value::str(enc))),
+                    Value::pair("r".to_string(), Value::TRUE),
+                    Value::pair("chomp".to_string(), chomp),
+                    Value::pair("nl-in".to_string(), nl_in),
+                    Value::pair("enc".to_string(), Value::str(enc)),
                 ];
                 match self.native_io_handle(&h_attrs, "open", open_args) {
-                    Ok(v) if matches!(&v, Value::Instance { class_name, .. } if class_name == "IO::Handle") => {
+                    Ok(v) if matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") => {
                         Some(v)
                     }
                     _ => None,
@@ -222,10 +220,10 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if let Value::Instance { attributes, .. } = handle {
+        if let ValueView::Instance { attributes, .. } = handle.view() {
             self.native_io_handle(&attributes.as_map(), method, args)
         } else {
-            Ok(Value::Nil)
+            Ok(Value::NIL)
         }
     }
 
@@ -235,29 +233,29 @@ impl Interpreter {
         // Remember the previously-active handle: it becomes the `$old` argument
         // to `on-switch` and must be closed before we open the next source.
         let old = match attrs.get("active").cloned() {
-            Some(active) if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle") =>
+            Some(active) if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") =>
             {
                 let _ = self.close_handle_value(&active);
                 active
             }
-            _ => Value::Nil,
+            _ => Value::NIL,
         };
-        let on_switch = attrs.get("on-switch").cloned().unwrap_or(Value::Nil);
+        let on_switch = attrs.get("on-switch").cloned().unwrap_or(Value::NIL);
         loop {
             let pos = attrs.get("pos").and_then(val_int).unwrap_or(0) as usize;
-            let sources: Vec<Value> = match attrs.get("sources") {
-                Some(Value::Array(items, ..)) => items.to_vec(),
+            let sources: Vec<Value> = match attrs.get("sources").map(Value::view) {
+                Some(ValueView::Array(items, ..)) => items.to_vec(),
                 _ => Vec::new(),
             };
             if pos >= sources.len() {
-                attrs.insert("active".to_string(), Value::Nil);
-                attrs.insert("path".to_string(), Value::Nil);
+                attrs.insert("active".to_string(), Value::NIL);
+                attrs.insert("path".to_string(), Value::NIL);
                 // Exhaustion still fires on-switch with a Nil active handle,
                 // matching rakudo (so the count is `handles + 1`).
-                self.cat_fire_on_switch(&on_switch, Value::Nil, old);
-                return Value::Nil;
+                self.cat_fire_on_switch(&on_switch, Value::NIL, old);
+                return Value::NIL;
             }
-            attrs.insert("pos".to_string(), Value::Int((pos + 1) as i64));
+            attrs.insert("pos".to_string(), Value::int((pos + 1) as i64));
             if let Some(handle) = self.cat_open_source(&sources[pos], attrs) {
                 // `.path`/`.IO` reflect the *original source* (`$source.IO`),
                 // not the opened handle's absolutized path: raku's
@@ -267,16 +265,16 @@ impl Interpreter {
                 // An IO::Path's `.IO` is itself, so clone it directly to keep
                 // the original `CWD` (routing through method dispatch rebuilds
                 // the path against the process cwd and loses it).
-                let path_val = match &sources[pos] {
-                    p @ Value::Instance { class_name, .. }
+                let path_val = match sources[pos].view() {
+                    ValueView::Instance { class_name, .. }
                         if class_name == "IO::Path"
                             || class_name.resolve().starts_with("IO::Path::") =>
                     {
-                        p.clone()
+                        sources[pos].clone()
                     }
                     _ => self
                         .call_method_with_values(sources[pos].clone(), "IO", vec![])
-                        .unwrap_or(Value::Nil),
+                        .unwrap_or(Value::NIL),
                 };
                 attrs.insert("active".to_string(), handle.clone());
                 attrs.insert("path".to_string(), path_val);
@@ -289,9 +287,9 @@ impl Interpreter {
     /// Ensure there is an active handle, opening the first/next source if needed.
     /// Returns `Nil` when nothing more can be read.
     fn cat_ensure_active(&mut self, attrs: &mut HashMap<String, Value>) -> Value {
-        if let Some(active @ Value::Instance { class_name, .. }) =
-            attrs.get("active").cloned().as_ref()
-            && class_name == "IO::Handle"
+        let active = attrs.get("active").cloned();
+        if let Some(active) = &active
+            && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
         {
             return active.clone();
         }
@@ -300,22 +298,22 @@ impl Interpreter {
         if pos == 0 {
             return self.cat_next_handle(attrs);
         }
-        Value::Nil
+        Value::NIL
     }
 
     /// Read the next line across all handles, switching when one is exhausted.
     fn cat_get(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
         loop {
             let active = self.cat_ensure_active(attrs);
-            if matches!(active, Value::Nil) {
-                return Ok(Value::Nil);
+            if active.is_nil() {
+                return Ok(Value::NIL);
             }
             self.cat_sync_active_settings(attrs);
             let line = self.native_io_handle_method(&active, "get", vec![])?;
-            if matches!(line, Value::Nil) {
+            if line.is_nil() {
                 let next = self.cat_next_handle(attrs);
-                if matches!(next, Value::Nil) {
-                    return Ok(Value::Nil);
+                if next.is_nil() {
+                    return Ok(Value::NIL);
                 }
                 continue;
             }
@@ -327,15 +325,15 @@ impl Interpreter {
     fn cat_getc(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
         loop {
             let active = self.cat_ensure_active(attrs);
-            if matches!(active, Value::Nil) {
-                return Ok(Value::Nil);
+            if active.is_nil() {
+                return Ok(Value::NIL);
             }
             self.cat_sync_active_settings(attrs);
             let c = self.native_io_handle_method(&active, "getc", vec![])?;
-            if matches!(c, Value::Nil) {
+            if c.is_nil() {
                 let next = self.cat_next_handle(attrs);
-                if matches!(next, Value::Nil) {
-                    return Ok(Value::Nil);
+                if next.is_nil() {
+                    return Ok(Value::NIL);
                 }
                 continue;
             }
@@ -346,14 +344,14 @@ impl Interpreter {
     /// Slurp the remaining content of all handles into one string.
     fn cat_slurp(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
         if attrs.get("closed").is_some_and(|v| v.truthy()) {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // A binary-mode cat slurps raw bytes into a `Buf[uint8]`.
         if attrs.get("bin").is_some_and(|v| v.truthy()) {
             let mut bytes: Vec<u8> = Vec::new();
             loop {
                 let active = self.cat_ensure_active(attrs);
-                if matches!(active, Value::Nil) {
+                if active.is_nil() {
                     break;
                 }
                 let chunk = self.native_io_handle_method(&active, "slurp", vec![])?;
@@ -362,7 +360,7 @@ impl Interpreter {
                 } else {
                     bytes.extend(chunk.to_string_value().into_bytes());
                 }
-                if matches!(self.cat_next_handle(attrs), Value::Nil) {
+                if self.cat_next_handle(attrs).is_nil() {
                     break;
                 }
             }
@@ -371,12 +369,12 @@ impl Interpreter {
         let mut out = String::new();
         loop {
             let active = self.cat_ensure_active(attrs);
-            if matches!(active, Value::Nil) {
+            if active.is_nil() {
                 break;
             }
             let s = self.native_io_handle_method(&active, "slurp", vec![])?;
             out.push_str(&s.to_string_value());
-            if matches!(self.cat_next_handle(attrs), Value::Nil) {
+            if self.cat_next_handle(attrs).is_nil() {
                 break;
             }
         }
@@ -393,9 +391,9 @@ impl Interpreter {
         let mut limit: Option<i64> = None;
         let mut close = false;
         for arg in args {
-            match arg {
-                Value::Pair(k, v) if k == "close" => close = v.truthy(),
-                Value::Int(n) => limit = Some(*n),
+            match arg.view() {
+                ValueView::Pair(k, v) if k == "close" => close = v.truthy(),
+                ValueView::Int(n) => limit = Some(n),
                 _ => {}
             }
         }
@@ -408,7 +406,7 @@ impl Interpreter {
                     break;
                 }
                 let line = self.cat_get(attrs)?;
-                if matches!(line, Value::Nil) {
+                if line.is_nil() {
                     break;
                 }
                 lines.push(line);
@@ -417,22 +415,22 @@ impl Interpreter {
         if close {
             self.cat_close(attrs);
         }
-        Ok(Value::Seq(std::sync::Arc::new(lines)))
+        Ok(Value::seq(lines))
     }
 
     /// Close the active handle and all `IO::Handle` sources, marking the cat
     /// closed. Shared by `.close`/`.DESTROY` and `:close` read adverbs.
     fn cat_close(&mut self, attrs: &mut HashMap<String, Value>) {
-        if let Some(active @ Value::Instance { class_name, .. }) =
-            attrs.get("active").cloned().as_ref()
-            && class_name == "IO::Handle"
+        let active = attrs.get("active").cloned();
+        if let Some(active) = &active
+            && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
         {
             let _ = self.close_handle_value(active);
         }
-        let handle_sources: Vec<Value> = match attrs.get("sources") {
-            Some(Value::Array(items, ..)) => items
+        let handle_sources: Vec<Value> = match attrs.get("sources").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items
                 .iter()
-                .filter(|v| matches!(v, Value::Instance { class_name, .. } if class_name == "IO::Handle"))
+                .filter(|v| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle"))
                 .cloned()
                 .collect(),
             _ => Vec::new(),
@@ -440,14 +438,14 @@ impl Interpreter {
         for src in &handle_sources {
             let _ = self.close_handle_value(src);
         }
-        attrs.insert("active".to_string(), Value::Nil);
-        attrs.insert("path".to_string(), Value::Nil);
-        attrs.insert("closed".to_string(), Value::Bool(true));
-        let pos = match attrs.get("sources") {
-            Some(Value::Array(items, ..)) => items.len() as i64,
+        attrs.insert("active".to_string(), Value::NIL);
+        attrs.insert("path".to_string(), Value::NIL);
+        attrs.insert("closed".to_string(), Value::TRUE);
+        let pos = match attrs.get("sources").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.len() as i64,
             _ => 0,
         };
-        attrs.insert("pos".to_string(), Value::Int(pos));
+        attrs.insert("pos".to_string(), Value::int(pos));
     }
 
     /// For `.lines` (no positional `$limit` / `:close`) and `.handles`, build a
@@ -466,7 +464,8 @@ impl Interpreter {
                 // A positional `$limit` or a `:close` adverb keeps the eager path,
                 // which already returns the bounded/closing result directly.
                 let has_limit_or_close = args.iter().any(|a| {
-                    matches!(a, Value::Int(_)) || matches!(a, Value::Pair(k, _) if k == "close")
+                    matches!(a.view(), ValueView::Int(_))
+                        || matches!(a.view(), ValueView::Pair(k, _) if k == "close")
                 });
                 if has_limit_or_close {
                     return None;
@@ -476,7 +475,7 @@ impl Interpreter {
             "handles" => crate::value::CatPullMode::Handles,
             _ => return None,
         };
-        Some(Value::LazyList(crate::gc::Gc::new(
+        Some(Value::lazy_list(crate::gc::Gc::new(
             crate::value::LazyList::new_cat_pull(cat.clone(), mode),
         )))
     }
@@ -521,30 +520,31 @@ impl Interpreter {
             "lines" => self.cat_lines(&mut attrs, &args)?,
             "slurp" => self.cat_slurp(&mut attrs)?,
             "words" => {
-                let text = match self.cat_slurp(&mut attrs)? {
-                    Value::Nil => return Ok((Value::Nil, attrs)),
-                    v => v.to_string_value(),
-                };
+                let slurped = self.cat_slurp(&mut attrs)?;
+                if slurped.is_nil() {
+                    return Ok((Value::NIL, attrs));
+                }
+                let text = slurped.to_string_value();
                 let words: Vec<Value> = text
                     .split_whitespace()
                     .map(|w| Value::str(w.to_string()))
                     .collect();
-                Value::Seq(std::sync::Arc::new(words))
+                Value::seq(words)
             }
             "comb" => {
-                let text = match self.cat_slurp(&mut attrs)? {
-                    Value::Nil => return Ok((Value::Nil, attrs)),
-                    v => v.to_string_value(),
-                };
-                let str_val = Value::str(text);
+                let slurped = self.cat_slurp(&mut attrs)?;
+                if slurped.is_nil() {
+                    return Ok((Value::NIL, attrs));
+                }
+                let str_val = Value::str(slurped.to_string_value());
                 self.call_method_with_values(str_val, "comb", args)?
             }
             "split" => {
-                let text = match self.cat_slurp(&mut attrs)? {
-                    Value::Nil => return Ok((Value::Nil, attrs)),
-                    v => v.to_string_value(),
-                };
-                let str_val = Value::str(text);
+                let slurped = self.cat_slurp(&mut attrs)?;
+                if slurped.is_nil() {
+                    return Ok((Value::NIL, attrs));
+                }
+                let str_val = Value::str(slurped.to_string_value());
                 self.call_method_with_values(str_val, "split", args)?
             }
             "readchars" => {
@@ -553,7 +553,7 @@ impl Interpreter {
                 let mut out = String::new();
                 loop {
                     let active = self.cat_ensure_active(&mut attrs);
-                    if matches!(active, Value::Nil) {
+                    if active.is_nil() {
                         break;
                     }
                     let want = count.map(|c| c.saturating_sub(out.chars().count()));
@@ -562,14 +562,14 @@ impl Interpreter {
                     }
                     self.cat_sync_active_settings(&attrs);
                     let chunk_args = match want {
-                        Some(n) => vec![Value::Int(n as i64)],
+                        Some(n) => vec![Value::int(n as i64)],
                         None => vec![],
                     };
                     let chunk = self
                         .native_io_handle_method(&active, "readchars", chunk_args)?
                         .to_string_value();
                     if chunk.is_empty() {
-                        if matches!(self.cat_next_handle(&mut attrs), Value::Nil) {
+                        if self.cat_next_handle(&mut attrs).is_nil() {
                             break;
                         }
                         continue;
@@ -592,14 +592,14 @@ impl Interpreter {
                 let mut bytes: Vec<u8> = Vec::new();
                 while bytes.len() < want {
                     let active = self.cat_ensure_active(&mut attrs);
-                    if matches!(active, Value::Nil) {
+                    if active.is_nil() {
                         break;
                     }
                     let remaining = want - bytes.len();
                     let chunk = self.native_io_handle_method(
                         &active,
                         "read",
-                        vec![Value::Int(remaining as i64)],
+                        vec![Value::int(remaining as i64)],
                     )?;
                     let chunk_bytes: Vec<u8> = Self::buf_as_byte_items(&chunk)
                         .unwrap_or_default()
@@ -608,7 +608,7 @@ impl Interpreter {
                         .map(|b| b as u8)
                         .collect();
                     if chunk_bytes.is_empty() {
-                        if matches!(self.cat_next_handle(&mut attrs), Value::Nil) {
+                        if self.cat_next_handle(&mut attrs).is_nil() {
                             break;
                         }
                         continue;
@@ -621,24 +621,24 @@ impl Interpreter {
             "next-handle" => self.cat_next_handle(&mut attrs),
             "close" | "DESTROY" => {
                 self.cat_close(&mut attrs);
-                Value::Bool(true)
+                Value::TRUE
             }
             "eof" => {
                 // At EOF when nothing more can be read.
                 if attrs.get("closed").is_some_and(|v| v.truthy()) {
-                    Value::Bool(true)
+                    Value::TRUE
                 } else {
                     let active = self.cat_ensure_active(&mut attrs);
-                    if matches!(active, Value::Nil) {
-                        Value::Bool(true)
+                    if active.is_nil() {
+                        Value::TRUE
                     } else {
                         let e = self.native_io_handle_method(&active, "eof", vec![])?;
                         if e.truthy() {
                             // Peek the next handle to decide true EOF.
                             let next = self.cat_next_handle(&mut attrs);
-                            Value::Bool(matches!(next, Value::Nil))
+                            Value::truth(next.is_nil())
                         } else {
-                            Value::Bool(false)
+                            Value::FALSE
                         }
                     }
                 }
@@ -648,10 +648,10 @@ impl Interpreter {
                 // handle: a closed/exhausted cat (or one with no sources) is not
                 // open. Opening the first source on demand matches rakudo.
                 if attrs.get("closed").is_some_and(|v| v.truthy()) {
-                    Value::Bool(false)
+                    Value::FALSE
                 } else {
                     let active = self.cat_ensure_active(&mut attrs);
-                    Value::Bool(matches!(active, Value::Instance { .. }))
+                    Value::truth(matches!(active.view(), ValueView::Instance { .. }))
                 }
             }
             "chomp" => {
@@ -660,7 +660,7 @@ impl Interpreter {
                     self.cat_sync_active_settings(&attrs);
                     arg
                 } else {
-                    attrs.get("chomp").cloned().unwrap_or(Value::Bool(true))
+                    attrs.get("chomp").cloned().unwrap_or(Value::TRUE)
                 }
             }
             "nl-in" => {
@@ -693,17 +693,19 @@ impl Interpreter {
                     attrs.insert("on-switch".to_string(), arg.clone());
                     arg
                 } else {
-                    attrs.get("on-switch").cloned().unwrap_or(Value::Nil)
+                    attrs.get("on-switch").cloned().unwrap_or(Value::NIL)
                 }
             }
             "path" | "IO" => {
                 // Make sure a handle is active so `.path` reflects the current source.
-                if matches!(attrs.get("active"), Some(Value::Nil) | None)
-                    && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
+                if matches!(
+                    attrs.get("active").map(Value::view),
+                    Some(ValueView::Nil) | None
+                ) && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
                 {
                     let _ = self.cat_ensure_active(&mut attrs);
                 }
-                attrs.get("path").cloned().unwrap_or(Value::Nil)
+                attrs.get("path").cloned().unwrap_or(Value::NIL)
             }
             "handles" => {
                 // The lazy list of handles this cat will read: the active one (if
@@ -712,30 +714,32 @@ impl Interpreter {
                 let mut out = Vec::new();
                 loop {
                     let active = self.cat_ensure_active(&mut attrs);
-                    if matches!(active, Value::Nil) {
+                    if active.is_nil() {
                         break;
                     }
                     out.push(active);
-                    if matches!(self.cat_next_handle(&mut attrs), Value::Nil) {
+                    if self.cat_next_handle(&mut attrs).is_nil() {
                         break;
                     }
                 }
-                Value::Seq(std::sync::Arc::new(out))
+                Value::seq(out)
             }
             "gist" => {
                 // Open the first handle if nothing has been read yet, then render
                 // `IO::CatHandle(opened on <path>.gist)` or `IO::CatHandle(closed)`.
-                if matches!(attrs.get("active"), Some(Value::Nil) | None)
-                    && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
+                if matches!(
+                    attrs.get("active").map(Value::view),
+                    Some(ValueView::Nil) | None
+                ) && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
                     && !attrs.get("closed").is_some_and(|v| v.truthy())
                 {
                     let _ = self.cat_ensure_active(&mut attrs);
                 }
                 match attrs.get("active").cloned() {
-                    Some(active @ Value::Instance { .. }) => {
+                    Some(active) if matches!(active.view(), ValueView::Instance { .. }) => {
                         let path = self
                             .native_io_handle_method(&active, "path", vec![])
-                            .unwrap_or(Value::Nil);
+                            .unwrap_or(Value::NIL);
                         let path_gist = self
                             .call_method_with_values(path, "gist", vec![])
                             .map(|v| v.to_string_value())
@@ -748,14 +752,16 @@ impl Interpreter {
             "Str" => {
                 // The active handle's path as a string (opening the first handle
                 // if needed). On a closed/exhausted cat, fall back to the name.
-                if matches!(attrs.get("active"), Some(Value::Nil) | None)
-                    && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
+                if matches!(
+                    attrs.get("active").map(Value::view),
+                    Some(ValueView::Nil) | None
+                ) && attrs.get("pos").and_then(val_int).unwrap_or(0) == 0
                     && !attrs.get("closed").is_some_and(|v| v.truthy())
                 {
                     let _ = self.cat_ensure_active(&mut attrs);
                 }
                 match attrs.get("path").cloned() {
-                    Some(p) if !matches!(p, Value::Nil) => Value::str(p.to_string_value()),
+                    Some(p) if !p.is_nil() => Value::str(p.to_string_value()),
                     // A closed/exhausted or zero-source cat has no active path;
                     // rakudo renders it as `<closed IO::CatHandle>`.
                     _ => Value::str("<closed IO::CatHandle>".to_string()),
@@ -767,10 +773,10 @@ impl Interpreter {
                 // handle (a zero-source or exhausted cat) the result is `Nil` —
                 // we never open a fresh handle just to lock it.
                 match attrs.get("active").cloned() {
-                    Some(active) if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle") => {
+                    Some(active) if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") => {
                         self.native_io_handle_method(&active, method, args)?
                     }
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 }
             }
             "native-descriptor" | "seek" | "tell" => {
@@ -779,22 +785,22 @@ impl Interpreter {
                 // never switches handles. On an exhausted/zero-source cat the
                 // result is Nil.
                 let active = self.cat_ensure_active(&mut attrs);
-                if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle")
+                if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
                 {
                     self.native_io_handle_method(&active, method, args)?
                 } else {
-                    Value::Nil
+                    Value::NIL
                 }
             }
             "t" => {
                 // `.t` (is-this-a-TTY) of the active handle; a cat with no active
                 // handle (exhausted/zero-source) is not a TTY, so `False`.
                 let active = self.cat_ensure_active(&mut attrs);
-                if matches!(&active, Value::Instance { class_name, .. } if class_name == "IO::Handle")
+                if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
                 {
                     self.native_io_handle_method(&active, "t", vec![])?
                 } else {
-                    Value::Bool(false)
+                    Value::FALSE
                 }
             }
             "Supply" => {
@@ -804,8 +810,8 @@ impl Interpreter {
                 // cats emit `Str` chunks of `:size` characters.
                 let size = args
                     .iter()
-                    .find_map(|a| match a {
-                        Value::Pair(name, val) if name == "size" => {
+                    .find_map(|a| match a.view() {
+                        ValueView::Pair(name, val) if name == "size" => {
                             val_int(val).map(|i| i as usize)
                         }
                         _ => None,
@@ -817,7 +823,7 @@ impl Interpreter {
                     let mut bytes: Vec<u8> = Vec::new();
                     loop {
                         let active = self.cat_ensure_active(&mut attrs);
-                        if matches!(active, Value::Nil) {
+                        if active.is_nil() {
                             break;
                         }
                         let chunk = self.native_io_handle_method(&active, "slurp", vec![])?;
@@ -826,7 +832,7 @@ impl Interpreter {
                         } else {
                             bytes.extend(chunk.to_string_value().into_bytes());
                         }
-                        if matches!(self.cat_next_handle(&mut attrs), Value::Nil) {
+                        if self.cat_next_handle(&mut attrs).is_nil() {
                             break;
                         }
                     }
@@ -835,9 +841,11 @@ impl Interpreter {
                         values.push(Self::make_buf(chunk.to_vec()));
                     }
                 } else {
-                    let text = match self.cat_slurp(&mut attrs)? {
-                        Value::Nil => String::new(),
-                        v => v.to_string_value(),
+                    let slurped = self.cat_slurp(&mut attrs)?;
+                    let text = if slurped.is_nil() {
+                        String::new()
+                    } else {
+                        slurped.to_string_value()
                     };
                     let chars: Vec<char> = text.chars().collect();
                     let step = size.unwrap_or(chars.len().max(1));
@@ -846,7 +854,7 @@ impl Interpreter {
                     }
                 }
                 let mut supply_attrs = HashMap::new();
-                supply_attrs.insert("live".to_string(), Value::Bool(false));
+                supply_attrs.insert("live".to_string(), Value::FALSE);
                 supply_attrs.insert("values".to_string(), Value::array(values));
                 Value::make_instance(Symbol::intern("Supply"), supply_attrs)
             }
@@ -860,8 +868,8 @@ impl Interpreter {
                 // `sources` list plus the chomp/nl-in/encoding/bin settings is
                 // sufficient as long as the cat hasn't been read from since
                 // construction (true for every `.raku` call site in the spec).
-                let sources = match attrs.get("sources") {
-                    Some(Value::Array(items, _)) => items.iter().cloned().collect::<Vec<_>>(),
+                let sources = match attrs.get("sources").map(Value::view) {
+                    Some(ValueView::Array(items, _)) => items.iter().cloned().collect::<Vec<_>>(),
                     _ => Vec::new(),
                 };
                 let mut parts = Vec::new();

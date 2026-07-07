@@ -14,15 +14,15 @@ impl Interpreter {
         args: &[Value],
         z_mode: bool,
     ) -> Result<Value, RuntimeError> {
-        let fmt = match args.first() {
-            Some(Value::Str(s)) => s.to_string(),
+        let fmt = match args.first().map(Value::view) {
+            Some(ValueView::Str(s)) => s.to_string(),
             _ => String::new(),
         };
         // Flatten array arguments (Raku: sprintf("%d", [42]) treats array elements as args)
         let rest = &args[1..];
         let flattened: Vec<Value>;
         let mut actual_args: Vec<Value> = if rest.len() == 1 {
-            if let Value::Array(items, ..) = &rest[0] {
+            if let ValueView::Array(items, ..) = rest[0].view() {
                 flattened = items.as_ref().clone().items;
                 flattened
             } else {
@@ -46,9 +46,9 @@ impl Interpreter {
             let Some(arg) = actual_args.get(idx) else {
                 continue;
             };
-            let class_name = match arg {
-                Value::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
-                Value::Package(name) => Some(name.resolve().to_string()),
+            let class_name = match arg.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve().to_string()),
+                ValueView::Package(name) => Some(name.resolve().to_string()),
                 _ => None,
             };
             let Some(cn) = class_name else { continue };
@@ -131,10 +131,10 @@ impl Interpreter {
     }
 
     fn quotewords_literal_value(value: &Value) -> Option<String> {
-        let Value::Scalar(inner) = value else {
+        let ValueView::Scalar(inner) = value.view() else {
             return None;
         };
-        let Value::Pair(marker, payload) = inner.as_ref() else {
+        let ValueView::Pair(marker, payload) = inner.view() else {
             return None;
         };
         if marker == "__mutsu_qw_literal" {
@@ -145,19 +145,19 @@ impl Interpreter {
     }
 
     fn quotewords_value_into(value: &Value, out: &mut Vec<Value>, allomorphic: bool) {
-        match value {
-            Value::Array(items, kind) if !kind.is_itemized() => {
+        match value.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
                 for item in items.iter() {
                     Self::quotewords_value_into(item, out, allomorphic);
                 }
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 for item in items.iter() {
                     Self::quotewords_value_into(item, out, allomorphic);
                 }
             }
-            other => {
-                for word in other.to_string_value().split_whitespace() {
+            _ => {
+                for word in value.to_string_value().split_whitespace() {
                     if allomorphic {
                         out.push(crate::parser::angle_word_value_full_allomorphic(word));
                     } else {
@@ -191,7 +191,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
         let result = apply_split_opts(parts, &opts);
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::seq_arc(std::sync::Arc::new(result)))
     }
 
     /// Handle split() function with full support for regex splitters.
@@ -217,7 +217,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
         let result = apply_split_opts(parts, &opts);
-        Ok(Value::Seq(std::sync::Arc::new(result)))
+        Ok(Value::seq_arc(std::sync::Arc::new(result)))
     }
 
     /// Core split implementation that handles string, regex, and list splitters.
@@ -227,14 +227,17 @@ impl Interpreter {
         splitter: &Value,
         limit: Option<usize>,
     ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
-        match splitter {
-            Value::Regex(pattern) => self.split_by_regex(text, pattern, limit),
-            Value::RegexWithAdverbs(a) => self.split_by_regex(text, &a.pattern, limit),
-            Value::Array(items, _) => {
+        match splitter.view() {
+            ValueView::Regex(pattern) => self.split_by_regex(text, pattern, limit),
+            ValueView::RegexWithAdverbs(a) => self.split_by_regex(text, &a.pattern, limit),
+            ValueView::Array(items, _) => {
                 // Check if any item is a regex
-                let has_regex = items
-                    .iter()
-                    .any(|v| matches!(v, Value::Regex(_) | Value::RegexWithAdverbs { .. }));
+                let has_regex = items.iter().any(|v| {
+                    matches!(
+                        v.view(),
+                        ValueView::Regex(_) | ValueView::RegexWithAdverbs(..)
+                    )
+                });
                 if has_regex {
                     self.split_by_regex_list(text, items, limit)
                 } else {
@@ -362,11 +365,11 @@ impl Interpreter {
             let mut best: Option<(usize, usize, usize, String, bool)> = None;
 
             for (idx, splitter) in splitters.iter().enumerate() {
-                match splitter {
-                    Value::Regex(_) | Value::RegexWithAdverbs(_) => {
-                        let pattern: &str = match splitter {
-                            Value::Regex(p) => p,
-                            Value::RegexWithAdverbs(a) => &a.pattern,
+                match splitter.view() {
+                    ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
+                        let pattern: &str = match splitter.view() {
+                            ValueView::Regex(p) => p,
+                            ValueView::RegexWithAdverbs(a) => &a.pattern,
                             _ => unreachable!(),
                         };
                         if let Some((from, to)) = self.regex_find_first_from(pattern, text, pos) {

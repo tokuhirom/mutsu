@@ -26,26 +26,26 @@ impl Interpreter {
 
         /// Helper: check if a Value is a non-numeric type (Str/Bool/etc.) for range endpoints.
         fn is_non_numeric_value(v: &Value) -> bool {
-            matches!(v, Value::Str(_) | Value::Bool(_))
+            matches!(v.view(), ValueView::Str(_) | ValueView::Bool(_))
         }
 
         /// Helper: extract f64 from a Value, treating NaN/Inf specially.
         fn endpoint_to_f64(v: &Value) -> f64 {
-            match v {
-                Value::Num(n) => *n,
-                Value::Int(i) => *i as f64,
-                Value::Rat(n, d) => *n as f64 / *d as f64,
+            match v.view() {
+                ValueView::Num(n) => n,
+                ValueView::Int(i) => i as f64,
+                ValueView::Rat(n, d) => n as f64 / d as f64,
                 _ => v.to_f64(),
             }
         }
 
-        match &val {
-            Value::Range(start, end) => {
-                let min = (*start).max(0) as usize;
-                let max = if *end == i64::MAX {
+        match val.view() {
+            ValueView::Range(start, end) => {
+                let min = start.max(0) as usize;
+                let max = if end == i64::MAX {
                     None
                 } else {
-                    Some((*end).max(0) as usize)
+                    Some(end.max(0) as usize)
                 };
                 // Check for empty range (min > max)
                 if let Some(max_val) = max
@@ -56,12 +56,12 @@ impl Interpreter {
                 }
                 Some((min, max))
             }
-            Value::RangeExcl(start, end) => {
-                let min = (*start).max(0) as usize;
-                let max = if *end == i64::MAX {
+            ValueView::RangeExcl(start, end) => {
+                let min = start.max(0) as usize;
+                let max = if end == i64::MAX {
                     None
                 } else {
-                    Some(((*end) - 1).max(0) as usize)
+                    Some((end - 1).max(0) as usize)
                 };
                 if let Some(max_val) = max
                     && min > max_val
@@ -71,12 +71,12 @@ impl Interpreter {
                 }
                 Some((min, max))
             }
-            Value::RangeExclStart(start, end) => {
-                let min = ((*start) + 1).max(0) as usize;
-                let max = if *end == i64::MAX {
+            ValueView::RangeExclStart(start, end) => {
+                let min = (start + 1).max(0) as usize;
+                let max = if end == i64::MAX {
                     None
                 } else {
-                    Some((*end).max(0) as usize)
+                    Some(end.max(0) as usize)
                 };
                 if let Some(max_val) = max
                     && min > max_val
@@ -86,12 +86,12 @@ impl Interpreter {
                 }
                 Some((min, max))
             }
-            Value::RangeExclBoth(start, end) => {
-                let min = ((*start) + 1).max(0) as usize;
-                let max = if *end == i64::MAX {
+            ValueView::RangeExclBoth(start, end) => {
+                let min = (start + 1).max(0) as usize;
+                let max = if end == i64::MAX {
                     None
                 } else {
-                    Some(((*end) - 1).max(0) as usize)
+                    Some((end - 1).max(0) as usize)
                 };
                 if let Some(max_val) = max
                     && min > max_val
@@ -101,7 +101,7 @@ impl Interpreter {
                 }
                 Some((min, max))
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -136,7 +136,7 @@ impl Interpreter {
                 let min_f = if start_f.is_infinite() && start_f < 0.0 {
                     // -Inf start: effective min is 0
                     0.0
-                } else if *excl_start {
+                } else if excl_start {
                     start_f.floor() + 1.0
                 } else {
                     start_f.floor()
@@ -146,7 +146,7 @@ impl Interpreter {
                 let max = if end_f.is_infinite() && end_f > 0.0 {
                     None // +Inf end → unbounded
                 } else {
-                    let max_f = if *excl_end {
+                    let max_f = if excl_end {
                         end_f.ceil() - 1.0
                     } else {
                         end_f.floor()
@@ -163,7 +163,7 @@ impl Interpreter {
                 }
                 Some((min, max))
             }
-            Value::Str(s) => {
+            ValueView::Str(s) => {
                 // String values that cannot parse as a number are non-numeric
                 match s.trim().parse::<f64>() {
                     Ok(n) if n.is_nan() => {
@@ -256,7 +256,7 @@ impl Interpreter {
                 self.env.insert(i.to_string(), pos_match);
             }
             // Set up named captures as $<name> variables
-            let ast_hint = self.env.get("made").cloned().unwrap_or(Value::Nil);
+            let ast_hint = self.env.get("made").cloned().unwrap_or(Value::NIL);
             for (k, v) in &ctx.named {
                 let to_match_with_ast = |text: &str, ast: &Value| -> Value {
                     let match_obj = Value::make_match_object_with_captures(
@@ -266,11 +266,11 @@ impl Interpreter {
                         &[],
                         &HashMap::new(),
                     );
-                    if let Value::Instance {
+                    if let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } = match_obj
+                    } = match_obj.view()
                     {
                         let attrs = attributes.as_ref().clone();
                         attrs.insert("ast".to_string(), ast.clone());

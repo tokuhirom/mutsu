@@ -7,10 +7,10 @@ impl Interpreter {
         // tap-ok($supply, @expected, $desc, :$live, :$virtual-time, :&after-tap)
         let supply = Self::positional_value(args, 0)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let expected = Self::positional_value(args, 1)
             .cloned()
-            .unwrap_or(Value::Nil);
+            .unwrap_or(Value::NIL);
         let desc = Self::positional_string(args, 2);
         let expected_live = Self::named_bool(args, "live");
         let after_tap = Self::named_value(args, "after-tap");
@@ -19,7 +19,7 @@ impl Interpreter {
         let ctx = self.begin_subtest();
 
         // 1. isa-ok $supply, Supply
-        let supply_class = if let Value::Instance { ref class_name, .. } = supply {
+        let supply_class = if let ValueView::Instance { class_name, .. } = supply.view() {
             class_name.resolve()
         } else {
             String::new()
@@ -32,7 +32,7 @@ impl Interpreter {
         )?;
 
         // 2. Check .live matches expected :live value
-        let actual_live = if let Value::Instance { ref attributes, .. } = supply {
+        let actual_live = if let ValueView::Instance { attributes, .. } = supply.view() {
             attributes
                 .as_map()
                 .get("live")
@@ -53,7 +53,7 @@ impl Interpreter {
         let mut tap_values = Vec::new();
 
         // Check if this is a scheduler-based supply
-        let has_scheduler = if let Value::Instance { ref attributes, .. } = supply {
+        let has_scheduler = if let ValueView::Instance { attributes, .. } = supply.view() {
             attributes.contains_key("scheduler")
         } else {
             false
@@ -62,12 +62,12 @@ impl Interpreter {
         if has_scheduler {
             // Scheduler-based Supply: register counter cue and let after-tap
             // drive emissions via progress-by
-            if let Value::Instance { ref attributes, .. } = supply {
+            if let ValueView::Instance { attributes, .. } = supply.view() {
                 let scheduler = attributes
                     .as_map()
                     .get("scheduler")
                     .cloned()
-                    .unwrap_or(Value::Nil);
+                    .unwrap_or(Value::NIL);
                 let interval = attributes
                     .as_map()
                     .get("scheduler_interval")
@@ -80,9 +80,10 @@ impl Interpreter {
                     .unwrap_or(0.0);
 
                 // Get scheduler_id from the scheduler instance
-                let scheduler_id = if let Value::Instance { ref attributes, .. } = scheduler {
-                    match attributes.as_map().get("scheduler_id") {
-                        Some(Value::Int(id)) => *id as u64,
+                let scheduler_id = if let ValueView::Instance { attributes, .. } = scheduler.view()
+                {
+                    match attributes.as_map().get("scheduler_id").map(Value::view) {
+                        Some(ValueView::Int(id)) => id as u64,
                         _ => 0,
                     }
                 } else {
@@ -101,8 +102,8 @@ impl Interpreter {
             // supply_emit_buffer with counter values
             if let Some(after_tap_cb) = after_tap.clone()
                 && matches!(
-                    after_tap_cb,
-                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    after_tap_cb.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
@@ -113,13 +114,13 @@ impl Interpreter {
             }
         } else {
             // Non-scheduler supply: original logic
-            if let Value::Instance { ref attributes, .. } = supply {
+            if let ValueView::Instance { attributes, .. } = supply.view() {
                 // For on-demand supplies, execute the callback to produce values
                 if let Some(on_demand_cb) = attributes.as_map().get("on_demand_callback") {
                     let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                         let mut a = HashMap::new();
                         a.insert("emitted".to_string(), Value::array(Vec::new()));
-                        a.insert("done".to_string(), Value::Bool(false));
+                        a.insert("done".to_string(), Value::FALSE);
                         a
                     });
                     self.supply_emit_buffer.push(Vec::new());
@@ -128,43 +129,44 @@ impl Interpreter {
                     tap_values = self.supply_emit_buffer.pop().unwrap_or_default();
                     let _ = self.supply_emit_timed_buffer.pop();
                 } else {
-                    let values =
-                        if let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id") {
-                            let (snap_values, _, _) =
-                                crate::runtime::native_methods::supplier_snapshot(*sid as u64);
-                            if !snap_values.is_empty() {
-                                snap_values
-                            } else {
-                                attributes
-                                    .as_map()
-                                    .get("values")
-                                    .and_then(|v| {
-                                        if let Value::Array(a, ..) = v {
-                                            Some(a.to_vec())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .unwrap_or_default()
-                            }
+                    let values = if let Some(ValueView::Int(sid)) =
+                        attributes.as_map().get("supplier_id").map(Value::view)
+                    {
+                        let (snap_values, _, _) =
+                            crate::runtime::native_methods::supplier_snapshot(sid as u64);
+                        if !snap_values.is_empty() {
+                            snap_values
                         } else {
                             attributes
                                 .as_map()
                                 .get("values")
                                 .and_then(|v| {
-                                    if let Value::Array(a, ..) = v {
+                                    if let ValueView::Array(a, ..) = v.view() {
                                         Some(a.to_vec())
                                     } else {
                                         None
                                     }
                                 })
                                 .unwrap_or_default()
-                        };
+                        }
+                    } else {
+                        attributes
+                            .as_map()
+                            .get("values")
+                            .and_then(|v| {
+                                if let ValueView::Array(a, ..) = v.view() {
+                                    Some(a.to_vec())
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or_default()
+                    };
                     let do_cbs = attributes
                         .as_map()
                         .get("do_callbacks")
                         .and_then(|v| {
-                            if let Value::Array(a, ..) = v {
+                            if let ValueView::Array(a, ..) = v.view() {
                                 Some(a.to_vec())
                             } else {
                                 None
@@ -181,8 +183,8 @@ impl Interpreter {
             }
             if let Some(after_tap_cb) = after_tap
                 && matches!(
-                    after_tap_cb,
-                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+                    after_tap_cb.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
                 )
             {
                 self.supply_emit_buffer.push(Vec::new());
@@ -196,11 +198,12 @@ impl Interpreter {
                 // The properly transformed values (batched lists, flattened items,
                 // etc.) are emitted to the downstream supplier. Use the downstream
                 // supplier snapshot instead of raw emissions.
-                let emitted = if let Value::Instance { ref attributes, .. } = supply
-                    && let Some(Value::Int(sid)) = attributes.as_map().get("supplier_id")
+                let emitted = if let ValueView::Instance { attributes, .. } = supply.view()
+                    && let Some(ValueView::Int(sid)) =
+                        attributes.as_map().get("supplier_id").map(Value::view)
                 {
                     let (snap_values, _, _) =
-                        crate::runtime::native_methods::supplier_snapshot(*sid as u64);
+                        crate::runtime::native_methods::supplier_snapshot(sid as u64);
                     if !snap_values.is_empty() {
                         snap_values
                     } else {
@@ -210,10 +213,10 @@ impl Interpreter {
                     raw_emitted
                 };
 
-                let emitted = if let Value::Instance { ref attributes, .. } = supply {
+                let emitted = if let ValueView::Instance { attributes, .. } = supply.view() {
                     if matches!(
-                        attributes.as_map().get("elems_filter"),
-                        Some(Value::Bool(true))
+                        attributes.as_map().get("elems_filter").map(Value::view),
+                        Some(ValueView::Bool(true))
                     ) {
                         let interval = attributes
                             .as_map()
@@ -223,14 +226,14 @@ impl Interpreter {
                         let initial_count = attributes
                             .as_map()
                             .get("elems_initial_count")
-                            .and_then(|v| match v {
-                                Value::Int(i) => Some(*i),
+                            .and_then(|v| match v.view() {
+                                ValueView::Int(i) => Some(i),
                                 _ => None,
                             })
                             .unwrap_or(0);
                         if interval <= 0.0 {
                             (1..=emitted.len())
-                                .map(|idx| Value::Int(initial_count + idx as i64))
+                                .map(|idx| Value::int(initial_count + idx as i64))
                                 .collect::<Vec<_>>()
                         } else {
                             let events = if timed_emitted.is_empty() {
@@ -250,15 +253,15 @@ impl Interpreter {
                                     true
                                 };
                                 if should_emit {
-                                    out.push(Value::Int(total));
+                                    out.push(Value::int(total));
                                     last_emit_at = Some(ts);
                                 }
                             }
                             out
                         }
                     } else if matches!(
-                        attributes.as_map().get("unique_filter"),
-                        Some(Value::Bool(true))
+                        attributes.as_map().get("unique_filter").map(Value::view),
+                        Some(ValueView::Bool(true))
                     ) {
                         let as_fn = attributes.as_map().get("unique_as").cloned();
                         let with_fn = attributes.as_map().get("unique_with").cloned();
@@ -308,16 +311,22 @@ impl Interpreter {
                 } else {
                     emitted
                 };
-                let split_emitted = if let Value::Instance {
-                    ref class_name,
-                    ref attributes,
+                let split_emitted = if let ValueView::Instance {
+                    class_name,
+                    attributes,
                     ..
-                } = supply
+                } = supply.view()
                 {
                     let is_lines = class_name == "Supply"
-                        && matches!(attributes.as_map().get("is_lines"), Some(Value::Bool(true)));
+                        && matches!(
+                            attributes.as_map().get("is_lines").map(Value::view),
+                            Some(ValueView::Bool(true))
+                        );
                     let is_words = class_name == "Supply"
-                        && matches!(attributes.as_map().get("is_words"), Some(Value::Bool(true)));
+                        && matches!(
+                            attributes.as_map().get("is_words").map(Value::view),
+                            Some(ValueView::Bool(true))
+                        );
                     if is_lines {
                         let chomp = attributes
                             .as_map()
@@ -341,12 +350,12 @@ impl Interpreter {
 
         // Supply.reduce produces a derived Supply that carries reducer metadata
         // for live sources. Apply the same reduction over collected tap values.
-        if let Value::Instance { ref attributes, .. } = supply
+        if let ValueView::Instance { attributes, .. } = supply.view()
             && let Some(reduce_callable) = attributes.as_map().get("reduce_callable").cloned()
             && tap_values.len() > 1
         {
             let reduced = self.reduce_items(reduce_callable, tap_values)?;
-            tap_values = if matches!(reduced, Value::Nil) {
+            tap_values = if reduced.is_nil() {
                 Vec::new()
             } else {
                 vec![reduced]
@@ -356,7 +365,7 @@ impl Interpreter {
         // Supply.produce is a running scan: emit intermediate accumulator
         // values computed by the produce_callable. For live sources, tap-ok
         // snapshots raw emissions, so we must apply the scan here.
-        if let Value::Instance { ref attributes, .. } = supply
+        if let ValueView::Instance { attributes, .. } = supply.view()
             && let Some(produce_callable) = attributes.as_map().get("produce_callable").cloned()
             && !tap_values.is_empty()
         {
@@ -386,24 +395,24 @@ impl Interpreter {
         let collected_are_ranges = !tap_values.is_empty()
             && tap_values.iter().all(|v| {
                 matches!(
-                    v,
-                    Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. }
+                    v.view(),
+                    ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
                 )
             });
-        let expected_expanded = match &expected {
-            Value::Array(items, ..) if !collected_are_ranges => {
+        let expected_expanded = match expected.view() {
+            ValueView::Array(items, ..) if !collected_are_ranges => {
                 let mut expanded = Vec::new();
                 for item in items.iter() {
-                    match item {
-                        Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. } => {
+                    match item.view() {
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => {
                             expanded.extend(Self::value_to_list(item));
                         }
                         _ => expanded.push(item.clone()),
@@ -411,29 +420,35 @@ impl Interpreter {
                 }
                 Value::array(expanded)
             }
-            other => other.clone(),
+            _ => expected.clone(),
         };
         let collected_val = Value::array(tap_values);
 
-        let expected_for_compare = match (&collected_val, &expected_expanded) {
-            (Value::Array(collected_items, ..), Value::Array(expected_items, kind))
+        let expected_for_compare = match (collected_val.view(), expected_expanded.view()) {
+            (ValueView::Array(collected_items, ..), ValueView::Array(expected_items, kind))
                 if collected_items.len() == 1
-                    && matches!(collected_items.first(), Some(Value::Bag(_, _)))
-                    && expected_items
-                        .iter()
-                        .all(|item| matches!(item, Value::Pair(_, _) | Value::ValuePair(_, _))) =>
+                    && matches!(
+                        collected_items.first().map(Value::view),
+                        Some(ValueView::Bag(_, _))
+                    )
+                    && expected_items.iter().all(|item| {
+                        matches!(
+                            item.view(),
+                            ValueView::Pair(_, _) | ValueView::ValuePair(_, _)
+                        )
+                    }) =>
             {
                 let mut map = HashMap::new();
-                let to_count = |v: &Value| match v {
-                    Value::Int(i) => *i,
-                    Value::Num(n) => *n as i64,
-                    Value::Rat(n, d) if *d != 0 => n / d,
-                    Value::FatRat(n, d) if *d != 0 => n / d,
+                let to_count = |v: &Value| match v.view() {
+                    ValueView::Int(i) => i,
+                    ValueView::Num(n) => n as i64,
+                    ValueView::Rat(n, d) if d != 0 => n / d,
+                    ValueView::FatRat(n, d) if d != 0 => n / d,
                     _ => crate::runtime::to_int(v),
                 };
                 for item in expected_items.iter() {
-                    match item {
-                        Value::Pair(key, value) => {
+                    match item.view() {
+                        ValueView::Pair(key, value) => {
                             let count = to_count(value);
                             if count == 1
                                 && let Some((raw_key, raw_weight)) = key.rsplit_once('\t')
@@ -444,7 +459,7 @@ impl Interpreter {
                                 map.insert(key.clone(), count);
                             }
                         }
-                        Value::ValuePair(key, value) => {
+                        ValueView::ValuePair(key, value) => {
                             let key_text = key.to_string_value();
                             let count = to_count(value);
                             if count == 1
@@ -459,9 +474,9 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                Value::Array(
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(vec![Value::bag(map)])),
-                    *kind,
+                    kind,
                 )
             }
             _ => expected_expanded.clone(),
@@ -471,6 +486,6 @@ impl Interpreter {
         self.test_ok(ok, &desc, false)?;
 
         self.finish_subtest(ctx, &desc, Ok(()))?;
-        Ok(Value::Bool(true))
+        Ok(Value::TRUE)
     }
 }

@@ -18,14 +18,14 @@ impl Interpreter {
         let cn = class_name.resolve();
         let raw_vals: Vec<Value> = args
             .iter()
-            .flat_map(|a| match a {
-                Value::Int(i) => vec![Value::Int(*i)],
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Seq(items) => items.to_vec(),
-                Value::Slip(items) => items.to_vec(),
-                Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
-                Value::RangeExcl(start, end) => (*start..*end).map(Value::Int).collect(),
-                Value::Instance {
+            .flat_map(|a| match a.view() {
+                ValueView::Int(i) => vec![Value::int(i)],
+                ValueView::Array(items, ..) => items.to_vec(),
+                ValueView::Seq(items) => items.to_vec(),
+                ValueView::Slip(items) => items.to_vec(),
+                ValueView::Range(start, end) => (start..=end).map(Value::int).collect(),
+                ValueView::RangeExcl(start, end) => (start..end).map(Value::int).collect(),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
@@ -38,14 +38,16 @@ impl Interpreter {
                     || class_name.resolve().starts_with("buf")
                     || class_name.resolve().starts_with("blob") =>
                 {
-                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                    if let Some(ValueView::Array(items, ..)) =
+                        attributes.as_map().get("bytes").map(Value::view)
+                    {
                         items.to_vec()
                     } else {
                         Vec::new()
                     }
                 }
-                Value::BigInt(_) => vec![a.clone()],
-                other => vec![Value::Int(to_int(other))],
+                ValueView::BigInt(_) => vec![a.clone()],
+                _ => vec![Value::int(to_int(a))],
             })
             .collect();
         // Mask values to unsigned range based on element size. For uint64, use
@@ -54,20 +56,20 @@ impl Interpreter {
             .into_iter()
             .map(|v| {
                 if cn.contains("64") {
-                    let u = match &v {
-                        Value::BigInt(n) => {
+                    let u = match v.view() {
+                        ValueView::BigInt(n) => {
                             use num_traits::ToPrimitive;
                             n.as_ref().to_u64().unwrap_or(to_int(&v) as u64)
                         }
                         _ => to_int(&v) as u64,
                     };
-                    Value::Int(u as i64)
+                    Value::int(u as i64)
                 } else if cn.contains("32") {
-                    Value::Int(to_int(&v) as u32 as i64)
+                    Value::int(to_int(&v) as u32 as i64)
                 } else if cn.contains("16") {
-                    Value::Int(to_int(&v) as u16 as i64)
+                    Value::int(to_int(&v) as u16 as i64)
                 } else {
-                    Value::Int(to_int(&v) as u8 as i64)
+                    Value::int(to_int(&v) as u8 as i64)
                 }
             })
             .collect();
@@ -97,18 +99,20 @@ impl Interpreter {
     pub(crate) fn build_native_utf_value(class_name: Symbol, args: &[Value]) -> Value {
         let elems: Vec<Value> = args
             .iter()
-            .flat_map(|a| match a {
-                Value::Int(i) => vec![Value::Int(*i)],
-                Value::Array(items, ..) => items.to_vec(),
-                Value::Seq(items) | Value::Slip(items) => items.to_vec(),
-                Value::Range(start, end) => (*start..=*end).map(Value::Int).collect(),
-                Value::RangeExcl(start, end) => (*start..*end).map(Value::Int).collect(),
-                Value::Instance {
+            .flat_map(|a| match a.view() {
+                ValueView::Int(i) => vec![Value::int(i)],
+                ValueView::Array(items, ..) => items.to_vec(),
+                ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                ValueView::Range(start, end) => (start..=end).map(Value::int).collect(),
+                ValueView::RangeExcl(start, end) => (start..end).map(Value::int).collect(),
+                ValueView::Instance {
                     class_name: cn,
                     attributes: ia,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&cn.resolve()) => {
-                    if let Some(Value::Array(items, ..)) = ia.as_map().get("bytes") {
+                    if let Some(ValueView::Array(items, ..)) =
+                        ia.as_map().get("bytes").map(Value::view)
+                    {
                         items.to_vec()
                     } else {
                         vec![]
@@ -130,27 +134,27 @@ impl Interpreter {
     pub(crate) fn build_native_uni_value(args: &[Value]) -> Value {
         let mut flat_args: Vec<Value> = Vec::new();
         for a in args {
-            match a {
-                Value::Array(items, ..) => flat_args.extend(items.iter().cloned()),
-                Value::Seq(items) | Value::Slip(items) => {
+            match a.view() {
+                ValueView::Array(items, ..) => flat_args.extend(items.iter().cloned()),
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     flat_args.extend(items.iter().cloned());
                 }
-                Value::Range(start, end) => {
-                    flat_args.extend((*start..=*end).map(Value::Int));
+                ValueView::Range(start, end) => {
+                    flat_args.extend((start..=end).map(Value::int));
                 }
-                Value::RangeExcl(start, end) => {
-                    flat_args.extend((*start..*end).map(Value::Int));
+                ValueView::RangeExcl(start, end) => {
+                    flat_args.extend((start..end).map(Value::int));
                 }
-                other => flat_args.push(other.clone()),
+                _ => flat_args.push(a.clone()),
             }
         }
         let text: String = flat_args
             .iter()
             .filter_map(|a| {
-                let cp = match a {
-                    Value::Int(i) => *i as u32,
-                    Value::Num(f) => *f as u32,
-                    other => other.to_string_value().parse::<u32>().unwrap_or(0),
+                let cp = match a.view() {
+                    ValueView::Int(i) => i as u32,
+                    ValueView::Num(f) => f as u32,
+                    _ => a.to_string_value().parse::<u32>().unwrap_or(0),
                 };
                 char::from_u32(cp)
             })
@@ -162,11 +166,11 @@ impl Interpreter {
     /// (Int/Num/Rat directly, anything else via `to_float_value`). Mirrors the
     /// interpreter's `Complex` constructor arm exactly.
     fn complex_component(v: Option<&Value>) -> f64 {
-        match v {
-            Some(Value::Int(i)) => *i as f64,
-            Some(Value::Num(f)) => *f,
-            Some(Value::Rat(n, d)) if *d != 0 => *n as f64 / *d as f64,
-            Some(v) => to_float_value(v).unwrap_or(0.0),
+        match v.map(Value::view) {
+            Some(ValueView::Int(i)) => i as f64,
+            Some(ValueView::Num(f)) => f,
+            Some(ValueView::Rat(n, d)) if d != 0 => n as f64 / d as f64,
+            Some(_) => to_float_value(v.unwrap()).unwrap_or(0.0),
             _ => 0.0,
         }
     }
@@ -177,7 +181,7 @@ impl Interpreter {
     /// (which is more lenient than raku — raku requires exactly two `Real`
     /// arguments, mutsu accepts 0/1/2 — a pre-existing divergence preserved here).
     pub(crate) fn build_native_complex_value(args: &[Value]) -> Value {
-        Value::Complex(
+        Value::complex(
             Self::complex_component(args.first()),
             Self::complex_component(args.get(1)),
         )
@@ -187,10 +191,10 @@ impl Interpreter {
     /// argument (default `0`). A type-object argument is an error, matching the
     /// interpreter's basic-type `.new` arm.
     pub(crate) fn build_native_int_value(args: &[Value]) -> Result<Value, RuntimeError> {
-        if matches!(args.first(), Some(Value::Package(_))) {
+        if matches!(args.first().map(Value::view), Some(ValueView::Package(_))) {
             return Err(RuntimeError::new("Cannot convert type object to Int"));
         }
-        Ok(Value::Int(args.first().map_or(0, crate::runtime::to_int)))
+        Ok(Value::int(args.first().map_or(0, crate::runtime::to_int)))
     }
 
     /// Build a `Num` from `.new(value)` as pure data: coerce the argument to
@@ -198,19 +202,19 @@ impl Interpreter {
     /// matching the interpreter's basic-type `.new` arm.
     pub(crate) fn build_native_num_value(args: &[Value]) -> Result<Value, RuntimeError> {
         if let Some(arg) = args.first() {
-            if matches!(arg, Value::Package(_)) {
+            if matches!(arg.view(), ValueView::Package(_)) {
                 return Err(RuntimeError::new(
                     "Cannot coerce to Num: no .Num method found",
                 ));
             }
             match crate::runtime::to_float_value(arg) {
-                Some(f) => Ok(Value::Num(f)),
+                Some(f) => Ok(Value::num(f)),
                 None => Err(RuntimeError::new(
                     "Cannot coerce to Num: no .Num method found",
                 )),
             }
         } else {
-            Ok(Value::Num(0.0))
+            Ok(Value::num(0.0))
         }
     }
 
@@ -219,16 +223,19 @@ impl Interpreter {
     /// avoid truncation; otherwise the components are `to_int`-coerced.
     pub(crate) fn build_native_rat_value(args: &[Value]) -> Value {
         use num_bigint::BigInt;
-        let has_big = args.iter().take(2).any(|v| matches!(v, Value::BigInt(_)));
+        let has_big = args
+            .iter()
+            .take(2)
+            .any(|v| matches!(v.view(), ValueView::BigInt(_)));
         if has_big {
-            let a = match args.first() {
-                Some(Value::BigInt(bi)) => (**bi).clone(),
-                Some(v) => BigInt::from(to_int(v)),
+            let a = match args.first().map(Value::view) {
+                Some(ValueView::BigInt(bi)) => (**bi).clone(),
+                Some(_) => BigInt::from(to_int(args.first().unwrap())),
                 None => BigInt::from(0),
             };
-            let b = match args.get(1) {
-                Some(Value::BigInt(bi)) => (**bi).clone(),
-                Some(v) => BigInt::from(to_int(v)),
+            let b = match args.get(1).map(Value::view) {
+                Some(ValueView::BigInt(bi)) => (**bi).clone(),
+                Some(_) => BigInt::from(to_int(args.get(1).unwrap())),
                 None => BigInt::from(1),
             };
             return crate::value::make_big_rat(a, b);
@@ -243,21 +250,21 @@ impl Interpreter {
     pub(crate) fn build_native_fatrat_value(args: &[Value]) -> Value {
         use crate::value::make_big_fat_rat;
         use num_bigint::BigInt;
-        let a = match args.first() {
-            Some(Value::BigInt(bi)) => (**bi).clone(),
-            Some(v) => BigInt::from(to_int(v)),
+        let a = match args.first().map(Value::view) {
+            Some(ValueView::BigInt(bi)) => (**bi).clone(),
+            Some(_) => BigInt::from(to_int(args.first().unwrap())),
             None => BigInt::from(0),
         };
-        let b = match args.get(1) {
-            Some(Value::BigInt(bi)) => (**bi).clone(),
-            Some(v) => BigInt::from(to_int(v)),
+        let b = match args.get(1).map(Value::view) {
+            Some(ValueView::BigInt(bi)) => (**bi).clone(),
+            Some(_) => BigInt::from(to_int(args.get(1).unwrap())),
             None => BigInt::from(1),
         };
-        match make_big_fat_rat(a, b) {
-            Value::Rat(n, d) => Value::FatRat(n, d),
-            Value::BigRat(n, d) => Value::BigRat(n, d),
-            other => other,
+        let r = make_big_fat_rat(a, b);
+        if let ValueView::Rat(n, d) = r.view() {
+            return Value::fat_rat_raw(n, d);
         }
+        r
     }
 
     /// Build a `Pair` from `.new(:key, :value)` or `.new(key, value)` as pure
@@ -268,26 +275,27 @@ impl Interpreter {
         let mut named_value: Option<Value> = None;
         let mut positional = Vec::new();
         for a in args {
-            match a {
-                Value::Pair(k, v) if k == "key" => named_key = Some((**v).clone()),
-                Value::Pair(k, v) if k == "value" => named_value = Some((**v).clone()),
+            match a.view() {
+                ValueView::Pair(k, v) if k == "key" => named_key = Some(v.clone()),
+                ValueView::Pair(k, v) if k == "value" => named_value = Some(v.clone()),
                 _ => positional.push(a.clone()),
             }
         }
         let (key, value) = if named_key.is_some() || named_value.is_some() {
             (
-                named_key.unwrap_or(Value::Nil),
-                named_value.unwrap_or(Value::Nil),
+                named_key.unwrap_or(Value::NIL),
+                named_value.unwrap_or(Value::NIL),
             )
         } else {
             (
-                positional.first().cloned().unwrap_or(Value::Nil),
-                positional.get(1).cloned().unwrap_or(Value::Nil),
+                positional.first().cloned().unwrap_or(Value::NIL),
+                positional.get(1).cloned().unwrap_or(Value::NIL),
             )
         };
-        match &key {
-            Value::Str(_) => Value::Pair(key.to_string_value(), Box::new(value)),
-            _ => Value::ValuePair(Box::new(key), Box::new(value)),
+        if matches!(key.view(), ValueView::Str(_)) {
+            Value::pair(key.to_string_value(), value)
+        } else {
+            Value::value_pair(key, value)
         }
     }
 
@@ -298,23 +306,27 @@ impl Interpreter {
     pub(crate) fn build_native_iterationbuffer_value(class_name: Symbol, args: &[Value]) -> Value {
         let mut items = Vec::new();
         for arg in args {
-            match arg {
-                Value::Array(vals, ..) => items.extend(vals.iter().cloned()),
-                Value::Seq(vals) | Value::Slip(vals) => items.extend(vals.iter().cloned()),
-                Value::Instance {
+            match arg.view() {
+                ValueView::Array(vals, ..) => items.extend(vals.iter().cloned()),
+                ValueView::Seq(vals) | ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if class_name == "IterationBuffer" => {
-                    match attributes.as_map().get("__mutsu_iterationbuffer_items") {
-                        Some(Value::Array(vals, ..)) => items.extend(vals.iter().cloned()),
-                        Some(Value::Seq(vals)) | Some(Value::Slip(vals)) => {
+                    match attributes
+                        .as_map()
+                        .get("__mutsu_iterationbuffer_items")
+                        .map(Value::view)
+                    {
+                        Some(ValueView::Array(vals, ..)) => items.extend(vals.iter().cloned()),
+                        Some(ValueView::Seq(vals)) | Some(ValueView::Slip(vals)) => {
                             items.extend(vals.iter().cloned())
                         }
                         _ => {}
                     }
                 }
-                other => items.push(other.clone()),
+                _ => items.push(arg.clone()),
             }
         }
         let mut attrs = HashMap::new();

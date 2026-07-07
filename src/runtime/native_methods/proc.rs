@@ -26,19 +26,19 @@ impl Interpreter {
                 )));
             }
         };
-        let Value::Instance {
+        let ValueView::Instance {
             attributes: new_attrs,
             ..
-        } = &new_proc
+        } = new_proc.view()
         else {
-            return Ok((Value::Bool(false), attributes));
+            return Ok((Value::FALSE, attributes));
         };
-        let new_pid = match new_attrs.as_map().get("pid") {
-            Some(Value::Int(p)) => *p,
+        let new_pid = match new_attrs.as_map().get("pid").map(Value::view) {
+            Some(ValueView::Int(p)) => p,
             _ => 0,
         };
-        let exitcode = match new_attrs.as_map().get("exitcode") {
-            Some(Value::Int(c)) => *c,
+        let exitcode = match new_attrs.as_map().get("exitcode").map(Value::view) {
+            Some(ValueView::Int(c)) => c,
             _ => -1,
         };
         let mut updated = attributes;
@@ -57,7 +57,7 @@ impl Interpreter {
         if let Some(v) = new_attrs.as_map().get("signal") {
             updated.insert("signal".to_string(), v.clone());
         }
-        Ok((Value::Bool(exitcode == 0), updated))
+        Ok((Value::truth(exitcode == 0), updated))
     }
 
     // --- Proc::Async immutable ---
@@ -87,37 +87,48 @@ impl Interpreter {
                     .get("cmd")
                     .cloned()
                     .unwrap_or(Value::array(Vec::new()));
-                if let Value::Array(items, ..) = &cmd
+                let replacement = if let ValueView::Array(items, ..) = cmd.view()
                     && items.len() == 1
                 {
-                    cmd = match &items[0] {
-                        Value::Array(inner, kind) => Value::Array(inner.clone(), *kind),
-                        Value::Seq(inner) => Value::real_array(inner.to_vec()),
-                        Value::Slip(inner) => Value::real_array(inner.to_vec()),
-                        _ => cmd,
-                    };
+                    match items[0].view() {
+                        ValueView::Array(inner, kind) => {
+                            Some(Value::array_with_kind(inner.clone(), kind))
+                        }
+                        ValueView::Seq(inner) => Some(Value::real_array(inner.to_vec())),
+                        ValueView::Slip(inner) => Some(Value::real_array(inner.to_vec())),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(r) = replacement {
+                    cmd = r;
                 }
                 // .command returns a List in Raku
-                if let Value::Array(items, _) = cmd {
-                    Ok(Value::Array(items, ArrayKind::List))
+                let list_items = if let ValueView::Array(items, _) = cmd.view() {
+                    Some(items.clone())
+                } else {
+                    None
+                };
+                if let Some(items) = list_items {
+                    Ok(Value::array_with_kind(items, ArrayKind::List))
                 } else {
                     Ok(cmd)
                 }
             }
-            "started" => Ok(attributes
-                .get("started")
-                .cloned()
-                .unwrap_or(Value::Bool(false))),
-            "w" => Ok(attributes.get("w").cloned().unwrap_or(Value::Bool(false))),
+            "started" => Ok(attributes.get("started").cloned().unwrap_or(Value::FALSE)),
+            "w" => Ok(attributes.get("w").cloned().unwrap_or(Value::FALSE)),
             "pid" => {
-                if let Some(Value::Int(pid)) = attributes.get("pid") {
+                if let Some(ValueView::Int(pid)) = attributes.get("pid").map(Value::view) {
                     let promise = SharedPromise::new();
-                    promise.keep(Value::Int(*pid), String::new(), String::new());
-                    Ok(Value::Promise(promise))
-                } else if let Some(promise @ Value::Promise(_)) = attributes.get("ready_promise") {
-                    Ok(promise.clone())
+                    promise.keep(Value::int(pid), String::new(), String::new());
+                    Ok(Value::promise(promise))
+                } else if let Some(p) = attributes.get("ready_promise")
+                    && matches!(p.view(), ValueView::Promise(_))
+                {
+                    Ok(p.clone())
                 } else {
-                    Ok(Value::Promise(SharedPromise::new()))
+                    Ok(Value::promise(SharedPromise::new()))
                 }
             }
             "stdout" | "stderr" => {
@@ -139,7 +150,7 @@ impl Interpreter {
                         &[("handle", Value::str_from(method))],
                     ));
                 }
-                Ok(attributes.get(method).cloned().unwrap_or(Value::Nil))
+                Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
             }
             "Supply" => {
                 if attributes
@@ -151,9 +162,9 @@ impl Interpreter {
                 {
                     return Err(proc_async_error("X::Proc::Async::SupplyOrStd", &[]));
                 }
-                Ok(attributes.get("supply").cloned().unwrap_or(Value::Nil))
+                Ok(attributes.get("supply").cloned().unwrap_or(Value::NIL))
             }
-            _ => Ok(Value::Nil),
+            _ => Ok(Value::NIL),
         }
     }
 
@@ -165,25 +176,31 @@ impl Interpreter {
         method: &str,
     ) -> Value {
         // For live procs (with :in), finalize the child on exitcode/out/err/signal access
-        let is_live = matches!(attributes.get("live"), Some(Value::Bool(true)));
+        let is_live = matches!(
+            attributes.get("live").map(Value::view),
+            Some(ValueView::Bool(true))
+        );
         if is_live && matches!(method, "exitcode" | "out" | "err" | "signal" | "in") {
-            let pid = match attributes.get("pid") {
-                Some(Value::Int(p)) => *p,
+            let pid = match attributes.get("pid").map(Value::view) {
+                Some(ValueView::Int(p)) => p,
                 _ => -1,
             };
 
             // .in returns the stored IO::Pipe for stdin
             if method == "in" {
-                return attributes.get("in").cloned().unwrap_or(Value::Nil);
+                return attributes.get("in").cloned().unwrap_or(Value::NIL);
             }
 
             // .out / .err on a live proc: return a "live" IO::Pipe
             if method == "out" || method == "err" {
                 let mut pipe_attrs = HashMap::new();
-                pipe_attrs.insert("live-pid".to_string(), Value::Int(pid));
+                pipe_attrs.insert("live-pid".to_string(), Value::int(pid));
                 pipe_attrs.insert("pipe-type".to_string(), Value::str(method.to_string()));
-                if matches!(attributes.get("bin"), Some(Value::Bool(true))) {
-                    pipe_attrs.insert("bin".to_string(), Value::Bool(true));
+                if matches!(
+                    attributes.get("bin").map(Value::view),
+                    Some(ValueView::Bool(true))
+                ) {
+                    pipe_attrs.insert("bin".to_string(), Value::TRUE);
                 }
                 return Value::make_instance(crate::symbol::Symbol::intern("IO::Pipe"), pipe_attrs);
             }
@@ -258,64 +275,69 @@ impl Interpreter {
                 && let Some(finalized) = fmap.get(&pid)
             {
                 return match method {
-                    "exitcode" => Value::Int(finalized.exitcode),
-                    "signal" => Value::Int(finalized.signal),
+                    "exitcode" => Value::int(finalized.exitcode),
+                    "signal" => Value::int(finalized.signal),
                     "out" => {
                         if let Some(ref content) = finalized.captured_out {
                             Self::make_io_pipe(content.clone())
                         } else {
-                            Value::Nil
+                            Value::NIL
                         }
                     }
                     "err" => {
                         if let Some(ref content) = finalized.captured_err {
                             Self::make_io_pipe(content.clone())
                         } else {
-                            Value::Nil
+                            Value::NIL
                         }
                     }
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 };
             }
         }
         match method {
-            "exitcode" => attributes.get("exitcode").cloned().unwrap_or(Value::Nil),
-            "signal" => attributes.get("signal").cloned().unwrap_or(Value::Int(0)),
+            "exitcode" => attributes.get("exitcode").cloned().unwrap_or(Value::NIL),
+            "signal" => attributes.get("signal").cloned().unwrap_or(Value::int(0)),
             "command" => {
                 let cmd = attributes
                     .get("command")
                     .cloned()
                     .unwrap_or(Value::array(Vec::new()));
                 // .command returns a List in Raku
-                if let Value::Array(items, _) = cmd {
-                    Value::Array(items, ArrayKind::List)
+                let list_items = if let ValueView::Array(items, _) = cmd.view() {
+                    Some(items.clone())
+                } else {
+                    None
+                };
+                if let Some(items) = list_items {
+                    Value::array_with_kind(items, ArrayKind::List)
                 } else {
                     cmd
                 }
             }
-            "pid" => attributes.get("pid").cloned().unwrap_or(Value::Nil),
-            "err" => attributes.get("err").cloned().unwrap_or(Value::Nil),
-            "out" => attributes.get("out").cloned().unwrap_or(Value::Nil),
-            "in" => attributes.get("in").cloned().unwrap_or(Value::Nil),
+            "pid" => attributes.get("pid").cloned().unwrap_or(Value::NIL),
+            "err" => attributes.get("err").cloned().unwrap_or(Value::NIL),
+            "out" => attributes.get("out").cloned().unwrap_or(Value::NIL),
+            "in" => attributes.get("in").cloned().unwrap_or(Value::NIL),
             "Numeric" | "Int" => attributes
                 .get("exitcode")
                 .cloned()
-                .unwrap_or(Value::Int(-1)),
+                .unwrap_or(Value::int(-1)),
             "Bool" => {
-                let exitcode = match attributes.get("exitcode") {
-                    Some(Value::Int(c)) => *c,
+                let exitcode = match attributes.get("exitcode").map(Value::view) {
+                    Some(ValueView::Int(c)) => c,
                     _ => -1,
                 };
-                Value::Bool(exitcode == 0)
+                Value::truth(exitcode == 0)
             }
             "Str" | "gist" => {
-                let exitcode = match attributes.get("exitcode") {
-                    Some(Value::Int(c)) => *c,
+                let exitcode = match attributes.get("exitcode").map(Value::view) {
+                    Some(ValueView::Int(c)) => c,
                     _ => -1,
                 };
                 Value::str(exitcode.to_string())
             }
-            _ => Value::Nil,
+            _ => Value::NIL,
         }
     }
 }

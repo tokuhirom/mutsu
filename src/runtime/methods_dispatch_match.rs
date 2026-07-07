@@ -5,7 +5,7 @@ impl Interpreter {
     /// 0-arg `.say`/`.print`/`.put`/`.printf` "stringify the invocant" behavior
     /// from shadowing the cat's own (X::NYI) write methods.
     fn is_io_cathandle(v: &Value) -> bool {
-        matches!(v, Value::Instance { class_name, .. } if class_name == "IO::CatHandle")
+        matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::CatHandle")
     }
 
     /// Dispatch methods by name - first group (string, IO, coercion, misc).
@@ -19,7 +19,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
             "are" => Some(self.dispatch_are(target, &args)),
-            "classify" | "categorize" if matches!(&target, Value::Package(name) if name == "Supply") =>
+            "classify" | "categorize" if matches!(target.view(), ValueView::Package(name) if name == "Supply") =>
             {
                 // Supply.classify / Supply.categorize are instance methods
                 // (declared `Supply:D:`); calling them on the Supply type
@@ -28,7 +28,7 @@ impl Interpreter {
                     "Cannot call '{method}' as a class method on Supply (requires a defined invocant)"
                 ))))
             }
-            "classify" | "categorize" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") =>
+            "classify" | "categorize" if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") =>
             {
                 let mut call_args = Vec::with_capacity(args.len() + 1);
                 call_args.extend(args.iter().cloned());
@@ -37,9 +37,9 @@ impl Interpreter {
             }
             "classify-list" | "categorize-list" => {
                 // Immutable Bag and Mix cannot be classified into
-                let type_name = match &target {
-                    Value::Bag(_, false) => Some("Bag"),
-                    Value::Mix(_, false) => Some("Mix"),
+                let type_name = match target.view() {
+                    ValueView::Bag(_, false) => Some("Bag"),
+                    ValueView::Mix(_, false) => Some("Mix"),
                     _ => None,
                 };
                 if let Some(tname) = type_name {
@@ -65,13 +65,13 @@ impl Interpreter {
                 let result_mutable = set_result_mutability(&target);
                 let mut call_args = Vec::with_capacity(args.len() + 1);
                 call_args.extend(args.iter().cloned());
-                call_args.push(Value::Pair("into".to_string(), Box::new(target)));
+                call_args.push(Value::pair("into".to_string(), target));
                 Some(
                     self.builtin_classify(classify_name, &call_args)
                         .map(|r| with_set_mutability(r, result_mutable)),
                 )
             }
-            "from-loop" | "from_loop" if matches!(&target, Value::Package(name) if name == "Seq") => {
+            "from-loop" | "from_loop" if matches!(target.view(), ValueView::Package(name) if name == "Seq") => {
                 Some(self.dispatch_seq_from_loop(args))
             }
             // `$obj.say`/`.print`/`.put`/`.printf` (no args) stringify and print the
@@ -111,11 +111,11 @@ impl Interpreter {
             "default" if args.is_empty() => Self::dispatch_default(&target),
             "note" if args.is_empty() => Some(self.dispatch_note(&target)),
             "return-rw" if args.is_empty() => Some(Ok(target)),
-            "encode" if !matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") => {
+            "encode" if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") => {
                 Some(self.dispatch_encode(&target, &args))
             }
             "decode" => self.dispatch_decode(&target, &args),
-            "unpack" if matches!(&target, Value::Instance { .. }) => {
+            "unpack" if matches!(target.view(), ValueView::Instance { .. }) => {
                 // $blob.unpack($template) — experimental, mirrors the sub form.
                 let bytes = Self::extract_buf_bytes(&target);
                 let template = args.first().map(Value::to_string_value).unwrap_or_default();
@@ -125,7 +125,7 @@ impl Interpreter {
             "polymod" => Some(self.method_polymod(&target, &args)),
             "VAR" if args.is_empty() => {
                 // Proxy .VAR returns a decontainerized copy
-                if matches!(&target, Value::Proxy { .. }) {
+                if matches!(target.view(), ValueView::Proxy { .. }) {
                     return Some(Ok(Value::proxy_var_object(target, String::new())));
                 }
                 Some(Ok(target))
@@ -136,22 +136,22 @@ impl Interpreter {
                 Some(Ok(Value::array(results)))
             }
             "does" if args.len() == 1 => {
-                let type_name = match &args[0] {
-                    Value::Package(name) => name.resolve(),
-                    Value::Str(name) => name.to_string(),
-                    Value::Instance { class_name, .. } => class_name.resolve(),
-                    other => other.to_string_value(),
+                let type_name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => args[0].to_string_value(),
                 };
-                Some(Ok(Value::Bool(
+                Some(Ok(Value::truth(
                     self.type_matches_value(&type_name, &target),
                 )))
             }
             "start" => self.dispatch_promise_start(&target, &args),
             "is-initial-thread" => {
-                if matches!(&target, Value::Package(cn) if cn == "Thread")
-                    || matches!(&target, Value::Instance { class_name, .. } if class_name == "Thread")
+                if matches!(target.view(), ValueView::Package(cn) if cn == "Thread")
+                    || matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread")
                 {
-                    Some(Ok(Value::Bool(
+                    Some(Ok(Value::truth(
                         super::methods_collection_ops::is_initial_thread(),
                     )))
                 } else {
@@ -160,15 +160,15 @@ impl Interpreter {
             }
             "in" => self.dispatch_promise_in(&target, &args),
             "THREAD" => {
-                if let Value::Junction { values, .. } = &target {
-                    let code = args.first().cloned().unwrap_or(Value::Nil);
+                if let ValueView::Junction { values, .. } = target.view() {
+                    let code = args.first().cloned().unwrap_or(Value::NIL);
                     for value in values.iter() {
                         match self.call_sub_value(code.clone(), vec![value.clone()], false) {
                             Ok(_) => {}
                             Err(e) => return Some(Err(e)),
                         }
                     }
-                    return Some(Ok(Value::Nil));
+                    return Some(Ok(Value::NIL));
                 }
                 None
             }
@@ -186,7 +186,7 @@ impl Interpreter {
             "enums" => self.dispatch_enums(&target),
             "invert" => self.dispatch_invert_enum(&target),
             "subparse" | "parse" | "parsefile" => {
-                if let Value::Package(ref package_name) = target {
+                if let ValueView::Package(package_name) = target.view() {
                     Some(self.dispatch_package_parse(&package_name.resolve(), method, &args))
                 } else {
                     None
@@ -196,9 +196,10 @@ impl Interpreter {
             "subst" => Some(self.dispatch_subst(target, &args)),
             "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
-                if matches!(&target, Value::Instance { class_name, .. } if class_name == "Supply") {
+                if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+                {
                     Some(self.dispatch_supply_transform(target, "comb", &args))
-                } else if matches!(&target, Value::Instance { class_name, .. }
+                } else if matches!(target.view(), ValueView::Instance { class_name, .. }
                     if matches!(class_name.resolve().as_str(),
                         "IO::Handle" | "IO::Path" | "IO::Pipe" | "IO::CatHandle"))
                 {
@@ -214,14 +215,14 @@ impl Interpreter {
             // path keeps the current `$*CWD`/`$*SPEC`.
             "IO" if args.is_empty()
                 || args.iter().all(|a| {
-                    matches!(a, Value::Pair(k, _) if k == "CWD" || k == "SPEC")
-                        || matches!(a, Value::ValuePair(k, _)
+                    matches!(a.view(), ValueView::Pair(k, _) if k == "CWD" || k == "SPEC")
+                        || matches!(a.view(), ValueView::ValuePair(k, _)
                                 if k.to_string_value() == "CWD" || k.to_string_value() == "SPEC")
                 }) =>
             {
                 // IO handle objects have their own `.IO` (returning the path of
                 // the open file); never coerce them via stringification.
-                if matches!(&target, Value::Instance { class_name, .. }
+                if matches!(target.view(), ValueView::Instance { class_name, .. }
                     if matches!(class_name.resolve().as_str(),
                         "IO::Handle" | "IO::Pipe" | "IO::CatHandle"))
                 {
@@ -229,7 +230,7 @@ impl Interpreter {
                 }
                 // `.IO` on an IO::Path (sub)class type object returns the type
                 // object itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
-                if let Value::Package(name) = &target {
+                if let ValueView::Package(name) = target.view() {
                     let n = name.resolve();
                     if n == "IO::Path" || n.starts_with("IO::Path::") {
                         return Some(Ok(target.clone()));
@@ -270,7 +271,7 @@ impl Interpreter {
         let mut positional: Vec<&Value> = Vec::new();
         let mut return_match = false;
         for arg in args {
-            if let Value::Pair(key, val) = arg
+            if let ValueView::Pair(key, val) = arg.view()
                 && key == "match"
             {
                 return_match = val.truthy();
@@ -290,23 +291,24 @@ impl Interpreter {
         if let Some(lim) = limit
             && lim <= 0
         {
-            return Some(Ok(Value::Seq(std::sync::Arc::new(Vec::new()))));
+            return Some(Ok(Value::seq_arc(std::sync::Arc::new(Vec::new()))));
         }
 
         let matcher = positional.first().copied();
 
-        let make_seq = |items: Vec<Value>| Value::Seq(std::sync::Arc::new(items));
+        let make_seq = |items: Vec<Value>| Value::seq_arc(std::sync::Arc::new(items));
 
-        match matcher {
+        match matcher.map(Value::view) {
             // Pure Int-chunk / Str-fixed split: single shared impl in
             // `builtins::comb` (also driving the native fast path). The regex
             // engine cases below stay here because they need the interpreter.
-            Some(m @ (Value::Int(_) | Value::Str(_))) => {
+            Some(ValueView::Int(_) | ValueView::Str(_)) => {
+                let m = matcher.expect("matcher is Some in this arm");
                 let items = crate::builtins::comb::comb_pure(&text, Some(m), limit)
                     .expect("comb_pure always handles Int/Str matchers");
                 Some(Ok(make_seq(items)))
             }
-            Some(Value::Regex(pat)) => {
+            Some(ValueView::Regex(pat)) => {
                 // Use the capturing path only when the regex contains code
                 // blocks that need eager execution (e.g. `{ take $/.Str }`).
                 // For regular regexes, use the faster non-capturing path.
@@ -368,7 +370,7 @@ impl Interpreter {
                     }
                 }
             }
-            Some(Value::Sub(_)) | Some(Value::WeakSub(_)) => Some(Err(RuntimeError::new(
+            Some(ValueView::Sub(_) | ValueView::WeakSub(_)) => Some(Err(RuntimeError::new(
                 "none of these signatures match: comb does not accept a Code argument",
             ))),
             _ => {
@@ -461,7 +463,7 @@ impl Interpreter {
             return None;
         }
 
-        if matches!(&target, Value::Instance { .. }) {
+        if matches!(target.view(), ValueView::Instance { .. }) {
             let coerced = if let Ok(v) =
                 self.call_method_with_values(target.clone(), "Numeric", vec![])
             {
@@ -478,7 +480,10 @@ impl Interpreter {
         }
 
         // .atan2(Instance) — coerce Instance arg
-        if method == "atan2" && args.len() == 1 && matches!(&args[0], Value::Instance { .. }) {
+        if method == "atan2"
+            && args.len() == 1
+            && matches!(args[0].view(), ValueView::Instance { .. })
+        {
             let coerced_arg = match self
                 .call_method_with_values(args[0].clone(), "Numeric", vec![])
                 .or_else(|_| self.call_method_with_values(args[0].clone(), "Bridge", vec![]))

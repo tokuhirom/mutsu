@@ -61,22 +61,22 @@ impl Interpreter {
 
         // Second arg: length
         let end = if let Some(len_val) = method_args.get(1) {
-            match len_val {
-                Value::Int(i) => {
-                    let len = (*i).max(0) as usize;
+            match len_val.view() {
+                ValueView::Int(i) => {
+                    let len = i.max(0) as usize;
                     (start + len).min(str_len)
                 }
-                Value::Num(f) if f.is_infinite() && *f > 0.0 => str_len,
-                Value::Num(f) => {
-                    let len = (*f as i64).max(0) as usize;
+                ValueView::Num(f) if f.is_infinite() && f > 0.0 => str_len,
+                ValueView::Num(f) => {
+                    let len = (f as i64).max(0) as usize;
                     (start + len).min(str_len)
                 }
-                Value::Rat(n, d) if *d != 0 => {
-                    let len = (*n / *d).max(0) as usize;
+                ValueView::Rat(n, d) if d != 0 => {
+                    let len = (n / d).max(0) as usize;
                     (start + len).min(str_len)
                 }
-                Value::Whatever => str_len,
-                Value::Sub { .. } => {
+                ValueView::Whatever => str_len,
+                ValueView::Sub(_) => {
                     // WhateverCode/Callable: call with remaining length
                     let remaining = if start <= str_len {
                         (str_len - start) as i64
@@ -84,11 +84,11 @@ impl Interpreter {
                         0
                     };
                     let result =
-                        self.eval_call_on_value(len_val.clone(), vec![Value::Int(remaining)])?;
-                    let len = match &result {
-                        Value::Int(i) => (*i).max(0) as usize,
-                        Value::Num(f) => (*f as i64).max(0) as usize,
-                        Value::Rat(n, d) if *d != 0 => (*n / *d).max(0) as usize,
+                        self.eval_call_on_value(len_val.clone(), vec![Value::int(remaining)])?;
+                    let len = match result.view() {
+                        ValueView::Int(i) => i.max(0) as usize,
+                        ValueView::Num(f) => (f as i64).max(0) as usize,
+                        ValueView::Rat(n, d) if d != 0 => (n / d).max(0) as usize,
                         _ => 0,
                     };
                     (start + len).min(str_len)
@@ -109,8 +109,9 @@ impl Interpreter {
         method_args: Vec<Value>,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        let mut items = if let Value::Instance { attributes, .. } = &target
-            && let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+        let mut items = if let ValueView::Instance { attributes, .. } = target.view()
+            && let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
         {
             items.to_vec()
         } else {
@@ -120,8 +121,9 @@ impl Interpreter {
         let from = method_args.first().map(crate::runtime::to_int).unwrap_or(0) as usize;
         let len = method_args.get(1).map(crate::runtime::to_int).unwrap_or(0) as usize;
 
-        let new_bytes = if let Value::Instance { attributes, .. } = &value
-            && let Some(Value::Array(new_items, ..)) = attributes.as_map().get("bytes")
+        let new_bytes = if let ValueView::Instance { attributes, .. } = value.view()
+            && let Some(ValueView::Array(new_items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
         {
             new_items.to_vec()
         } else {
@@ -132,7 +134,7 @@ impl Interpreter {
         let end = (from + len).min(items.len());
         items.splice(from..end, new_bytes);
 
-        let class_name = if let Value::Instance { class_name, .. } = &target {
+        let class_name = if let ValueView::Instance { class_name, .. } = target.view() {
             class_name.resolve().to_string()
         } else {
             "Buf".to_string()
@@ -153,12 +155,12 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
+        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let ValueView::Instance {
             class_name,
             attributes,
             id,
             ..
-        } = &target
+        } = target.view()
         {
             // Blob is immutable — cannot reallocate
             let cn = class_name.resolve();
@@ -168,12 +170,14 @@ impl Interpreter {
                     cn
                 )));
             }
-            let items = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+            let items = if let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
+            {
                 items.to_vec()
             } else {
                 Vec::new()
             };
-            (*class_name, items, *id, attributes.clone())
+            (class_name, items, id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -184,7 +188,7 @@ impl Interpreter {
         // Guard the grow path with a fallible reservation so an absurd size
         // (`$b.reallocate(1e15)`) yields a catchable `X::` instead of an
         // uncatchable abort; `truncate` then handles the shrink case.
-        Self::autoviv_resize(&mut bytes, new_size, Value::Int(0))?;
+        Self::autoviv_resize(&mut bytes, new_size, Value::int(0))?;
         bytes.truncate(new_size);
         let mut attrs = HashMap::new();
         attrs.insert("bytes".to_string(), Value::array(bytes));
@@ -198,33 +202,41 @@ impl Interpreter {
     pub(in crate::runtime) fn flatten_buf_args(args: Vec<Value>) -> Vec<Value> {
         let mut result = Vec::new();
         for a in args {
-            match &a {
-                Value::Int(_) => result.push(a),
-                Value::Array(items, ..) => {
+            let handled = match a.view() {
+                ValueView::Int(_) => false,
+                ValueView::Array(items, ..) => {
                     // Recursively flatten
                     result.extend(Self::flatten_buf_args(items.to_vec()));
+                    true
                 }
-                Value::Seq(items) | Value::Slip(items) => {
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     // Recursively flatten
                     result.extend(Self::flatten_buf_args(items.to_vec()));
+                    true
                 }
-                Value::Instance {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
                 } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                    if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+                    if let Some(ValueView::Array(items, ..)) =
+                        attributes.as_map().get("bytes").map(Value::view)
+                    {
                         result.extend(items.to_vec());
                     }
+                    true
                 }
-                _ => result.push(a),
+                _ => false,
+            };
+            if !handled {
+                result.push(a);
             }
         }
         result
     }
 
     pub(crate) fn is_buf_like_value(val: &Value) -> bool {
-        if let Value::Instance { class_name, .. } = val {
+        if let ValueView::Instance { class_name, .. } = val.view() {
             let cn = class_name.resolve();
             cn == "Buf"
                 || cn == "Blob"
@@ -246,19 +258,21 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
+        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let ValueView::Instance {
             class_name,
             attributes,
             id,
             ..
-        } = &target
+        } = target.view()
         {
-            let items = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+            let items = if let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
+            {
                 items.to_vec()
             } else {
                 Vec::new()
             };
-            (*class_name, items, *id, attributes.clone())
+            (class_name, items, id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -266,7 +280,7 @@ impl Interpreter {
         // Validate and flatten args to int values
         // String args should throw X::TypeCheck
         for a in &args {
-            if matches!(a, Value::Str(_)) {
+            if matches!(a.view(), ValueView::Str(_)) {
                 let msg = "Type check failed in assignment; expected Int but got Str".to_string();
                 let mut ex_attrs = HashMap::new();
                 ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -307,12 +321,12 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let Value::Instance {
+        let (class_name_sym, mut bytes, orig_id, attrs_cell) = if let ValueView::Instance {
             class_name,
             attributes,
             id,
             ..
-        } = &target
+        } = target.view()
         {
             let cn = class_name.resolve();
             // Blob is immutable
@@ -322,12 +336,14 @@ impl Interpreter {
                     cn, method
                 )));
             }
-            let items = if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes") {
+            let items = if let Some(ValueView::Array(items, ..)) =
+                attributes.as_map().get("bytes").map(Value::view)
+            {
                 items.to_vec()
             } else {
                 Vec::new()
             };
-            (*class_name, items, *id, attributes.clone())
+            (class_name, items, id, attributes.clone())
         } else {
             return Err(RuntimeError::new("Not a Buf".to_string()));
         };
@@ -391,13 +407,13 @@ impl Interpreter {
                 // offset/count counts from the end (Raku semantics).
                 let len = bytes.len() as i64;
                 let resolve = |v: &Value| -> i64 {
-                    match v {
-                        Value::Int(i) => *i,
-                        Value::Whatever => len,
-                        Value::Num(n) => *n as i64,
-                        Value::Str(s) => s.parse::<i64>().unwrap_or(0),
-                        Value::Mixin(inner, _) => match inner.as_ref() {
-                            Value::Int(i) => *i,
+                    match v.view() {
+                        ValueView::Int(i) => i,
+                        ValueView::Whatever => len,
+                        ValueView::Num(n) => n as i64,
+                        ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+                        ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                            ValueView::Int(i) => i,
                             _ => 0,
                         },
                         _ => 0,
@@ -423,20 +439,21 @@ impl Interpreter {
                 // integer bytes).
                 let mut replacement: Vec<Value> = Vec::new();
                 for arg in args.iter().skip(2) {
-                    match arg {
-                        Value::Instance { attributes, .. }
+                    match arg.view() {
+                        ValueView::Instance { attributes, .. }
                             if matches!(
-                                attributes.as_map().get("bytes"),
-                                Some(Value::Array(..))
+                                attributes.as_map().get("bytes").map(Value::view),
+                                Some(ValueView::Array(..))
                             ) =>
                         {
-                            if let Some(Value::Array(items, ..)) = attributes.as_map().get("bytes")
+                            if let Some(ValueView::Array(items, ..)) =
+                                attributes.as_map().get("bytes").map(Value::view)
                             {
                                 replacement.extend(items.iter().cloned());
                             }
                         }
-                        Value::Array(items, ..) => replacement.extend(items.iter().cloned()),
-                        other => replacement.push(Value::Int(resolve(other) & 0xff)),
+                        ValueView::Array(items, ..) => replacement.extend(items.iter().cloned()),
+                        _ => replacement.push(Value::int(resolve(arg) & 0xff)),
                     }
                 }
                 let removed: Vec<Value> = bytes.splice(start..end, replacement).collect();

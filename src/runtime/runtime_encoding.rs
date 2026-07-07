@@ -178,7 +178,7 @@ impl Interpreter {
     /// env binds the bare name to that storage name, so `is Foo` links to the Foo
     /// visible in *this* scope rather than a same-named class from another scope.
     pub(crate) fn lexical_env_remap_name(&self, name: &str) -> String {
-        if let Some(Value::Package(p)) = self.env().get(name) {
+        if let Some(ValueView::Package(p)) = self.env().get(name).map(Value::view) {
             let resolved = p.resolve();
             if resolved != name {
                 return resolved;
@@ -273,10 +273,10 @@ impl Interpreter {
         // Check only the current scope for the same name from a different enum
         if let Some(current_scope) = self.enum_scope_names.last()
             && current_scope.iter().any(|n| n == name)
-            && let Some(Value::Enum {
+            && let Some(ValueView::Enum {
                 enum_type: prev_type,
                 ..
-            }) = self.env.get(name)
+            }) = self.env.get(name).map(Value::view)
             && prev_type.resolve() != enum_type
         {
             self.poisoned_enum_aliases
@@ -341,7 +341,7 @@ impl Interpreter {
     }
 
     pub fn set_pid(&mut self, pid: i64) {
-        self.env.insert("*PID".to_string(), Value::Int(pid));
+        self.env.insert("*PID".to_string(), Value::int(pid));
     }
 
     pub fn set_program_path(&mut self, path: &str) {

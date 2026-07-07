@@ -16,8 +16,8 @@ impl Interpreter {
         let line = self
             .env
             .get("?LINE")
-            .and_then(|v| match v {
-                Value::Int(i) => Some(*i),
+            .and_then(|v| match v.view() {
+                ValueView::Int(i) => Some(i),
                 _ => None,
             })
             .unwrap_or(0);
@@ -186,7 +186,7 @@ impl Interpreter {
             )));
         }
         // Copy the current value to the caller env and set up the binding alias
-        let source_val = self.env.get(source_name).cloned().unwrap_or(Value::Nil);
+        let source_val = self.env.get(source_name).cloned().unwrap_or(Value::NIL);
         let idx = stack_len - depth;
         self.caller_env_stack[idx].insert(target_name.to_string(), source_val.clone());
         // Set up binding alias so reads of target_name resolve to source_name

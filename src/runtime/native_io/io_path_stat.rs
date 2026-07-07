@@ -199,39 +199,39 @@ impl Interpreter {
     /// run the exact same filesystem queries and Failure shaping.
     fn io_path_stat_result(path_buf: &Path, p: &str, method: &str) -> Result<Value, RuntimeError> {
         match method {
-            "e" => Ok(Value::Bool(path_buf.exists())),
+            "e" => Ok(Value::truth(path_buf.exists())),
             "f" => match fs::metadata(path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.is_file())),
+                Ok(meta) => Ok(Value::truth(meta.is_file())),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "d" => match fs::metadata(path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.is_dir())),
+                Ok(meta) => Ok(Value::truth(meta.is_dir())),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "l" => match fs::symlink_metadata(path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.file_type().is_symlink())),
+                Ok(meta) => Ok(Value::truth(meta.file_type().is_symlink())),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "r" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::Bool(path_is_readable(path_buf))),
+                Ok(_) => Ok(Value::truth(path_is_readable(path_buf))),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "w" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::Bool(path_is_writable(path_buf))),
+                Ok(_) => Ok(Value::truth(path_is_writable(path_buf))),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "x" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::Bool(path_is_executable(path_buf))),
+                Ok(_) => Ok(Value::truth(path_is_executable(path_buf))),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "rw" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::Bool(
+                Ok(_) => Ok(Value::truth(
                     path_is_readable(path_buf) && path_is_writable(path_buf),
                 )),
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "rwx" => match fs::metadata(path_buf) {
-                Ok(_) => Ok(Value::Bool(
+                Ok(_) => Ok(Value::truth(
                     path_is_readable(path_buf)
                         && path_is_writable(path_buf)
                         && path_is_executable(path_buf),
@@ -239,7 +239,7 @@ impl Interpreter {
                 Err(_) => Ok(io_path_missing_failure(p, method)),
             },
             "z" => match fs::metadata(path_buf) {
-                Ok(meta) => Ok(Value::Bool(meta.len() == 0)),
+                Ok(meta) => Ok(Value::truth(meta.len() == 0)),
                 Err(_) => {
                     let message = format!("Failed to find '{}' while trying to do '.z'", p);
                     let mut attrs = HashMap::new();
@@ -271,12 +271,12 @@ impl Interpreter {
                     } else {
                         (0o666, "0666".to_string())
                     };
-                    Self::build_native_allomorph_value("IntStr", &[Value::Int(mode), Value::str(s)])
+                    Self::build_native_allomorph_value("IntStr", &[Value::int(mode), Value::str(s)])
                 }
                 Err(_) => Ok(io_path_missing_failure(p, "mode")),
             },
             "s" => match fs::metadata(path_buf) {
-                Ok(meta) => Ok(Value::Int(meta.len() as i64)),
+                Ok(meta) => Ok(Value::int(meta.len() as i64)),
                 // `.s` on a missing path fails with `X::IO::DoesNotExist` (a Failure),
                 // not a thrown generic error (roast S32-io/file-tests.t).
                 Err(_) => Ok(io_path_missing_failure(p, "s")),

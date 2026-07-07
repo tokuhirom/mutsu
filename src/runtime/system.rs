@@ -135,8 +135,8 @@ impl Interpreter {
                 // value from the stack, so eval_block_value returns Nil/Any.
                 // In Raku, EVAL returns the value of the last expression,
                 // which for assignments is the assigned value.
-                let value = if matches!(value, Value::Nil)
-                    || matches!(&value, Value::Package(name) if name == "Any")
+                let value = if value.is_nil()
+                    || matches!(value.view(), ValueView::Package(name) if name == "Any")
                 {
                     if let Some(Stmt::Assign { name, .. }) = stmts.last() {
                         self.env.get(name).cloned().unwrap_or(value)

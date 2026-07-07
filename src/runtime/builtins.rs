@@ -145,7 +145,7 @@ impl Interpreter {
         // For Map containers, .VAR returns the value itself (no Scalar container)
         // since Map decontainerizes all values.
         if let Some(container) = self.env.get(&source_name)
-            && let Value::Hash(map) = container
+            && let ValueView::Hash(map) = container.view()
         {
             let is_map = self
                 .container_type_metadata(container)
@@ -154,9 +154,9 @@ impl Interpreter {
             if is_map {
                 if let Some(key) = index_key {
                     let key_str = key.to_string_value();
-                    return Ok(map.get(&key_str).cloned().unwrap_or(Value::Nil));
+                    return Ok(map.get(&key_str).cloned().unwrap_or(Value::NIL));
                 }
-                return Ok(Value::Nil);
+                return Ok(Value::NIL);
             }
         }
 
@@ -168,12 +168,12 @@ impl Interpreter {
         );
         attributes.insert(
             "dynamic".to_string(),
-            Value::Bool(self.is_var_dynamic(&source_name)),
+            Value::truth(self.is_var_dynamic(&source_name)),
         );
         let default_val = if let Some(tc) = self.var_type_constraint(&source_name) {
-            Value::Package(Symbol::intern(&tc))
+            Value::package(Symbol::intern(&tc))
         } else {
-            Value::Package(Symbol::intern("Any"))
+            Value::package(Symbol::intern("Any"))
         };
         attributes.insert("default".to_string(), default_val);
         Ok(Value::make_instance(Symbol::intern("Scalar"), attributes))
@@ -214,50 +214,64 @@ impl Interpreter {
         value: Value,
     ) -> Option<Value> {
         let by_index = |idx: usize| -> Option<Value> {
-            variants.get(idx).map(|(key, val)| Value::Enum {
-                enum_type: Symbol::intern(enum_name),
-                key: Symbol::intern(key),
-                value: val.clone(),
-                index: idx,
+            variants.get(idx).map(|(key, val)| {
+                Value::enum_parts(
+                    Symbol::intern(enum_name),
+                    Symbol::intern(key),
+                    val.clone(),
+                    idx,
+                )
             })
         };
 
-        match value {
-            Value::Enum {
+        let by_view = match value.view() {
+            ValueView::Enum {
                 enum_type, index, ..
-            } if enum_type == enum_name => by_index(index),
-            Value::Enum { key, .. } => {
+            } if enum_type == enum_name => Some(by_index(index)),
+            ValueView::Enum { key, .. } => {
                 // For foreign enum types, look up by string name, not numeric value
-                variants
-                    .iter()
-                    .enumerate()
-                    .find(|(_, (k, _))| k == &key.resolve())
-                    .and_then(|(idx, _)| by_index(idx))
-            }
-            Value::Int(int_value) => variants
-                .iter()
-                .enumerate()
-                .find(|(_, (_, v))| *v == EnumValue::Int(int_value))
-                .and_then(|(idx, _)| by_index(idx)),
-            Value::Num(num_value) => {
-                if num_value.fract() == 0.0 {
-                    let int_value = num_value as i64;
+                Some(
                     variants
                         .iter()
                         .enumerate()
-                        .find(|(_, (_, v))| *v == EnumValue::Int(int_value))
-                        .and_then(|(idx, _)| by_index(idx))
+                        .find(|(_, (k, _))| k == &key.resolve())
+                        .and_then(|(idx, _)| by_index(idx)),
+                )
+            }
+            ValueView::Int(int_value) => Some(
+                variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (_, v))| *v == EnumValue::Int(int_value))
+                    .and_then(|(idx, _)| by_index(idx)),
+            ),
+            ValueView::Num(num_value) => {
+                if num_value.fract() == 0.0 {
+                    let int_value = num_value as i64;
+                    Some(
+                        variants
+                            .iter()
+                            .enumerate()
+                            .find(|(_, (_, v))| *v == EnumValue::Int(int_value))
+                            .and_then(|(idx, _)| by_index(idx)),
+                    )
                 } else {
-                    None
+                    Some(None)
                 }
             }
-            Value::Str(name) => variants
-                .iter()
-                .enumerate()
-                .find(|(_, (key, _))| key.as_str() == name.as_str())
-                .and_then(|(idx, _)| by_index(idx)),
-            other => self
-                .call_method_with_values(other, enum_name, vec![])
+            ValueView::Str(name) => Some(
+                variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (key, _))| key.as_str() == name.as_str())
+                    .and_then(|(idx, _)| by_index(idx)),
+            ),
+            _ => None,
+        };
+        match by_view {
+            Some(result) => result,
+            None => self
+                .call_method_with_values(value, enum_name, vec![])
                 .ok()
                 .and_then(|resolved| self.coerce_to_enum_variant(enum_name, variants, resolved)),
         }
@@ -269,28 +283,33 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         // Upgrade WeakSub to Sub transparently
-        let target_val = match target_val {
-            Value::WeakSub(ref weak) => match weak.upgrade() {
-                Some(strong) => Value::Sub(strong),
+        let upgraded = match target_val.view() {
+            ValueView::WeakSub(weak) => Some(match weak.upgrade() {
+                Some(strong) => Value::sub_value(strong),
                 None => return Err(RuntimeError::new("Callable has been freed")),
-            },
-            other => other,
+            }),
+            _ => None,
         };
-        if matches!(target_val, Value::Sub(_)) {
+        let target_val = upgraded.unwrap_or(target_val);
+        if matches!(target_val.view(), ValueView::Sub(_)) {
             return self.call_sub_value(target_val, args, true);
         }
-        if matches!(target_val, Value::Routine { .. }) {
+        if matches!(target_val.view(), ValueView::Routine { .. }) {
             return self.call_sub_value(target_val, args, false);
         }
-        if let Value::Junction { kind, values } = target_val {
+        if let ValueView::Junction { kind, values } = target_val.view() {
             let mut results = Vec::with_capacity(values.len());
             for callable in values.iter() {
                 results.push(self.eval_call_on_value(callable.clone(), args.clone())?);
             }
-            return Ok(Value::junction(kind, results));
+            return Ok(Value::junction(kind.clone(), results));
         }
         // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
-        if let Value::Mixin(ref inner, ref mixins) = target_val {
+        let mixin_parts = match target_val.view() {
+            ValueView::Mixin(inner, mixins) => Some((Arc::clone(inner), Arc::clone(mixins))),
+            _ => None,
+        };
+        if let Some((inner, mixins)) = mixin_parts {
             // Check if any mixed-in role provides CALL-ME
             for key in mixins.keys() {
                 if let Some(role_name) = key.strip_prefix("__mutsu_role__")
@@ -300,18 +319,18 @@ impl Interpreter {
                 }
             }
             // Otherwise, delegate to the inner callable
-            match inner.as_ref() {
-                Value::Sub(_) => return self.call_sub_value(inner.as_ref().clone(), args, true),
-                Value::Routine { .. } => {
-                    return self.call_sub_value(inner.as_ref().clone(), args, false);
+            match inner.as_ref().view() {
+                ValueView::Sub(_) => return self.call_sub_value((*inner).clone(), args, true),
+                ValueView::Routine { .. } => {
+                    return self.call_sub_value((*inner).clone(), args, false);
                 }
                 _ => {}
             }
         }
-        if matches!(target_val, Value::Instance { .. }) {
+        if matches!(target_val.view(), ValueView::Instance { .. }) {
             return self.call_method_with_values(target_val, "CALL-ME", args);
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     pub(crate) fn call_function(
@@ -353,18 +372,18 @@ impl Interpreter {
             "__mutsu_zip_shortcircuit" => self.builtin_zip_shortcircuit(&args),
             "__mutsu_zip_shortcircuit_topic" => self.builtin_zip_shortcircuit_topic(&args),
             "__mutsu_zip_xx" => self.builtin_zip_xx(&args),
-            "__mutsu_bind_index_value" => Ok(Value::Pair(
+            "__mutsu_bind_index_value" => Ok(Value::pair(
                 "__mutsu_bind_index_value".to_string(),
-                Box::new(Value::Array(
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                        args.first().cloned().unwrap_or(Value::Nil),
-                        args.get(1).cloned().unwrap_or(Value::Array(
+                        args.first().cloned().unwrap_or(Value::NIL),
+                        args.get(1).cloned().unwrap_or(Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                             crate::value::ArrayKind::List,
                         )),
                     ])),
                     crate::value::ArrayKind::List,
-                )),
+                ),
             )),
             "__mutsu_subscript_adverb" => self.builtin_subscript_adverb(&args),
             "__mutsu_subscript_adverb_error" => Self::builtin_subscript_adverb_error(&args),
@@ -404,51 +423,51 @@ impl Interpreter {
             "__mutsu_make_format" => self.builtin_make_format(&args),
             "__mutsu_quotewords_atom" => self.builtin_quotewords_atom(&args),
             "__mutsu_words_atom" => self.builtin_words_atom(&args),
-            "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "__mutsu_qw_result" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
             "__mutsu_unknown_backslash_escape" => self.builtin_unknown_backslash_escape(&args),
-            "undefine" => Ok(Value::Package(crate::symbol::Symbol::intern("Any"))),
+            "undefine" => Ok(Value::package(crate::symbol::Symbol::intern("Any"))),
             "__mutsu_undefine_rvalue" => {
                 // Called when undefine receives a non-variable expression.
                 // Immutable types (Bool, Int, Str, etc.) must die.
-                let val = args.first().cloned().unwrap_or(Value::Nil);
-                match &val {
-                    Value::Bool(b) => Err(RuntimeError::assignment_ro_typename(
+                let val = args.first().cloned().unwrap_or(Value::NIL);
+                match val.view() {
+                    ValueView::Bool(b) => Err(RuntimeError::assignment_ro_typename(
                         "Bool",
                         &format!("{b}"),
                     )),
-                    Value::Int(i) => {
+                    ValueView::Int(i) => {
                         Err(RuntimeError::assignment_ro_typename("Int", &format!("{i}")))
                     }
-                    Value::Num(n) => {
+                    ValueView::Num(n) => {
                         Err(RuntimeError::assignment_ro_typename("Num", &format!("{n}")))
                     }
-                    Value::Str(s) => {
+                    ValueView::Str(s) => {
                         Err(RuntimeError::assignment_ro_typename("Str", &format!("{s}")))
                     }
-                    Value::Rat(n, d) => Err(RuntimeError::assignment_ro_typename(
+                    ValueView::Rat(n, d) => Err(RuntimeError::assignment_ro_typename(
                         "Rat",
                         &format!("{n}/{d}"),
                     )),
-                    Value::Sub(sub_def) => {
+                    ValueView::Sub(sub_def) => {
                         let sub_name = sub_def.name.resolve();
                         Err(RuntimeError::assignment_ro_typename(
                             "Sub",
                             &format!("&{sub_name}"),
                         ))
                     }
-                    Value::Routine { name, .. } => {
+                    ValueView::Routine { name, .. } => {
                         let sub_name = name.resolve();
                         Err(RuntimeError::assignment_ro_typename(
                             "Sub",
                             &format!("&{sub_name}"),
                         ))
                     }
-                    Value::Nil | Value::Array(..) | Value::Hash(..) => Ok(Value::Nil),
-                    _ => Ok(Value::Nil),
+                    ValueView::Nil | ValueView::Array(..) | ValueView::Hash(..) => Ok(Value::NIL),
+                    _ => Ok(Value::NIL),
                 }
             }
-            "local" => Ok(Value::Nil),
-            "VAR" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "local" => Ok(Value::NIL),
+            "VAR" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
             "WHAT" => {
                 if args.len() != 1 {
                     return Err(RuntimeError::new(
@@ -472,11 +491,11 @@ impl Interpreter {
                     self.env.remove(&class_name);
                     self.suppress_name(&class_name);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "__MUTSU_SET_META__" => {
                 if args.len() < 3 {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 }
                 let type_name = args[0].to_string_value();
                 let key = args[1].to_string_value();
@@ -485,11 +504,11 @@ impl Interpreter {
                     .entry(type_name)
                     .or_default()
                     .insert(key, value);
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "__mutsu_set_newline" => {
-                let pair = args.first().cloned().unwrap_or(Value::Nil);
-                let Value::Pair(name, value) = pair else {
+                let pair = args.first().cloned().unwrap_or(Value::NIL);
+                let ValueView::Pair(name, value) = pair.view() else {
                     return Err(RuntimeError::new(
                         "use newline expects a colonpair argument",
                     ));
@@ -505,18 +524,21 @@ impl Interpreter {
                         return Err(RuntimeError::new(format!("Unknown newline mode: {}", name)));
                     }
                 };
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "require" => self.builtin_require(&args),
             "BEGIN" => {
                 let Some(first) = args.first().cloned() else {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 };
-                match first {
-                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
-                        self.call_sub_value(first, Vec::new(), false)
-                    }
-                    other => Ok(other),
+                let is_callable = matches!(
+                    first.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                );
+                if is_callable {
+                    self.call_sub_value(first, Vec::new(), false)
+                } else {
+                    Ok(first)
                 }
             }
             // Array operations
@@ -534,7 +556,7 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             // Introspection
             "callframe" => self.builtin_callframe(&args, 0),
@@ -544,10 +566,10 @@ impl Interpreter {
             "EVAL" => self.builtin_eval(&args),
             // NQP functions (minimal compatibility)
             "nqp::atkey" => {
-                let hash = args.first().cloned().unwrap_or(Value::Nil);
+                let hash = args.first().cloned().unwrap_or(Value::NIL);
                 let key = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-                match &hash {
-                    Value::Hash(map) => Ok(map.get(&key).cloned().unwrap_or(Value::Nil)),
+                match hash.view() {
+                    ValueView::Hash(map) => Ok(map.get(&key).cloned().unwrap_or(Value::NIL)),
                     _ => {
                         let h = hash.clone();
                         self.call_method_with_values(h, "AT-KEY", vec![Value::str(key)])
@@ -555,17 +577,17 @@ impl Interpreter {
                 }
             }
             "nqp::atpos" => {
-                let list = args.first().cloned().unwrap_or(Value::Nil);
+                let list = args.first().cloned().unwrap_or(Value::NIL);
                 let idx = args
                     .get(1)
-                    .and_then(|v| match v {
-                        Value::Int(i) => Some(*i as usize),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) => Some(i as usize),
                         _ => v.to_string_value().parse::<usize>().ok(),
                     })
                     .unwrap_or(0);
-                match &list {
-                    Value::Array(items, _) => Ok(items.get(idx).cloned().unwrap_or(Value::Nil)),
-                    _ => Ok(Value::Nil),
+                match list.view() {
+                    ValueView::Array(items, _) => Ok(items.get(idx).cloned().unwrap_or(Value::NIL)),
+                    _ => Ok(Value::NIL),
                 }
             }
             // Debug
@@ -609,7 +631,7 @@ impl Interpreter {
             "join" => self.builtin_join(&args),
             "item" => {
                 if args.len() <= 1 {
-                    let val = args.first().cloned().unwrap_or(Value::Nil);
+                    let val = args.first().cloned().unwrap_or(Value::NIL);
                     Ok(val.item())
                 } else {
                     Ok(Value::array(args.clone()))
@@ -625,10 +647,10 @@ impl Interpreter {
             "slip" | "Slip" => self.builtin_slip(&args),
             "take" => {
                 let value = if args.len() <= 1 {
-                    args.first().cloned().unwrap_or(Value::Nil)
+                    args.first().cloned().unwrap_or(Value::NIL)
                 } else {
                     // take with multiple args creates a single list element
-                    Value::Array(
+                    Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(args.clone())),
                         crate::value::ArrayKind::List,
                     )
@@ -643,12 +665,12 @@ impl Interpreter {
             "emit" => {
                 // Top-level `emit` outside a supply block raises a CX::Emit
                 // control exception that a CONTROL block can observe.
-                let value = args.first().cloned().unwrap_or(Value::Nil);
+                let value = args.first().cloned().unwrap_or(Value::NIL);
                 Err(RuntimeError::emit_signal(value))
             }
             "return" => {
                 let mut err = RuntimeError::new("return");
-                err.return_value = Some(args.first().cloned().unwrap_or(Value::Nil));
+                err.return_value = Some(args.first().cloned().unwrap_or(Value::NIL));
                 Err(err)
             }
             "reverse" => self.builtin_reverse(&args),
@@ -681,21 +703,21 @@ impl Interpreter {
                         values.push(value.clone());
                         continue;
                     }
-                    match value {
-                        Value::Array(items, ..) => {
+                    match value.view() {
+                        ValueView::Array(items, ..) => {
                             values.extend(items.iter().cloned());
                         }
-                        Value::Seq(items) | Value::Slip(items) => {
+                        ValueView::Seq(items) | ValueView::Slip(items) => {
                             values.extend(items.iter().cloned());
                         }
-                        Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. } => {
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => {
                             values.extend(crate::runtime::value_to_list(value));
                         }
-                        other => values.push(other.clone()),
+                        _ => values.push(value.clone()),
                     }
                 }
                 let list = Value::array(values);
@@ -719,21 +741,21 @@ impl Interpreter {
                         values.push(value.clone());
                         continue;
                     }
-                    match value {
-                        Value::Array(items, ..) => {
+                    match value.view() {
+                        ValueView::Array(items, ..) => {
                             values.extend(items.iter().cloned());
                         }
-                        Value::Seq(items) | Value::Slip(items) => {
+                        ValueView::Seq(items) | ValueView::Slip(items) => {
                             values.extend(items.iter().cloned());
                         }
-                        Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. } => {
+                        ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. } => {
                             values.extend(crate::runtime::value_to_list(value));
                         }
-                        other => values.push(other.clone()),
+                        _ => values.push(value.clone()),
                     }
                 }
                 let list = Value::array(values);
@@ -746,8 +768,8 @@ impl Interpreter {
                 // List skip signature: (Int $n, @list)
                 // Key distinction: Test::skip's first arg is always a Str.
                 if self.test_mode_active() {
-                    let is_list_skip =
-                        args.len() >= 2 && matches!(args[0], Value::Int(..) | Value::Num(..));
+                    let is_list_skip = args.len() >= 2
+                        && matches!(args[0].view(), ValueView::Int(..) | ValueView::Num(..));
                     if is_list_skip {
                         self.builtin_skip(&args)
                     } else {
@@ -766,7 +788,7 @@ impl Interpreter {
                 let target = args[0].clone();
                 let method_args = args[1..].to_vec();
                 // Junction auto-threading on first argument
-                if let Value::Junction { kind, values } = &target {
+                if let ValueView::Junction { kind, values } = target.view() {
                     let kind = kind.clone();
                     let mut results = Vec::new();
                     for v in values.iter() {
@@ -776,10 +798,7 @@ impl Interpreter {
                             method_args.clone(),
                         )?);
                     }
-                    return Ok(Value::Junction {
-                        kind,
-                        values: std::sync::Arc::new(results),
-                    });
+                    return Ok(Value::junction(kind, results));
                 }
                 self.call_method_with_values(target, "index", method_args)
             }
@@ -806,7 +825,7 @@ impl Interpreter {
             "sprintf" | "zprintf" => {
                 // If the first arg is a Junction, thread through it:
                 // call .Str on each element and concatenate.
-                if let Some(Value::Junction { kind: _, values }) = args.first() {
+                if let Some(ValueView::Junction { values, .. }) = args.first().map(Value::view) {
                     let mut content = String::new();
                     for v in values.iter() {
                         content.push_str(&self.render_str_value(v));
@@ -819,17 +838,17 @@ impl Interpreter {
             "printf" => {
                 // If the first arg is a Junction, thread through it:
                 // call .Str on each element and print the result.
-                if let Some(Value::Junction { kind: _, values }) = args.first() {
+                if let Some(ValueView::Junction { values, .. }) = args.first().map(Value::view) {
                     let mut content = String::new();
                     for v in values.iter() {
                         content.push_str(&self.render_str_value(v));
                     }
                     self.write_to_named_handle("$*OUT", &content, false)?;
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 } else {
                     let formatted = self.builtin_sprintf(&args, false)?;
                     self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
-                    Ok(Value::Bool(true))
+                    Ok(Value::TRUE)
                 }
             }
             "split" => self.handle_split_function(args),
@@ -838,9 +857,9 @@ impl Interpreter {
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let radix = match args.get(1) {
-                    Some(Value::Int(n)) => *n,
-                    Some(Value::Str(s)) => s.parse::<i64>().unwrap_or(10),
+                let radix = match args.get(1).map(Value::view) {
+                    Some(ValueView::Int(n)) => n,
+                    Some(ValueView::Str(s)) => s.parse::<i64>().unwrap_or(10),
                     _ => 10,
                 };
                 crate::builtins::parse_base::parse_base(&s, radix)
@@ -869,13 +888,15 @@ impl Interpreter {
             "sink" => {
                 // sink evaluates args and returns Nil.
                 // If the argument is a block/sub, call it first.
-                if let Some(func @ Value::Sub(_)) = args.first() {
+                if let Some(func) = args.first()
+                    && matches!(func.view(), ValueView::Sub(_))
+                {
                     let value = self.call_sub_value(func.clone(), Vec::new(), false)?;
-                    if let Value::Instance {
+                    if let ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } = &value
+                    } = value.view()
                         && class_name == "Failure"
                         && let Some(ex) = attributes.as_map().get("exception")
                     {
@@ -883,11 +904,11 @@ impl Interpreter {
                         err.exception = Some(Box::new(ex.clone()));
                         return Err(err);
                     }
-                } else if let Some(Value::Instance {
+                } else if let Some(ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                }) = args.first()
+                }) = args.first().map(Value::view)
                     && class_name == "Failure"
                     && let Some(ex) = attributes.as_map().get("exception")
                 {
@@ -895,23 +916,26 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex.clone()));
                     return Err(err);
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "quietly" => {
                 let Some(first) = args.first().cloned() else {
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 };
-                match first {
-                    Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } => {
-                        self.push_warn_suppression();
-                        let result = self.call_sub_value(first, Vec::new(), true);
-                        self.pop_warn_suppression();
-                        match result {
-                            Err(e) if e.is_warn() => Ok(Value::Nil),
-                            other => other,
-                        }
+                let is_callable = matches!(
+                    first.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                );
+                if is_callable {
+                    self.push_warn_suppression();
+                    let result = self.call_sub_value(first, Vec::new(), true);
+                    self.pop_warn_suppression();
+                    match result {
+                        Err(e) if e.is_warn() => Ok(Value::NIL),
+                        other => other,
                     }
-                    other => Ok(other),
+                } else {
+                    Ok(first)
                 }
             }
             "prompt" => self.builtin_prompt(&args),
@@ -934,8 +958,8 @@ impl Interpreter {
             // Concurrency (single-threaded simulation)
             "start" => self.builtin_start(args),
             "await" => self.builtin_await(&args),
-            "full-barrier" => Ok(Value::Nil),
-            "atomic-fetch" => Ok(args.first().cloned().unwrap_or(Value::Nil)),
+            "full-barrier" => Ok(Value::NIL),
+            "atomic-fetch" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(&args),
@@ -951,15 +975,15 @@ impl Interpreter {
             "__mutsu_hyper_prefix" => self.builtin_hyper_prefix(&args),
             "signal" => self.builtin_signal(&args),
             // Boolean coercion functions
-            "not" => Ok(Value::Bool(!args.first().unwrap_or(&Value::Nil).truthy())),
-            "so" => Ok(Value::Bool(args.first().unwrap_or(&Value::Nil).truthy())),
+            "not" => Ok(Value::truth(!args.first().unwrap_or(&Value::NIL).truthy())),
+            "so" => Ok(Value::truth(args.first().unwrap_or(&Value::NIL).truthy())),
             // Fallback
             // CREATE: allocate bare instance (used as a method found via find_method)
             "CREATE" => {
                 if let Some(target) = args.first() {
                     self.call_method_with_values(target.clone(), "CREATE", vec![])
                 } else {
-                    Ok(Value::Nil)
+                    Ok(Value::NIL)
                 }
             }
             _ => self.call_function_fallback(name, &args),
@@ -990,21 +1014,21 @@ impl Interpreter {
                 values.push(value.clone());
                 continue;
             }
-            match value {
-                Value::Array(items, ..) => {
+            match value.view() {
+                ValueView::Array(items, ..) => {
                     values.extend(items.iter().cloned());
                 }
-                Value::Seq(items) | Value::Slip(items) => {
+                ValueView::Seq(items) | ValueView::Slip(items) => {
                     values.extend(items.iter().cloned());
                 }
-                Value::Range(..)
-                | Value::RangeExcl(..)
-                | Value::RangeExclStart(..)
-                | Value::RangeExclBoth(..)
-                | Value::GenericRange { .. } => {
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => {
                     values.extend(crate::runtime::value_to_list(value));
                 }
-                other => values.push(other.clone()),
+                _ => values.push(value.clone()),
             }
         }
         let list = Value::array(values);

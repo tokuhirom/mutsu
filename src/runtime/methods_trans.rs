@@ -89,17 +89,17 @@ fn expand_trans_spec(spec: &str) -> Vec<char> {
 /// Convert a Value to a list of strings (for array-based trans pairs).
 /// Arrays are flattened, Ranges are iterated, strings are expanded via `expand_trans_spec`.
 fn value_to_string_list(v: &Value) -> Vec<String> {
-    match v {
-        Value::Array(items, ..) => {
+    match v.view() {
+        ValueView::Array(items, ..) => {
             let mut result = Vec::new();
             for item in items.iter() {
-                match item {
-                    Value::Array(..)
-                    | Value::Range(..)
-                    | Value::RangeExcl(..)
-                    | Value::RangeExclStart(..)
-                    | Value::RangeExclBoth(..)
-                    | Value::GenericRange { .. } => {
+                match item.view() {
+                    ValueView::Array(..)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. } => {
                         let expanded = crate::runtime::utils::value_to_list(item);
                         for i in expanded.iter() {
                             result.push(i.to_string_value());
@@ -110,21 +110,21 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
             }
             result
         }
-        Value::Str(s) => {
+        ValueView::Str(s) => {
             let expanded = expand_trans_spec(s);
             expanded.into_iter().map(|c| c.to_string()).collect()
         }
         // Handle Range types by iterating their elements
-        Value::Range(..)
-        | Value::RangeExcl(..)
-        | Value::RangeExclStart(..)
-        | Value::RangeExclBoth(..)
-        | Value::GenericRange { .. } => {
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => {
             let items = crate::runtime::utils::value_to_list(v);
             items.iter().map(|i| i.to_string_value()).collect()
         }
-        other => {
-            let s = other.to_string_value();
+        _ => {
+            let s = v.to_string_value();
             let expanded = expand_trans_spec(&s);
             expanded.into_iter().map(|c| c.to_string()).collect()
         }
@@ -133,7 +133,10 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
 
 /// Check if a value is a callable closure (Sub/Block).
 fn is_closure(v: &Value) -> bool {
-    matches!(v, Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. })
+    matches!(
+        v.view(),
+        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+    )
 }
 
 /// Check if a Pair key is a stringified regex pattern (e.g. `/ \s+ /`).
@@ -167,7 +170,7 @@ impl Interpreter {
             if let Some(items) = arg.as_list_items() {
                 let all_pairs = items
                     .iter()
-                    .all(|v| matches!(v, Value::Pair(..) | Value::ValuePair(..)));
+                    .all(|v| matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
                 if all_pairs && !items.is_empty() {
                     for item in items.iter() {
                         flat_args.push(item.clone());
@@ -179,7 +182,7 @@ impl Interpreter {
         }
 
         for arg in &flat_args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "s" | "squash" => {
                         squash = value.truthy();
@@ -200,25 +203,25 @@ impl Interpreter {
                     if let Some(pattern) = extract_regex_pattern(key) {
                         rules.push(TransRule::RegexClosure {
                             pattern: pattern.to_string(),
-                            closure: value.as_ref().clone(),
+                            closure: value.clone(),
                         });
                     } else {
                         let from_chars = expand_trans_spec(key);
                         rules.push(TransRule::CharClosure {
                             from_chars,
-                            closure: value.as_ref().clone(),
+                            closure: value.clone(),
                         });
                     }
                 } else {
                     rules.push(self.parse_trans_pair(key, value));
                 }
-            } else if let Value::ValuePair(key, value) = arg {
+            } else if let ValueView::ValuePair(key, value) = arg.view() {
                 // For ValuePair, the key preserves its original type
-                if let Value::Regex(pattern) = key.as_ref() {
+                if let ValueView::Regex(pattern) = key.view() {
                     if is_closure(value) {
                         rules.push(TransRule::RegexClosure {
                             pattern: pattern.to_string(),
-                            closure: value.as_ref().clone(),
+                            closure: value.clone(),
                         });
                     } else {
                         rules.push(TransRule::Regex {
@@ -227,33 +230,35 @@ impl Interpreter {
                         });
                     }
                 } else if matches!(
-                    key.as_ref(),
-                    Value::Array(..)
-                        | Value::Range(..)
-                        | Value::RangeExcl(..)
-                        | Value::RangeExclStart(..)
-                        | Value::RangeExclBoth(..)
-                        | Value::GenericRange { .. }
+                    key.view(),
+                    ValueView::Array(..)
+                        | ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
                 ) {
                     // A from-side element that is neither a Str nor a Regex
                     // (e.g. an `Any` object via `[Any.new]`) is an illegal
                     // substitution key.
-                    if let Value::Array(items, ..) = key.as_ref()
-                        && let Some(bad) = items
-                            .iter()
-                            .find(|v| matches!(v, Value::Instance { .. } | Value::Package(_)))
+                    if let ValueView::Array(items, ..) = key.view()
+                        && let Some(bad) = items.iter().find(|v| {
+                            matches!(v.view(), ValueView::Instance { .. } | ValueView::Package(_))
+                        })
                     {
                         return Err(self.str_trans_illegal_key_error(bad));
                     }
                     // Check if the to-side array contains any closures.
-                    let has_closures = if let Value::Array(items, ..) = value.as_ref() {
+                    let has_closures = if let ValueView::Array(items, ..) = value.view() {
                         items.iter().any(is_closure)
                     } else {
                         false
                     };
                     // Check if the from-side array contains any Regex values.
-                    let has_regex = if let Value::Array(items, ..) = key.as_ref() {
-                        items.iter().any(|v| matches!(v, Value::Regex(..)))
+                    let has_regex = if let ValueView::Array(items, ..) = key.view() {
+                        items
+                            .iter()
+                            .any(|v| matches!(v.view(), ValueView::Regex(..)))
                     } else {
                         false
                     };
@@ -261,7 +266,7 @@ impl Interpreter {
                         // Build from_tokens and to_values with closure support
                         let from_list = value_to_string_list(key);
                         let to_values: Vec<TokenReplacement> =
-                            if let Value::Array(items, ..) = value.as_ref() {
+                            if let ValueView::Array(items, ..) = value.view() {
                                 items
                                     .iter()
                                     .map(|v| {
@@ -281,10 +286,10 @@ impl Interpreter {
                         });
                     } else if has_regex {
                         let to_list = value_to_string_list(value);
-                        if let Value::Array(items, ..) = key.as_ref() {
+                        if let ValueView::Array(items, ..) = key.view() {
                             for (idx, item) in items.iter().enumerate() {
                                 let replacement = to_list.get(idx).cloned().unwrap_or_default();
-                                if let Value::Regex(pattern) = item {
+                                if let ValueView::Regex(pattern) = item.view() {
                                     rules.push(TransRule::Regex {
                                         pattern: pattern.to_string(),
                                         replacement,
@@ -336,13 +341,13 @@ impl Interpreter {
                     if let Some(pattern) = extract_regex_pattern(&key_str) {
                         rules.push(TransRule::RegexClosure {
                             pattern: pattern.to_string(),
-                            closure: value.as_ref().clone(),
+                            closure: value.clone(),
                         });
                     } else {
                         let from_chars = expand_trans_spec(&key_str);
                         rules.push(TransRule::CharClosure {
                             from_chars,
-                            closure: value.as_ref().clone(),
+                            closure: value.clone(),
                         });
                     }
                 } else {
@@ -375,7 +380,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert(
             "got".to_string(),
-            Value::Package(crate::symbol::Symbol::intern(&type_name)),
+            Value::package(crate::symbol::Symbol::intern(&type_name)),
         );
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         let mut err = RuntimeError::new(&msg);
@@ -617,7 +622,7 @@ impl Interpreter {
             // Set positional captures ($0, $1, ...) as well
             for (idx, cap) in caps.iter().enumerate() {
                 self.env_mut()
-                    .insert(idx.to_string(), Value::Str(cap.clone().into()));
+                    .insert(idx.to_string(), Value::str_arc(cap.clone().into()));
             }
             Value::make_match_object_with_captures(
                 matched.to_string(),

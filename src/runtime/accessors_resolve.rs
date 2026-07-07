@@ -73,7 +73,7 @@ impl Interpreter {
                         &def.body,
                     )
                 {
-                    let msg = if let Value::Instance { attributes, .. } = &err_val {
+                    let msg = if let ValueView::Instance { attributes, .. } = err_val.view() {
                         attributes
                             .as_map()
                             .get("message")
@@ -118,9 +118,10 @@ impl Interpreter {
         let result = self.eval_sequence(left, right, exclude_end)?;
         // The `...` operator returns a Seq in Raku, not a List/Array.
         // Convert finite Array results to Seq; LazyList results stay as-is.
-        match result {
-            Value::Array(items, _) => Ok(Value::Seq(std::sync::Arc::new(items.to_vec()))),
-            other => Ok(other),
+        if let ValueView::Array(items, _) = result.view() {
+            Ok(Value::seq_arc(std::sync::Arc::new(items.to_vec())))
+        } else {
+            Ok(result)
         }
     }
 
@@ -131,11 +132,11 @@ impl Interpreter {
             || normalized_name.starts_with("postfix:<"))
             && normalized_name.ends_with('>')
         {
-            return Value::Routine {
-                package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(&normalized_name),
-                is_regex: false,
-            };
+            return Value::routine_parts(
+                Symbol::intern("GLOBAL"),
+                Symbol::intern(&normalized_name),
+                false,
+            );
         }
         // Handle package-qualified names: strip pseudo-package prefixes and
         // resolve the bare function name.
@@ -154,19 +155,19 @@ impl Interpreter {
                 // Return the block_stack Sub directly so callers can invoke it.
                 if frame.name.is_empty() || frame.name == "<anon>" {
                     if let Some(val) = self.block_stack.last().cloned()
-                        && matches!(val, Value::Sub(_))
+                        && matches!(val.view(), ValueView::Sub(_))
                     {
                         return val;
                     }
-                    return Value::Nil;
+                    return Value::NIL;
                 }
-                return Value::Routine {
-                    package: Symbol::intern(&frame.package),
-                    name: Symbol::intern(&frame.name),
-                    is_regex: false,
-                };
+                return Value::routine_parts(
+                    Symbol::intern(&frame.package),
+                    Symbol::intern(&frame.name),
+                    false,
+                );
             }
-            return Value::Nil;
+            return Value::NIL;
         }
         // When SETTING:: (or similar) pseudo-packages are present, resolve to
         // the builtin directly — these refer to the outer setting scope, not
@@ -174,11 +175,11 @@ impl Interpreter {
         // When pseudo-package qualifiers are present (e.g. SETTING::), resolve
         // to the builtin directly, bypassing user-defined overrides.
         if has_packages && Self::is_builtin_function(lookup_name) {
-            return Value::Routine {
-                package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(lookup_name),
-                is_regex: false,
-            };
+            return Value::routine_parts(
+                Symbol::intern("GLOBAL"),
+                Symbol::intern(lookup_name),
+                false,
+            );
         }
         // For &-sigil private attribute access (e.g. &!m), the attribute
         // value is stored in env as "!m" (not "&!m"), so check directly.
@@ -191,10 +192,10 @@ impl Interpreter {
         let var_key = format!("&{}", bare_name);
         if let Some(val) = self.env.get(&var_key) {
             // Upgrade WeakSub references (e.g., &?BLOCK) to strong Sub
-            if let Value::WeakSub(weak) = val {
+            if let ValueView::WeakSub(weak) = val.view() {
                 return match weak.upgrade() {
-                    Some(strong) => Value::Sub(strong),
-                    None => Value::Nil,
+                    Some(strong) => Value::sub_value(strong),
+                    None => Value::NIL,
                 };
             }
             return val.clone();
@@ -202,11 +203,7 @@ impl Interpreter {
         // `return` is a control-flow keyword that also resolves as &return
         // so that it can be rebound (proxied return pattern).
         if bare_name == "return" {
-            return Value::Routine {
-                package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern("return"),
-                is_regex: false,
-            };
+            return Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern("return"), false);
         }
         // Look up as a function reference (including multi subs).
         // When pseudo-packages are present (e.g. OUR::, GLOBAL::), also check
@@ -265,7 +262,7 @@ impl Interpreter {
             let mut dispatcher_env = self.env.clone();
             dispatcher_env.insert(
                 "__mutsu_multi_dispatch_candidates".to_string(),
-                Value::Array(
+                Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(candidate_subs)),
                     crate::value::ArrayKind::List,
                 ),
@@ -287,12 +284,11 @@ impl Interpreter {
             || self.resolve_token_defs(lookup_name).is_some()
             || self.has_proto_token(lookup_name)
         {
-            Value::Routine {
-                package: Symbol::intern(&self.current_package()),
-                name: Symbol::intern(lookup_name),
-                is_regex: self.resolve_token_defs(lookup_name).is_some()
-                    || self.has_proto_token(lookup_name),
-            }
+            Value::routine_parts(
+                Symbol::intern(&self.current_package()),
+                Symbol::intern(lookup_name),
+                self.resolve_token_defs(lookup_name).is_some() || self.has_proto_token(lookup_name),
+            )
         } else if let Some(def) = def {
             let mut captured_env = self.env.clone();
             if let Some(ref return_type) = def.return_type {
@@ -319,28 +315,20 @@ impl Interpreter {
             );
             // Preserve empty_sig from the FunctionDef so that arity checks
             // (e.g. sort rejecting 0-arity callables) work correctly.
-            if empty_sig && let Value::Sub(ref data) = sub_val {
+            if empty_sig && let ValueView::Sub(data) = sub_val.view() {
                 let mut new_data = (**data).clone();
                 new_data.empty_sig = true;
-                sub_val = Value::Sub(crate::gc::Gc::new(new_data));
+                sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
             }
             sub_val
         } else if Self::is_builtin_function(lookup_name) {
-            Value::Routine {
-                package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(lookup_name),
-                is_regex: false,
-            }
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if bare_name.starts_with('*') {
             // Dynamic code vars (&*foo) can point to routines that are resolved
             // at call time (including builtins not listed in is_builtin_function).
-            Value::Routine {
-                package: Symbol::intern("GLOBAL"),
-                name: Symbol::intern(lookup_name),
-                is_regex: false,
-            }
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else {
-            Value::Nil
+            Value::NIL
         }
     }
 

@@ -29,7 +29,7 @@ impl Interpreter {
         default_message: &str,
         is_fail: bool,
     ) -> RuntimeError {
-        if matches!(value, Value::Nil) {
+        if value.is_nil() {
             let mut err = RuntimeError::new(default_message);
             if is_fail {
                 err.control = Some(crate::value::Control::Fail);
@@ -37,7 +37,7 @@ impl Interpreter {
             return err;
         }
 
-        let msg = if let Value::Instance { attributes, .. } = value {
+        let msg = if let ValueView::Instance { attributes, .. } = value.view() {
             attributes
                 .as_map()
                 .get("message")
@@ -48,7 +48,7 @@ impl Interpreter {
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|_| value.to_string_value())
                 })
-        } else if let Value::Array(items, _) = value {
+        } else if let ValueView::Array(items, _) = value.view() {
             // Multi-arg die: concatenate .Str of each element
             let mut parts = Vec::new();
             for item in items.iter() {
@@ -67,7 +67,7 @@ impl Interpreter {
         if is_fail {
             err.control = Some(crate::value::Control::Fail);
         }
-        if let Value::Instance { class_name, .. } = value {
+        if let ValueView::Instance { class_name, .. } = value.view() {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"
                 || cn.starts_with("X::")
@@ -103,8 +103,8 @@ impl Interpreter {
 
     pub(super) fn builtin_die(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Check if we have actual arguments (not just an empty array from die())
-        let has_real_args = match args.first() {
-            Some(Value::Array(items, _)) if items.is_empty() => false,
+        let has_real_args = match args.first().map(Value::view) {
+            Some(ValueView::Array(items, _)) if items.is_empty() => false,
             Some(_) => true,
             None => false,
         };
@@ -112,7 +112,7 @@ impl Interpreter {
             return Err(self.runtime_error_from_die_value(args.first().unwrap(), "Died", false));
         }
         if let Some(current) = self.env.get("!").cloned()
-            && !matches!(current, Value::Nil)
+            && !current.is_nil()
         {
             return Err(self.runtime_error_from_die_value(&current, "Died", false));
         }
@@ -130,11 +130,11 @@ impl Interpreter {
         if let Some(v) = args.first().cloned() {
             // When fail() receives a Failure:D, extract the inner exception
             // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } = &v
+            } = v.view()
                 && class_name.resolve() == "Failure"
                 && let Some(exc) = attributes.as_map().get("exception").cloned()
             {
@@ -143,7 +143,7 @@ impl Interpreter {
             return Err(self.runtime_error_from_die_value(&v, "Failed", true));
         }
         if let Some(current) = self.env.get("!").cloned()
-            && !matches!(current, Value::Nil)
+            && !current.is_nil()
         {
             return Err(self.runtime_error_from_die_value(&current, "Failed", true));
         }
@@ -161,7 +161,7 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_return_rw(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let value = args.first().cloned().unwrap_or(Value::Nil);
+        let value = args.first().cloned().unwrap_or(Value::NIL);
         Err(RuntimeError {
             return_value: Some(value),
             ..RuntimeError::new("")
@@ -172,7 +172,7 @@ impl Interpreter {
         match args {
             [] => None,
             [single] => Some(single.clone()),
-            _ => Some(Value::Slip(std::sync::Arc::new(args.to_vec()))),
+            _ => Some(Value::slip_arc(std::sync::Arc::new(args.to_vec()))),
         }
     }
 
@@ -197,19 +197,22 @@ impl Interpreter {
         sig.is_leave = true;
         sig.return_value = Self::leave_return_value(args);
 
-        let current_callable_id = self.env.get("__mutsu_callable_id").and_then(|v| match v {
-            Value::Int(i) if *i > 0 => Some(*i as u64),
-            _ => None,
-        });
-        let current_block_id = self.env.get("&?BLOCK").and_then(|v| match v {
-            Value::WeakSub(weak) => weak.upgrade().map(|sub| sub.id),
-            Value::Sub(sub) => Some(sub.id),
+        let current_callable_id =
+            self.env
+                .get("__mutsu_callable_id")
+                .and_then(|v| match v.view() {
+                    ValueView::Int(i) if i > 0 => Some(i as u64),
+                    _ => None,
+                });
+        let current_block_id = self.env.get("&?BLOCK").and_then(|v| match v.view() {
+            ValueView::WeakSub(weak) => weak.upgrade().map(|sub| sub.id),
+            ValueView::Sub(sub) => Some(sub.id),
             _ => None,
         });
 
-        match target {
+        match target.as_ref().map(Value::view) {
             None => {}
-            Some(Value::WeakSub(weak)) => {
+            Some(ValueView::WeakSub(weak)) => {
                 if let Some(sub) = weak.upgrade() {
                     if Some(sub.id) != current_callable_id && Some(sub.id) != current_block_id {
                         sig.set_leave_callable_id(Some(sub.id));
@@ -218,23 +221,23 @@ impl Interpreter {
                     return Err(RuntimeError::new("Callable has been freed"));
                 }
             }
-            Some(Value::Sub(data)) => {
+            Some(ValueView::Sub(data)) => {
                 if Some(data.id) != current_callable_id && Some(data.id) != current_block_id {
                     sig.set_leave_callable_id(Some(data.id));
                 }
             }
-            Some(Value::Routine { package, name, .. }) => {
+            Some(ValueView::Routine { package, name, .. }) => {
                 sig.set_leave_routine(Some(format!("{package}::{name}")));
             }
-            Some(Value::Nil) => {}
-            Some(Value::Package(name)) if name == "Any" => {}
-            Some(Value::Package(name)) if name == "Sub" => {
+            Some(ValueView::Nil) => {}
+            Some(ValueView::Package(name)) if name == "Any" => {}
+            Some(ValueView::Package(name)) if name == "Sub" => {
                 let caller_callable_id = self
                     .caller_env_stack
                     .last()
                     .and_then(|env| env.get("__mutsu_callable_id"))
-                    .and_then(|v| match v {
-                        Value::Int(i) if *i > 0 => Some(*i as u64),
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(i) if i > 0 => Some(i as u64),
                         _ => None,
                     });
                 if let Some(id) = caller_callable_id {
@@ -243,12 +246,12 @@ impl Interpreter {
                     sig.set_leave_routine(Some(format!("{}::{}", frame.package, frame.name)));
                 }
             }
-            Some(Value::Package(name)) if name == "Block" => {}
-            Some(Value::Str(label)) => {
+            Some(ValueView::Package(name)) if name == "Block" => {}
+            Some(ValueView::Str(label)) => {
                 sig.label = Some(label.to_string());
             }
-            Some(other) => {
-                sig.label = Some(other.to_string_value());
+            Some(_) => {
+                sig.label = Some(target.as_ref().unwrap().to_string_value());
             }
         }
 
@@ -256,17 +259,17 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_exit(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let code = match args.first() {
-            Some(Value::Int(i)) => *i,
-            Some(Value::Bool(b)) => {
-                if *b {
+        let code = match args.first().map(Value::view) {
+            Some(ValueView::Int(i)) => i,
+            Some(ValueView::Bool(b)) => {
+                if b {
                     1
                 } else {
                     0
                 }
             }
-            Some(Value::Num(f)) => *f as i64,
-            Some(other) => other.to_f64() as i64,
+            Some(ValueView::Num(f)) => f as i64,
+            Some(_) => args.first().unwrap().to_f64() as i64,
             _ => 0,
         };
         self.halted = true;
@@ -278,7 +281,7 @@ impl Interpreter {
         if !self.nested_mode {
             set_global_exit_flag(code);
         }
-        Ok(Value::Nil)
+        Ok(Value::NIL)
     }
 
     pub(super) fn builtin_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -299,8 +302,8 @@ impl Interpreter {
         let line = self
             .test_pending_callsite_line
             .or_else(|| {
-                self.env().get("?LINE").and_then(|v| match v {
-                    Value::Int(n) => Some(*n),
+                self.env().get("?LINE").and_then(|v| match v.view() {
+                    ValueView::Int(n) => Some(n),
                     _ => None,
                 })
             })
@@ -320,7 +323,7 @@ impl Interpreter {
             if !self.warning_suppressed() {
                 self.write_warn_to_stderr(&message);
             }
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         // A CONTROL handler is active somewhere up the dynamic call stack. If the
         // *innermost* one unconditionally `.resume`s (`resume_safe`), run it
@@ -389,7 +392,7 @@ impl Interpreter {
                         .or_else(|| name.strip_prefix('%'))
                         .or_else(|| name.strip_prefix('&'))
                         .and_then(|bare| self.env().get(bare).cloned())
-                        .unwrap_or(Value::Nil)
+                        .unwrap_or(Value::NIL)
                 })
             })
             .collect();
@@ -442,16 +445,16 @@ impl Interpreter {
         match result {
             // Handler fell through (no explicit `.resume`) — for a resume_safe
             // handler this is equivalent to resuming with Nil.
-            Ok(()) => Some(Ok(Value::Nil)),
+            Ok(()) => Some(Ok(Value::NIL)),
             // `.resume` — the warn resumes; a bare `.resume` yields Nil.
-            Err(ce) if ce.is_resume() => Some(Ok(Value::Nil)),
+            Err(ce) if ce.is_resume() => Some(Ok(Value::NIL)),
             // The handler re-threw the warn (`warn`/`.rethrow` of CX::Warn):
             // act like the default handler — print and resume.
             Err(ce) if ce.is_warn() => {
                 if !self.warning_suppressed() {
                     self.write_warn_to_stderr(&ce.message);
                 }
-                Some(Ok(Value::Nil))
+                Some(Ok(Value::NIL))
             }
             // Anything else (shouldn't happen for a resume_safe handler) →
             // propagate so it is not silently swallowed.
@@ -515,32 +518,32 @@ impl Interpreter {
             routine: &str,
             value: Value,
         ) -> Result<Value, RuntimeError> {
-            match value {
-                Value::Array(items, kind) => {
+            match value.view() {
+                ValueView::Array(items, kind) => {
                     let mut mapped = Vec::with_capacity(items.len());
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Array(
+                    Ok(Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(mapped)),
                         kind,
                     ))
                 }
-                Value::Seq(items) => {
+                ValueView::Seq(items) => {
                     let mut mapped = Vec::with_capacity(items.len());
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Seq(std::sync::Arc::new(mapped)))
+                    Ok(Value::seq(mapped))
                 }
-                Value::Slip(items) => {
+                ValueView::Slip(items) => {
                     let mut mapped = Vec::with_capacity(items.len());
                     for item in items.iter() {
                         mapped.push(apply_hyper_prefix(interp, routine, item.clone())?);
                     }
-                    Ok(Value::Slip(std::sync::Arc::new(mapped)))
+                    Ok(Value::slip_arc(std::sync::Arc::new(mapped)))
                 }
-                other => interp.call_function(routine, vec![other]),
+                _ => interp.call_function(routine, vec![value.clone()]),
             }
         }
         // Auto-increment/decrement prefix hyper ops mutate the operand in place,
@@ -549,13 +552,13 @@ impl Interpreter {
         // (`-<<`) and other non-mutating prefixes only return a new container.
         let mutating = op == "++" || op == "--";
         // Handle hashes: apply the operation to values, preserving hash structure
-        if let Value::Hash(map) = &args[1] {
+        if let ValueView::Hash(map) = args[1].view() {
             let mut result_map = std::collections::HashMap::new();
             for (k, v) in map.iter() {
                 let new_val = apply_hyper_prefix(self, &routine, v.clone())?;
                 result_map.insert(k.clone(), new_val);
             }
-            let result = Value::Hash(Value::hash_arc(result_map));
+            let result = Value::hash_with_data(Value::hash_arc(result_map));
             if mutating {
                 self.overwrite_hash_bindings_by_identity(map, result.clone());
             }
@@ -563,14 +566,14 @@ impl Interpreter {
         }
         // Handle arrays: preserve the array kind and write the mutation back to
         // the original variable for auto-increment/decrement.
-        if let Value::Array(items, kind) = &args[1] {
+        if let ValueView::Array(items, kind) = args[1].view() {
             let mut results = Vec::with_capacity(items.len());
             for item in items.iter() {
                 results.push(apply_hyper_prefix(self, &routine, item.clone())?);
             }
-            let result = Value::Array(
+            let result = Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(results)),
-                *kind,
+                kind,
             );
             if mutating {
                 self.overwrite_array_bindings_by_identity(items, result.clone());

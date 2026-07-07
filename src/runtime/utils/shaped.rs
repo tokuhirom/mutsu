@@ -3,8 +3,8 @@ use super::*;
 /// Check if an array is a shaped (multidimensional) array.
 /// A shaped array is one explicitly created as multidimensional via `:shape`.
 pub(crate) fn is_shaped_array(value: &Value) -> bool {
-    if let Value::Array(_, kind) = value
-        && *kind == ArrayKind::Shaped
+    if let ValueView::Array(_, kind) = value.view()
+        && kind == ArrayKind::Shaped
     {
         return true;
     }
@@ -12,11 +12,11 @@ pub(crate) fn is_shaped_array(value: &Value) -> bool {
 }
 
 pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
-    let Value::Array(items, kind) = value else {
+    let ValueView::Array(items, kind) = value.view() else {
         return None;
     };
     // Only arrays explicitly created as shaped can be shaped
-    if *kind != ArrayKind::Shaped {
+    if kind != ArrayKind::Shaped {
         return None;
     }
 
@@ -24,14 +24,16 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
         if shape.is_empty() {
             return false;
         }
-        let Value::Array(items, ..) = value else {
+        let ValueView::Array(items, ..) = value.view() else {
             return false;
         };
         if items.len() != shape[0] {
             return false;
         }
         if shape.len() == 1 {
-            return items.iter().all(|v| !matches!(v, Value::Array(..)));
+            return items
+                .iter()
+                .all(|v| !matches!(v.view(), ValueView::Array(..)));
         }
         items
             .iter()
@@ -45,12 +47,12 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     // Infer this array's shape from its children's embedded shapes.
     fn infer_shape_from_array(items: &[Value]) -> Option<Vec<usize>> {
         let first = items.first()?;
-        let Value::Array(first_items, ..) = first else {
+        let ValueView::Array(first_items, ..) = first.view() else {
             return None;
         };
         let first_shape = first_items.shape.as_ref()?;
         if !items.iter().all(|child| {
-            if let Value::Array(child_items, ..) = child {
+            if let ValueView::Array(child_items, ..) = child.view() {
                 child_items.shape.as_ref() == Some(first_shape)
             } else {
                 false
@@ -77,7 +79,10 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     // boundary (the dual-store sync does not always carry it), so a re-assignment
     // (`@arr = ...` after an earlier `@arr = ...`) still sees the array as shaped
     // and refills to its fixed dimension instead of silently shrinking.
-    if items.iter().all(|v| !matches!(v, Value::Array(..))) {
+    if items
+        .iter()
+        .all(|v| !matches!(v.view(), ValueView::Array(..)))
+    {
         return Some(vec![items.len()]);
     }
     let inferred_shape = infer_shape_from_array(items.as_ref())?;
@@ -89,7 +94,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
 }
 
 pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
-    let Value::Array(items, ..) = value else {
+    let ValueView::Array(items, ..) = value.view() else {
         return;
     };
     mark_shaped_array_items(items, shape);
@@ -125,8 +130,11 @@ pub(crate) fn shaped_array_leaves(value: &Value) -> Vec<Value> {
 }
 
 fn collect_leaves(value: &Value, out: &mut Vec<Value>) {
-    if let Value::Array(items, ..) = value {
-        if items.iter().any(|v| matches!(v, Value::Array(..))) {
+    if let ValueView::Array(items, ..) = value.view() {
+        if items
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Array(..)))
+        {
             for item in items.iter() {
                 collect_leaves(item, out);
             }
@@ -147,8 +155,11 @@ pub(crate) fn shaped_array_indexed_leaves(value: &Value) -> Vec<(Vec<i64>, Value
 }
 
 fn collect_indexed_leaves(value: &Value, indices: &mut Vec<i64>, out: &mut Vec<(Vec<i64>, Value)>) {
-    if let Value::Array(items, ..) = value {
-        if items.iter().any(|v| matches!(v, Value::Array(..))) {
+    if let ValueView::Array(items, ..) = value.view() {
+        if items
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Array(..)))
+        {
             for (i, item) in items.iter().enumerate() {
                 indices.push(i as i64);
                 collect_indexed_leaves(item, indices, out);
@@ -176,8 +187,11 @@ pub(crate) fn replace_shaped_leaves(original: &Value, new_leaves: &[Value]) -> V
 }
 
 fn rebuild_with_leaves<'a, I: Iterator<Item = &'a Value>>(value: &Value, iter: &mut I) -> Value {
-    if let Value::Array(items, kind) = value {
-        let new_items: Vec<Value> = if items.iter().any(|v| matches!(v, Value::Array(..))) {
+    if let ValueView::Array(items, kind) = value.view() {
+        let new_items: Vec<Value> = if items
+            .iter()
+            .any(|v| matches!(v.view(), ValueView::Array(..)))
+        {
             items.iter().map(|c| rebuild_with_leaves(c, iter)).collect()
         } else {
             items
@@ -187,29 +201,30 @@ fn rebuild_with_leaves<'a, I: Iterator<Item = &'a Value>>(value: &Value, iter: &
         };
         let mut data = crate::value::ArrayData::new(new_items);
         data.shape = items.shape.clone();
-        Value::Array(crate::gc::Gc::new(data), *kind)
+        Value::array_with_kind(crate::gc::Gc::new(data), kind)
     } else {
         iter.next().cloned().unwrap_or_else(|| value.clone())
     }
 }
 
 pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
-    match (left, right) {
-        (Value::Package(name), Value::Int(0)) | (Value::Int(0), Value::Package(name))
+    match (left.view(), right.view()) {
+        (ValueView::Package(name), ValueView::Int(0))
+        | (ValueView::Int(0), ValueView::Package(name))
             if name.resolve() == "int" =>
         {
             true
         }
-        (Value::Array(a, _), Value::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-        (Value::Seq(a), Value::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-        (Value::Slip(a), Value::Slip(b)) => {
+        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+        (ValueView::Slip(a), ValueView::Slip(b)) => {
             // Empty is a singleton semantic value in Raku even when represented
             // by distinct empty Slip allocations.
             (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
         }
-        (Value::LazyList(a), Value::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
-        (Value::Hash(a), Value::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
-        (Value::Sub(a), Value::Sub(b)) => {
+        (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::Sub(a), ValueView::Sub(b)) => {
             if crate::gc::Gc::ptr_eq(a, b) {
                 return true;
             }
@@ -219,19 +234,19 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b.name.resolve();
             !a_name.is_empty() && a_name == b_name && a.package == b.package
         }
-        (Value::WeakSub(a), Value::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
-        (Value::Mixin(a_inner, a_mix), Value::Mixin(b_inner, b_mix)) => {
+        (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
+        (ValueView::Mixin(a_inner, a_mix), ValueView::Mixin(b_inner, b_mix)) => {
             a_inner.eqv(b_inner) && a_mix == b_mix
         }
-        (Value::Mixin(_, _), _) | (_, Value::Mixin(_, _)) => false,
+        (ValueView::Mixin(_, _), _) | (_, ValueView::Mixin(_, _)) => false,
         (
-            Value::Instance {
+            ValueView::Instance {
                 class_name: a_class,
                 id: a_id,
                 attributes: a_attrs,
                 ..
             },
-            Value::Instance {
+            ValueView::Instance {
                 class_name: b_class,
                 id: b_id,
                 attributes: b_attrs,
@@ -254,20 +269,21 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             }
         }
         // Junction identity: each junction object is unique
-        (Value::Junction { values: a_vals, .. }, Value::Junction { values: b_vals, .. }) => {
-            std::sync::Arc::ptr_eq(a_vals, b_vals)
-        }
+        (
+            ValueView::Junction { values: a_vals, .. },
+            ValueView::Junction { values: b_vals, .. },
+        ) => std::sync::Arc::ptr_eq(a_vals, b_vals),
         // Capture identity is NOT structural: a Capture's `.WHICH` keeps the
         // *container* identity of each captured element, so `\($a) === \($b)`
         // is False even when `$a` and `$b` hold equal values, while
         // `\(42) === \(42)` is True (both literal-value elements). This is
         // unlike `eqv`, which deconts and compares structurally.
         (
-            Value::Capture {
+            ValueView::Capture {
                 positional: ap,
                 named: an,
             },
-            Value::Capture {
+            ValueView::Capture {
                 positional: bp,
                 named: bn,
             },
@@ -293,9 +309,9 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
 /// container can never be identical to a plain value. Non-container elements
 /// fall back to the normal value identity rules.
 fn capture_elem_identical(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::ContainerRef(x), Value::ContainerRef(y)) => crate::gc::Gc::ptr_eq(x, y),
-        (Value::ContainerRef(_), _) | (_, Value::ContainerRef(_)) => false,
+    match (a.view(), b.view()) {
+        (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => crate::gc::Gc::ptr_eq(x, y),
+        (ValueView::ContainerRef(_), _) | (_, ValueView::ContainerRef(_)) => false,
         _ => values_identical(a, b),
     }
 }

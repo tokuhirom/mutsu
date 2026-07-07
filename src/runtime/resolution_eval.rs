@@ -10,24 +10,25 @@ type ProtectBlockCapturedNames = std::sync::Arc<Vec<String>>;
 impl Interpreter {
     pub(crate) fn composed_result_to_args(value: Value, prefer_single: bool) -> Vec<Value> {
         if prefer_single {
-            return match value {
-                Value::Seq(items) | Value::Slip(items) => vec![Value::array(items.to_vec())],
-                other => vec![other],
-            };
-        }
-        match value {
-            Value::Array(items, _) => items.to_vec(),
-            Value::Seq(items) => items.to_vec(),
-            Value::Slip(items) => items.to_vec(),
-            Value::Capture { positional, named } => {
-                let mut args = *positional;
-                for (k, v) in *named {
-                    args.push(Value::Pair(k, Box::new(v)));
-                }
-                args
+            if let ValueView::Seq(items) | ValueView::Slip(items) = value.view() {
+                return vec![Value::array(items.to_vec())];
             }
-            other => vec![other],
+            return vec![value];
         }
+        let converted = match value.view() {
+            ValueView::Array(items, _) => Some(items.to_vec()),
+            ValueView::Seq(items) => Some(items.to_vec()),
+            ValueView::Slip(items) => Some(items.to_vec()),
+            ValueView::Capture { positional, named } => {
+                let mut args = positional.clone();
+                for (k, v) in named {
+                    args.push(Value::pair(k.clone(), v.clone()));
+                }
+                Some(args)
+            }
+            _ => None,
+        };
+        converted.unwrap_or_else(|| vec![value])
     }
 
     /// Like `eval_block_value` but handles PRE/POST phasers in the body.
@@ -53,7 +54,7 @@ impl Interpreter {
         // Run POST phasers (with $_ set to return value for POST checks)
         let ret_val = match &result {
             Ok(v) => v.clone(),
-            Err(e) => e.return_value.clone().unwrap_or(Value::Nil),
+            Err(e) => e.return_value.clone().unwrap_or(Value::NIL),
         };
         let saved_topic = self.env.get("_").cloned();
         self.env.insert("_".to_string(), ret_val);
@@ -117,7 +118,7 @@ impl Interpreter {
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
         if body.is_empty() {
-            return Ok(Value::Nil);
+            return Ok(Value::NIL);
         }
         let let_mark = self.let_saves_len();
         let saved_functions = self.registry().functions.clone();
@@ -328,7 +329,7 @@ impl Interpreter {
                 self.set_state_var(key.clone(), val);
             }
         }
-        let value = self.env().get("_").cloned().unwrap_or(Value::Nil);
+        let value = self.env().get("_").cloned().unwrap_or(Value::NIL);
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
         result.map(|last_value| last_value.unwrap_or(value))
     }
@@ -338,7 +339,7 @@ impl Interpreter {
     /// of `call_sub_value`.  Shared vars must already be synced to env by the
     /// caller.
     pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
-        if let Value::Sub(data) = code {
+        if let ValueView::Sub(data) = code.view() {
             let (compiled, compiled_fns, _captured_bindings, _writeback_bindings, captured_names) =
                 self.get_or_compile_protect_block_with_slots(data);
             self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
@@ -419,7 +420,8 @@ impl Interpreter {
                 let Some(idx) = name_idx else {
                     continue;
                 };
-                let Some(crate::value::Value::Str(name)) = compiled.constants.get(idx) else {
+                let Some(ValueView::Str(name)) = compiled.constants.get(idx).map(Value::view)
+                else {
                     continue;
                 };
                 if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
@@ -459,7 +461,7 @@ impl Interpreter {
                 self.set_state_var(key.clone(), val);
             }
         }
-        let value = self.env().get("_").cloned().unwrap_or(Value::Nil);
+        let value = self.env().get("_").cloned().unwrap_or(Value::NIL);
         result.map(|last_value| last_value.unwrap_or(value))
     }
 

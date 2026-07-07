@@ -82,18 +82,18 @@ impl Interpreter {
         value: Value,
     ) -> Result<Value, RuntimeError> {
         let mut updated = attributes.to_map();
-        let container = updated.get(attr_name).cloned().unwrap_or(Value::Nil);
+        let container = updated.get(attr_name).cloned().unwrap_or(Value::NIL);
         let new_container = if is_positional {
             let idx = crate::runtime::utils::to_int(&index_value);
-            let (mut data, kind) = match container {
-                Value::Array(items, kind) => ((*items).clone(), kind),
-                Value::Nil => (
+            let (mut data, kind) = match container.view() {
+                ValueView::Array(items, kind) => ((**items).clone(), kind),
+                ValueView::Nil => (
                     crate::value::ArrayData::new(Vec::new()),
                     crate::value::ArrayKind::Array,
                 ),
-                other => {
+                _ => {
                     return Err(RuntimeError::assignment_ro_typename(
-                        &crate::value::what_type_name(&other),
+                        &crate::value::what_type_name(&container),
                         &value.to_string_value(),
                     ));
                 }
@@ -106,24 +106,24 @@ impl Interpreter {
             }
             let idx = idx as usize;
             if idx >= data.items.len() {
-                data.items.resize(idx + 1, Value::Nil);
+                data.items.resize(idx + 1, Value::NIL);
             }
             data.items[idx] = value.clone();
-            Value::Array(crate::gc::Gc::new(data), kind)
+            Value::array_with_kind(crate::gc::Gc::new(data), kind)
         } else {
             let key = index_value.to_string_value();
-            let mut data = match container {
-                Value::Hash(items) => (*items).clone(),
-                Value::Nil => crate::value::HashData::new(std::collections::HashMap::new()),
-                other => {
+            let mut data = match container.view() {
+                ValueView::Hash(items) => (**items).clone(),
+                ValueView::Nil => crate::value::HashData::new(std::collections::HashMap::new()),
+                _ => {
                     return Err(RuntimeError::assignment_ro_typename(
-                        &crate::value::what_type_name(&other),
+                        &crate::value::what_type_name(&container),
                         &value.to_string_value(),
                     ));
                 }
             };
             data.map.insert(key, value.clone());
-            Value::Hash(crate::gc::Gc::new(data))
+            Value::hash_with_data(crate::gc::Gc::new(data))
         };
         updated.insert(attr_name.to_string(), new_container);
         if let Some(var_name) = target_var {

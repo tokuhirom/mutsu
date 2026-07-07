@@ -11,22 +11,22 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
-            "new" if matches!(target, Value::Package(name) if name == "IO::ArgFiles") => {
+            "new" if matches!(target.view(), ValueView::Package(name) if name == "IO::ArgFiles") => {
                 // IO::ArgFiles.new(@files): an $*ARGFILES-like handle that reads
                 // from an explicit file list rather than the global @*ARGS.
                 let paths: Vec<String> = args
                     .iter()
-                    .filter(|a| !matches!(a, Value::Pair(..) | Value::ValuePair(..)))
-                    .flat_map(|a| match a {
-                        Value::Array(items, ..) => items
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                    .flat_map(|a| match a.view() {
+                        ValueView::Array(items, ..) => items
                             .iter()
                             .map(|v| v.to_string_value())
                             .collect::<Vec<_>>(),
-                        Value::Seq(items) => items
+                        ValueView::Seq(items) => items
                             .iter()
                             .map(|v| v.to_string_value())
                             .collect::<Vec<_>>(),
-                        other => vec![other.to_string_value()],
+                        _ => vec![a.to_string_value()],
                     })
                     .collect();
                 let handle = self.create_handle(
@@ -40,41 +40,41 @@ impl Interpreter {
                 });
                 Some(Ok(handle))
             }
-            "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
+            "new" if matches!(target.view(), ValueView::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
             {
                 // Pure data assembly — shared with the VM's `try_native_builtin_construct`.
-                let class_name = match target {
-                    Value::Package(n) => *n,
+                let class_name = match target.view() {
+                    ValueView::Package(n) => n,
                     _ => unreachable!(),
                 };
                 Some(Self::build_native_objat_value(class_name, &args))
             }
-            "new" if matches!(target, Value::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
+            "new" if matches!(target.view(), ValueView::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
             {
                 // Pure data assembly — shared with the VM's `try_native_builtin_construct`.
-                let type_name = match target {
-                    Value::Package(n) => n.resolve(),
+                let type_name = match target.view() {
+                    ValueView::Package(n) => n.resolve(),
                     _ => unreachable!(),
                 };
                 Some(Self::build_native_allomorph_value(&type_name, &args))
             }
-            "new" if matches!(target, Value::Package(name) if name == "Failure") => {
+            "new" if matches!(target.view(), ValueView::Package(name) if name == "Failure") => {
                 // Pure data assembly (reads `$!` / MRO) — shared with the VM's
                 // `try_native_failure_construct`.
                 Some(Ok(self.build_native_failure_value(&args)))
             }
-            "handled" if matches!(target, Value::Instance { class_name, .. } if class_name == "Failure") =>
+            "handled" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure") =>
             {
                 if args.is_empty() {
                     // Read the handled state
-                    Some(Ok(Value::Bool(target.is_failure_handled())))
+                    Some(Ok(Value::truth(target.is_failure_handled())))
                 } else if args.len() == 1 {
                     // Set the handled state: $failure.handled = value
                     let val = args[0].truthy();
-                    if let Value::Instance { id, .. } = target {
-                        crate::value::set_failure_handled(*id, val);
+                    if let ValueView::Instance { id, .. } = target.view() {
+                        crate::value::set_failure_handled(id, val);
                     }
-                    Some(Ok(Value::Bool(val)))
+                    Some(Ok(Value::truth(val)))
                 } else {
                     None
                 }
@@ -96,8 +96,8 @@ impl Interpreter {
         target: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let type_name = match target {
-            Value::Package(name) => name.resolve(),
+        let type_name = match target.view() {
+            ValueView::Package(name) => name.resolve(),
             _ => {
                 return Err(RuntimeError::new(
                     "new-from-pairs can only be called on a type object",
@@ -128,16 +128,16 @@ impl Interpreter {
             "Mix" | "MixHash" => {
                 let mut weights: HashMap<String, f64> = HashMap::new();
                 for item in &items {
-                    let (key, weight) = match item {
-                        Value::Pair(k, v) => (
+                    let (key, weight) = match item.view() {
+                        ValueView::Pair(k, v) => (
                             k.clone(),
                             crate::builtins::quanthash_coerce::mix_pair_weight(v)?,
                         ),
-                        Value::ValuePair(k, v) => (
+                        ValueView::ValuePair(k, v) => (
                             k.to_string_value(),
                             crate::builtins::quanthash_coerce::mix_pair_weight(v)?,
                         ),
-                        other => (other.to_string_value(), 1.0),
+                        _ => (item.to_string_value(), 1.0),
                     };
                     *weights.entry(key).or_insert(0.0) += weight;
                 }
@@ -150,24 +150,24 @@ impl Interpreter {
             "Bag" | "BagHash" => {
                 let mut counts: HashMap<String, i64> = HashMap::new();
                 for item in &items {
-                    let (key, count) = match item {
-                        Value::Pair(k, v) => {
-                            let c = match v.as_ref() {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => *n as i64,
+                    let (key, count) = match item.view() {
+                        ValueView::Pair(k, v) => {
+                            let c = match v.view() {
+                                ValueView::Int(i) => i,
+                                ValueView::Num(n) => n as i64,
                                 _ => 1,
                             };
                             (k.clone(), c)
                         }
-                        Value::ValuePair(k, v) => {
-                            let c = match v.as_ref() {
-                                Value::Int(i) => *i,
-                                Value::Num(n) => *n as i64,
+                        ValueView::ValuePair(k, v) => {
+                            let c = match v.view() {
+                                ValueView::Int(i) => i,
+                                ValueView::Num(n) => n as i64,
                                 _ => 1,
                             };
                             (k.to_string_value(), c)
                         }
-                        other => (other.to_string_value(), 1),
+                        _ => (item.to_string_value(), 1),
                     };
                     *counts.entry(key).or_insert(0) += count;
                 }
@@ -182,26 +182,26 @@ impl Interpreter {
             "Set" | "SetHash" => {
                 let mut elems = std::collections::HashSet::new();
                 for item in &items {
-                    match item {
-                        Value::Pair(k, v) => {
+                    match item.view() {
+                        ValueView::Pair(k, v) => {
                             if v.truthy() {
                                 elems.insert(k.clone());
                             }
                         }
-                        Value::ValuePair(k, v) => {
+                        ValueView::ValuePair(k, v) => {
                             if v.truthy() {
                                 elems.insert(k.to_string_value());
                             }
                         }
-                        Value::Hash(h) => {
+                        ValueView::Hash(h) => {
                             for (k, v) in h.iter() {
                                 if v.truthy() {
                                     elems.insert(k.clone());
                                 }
                             }
                         }
-                        other => {
-                            elems.insert(other.to_string_value());
+                        _ => {
+                            elems.insert(item.to_string_value());
                         }
                     }
                 }
@@ -222,9 +222,9 @@ impl Interpreter {
     fn dispatch_bless(&mut self, target: &Value, args: Vec<Value>) -> Result<Value, RuntimeError> {
         // self.bless(:attr1($val1), :attr2($val2), ...)
         // Creates a new instance of the invocant's class with attributes from named args
-        let class_name = match target {
-            Value::Package(name) => *name,
-            Value::Instance { class_name, .. } => *class_name,
+        let class_name = match target.view() {
+            ValueView::Package(name) => name,
+            ValueView::Instance { class_name, .. } => class_name,
             _ => {
                 return Err(RuntimeError::new(
                     "bless can only be called on a class or instance",
@@ -259,10 +259,10 @@ impl Interpreter {
                         Some(
                             "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
                             | "uint16" | "uint32" | "uint64" | "byte" | "atomicint",
-                        ) => Value::Int(0),
-                        Some("num" | "num32" | "num64") => Value::Num(0.0),
+                        ) => Value::int(0),
+                        Some("num" | "num32" | "num64") => Value::num(0.0),
                         Some("str") => Value::str("".to_string()),
-                        _ => Value::Nil,
+                        _ => Value::NIL,
                     }
                 };
                 attributes.insert(attr_name, val);
@@ -270,8 +270,8 @@ impl Interpreter {
         }
         // Override with named args from bless call
         for arg in &args {
-            if let Value::Pair(key, value) = arg {
-                attributes.insert(key.clone(), *value.clone());
+            if let ValueView::Pair(key, value) = arg.view() {
+                attributes.insert(key.clone(), value.clone());
             }
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
@@ -610,13 +610,15 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let _ = args;
-        let enum_name = match target {
-            Value::Package(name) if name == "Bool" => Some("Bool".to_string()),
-            Value::Bool(_) => Some("Bool".to_string()),
-            Value::Package(name) if self.registry().enum_types.contains_key(&name.resolve()) => {
+        let enum_name = match target.view() {
+            ValueView::Package(name) if name == "Bool" => Some("Bool".to_string()),
+            ValueView::Bool(_) => Some("Bool".to_string()),
+            ValueView::Package(name)
+                if self.registry().enum_types.contains_key(&name.resolve()) =>
+            {
                 Some(name.resolve())
             }
-            Value::Enum { enum_type, .. } => Some(enum_type.resolve()),
+            ValueView::Enum { enum_type, .. } => Some(enum_type.resolve()),
             _ => None,
         };
         if let Some(ename) = enum_name {
@@ -639,8 +641,8 @@ impl Interpreter {
         &mut self,
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
-        match target {
-            Value::CustomType(c) => Some(Ok(Value::custom_type_instance(
+        match target.view() {
+            ValueView::CustomType(c) => Some(Ok(Value::custom_type_instance(
                 c.id,
                 c.how.clone(),
                 c.repr.clone(),
@@ -648,7 +650,7 @@ impl Interpreter {
                 std::sync::Arc::new(HashMap::new()),
                 crate::value::next_instance_id(),
             ))),
-            Value::Package(class_name) => {
+            ValueView::Package(class_name) => {
                 // `CREATE` allocates a bare instance with all declared attribute
                 // slots present (in their type-default empty state). It does NOT
                 // run default-value expressions or BUILD/TWEAK — those belong to
@@ -657,7 +659,7 @@ impl Interpreter {
                 // builder, as MIME::Types uses) persist: the attribute write-back
                 // only updates keys that already exist on the instance.
                 let attributes = self.create_default_attr_slots(&class_name.resolve());
-                Some(Ok(Value::make_instance(*class_name, attributes)))
+                Some(Ok(Value::make_instance(class_name, attributes)))
             }
             _ => None,
         }
@@ -678,10 +680,10 @@ impl Interpreter {
                     Some(
                         "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
                         | "uint32" | "uint64" | "byte" | "atomicint",
-                    ) => Value::Int(0),
-                    Some("num" | "num32" | "num64") => Value::Num(0.0),
+                    ) => Value::int(0),
+                    Some("num" | "num32" | "num64") => Value::num(0.0),
                     Some("str") => Value::str("".to_string()),
-                    _ => Value::Nil,
+                    _ => Value::NIL,
                 };
                 attributes.insert(attr_name, val);
             }
@@ -695,7 +697,7 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let Value::Package(class_name) = target else {
+        let ValueView::Package(class_name) = target.view() else {
             return None;
         };
         if !self
@@ -711,8 +713,8 @@ impl Interpreter {
             .env
             .get("*TZ")
             .and_then(|v| {
-                if let Value::Int(n) = v {
-                    Some(*n)
+                if let ValueView::Int(n) = v.view() {
+                    Some(n)
                 } else {
                     None
                 }
@@ -721,10 +723,10 @@ impl Interpreter {
         let mut timezone = default_tz;
         let mut formatter: Option<Value> = None;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "timezone" => timezone = value.to_f64() as i64,
-                    "formatter" => formatter = Some(*value.clone()),
+                    "formatter" => formatter = Some(value.clone()),
                     _ => {}
                 }
             }
@@ -740,11 +742,11 @@ impl Interpreter {
         let s = (day_secs % 60) as f64 + frac;
         let dt = temporal::make_datetime(y, m, d, h, mi, s, timezone);
         if let Some(formatter_value) = formatter
-            && let Value::Instance {
+            && let ValueView::Instance {
                 class_name,
-                ref attributes,
+                attributes,
                 id,
-            } = dt
+            } = dt.view()
         {
             let mut attrs = attributes.to_map();
             attrs.insert("formatter".to_string(), formatter_value.clone());
@@ -758,19 +760,16 @@ impl Interpreter {
                 };
             *self.env_mut() = saved_env;
             self.restore_readonly_vars(saved_readonly);
-            if let Value::Instance {
+            if let ValueView::Instance {
                 class_name,
                 attributes,
                 id,
-            } = dt_with_formatter
+            } = dt_with_formatter.view()
             {
                 let mut updated = attributes.to_map();
                 updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
                 return Some(Ok(Value::write_back_sharing(
-                    &attributes,
-                    class_name,
-                    updated,
-                    id,
+                    attributes, class_name, updated, id,
                 )));
             }
         }

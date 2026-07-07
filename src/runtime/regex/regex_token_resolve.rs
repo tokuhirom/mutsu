@@ -92,11 +92,11 @@ impl Interpreter {
                     Err(_) => None,
                 };
                 if let Some(value) = value {
-                    let pattern = match value {
-                        Value::Regex(pat) => pat.to_string(),
-                        Value::Str(s) => s.to_string(),
-                        Value::Nil => String::new(),
-                        other => other.to_string_value(),
+                    let pattern = match value.view() {
+                        ValueView::Regex(pat) => pat.to_string(),
+                        ValueView::Str(s) => s.to_string(),
+                        ValueView::Nil => String::new(),
+                        _ => value.to_string_value(),
                     };
                     // Bake the bound parameter values into any `{ ... }` code
                     // blocks of the pattern. This is needed because regex code
@@ -140,14 +140,14 @@ impl Interpreter {
     }
 
     pub(super) fn format_named_regex_arg_value(value: &Value) -> String {
-        match value {
-            Value::Str(s) => {
+        match value.view() {
+            ValueView::Str(s) => {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
                 format!("\"{escaped}\"")
             }
-            Value::Bool(true) => "True".to_string(),
-            Value::Bool(false) => "False".to_string(),
-            Value::Nil => "Nil".to_string(),
+            ValueView::Bool(true) => "True".to_string(),
+            ValueView::Bool(false) => "False".to_string(),
+            ValueView::Nil => "Nil".to_string(),
             _ => value.to_string_value(),
         }
     }

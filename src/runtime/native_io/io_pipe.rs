@@ -8,8 +8,8 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         // Check if this is a writable stdin pipe (from run :in)
-        if let Some(Value::Int(pid)) = attributes.get("proc-pid") {
-            let pid_u32 = *pid as u32;
+        if let Some(ValueView::Int(pid)) = attributes.get("proc-pid").map(Value::view) {
+            let pid_u32 = pid as u32;
             match method {
                 "print" => {
                     // Write to the child's stdin
@@ -25,7 +25,7 @@ impl Interpreter {
                         }
                         let _ = stdin.flush();
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 "say" => {
                     // Write to the child's stdin with a trailing newline
@@ -42,7 +42,7 @@ impl Interpreter {
                         let _ = stdin.write_all(b"\n");
                         let _ = stdin.flush();
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 "put" => {
                     // Same as say for IO handles
@@ -59,7 +59,7 @@ impl Interpreter {
                         let _ = stdin.write_all(b"\n");
                         let _ = stdin.flush();
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 "flush" => {
                     if let Ok(map) = super::native_methods::proc_stdin_map().lock()
@@ -70,7 +70,7 @@ impl Interpreter {
                         use std::io::Write;
                         let _ = stdin.flush();
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 "write" => {
                     // Write binary data (Buf/Blob/utf8) to stdin
@@ -81,8 +81,8 @@ impl Interpreter {
                     {
                         use std::io::Write;
                         for arg in args {
-                            match arg {
-                                Value::Instance {
+                            match arg.view() {
+                                ValueView::Instance {
                                     class_name,
                                     attributes,
                                     ..
@@ -93,7 +93,9 @@ impl Interpreter {
                                     // Try "bytes" first (make_buf), then "data"
                                     let map = attributes.as_map();
                                     let bytes_arr = map.get("bytes").or_else(|| map.get("data"));
-                                    if let Some(Value::Array(bytes, _)) = bytes_arr {
+                                    if let Some(ValueView::Array(bytes, _)) =
+                                        bytes_arr.map(Value::view)
+                                    {
                                         let data: Vec<u8> =
                                             bytes.iter().map(|v| v.to_f64() as u8).collect();
                                         let _ = stdin.write_all(&data);
@@ -106,7 +108,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 "close" => {
                     // Close the child's stdin (drop it)
@@ -118,23 +120,23 @@ impl Interpreter {
                     }
                     // `.close` on a Proc pipe returns the owning Proc.
                     if let Ok(map) = super::builtins_system::proc_by_pid_map().lock()
-                        && let Some(proc) = map.get(pid)
+                        && let Some(proc) = map.get(&pid)
                     {
                         return Ok(proc.clone());
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 _ => {}
             }
         }
         // Handle "live" IO::Pipe from a live Proc (has `live-pid`).
-        if let Some(Value::Int(live_pid)) = attributes.get("live-pid") {
+        if let Some(ValueView::Int(live_pid)) = attributes.get("live-pid").map(Value::view) {
             let pipe_type = attributes
                 .get("pipe-type")
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| "out".to_string());
             let finalize_and_get_content = || -> String {
-                let pid = *live_pid;
+                let pid = live_pid;
                 if let Ok(mut map) = super::builtins_system::live_proc_map().lock()
                     && let Some(mut state) = map.remove(&pid)
                 {
@@ -201,7 +203,10 @@ impl Interpreter {
             match method {
                 "slurp" | "Str" | "gist" => {
                     let has_bin = Self::named_bool(args, "bin");
-                    let pipe_bin = matches!(attributes.get("bin"), Some(Value::Bool(true)));
+                    let pipe_bin = matches!(
+                        attributes.get("bin").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
                     let content = finalize_and_get_content();
                     if has_bin || pipe_bin {
                         return Ok(Self::make_buf(content.into_bytes()));
@@ -230,15 +235,15 @@ impl Interpreter {
                     let _ = finalize_and_get_content();
                     // `.close` on a Proc pipe returns the owning Proc.
                     if let Ok(map) = super::builtins_system::proc_by_pid_map().lock()
-                        && let Some(proc) = map.get(live_pid)
+                        && let Some(proc) = map.get(&live_pid)
                     {
                         return Ok(proc.clone());
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 "encoding" => return Ok(Value::str("utf8".to_string())),
                 "IO" | "path" => {
-                    return Ok(Value::Package(crate::symbol::Symbol::intern("IO::Path")));
+                    return Ok(Value::package(crate::symbol::Symbol::intern("IO::Path")));
                 }
                 _ => {}
             }
@@ -248,8 +253,8 @@ impl Interpreter {
         // on the same logical IO::Pipe share this so `.get` / `.lines` can
         // advance through buffered content line by line.
         let pipe_id = attributes.get("pipe-id").and_then(|v| {
-            if let Value::Int(i) = v {
-                Some(*i)
+            if let ValueView::Int(i) = v.view() {
+                Some(i)
             } else {
                 None
             }
@@ -264,7 +269,7 @@ impl Interpreter {
                             return Err(RuntimeError::io_closed("get"));
                         }
                         if state.cursor >= state.content.len() {
-                            return Ok(Value::Nil);
+                            return Ok(Value::NIL);
                         }
                         let rest = &state.content[state.cursor..];
                         let (line, advance) = if let Some(pos) = rest.find('\n') {
@@ -276,7 +281,7 @@ impl Interpreter {
                         state.cursor += advance;
                         return Ok(Value::str(line));
                     }
-                    return Ok(Value::Nil);
+                    return Ok(Value::NIL);
                 }
                 "lines" => {
                     if let Ok(mut map) = super::builtins_system::io_pipe_state_map().lock()
@@ -304,9 +309,9 @@ impl Interpreter {
                     if let Ok(map) = super::builtins_system::io_pipe_state_map().lock()
                         && let Some(state) = map.get(&id)
                     {
-                        return Ok(Value::Bool(state.cursor >= state.content.len()));
+                        return Ok(Value::truth(state.cursor >= state.content.len()));
                     }
-                    return Ok(Value::Bool(true));
+                    return Ok(Value::TRUE);
                 }
                 _ => {}
             }
@@ -318,7 +323,10 @@ impl Interpreter {
         match method {
             "slurp" | "Str" | "gist" => {
                 let has_bin = Self::named_bool(args, "bin");
-                let pipe_bin = matches!(attributes.get("bin"), Some(Value::Bool(true)));
+                let pipe_bin = matches!(
+                    attributes.get("bin").map(Value::view),
+                    Some(ValueView::Bool(true))
+                );
                 if has_bin || pipe_bin {
                     return Ok(Self::make_buf(content.into_bytes()));
                 }
@@ -339,7 +347,7 @@ impl Interpreter {
                 {
                     return Ok(proc_val.clone());
                 }
-                Ok(Value::Bool(true))
+                Ok(Value::TRUE)
             }
             "proc" => {
                 // Return the parent Proc object
@@ -349,11 +357,11 @@ impl Interpreter {
                 {
                     return Ok(proc_val.clone());
                 }
-                Ok(Value::Nil)
+                Ok(Value::NIL)
             }
             "IO" | "path" => {
                 // Returns the IO::Path type object (not an instance)
-                Ok(Value::Package(crate::symbol::Symbol::intern("IO::Path")))
+                Ok(Value::package(crate::symbol::Symbol::intern("IO::Path")))
             }
             "split" => {
                 // Basic split for IO::Pipe
@@ -363,7 +371,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 let skip_empty = args
                     .iter()
-                    .any(|a| matches!(a, Value::Pair(k, v) if k == "skip-empty" && v.truthy()));
+                    .any(|a| matches!(a.view(), ValueView::Pair(k, v) if k == "skip-empty" && v.truthy()));
                 let parts: Vec<Value> = content
                     .split(&separator)
                     .filter(|s| !skip_empty || !s.is_empty())

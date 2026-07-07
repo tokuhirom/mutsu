@@ -10,16 +10,16 @@ pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> V
 /// Format a short representation of a value for type-check error messages,
 /// matching Raku's format: e.g. `("hello")`, `(42)`.
 pub(crate) fn value_short_repr(val: &Value) -> String {
-    match val {
-        Value::Str(s) => format!("(\"{}\")", s),
-        Value::Int(n) => format!("({})", n),
-        Value::BigInt(n) => format!("({})", n),
-        Value::Num(n) => format!("({})", n),
-        Value::Bool(b) => format!("({})", if *b { "True" } else { "False" }),
-        Value::Rat(n, d) => format!("({}/{})", n, d),
-        Value::BigRat(n, d) => format!("({}/{})", n, d),
-        Value::FatRat(n, d) => format!("(FatRat.new({}, {}))", n, d),
-        Value::Nil => "(Nil)".to_string(),
+    match val.view() {
+        ValueView::Str(s) => format!("(\"{}\")", s),
+        ValueView::Int(n) => format!("({})", n),
+        ValueView::BigInt(n) => format!("({})", n),
+        ValueView::Num(n) => format!("({})", n),
+        ValueView::Bool(b) => format!("({})", if b { "True" } else { "False" }),
+        ValueView::Rat(n, d) => format!("({}/{})", n, d),
+        ValueView::BigRat(n, d) => format!("({}/{})", n, d),
+        ValueView::FatRat(n, d) => format!("(FatRat.new({}, {}))", n, d),
+        ValueView::Nil => "(Nil)".to_string(),
         _ => String::new(),
     }
 }
@@ -176,27 +176,27 @@ pub(crate) fn type_check_element_typed_error(
 /// Compute the `.WHICH` string for a value, used as the internal key
 /// in object hashes (`my %h{Any}`).
 pub(crate) fn value_which_key(value: &Value) -> String {
-    match value {
-        Value::Int(n) => format!("Int|{}", n),
-        Value::BigInt(n) => format!("Int|{}", n),
-        Value::Num(n) => format!("Num|{}", n),
-        Value::Str(s) => format!("Str|{}", s),
-        Value::Bool(b) => format!("Bool|{}", if *b { 1 } else { 0 }),
-        Value::Rat(n, d) => format!("Rat|{}/{}", n, d),
-        Value::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
-        Value::BigRat(n, d) => format!("Rat|{}/{}", n, d),
-        Value::Complex(r, i) => format!("Complex|{}+{}i", r, i),
-        Value::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
-        Value::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
-        Value::CustomType(c) => format!("{}|U{}", c.name.resolve(), c.id),
-        Value::Instance { id, .. } => {
+    match value.view() {
+        ValueView::Int(n) => format!("Int|{}", n),
+        ValueView::BigInt(n) => format!("Int|{}", n),
+        ValueView::Num(n) => format!("Num|{}", n),
+        ValueView::Str(s) => format!("Str|{}", s),
+        ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
+        ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
+        ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
+        ValueView::BigRat(n, d) => format!("Rat|{}/{}", n, d),
+        ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+        ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
+        ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
+        ValueView::CustomType(c) => format!("{}|U{}", c.name.resolve(), c.id),
+        ValueView::Instance { id, .. } => {
             format!("{}|{}", value_type_name(value), id)
         }
-        Value::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(items)),
-        Value::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(map)),
-        Value::Pair(k, v) => format!("Pair|{}|{}", k, value_which_key(v)),
-        Value::ValuePair(k, v) => format!("Pair|{}|{}", value_which_key(k), value_which_key(v)),
-        Value::Enum { enum_type, key, .. } => {
+        ValueView::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(items)),
+        ValueView::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(map)),
+        ValueView::Pair(k, v) => format!("Pair|{}|{}", k, value_which_key(v)),
+        ValueView::ValuePair(k, v) => format!("Pair|{}|{}", value_which_key(k), value_which_key(v)),
+        ValueView::Enum { enum_type, key, .. } => {
             format!("{}|{}", enum_type.resolve(), key.resolve())
         }
         // A `but`-mixed value (e.g. `"quux" but $role`) keeps the identity of
@@ -204,7 +204,7 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         // `.WHICH` is `Str+{<role>}|quux`. Fold the (sorted) mixin type/role
         // names into the key so two different roles over the same base value are
         // distinct object-hash keys, while the same value+role collides.
-        Value::Mixin(inner, mixins) => {
+        ValueView::Mixin(inner, mixins) => {
             let mut roles: Vec<&str> = mixins.keys().map(|s| s.as_str()).collect();
             roles.sort_unstable();
             format!(

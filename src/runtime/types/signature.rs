@@ -6,16 +6,16 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
     if let Some((_, inner)) = varref_from_value(value) {
         return positional_values_from_unpack_target(&inner);
     }
-    match value {
-        Value::Capture { positional, .. } => (**positional).clone(),
+    match value.view() {
+        ValueView::Capture { positional, .. } => (*positional).clone(),
         // For sub-signature destructuring, a list is always taken apart
         // element-wise even when itemized — e.g. `$(3, 4)` or an array variable
         // bound to a single destructuring positional via the single-argument
         // rule. `value_to_list` would otherwise return an itemized list as a
         // single opaque element, which fails the destructuring arity check.
-        Value::Array(data, _) => data.items.clone(),
-        Value::Seq(items) | Value::Slip(items) => (**items).clone(),
-        other => crate::runtime::value_to_list(other),
+        ValueView::Array(data, _) => data.items.clone(),
+        ValueView::Seq(items) | ValueView::Slip(items) => (**items).clone(),
+        _ => crate::runtime::value_to_list(value),
     }
 }
 
@@ -26,13 +26,13 @@ pub(in crate::runtime) fn varref_from_value(value: &Value) -> Option<(String, Va
 pub(in crate::runtime) fn indexed_varref_from_value(
     value: &Value,
 ) -> Option<(String, Value, Option<usize>)> {
-    if let Value::Capture { positional, named } = value
+    if let ValueView::Capture { positional, named } = value.view()
         && positional.is_empty()
-        && let Some(Value::Str(name)) = named.get("__mutsu_varref_name")
+        && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
         && let Some(inner) = named.get("__mutsu_varref_value")
     {
-        let source_index = match named.get("__mutsu_varref_index") {
-            Some(Value::Int(i)) if *i >= 0 => Some(*i as usize),
+        let source_index = match named.get("__mutsu_varref_index").map(Value::view) {
+            Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
             _ => None,
         };
         return Some((name.to_string(), inner.clone(), source_index));
@@ -57,16 +57,16 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
         return Ok(val);
     }
     // Type objects cannot be unboxed to native types
-    if let Value::Package(pkg_name) = &val {
+    if let ValueView::Package(pkg_name) = val.view() {
         return Err(crate::value::RuntimeError::new(format!(
             "Cannot unbox a type object ({}) to {}.",
             pkg_name.resolve(),
             base
         )));
     }
-    let big_val = match &val {
-        Value::Int(n) => NumBigInt::from(*n),
-        Value::BigInt(n) => (**n).clone(),
+    let big_val = match val.view() {
+        ValueView::Int(n) => NumBigInt::from(n),
+        ValueView::BigInt(n) => (**n).clone(),
         _ => return Ok(val),
     };
     if native_types::is_in_native_range(base, &big_val) {
@@ -89,7 +89,7 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
     let wrapped = native_types::wrap_native_int(base, &big_val);
     Ok(wrapped
         .to_i64()
-        .map(Value::Int)
+        .map(Value::int)
         .unwrap_or_else(|| Value::bigint(wrapped)))
 }
 
@@ -113,48 +113,48 @@ const MAX_SLURPY_RANGE_EXPAND: i64 = 100_000;
 /// (`$(...)`, `$[...]`) are preserved as single elements.
 pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
     for val in values {
-        match val {
-            Value::Array(arr, kind) if !kind.is_itemized() => {
+        match val.view() {
+            ValueView::Array(arr, kind) if !kind.is_itemized() => {
                 flatten_into_slurpy(arr, out);
             }
-            Value::Seq(items) | Value::Slip(items) => {
+            ValueView::Seq(items) | ValueView::Slip(items) => {
                 flatten_into_slurpy(items, out);
             }
-            Value::Range(a, b) => {
-                let end = (*b).min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
-                if end >= *a {
-                    for i in *a..=end {
-                        out.push(Value::Int(i));
+            ValueView::Range(a, b) => {
+                let end = b.min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                if end >= a {
+                    for i in a..=end {
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::RangeExcl(a, b) => {
-                let end = (*b).min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
-                if end > *a {
-                    for i in *a..end {
-                        out.push(Value::Int(i));
+            ValueView::RangeExcl(a, b) => {
+                let end = b.min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                if end > a {
+                    for i in a..end {
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::RangeExclStart(a, b) => {
+            ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
-                let end = (*b).min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                let end = b.min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
                 if end >= start {
                     for i in start..=end {
-                        out.push(Value::Int(i));
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::RangeExclBoth(a, b) => {
+            ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
-                let end = (*b).min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                let end = b.min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
                 if end > start {
                     for i in start..end {
-                        out.push(Value::Int(i));
+                        out.push(Value::int(i));
                     }
                 }
             }
-            Value::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
@@ -165,23 +165,23 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
                 // sequence, so delegate to `value_to_list` which knows how (a
                 // plain `to_int` would collapse both endpoints to 0).
                 if matches!(
-                    (start.as_ref(), end.as_ref()),
-                    (Value::Int(_), Value::Int(_))
+                    (start.as_ref().view(), end.as_ref().view()),
+                    (ValueView::Int(_), ValueView::Int(_))
                 ) {
                     let a = crate::runtime::to_int(start);
                     let b = crate::runtime::to_int(end);
-                    let s = if *excl_start { a + 1 } else { a };
-                    let raw_e = if *excl_end { b } else { b + 1 };
+                    let s = if excl_start { a + 1 } else { a };
+                    let raw_e = if excl_end { b } else { b + 1 };
                     let e = raw_e.min(s.saturating_add(MAX_SLURPY_RANGE_EXPAND));
                     for i in s..e {
-                        out.push(Value::Int(i));
+                        out.push(Value::int(i));
                     }
                 } else {
                     out.extend(crate::runtime::utils::value_to_list(val));
                 }
             }
-            other => {
-                out.push(other.clone());
+            _ => {
+                out.push(val.clone());
             }
         }
     }
@@ -192,7 +192,7 @@ pub(crate) fn make_varref_value(name: String, value: Value, source_index: Option
     named.insert("__mutsu_varref_name".to_string(), Value::str(name));
     named.insert("__mutsu_varref_value".to_string(), value);
     if let Some(i) = source_index {
-        named.insert("__mutsu_varref_index".to_string(), Value::Int(i as i64));
+        named.insert("__mutsu_varref_index".to_string(), Value::int(i as i64));
     }
     Value::capture(Vec::new(), named)
 }
@@ -256,12 +256,12 @@ pub(in crate::runtime) fn sigilless_readonly_key(name: &str) -> String {
 fn pairs_in_list_to_named(items: &[Value]) -> std::collections::HashMap<String, Value> {
     let mut out = std::collections::HashMap::new();
     for item in items {
-        match item {
-            Value::Pair(key, val) => {
-                out.insert(key.clone(), val.as_ref().clone());
+        match item.view() {
+            ValueView::Pair(key, val) => {
+                out.insert(key.clone(), val.clone());
             }
-            Value::ValuePair(key, val) => {
-                out.insert(key.to_string_value(), val.as_ref().clone());
+            ValueView::ValuePair(key, val) => {
+                out.insert(key.to_string_value(), val.clone());
             }
             _ => {}
         }
@@ -277,21 +277,21 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
     if let Some((_, inner)) = varref_from_value(value) {
         return named_values_from_unpack_target(&inner);
     }
-    match value {
-        Value::Capture { named, .. } => (**named).clone(),
-        Value::Hash(map) => map.map.clone(),
-        Value::Pair(key, val) => {
+    match value.view() {
+        ValueView::Capture { named, .. } => (*named).clone(),
+        ValueView::Hash(map) => map.map.clone(),
+        ValueView::Pair(key, val) => {
             let mut out = std::collections::HashMap::new();
-            out.insert(key.clone(), *val.clone());
+            out.insert(key.clone(), val.clone());
             out.insert("key".to_string(), Value::str(key.clone()));
-            out.insert("value".to_string(), *val.clone());
+            out.insert("value".to_string(), val.clone());
             out
         }
         // A list of Pairs (e.g. `(a => 1, b => 2)`) destructured by named
         // params `(:$a, :$b)` binds each pair's key to its value.
-        Value::Array(data, _) => pairs_in_list_to_named(&data.items),
-        Value::Seq(items) | Value::Slip(items) => pairs_in_list_to_named(items),
-        Value::Instance { attributes, .. } => attributes.to_map(),
+        ValueView::Array(data, _) => pairs_in_list_to_named(&data.items),
+        ValueView::Seq(items) | ValueView::Slip(items) => pairs_in_list_to_named(items),
+        ValueView::Instance { attributes, .. } => attributes.to_map(),
         _ => std::collections::HashMap::new(),
     }
 }
@@ -425,13 +425,13 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         // scalar would wrongly bind to `@x`/`%h` during multi dispatch.
         if !pd.slurpy {
             if pd.name.starts_with('@')
-                && !matches!(candidate, Value::Nil)
+                && !candidate.is_nil()
                 && !interpreter.type_matches_value("Positional", &candidate)
             {
                 return false;
             }
             if pd.name.starts_with('%')
-                && !matches!(candidate, Value::Nil)
+                && !candidate.is_nil()
                 && !interpreter.type_matches_value("Associative", &candidate)
             {
                 return false;
@@ -465,7 +465,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     }
     // Reject unexpected named arguments (for the multi-dispatch case where the
     // value is a Capture).  A named slurpy (`*%h`) accepts any named argument.
-    if let Value::Capture { named, .. } = value {
+    if let ValueView::Capture { named, .. } = value.view() {
         let has_named_slurpy = sub_params
             .iter()
             .any(|p| p.slurpy && (p.named || p.name.starts_with('%')));
@@ -512,7 +512,7 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
             ));
         }
         // Sigil-based type check: %param requires Associative, @param requires Positional
-        if bind_name.starts_with('%') && !matches!(value, Value::Hash(..)) {
+        if bind_name.starts_with('%') && !matches!(value.view(), ValueView::Hash(..)) {
             return Err(RuntimeError::typecheck_binding_parameter(
                 bind_name,
                 "Associative",
@@ -520,7 +520,9 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
                 None,
             ));
         }
-        if bind_name.starts_with('@') && !matches!(value, Value::Array(..) | Value::Nil) {
+        if bind_name.starts_with('@')
+            && !matches!(value.view(), ValueView::Array(..) | ValueView::Nil)
+        {
             return Err(RuntimeError::typecheck_binding_parameter(
                 bind_name,
                 "Positional",
@@ -602,13 +604,13 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 } else if sub_pd.name.starts_with('%') {
                     Value::hash(std::collections::HashMap::new())
                 } else {
-                    Value::Nil
+                    Value::NIL
                 };
                 interpreter.env.insert(sub_pd.name.clone(), default_val);
             }
             continue;
         };
-        if let Value::Pair(key, inner) = &candidate {
+        let unwrapped_pair_value = if let ValueView::Pair(key, inner) = candidate.view() {
             let bind_name = sub_pd
                 .name
                 .strip_prefix('$')
@@ -619,13 +621,20 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             // positional parameter's name. A NAMED sub-param's candidate already
             // came from `extract_named_from_unpack_target` (the source pair's
             // `.value`), so unwrapping it again would wrongly strip a value that
-            // is itself a `Value::Pair` — e.g. `Pair :value((...))` nested
+            // is itself a `Pair` — e.g. `Pair :value((...))` nested
             // destructuring or `:value($v)` where the value is a Pair (the
             // `ValuePair` form already skips this unwrap; this aligns the
-            // string-key `Value::Pair` form with it).
+            // string-key `Pair` form with it).
             if !sub_pd.named && bind_name == key {
-                candidate = *inner.clone();
+                Some(inner.clone())
+            } else {
+                None
             }
+        } else {
+            None
+        };
+        if let Some(unwrapped) = unwrapped_pair_value {
+            candidate = unwrapped;
         }
         // Sigil-based type check for a non-slurpy positional sub-param: a `@`
         // parameter requires a Positional, a `%` parameter an Associative. In a
@@ -634,7 +643,10 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
         // (e.g. `foo <1 2 3>` -> `@rest` gets the IntStr `2`).
         if !sub_pd.named {
             if sub_pd.name.starts_with('@')
-                && !matches!(candidate, Value::Array(..) | Value::Nil | Value::Slip(_))
+                && !matches!(
+                    candidate.view(),
+                    ValueView::Array(..) | ValueView::Nil | ValueView::Slip(_)
+                )
             {
                 return Err(RuntimeError::typecheck_binding_parameter_value(
                     &sub_pd.name,
@@ -642,7 +654,9 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                     candidate,
                 ));
             }
-            if sub_pd.name.starts_with('%') && !matches!(candidate, Value::Hash(..) | Value::Nil) {
+            if sub_pd.name.starts_with('%')
+                && !matches!(candidate.view(), ValueView::Hash(..) | ValueView::Nil)
+            {
                 return Err(RuntimeError::typecheck_binding_parameter_value(
                     &sub_pd.name,
                     "Associative",
@@ -708,14 +722,14 @@ pub(in crate::runtime) fn sub_signature_target_from_remaining_args(args: &[Value
     let mut positional = Vec::new();
     let mut named = std::collections::HashMap::new();
     for arg in args {
-        match arg {
-            Value::Pair(key, val) => {
-                named.insert(key.clone(), val.as_ref().clone());
+        match arg.view() {
+            ValueView::Pair(key, val) => {
+                named.insert(key.clone(), val.clone());
             }
-            Value::ValuePair(key, val) => {
-                named.insert(key.to_string_value(), val.as_ref().clone());
+            ValueView::ValuePair(key, val) => {
+                named.insert(key.to_string_value(), val.clone());
             }
-            other => positional.push(other.clone()),
+            _ => positional.push(arg.clone()),
         }
     }
     Value::capture(positional, named)
@@ -727,22 +741,22 @@ pub(in crate::runtime) fn callable_signature_info(
 ) -> Option<crate::value::signature::SigInfo> {
     use crate::value::signature::param_defs_to_sig_info;
 
-    let callable = match value {
-        Value::WeakSub(weak) => weak.upgrade().map(Value::Sub)?,
-        other => other.clone(),
+    let callable = match value.view() {
+        ValueView::WeakSub(weak) => weak.upgrade().map(Value::sub_value)?,
+        _ => value.clone(),
     };
     if !interpreter.type_matches_value("Callable", &callable) {
         return None;
     }
 
-    match &callable {
-        Value::Sub(data) => {
+    match callable.view() {
+        ValueView::Sub(data) => {
             let return_type = interpreter
                 .callable_return_type(&callable)
                 .or_else(|| interpreter.routine_return_spec_by_name(&data.name.resolve()));
             Some(param_defs_to_sig_info(&data.param_defs, return_type))
         }
-        Value::Routine { name, .. } => {
+        ValueView::Routine { name, .. } => {
             let (params, param_defs) = interpreter.callable_signature(&callable);
             let defs = if !param_defs.is_empty() {
                 param_defs
@@ -823,11 +837,11 @@ pub(in crate::runtime) fn code_signature_matches_value(
 
     fn resolve_captured_constraint(interpreter: &Interpreter, constraint: &str) -> String {
         if let Some(captured) = constraint.strip_prefix("::")
-            && let Some(Value::Package(name)) = interpreter.env.get(captured)
+            && let Some(ValueView::Package(name)) = interpreter.env.get(captured).map(Value::view)
         {
             return name.resolve();
         }
-        if let Some(Value::Package(name)) = interpreter.env.get(constraint) {
+        if let Some(ValueView::Package(name)) = interpreter.env.get(constraint).map(Value::view) {
             return name.resolve();
         }
         constraint.to_string()

@@ -9,7 +9,7 @@ impl Interpreter {
         let mut positional: Vec<Value> = Vec::new();
         let mut ignore_case = false;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
                     ignore_case = value.truthy();
                 }
@@ -22,15 +22,15 @@ impl Interpreter {
             .cloned()
             .unwrap_or(Value::str(String::new()));
         let start = if let Some(pos) = positional.get(1) {
-            match pos {
-                Value::Int(i) => *i,
-                Value::Num(f) => *f as i64,
-                Value::Str(s) => s.parse::<i64>().unwrap_or(0),
-                Value::BigInt(b) => {
+            match pos.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
+                ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+                ValueView::BigInt(b) => {
                     if b.as_ref() > &num_bigint::BigInt::from(i64::MAX) {
                         return Ok(RuntimeError::out_of_range_failure(
                             "start",
-                            Value::BigInt(b.clone()),
+                            Value::bigint_arc(b.clone()),
                             "0..Inf",
                         ));
                     }
@@ -46,7 +46,7 @@ impl Interpreter {
         if start < 0 || start > len {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
-                Value::Int(start),
+                Value::int(start),
                 &format!("0..{}", len),
             ));
         }
@@ -55,8 +55,8 @@ impl Interpreter {
     }
 
     fn contains_value(hay: &str, needle: &Value, ignore_case: bool) -> Value {
-        match needle {
-            Value::Junction { kind, values } => {
+        match needle.view() {
+            ValueView::Junction { kind, values } => {
                 let mapped = values
                     .iter()
                     .map(|v| Self::contains_value(hay, v, ignore_case))
@@ -70,7 +70,7 @@ impl Interpreter {
                 } else {
                     hay.contains(&needle)
                 };
-                Value::Bool(ok)
+                Value::truth(ok)
             }
         }
     }
@@ -107,7 +107,7 @@ impl Interpreter {
         let mut ignore_case = false;
         let mut ignore_mark = false;
         for arg in args {
-            if let Value::Pair(key, value) = arg {
+            if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "i" | "ignorecase" => ignore_case = value.truthy(),
                     "m" | "ignoremark" => ignore_mark = value.truthy(),
@@ -118,7 +118,7 @@ impl Interpreter {
             }
         }
         // Type objects (Package) as needle should throw
-        if let Some(Value::Package(type_name)) = positional.first() {
+        if let Some(ValueView::Package(type_name)) = positional.first().map(Value::view) {
             return Err(RuntimeError::new(format!(
                 "Cannot resolve caller {}({}:U)",
                 method_name, type_name
@@ -166,6 +166,6 @@ impl Interpreter {
                 }
             }
         };
-        Ok(Value::Bool(ok))
+        Ok(Value::truth(ok))
     }
 }

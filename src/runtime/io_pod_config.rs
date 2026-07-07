@@ -31,7 +31,7 @@ impl Interpreter {
                     let num_str = &rest[..digit_prefix_len];
                     let val = num_str
                         .parse::<i64>()
-                        .map(Value::Int)
+                        .map(Value::int)
                         .unwrap_or_else(|_| Value::str(num_str.to_string()));
                     config.insert(name.to_string(), val);
                     s = after_digits[name_len..].trim_start();
@@ -80,7 +80,7 @@ impl Interpreter {
                     break;
                 }
             } else {
-                (Value::Bool(!negated), after_name)
+                (Value::truth(!negated), after_name)
             };
             config.insert(name.to_string(), value);
             s = after_val.trim_start();
@@ -238,10 +238,10 @@ impl Interpreter {
             return Value::str(String::new());
         }
         if raw == "True" {
-            return Value::Bool(true);
+            return Value::TRUE;
         }
         if raw == "False" {
-            return Value::Bool(false);
+            return Value::FALSE;
         }
         if raw.starts_with('\'') && raw.ends_with('\'') && raw.len() >= 2 {
             return Value::str(raw[1..raw.len() - 1].to_string());
@@ -280,17 +280,17 @@ impl Interpreter {
             let digits_str = num_str.strip_prefix('-').unwrap_or(num_str);
             if !digits_str.is_empty() && digits_str.chars().all(|c| c.is_ascii_digit()) {
                 if let Ok(n) = num_str.parse::<i64>() {
-                    return Value::Int(n);
+                    return Value::int(n);
                 }
                 if let Ok(n) = num_str.parse::<num_bigint::BigInt>() {
-                    return Value::BigInt(std::sync::Arc::new(n));
+                    return Value::bigint_arc(std::sync::Arc::new(n));
                 }
                 return Value::str(raw.to_string());
             }
             if Self::looks_like_num(num_str)
                 && let Ok(f) = num_str.parse::<f64>()
             {
-                return Value::Num(f);
+                return Value::num(f);
             }
         }
         Value::str(raw.to_string())

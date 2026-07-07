@@ -23,9 +23,9 @@ impl Interpreter {
             .map(|s| s.trim().to_string());
         let mut items = Vec::new();
         for arg in args {
-            match arg {
-                Value::Slip(vals) => items.extend(vals.iter().cloned()),
-                other => items.push(other.clone()),
+            match arg.view() {
+                ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
+                _ => items.push(arg.clone()),
             }
         }
         if let Some(ref constraint) = inner
@@ -76,7 +76,7 @@ impl Interpreter {
     /// side tables (unchanged) and returns the value untouched.
     pub(crate) fn tag_container_metadata(
         &mut self,
-        value: Value,
+        mut value: Value,
         info: ContainerTypeInfo,
     ) -> Value {
         // Skip the copy-on-write clone when the metadata is already present.
@@ -85,58 +85,67 @@ impl Interpreter {
         // no-op re-tag of e.g. `$map.Map` would otherwise break
         // `$map.Map === $map`.
         macro_rules! embed_type_info {
-            ($arc:ident, $info:ident) => {{
-                let new_vt = (!$info.value_type.is_empty()).then(|| $info.value_type.clone());
+            ($arc:ident) => {{
+                let new_vt = (!info.value_type.is_empty()).then(|| info.value_type.clone());
                 if $arc.value_type != new_vt
-                    || $arc.key_type != $info.key_type
-                    || $arc.declared_type != $info.declared_type
+                    || $arc.key_type != info.key_type
+                    || $arc.declared_type != info.declared_type
                 {
-                    let data = crate::gc::ContainerMakeMut::container_make_mut(&mut $arc);
+                    let data = crate::gc::ContainerMakeMut::container_make_mut($arc);
                     data.value_type = new_vt;
-                    data.key_type = $info.key_type.clone();
-                    data.declared_type = $info.declared_type.clone();
+                    data.key_type = info.key_type.clone();
+                    data.declared_type = info.declared_type.clone();
                 }
             }};
         }
-        match value {
-            Value::Array(mut arc, kind) => {
-                embed_type_info!(arc, info);
-                Value::Array(arc, kind)
-            }
-            Value::Hash(mut arc) => {
-                embed_type_info!(arc, info);
-                Value::Hash(arc)
-            }
-            Value::Set(mut arc, m) => {
-                embed_type_info!(arc, info);
-                Value::Set(arc, m)
-            }
-            Value::Bag(mut arc, m) => {
-                embed_type_info!(arc, info);
-                Value::Bag(arc, m)
-            }
-            Value::Mix(mut arc, m) => {
-                embed_type_info!(arc, info);
-                Value::Mix(arc, m)
-            }
-            Value::Mixin(inner, m)
+        if value
+            .with_array_mut(|arc, _kind| embed_type_info!(arc))
+            .is_some()
+        {
+            return value;
+        }
+        if value.with_hash_mut(|arc| embed_type_info!(arc)).is_some() {
+            return value;
+        }
+        if value
+            .with_set_mut(|arc, _m| embed_type_info!(arc))
+            .is_some()
+        {
+            return value;
+        }
+        if value
+            .with_bag_mut(|arc, _m| embed_type_info!(arc))
+            .is_some()
+        {
+            return value;
+        }
+        if value
+            .with_mix_mut(|arc, _m| embed_type_info!(arc))
+            .is_some()
+        {
+            return value;
+        }
+        let mixin_parts = match value.view() {
+            ValueView::Mixin(inner, m)
                 if matches!(
-                    inner.as_ref(),
-                    Value::Array(..)
-                        | Value::Hash(_)
-                        | Value::Set(..)
-                        | Value::Bag(..)
-                        | Value::Mix(..)
+                    inner.as_ref().view(),
+                    ValueView::Array(..)
+                        | ValueView::Hash(_)
+                        | ValueView::Set(..)
+                        | ValueView::Bag(..)
+                        | ValueView::Mix(..)
                 ) =>
             {
-                let tagged = self.tag_container_metadata((*inner).clone(), info);
-                Value::Mixin(Arc::new(tagged), m)
+                Some((Arc::clone(inner), Arc::clone(m)))
             }
-            other => {
-                self.register_container_type_metadata(&other, info);
-                other
-            }
+            _ => None,
+        };
+        if let Some((inner, m)) = mixin_parts {
+            let tagged = self.tag_container_metadata((*inner).clone(), info);
+            return Value::mixin_parts(Arc::new(tagged), m);
         }
+        self.register_container_type_metadata(&value, info);
+        value
     }
 
     pub(crate) fn register_container_type_metadata(
@@ -144,12 +153,12 @@ impl Interpreter {
         value: &Value,
         info: ContainerTypeInfo,
     ) {
-        match value {
-            Value::Array(..)
-            | Value::Hash(_)
-            | Value::Set(..)
-            | Value::Bag(..)
-            | Value::Mix(..) => {
+        match value.view() {
+            ValueView::Array(..)
+            | ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..) => {
                 // Array/Hash/Set/Bag/Mix type metadata is embedded in the backing
                 // data struct — see `tag_container_metadata`. Reaching here
                 // means such a value flowed through the by-reference register
@@ -162,13 +171,13 @@ impl Interpreter {
                     crate::value::what_type_name(value)
                 );
             }
-            Value::Instance { id, .. } => {
+            ValueView::Instance { id, .. } => {
                 self.instance_type_metadata
                     .write()
                     .unwrap()
-                    .insert(*id, info);
+                    .insert(id, info);
             }
-            Value::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
+            ValueView::Mixin(inner, _) => self.register_container_type_metadata(inner, info),
             _ => {}
         }
     }
@@ -188,7 +197,8 @@ impl Interpreter {
         saved: &Option<ContainerTypeInfo>,
     ) {
         if let Some(info) = saved
-            && let Some(arr @ Value::Array(..)) = self.env.get(key).cloned()
+            && let Some(arr) = self.env.get(key).cloned()
+            && matches!(arr.view(), ValueView::Array(..))
         {
             let tagged = self.tag_container_metadata(arr, info.clone());
             self.env.insert(key.to_string(), tagged);
@@ -197,21 +207,29 @@ impl Interpreter {
 
     /// Clear a hash's embedded type metadata, returning the rebuilt value.
     /// Callers must store the returned value back into its slot.
-    pub(crate) fn clear_hash_type_metadata(value: Value) -> Value {
-        if let Value::Hash(mut arc) = value {
-            if arc.has_type_meta() {
-                crate::gc::Gc::make_mut(&mut arc).clear_type_meta();
-            }
-            return Value::Hash(arc);
+    pub(crate) fn clear_hash_type_metadata(mut value: Value) -> Value {
+        if value
+            .with_hash_mut(|arc| {
+                if arc.has_type_meta() {
+                    crate::gc::Gc::make_mut(arc).clear_type_meta();
+                }
+            })
+            .is_some()
+        {
+            return value;
         }
-        if let Value::Array(mut arc, kind) = value {
-            if arc.has_type_meta() {
-                let data = crate::gc::Gc::make_mut(&mut arc);
-                data.value_type = None;
-                data.key_type = None;
-                data.declared_type = None;
-            }
-            return Value::Array(arc, kind);
+        if value
+            .with_array_mut(|arc, _kind| {
+                if arc.has_type_meta() {
+                    let data = crate::gc::Gc::make_mut(arc);
+                    data.value_type = None;
+                    data.key_type = None;
+                    data.declared_type = None;
+                }
+            })
+            .is_some()
+        {
+            return value;
         }
         value
     }
@@ -232,7 +250,7 @@ impl Interpreter {
 
     /// Get the key type constraint for an object hash, if any.
     pub(crate) fn hash_key_type(&self, hash: &Value) -> Option<String> {
-        if let Value::Hash(arc) = hash {
+        if let ValueView::Hash(arc) = hash.view() {
             return arc.key_type.clone();
         }
         None
@@ -303,7 +321,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if let Some(constraint) = self.var_type_constraint(var_name) {
             for val in values {
-                if !matches!(val, Value::Nil) && !self.type_matches_value(&constraint, val) {
+                if !val.is_nil() && !self.type_matches_value(&constraint, val) {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
                         var_name,
                         &constraint,
@@ -326,7 +344,7 @@ impl Interpreter {
             let constraint = &info.value_type;
             if constraint != "Mu" && constraint != "Any" {
                 for val in values {
-                    if !matches!(val, Value::Nil) && !self.type_matches_value(constraint, val) {
+                    if !val.is_nil() && !self.type_matches_value(constraint, val) {
                         return Err(crate::runtime::utils::type_check_element_typed_error(
                             "@_", constraint, val,
                         ));
@@ -364,8 +382,10 @@ impl Interpreter {
             // leaves; a plain array checks its direct elements (a `has Array @.x`
             // legitimately holds array elements, so do not descend into those).
             fn collect_leaves<'a>(v: &'a Value, descend: bool, out: &mut Vec<&'a Value>) {
-                match v {
-                    Value::Array(items, kind) if descend || matches!(kind, ArrayKind::Shaped) => {
+                match v.view() {
+                    ValueView::Array(items, kind)
+                        if descend || matches!(kind, ArrayKind::Shaped) =>
+                    {
                         for it in items.iter() {
                             collect_leaves(it, true, out);
                         }
@@ -374,18 +394,18 @@ impl Interpreter {
                 }
             }
             let mut elems: Vec<&Value> = Vec::new();
-            match &value {
-                Value::Array(items, ArrayKind::Shaped) => {
+            match value.view() {
+                ValueView::Array(items, ArrayKind::Shaped) => {
                     for it in items.iter() {
                         collect_leaves(it, true, &mut elems);
                     }
                 }
-                Value::Array(items, _) => elems.extend(items.iter()),
-                Value::Hash(map) => elems.extend(map.values()),
+                ValueView::Array(items, _) => elems.extend(items.iter()),
+                ValueView::Hash(map) => elems.extend(map.values()),
                 _ => {}
             }
             for it in elems {
-                if !matches!(it, Value::Nil) && !self.type_matches_value(elem_type, it) {
+                if !it.is_nil() && !self.type_matches_value(elem_type, it) {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
                         &display, elem_type, it,
                     ));

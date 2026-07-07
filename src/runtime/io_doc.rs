@@ -1200,11 +1200,12 @@ impl Interpreter {
     pub(super) fn add_declarator_pod_entries(&mut self) {
         use super::DocDeclKind;
         // Get existing $=pod entries
-        let mut pod_entries: Vec<Value> = if let Some(Value::Array(arr, _)) = self.env.get("=pod") {
-            arr.iter().cloned().collect()
-        } else {
-            Vec::new()
-        };
+        let mut pod_entries: Vec<Value> =
+            if let Some(ValueView::Array(arr, _)) = self.env.get("=pod").map(Value::view) {
+                arr.iter().cloned().collect()
+            } else {
+                Vec::new()
+            };
         // Add declarator doc entries
         // TODO: For Sub/Method/Attr, the WHEREFORE should ideally be the actual
         // runtime object, not a Package placeholder. Currently we use the type
@@ -1212,12 +1213,12 @@ impl Interpreter {
         for dc in &self.doc_comment_list {
             let wherefore = match dc.kind {
                 DocDeclKind::Package => {
-                    Value::Package(crate::symbol::Symbol::intern(&dc.wherefore_name))
+                    Value::package(crate::symbol::Symbol::intern(&dc.wherefore_name))
                 }
                 DocDeclKind::Sub => {
                     // Block declarations (from "my $var = {") use "Block" type
                     if dc.wherefore_name.starts_with("block:") {
-                        Value::Package(crate::symbol::Symbol::intern("Block"))
+                        Value::package(crate::symbol::Symbol::intern("Block"))
                     } else {
                         // Use callable_type_override if set (Method, Submethod)
                         let is_standalone_sub =
@@ -1236,12 +1237,12 @@ impl Interpreter {
                         } else {
                             base_type.to_string()
                         };
-                        Value::Package(crate::symbol::Symbol::intern(&type_name))
+                        Value::package(crate::symbol::Symbol::intern(&type_name))
                     }
                 }
-                DocDeclKind::GrammarRule => Value::Package(crate::symbol::Symbol::intern("Regex")),
-                DocDeclKind::Attr => Value::Package(crate::symbol::Symbol::intern("Attribute")),
-                DocDeclKind::Param => Value::Package(crate::symbol::Symbol::intern("Parameter")),
+                DocDeclKind::GrammarRule => Value::package(crate::symbol::Symbol::intern("Regex")),
+                DocDeclKind::Attr => Value::package(crate::symbol::Symbol::intern("Attribute")),
+                DocDeclKind::Param => Value::package(crate::symbol::Symbol::intern("Parameter")),
             };
             let pod_entry = Interpreter::make_pod_declarator(dc, wherefore);
             pod_entries.push(pod_entry);

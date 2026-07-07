@@ -17,7 +17,7 @@ impl Interpreter {
                 ));
             }
             if should_treat_role_arg_as_type_expr(expr) {
-                values.push(Value::Package(Symbol::intern(expr.trim())));
+                values.push(Value::package(Symbol::intern(expr.trim())));
                 continue;
             }
             match crate::parse_dispatch::parse_source(expr)
@@ -25,7 +25,7 @@ impl Interpreter {
             {
                 Ok(value) => values.push(value),
                 Err(_) if looks_like_type_arg_expr(expr) => {
-                    values.push(Value::Package(Symbol::intern(expr.trim())));
+                    values.push(Value::package(Symbol::intern(expr.trim())));
                 }
                 Err(err) => return Err(err),
             }
@@ -72,7 +72,7 @@ impl Interpreter {
         }
         let positional_arg_count = args
             .iter()
-            .filter(|arg| !matches!(arg, Value::Pair(..)))
+            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
             .count();
         let positional_params: Vec<&ParamDef> = param_defs.iter().filter(|pd| !pd.named).collect();
         let has_positional_slurpy = positional_params
@@ -192,7 +192,7 @@ impl Interpreter {
             );
             let mut resolved = Vec::with_capacity(selected.type_params.len());
             for param_name in &selected.type_params {
-                let value = self.env.get(param_name).cloned().unwrap_or(Value::Nil);
+                let value = self.env.get(param_name).cloned().unwrap_or(Value::NIL);
                 resolved.push(value);
             }
             self.env = saved_env;

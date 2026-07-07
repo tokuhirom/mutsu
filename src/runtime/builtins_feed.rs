@@ -2,7 +2,7 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn builtin_feed_whatever(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let value = args.first().cloned().unwrap_or(Value::Nil);
+        let value = args.first().cloned().unwrap_or(Value::NIL);
         let list = crate::runtime::value_to_list(&value);
         let list_value = Value::array(list.clone());
         let mut hash_items = std::collections::HashMap::new();
@@ -32,7 +32,7 @@ impl Interpreter {
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let source = args.first().cloned().unwrap_or(Value::Nil);
+        let source = args.first().cloned().unwrap_or(Value::NIL);
         let current = self
             .env
             .get("@(*)")
@@ -57,12 +57,12 @@ impl Interpreter {
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let value = args.first().cloned().unwrap_or(Value::Nil);
+        let value = args.first().cloned().unwrap_or(Value::NIL);
         let int_max = i64::MAX;
-        let infinite = match &value {
-            Value::Range(_, end) | Value::RangeExcl(_, end) => *end == int_max,
-            Value::GenericRange { end, .. } => end.to_f64().is_infinite(),
-            Value::Int(end) => *end == int_max,
+        let infinite = match value.view() {
+            ValueView::Range(_, end) | ValueView::RangeExcl(_, end) => end == int_max,
+            ValueView::GenericRange { end, .. } => end.to_f64().is_infinite(),
+            ValueView::Int(end) => end == int_max,
             _ => false,
         };
         if infinite {
@@ -81,14 +81,14 @@ impl Interpreter {
         }
         let count = crate::runtime::to_int(&args[0]);
         if count <= 0 {
-            return Ok(Value::Seq(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
         let thunk = args[1].clone();
         let mut values = Vec::with_capacity(count as usize);
         for _ in 0..count {
             values.push(self.eval_call_on_value(thunk.clone(), Vec::new())?);
         }
-        Ok(Value::Seq(std::sync::Arc::new(values)))
+        Ok(Value::seq(values))
     }
 
     pub(super) fn builtin_reverse_andthen(
@@ -133,9 +133,12 @@ impl Interpreter {
         // only when it is actually callable. A plain instance (`$x orelse
         // Foo.new`) is a value, not a block — call it only if it is `Callable`
         // (has a `CALL-ME`), otherwise `Foo.new` would be mis-invoked as `Foo()`.
-        let rhs_is_callable = match &rhs {
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. } | Value::Mixin(..) => true,
-            Value::Instance { class_name, .. } => {
+        let rhs_is_callable = match rhs.view() {
+            ValueView::Sub(_)
+            | ValueView::WeakSub(_)
+            | ValueView::Routine { .. }
+            | ValueView::Mixin(..) => true,
+            ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();
                 self.class_has_method(&cn, "CALL-ME")
             }
@@ -169,8 +172,8 @@ impl Interpreter {
             ));
         }
         let op = args[0].to_string_value();
-        let left_values = if matches!(args[1], Value::Nil) {
-            vec![Value::Nil]
+        let left_values = if args[1].is_nil() {
+            vec![Value::NIL]
         } else {
             crate::runtime::value_to_list(&args[1])
         };
@@ -219,7 +222,7 @@ impl Interpreter {
         // slice 1.6) — without this they are lost once the blanket reconcile is
         // removed (docs/captured-outer-cell-sharing.md §7.2).
         if thunk_ran
-            && let Value::Sub(ref data) = thunk
+            && let ValueView::Sub(data) = thunk.view()
             && let Some(code) = data.compiled_code.clone()
         {
             self.record_eager_block_free_var_writeback(&code, &data.params);
@@ -245,8 +248,8 @@ impl Interpreter {
         }
         let op = args[0].to_string_value();
         // For zip, treat scalars (including Nil) as single-element lists
-        let left_values = if matches!(args[1], Value::Nil) {
-            vec![Value::Nil]
+        let left_values = if args[1].is_nil() {
+            vec![Value::NIL]
         } else {
             let list = crate::runtime::value_to_list(&args[1]);
             if list.is_empty() {
@@ -274,7 +277,7 @@ impl Interpreter {
             }
             let entry = right_thunks[i].clone();
             // A plain value (not a thunk) is used as-is; a thunk is evaluated now.
-            let rhs_value = if !matches!(entry, Value::Sub(_)) {
+            let rhs_value = if !matches!(entry.view(), ValueView::Sub(_)) {
                 entry
             } else if op == "andthen" || op == "orelse" {
                 ran_thunks.push(entry.clone());
@@ -300,7 +303,7 @@ impl Interpreter {
         // drains them into the caller's locals (carrier; see the topic variant
         // and slice 1.9 / docs §7.1i).
         for thunk in ran_thunks {
-            if let Value::Sub(ref data) = thunk
+            if let ValueView::Sub(data) = thunk.view()
                 && let Some(code) = data.compiled_code.clone()
             {
                 self.record_eager_block_free_var_writeback(&code, &data.params);
@@ -324,8 +327,8 @@ impl Interpreter {
             ));
         }
         let op = args[0].to_string_value();
-        let left_values = if matches!(args[1], Value::Nil) {
-            vec![Value::Nil]
+        let left_values = if args[1].is_nil() {
+            vec![Value::NIL]
         } else {
             let list = crate::runtime::value_to_list(&args[1]);
             if list.is_empty() {
@@ -362,7 +365,7 @@ impl Interpreter {
             let rhs_value = result?;
             // The thunk returns the whole right list; pick element i (zip is 1:1).
             let rhs_items = crate::runtime::value_to_list(&rhs_value);
-            out.push(rhs_items.into_iter().nth(i).unwrap_or(Value::Nil));
+            out.push(rhs_items.into_iter().nth(i).unwrap_or(Value::NIL));
         }
         // Record the topicalizing thunk's captured-outer writes (`$x = $_`) so the
         // call site drains them into the caller's locals — same as the
@@ -370,7 +373,7 @@ impl Interpreter {
         // is lost once the blanket reconcile is removed
         // (docs/captured-outer-cell-sharing.md §7.1i).
         if thunk_ran
-            && let Value::Sub(ref data) = thunk
+            && let ValueView::Sub(data) = thunk.view()
             && let Some(code) = data.compiled_code.clone()
         {
             self.record_eager_block_free_var_writeback(&code, &data.params);
@@ -397,12 +400,12 @@ impl Interpreter {
                 let val = self.eval_call_on_value(thunk.clone(), Vec::new())?;
                 let items = crate::runtime::value_to_list(&val);
                 if i >= items.len() {
-                    return Ok(Value::Seq(std::sync::Arc::new(out)));
+                    return Ok(Value::seq(out));
                 }
-                repeated.push(items.into_iter().nth(i).unwrap_or(Value::Nil));
+                repeated.push(items.into_iter().nth(i).unwrap_or(Value::NIL));
             }
-            out.push(Value::Seq(std::sync::Arc::new(repeated)));
+            out.push(Value::seq(repeated));
         }
-        Ok(Value::Seq(std::sync::Arc::new(out)))
+        Ok(Value::seq(out))
     }
 }
