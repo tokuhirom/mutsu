@@ -100,26 +100,6 @@
   同一の基盤工事が前提条件。単体の parser/dispatch 修正では閉じない。
   次に着手するなら §3 のキャンペーンとして本腰を入れる想定で計画すること。
 
-### 2.4 `S06-operator-overloading/infix.t`
-
-- **現状（2026-07-02 更新）**: 48/50（残り 2 失敗: test 31-32 のみ）。test 11, 33 は
-  rakudo 自身が divergent としている既知の TODO で数に入らない。
-- **経緯**: `import ClassName` 経由の演算子メソッド export（#3982）→ 35/42 → LTM 拡張・
-  `is assoc('non')`・user-declared `infix:<+>`/`infix:<+=>` fast-path override・
-  `infix:OP:[...]`/`infix:OP:«...»` 呼び出し構文で 42/44 → `&infix:<<$var>>`/`«$var»`/
-  `[$var]`（interpolating/expression な演算子名参照。詳細は `TODO_roast/S06.md`）の
-  ランタイム解決を追加して 48/50 まで前進。
-- **残り (test 31-32)**: `sub infix:<,>($a,$b){...}` によるカンマ演算子そのものの
-  オーバーロード（EVAL 内限定）。カンマは list/引数区切りとしてパーサ全体に
-  ハードコードされた特殊トークンであり、他の user 演算子のような汎用 dispatch
-  経路に乗っていない。real raku でも EVAL の外（同一ファイルのトップレベル）では
-  効かない——EVAL は新しいコンパイル単位として、宣言済みの演算子テーブルを
-  引き継いで再パースするため機能する、という compile-time な仕組み。
-- **評価**: 深い・リスクの高いアーキテクチャ変更（カンマを他の user 演算子と同じ
-  拡張可能テーブル経由にする必要があり、あらゆる箇所の区切り用途を壊さずに行う
-  必要がある）。安易に着手しない。whitelist するにはこの 2 件を解決する必要がある。
-- **Canary**: `roast/S06-operator-overloading/infix.t`
-
 ---
 
 ## 3. 第一級コンテナ / container identity
@@ -422,9 +402,6 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
    （§3.1 参照）。残るは closure-captured shared-cell を list へ by-value 捕捉したときの
    スナップショット追従（return-writeback 系）と、attribute slot の cell 化。
 2. **`S17-supply/syntax.t`**（§6.2）— test 75/90 は個別に深掘りが必要（hard case）。
-
-`S06-operator-overloading/infix.t`（§2.4）は残り 2 件（カンマ演算子オーバーロード）が
-深いアーキテクチャ変更を要するため、上記優先順から外した。
 
 whitelist を目標にしない §7 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、
 そのファイル単体を通すことを目的にしない。
