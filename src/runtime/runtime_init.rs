@@ -2140,6 +2140,7 @@ impl Interpreter {
             pending_caller_var_writeback: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
+            imported_compiled_fns: HashMap::new(),
             state_scope_id: None,
             fn_resolve_cache: HashMap::new(),
             fn_resolve_gen: 0,

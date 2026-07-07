@@ -337,6 +337,10 @@ impl Interpreter {
             pending_caller_var_writeback: Vec::new(),
             local_bind_pairs: Vec::new(),
             otf_compile_cache: HashMap::new(),
+            // Share the parent's captured module-sub bodies by value so a `start`
+            // block that calls a module sub with `state` reaches the same compiled
+            // body (and thus the same cross-thread `state` cell) the parent used.
+            imported_compiled_fns: self.imported_compiled_fns.clone(),
             state_scope_id: None,
             fn_resolve_cache: HashMap::new(),
             fn_resolve_gen: 0,
