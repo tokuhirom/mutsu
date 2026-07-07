@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Compiler {
     /// Pre-qualify a class/role declaration's name with the compiler's
@@ -151,8 +152,8 @@ impl Compiler {
             _ => return false,
         };
         matches!(
-            regex,
-            Value::RegexWithAdverbs(a)
+            regex.view(),
+            ValueView::RegexWithAdverbs(a)
                 if a.global || a.overlap || a.exhaustive || a.repeat.is_some()
         )
     }
@@ -203,9 +204,11 @@ impl Compiler {
         // (type-object-only) constraint, e.g. `my Int:U $y is default(0)`.
         let is_concrete_literal = matches!(
             expr,
-            Expr::Literal(
-                Value::Int(_) | Value::Num(_) | Value::Str(_) | Value::Bool(_) | Value::Rat(..)
-            )
+            Expr::Literal(lit)
+                if matches!(
+                    lit.view(),
+                    ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_) | ValueView::Bool(_) | ValueView::Rat(..)
+                )
         );
         if smiley == Some('U') && is_concrete_literal {
             return Some(match expr {
@@ -214,29 +217,32 @@ impl Compiler {
             });
         }
         let value_type = match expr {
-            Expr::Literal(Value::Str(s)) => {
-                if effective_constraint != "Str"
-                    && effective_constraint != "Cool"
-                    && effective_constraint != "Any"
-                {
-                    return Some(s.to_string());
+            Expr::Literal(lit) => match lit.view() {
+                ValueView::Str(s) => {
+                    if effective_constraint != "Str"
+                        && effective_constraint != "Cool"
+                        && effective_constraint != "Any"
+                    {
+                        return Some(s.to_string());
+                    }
+                    return None;
                 }
-                return None;
-            }
-            Expr::Literal(Value::Int(_)) => "Int",
-            Expr::Literal(Value::Num(_)) => "Num",
-            Expr::Literal(Value::Bool(_)) => "Bool",
-            Expr::Literal(Value::Nil) => {
-                // Nil is invalid for typed variables (Int, Str, etc.)
-                // but valid for untyped (Any, Mu) or explicitly Nil-accepting types
-                if effective_constraint != "Any"
-                    && effective_constraint != "Mu"
-                    && !effective_constraint.contains("Nil")
-                {
-                    return Some("Nil".to_string());
+                ValueView::Int(_) => "Int",
+                ValueView::Num(_) => "Num",
+                ValueView::Bool(_) => "Bool",
+                ValueView::Nil => {
+                    // Nil is invalid for typed variables (Int, Str, etc.)
+                    // but valid for untyped (Any, Mu) or explicitly Nil-accepting types
+                    if effective_constraint != "Any"
+                        && effective_constraint != "Mu"
+                        && !effective_constraint.contains("Nil")
+                    {
+                        return Some("Nil".to_string());
+                    }
+                    return None;
                 }
-                return None;
-            }
+                _ => return None,
+            },
             _ => return None, // non-literal, can't check statically
         };
         // Check type hierarchy: Int matches Numeric, Cool, Any, etc.
@@ -321,7 +327,12 @@ impl Compiler {
 
     fn compile_condition_expr(&mut self, cond: &Expr) {
         match cond {
-            Expr::Literal(Value::Regex(_)) | Expr::Literal(Value::RegexWithAdverbs { .. }) => {
+            Expr::Literal(lit)
+                if matches!(
+                    lit.view(),
+                    ValueView::Regex(_) | ValueView::RegexWithAdverbs(..)
+                ) =>
+            {
                 self.compile_expr(&Expr::MatchRegex(match cond {
                     Expr::Literal(v) => v.clone(),
                     _ => unreachable!(),
@@ -340,7 +351,7 @@ impl Compiler {
         } = expr
             && matches!(
                 left.as_ref(),
-                Expr::Literal(Value::Str(key)) if key.as_str() == "tests"
+                Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(key) if key.as_str() == "tests")
             )
         {
             return Some(right.as_ref());
@@ -494,7 +505,7 @@ impl Compiler {
                 let mut feed = feed.clone();
                 {
                     let slot = crate::parser::feed_leftmost_operand_mut(&mut feed);
-                    let source = std::mem::replace(slot, Expr::Literal(Value::Nil));
+                    let source = std::mem::replace(slot, Expr::Literal(Value::NIL));
                     *slot = Expr::AssignExpr {
                         name: name.clone(),
                         expr: Box::new(source),
@@ -698,7 +709,7 @@ impl Compiler {
                     {
                         let key = format!("__mutsu_sigilless_readonly::{}", name);
                         let key_idx = self.code.add_constant(Value::str(key));
-                        let false_idx = self.code.add_constant(Value::Bool(false));
+                        let false_idx = self.code.add_constant(Value::FALSE);
                         self.code.emit(OpCode::LoadConst(false_idx));
                         self.code.emit(OpCode::SetGlobal(key_idx));
                     }
@@ -727,7 +738,7 @@ impl Compiler {
                 // container (writable) apart from a `constant` one (immutable).
                 let key = format!("__mutsu_bound::{}", name);
                 let key_idx = self.code.add_constant(Value::str(key));
-                let true_idx = self.code.add_constant(Value::Bool(true));
+                let true_idx = self.code.add_constant(Value::TRUE);
                 self.code.emit(OpCode::LoadConst(true_idx));
                 self.code.emit(OpCode::SetGlobal(key_idx));
             }
@@ -741,7 +752,7 @@ impl Compiler {
                 // Set __mutsu_sigilless_readonly::NAME = true in env
                 let key = format!("__mutsu_sigilless_readonly::{}", name);
                 let key_idx = self.code.add_constant(Value::str(key));
-                let true_idx = self.code.add_constant(Value::Bool(true));
+                let true_idx = self.code.add_constant(Value::TRUE);
                 self.code.emit(OpCode::LoadConst(true_idx));
                 self.code.emit(OpCode::SetGlobal(key_idx));
             }
@@ -862,7 +873,10 @@ impl Compiler {
                         .iter()
                         .find(|(t, _)| t == "__constant_sigil")
                         .and_then(|(_, e)| match e {
-                            Some(Expr::Literal(Value::Str(s))) => Some(s.to_string()),
+                            Some(Expr::Literal(lit)) => match lit.view() {
+                                ValueView::Str(s) => Some(s.to_string()),
+                                _ => None,
+                            },
                             _ => None,
                         })
                         .unwrap_or_default();
@@ -922,8 +936,11 @@ impl Compiler {
                     // `Expr::Hash` (%).
                     let is_default_init = !has_init
                         && match expr {
-                            Expr::Literal(Value::Nil) => true,
-                            Expr::Literal(Value::Array(ad, _)) => ad.items.is_empty(),
+                            Expr::Literal(lit) => match lit.view() {
+                                ValueView::Nil => true,
+                                ValueView::Array(ad, _) => ad.items.is_empty(),
+                                _ => false,
+                            },
                             Expr::Hash(pairs) => pairs.is_empty(),
                             _ => false,
                         };
@@ -983,7 +1000,8 @@ impl Compiler {
                 // load the existing package variable value instead of
                 // resetting to Nil. This makes `our $x = 3; ... our $x`
                 // preserve the value 3 in the redeclaration.
-                let is_our_redecl_nil = *is_our && matches!(expr, Expr::Literal(Value::Nil));
+                let is_our_redecl_nil =
+                    *is_our && matches!(expr, Expr::Literal(lit) if lit.is_nil());
                 // A scalar `:=` bind to a Positional makes the scalar a
                 // non-container alias; record it so SetLocal can mark it
                 // decontainerized (so `@a = $bound` flattens, not itemizes).
@@ -1065,13 +1083,13 @@ impl Compiler {
                     let rhs_expr = if has_default_trait
                         && !name.starts_with('@')
                         && !name.starts_with('%')
-                        && matches!(expr, Expr::Literal(Value::Nil))
+                        && matches!(expr, Expr::Literal(lit) if lit.is_nil())
                     {
                         default_trait_expr.unwrap_or(expr)
                     } else if name.starts_with('&')
                         && !has_explicit_initializer
                         && type_constraint.is_none()
-                        && matches!(expr, Expr::Literal(Value::Nil))
+                        && matches!(expr, Expr::Literal(lit) if lit.is_nil())
                     {
                         // `my Int &a` carries `Int` as a *return*-type constraint,
                         // not a value type; substituting a Callable default there
@@ -1108,7 +1126,7 @@ impl Compiler {
                     && !is_hash
                     && !has_default_trait
                     && !(has_explicit_initializer
-                        && matches!(expr, Expr::Literal(Value::Nil))
+                        && matches!(expr, Expr::Literal(lit) if lit.is_nil())
                         && !is_native_type)
                 {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
@@ -1319,12 +1337,12 @@ impl Compiler {
                         attrs.insert("message".to_string(), Value::str(err_msg));
                         attrs.insert(
                             "expected".to_string(),
-                            Value::Package(Symbol::intern(&expected_type_name)),
+                            Value::package(Symbol::intern(&expected_type_name)),
                         );
                         attrs.insert(
                             "got".to_string(),
                             if type_mismatch == "Nil" {
-                                Value::Nil
+                                Value::NIL
                             } else {
                                 Value::str(type_mismatch.clone())
                             },
@@ -1999,7 +2017,7 @@ impl Compiler {
                                 value: None,
                             } => {
                                 self.compile_expr(&Expr::Literal(Value::str(n.clone())));
-                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                self.compile_expr(&Expr::Literal(Value::TRUE));
                                 self.code.emit(OpCode::MakePair);
                                 regular_count += 1;
                                 stack_idx += 1;
@@ -2032,7 +2050,7 @@ impl Compiler {
                         }
                         CallArg::Named { name, value: None } => {
                             self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                            self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                            self.compile_expr(&Expr::Literal(Value::TRUE));
                             self.code.emit(OpCode::MakePair);
                         }
                         CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
@@ -2561,7 +2579,7 @@ impl Compiler {
                             Stmt::Expr(expr) => self.compile_expr(expr),
                             _ => {
                                 self.compile_stmt(inner);
-                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                self.compile_expr(&Expr::Literal(Value::TRUE));
                             }
                         }
                     } else {
@@ -2585,7 +2603,7 @@ impl Compiler {
                             Stmt::Expr(expr) => self.compile_expr(expr),
                             _ => {
                                 self.compile_stmt(inner);
-                                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                self.compile_expr(&Expr::Literal(Value::TRUE));
                             }
                         }
                     } else {
@@ -2817,7 +2835,7 @@ impl Compiler {
                 if let Some(arg_expr) = arg {
                     self.compile_expr(arg_expr);
                 } else {
-                    let nil_idx = self.code.add_constant(Value::Nil);
+                    let nil_idx = self.code.add_constant(Value::NIL);
                     self.code.emit(OpCode::LoadConst(nil_idx));
                 }
                 let name_idx = self.code.add_constant(Value::str("variables".to_string()));
@@ -2828,7 +2846,7 @@ impl Compiler {
                 if let Some(arg_expr) = arg {
                     self.compile_expr(arg_expr);
                 } else {
-                    let nil_idx = self.code.add_constant(Value::Nil);
+                    let nil_idx = self.code.add_constant(Value::NIL);
                     self.code.emit(OpCode::LoadConst(nil_idx));
                 }
                 let name_idx = self.code.add_constant(Value::str("attributes".to_string()));
@@ -3013,7 +3031,7 @@ impl Compiler {
                 // This makes LetSave capture the undefined state, so on scope exit
                 // the variable is restored to undefined (and its default value applies).
                 if *undefine_first {
-                    self.compile_expr(&Expr::Literal(Value::Nil));
+                    self.compile_expr(&Expr::Literal(Value::NIL));
                     self.emit_set_named_var(name);
                 }
                 // Emit LetSave: saves current value of the variable
@@ -3108,7 +3126,7 @@ impl Compiler {
                 // For non-expression statements (calls, assignments, etc.),
                 // compile normally. Any completed statement counts as success.
                 self.compile_stmt(stmt);
-                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                self.compile_expr(&Expr::Literal(Value::TRUE));
                 self.code.emit(OpCode::SetTopic);
             }
         }
@@ -3123,7 +3141,7 @@ impl Compiler {
             Stmt::Expr(expr) => self.compile_expr(expr),
             _ => {
                 self.compile_stmt(stmt);
-                self.compile_expr(&Expr::Literal(Value::Bool(true)));
+                self.compile_expr(&Expr::Literal(Value::TRUE));
             }
         }
     }
@@ -3170,7 +3188,7 @@ impl Compiler {
                             Stmt::Expr(expr) => compiler.compile_expr(expr),
                             _ => {
                                 compiler.compile_stmt(inner);
-                                compiler.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                compiler.compile_expr(&Expr::Literal(Value::TRUE));
                             }
                         }
                     } else {
@@ -3201,7 +3219,7 @@ impl Compiler {
                             Stmt::Expr(expr) => compiler.compile_expr(expr),
                             _ => {
                                 compiler.compile_stmt(inner);
-                                compiler.compile_expr(&Expr::Literal(Value::Bool(true)));
+                                compiler.compile_expr(&Expr::Literal(Value::TRUE));
                             }
                         }
                     } else {

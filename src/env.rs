@@ -168,7 +168,7 @@ pub struct Env {
     /// A scoped env is transient -- it is only ever the live `self.env` during a
     /// converted call frame's own opcode execution and the `saved_env` slots that
     /// restore it. Anything that captures the env into a long-lived structure
-    /// (a `Value::Sub` closure, an END phaser, a thread) flattens it first via
+    /// (a `Sub` closure, an END phaser, a thread) flattens it first via
     /// [`Env::flattened`] / `clone_env`, so an overlay-only iteration consumer is
     /// never starved of parent-chain lexicals. See docs/vm-dual-store.md (Slice 6).
     parent: Option<Arc<Env>>,
@@ -683,7 +683,7 @@ mod tests {
     fn scoped_with(parent: Env, writes: &[(&str, i64)]) -> Env {
         let mut e = Env::scoped_child(parent);
         for (k, v) in writes {
-            e.insert(k.to_string(), Value::Int(*v));
+            e.insert(k.to_string(), Value::int(*v));
         }
         e
     }
@@ -691,13 +691,13 @@ mod tests {
     #[test]
     fn chain_lookup_reads_through_all_tiers() {
         let mut root = Env::new();
-        root.insert("a".into(), Value::Int(1));
+        root.insert("a".into(), Value::int(1));
         let mid = scoped_with(root, &[("b", 2)]);
         let leaf = scoped_with(mid, &[("c", 3)]);
         // Each tier's key is visible from the leaf.
-        assert_eq!(leaf.get_sym(s("a")), Some(&Value::Int(1)));
-        assert_eq!(leaf.get_sym(s("b")), Some(&Value::Int(2)));
-        assert_eq!(leaf.get_sym(s("c")), Some(&Value::Int(3)));
+        assert_eq!(leaf.get_sym(s("a")), Some(&Value::int(1)));
+        assert_eq!(leaf.get_sym(s("b")), Some(&Value::int(2)));
+        assert_eq!(leaf.get_sym(s("c")), Some(&Value::int(3)));
         assert!(leaf.get_sym(s("missing")).is_none());
         assert!(leaf.contains_key_sym(s("a")));
         assert!(!leaf.contains_key_sym(s("missing")));
@@ -706,15 +706,15 @@ mod tests {
     #[test]
     fn overlay_shadows_parent() {
         let mut root = Env::new();
-        root.insert("x".into(), Value::Int(1));
+        root.insert("x".into(), Value::int(1));
         let leaf = scoped_with(root, &[("x", 99)]);
-        assert_eq!(leaf.get_sym(s("x")), Some(&Value::Int(99)));
+        assert_eq!(leaf.get_sym(s("x")), Some(&Value::int(99)));
     }
 
     #[test]
     fn iter_is_overlay_only() {
         let mut root = Env::new();
-        root.insert("a".into(), Value::Int(1));
+        root.insert("a".into(), Value::int(1));
         let leaf = scoped_with(root, &[("b", 2)]);
         let keys: Vec<String> = leaf.iter().map(|(k, _)| k.resolve()).collect();
         // Only the leaf's own write, not the parent's `a`.
@@ -724,33 +724,33 @@ mod tests {
     #[test]
     fn tombstone_hides_parent_key_through_chain() {
         let mut root = Env::new();
-        root.insert("a".into(), Value::Int(1));
+        root.insert("a".into(), Value::int(1));
         let mut leaf = Env::scoped_child(root);
         let removed = leaf.remove("a");
-        assert_eq!(removed, Some(Value::Int(1)));
+        assert_eq!(removed, Some(Value::int(1)));
         // Hidden in this scope, but not deleted from the parent tier.
         assert!(leaf.get_sym(s("a")).is_none());
         assert!(!leaf.contains_key_sym(s("a")));
         // Re-inserting clears the tombstone.
-        leaf.insert("a".into(), Value::Int(5));
-        assert_eq!(leaf.get_sym(s("a")), Some(&Value::Int(5)));
+        leaf.insert("a".into(), Value::int(5));
+        assert_eq!(leaf.get_sym(s("a")), Some(&Value::int(5)));
     }
 
     #[test]
     fn flattened_preserves_full_view_and_tombstones() {
         let mut root = Env::new();
-        root.insert("a".into(), Value::Int(1));
-        root.insert("gone".into(), Value::Int(7));
+        root.insert("a".into(), Value::int(1));
+        root.insert("gone".into(), Value::int(7));
         let mid = scoped_with(root, &[("b", 2)]);
         let mut leaf = mid;
-        leaf.insert("c".into(), Value::Int(3));
+        leaf.insert("c".into(), Value::int(3));
         leaf.remove("gone");
         let flat = leaf.flattened();
         assert!(!flat.is_scoped());
         assert_eq!(flat.depth, 0);
-        assert_eq!(flat.get_sym(s("a")), Some(&Value::Int(1)));
-        assert_eq!(flat.get_sym(s("b")), Some(&Value::Int(2)));
-        assert_eq!(flat.get_sym(s("c")), Some(&Value::Int(3)));
+        assert_eq!(flat.get_sym(s("a")), Some(&Value::int(1)));
+        assert_eq!(flat.get_sym(s("b")), Some(&Value::int(2)));
+        assert_eq!(flat.get_sym(s("c")), Some(&Value::int(3)));
         assert!(flat.get_sym(s("gone")).is_none());
     }
 
@@ -760,7 +760,7 @@ mod tests {
         // (scoped_child flattens the parent at the limit) while still reading the
         // deepest lexical correctly.
         let mut env = Env::new();
-        env.insert("root".into(), Value::Int(42));
+        env.insert("root".into(), Value::int(42));
         for i in 0..(MAX_OVERLAY_DEPTH as i64 * 4) {
             env = scoped_with(env, &[("tmp", i)]);
             assert!(
@@ -771,6 +771,6 @@ mod tests {
             );
         }
         // The original root lexical is still reachable through the flattened tiers.
-        assert_eq!(env.get_sym(s("root")), Some(&Value::Int(42)));
+        assert_eq!(env.get_sym(s("root")), Some(&Value::int(42)));
     }
 }

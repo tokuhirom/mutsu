@@ -1,4 +1,4 @@
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// Unescape backslash sequences in a `<...>` word.
 /// Per Raku spec, `<...>` is `q:w` quoting which only processes a small set of
@@ -120,15 +120,16 @@ fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
 /// Negate a numeric Value produced by the unsigned angle-word number parsers.
 /// Non-numeric values are returned unchanged (the caller only passes numerics).
 fn negate_angle_numeric(val: Value) -> Value {
-    match val {
-        Value::Int(n) => Value::Int(-n),
-        Value::BigInt(n) => Value::BigInt(std::sync::Arc::new(-(&*n))),
-        Value::Num(n) => Value::Num(-n),
-        Value::Rat(n, d) => Value::Rat(-n, d),
-        Value::FatRat(n, d) => Value::FatRat(-n, d),
-        Value::BigRat(n, d) => Value::bigrat(-(*n), *d),
-        other => other,
-    }
+    let negated = match val.view() {
+        ValueView::Int(n) => Some(Value::int(-n)),
+        ValueView::BigInt(n) => Some(Value::bigint_arc(std::sync::Arc::new(-(&**n)))),
+        ValueView::Num(n) => Some(Value::num(-n)),
+        ValueView::Rat(n, d) => Some(Value::rat_raw(-n, d)),
+        ValueView::FatRat(n, d) => Some(Value::fat_rat_raw(-n, d)),
+        ValueView::BigRat(n, d) => Some(Value::bigrat(-n, d.clone())),
+        _ => None,
+    };
+    negated.unwrap_or(val)
 }
 
 fn make_allomorphic_value(val: Value, word: &str) -> Value {
@@ -242,7 +243,7 @@ fn parse_angle_complex(word: &str) -> Option<Value> {
 
     // Pure imaginary: just "Ni" (e.g. "5i", "-3i")
     if let Ok(imag) = without_i.parse::<f64>() {
-        return Some(Value::Complex(0.0, imag));
+        return Some(Value::complex(0.0, imag));
     }
 
     // Find the last '+' or '-' that splits real from imaginary.
@@ -268,7 +269,7 @@ fn parse_angle_complex(word: &str) -> Option<Value> {
 
     let real: f64 = real_str.parse().ok()?;
     let imag: f64 = imag_str.parse().ok()?;
-    Some(Value::Complex(real, imag))
+    Some(Value::complex(real, imag))
 }
 
 /// Parse a Num (floating-point with exponent) from an angle bracket word.
@@ -280,7 +281,7 @@ fn parse_angle_num(word: &str) -> Option<Value> {
         return None;
     }
     let val: f64 = word.parse().ok()?;
-    Some(Value::Num(val))
+    Some(Value::num(val))
 }
 
 /// Build an `Expr::Literal` from a single angle-bracket word, applying allomorphic

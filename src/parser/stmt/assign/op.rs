@@ -164,7 +164,7 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
                 args: vec![lhs.clone()],
             }),
             then_expr: Box::new(lhs),
-            else_expr: Box::new(Expr::Literal(Value::Int(1))),
+            else_expr: Box::new(Expr::Literal(Value::int(1))),
         }
     } else if matches!(op, CompoundAssignOp::Mod) {
         // `$x op= $y` on an undefined `$x` seeds the container with the

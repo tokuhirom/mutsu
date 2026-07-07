@@ -910,7 +910,7 @@ pub(in crate::parser::primary) fn version_lit(input: &str) -> PResult<'_, Expr> 
         (version, rest)
     };
     let (parts, plus, minus) = Value::parse_version_string(version);
-    Ok((rest, Expr::Literal(Value::Version { parts, plus, minus })))
+    Ok((rest, Expr::Literal(Value::version(parts, plus, minus))))
 }
 
 /// Parse a topicalized method call: .say, .uc, .defined, etc.

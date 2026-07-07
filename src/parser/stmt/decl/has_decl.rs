@@ -826,8 +826,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             default = Some(match tc.as_str() {
                 "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
-                | "uint32" | "uint64" | "byte" | "atomicint" => Expr::Literal(Value::Int(0)),
-                "num" | "num32" | "num64" => Expr::Literal(Value::Num(0.0)),
+                | "uint32" | "uint64" | "byte" | "atomicint" => Expr::Literal(Value::int(0)),
+                "num" | "num32" | "num64" => Expr::Literal(Value::num(0.0)),
                 "str" => Expr::Literal(Value::str("".to_string())),
                 _ => Expr::BareWord(tc.clone()),
             });

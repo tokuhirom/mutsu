@@ -6,6 +6,7 @@ use super::take_while_opt;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::value::ValueView;
 
 /// Parse `anon enum` declaration.
 pub(crate) fn anon_enum_decl(input: &str) -> PResult<'_, Stmt> {
@@ -133,7 +134,7 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
             })?;
             if negated {
                 // :!key => value is 0 (false)
-                variants.push((key.to_string(), Some(Expr::Literal(Value::Int(0.into())))));
+                variants.push((key.to_string(), Some(Expr::Literal(Value::int(0.into())))));
                 r = after_key;
             } else if let Some(after_open) = after_key.strip_prefix('<') {
                 // :key<value>
@@ -201,18 +202,21 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
         // body as a value expression, which the undeclared-names check scans.
         // (Pairs like `A => 1` keep their bare LHS as an autoquoted key below.)
         Expr::BareWord(_) => Err(PError::expected("enum value (use <...> to autoquote keys)")),
-        Expr::Literal(Value::Str(name)) => Ok((rest, (name.to_string(), None))),
+        Expr::Literal(lit) if lit.as_str().is_some() => {
+            Ok((rest, (lit.as_str().unwrap().to_string(), None)))
+        }
         Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
         } => match *left {
-            Expr::Literal(Value::Str(name)) => {
+            Expr::Literal(lit) if lit.as_str().is_some() => {
+                let name = lit.as_str().unwrap().to_string();
                 let value_expr = match *right {
-                    Expr::Literal(Value::Bool(true)) => None,
+                    Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => None,
                     other => Some(other),
                 };
-                Ok((rest, (name.to_string(), value_expr)))
+                Ok((rest, (name, value_expr)))
             }
             _ => Err(PError::expected("enum variant name")),
         },
@@ -223,12 +227,13 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
                 op: crate::token_kind::TokenKind::FatArrow,
                 right,
             } => match *left {
-                Expr::Literal(Value::Str(name)) => {
+                Expr::Literal(lit) if lit.as_str().is_some() => {
+                    let name = lit.as_str().unwrap().to_string();
                     let value_expr = match *right {
-                        Expr::Literal(Value::Bool(true)) => None,
+                        Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => None,
                         other => Some(other),
                     };
-                    Ok((rest, (name.to_string(), value_expr)))
+                    Ok((rest, (name, value_expr)))
                 }
                 _ => Err(PError::expected("enum variant name")),
             },

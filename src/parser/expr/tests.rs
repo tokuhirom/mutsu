@@ -1,5 +1,6 @@
 use super::operators::*;
 use super::*;
+use crate::value::ValueView;
 
 #[test]
 fn parse_binary_add() {
@@ -305,22 +306,30 @@ fn parse_fat_arrow_chains_right_associatively() {
                 left,
                 right,
             } => {
-                assert!(matches!(*left, Expr::Literal(Value::Int(1))));
+                assert!(
+                    matches!(*left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(1)))
+                );
                 match *right {
                     Expr::Binary {
                         op: TokenKind::FatArrow,
                         left: right_left,
                         right: right_right,
                     } => {
-                        assert!(matches!(*right_left, Expr::Literal(Value::Int(2))));
+                        assert!(
+                            matches!(*right_left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(2)))
+                        );
                         match *right_right {
                             Expr::Binary {
                                 op: TokenKind::FatArrow,
                                 left: tail_left,
                                 right: tail_right,
                             } => {
-                                assert!(matches!(*tail_left, Expr::Literal(Value::Int(3))));
-                                assert!(matches!(*tail_right, Expr::Literal(Value::Int(4))));
+                                assert!(
+                                    matches!(*tail_left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(3)))
+                                );
+                                assert!(
+                                    matches!(*tail_right, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(4)))
+                                );
                             }
                             _ => panic!("expected final fat-arrow pair"),
                         }
@@ -374,13 +383,14 @@ fn parse_upto_with_infinity_literal() {
     assert_eq!(rest, "");
     match expr {
         Expr::Binary { left, op, right } => {
-            assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+            assert!(matches!(*left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(0))));
             assert!(matches!(op, TokenKind::DotDotCaret));
             assert!(matches!(
                 *right,
-                Expr::Literal(Value::Int(_))
-                    | Expr::Literal(Value::BigInt(_))
-                    | Expr::Literal(Value::Num(_))
+                Expr::Literal(ref v) if matches!(
+                    v.view(),
+                    ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Num(_)
+                )
             ));
         }
         _ => panic!("expected upto range expression"),
@@ -393,7 +403,7 @@ fn parse_upto_with_negative_literal() {
     assert_eq!(rest, "");
     match expr {
         Expr::Binary { left, op, right } => {
-            assert!(matches!(*left, Expr::Literal(Value::Int(0))));
+            assert!(matches!(*left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(0))));
             assert!(matches!(op, TokenKind::DotDotCaret));
             assert!(matches!(
                 *right,
@@ -429,7 +439,7 @@ fn parse_dynamic_pseudostash_dot_angle_with_dynamic_var() {
         expr,
         Expr::Index { target, index, .. }
             if matches!(target.as_ref(), Expr::PseudoStash(s) if s.as_str() == "DYNAMIC::")
-            && matches!(index.as_ref(), Expr::Literal(Value::Str(s)) if s.as_str() == "$*x80")
+            && matches!(index.as_ref(), Expr::Literal(v) if v.as_str() == Some("$*x80"))
     ));
 }
 

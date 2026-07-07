@@ -290,7 +290,7 @@ impl Compiler {
         let mut pre = vec![
             Stmt::VarDecl {
                 name: first_var.clone(),
-                expr: Expr::Literal(Value::Bool(true)),
+                expr: Expr::Literal(Value::TRUE),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -302,7 +302,7 @@ impl Compiler {
             },
             Stmt::VarDecl {
                 name: ran_var.clone(),
-                expr: Expr::Literal(Value::Bool(false)),
+                expr: Expr::Literal(Value::FALSE),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -316,7 +316,7 @@ impl Compiler {
         if let Some(result_var) = result_var.clone() {
             pre.push(Stmt::VarDecl {
                 name: result_var,
-                expr: Expr::Literal(Value::Nil),
+                expr: Expr::Literal(Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -330,7 +330,7 @@ impl Compiler {
         if let Some(last_topic_var) = last_topic_var.clone() {
             pre.push(Stmt::VarDecl {
                 name: last_topic_var,
-                expr: Expr::Literal(Value::Nil),
+                expr: Expr::Literal(Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -344,7 +344,7 @@ impl Compiler {
         if let Some(post_topic_var) = post_topic_var.clone() {
             pre.push(Stmt::VarDecl {
                 name: post_topic_var,
-                expr: Expr::Literal(Value::Nil),
+                expr: Expr::Literal(Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -359,7 +359,7 @@ impl Compiler {
         let mut loop_body = Vec::new();
         loop_body.push(Stmt::Assign {
             name: ran_var.clone(),
-            expr: Expr::Literal(Value::Bool(true)),
+            expr: Expr::Literal(Value::TRUE),
             op: AssignOp::Assign,
         });
         // Save $_ at the start of each iteration so LAST phasers can see it
@@ -392,7 +392,7 @@ impl Compiler {
             let mut then_branch = first_ph;
             then_branch.push(Stmt::Assign {
                 name: first_var.clone(),
-                expr: Expr::Literal(Value::Bool(false)),
+                expr: Expr::Literal(Value::FALSE),
                 op: AssignOp::Assign,
             });
             loop_body.push(Stmt::If {
@@ -406,7 +406,7 @@ impl Compiler {
         for var_name in &enter_expr_vars {
             pre.push(Stmt::VarDecl {
                 name: var_name.clone(),
-                expr: Expr::Literal(Value::Nil),
+                expr: Expr::Literal(Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -436,7 +436,7 @@ impl Compiler {
                         loop_body.push(other.clone());
                         loop_body.push(Stmt::Assign {
                             name: cap_var.clone(),
-                            expr: Expr::Literal(Value::Nil),
+                            expr: Expr::Literal(Value::NIL),
                             op: AssignOp::Assign,
                         });
                     }
@@ -444,7 +444,7 @@ impl Compiler {
             } else {
                 loop_body.push(Stmt::Assign {
                     name: cap_var.clone(),
-                    expr: Expr::Literal(Value::Nil),
+                    expr: Expr::Literal(Value::NIL),
                     op: AssignOp::Assign,
                 });
             }
@@ -469,7 +469,7 @@ impl Compiler {
             let post_topic = post_topic_var
                 .clone()
                 .map(Expr::Var)
-                .unwrap_or(Expr::Literal(Value::Nil));
+                .unwrap_or(Expr::Literal(Value::NIL));
             let mut post_body = Vec::new();
             for s in post_ph.iter().rev() {
                 post_body.push(s.clone());

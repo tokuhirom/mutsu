@@ -84,14 +84,14 @@ fn parse_quote_word_list<'a>(
         // However, if the original content had surrounding whitespace (e.g. <01.0+42i >),
         // keep the allomorphic ComplexStr form.
         let has_whitespace = content.trim() != content;
-        let expr = match expr {
-            Expr::Literal(crate::value::Value::Mixin(inner, _))
-                if matches!(inner.as_ref(), crate::value::Value::Complex(..))
-                    && !has_whitespace =>
-            {
-                Expr::Literal(inner.as_ref().clone())
-            }
-            other => other,
+        let expr = if !has_whitespace
+            && let Expr::Literal(ref lit) = expr
+            && let crate::value::ValueView::Mixin(inner, _) = lit.view()
+            && matches!(inner.as_ref().view(), crate::value::ValueView::Complex(..))
+        {
+            Expr::Literal(inner.as_ref().clone())
+        } else {
+            expr
         };
         Ok((rest, expr))
     } else {

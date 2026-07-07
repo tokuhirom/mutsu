@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 impl Compiler {
     /// Lower a call to the assignment/bind operator used as a function
@@ -48,11 +49,11 @@ impl Compiler {
     pub(super) fn compile_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Whatever => {
-                let idx = self.code.add_constant(Value::Whatever);
+                let idx = self.code.add_constant(Value::WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));
             }
             Expr::HyperWhatever => {
-                let idx = self.code.add_constant(Value::HyperWhatever);
+                let idx = self.code.add_constant(Value::HYPER_WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));
             }
             // A source-preserving literal compiles exactly like its inner value;
@@ -60,14 +61,14 @@ impl Compiler {
             Expr::LiteralSrc(v, _) => {
                 self.compile_expr(&Expr::Literal(v.clone()));
             }
-            Expr::Literal(v) => match v {
-                Value::Nil => {
+            Expr::Literal(v) => match v.view() {
+                ValueView::Nil => {
                     self.code.emit(OpCode::LoadNil);
                 }
-                Value::Bool(true) => {
+                ValueView::Bool(true) => {
                     self.code.emit(OpCode::LoadTrue);
                 }
-                Value::Bool(false) => {
+                ValueView::Bool(false) => {
                     self.code.emit(OpCode::LoadFalse);
                 }
                 _ => {
@@ -352,11 +353,11 @@ impl Compiler {
                 self.compile_expr_method_on_index(target, name, args, modifier, *quoted);
             }
             // Compile-time fold: Nil.gist / Nil.raku / Nil.perl → "Nil"
-            // Value::Nil is also used for uninitialized variables (which are Any type objects),
+            // Nil is also used for uninitialized variables (which are Any type objects),
             // so we can only constant-fold when the target is the *literal* Nil keyword.
             Expr::MethodCall {
                 target, name, args, ..
-            } if matches!(target.as_ref(), Expr::Literal(Value::Nil))
+            } if matches!(target.as_ref(), Expr::Literal(v) if v.is_nil())
                 && args.is_empty()
                 && matches!(name.resolve().as_str(), "gist" | "raku" | "perl") =>
             {
@@ -370,7 +371,7 @@ impl Compiler {
             // we only reject the literal `Nil` keyword here, matching the gist/raku
             // fold above.
             Expr::MethodCall { target, name, .. }
-                if matches!(target.as_ref(), Expr::Literal(Value::Nil))
+                if matches!(target.as_ref(), Expr::Literal(v) if v.is_nil())
                     && matches!(
                         name.resolve().as_str(),
                         "push" | "append" | "unshift" | "prepend"
@@ -838,7 +839,7 @@ impl Compiler {
                     // [//] () and [orelse] () return Any (type object)
                     let any_idx = self
                         .code
-                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                        .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
                     self.code.emit(OpCode::LoadConst(any_idx));
                 }
                 _ => {
@@ -1028,7 +1029,7 @@ impl Compiler {
                 "//" | "orelse" => {
                     let any_idx = self
                         .code
-                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                        .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
                     self.code.emit(OpCode::LoadConst(any_idx));
                 }
                 "&&" | "and" => {

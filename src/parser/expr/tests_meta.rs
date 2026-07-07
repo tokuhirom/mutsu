@@ -180,7 +180,9 @@ fn parse_hyper_prefix_metaop_negate() {
         Expr::Call { name, args } => {
             assert_eq!(name, "__mutsu_hyper_prefix");
             assert_eq!(args.len(), 2);
-            assert!(matches!(args[0], Expr::Literal(Value::Str(ref s)) if s.as_str() == "-"));
+            assert!(
+                matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Str(s) if s.as_str() == "-"))
+            );
         }
         _ => panic!("expected hyper prefix metaop call"),
     }

@@ -19,8 +19,11 @@ BASELINE_FILE=scripts/value-wall-baseline.txt
 # lowercase or not variant names, so they never match.
 VARIANTS='Int|BigInt|Num|Str|Bool|Range|RangeExcl|RangeExclStart|RangeExclBoth|GenericRange|Array|Hash|Rat|FatRat|BigRat|Complex|Set|Bag|Mix|CompUnitDepSpec|Package|Routine|Pair|ValuePair|Enum|Regex|RegexWithAdverbs|Sub|WeakSub|Instance|Junction|Seq|HyperSeq|RaceSeq|Slip|LazyList|Version|Promise|Channel|Nil|Whatever|HyperWhatever|Mixin|Capture|Uni|Proxy|ParametricRole|CustomType|CustomTypeInstance|Scalar|ContainerRef|LazyThunk|LazyIoLines|HashEntryRef'
 
-current=$(grep -rEo "\bValue::(${VARIANTS})\b" src --include='*.rs' \
-    | grep -v '^src/value/' | wc -l)
+# The wall is complete when this reaches 0. At 0 the `grep -v` matches nothing
+# and exits 1, which under `set -euo pipefail` would abort the script — so
+# tolerate it and let `wc -l` report the real (zero) count.
+current=$( { grep -rEo "\bValue::(${VARIANTS})\b" src --include='*.rs' \
+    | grep -v '^src/value/' | wc -l; } || true)
 
 if [[ "${1:-}" == "--update" ]]; then
     echo "$current" > "$BASELINE_FILE"

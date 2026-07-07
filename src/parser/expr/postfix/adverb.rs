@@ -184,7 +184,8 @@ pub(crate) fn try_parse_unknown_adverb(input: &str) -> Option<(&str, String)> {
 pub(crate) fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
     // A *zen* slice (`@a[]` / `%h{}`, modelled as a `Literal(Whatever)` index by
     // the empty-subscript-with-adverb path) reports "zen slice".
-    if matches!(index_expr, Expr::Literal(Value::Whatever)) {
+    if matches!(index_expr, Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Whatever))
+    {
         return "zen slice".to_string();
     }
     // A whatever slice (`@a[*]`, parsed as a bare Whatever index) reports
@@ -334,7 +335,7 @@ pub(crate) fn subscript_adverb_expr_with_cond(
     let var_name = match target.as_ref() {
         Expr::ArrayVar(name) => Expr::Literal(Value::str(format!("@{}", name))),
         Expr::HashVar(name) => Expr::Literal(Value::str(format!("%{}", name))),
-        _ => Expr::Literal(Value::Nil),
+        _ => Expr::Literal(Value::NIL),
     };
     let mut args = vec![
         *target,

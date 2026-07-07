@@ -29,7 +29,7 @@ use crate::parser::primary::misc::{
 };
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{Value, ValueView};
 
 /// When `do STMT` parses its inner statement via the full statement parser, a
 /// statement modifier (`do $_ for @list`) or assignment consumes the trailing
@@ -54,7 +54,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             if r_mod.starts_with(":file(") {
                 (
                     r_mod,
-                    Expr::Literal(Value::Package(Symbol::intern(&normalize_raku_identifier(
+                    Expr::Literal(Value::package(Symbol::intern(&normalize_raku_identifier(
                         &mod_name,
                     )))),
                 )
@@ -66,12 +66,15 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
         };
     let module_name_for_parse = match &target_raw {
         Expr::BareWord(name) => Some(name.clone()),
-        Expr::Literal(Value::Package(name)) => Some(name.resolve()),
-        Expr::Literal(Value::Str(name)) => Some(name.to_string()),
+        Expr::Literal(v) => match v.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Str(name) => Some(name.to_string()),
+            _ => None,
+        },
         _ => None,
     };
     let target = if let Expr::BareWord(name) = target_raw {
-        Expr::Literal(Value::Package(Symbol::intern(&name)))
+        Expr::Literal(Value::package(Symbol::intern(&name)))
     } else {
         target_raw
     };
@@ -1181,7 +1184,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     TEST_CALLSITE_LINE_KEY.to_string(),
                 ))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+                right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
             });
         }
         return Ok((rest, make_call_expr(name, input, args)));
@@ -1566,7 +1569,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 TEST_CALLSITE_LINE_KEY.to_string(),
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::Int(current_line_number(input)))),
+            right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
         }];
         return Ok((rest, make_call_expr(name, input, args)));
     }

@@ -158,11 +158,11 @@ impl Compiler {
                 match target {
                     Expr::Var(var_name) => {
                         if seen_slurpy {
-                            let nil_idx = self.code.add_constant(Value::Nil);
+                            let nil_idx = self.code.add_constant(Value::NIL);
                             self.code.emit(OpCode::LoadConst(nil_idx));
                         } else {
                             self.code.emit(OpCode::GetGlobal(tmp_idx));
-                            let idx = self.code.add_constant(Value::Int(offset as i64));
+                            let idx = self.code.add_constant(Value::int(offset as i64));
                             self.code.emit(OpCode::LoadConst(idx));
                             self.code.emit(OpCode::Index {
                                 is_positional: true,
@@ -178,7 +178,7 @@ impl Compiler {
                             Expr::MethodCall {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
                                 name: crate::symbol::Symbol::intern("skip"),
-                                args: vec![Expr::Literal(Value::Int(offset as i64))],
+                                args: vec![Expr::Literal(Value::int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
                             }
@@ -197,7 +197,7 @@ impl Compiler {
                             Expr::MethodCall {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
                                 name: crate::symbol::Symbol::intern("skip"),
-                                args: vec![Expr::Literal(Value::Int(offset as i64))],
+                                args: vec![Expr::Literal(Value::int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
                             }
@@ -229,7 +229,7 @@ impl Compiler {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
                                 index: Box::new(Expr::ArrayLiteral(
                                     (offset..offset + width)
-                                        .map(|k| Expr::Literal(Value::Int(k as i64)))
+                                        .map(|k| Expr::Literal(Value::int(k as i64)))
                                         .collect(),
                                 )),
                                 is_positional: true,
@@ -237,7 +237,7 @@ impl Compiler {
                         } else {
                             Expr::Index {
                                 target: Box::new(Expr::Var(tmp_name.clone())),
-                                index: Box::new(Expr::Literal(Value::Int(offset as i64))),
+                                index: Box::new(Expr::Literal(Value::int(offset as i64))),
                                 is_positional: true,
                             }
                         };
@@ -529,7 +529,7 @@ impl Compiler {
                     } else {
                         let any_idx = self
                             .code
-                            .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                            .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
                         self.code.emit(OpCode::LoadConst(any_idx));
                         self.emit_assign_local_or_name(&vname);
                     }
@@ -562,7 +562,7 @@ impl Compiler {
                 } else {
                     let any_idx = self
                         .code
-                        .add_constant(Value::Package(crate::symbol::Symbol::intern("Any")));
+                        .add_constant(Value::package(crate::symbol::Symbol::intern("Any")));
                     self.code.emit(OpCode::LoadConst(any_idx));
                     self.emit_assign_local_or_name(&vname);
                 }
@@ -578,7 +578,7 @@ impl Compiler {
                     let assign_expr = Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
-                        value: Box::new(Expr::Literal(Value::Nil)),
+                        value: Box::new(Expr::Literal(Value::NIL)),
                         is_positional: true,
                     };
                     self.compile_expr(&assign_expr);

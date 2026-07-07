@@ -156,7 +156,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                     } else {
                         let idx_expr = Expr::Index {
                             target: Box::new(Expr::Var(pname.clone())),
-                            index: Box::new(Expr::Literal(Value::Int(positional_index as i64))),
+                            index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                             is_positional: true,
                         };
                         positional_index += 1;

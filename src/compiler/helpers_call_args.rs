@@ -155,7 +155,7 @@ impl Compiler {
     fn is_named_arg_expr(expr: &Expr) -> bool {
         match expr {
             Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow => true,
-            Expr::Literal(crate::value::Value::Pair(..)) => true,
+            Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Pair(..)) => true,
             Expr::Unary { op, .. } if *op == crate::token_kind::TokenKind::Pipe => true,
             _ => false,
         }

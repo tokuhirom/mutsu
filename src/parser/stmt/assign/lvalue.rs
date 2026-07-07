@@ -23,7 +23,7 @@ pub(crate) fn method_lvalue_assign_expr(
     ];
     args.push(match target_var_name {
         Some(name) => Expr::Literal(Value::str(name)),
-        None => Expr::Literal(Value::Nil),
+        None => Expr::Literal(Value::NIL),
     });
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
@@ -61,9 +61,10 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
         if name != "__mutsu_subscript_adverb" || args.len() < 3 {
             return None;
         }
-        let Expr::Literal(Value::Str(mode)) = &args[2] else {
+        let Expr::Literal(lit) = &args[2] else {
             return None;
         };
+        let mode = lit.as_str()?;
         Some((args[0].clone(), args[1].clone(), mode.to_string()))
     }
 
@@ -92,7 +93,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
             if mode != "kv" && mode != "not-kv" {
                 return None;
             }
-            if !matches!(*index, Expr::Literal(Value::Int(1))) {
+            if !matches!(&*index, Expr::Literal(lit) if lit.as_int() == Some(1)) {
                 return None;
             }
             Some(Expr::IndexAssign {
@@ -130,7 +131,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
     // the whole list. Mirrors the statement-level `single_target_list_lvalue_stmt`.
     let extracted_rhs = Expr::Index {
         target: Box::new(rhs.clone()),
-        index: Box::new(Expr::Literal(Value::Int(pos as i64))),
+        index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
     };
     match target {
@@ -145,7 +146,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
                 Expr::MethodCall {
                     target: Box::new(rhs),
                     name: Symbol::intern("skip"),
-                    args: vec![Expr::Literal(Value::Int(pos as i64))],
+                    args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
                 }

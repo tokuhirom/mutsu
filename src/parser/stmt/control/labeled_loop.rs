@@ -112,7 +112,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             r,
             Stmt::For {
-                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::Nil)]),
+                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::NIL)]),
                 param: None,
                 param_def: Box::new(None),
                 params: Vec::new(),
@@ -133,7 +133,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((
             r,
             Stmt::For {
-                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::Nil)]),
+                iterable: Expr::ArrayLiteral(vec![Expr::Literal(crate::value::Value::NIL)]),
                 param: None,
                 param_def: Box::new(None),
                 params: Vec::new(),

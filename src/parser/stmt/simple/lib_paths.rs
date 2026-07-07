@@ -44,7 +44,7 @@ pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
 fn extract_lib_path(expr: &Expr) -> Option<String> {
     match expr {
         // use lib "some/path"
-        Expr::Literal(Value::Str(s)) => Some(s.to_string()),
+        Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
         // use lib $*PROGRAM.parent(N).add("path") or .add($*SPEC.catdir(<...>))
         Expr::MethodCall {
             target, name, args, ..
@@ -64,7 +64,7 @@ fn extract_lib_path(expr: &Expr) -> Option<String> {
 /// Handles string literals and `$*SPEC.catdir(<word list>)`.
 fn extract_static_string(expr: &Expr) -> Option<String> {
     match expr {
-        Expr::Literal(Value::Str(s)) => Some(s.to_string()),
+        Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
         // $*SPEC.catdir(<packages Test-Helpers lib>) → "packages/Test-Helpers/lib"
         Expr::MethodCall {
             target, name, args, ..
@@ -76,12 +76,14 @@ fn extract_static_string(expr: &Expr) -> Option<String> {
                 let parts: Vec<String> = args
                     .iter()
                     .filter_map(|a| match a {
-                        Expr::Literal(Value::Str(s)) => Some(s.to_string()),
+                        Expr::Literal(lit) => lit.as_str().map(|s| s.to_string()),
                         Expr::ArrayLiteral(items) => {
                             let strs: Vec<String> = items
                                 .iter()
                                 .filter_map(|i| {
-                                    if let Expr::Literal(Value::Str(s)) = i {
+                                    if let Expr::Literal(lit) = i
+                                        && let Some(s) = lit.as_str()
+                                    {
                                         Some(s.to_string())
                                     } else {
                                         None
@@ -119,8 +121,10 @@ fn extract_program_parent(expr: &Expr) -> Option<String> {
                 Expr::Var(v) if v == "*PROGRAM" => PROGRAM_PATH.with(|p| p.borrow().clone())?,
                 other => extract_program_parent(other)?,
             };
-            let levels = if let Some(Expr::Literal(Value::Int(n))) = args.first() {
-                *n as usize
+            let levels = if let Some(Expr::Literal(lit)) = args.first()
+                && let Some(n) = lit.as_int()
+            {
+                n as usize
             } else {
                 1
             };

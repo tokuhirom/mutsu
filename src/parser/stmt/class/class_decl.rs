@@ -3,6 +3,7 @@ use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
+use crate::value::ValueView;
 
 use crate::parser::expr::expression;
 use crate::parser::helpers::{skip_balanced_parens, ws, ws1};
@@ -20,7 +21,7 @@ pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, V
         rest = &rest[1..];
         let (r, name) = take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         rest = r;
-        let mut value = Value::Bool(true);
+        let mut value = Value::TRUE;
         if let Some(inner) = rest.strip_prefix('<') {
             if let Some(end) = inner.find('>') {
                 value = Value::str(inner[..end].to_string());
@@ -367,7 +368,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let repr = is_repr.or_else(|| {
         traits.iter().find_map(|(k, v)| {
             if k == "repr" {
-                if let Value::Str(s) = v {
+                if let ValueView::Str(s) = v.view() {
                     Some(s.to_string())
                 } else {
                     None

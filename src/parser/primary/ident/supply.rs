@@ -117,7 +117,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
                 modifier: None,
                 quoted: false,
             }),
-            Stmt::Return(Expr::Literal(Value::Nil)),
+            Stmt::Return(Expr::Literal(Value::NIL)),
         ]),
         Stmt::Block(stmts) => Stmt::Block(rewrite_supply_body(stmts, emitter_name)),
         Stmt::SyntheticBlock(stmts) => {

@@ -1,5 +1,5 @@
 use crate::ast::Expr;
-use crate::value::Value;
+use crate::value::ValueView;
 
 pub(super) fn starts_with_term_token(input: &str) -> bool {
     let Some(ch) = input.chars().next() else {
@@ -91,8 +91,12 @@ pub(super) fn is_literal_expr(expr: &Expr) -> bool {
 pub(crate) fn index_bind_target_is_immutable(target: &Expr) -> bool {
     match target {
         Expr::Literal(v) => matches!(
-            v,
-            Value::Int(_) | Value::Str(_) | Value::Num(_) | Value::Rat(..) | Value::Bool(_)
+            v.view(),
+            ValueView::Int(_)
+                | ValueView::Str(_)
+                | ValueView::Num(_)
+                | ValueView::Rat(..)
+                | ValueView::Bool(_)
         ),
         Expr::ArrayLiteral(elems) => {
             !elems.is_empty() && elems.iter().all(|e| matches!(e, Expr::Literal(_)))

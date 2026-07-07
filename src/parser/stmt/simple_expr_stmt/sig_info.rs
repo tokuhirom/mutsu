@@ -1,5 +1,6 @@
 use crate::ast::Expr;
 use crate::value::Value;
+use crate::value::ValueView;
 
 /// Extract variable names from a Signature literal expression for signature binding.
 /// Returns None if the expression is not a Signature literal.
@@ -16,11 +17,14 @@ pub(super) struct SigParamInfo {
 }
 
 pub(super) fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamInfo>> {
-    let Expr::Literal(Value::Instance {
+    let Expr::Literal(lit) = expr else {
+        return None;
+    };
+    let ValueView::Instance {
         class_name,
         attributes,
         ..
-    }) = expr
+    } = lit.view()
     else {
         return None;
     };
@@ -29,12 +33,12 @@ pub(super) fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamI
     }
     let map = attributes.as_map();
     let params = map.get("params")?;
-    let Value::Array(param_list, ..) = params else {
+    let ValueView::Array(param_list, ..) = params.view() else {
         return None;
     };
     let mut infos = Vec::new();
     for param in param_list.iter() {
-        let Value::Instance { attributes, .. } = param else {
+        let ValueView::Instance { attributes, .. } = param.view() else {
             infos.push(SigParamInfo {
                 sigiled_name: String::new(),
                 is_named: false,
@@ -42,16 +46,19 @@ pub(super) fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamI
             });
             continue;
         };
-        let sigiled_name = match attributes.as_map().get("name") {
-            Some(Value::Str(name)) => name.to_string(),
+        let sigiled_name = match attributes.as_map().get("name").map(Value::view) {
+            Some(ValueView::Str(name)) => name.to_string(),
             _ => String::new(),
         };
-        let is_named = matches!(attributes.as_map().get("named"), Some(Value::Bool(true)));
-        let named_keys = match attributes.as_map().get("named_names") {
-            Some(Value::Array(arr, ..)) => arr
+        let is_named = matches!(
+            attributes.as_map().get("named").map(Value::view),
+            Some(ValueView::Bool(true))
+        );
+        let named_keys = match attributes.as_map().get("named_names").map(Value::view) {
+            Some(ValueView::Array(arr, ..)) => arr
                 .iter()
-                .filter_map(|v| match v {
-                    Value::Str(s) => Some(s.to_string()),
+                .filter_map(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.to_string()),
                     _ => None,
                 })
                 .collect(),
@@ -87,14 +94,21 @@ pub(super) fn extract_static_named_map(
                 right,
             } => {
                 let key = match left.as_ref() {
-                    Expr::Literal(Value::Str(s)) => s.to_string(),
+                    Expr::Literal(lit) => match lit.view() {
+                        ValueView::Str(s) => s.to_string(),
+                        _ => return None,
+                    },
                     Expr::BareWord(s) => s.clone(),
                     _ => return None,
                 };
                 map.insert(key, (**right).clone());
             }
-            Expr::Literal(Value::Pair(k, v)) => {
-                map.insert(k.to_string(), Expr::Literal((**v).clone()));
+            Expr::Literal(lit) => {
+                if let ValueView::Pair(k, v) = lit.view() {
+                    map.insert(k.to_string(), Expr::Literal(v.clone()));
+                } else {
+                    return None;
+                }
             }
             _ => return None,
         }

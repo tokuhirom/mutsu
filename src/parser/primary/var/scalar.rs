@@ -325,11 +325,11 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
     // $?LINE is a compile-time constant: replace with the current line number
     if full_name == "?LINE" {
         let line = crate::parser::primary::current_line_number(input);
-        return Ok((rest, Expr::Literal(Value::Int(line))));
+        return Ok((rest, Expr::Literal(Value::int(line))));
     }
     // $?TABSTOP is a compile-time constant: hardcoded to 8
     if full_name == "?TABSTOP" {
-        return Ok((rest, Expr::Literal(Value::Int(8))));
+        return Ok((rest, Expr::Literal(Value::int(8))));
     }
     // Normalize positional capture variables: $00 → $0, $01 → $1, etc.
     // Strip leading zeros from all-digit variable names so $00 resolves to $0.

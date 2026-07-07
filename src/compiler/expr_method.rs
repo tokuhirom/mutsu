@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Compiler {
     /// Compile method call on indexed target: .VAR on @a[0] / %h<k>
@@ -365,7 +366,7 @@ impl Compiler {
             call_args.push(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str_from("delete"))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::Literal(Value::Bool(true))),
+                right: Box::new(Expr::Literal(Value::TRUE)),
             });
             self.compile_expr(&Expr::Call {
                 name: *sub_name,
@@ -391,11 +392,13 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::FatArrow,
                 right,
             } = &args[0]
-            && let Expr::Literal(Value::Str(mode)) = left.as_ref()
+            && let Expr::Literal(mode_lit) = left.as_ref()
+            && let ValueView::Str(mode) = mode_lit.view()
             && matches!(mode.as_ref().as_str(), "k" | "v" | "p" | "kv")
-            && let Expr::Literal(Value::Bool(positive)) = right.as_ref()
+            && let Expr::Literal(pos_lit) = right.as_ref()
+            && let ValueView::Bool(positive) = pos_lit.view()
         {
-            let mode_str = if *positive {
+            let mode_str = if positive {
                 mode.to_string()
             } else {
                 format!("not-{mode}")
@@ -409,7 +412,7 @@ impl Compiler {
                 Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str_from("delete"))),
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right: Box::new(Expr::Literal(Value::Bool(true))),
+                    right: Box::new(Expr::Literal(Value::TRUE)),
                 },
             ];
             self.compile_expr(&Expr::Call {
@@ -502,7 +505,7 @@ impl Compiler {
             let mutate = Expr::HyperOp {
                 op: op.to_string(),
                 left: Box::new(target.clone()),
-                right: Box::new(Expr::Literal(Value::Int(1))),
+                right: Box::new(Expr::Literal(Value::int(1))),
                 dwim_left: false,
                 dwim_right: true,
             };

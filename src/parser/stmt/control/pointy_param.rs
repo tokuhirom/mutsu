@@ -295,7 +295,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 onearg: false,
                 sigilless: false,
                 type_constraint,
-                literal_value: Some(crate::value::Value::Int(parsed)),
+                literal_value: Some(crate::value::Value::int(parsed)),
                 sub_signature: None,
                 outer_sub_signature: None,
                 code_signature: None,

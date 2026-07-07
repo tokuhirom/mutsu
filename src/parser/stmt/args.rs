@@ -359,7 +359,7 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
                 r,
                 CallArg::Named {
                     name,
-                    value: Some(Expr::Literal(Value::Bool(false))),
+                    value: Some(Expr::Literal(Value::FALSE)),
                 },
             ));
         }

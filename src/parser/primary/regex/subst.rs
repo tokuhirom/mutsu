@@ -1,7 +1,5 @@
 //! Substitution expression building helpers.
 
-use std::sync::Arc;
-
 use crate::ast::{Expr, Stmt};
 use crate::parser::expr::expression;
 use crate::parser::helpers::ws;
@@ -115,7 +113,7 @@ pub(super) fn build_topic_subst_compound_expr(
         }
     };
 
-    let regex_value = Value::Regex(Arc::new(pattern));
+    let regex_value = Value::regex(pattern);
 
     let mut args = vec![
         Expr::Literal(regex_value),
@@ -126,10 +124,7 @@ pub(super) fn build_topic_subst_compound_expr(
         },
     ];
     if adverbs.global {
-        args.push(Expr::Literal(Value::Pair(
-            "g".to_string(),
-            Box::new(Value::Bool(true)),
-        )));
+        args.push(Expr::Literal(Value::pair("g".to_string(), Value::TRUE)));
     }
 
     Ok(Expr::AssignExpr {
@@ -164,7 +159,7 @@ pub(super) fn build_topic_subst_expr(
     let regex_value = if adverbs.perl5 {
         build_regex_with_adverbs(pattern, adverbs)
     } else {
-        Value::Regex(Arc::new(pattern))
+        Value::regex(pattern)
     };
 
     let mut args = vec![
@@ -176,10 +171,7 @@ pub(super) fn build_topic_subst_expr(
         },
     ];
     if adverbs.global {
-        args.push(Expr::Literal(Value::Pair(
-            "g".to_string(),
-            Box::new(Value::Bool(true)),
-        )));
+        args.push(Expr::Literal(Value::pair("g".to_string(), Value::TRUE)));
     }
 
     Ok(Expr::AssignExpr {
@@ -213,7 +205,7 @@ pub(super) fn build_non_destructive_subst_expr(
     let regex_value = if adverbs.perl5 {
         build_regex_with_adverbs(pattern, adverbs)
     } else {
-        Value::Regex(Arc::new(pattern))
+        Value::regex(pattern)
     };
 
     let mut args = vec![
@@ -225,27 +217,24 @@ pub(super) fn build_non_destructive_subst_expr(
         },
     ];
     if adverbs.global {
-        args.push(Expr::Literal(Value::Pair(
-            "g".to_string(),
-            Box::new(Value::Bool(true)),
-        )));
+        args.push(Expr::Literal(Value::pair("g".to_string(), Value::TRUE)));
     }
     if adverbs.samecase {
-        args.push(Expr::Literal(Value::Pair(
+        args.push(Expr::Literal(Value::pair(
             "samecase".to_string(),
-            Box::new(Value::Bool(true)),
+            Value::TRUE,
         )));
     }
     if adverbs.samemark {
-        args.push(Expr::Literal(Value::Pair(
+        args.push(Expr::Literal(Value::pair(
             "samemark".to_string(),
-            Box::new(Value::Bool(true)),
+            Value::TRUE,
         )));
     }
     if adverbs.samespace {
-        args.push(Expr::Literal(Value::Pair(
+        args.push(Expr::Literal(Value::pair(
             "samespace".to_string(),
-            Box::new(Value::Bool(true)),
+            Value::TRUE,
         )));
     }
 

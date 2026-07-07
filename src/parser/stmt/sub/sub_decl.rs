@@ -10,10 +10,14 @@ pub(crate) fn parse_indirect_decl_name(input: &str) -> PResult<'_, (String, Expr
     let (rest, expr) = expression(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = parse_char(rest, ')')?;
-    let name = match &expr {
-        Expr::Literal(Value::Str(s)) => s.to_string(),
-        Expr::BareWord(s) => s.clone(),
-        _ => "__INDIRECT_DECL_NAME__".to_string(),
+    let name = if let Expr::Literal(v) = &expr
+        && let crate::value::ValueView::Str(s) = v.view()
+    {
+        s.to_string()
+    } else if let Expr::BareWord(s) = &expr {
+        s.clone()
+    } else {
+        "__INDIRECT_DECL_NAME__".to_string()
     };
     Ok((rest, (name, expr)))
 }

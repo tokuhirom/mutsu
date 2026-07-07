@@ -45,7 +45,7 @@ fn loop_header_item(input: &str) -> PResult<'_, Stmt> {
                 rest,
                 Stmt::VarDecl {
                     name,
-                    expr: Expr::Literal(crate::value::Value::Nil),
+                    expr: Expr::Literal(crate::value::Value::NIL),
                     type_constraint: None,
                     is_state,
                     is_our: false,
@@ -324,7 +324,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let init = repeat_param.as_ref().map(|name| {
             Box::new(Stmt::VarDecl {
                 name: name.clone(),
-                expr: Expr::Literal(crate::value::Value::Nil),
+                expr: Expr::Literal(crate::value::Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -337,7 +337,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
             name,
-            expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+            expr: Box::new(Expr::Literal(crate::value::Value::TRUE)),
             is_bind: false,
         });
         return Ok((
@@ -366,7 +366,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         let init = repeat_param.as_ref().map(|name| {
             Box::new(Stmt::VarDecl {
                 name: name.clone(),
-                expr: Expr::Literal(crate::value::Value::Nil),
+                expr: Expr::Literal(crate::value::Value::NIL),
                 type_constraint: None,
                 is_state: false,
                 is_our: false,
@@ -379,7 +379,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
         });
         let step = repeat_param.map(|name| Expr::AssignExpr {
             name,
-            expr: Box::new(Expr::Literal(crate::value::Value::Bool(true))),
+            expr: Box::new(Expr::Literal(crate::value::Value::TRUE)),
             is_bind: false,
         });
         return Ok((

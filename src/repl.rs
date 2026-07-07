@@ -1,6 +1,5 @@
 use crate::Interpreter;
 use crate::builtins::native_method_0arg;
-use crate::value::Value;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
@@ -89,7 +88,7 @@ fn process_line(
                 Some(output)
             } else if !had_output
                 && let Some(value) = interpreter.last_value.take()
-                && !matches!(value, Value::Nil)
+                && !value.is_nil()
             {
                 let text = if let Some(Ok(gist)) =
                     native_method_0arg(&value, crate::symbol::Symbol::intern("gist"))

@@ -172,11 +172,11 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
                     let mut attrs = std::collections::HashMap::new();
                     attrs.insert(
                         "outer".to_string(),
-                        crate::value::Value::Package(crate::symbol::Symbol::intern(outer)),
+                        crate::value::Value::package(crate::symbol::Symbol::intern(outer)),
                     );
                     attrs.insert(
                         "inner".to_string(),
-                        crate::value::Value::Package(crate::symbol::Symbol::intern(&tc)),
+                        crate::value::Value::package(crate::symbol::Symbol::intern(&tc)),
                     );
                     let msg = format!(
                         "X::Syntax::Variable::ConflictingTypes: Variable definition of type {} (from declaration) conflicts with type {} (from inner declaration)",
@@ -498,7 +498,7 @@ fn parse_destructuring_with_rhs(
             // already enforces this), reading the i-th temp element. (subtypes.t 90)
             let read = Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                index: Box::new(Expr::Literal(Value::int(i as i64))),
                 is_positional: true,
             };
             stmts.push(Stmt::VarDecl {
@@ -536,14 +536,14 @@ fn parse_destructuring_with_rhs(
             } else if is_hash {
                 Expr::Hash(Vec::new())
             } else {
-                Expr::Literal(Value::Nil)
+                Expr::Literal(Value::NIL)
             }
         } else if dvar.is_slurpy || is_implicit_slurpy {
             seen_slurpy = true;
             Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                 index: Box::new(Expr::Binary {
-                    left: Box::new(Expr::Literal(Value::Int(i as i64))),
+                    left: Box::new(Expr::Literal(Value::int(i as i64))),
                     op: TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
                 }),
@@ -552,7 +552,7 @@ fn parse_destructuring_with_rhs(
         } else {
             let read = Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
-                index: Box::new(Expr::Literal(Value::Int(i as i64))),
+                index: Box::new(Expr::Literal(Value::int(i as i64))),
                 is_positional: true,
             };
             // A *typed* element whose RHS ran out of values gets the type's
@@ -606,10 +606,10 @@ fn native_type_default(tc: &Option<String>) -> Expr {
         Some(
             "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16" | "uint32"
             | "uint64",
-        ) => Expr::Literal(Value::Int(0)),
-        Some("num" | "num32" | "num64") => Expr::Literal(Value::Num(0.0)),
+        ) => Expr::Literal(Value::int(0)),
+        Some("num" | "num32" | "num64") => Expr::Literal(Value::num(0.0)),
         Some("str") => Expr::Literal(Value::str(String::new())),
-        _ => Expr::Literal(Value::Nil),
+        _ => Expr::Literal(Value::NIL),
     }
 }
 

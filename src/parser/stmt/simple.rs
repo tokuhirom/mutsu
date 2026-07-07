@@ -13,6 +13,7 @@ use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use crate::value::ValueView;
 
 pub(super) use super::simple_expr_stmt::{expr_stmt, let_stmt, temp_stmt};
 
@@ -186,7 +187,9 @@ pub(super) fn add_xor_sink_warnings(expr: &Expr) {
         return;
     }
     for term in terms.iter().skip(1) {
-        if let Expr::Literal(Value::Str(s)) = term {
+        if let Expr::Literal(lit) = term
+            && let ValueView::Str(s) = lit.view()
+        {
             add_parse_warning(format!(
                 "Useless use of constant string \"{}\" in sink context (line 1)",
                 s

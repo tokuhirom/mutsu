@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 /// Snapshot of the compiler's lexical-scope-sensitive state, saved on block
 /// entry and restored on block exit.
@@ -62,16 +63,20 @@ impl Compiler {
             Some(Expr::ArrayLiteral(items)) => {
                 let mut names = std::collections::HashSet::new();
                 for item in items {
-                    if let Expr::Literal(Value::Str(s)) = item {
+                    if let Expr::Literal(lit) = item
+                        && let ValueView::Str(s) = lit.view()
+                    {
                         names.insert(Self::normalize_dynamic_scope_name(s));
                     }
                 }
                 self.dynamic_scope_all = false;
                 self.dynamic_scope_names = Some(names);
             }
-            Some(Expr::Literal(Value::Str(s))) => {
+            Some(Expr::Literal(lit)) if matches!(lit.view(), ValueView::Str(_)) => {
                 let mut names = std::collections::HashSet::new();
-                names.insert(Self::normalize_dynamic_scope_name(s));
+                if let ValueView::Str(s) = lit.view() {
+                    names.insert(Self::normalize_dynamic_scope_name(s));
+                }
                 self.dynamic_scope_all = false;
                 self.dynamic_scope_names = Some(names);
             }

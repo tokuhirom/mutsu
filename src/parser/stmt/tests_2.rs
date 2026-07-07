@@ -2,7 +2,6 @@
 
 use super::*;
 use crate::ast::Expr;
-use crate::value::Value;
 
 #[test]
 fn parse_for_loop_with_optional_pointy_param() {
@@ -197,7 +196,7 @@ fn parse_my_regex_decl() {
             if name == "rx"
                 && matches!(
                     body.as_slice(),
-                    [Stmt::Expr(Expr::Literal(Value::Regex(pattern)))] if pattern.as_str() == "abc"
+                    [Stmt::Expr(Expr::Literal(lit))] if matches!(lit.view(), crate::value::ValueView::Regex(pattern) if pattern.as_str() == "abc")
                 )
     ));
 }

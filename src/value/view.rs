@@ -388,6 +388,12 @@ impl Value {
         Value::CompUnitDepSpec { short_name }
     }
 
+    /// Construct a `RegexWithAdverbs` from its adverb payload (boxing it).
+    #[inline]
+    pub(crate) fn regex_with_adverbs(adverbs: RegexAdverbs) -> Self {
+        Value::RegexWithAdverbs(Box::new(adverbs))
+    }
+
     /// Construct an inclusive integer `Range`.
     #[inline]
     pub fn range(start: i64, end: i64) -> Self {

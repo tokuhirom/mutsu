@@ -2,7 +2,7 @@ use crate::ast::ParamDef;
 use crate::parser::expr::expression;
 use crate::parser::helpers::{ws, ws1};
 use crate::parser::parse_result::{PError, PResult, parse_char};
-use crate::value::Value;
+use crate::value::ValueView;
 
 pub(crate) fn parse_single_param(input: &str) -> PResult<'_, ParamDef> {
     let (rest, mut p) = parse_single_param_inner(input)?;
@@ -592,13 +592,13 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         // If no explicit type constraint, infer from the literal value type
         p.type_constraint = type_constraint.or_else(|| {
             Some(
-                match &v {
-                    Value::Int(_) | Value::BigInt(_) => "Int",
-                    Value::Num(_) => "Num",
-                    Value::Rat(..) | Value::FatRat(..) | Value::BigRat(..) => "Rat",
-                    Value::Str(_) => "Str",
-                    Value::Bool(_) => "Bool",
-                    Value::Complex(..) => "Complex",
+                match v.view() {
+                    ValueView::Int(_) | ValueView::BigInt(_) => "Int",
+                    ValueView::Num(_) => "Num",
+                    ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => "Rat",
+                    ValueView::Str(_) => "Str",
+                    ValueView::Bool(_) => "Bool",
+                    ValueView::Complex(..) => "Complex",
                     _ => return None,
                 }
                 .to_string(),

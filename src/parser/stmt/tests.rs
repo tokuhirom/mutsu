@@ -3,7 +3,7 @@
 use super::*;
 use crate::ast::{CallArg, Expr};
 use crate::token_kind::TokenKind;
-use crate::value::Value;
+use crate::value::ValueView;
 
 #[test]
 fn parse_use_test() {
@@ -360,7 +360,7 @@ fn parse_parenthesized_assign_lvalue_stmt() {
             assert!(matches!(
                 &stmts[1],
                 Stmt::Assign { name, expr, .. }
-                    if name == "x" && matches!(expr, Expr::Literal(Value::Int(5)))
+                    if name == "x" && matches!(expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(5)))
             ));
         }
         other => panic!("expected block stmt, got {:?}", other),

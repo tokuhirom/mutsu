@@ -15,6 +15,7 @@
 use crate::ast::{CallArg, Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::Value;
+use crate::value::ValueView;
 
 /// Entry point: emit sink-context warnings for the mainline statement list.
 pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
@@ -347,20 +348,20 @@ fn describe_useless(expr: &Expr) -> Option<String> {
 }
 
 fn describe_literal(v: &Value) -> Option<String> {
-    match v {
-        Value::Int(n) => Some(format!("constant integer {}", n)),
-        Value::BigInt(n) => Some(format!("constant integer {}", n)),
-        Value::Num(_) => Some(format!(
+    match v.view() {
+        ValueView::Int(n) => Some(format!("constant integer {}", n)),
+        ValueView::BigInt(n) => Some(format!("constant integer {}", n)),
+        ValueView::Num(_) => Some(format!(
             "constant floating-point number {}",
             v.to_string_value()
         )),
-        Value::Rat(..) | Value::FatRat(..) | Value::BigRat(..) => {
+        ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
             Some(format!("constant rational {}", v.to_string_value()))
         }
-        Value::Str(s) => Some(format!("constant string \"{}\"", s)),
-        Value::Complex(..) => Some(format!("constant value {}", v.to_string_value())),
-        Value::Package(_) => Some(format!("constant value {}", v.to_string_value())),
-        Value::Mixin(inner, _) => {
+        ValueView::Str(s) => Some(format!("constant string \"{}\"", s)),
+        ValueView::Complex(..) => Some(format!("constant value {}", v.to_string_value())),
+        ValueView::Package(_) => Some(format!("constant value {}", v.to_string_value())),
+        ValueView::Mixin(inner, _) => {
             // `<123.456>` etc. parse to a Mixin carrying a Str representation;
             // describe by the inner value's category but the stringified whole.
             describe_literal(inner).map(|_| format!("constant value {}", v.to_string_value()))
@@ -373,12 +374,12 @@ fn describe_literal(v: &Value) -> Option<String> {
 /// for the canonical number rendering, keeping the user's radix / scientific /
 /// Unicode format in the warning.
 fn describe_literal_with_src(v: &Value, src: &str) -> Option<String> {
-    match v {
-        Value::Int(_) | Value::BigInt(_) => Some(format!("constant integer {}", src)),
-        Value::Num(_) => Some(format!("constant floating-point number {}", src)),
+    match v.view() {
+        ValueView::Int(_) | ValueView::BigInt(_) => Some(format!("constant integer {}", src)),
+        ValueView::Num(_) => Some(format!("constant floating-point number {}", src)),
         // A source-preserving colonpair (`:foo(42)`): echo the original syntax
         // quoted, matching Raku's `Useless use of ":foo(42)" in sink context`.
-        Value::Pair(..) | Value::ValuePair(..) => Some(format!("\"{}\"", src)),
+        ValueView::Pair(..) | ValueView::ValuePair(..) => Some(format!("\"{}\"", src)),
         _ => describe_literal(v),
     }
 }
@@ -388,8 +389,10 @@ fn describe_literal_with_src(v: &Value, src: &str) -> Option<String> {
 fn render_source(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Grouped(inner) | Expr::PositionalPair(inner) => render_source(inner),
-        Expr::Literal(Value::Str(s)) => Some((**s).clone()),
-        Expr::Literal(v) => Some(v.to_string_value()),
+        Expr::Literal(lit) => match lit.view() {
+            ValueView::Str(s) => Some((**s).clone()),
+            _ => Some(lit.to_string_value()),
+        },
         Expr::LiteralSrc(_, src) => Some(src.to_string()),
         Expr::Var(n) => Some(format!("${}", n)),
         Expr::ArrayVar(n) => Some(format!("@{}", n)),

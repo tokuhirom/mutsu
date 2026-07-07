@@ -100,7 +100,7 @@ fn build_vcs_conflict_error(lines: &[i64]) -> RuntimeError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("payload".to_string(), Value::str(PAYLOAD.to_string()));
         attrs.insert("message".to_string(), Value::str(PAYLOAD.to_string()));
-        attrs.insert("line".to_string(), Value::Int(line));
+        attrs.insert("line".to_string(), Value::int(line));
         Value::make_instance(crate::symbol::Symbol::intern("X::Comp::AdHoc"), attrs)
     };
 
@@ -138,7 +138,7 @@ fn build_whenever_out_of_scope_error(line: i64) -> RuntimeError {
     attrs.insert("message".to_string(), Value::str(MESSAGE.to_string()));
     attrs.insert("payload".to_string(), Value::str(MESSAGE.to_string()));
     if line > 0 {
-        attrs.insert("line".to_string(), Value::Int(line));
+        attrs.insert("line".to_string(), Value::int(line));
     }
     let mut err = RuntimeError::new(MESSAGE);
     err.set_code(Some(RuntimeErrorCode::ParseGeneric));
@@ -169,7 +169,7 @@ fn build_outer_redeclaration_error(symbol: &str, line: i64) -> RuntimeError {
     attrs.insert("postfix".to_string(), Value::str(String::new()));
     attrs.insert("what".to_string(), Value::str("symbol".to_string()));
     if line > 0 {
-        attrs.insert("line".to_string(), Value::Int(line));
+        attrs.insert("line".to_string(), Value::int(line));
     }
     let mut err = RuntimeError::new(&message);
     err.set_code(Some(RuntimeErrorCode::ParseGeneric));
@@ -505,7 +505,7 @@ pub(crate) fn parse_program_partial(input: &str) -> (Vec<Stmt>, Option<String>) 
 mod tests {
     use super::parse_program;
     use crate::ast::{Expr, Stmt};
-    use crate::value::{RuntimeErrorCode, Value};
+    use crate::value::{RuntimeErrorCode, ValueView};
 
     /// Filter out SetLine statements from parsed output for test assertions.
     fn filter_setline(stmts: Vec<Stmt>) -> Vec<Stmt> {
@@ -562,11 +562,11 @@ mod tests {
                 assert_eq!(name, "f");
                 assert_eq!(args.len(), 3);
                 assert!(
-                    matches!(&args[0], Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "say 42")
+                    matches!(&args[0], Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "say 42"))
                 );
                 assert!(matches!(&args[1], Expr::Hash(_)));
                 assert!(
-                    matches!(&args[2], Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "msg")
+                    matches!(&args[2], Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "msg"))
                 );
             }
             other => panic!("expected function call expression, got {other:?}"),
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(items.len(), 7);
         assert!(matches!(
             &items[3],
-            Expr::Literal(crate::value::Value::Str(s)) if s.as_str() == "\r\nth"
+            Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "\r\nth")
         ));
     }
 
@@ -746,7 +746,9 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
                     Expr::Call { name, args } => {
                         assert_eq!(name.resolve(), "isfive");
                         assert_eq!(args.len(), 1);
-                        assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+                        assert!(
+                            matches!(&args[0], Expr::Literal(v) if matches!(v.view(), ValueView::Int(5)))
+                        );
                     }
                     other => panic!("expected lhs call, got {other:?}"),
                 }
@@ -754,7 +756,9 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
                     Expr::Call { name, args } => {
                         assert_eq!(name.resolve(), "isfive");
                         assert_eq!(args.len(), 1);
-                        assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+                        assert!(
+                            matches!(&args[0], Expr::Literal(v) if matches!(v.view(), ValueView::Int(5)))
+                        );
                     }
                     other => panic!("expected rhs call, got {other:?}"),
                 }
@@ -821,7 +825,9 @@ is (1 + 2 § 3), 1, "x";
                 assert_eq!(name.resolve(), "is");
                 match &args[0] {
                     Expr::Binary { left, op, right } => {
-                        assert!(matches!(left.as_ref(), Expr::Literal(Value::Int(1))));
+                        assert!(
+                            matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Int(1)))
+                        );
                         assert_eq!(*op, crate::token_kind::TokenKind::Plus);
                         assert!(matches!(
                             right.as_ref(),

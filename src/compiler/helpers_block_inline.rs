@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::ValueView;
 
 impl Compiler {
     /// Compile a `given`/`when`/`default` body's final statement in value
@@ -202,7 +203,7 @@ impl Compiler {
                         // Record for an enclosing scope-isolating do-block.
                         self.record_block_decl(name);
                         let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
-                        let name_idx = self.code.add_constant(Value::Str(name.clone().into()));
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::SetVarDynamic {
                             name_idx,
                             dynamic: is_dynamic,
@@ -236,7 +237,7 @@ impl Compiler {
                             if let Some(tc) = type_constraint
                                 && !name.starts_with('@')
                                 && !name.starts_with('%')
-                                && !matches!(expr, Expr::Literal(Value::Nil))
+                                && !matches!(expr, Expr::Literal(lit) if lit.is_nil())
                             {
                                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                                 let display_name = format!("${}", name);
@@ -315,13 +316,16 @@ impl Compiler {
     pub(super) fn check_literal_type_mismatch(&self, var_name: &str, expr: &Expr) -> Option<Value> {
         // Only check plain assignment of literal values
         let (lit_type, lit_repr) = match expr {
-            Expr::Literal(Value::Int(n)) => ("Int", format!("{}", n)),
-            Expr::Literal(Value::Num(n)) => ("Num", format!("{:?}", n)),
-            Expr::Literal(Value::Rat(n, d)) => {
-                let r = *n as f64 / *d as f64;
-                ("Rat", format!("{}", r))
-            }
-            Expr::Literal(Value::Complex(re, im)) => ("Complex", format!("<{}+{}i>", re, im)),
+            Expr::Literal(lit) => match lit.view() {
+                ValueView::Int(n) => ("Int", format!("{}", n)),
+                ValueView::Num(n) => ("Num", format!("{:?}", n)),
+                ValueView::Rat(n, d) => {
+                    let r = n as f64 / d as f64;
+                    ("Rat", format!("{}", r))
+                }
+                ValueView::Complex(re, im) => ("Complex", format!("<{}+{}i>", re, im)),
+                _ => return None,
+            },
             _ => return None,
         };
 

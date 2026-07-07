@@ -33,7 +33,7 @@ impl Compiler {
                 crate::ast::CallArg::Named { name, value: None } => Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right: Box::new(Expr::Literal(Value::Bool(true))),
+                    right: Box::new(Expr::Literal(Value::TRUE)),
                 },
                 crate::ast::CallArg::Slip(e) => Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
@@ -190,7 +190,7 @@ impl Compiler {
             sub_compiler.compile_try(body, &None);
             if sink_last_expr {
                 sub_compiler.code.emit(OpCode::Pop);
-                let nil_idx = sub_compiler.code.add_constant(Value::Nil);
+                let nil_idx = sub_compiler.code.add_constant(Value::NIL);
                 sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
             }
         } else if Self::has_block_enter_leave_phasers(body) {
@@ -249,7 +249,7 @@ impl Compiler {
                 let is_last_enter = i == enter_bodies.len() - 1;
                 if is_last_enter && last_is_enter {
                     if enter_body.is_empty() {
-                        sub_compiler.compile_expr(&Expr::Literal(Value::Nil));
+                        sub_compiler.compile_expr(&Expr::Literal(Value::NIL));
                     } else {
                         for (j, inner) in enter_body.iter().enumerate() {
                             if j == enter_body.len() - 1 {
@@ -257,8 +257,7 @@ impl Compiler {
                                     Stmt::Expr(expr) => sub_compiler.compile_expr(expr),
                                     _ => {
                                         sub_compiler.compile_stmt(inner);
-                                        sub_compiler
-                                            .compile_expr(&Expr::Literal(Value::Bool(true)));
+                                        sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
                                     }
                                 }
                             } else {
@@ -450,7 +449,7 @@ impl Compiler {
             for stmt in body {
                 sub_compiler.compile_stmt(stmt);
             }
-            let nil_idx = sub_compiler.code.add_constant(Value::Nil);
+            let nil_idx = sub_compiler.code.add_constant(Value::NIL);
             sub_compiler.code.emit(OpCode::LoadConst(nil_idx));
             return;
         }
@@ -666,8 +665,7 @@ impl Compiler {
                                         }
                                         _ => {
                                             sub_compiler.compile_stmt(inner);
-                                            sub_compiler
-                                                .compile_expr(&Expr::Literal(Value::Bool(true)));
+                                            sub_compiler.compile_expr(&Expr::Literal(Value::TRUE));
                                         }
                                     }
                                 } else {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::ValueView;
 
 #[test]
 fn parse_pair_lvalue_colonparen_form() {
@@ -6,7 +7,7 @@ fn parse_pair_lvalue_colonparen_form() {
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
-        Expr::Literal(Value::Instance { ref class_name, .. }) if class_name == "Signature"
+        Expr::Literal(lit) if matches!(lit.view(), ValueView::Instance { class_name, .. } if class_name == "Signature")
     ));
 }
 
@@ -32,7 +33,9 @@ fn parse_unicode_custom_postfix_operator_call() {
         Expr::Call { name, args } => {
             assert_eq!(name, "postfix:<§>");
             assert_eq!(args.len(), 1);
-            assert!(matches!(args[0], Expr::Literal(Value::Int(3))));
+            assert!(
+                matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(3)))
+            );
         }
         _ => panic!("expected unicode postfix operator call"),
     }
@@ -46,7 +49,9 @@ fn parse_dot_custom_postfix_operator_call() {
         Expr::Call { name, args } => {
             assert_eq!(name, "postfix:<!>");
             assert_eq!(args.len(), 1);
-            assert!(matches!(args[0], Expr::Literal(Value::Int(5))));
+            assert!(
+                matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(5)))
+            );
         }
         _ => panic!("expected dot-postfix operator call"),
     }
@@ -174,8 +179,12 @@ fn parse_array_slice_assignment_with_comma_rhs() {
         Expr::IndexAssign { value, .. } => match *value {
             Expr::ArrayLiteral(items) => {
                 assert_eq!(items.len(), 2);
-                assert!(matches!(items[0], Expr::Literal(Value::Int(10))));
-                assert!(matches!(items[1], Expr::Literal(Value::Int(20))));
+                assert!(
+                    matches!(&items[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(10)))
+                );
+                assert!(
+                    matches!(&items[1], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(20)))
+                );
             }
             other => panic!("expected ArrayLiteral RHS, got {other:?}"),
         },
@@ -192,10 +201,10 @@ fn parse_hash_slice_assignment_with_comma_rhs() {
             Expr::ArrayLiteral(items) => {
                 assert_eq!(items.len(), 2);
                 assert!(
-                    matches!(items[0], Expr::Literal(Value::Str(ref s)) if s.as_str() == "one")
+                    matches!(&items[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "one"))
                 );
                 assert!(
-                    matches!(items[1], Expr::Literal(Value::Str(ref s)) if s.as_str() == "two")
+                    matches!(&items[1], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "two"))
                 );
             }
             other => panic!("expected ArrayLiteral RHS, got {other:?}"),
@@ -245,7 +254,9 @@ fn parse_ascii_minus_on_angle_complex_literal() {
             expr,
         } => {
             // Single-element <42+2i> produces plain Complex (not ComplexStr allomorph)
-            assert!(matches!(*expr, Expr::Literal(Value::Complex(42.0, 2.0))));
+            assert!(
+                matches!(&*expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Complex(42.0, 2.0)))
+            );
         }
         _ => panic!("expected unary minus expression"),
     }

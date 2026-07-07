@@ -130,7 +130,7 @@ pub(crate) fn build_compound_assign_expr(
             modifier: _,
             quoted: _,
         } if name == "AT-POS" && args.len() == 1 => {
-            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::Nil));
+            let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             return Ok(compound_index_assign_expr(
                 *target,
                 index,
