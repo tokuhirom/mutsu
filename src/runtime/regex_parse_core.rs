@@ -1467,10 +1467,22 @@ impl Interpreter {
                             for _ in 0..keyword.len() {
                                 chars.next();
                             }
-                            // Read the inner pattern up to the closing '>'
+                            // Read the inner pattern up to the closing '>'.
                             let mut inner = String::new();
                             let mut angle_depth = 1usize;
-                            for ch in chars.by_ref() {
+                            while let Some(ch) = chars.next() {
+                                if ch == '\\' {
+                                    // Keep an escaped char (and its backslash)
+                                    // literally so an escaped delimiter (`\>`,
+                                    // `\<`) inside the assertion — e.g.
+                                    // `<!before \>>` — does not prematurely close
+                                    // it or shift the angle-depth count.
+                                    inner.push(ch);
+                                    if let Some(next) = chars.next() {
+                                        inner.push(next);
+                                    }
+                                    continue;
+                                }
                                 if ch == '<' {
                                     angle_depth += 1;
                                     inner.push(ch);
