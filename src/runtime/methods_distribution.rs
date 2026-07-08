@@ -141,6 +141,17 @@ impl Interpreter {
                 Some(self.cur_inst_uninstall(&prefix, &dist))
             }
             "installed" => Some(self.cur_inst_installed(&prefix)),
+            "can-install" => {
+                // Mirror rakudo's CompUnit::Repository::Installation.can-install:
+                // writable if the prefix is writable, or it does not yet exist and
+                // its parent directory is writable (so it can be created on install).
+                use crate::runtime::native_io::path_is_writable;
+                let prefix_path = std::path::Path::new(&prefix);
+                let can = path_is_writable(prefix_path)
+                    || (!prefix_path.exists()
+                        && prefix_path.parent().map(path_is_writable).unwrap_or(false));
+                Some(Ok(Value::truth(can)))
+            }
             "path-spec" => Some(Ok(Value::str(format!("inst#{prefix}")))),
             "short-id" => Some(Ok(Value::str_from("inst"))),
             "id" => {
