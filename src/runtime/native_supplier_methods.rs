@@ -277,6 +277,19 @@ impl Interpreter {
                             } => {
                                 self.handle_supply_forward(downstream_supplier_id, val)?;
                             }
+                            SupplierEmitAction::TransformCall {
+                                downstream_supplier_id,
+                                callable,
+                                is_grep,
+                                value: val,
+                            } => {
+                                self.handle_supply_transform_emit(
+                                    downstream_supplier_id,
+                                    callable,
+                                    is_grep,
+                                    val,
+                                )?;
+                            }
                         }
                     }
                 }
@@ -319,6 +332,13 @@ impl Interpreter {
                     }
                     // Propagate done to start-transform output suppliers
                     for out_sid in get_start_output_supplier_ids(supplier_id) {
+                        supplier_done(out_sid);
+                        for done_cb in take_supplier_done_callbacks(out_sid) {
+                            let _ = self.invoke_done_callback(done_cb);
+                        }
+                    }
+                    // Propagate done to grep/map transform output suppliers
+                    for out_sid in get_transform_output_supplier_ids(supplier_id) {
                         supplier_done(out_sid);
                         for done_cb in take_supplier_done_callbacks(out_sid) {
                             let _ = self.invoke_done_callback(done_cb);
@@ -667,6 +687,19 @@ impl Interpreter {
                             } => {
                                 self.handle_supply_forward(downstream_supplier_id, val)?;
                             }
+                            SupplierEmitAction::TransformCall {
+                                downstream_supplier_id,
+                                callable,
+                                is_grep,
+                                value: val,
+                            } => {
+                                self.handle_supply_transform_emit(
+                                    downstream_supplier_id,
+                                    callable,
+                                    is_grep,
+                                    val,
+                                )?;
+                            }
                         }
                     }
                 }
@@ -719,6 +752,13 @@ impl Interpreter {
                     }
                     // Propagate done to start-transform output suppliers
                     for out_sid in get_start_output_supplier_ids(sid) {
+                        supplier_done(out_sid);
+                        for done_cb in take_supplier_done_callbacks(out_sid) {
+                            let _ = self.invoke_done_callback(done_cb);
+                        }
+                    }
+                    // Propagate done to grep/map transform output suppliers
+                    for out_sid in get_transform_output_supplier_ids(sid) {
                         supplier_done(out_sid);
                         for done_cb in take_supplier_done_callbacks(out_sid) {
                             let _ = self.invoke_done_callback(done_cb);

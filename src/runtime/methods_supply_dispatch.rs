@@ -454,6 +454,11 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let mapper = args.first().cloned().unwrap_or(Value::NIL);
+        // Live (Supplier-backed) supply: register a transform tap so the map
+        // stays live and forwards each mapped value to the derived supply.
+        if let Some(live) = self.make_live_transform_supply(attributes, mapper.clone(), false) {
+            return Ok(live);
+        }
         let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
             let emitter = Value::make_instance(Symbol::intern("Supplier"), {
                 let mut a = HashMap::new();
@@ -481,6 +486,33 @@ impl Interpreter {
             attributes.get("live").cloned().unwrap_or(Value::FALSE),
         );
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+    }
+
+    /// If `attributes` describes a live (Supplier-backed) supply, register a
+    /// `grep`/`map` transform tap on it and return a new live derived Supply
+    /// that receives the filtered/mapped values. Returns `None` for a
+    /// materialized (snapshot) supply so the caller applies the transform
+    /// eagerly instead.
+    pub(super) fn make_live_transform_supply(
+        &mut self,
+        attributes: &HashMap<String, Value>,
+        callable: Value,
+        is_grep: bool,
+    ) -> Option<Value> {
+        let source_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes)?;
+        let downstream_sid = crate::runtime::native_methods::next_supplier_id();
+        crate::runtime::native_methods::register_supplier_transform_tap(
+            source_sid,
+            downstream_sid,
+            callable,
+            is_grep,
+        );
+        let mut new_attrs = HashMap::new();
+        new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+        new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+        new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+        new_attrs.insert("live".to_string(), Value::TRUE);
+        Some(Value::make_instance(Symbol::intern("Supply"), new_attrs))
     }
 
     /// Handle Supply.reduce method
@@ -584,6 +616,30 @@ impl Interpreter {
                 Self::sleep_for_supply_delay(delay_seconds);
                 self.call_sub_value(tap, vec![emitted], true)?;
             }
+        }
+        Ok(())
+    }
+
+    /// Handle a `grep`/`map` transform tap emission on a live supply: run the
+    /// callable on the value, then forward the (filtered or mapped) result to
+    /// the downstream supplier and drive its taps.
+    pub(in crate::runtime) fn handle_supply_transform_emit(
+        &mut self,
+        downstream_supplier_id: u64,
+        callable: Value,
+        is_grep: bool,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        if is_grep {
+            // `grep` uses smart-match semantics (`$_ ~~ matcher`), so a Callable
+            // is called, a type object type-checks, a Regex matches, etc.
+            let keep = self.smart_match_values(&value, &callable);
+            if keep {
+                self.handle_supply_forward(downstream_supplier_id, value)?;
+            }
+        } else {
+            let mapped = self.call_sub_value(callable, vec![value], true)?;
+            self.handle_supply_forward(downstream_supplier_id, mapped)?;
         }
         Ok(())
     }

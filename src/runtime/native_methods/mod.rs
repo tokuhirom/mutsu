@@ -38,7 +38,8 @@ pub(in crate::runtime) use state::{
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.
 pub(crate) use state::{
-    next_supplier_id, supplier_register_promise, supplier_snapshot, take_promise_combinator_sources,
+    next_supplier_id, supplier_register_promise, supplier_snapshot, supplier_snapshot_seqs,
+    take_promise_combinator_sources,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;
@@ -50,21 +51,21 @@ pub(in crate::runtime) use state_supplier::{
     close_supplier_channel_taps, create_whenever_done_group, flush_supplier_batch_taps,
     flush_supplier_line_taps, flush_supplier_words_taps, get_classify_state,
     get_classify_sub_supplier_ids, get_start_output_supplier_ids,
-    get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids, last_supplier_tap_id,
-    migrate_switch_inner, register_supplier_batch_tap, register_supplier_channel_tap,
-    register_supplier_classify_tap, register_supplier_close_callback,
-    register_supplier_done_callback, register_supplier_elems_tap, register_supplier_flat_tap,
-    register_supplier_lines_tap, register_supplier_migrate_tap, register_supplier_produce_tap,
-    register_supplier_quit_callback, register_supplier_start_tap, register_supplier_tap,
-    register_supplier_tap_with_head_limit, register_supplier_unique_tap,
-    register_supplier_whenever_quit_callback, register_supplier_words_tap,
-    register_supplier_zip_latest_tap, register_supplier_zip_tap, register_zip_latest_state,
-    register_zip_state, supplier_done_count, supplier_emit_callbacks, supplier_produce_update_acc,
-    supplier_tap_count, supplier_unique_get_seen, supplier_unique_mark_seen,
-    take_supplier_close_callbacks, take_supplier_done_callbacks, take_supplier_quit_callbacks,
-    take_supplier_whenever_quit_callbacks, update_classify_state, whenever_done_group_decrement,
-    zip_buffer_value, zip_latest_buffer_value, zip_latest_source_done, zip_latest_state_info,
-    zip_source_done, zip_state_info,
+    get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids,
+    get_transform_output_supplier_ids, last_supplier_tap_id, migrate_switch_inner,
+    register_supplier_batch_tap, register_supplier_channel_tap, register_supplier_classify_tap,
+    register_supplier_close_callback, register_supplier_done_callback, register_supplier_elems_tap,
+    register_supplier_flat_tap, register_supplier_lines_tap, register_supplier_migrate_tap,
+    register_supplier_produce_tap, register_supplier_quit_callback, register_supplier_start_tap,
+    register_supplier_tap, register_supplier_tap_with_head_limit, register_supplier_transform_tap,
+    register_supplier_unique_tap, register_supplier_whenever_quit_callback,
+    register_supplier_words_tap, register_supplier_zip_latest_tap, register_supplier_zip_tap,
+    register_zip_latest_state, register_zip_state, supplier_done_count, supplier_emit_callbacks,
+    supplier_produce_update_acc, supplier_tap_count, supplier_unique_get_seen,
+    supplier_unique_mark_seen, take_supplier_close_callbacks, take_supplier_done_callbacks,
+    take_supplier_quit_callbacks, take_supplier_whenever_quit_callbacks, update_classify_state,
+    whenever_done_group_decrement, zip_buffer_value, zip_latest_buffer_value,
+    zip_latest_source_done, zip_latest_state_info, zip_source_done, zip_state_info,
 };
 
 use super::*;

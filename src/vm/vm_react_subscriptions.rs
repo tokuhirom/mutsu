@@ -2,13 +2,148 @@
 //! split from `vm_react_loop` (§7-8 file split).
 use super::*;
 use crate::runtime::native_methods::{
-    SupplyEvent, supplier_snapshot, take_promise_combinator_sources,
+    SupplyEvent, supplier_snapshot_seqs, take_promise_combinator_sources,
 };
 use crate::runtime::subtest::{ReactSubscription, SupplyDrivePolicy};
 use std::sync::mpsc;
 use std::time::Duration;
 
 impl Interpreter {
+    /// Deliver every value currently buffered across all supplier-backed
+    /// subscriptions to their `whenever` consumers, merged into a single global
+    /// emit order (by each value's emit sequence number), then honour any
+    /// per-supplier `done`/`quit` signals. Returns `Ok(true)` if a consumer
+    /// raised react `done`; propagates `Err` for an unhandled supplier `quit`.
+    ///
+    /// Global-order merge (rather than draining one supplier fully before the
+    /// next) is what makes sibling `whenever $s.grep(...)` derived supplies
+    /// interleave the way Raku delivers them — each value reaches its consumer
+    /// in the order it was `emit`ted into the source, across suppliers. It also
+    /// honours Raku's ordering guarantee that values emitted before a later
+    /// terminating event are still delivered, since the polling loop calls this
+    /// both at the top of each iteration and just before running a receiver
+    /// (Promise / `start`) source's consumer.
+    fn drain_supplier_subs_ordered(
+        &mut self,
+        react_subs: &mut [ReactSubscription],
+    ) -> Result<bool, RuntimeError> {
+        // Deliver the globally-earliest pending value, one at a time; re-scan
+        // each round because a consumer may emit more or mark subs done.
+        loop {
+            let mut best: Option<(u64, usize, Value)> = None;
+            for (i, sub) in react_subs.iter().enumerate() {
+                if sub.done {
+                    continue;
+                }
+                let Some(sid) = sub.supplier_id else {
+                    continue;
+                };
+                if let Some(limit) = sub.head_limit
+                    && sub.emit_count >= limit
+                {
+                    continue;
+                }
+                let (values, seqs, _done, _quit) = supplier_snapshot_seqs(sid);
+                let idx = sub.supplier_next_index;
+                if idx < values.len() {
+                    let seq = seqs.get(idx).copied().unwrap_or(0);
+                    if best.as_ref().is_none_or(|(bseq, _, _)| seq < *bseq) {
+                        best = Some((seq, i, values[idx].clone()));
+                    }
+                }
+            }
+            let Some((_seq, i, value)) = best else {
+                break;
+            };
+            react_subs[i].supplier_next_index += 1;
+            if react_subs[i].is_lines {
+                let chunk = value.to_string_value();
+                react_subs[i].line_buffer.push_str(&chunk);
+                while let Some(pos) = react_subs[i].line_buffer.find('\n') {
+                    let line = react_subs[i].line_buffer[..pos].to_string();
+                    react_subs[i].line_buffer = react_subs[i].line_buffer[pos + 1..].to_string();
+                    if self.run_react_consumer(&mut react_subs[i], Value::str(line))? {
+                        return Ok(true);
+                    }
+                    if react_subs[i].done {
+                        break;
+                    }
+                    react_subs[i].emit_count += 1;
+                    if self.head_limit_reached(&mut react_subs[i])? {
+                        break;
+                    }
+                }
+            } else {
+                if self.run_react_consumer(&mut react_subs[i], value)? {
+                    return Ok(true);
+                }
+                if !react_subs[i].done {
+                    react_subs[i].emit_count += 1;
+                    self.head_limit_reached(&mut react_subs[i])?;
+                }
+            }
+        }
+        // All pending values delivered — now honour per-supplier done/quit.
+        for i in 0..react_subs.len() {
+            if react_subs[i].done {
+                continue;
+            }
+            let Some(sid) = react_subs[i].supplier_id else {
+                continue;
+            };
+            let (values, _seqs, done, quit) = supplier_snapshot_seqs(sid);
+            if react_subs[i].supplier_next_index < values.len() {
+                continue;
+            }
+            if let Some(error) = quit {
+                let mut handled = false;
+                for quit_cb in react_subs[i].quit_callbacks.clone() {
+                    self.call_supply_quit_handler(quit_cb, error.clone())?;
+                    handled = true;
+                }
+                if handled {
+                    react_subs[i].done = true;
+                    continue;
+                }
+                Self::run_react_close_callbacks(self, react_subs);
+                let quit_err = crate::runtime::Interpreter::runtime_error_from_supply_reason(error);
+                return Err(crate::runtime::Interpreter::wrap_react_died(quit_err));
+            }
+            if done {
+                if react_subs[i].is_lines && !react_subs[i].line_buffer.is_empty() {
+                    let remaining = std::mem::take(&mut react_subs[i].line_buffer);
+                    let cb = react_subs[i].callback.clone();
+                    match self.call_react_callback(&cb, vec![Value::str(remaining)]) {
+                        Err(e) if e.is_react_done() => return Ok(true),
+                        other => {
+                            other?;
+                        }
+                    }
+                }
+                for cb in react_subs[i].last_callbacks.clone() {
+                    self.call_react_callback(&cb, Vec::new())?;
+                }
+                react_subs[i].done = true;
+            }
+        }
+        Ok(false)
+    }
+
+    /// If `sub` has reached its `head`/`.head(N)` limit, fire its LAST callbacks
+    /// and mark it done. Returns whether the limit was reached.
+    fn head_limit_reached(&mut self, sub: &mut ReactSubscription) -> Result<bool, RuntimeError> {
+        if let Some(limit) = sub.head_limit
+            && sub.emit_count >= limit
+        {
+            for cb in sub.last_callbacks.clone() {
+                self.call_react_callback(&cb, Vec::new())?;
+            }
+            sub.done = true;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     /// Shared subscription drive loop backing both `react { ... }` and the
     /// `await $supply` / `$supply.Promise` paths. `react`-built and
     /// promise-built subscriptions poll through here; `policy` selects how each
@@ -58,9 +193,23 @@ impl Interpreter {
                     return Ok(());
                 }
             }
+            // Phase 1: deliver all buffered supplier values in global emit order
+            // (so sibling `whenever $s.grep(...)` supplies interleave correctly),
+            // and honour supplier done/quit.
+            if self.drain_supplier_subs_ordered(&mut react_subs)? {
+                break 'react_loop;
+            }
+            // Phase 2: poll the non-supplier subscriptions (on-demand / channel /
+            // receiver sources).
             let mut all_done = true;
-            for sub in react_subs.iter_mut() {
+            for si in 0..react_subs.len() {
+                let sub = &mut react_subs[si];
                 if sub.done {
+                    continue;
+                }
+                // Supplier-backed subs were fully serviced in phase 1.
+                if sub.supplier_id.is_some() {
+                    all_done = false;
                     continue;
                 }
                 all_done = false;
@@ -109,116 +258,43 @@ impl Interpreter {
                     }
                     continue;
                 }
-                if let Some(supplier_id) = sub.supplier_id {
-                    let (values, done, quit) = supplier_snapshot(supplier_id);
-                    while sub.supplier_next_index < values.len() {
-                        // Check head_limit before processing more values
-                        if let Some(limit) = sub.head_limit
-                            && sub.emit_count >= limit
-                        {
-                            // Reached the head limit — mark as done
-                            for callback in &sub.last_callbacks {
-                                self.call_react_callback(&callback.clone(), Vec::new())?;
-                            }
-                            sub.done = true;
-                            break;
-                        }
-                        let value = values[sub.supplier_next_index].clone();
-                        sub.supplier_next_index += 1;
-                        if sub.is_lines {
-                            let chunk = value.to_string_value();
-                            sub.line_buffer.push_str(&chunk);
-                            while let Some(pos) = sub.line_buffer.find('\n') {
-                                let line = sub.line_buffer[..pos].to_string();
-                                sub.line_buffer = sub.line_buffer[pos + 1..].to_string();
-                                if self.run_react_consumer(sub, Value::str(line))? {
-                                    break 'react_loop;
-                                }
-                                if sub.done {
-                                    break;
-                                }
-                                sub.emit_count += 1;
-                                if let Some(limit) = sub.head_limit
-                                    && sub.emit_count >= limit
-                                {
-                                    for callback in &sub.last_callbacks {
-                                        self.call_react_callback(&callback.clone(), Vec::new())?;
-                                    }
-                                    sub.done = true;
-                                    break;
-                                }
-                            }
-                        } else {
-                            if self.run_react_consumer(sub, value)? {
-                                break 'react_loop;
-                            }
-                            // `last` in the body marked this whenever done; stop
-                            // pulling further values from the source.
-                            if sub.done {
-                                break;
-                            }
-                            sub.emit_count += 1;
-                            if let Some(limit) = sub.head_limit
-                                && sub.emit_count >= limit
-                            {
-                                for callback in &sub.last_callbacks {
-                                    self.call_react_callback(&callback.clone(), Vec::new())?;
-                                }
-                                sub.done = true;
-                                break;
-                            }
-                        }
-                    }
-                    if let Some(error) = quit {
-                        let mut handled = false;
-                        for quit_cb in &sub.quit_callbacks {
-                            self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
-                            handled = true;
-                        }
-                        if handled {
-                            sub.done = true;
-                            continue;
-                        }
-                        Self::run_react_close_callbacks(self, &react_subs);
-                        let quit_err =
-                            crate::runtime::Interpreter::runtime_error_from_supply_reason(error);
-                        return Err(crate::runtime::Interpreter::wrap_react_died(quit_err));
-                    }
-                    if done {
-                        if sub.is_lines && !sub.line_buffer.is_empty() {
-                            let remaining = std::mem::take(&mut sub.line_buffer);
-                            match self.call_react_callback(
-                                &sub.callback.clone(),
-                                vec![Value::str(remaining)],
-                            ) {
-                                Err(e) if e.is_react_done() => break 'react_loop,
-                                other => {
-                                    other?;
-                                }
-                            }
-                        }
-                        for callback in &sub.last_callbacks {
-                            self.call_react_callback(&callback.clone(), Vec::new())?;
-                        }
-                        sub.done = true;
-                    }
+                if react_subs[si].receiver.is_none() {
+                    react_subs[si].done = true;
                     continue;
                 }
-                let Some(receiver) = sub.receiver.as_ref() else {
-                    sub.done = true;
-                    continue;
-                };
-                if let Some(promise) = sub.promise.as_ref()
-                    && let Some(sources) = take_promise_combinator_sources(promise)
+                if let Some(promise) = react_subs[si].promise.clone()
+                    && let Some(sources) = take_promise_combinator_sources(&promise)
                 {
                     for source in sources {
                         source.result_blocking();
                     }
                     continue;
                 }
+                // Poll the receiver with a short timeout. The `Result` is owned, so
+                // the borrow of the receiver ends on this line — freeing
+                // `react_subs` for the pre-drain below.
+                let poll = react_subs[si]
+                    .receiver
+                    .as_ref()
+                    .map(|r| r.recv_timeout(timeout));
+                // Raku ordering guarantee: values `emit`ted into a supplier
+                // *before* the event this receiver just delivered are causally
+                // earlier and must reach their `whenever`s first — even when that
+                // event's callback ends the react (e.g. `whenever start { emit … }`
+                // finishing while a sibling `whenever` calls `done`, so the sibling
+                // supplier's already-emitted values would otherwise be lost). Drain
+                // every supplier subscription before running this receiver's
+                // consumer, so their pending values are delivered in source order.
+                if matches!(poll, Some(Ok(SupplyEvent::Emit(_))))
+                    && matches!(policy, SupplyDrivePolicy::React)
+                    && self.drain_supplier_subs_ordered(&mut react_subs)?
+                {
+                    break 'react_loop;
+                }
+                let sub = &mut react_subs[si];
                 // Try to receive with a short timeout
-                match receiver.recv_timeout(timeout) {
-                    Ok(SupplyEvent::Emit(value)) => match &mut policy {
+                match poll {
+                    Some(Ok(SupplyEvent::Emit(value))) => match &mut policy {
                         SupplyDrivePolicy::Promise {
                             promise,
                             last_value,
@@ -277,7 +353,7 @@ impl Interpreter {
                             }
                         }
                     },
-                    Ok(SupplyEvent::Done) => {
+                    Some(Ok(SupplyEvent::Done)) => {
                         if matches!(policy, SupplyDrivePolicy::Promise { .. }) {
                             // Inner supply done: the promise resolves through the
                             // supplier registry, not the channel close — just
@@ -302,7 +378,7 @@ impl Interpreter {
                             sub.done = true;
                         }
                     }
-                    Ok(SupplyEvent::Quit(error)) => {
+                    Some(Ok(SupplyEvent::Quit(error))) => {
                         if matches!(policy, SupplyDrivePolicy::Promise { .. }) {
                             // On the await path an inner quit just retires the
                             // receiver; the promise is resolved/broken elsewhere.
@@ -325,8 +401,8 @@ impl Interpreter {
                             }
                         }
                     }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    Some(Err(mpsc::RecvTimeoutError::Timeout)) | None => {}
+                    Some(Err(mpsc::RecvTimeoutError::Disconnected)) => {
                         sub.done = true;
                     }
                 }

@@ -343,13 +343,18 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
 
 ### 6.2 `S17-supply/syntax.t`
 
-- **現状**: 88/90（test 75, 90 が失敗）。根本原因分析は `TODO_roast/S17.md` に記録済み:
+- **現状**: 88/90（test 75, 53 が失敗。**test 90 は 2026-07-08 に修正済み**）。
+  根本原因分析は `TODO_roast/S17.md` に記録済み:
+  - **test 90 (FIXED)**: live `Supply.grep`/`.map` 転送タップ + react loop の
+    supplier pre-drain（emit-before-done 順序保証）+ グローバル emit 順マージ
+    （`emit_seqs` で sibling `whenever $s.grep(...)` を emit 順に interleave）で
+    決定的に通過。pin=`t/supply-live-grep-map-react-order.t`。
   - test 75: nested `whenever`（on-demand supply が `whenever Supply.interval {}` の
-    内側にある場合）は react loop でなく非-react tap 経路（`native_supply_mut`
-    tap/act）を通るため、その async body 完了時の `on_close_callbacks` 発火が
-    react-loop 側の仕組みに乗らない。
-  - test 90: 2 つの `whenever` がそれぞれ `last` する cross-whenever ordering — hard case、
-    据え置き。
+    内側にある場合）の `closing => { $closed++ }` が cross-thread plain-scalar
+    writeback（worker→main lexical）で伝播しない別軸（§4.1/§4.2 thread-capture gap、
+    lock.t 10-24 と同じ）。cross-thread-lexical campaign 待ち。
+  - test 53: `supply {}` の whenever 相互排他順序 race（full-file parallel load 下のみ
+    flaky、単体では 6/6 pass）。
 - **Canary**: `roast/S17-supply/syntax.t`
 
 ### 6.3 async IO / Proc::Async / socket supplies（変化なし）

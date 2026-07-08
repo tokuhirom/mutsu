@@ -191,6 +191,19 @@ impl Interpreter {
                 } => {
                     self.handle_supply_forward(downstream_supplier_id, val)?;
                 }
+                SupplierEmitAction::TransformCall {
+                    downstream_supplier_id,
+                    callable,
+                    is_grep,
+                    value: val,
+                } => {
+                    self.handle_supply_transform_emit(
+                        downstream_supplier_id,
+                        callable,
+                        is_grep,
+                        val,
+                    )?;
+                }
             }
         }
         Ok(())
