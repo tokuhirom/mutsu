@@ -99,16 +99,17 @@ impl Compiler {
 
     /// Methods that STORE their closure argument for later invocation on
     /// another thread rather than calling it immediately. A closure passed to
-    /// one of these genuinely escapes the call frame (it is registered in a
-    /// Supply/Tap and driven asynchronously — see the socket-listener worker in
-    /// `dispatch_socket_async_listen`), so the locals it captures-and-mutates
-    /// must be promoted to shared `ContainerRef` cells (same escape rule that
-    /// `start {...}` uses). Without this a lexical the parent thread reassigns
-    /// after registering the tap (e.g. `$send-rest = Promise.new`) is invisible
-    /// to the tap body, which reads a stale clone-time snapshot
-    /// (roast S32-io/socket-recv-vs-read.t test 11).
+    /// one of these genuinely escapes the call frame — it is registered in a
+    /// Supply/Tap (`tap`/`act`, driven by the socket-listener worker in
+    /// `dispatch_socket_async_listen`) or a Promise continuation (`then`, run on
+    /// the thread pool when the promise is kept) — so the locals it
+    /// captures-and-mutates must be promoted to shared `ContainerRef` cells (the
+    /// same escape rule that `start {...}` uses). Without this a lexical the
+    /// parent thread reassigns after registering the callback (e.g.
+    /// `$send-rest = Promise.new`) is invisible to the callback body, which reads
+    /// a stale clone-time snapshot (roast S32-io/socket-recv-vs-read.t test 11).
     pub(super) fn method_escapes_closure_args(name: &str) -> bool {
-        matches!(name, "tap" | "act")
+        matches!(name, "tap" | "act" | "then")
     }
 
     /// Compile a method call argument. Named args (AssignExpr) are
