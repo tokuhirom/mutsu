@@ -10,6 +10,13 @@ use Test;
 # It also verifies a bare `whenever $sod { }` statement does NOT clobber `$sod`
 # with its Tap (which would make the next tap a no-op): the compiler only
 # bridges the tap out through the supply var for `do whenever` expressions.
+#
+# Exit deterministically once `closing` has fired at least once (`done if
+# $closed`) instead of racing a fixed `Promise.in(0.4)` timer: under load the
+# interval timer's first tick could slip past the 0.4s window (0 ticks -> the
+# 0.4s timer wins -> closed=0), which made subtest 2 flaky in CI. A generous
+# 5s backstop keeps a genuine regression (closing never fires) failing cleanly
+# with closed=0 rather than hanging.
 
 plan 3;
 
@@ -22,8 +29,9 @@ plan 3;
     react {
         whenever Supply.interval(0.02) {
             whenever $sod { }
+            done if $closed;
         }
-        whenever Promise.in(0.4) { done }
+        whenever Promise.in(5) { done }
     }
     ok $closed, "async on-demand closing fires from a nested whenever (closed=$closed)";
 }
@@ -37,8 +45,9 @@ plan 3;
     react {
         whenever Supply.interval(0.02) {
             whenever $sod { }
+            done if $closed;
         }
-        whenever Promise.in(0.4) { done }
+        whenever Promise.in(5) { done }
     }
     ok $closed, "sync on-demand closing fires from a nested whenever (closed=$closed)";
 }
