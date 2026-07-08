@@ -59,6 +59,19 @@ impl Interpreter {
             {
                 match sigil_of(key) {
                     '@' | '%' => {
+                        // A `%`-attribute bound to a non-Hash object is
+                        // list-contextualized like Raku's `Hash.STORE` (an object
+                        // with a custom `.iterator`/`.list` contributes its pairs).
+                        // That re-enters user code, which this native fast path
+                        // must not do, so defer to the interpreter slow path.
+                        if sigil_of(key) == '%'
+                            && matches!(
+                                val.view(),
+                                ValueView::Instance { class_name, .. } if class_name != "Match"
+                            )
+                        {
+                            return None;
+                        }
                         // Coerce exactly as the interpreter's shared helper does
                         // (List/Range -> Array, array-of-Pairs -> Hash, …).
                         attrs.insert(

@@ -176,7 +176,7 @@ impl Interpreter {
             {
                 runtime::utils::build_hash_from_items(vec![value])?
             }
-            _ => runtime::coerce_to_hash(value),
+            _ => self.coerce_object_to_hash(value),
         };
         // Resolve hash sentinel entries (self-refs) and decont `:=`-bound
         // `ContainerRef` cells when assigning to a new hash variable:
