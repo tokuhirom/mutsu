@@ -316,6 +316,31 @@ pub(crate) fn subscript_adverb_expr_with_cond(
     adverb: &'static str,
     cond: Option<Expr>,
 ) -> Expr {
+    // `@a[...]:delete:k` (delete adverb BEFORE the value adverb): the leading
+    // `:delete` already lowered the multislice to a `__mutsu_multidim_delete`
+    // call `(var, dims...)`. Combine it with this value adverb (`:k`/`:kv`/`:p`/
+    // `:v`) into the same delete+adverb `_dyn` form the reverse `:k:delete`
+    // order produces, so both orders read the removed elements as
+    // keys/kv-pairs/pairs/values. Args become [var, adverb, True(delete), dims...].
+    if let Expr::Call { name, args } = &expr
+        && *name == Symbol::intern("__mutsu_multidim_delete")
+        && !args.is_empty()
+    {
+        let mut new_args = vec![
+            args[0].clone(),
+            Expr::Literal(Value::str(adverb.to_string())),
+            Expr::Literal(Value::TRUE),
+        ];
+        new_args.extend(args[1..].iter().cloned());
+        if let Some(cond_expr) = cond {
+            new_args.push(Expr::Literal(Value::str("__adverb_cond__".to_string())));
+            new_args.push(cond_expr);
+        }
+        return Expr::Call {
+            name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
+            args: new_args,
+        };
+    }
     // Handle MultiDimIndex: @a[0;0;0]:kv etc.
     if let Expr::MultiDimIndex { target, dimensions } = expr {
         let mut args = vec![*target, Expr::Literal(Value::str(adverb.to_string()))];

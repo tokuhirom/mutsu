@@ -463,7 +463,16 @@ impl Interpreter {
             ));
         }
         let var_name = args[0].to_string_value();
-        let raw_indices = args[1..].to_vec();
+        let mut raw_indices = args[1..].to_vec();
+        // `@a[|| @list]:delete` passes the `||` operand list as a single
+        // dimension; expand its elements into the real dimensions (the delete
+        // counterpart of `expand_pipe_multidim_dims`). A single-dimension
+        // multidim subscript is only ever produced by `||`.
+        if raw_indices.len() == 1
+            && let Some(items) = raw_indices[0].as_list_items()
+        {
+            raw_indices = items.to_vec();
+        }
         let target_val = self.env.get(&var_name).cloned().unwrap_or(Value::NIL);
         let indices = self.resolve_multidim_indices(&target_val, &raw_indices)?;
         // A shaped array (`my @a[2;2]`) has fixed dimensions; an out-of-range

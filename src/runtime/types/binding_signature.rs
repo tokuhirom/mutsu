@@ -11,6 +11,16 @@ use super::*;
 /// _)`, produced by `pair_as_positional` for `.first`/etc. over Hash/Pair
 /// elements) is passed, it must bind to such a plain param positionally rather
 /// than be siphoned off as a named argument.
+/// Whether `value` is a multi-dimensional slice lvalue produced by
+/// `MultiDimIndexBindRef` for a subscript with a slice dimension — a plain,
+/// non-empty list whose elements are ALL shared `ContainerRef` cells (one per
+/// selected leaf). A raw `\target` bound to such a value is writable: a later
+/// `target = v` distributes the RHS element-wise through the cells.
+fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
+    matches!(value.view(), crate::value::ValueView::Array(items, ..)
+        if !items.is_empty() && items.iter().all(crate::value::Value::is_container_ref))
+}
+
 fn legacy_has_plain_positional_param(params: &[String]) -> bool {
     params.iter().any(|p| {
         !p.starts_with(':')
@@ -1226,15 +1236,34 @@ impl Interpreter {
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
-                        if matches!(value.view(), ValueView::ContainerRef(_)) {
+                        if matches!(value.view(), ValueView::ContainerRef(_))
+                            || is_multidim_slice_cells(&value)
+                        {
                             // A multi-dimensional subscript lvalue (`@a[0;1;2]`)
                             // arrives as a shared `ContainerRef` cell aliasing the
-                            // real array/hash element. Bind the raw `\target` param
-                            // to the cell as a writable, anonymous alias so a later
-                            // `target = v` writes through to the underlying
-                            // container (and is visible immediately).
+                            // real array/hash element (single scalar leaf), or — for
+                            // a subscript with a slice dimension (`@a[0;0;(0,1,2)]`,
+                            // `@a[*;0;0]`) — as a plain list whose elements are all
+                            // shared `ContainerRef` cells (one per selected leaf).
+                            // Bind the raw `\target` param to it as a writable,
+                            // anonymous alias so a later `target = v` writes through
+                            // to the underlying container (distributing element-wise
+                            // for the slice case) and is visible immediately.
                             self.env.remove(&alias_key);
                             self.env.insert(readonly_key, Value::FALSE);
+                            // Mark a genuine multi-dim slice lvalue so the assign
+                            // ops know to distribute a whole-value assignment
+                            // through its cells. "Elements are all cells" alone is
+                            // NOT a safe trigger — `.grep`'s rw-topic promotion can
+                            // also leave a cell-list in an unrelated scalar, which
+                            // must keep plain replace semantics (roast
+                            // S03-operators/assign.t `$x = $x.grep(...)`).
+                            if is_multidim_slice_cells(&value) {
+                                self.env.insert(
+                                    Self::bound_array_slice_marker_key(&pd.name),
+                                    Value::TRUE,
+                                );
+                            }
                         } else if let Some((source_name, inner)) = varref_from_value(&raw_arg) {
                             let resolved_source =
                                 self.resolve_sigilless_alias_source_name(&source_name);

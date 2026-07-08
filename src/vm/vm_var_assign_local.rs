@@ -50,6 +50,25 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
+        // whole-value assignment (`target = values`) element-wise through its
+        // leaf cells — the raw analogue of the `@slice := @array[1,2]; @slice =
+        // ...` bound-slice write-through below (gated on the bind-time marker,
+        // NOT "elements are cells", to avoid colliding with `.grep`'s rw-topic
+        // cell promotion).
+        {
+            let name = code.locals[idx].clone();
+            let holder = self.locals[idx].clone();
+            if let Some(rhs) = self.stack.last().cloned()
+                && let Some(res) = self.distribute_bound_multidim_slice(&name, &holder, &rhs)
+            {
+                // The RHS is both the distributed source and the assignment
+                // result; leave it on the stack top as the expression value.
+                res?;
+                return Ok(());
+            }
+        }
+
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
             let mut val = self.stack.pop().unwrap_or(Value::NIL);
