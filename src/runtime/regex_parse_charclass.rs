@@ -540,6 +540,14 @@ impl Interpreter {
     ) -> Option<RegexAtom> {
         let mut positive_items: Vec<ClassItem> = Vec::new();
         let mut negative_items: Vec<ClassItem> = Vec::new();
+        // Positive user-defined grammar-token names (e.g. `+name-sep`) that must be
+        // matched as whole subrules (they may consume >1 char) rather than as
+        // single-char class items. Desugared into an alternation at the end.
+        let mut subrule_branches: Vec<String> = Vec::new();
+        // Whether a *negated* item resolves to a user grammar token (`<-restricted>`).
+        // A plain negated `CharClass` cannot resolve such a token at match time, so
+        // route the class through `CompositeClass` (which does) instead.
+        let mut negative_has_grammar_token = false;
         let mut remaining = input.trim();
         // A leading bracket class with no sign (`[a..z] +digit`) is an implicit
         // positive first item: the `+`/`-` only separates the subsequent parts.
@@ -582,10 +590,15 @@ impl Interpreter {
                 let class_end = Self::find_combined_class_part_end(remaining);
                 let class_name = remaining[..class_end].trim();
                 remaining = remaining[class_end..].trim_start();
-                let item = if let Some(prop) = class_name.strip_prefix(':') {
-                    ClassItem::UnicodePropItem {
+                if let Some(prop) = class_name.strip_prefix(':') {
+                    let item = ClassItem::UnicodePropItem {
                         name: prop.to_string(),
                         negated: false,
+                    };
+                    if adding {
+                        positive_items.push(item);
+                    } else {
+                        negative_items.push(item);
                     }
                 } else {
                     // Check if this is a known built-in character class name
@@ -605,15 +618,16 @@ impl Interpreter {
                             | "print"
                             | "ws"
                     );
-                    if !is_known_builtin {
-                        // Check if the name resolves as a grammar token in the current package
-                        let is_grammar_token = !self.current_package().is_empty()
-                            && self.resolve_token_defs(class_name).is_some();
+                    // Check if the name resolves as a grammar token in the current package
+                    let is_grammar_token = !is_known_builtin
+                        && !self.current_package().is_empty()
+                        && self.resolve_token_defs(class_name).is_some();
+                    if !is_known_builtin && !is_grammar_token {
                         // "No such method" is a runtime resolution failure, not a
                         // parse-time syntax error: such patterns are meant to die
                         // at match time (`dies-ok`), not at compile time. In
                         // `Validate` mode treat the unknown name as opaque.
-                        if !is_grammar_token && mode == RegexParseMode::Match {
+                        if mode == RegexParseMode::Match {
                             let msg = format!(
                                 "No such method '{}' for invocant of type 'Match'",
                                 class_name
@@ -624,30 +638,98 @@ impl Interpreter {
                             return None;
                         }
                     }
-                    ClassItem::NamedBuiltin(class_name.to_string())
-                };
-                if adding {
-                    positive_items.push(item);
-                } else {
-                    negative_items.push(item);
+                    // A *positive* user-defined grammar token may match a
+                    // MULTI-character sequence (e.g. `token name-sep { '::' }`),
+                    // which a single-char char class cannot express. Collect it as
+                    // an alternation branch (desugared below) so the subrule is
+                    // matched as a whole unit. Builtins stay as efficient
+                    // single-char class items; a *negated* user token keeps the
+                    // single-char CompositeClass negation (all the enumerated-class
+                    // negative form supports).
+                    if adding && is_grammar_token {
+                        subrule_branches.push(class_name.to_string());
+                    } else {
+                        let item = ClassItem::NamedBuiltin(class_name.to_string());
+                        if adding {
+                            positive_items.push(item);
+                        } else {
+                            if is_grammar_token {
+                                negative_has_grammar_token = true;
+                            }
+                            negative_items.push(item);
+                        }
+                    }
                 }
             }
         }
-        if positive_items.is_empty() && negative_items.is_empty() {
+        if positive_items.is_empty() && negative_items.is_empty() && subrule_branches.is_empty() {
             return None;
         }
-        if positive_items.is_empty() {
-            // Purely negated: <-alpha> means "any character NOT matching alpha"
-            Some(RegexAtom::CharClass(CharClass {
-                items: negative_items,
-                negated: true,
-            }))
+        if subrule_branches.is_empty() {
+            // No user-subrule parts — the original char-class atoms.
+            if positive_items.is_empty() {
+                // A negated user grammar token (`<-restricted>`) must resolve at
+                // match time, which the plain negated `CharClass` path cannot do —
+                // route it through `CompositeClass` (empty positive = "any char").
+                if negative_has_grammar_token {
+                    return Some(RegexAtom::CompositeClass {
+                        positive: positive_items,
+                        negative: negative_items,
+                    });
+                }
+                // Purely negated: <-alpha> means "any character NOT matching alpha"
+                return Some(RegexAtom::CharClass(CharClass {
+                    items: negative_items,
+                    negated: true,
+                }));
+            }
+            return Some(RegexAtom::CompositeClass {
+                positive: positive_items,
+                negative: negative_items,
+            });
+        }
+        // The single-char portion of the enumerated class. Always a
+        // `CompositeClass` (not a negated `CharClass`) so that negated
+        // grammar-token items resolve at match time; the CompositeClass matcher
+        // treats an empty `positive` as "any char" (see its `pos_match` fallback).
+        let class_atom = if positive_items.is_empty() && negative_items.is_empty() {
+            None
         } else {
             Some(RegexAtom::CompositeClass {
                 positive: positive_items,
                 negative: negative_items,
             })
+        };
+        // Desugar an enumerated class carrying positive user-subrules into an
+        // LTM alternation: `<-restricted +name-sep>` -> `[ <name-sep> | <-restricted> ]`.
+        // The subrule branches are non-capturing (char classes never capture).
+        let make_pattern = |atom: RegexAtom| RegexPattern {
+            tokens: vec![RegexToken {
+                atom,
+                quant: RegexQuant::One,
+                named_capture: None,
+                secondary_named_capture: None,
+                hash_capture: None,
+                force_list_capture: false,
+                ratchet: false,
+                frugal: false,
+                separator: None,
+            }],
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case: false,
+            ignore_mark: false,
+        };
+        let mut branches: Vec<RegexPattern> = subrule_branches
+            .into_iter()
+            // Prefix with `.` so the subrule is matched *silently* (no named
+            // capture) — a character class never captures.
+            .map(|name| make_pattern(RegexAtom::Named(format!(".{name}"))))
+            .collect();
+        if let Some(atom) = class_atom {
+            branches.push(make_pattern(atom));
         }
+        Some(RegexAtom::Alternation(branches))
     }
 
     /// Whether a bracket-class string (`[a..z] +digit`) is followed by a
