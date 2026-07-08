@@ -740,9 +740,21 @@ impl Interpreter {
             };
             let sp = if use_spaced { " " } else { "" };
             if let Some((prefix, quantified_tail)) = Self::split_simple_quantified_atom(&atom) {
+                // `quantified_tail` still carries its trailing quantifier (e.g.
+                // "\w+", "u*"). Split it off and translate it into the repetition
+                // count, otherwise the atom is double-quantified: `\w+ %% X` would
+                // expand to `\w+ (X \w+)*` (each iteration greedily eats a run)
+                // instead of `\w (X \w)*` (one `\w` per separated item).
+                let q = quantified_tail.chars().last().unwrap_or('+');
+                let base = &quantified_tail[..quantified_tail.len() - q.len_utf8()];
+                let count = match q {
+                    '*' => "0..*",
+                    '?' => "0..1",
+                    _ => "1..*",
+                };
                 return build_with_rest(format!(
                     "{prefix}{sp}{}",
-                    expand(&quantified_tail, "1..*", sep_mode, sep)
+                    expand(base, count, sep_mode, sep)
                 ));
             }
             // Handle prefix + quantified bracket: e.g. `'u'<cp>+` where 'u' is a

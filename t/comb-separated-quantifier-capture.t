@@ -18,9 +18,12 @@ is-deeply "1.2.3.4".comb(/ (\d) ** 4 % '.' /).List,
     ("1.2.3.4",),
     '.comb with single-digit captured groups and a separator';
 
-# A non-capturing separated quantifier must keep working.
+# A non-capturing separated quantifier must keep working. `\d+ % '-'` is
+# "`\d`, one or more, separated by `-`" = `\d (- \d)*`, so a bare run of digits
+# ("44") matches only its first digit before the separator is required — matching
+# Rakudo: `"1-2-3 44-55".comb(/ \d+ % '-' /)` is `(1-2-3 4 4-5 5)`.
 is-deeply "1-2-3 44-55".comb(/ \d+ % '-' /).List,
-    ("1-2-3", "44-55"),
+    ("1-2-3", "4", "4-5", "5"),
     '.comb with a non-capturing separated quantifier still works';
 
 # The same pattern via ~~ single match and m:g must agree on the match strings.
