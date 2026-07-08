@@ -24,6 +24,17 @@ per_file_timeout() {
       # This test intentionally uses multiple sleep 1 calls and needs >30s.
       echo 60
       ;;
+    roast/S17-supply/syntax.t)
+      # 90 concurrency-heavy subtests: a ^500 react/channel stress loop
+      # (1000 short-lived threads), Supply.interval polling, and fixed
+      # Promise.in waits. Wall-clock is highly load-sensitive (measured
+      # 19-35s run-to-run on an idle 12-core box, debug and release alike,
+      # identical on main); under `prove -j4` on a 4-core CI runner the
+      # default 30s budget times it out mid-file (exit 124, Failed: 0)
+      # while the gc-stress job's 2x-scaled 60s budget passes. Same
+      # rationale as S17-promise/start.t above.
+      echo 60
+      ;;
     roast/S17-promise/allof.t)
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
       echo 60

@@ -313,7 +313,14 @@ impl Interpreter {
         self.replay_proc_output(stdout_sid, &stdout_taps, collected_stdout);
         self.replay_proc_output(stderr_sid, &stderr_taps, collected_stderr);
 
-        if !collected_merged.is_empty() && !supply_taps.is_empty() {
+        let merged_sid = match attributes.as_map().get("supply_id").map(Value::view) {
+            Some(ValueView::Int(sid)) => Some(sid as u64),
+            _ => None,
+        };
+        let merged_first_replay = merged_sid
+            .map(super::super::native_methods::mark_supply_replayed)
+            .unwrap_or(true);
+        if merged_first_replay && !collected_merged.is_empty() && !supply_taps.is_empty() {
             for tap in &supply_taps {
                 let _ = self.call_sub_value(
                     tap.clone(),
@@ -331,8 +338,15 @@ impl Interpreter {
     /// encoding error" behaviour (roast S17-procasync/encoding.t).
     fn replay_proc_output(&mut self, sid: Option<u64>, value_taps: &[Value], fallback: String) {
         use super::super::native_methods::{
-            get_supply_enc, get_supply_quit_taps, take_supply_collected_bytes,
+            get_supply_enc, get_supply_quit_taps, mark_supply_replayed, take_supply_collected_bytes,
         };
+        // Replay is once-per-stream: a second `await`/`.result` on the same Proc
+        // must not deliver the collected output to the taps again.
+        if let Some(sid) = sid
+            && !mark_supply_replayed(sid)
+        {
+            return;
+        }
         let (text, quit_reason) = match sid {
             Some(sid) => {
                 let enc = get_supply_enc(sid).unwrap_or_else(|| "utf-8".to_string());

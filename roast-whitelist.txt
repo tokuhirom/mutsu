@@ -1128,6 +1128,7 @@ roast/S32-io/slurp.t
 roast/S32-io/socket-accept-and-working-threads.t
 roast/S32-io/socket-fail-invalid-values.t
 roast/S32-io/socket-host-port-split.t
+roast/S32-io/socket-recv-vs-read.t
 roast/S32-io/spurt.t
 roast/S32-io/tell.t
 roast/S32-io/utf16.t

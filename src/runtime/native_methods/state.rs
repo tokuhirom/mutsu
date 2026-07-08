@@ -632,6 +632,22 @@ pub(in crate::runtime) fn take_supply_collected_bytes(supply_id: u64) -> Option<
         .and_then(|mut map| map.remove(&supply_id))
 }
 
+/// Once-guard for the await/result-time Proc::Async tap replay. Returns `true`
+/// only the first time it is called for a given output-supply id: `await
+/// $p.start` followed by `.result` (or a second `await`) must not deliver the
+/// same collected output to the registered taps again.
+pub(in crate::runtime) fn mark_supply_replayed(supply_id: u64) -> bool {
+    type ReplayedSet = std::sync::Mutex<std::collections::HashSet<u64>>;
+    fn replayed_set() -> &'static ReplayedSet {
+        static SET: OnceLock<ReplayedSet> = OnceLock::new();
+        SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+    }
+    replayed_set()
+        .lock()
+        .map(|mut set| set.insert(supply_id))
+        .unwrap_or(false)
+}
+
 /// Register a `quit =>` handler on a Proc::Async output Supply. Unlike ordinary
 /// value taps these fire only when the stream ends in an encoding error.
 pub(in crate::runtime) fn register_supply_quit_tap(supply_id: u64, tap: Value) {

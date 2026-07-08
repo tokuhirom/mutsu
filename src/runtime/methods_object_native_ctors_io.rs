@@ -215,10 +215,15 @@ impl Interpreter {
         let supply_id = super::native_methods::next_supply_id();
         let stdout_descriptor = SharedPromise::new();
         let stderr_descriptor = SharedPromise::new();
+        // `proc_output` marks the supply as a Proc::Async output stream: a plain
+        // `.tap`/`.act` on it is delivered exactly once, by the await/result-time
+        // `replay_proc_taps`, never by the tap-time live-channel loop (which
+        // would double-deliver — see the tap arm in native_supply_mut_methods).
         let mut stdout_supply_attrs = HashMap::new();
         stdout_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
         stdout_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         stdout_supply_attrs.insert("supply_id".to_string(), Value::int(stdout_id as i64));
+        stdout_supply_attrs.insert("proc_output".to_string(), Value::TRUE);
         stdout_supply_attrs.insert("enc".to_string(), enc.clone());
         stdout_supply_attrs.insert(
             "native_descriptor_promise".to_string(),
@@ -228,6 +233,7 @@ impl Interpreter {
         stderr_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
         stderr_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         stderr_supply_attrs.insert("supply_id".to_string(), Value::int(stderr_id as i64));
+        stderr_supply_attrs.insert("proc_output".to_string(), Value::TRUE);
         stderr_supply_attrs.insert("enc".to_string(), enc.clone());
         stderr_supply_attrs.insert(
             "native_descriptor_promise".to_string(),
@@ -237,6 +243,7 @@ impl Interpreter {
         merged_supply_attrs.insert("values".to_string(), Value::array(Vec::new()));
         merged_supply_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         merged_supply_attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
+        merged_supply_attrs.insert("proc_output".to_string(), Value::TRUE);
 
         let mut attrs = HashMap::new();
         attrs.insert("cmd".to_string(), Value::array(positional));
