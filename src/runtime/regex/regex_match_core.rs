@@ -237,17 +237,27 @@ impl Interpreter {
     ) -> Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)> {
         let mut chains: Vec<(Vec<RegexCaptures>, Vec<RegexCaptures>, usize)> = Vec::new();
         let empty = RegexCaptures::default();
-        // First atom (single highest-priority match, matching the non-separator
-        // atom-matching policy elsewhere).
-        if let Some((end, caps)) = self.regex_match_atom_with_capture_in_pkg(
+        // First atom: enumerate EVERY match length (highest-priority first), not
+        // just the single highest-priority one. A frugal atom (`[[.]+?]`) matches
+        // as few chars as possible, but an outer anchor / goalpost following the
+        // separated quantifier (e.g. `'<' ~ '>' [<( [[.]+?]* %% SEP )>]`) may
+        // require the atom to expand. Taking only the shortest match would leave
+        // no candidate for that anchor and the whole pattern would fail to match.
+        let first_matches = self.regex_match_atom_all_with_capture_in_pkg(
             &token.atom,
             chars,
             start,
             &empty,
             pkg,
             pattern.ignore_case,
-        ) && end != start
-        {
+        );
+        // `regex_match_atom_all_with_capture_in_pkg` returns lowest-priority
+        // first; iterate highest-priority first so the chains come out in
+        // highest-priority order for the caller's LIFO stack.
+        for (end, caps) in first_matches.into_iter().rev() {
+            if end == start {
+                continue;
+            }
             let mut atom_caps = vec![caps];
             let mut sep_caps: Vec<RegexCaptures> = Vec::new();
             self.extend_separated_chain(
@@ -297,17 +307,23 @@ impl Interpreter {
                 cur,
                 pkg,
             ) {
-                if let Some((atom_end, acaps)) = self.regex_match_atom_with_capture_in_pkg(
+                // Enumerate every atom-match length after this separator
+                // (highest-priority first), mirroring the first-atom enumeration
+                // so a frugal atom can expand to satisfy a following anchor.
+                let atom_matches = self.regex_match_atom_all_with_capture_in_pkg(
                     &token.atom,
                     chars,
                     sep_end,
                     &empty,
                     pkg,
                     pattern.ignore_case,
-                ) && atom_end > cur
-                {
+                );
+                for (atom_end, acaps) in atom_matches.into_iter().rev() {
+                    if atom_end <= cur {
+                        continue;
+                    }
                     atom_caps.push(acaps);
-                    sep_caps.push(scaps);
+                    sep_caps.push(scaps.clone());
                     self.extend_separated_chain(
                         token, chars, atom_end, pkg, pattern, max, atom_caps, sep_caps, out,
                     );

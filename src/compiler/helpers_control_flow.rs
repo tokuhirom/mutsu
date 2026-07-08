@@ -54,9 +54,7 @@ impl Compiler {
                         then_branch,
                         else_branch,
                         binding_var,
-                    } if binding_var.is_none() => {
-                        self.compile_if_value(cond, then_branch, else_branch)
-                    }
+                    } => self.compile_if_value(cond, then_branch, else_branch, binding_var),
                     Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
                         self.compile_block_inline(inner)
                     }
@@ -115,6 +113,7 @@ impl Compiler {
         cond: &Expr,
         then_branch: &[Stmt],
         else_branch: &[Stmt],
+        binding_var: &Option<String>,
     ) {
         // Check for heredoc scope violations before compiling
         if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
@@ -130,7 +129,30 @@ impl Compiler {
             return;
         }
         let needs_at_underscore = Self::body_uses_legacy_args(then_branch);
-        self.compile_expr(cond);
+        // A topic-binding `if EXPR -> $v { ... }` (or a pointy `elsif`): bind the
+        // condition value to `$v` and test the bound variable, mirroring the
+        // statement-form desugar (`{ my $v = EXPR; if $v { ... } }`) that
+        // `compile_do_if_expr_bound` uses. Without this a value-position pointy
+        // `if`/`elsif` fell through to a Nil result (its branch value was lost).
+        if let Some(var_name) = binding_var {
+            let bare_name = var_name.trim_start_matches('$').to_string();
+            let var_decl = Stmt::VarDecl {
+                name: bare_name.clone(),
+                expr: cond.clone(),
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: vec![],
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            };
+            self.compile_stmt(&var_decl);
+            self.compile_expr(&Expr::Var(bare_name));
+        } else {
+            self.compile_expr(cond);
+        }
         if needs_at_underscore {
             // Duplicate condition for @_ (bare if blocks receive condition as @_).
             self.code.emit(OpCode::Dup);
