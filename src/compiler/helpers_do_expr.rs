@@ -92,16 +92,8 @@ impl Compiler {
         self.code.patch_body_end(idx);
     }
 
-    pub(super) fn compile_do_if_expr(
-        &mut self,
-        cond: &Expr,
-        then_branch: &[Stmt],
-        else_branch: &[Stmt],
-    ) {
-        self.compile_do_if_expr_bound(cond, then_branch, else_branch, &None);
-    }
-
-    /// Like `compile_do_if_expr`, but honours a per-branch topic binding
+    /// Compile an `if`/`elsif` chain in value (expression) position, honouring an
+    /// optional per-branch topic binding
     /// (`if EXPR -> $v { ... }`). When `binding_var` is `Some`, the condition
     /// value is bound to `$v` for the `then` branch — desugared exactly like the
     /// statement-form `if` (`{ my $v = EXPR; if $v { ... } }`) — so a value-mode

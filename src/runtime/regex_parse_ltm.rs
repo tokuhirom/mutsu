@@ -657,8 +657,62 @@ impl Interpreter {
         (first, rest)
     }
 
+    /// Strip insignificant whitespace from a regex pattern for the LTM
+    /// separator-detection regexes, but PRESERVE whitespace that is semantically
+    /// significant: inside quotes (`'a b'`, `"a b"`) and inside angle-bracket
+    /// assertions/subrules (`<!before X>`, where the space separates the keyword
+    /// from its pattern). Blindly stripping all whitespace corrupted such atoms
+    /// (`<!before X>` -> `<!beforeX>`, a wrong subrule call), which made any
+    /// `%%`/`%`-separated quantifier whose atom contained a lookahead fail to
+    /// match (e.g. Zef::Identity's `value` grammar rule). Whitespace inside
+    /// `[...]` / `(...)` groups and at the top level stays insignificant and is
+    /// stripped as before.
+    fn compact_regex_whitespace(pattern: &str) -> String {
+        let mut out = String::with_capacity(pattern.len());
+        let mut escaped = false;
+        let mut quote: Option<char> = None;
+        let mut angle_depth: i32 = 0;
+        for ch in pattern.chars() {
+            if escaped {
+                out.push(ch);
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => {
+                    out.push(ch);
+                    escaped = true;
+                }
+                '\'' | '"' if quote.is_none() => {
+                    quote = Some(ch);
+                    out.push(ch);
+                }
+                c if quote == Some(c) => {
+                    quote = None;
+                    out.push(ch);
+                }
+                '<' if quote.is_none() => {
+                    angle_depth += 1;
+                    out.push(ch);
+                }
+                '>' if quote.is_none() => {
+                    angle_depth = (angle_depth - 1).max(0);
+                    out.push(ch);
+                }
+                c if c.is_whitespace() => {
+                    // Preserve whitespace only where it carries meaning.
+                    if quote.is_some() || angle_depth > 0 {
+                        out.push(ch);
+                    }
+                }
+                _ => out.push(ch),
+            }
+        }
+        out
+    }
+
     pub(super) fn expand_ltm_pattern(pattern: &str, sigspace: bool) -> String {
-        let compact: String = pattern.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let compact: String = Self::compact_regex_whitespace(pattern);
         if compact.is_empty() {
             return pattern.to_string();
         }

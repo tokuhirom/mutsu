@@ -1208,8 +1208,8 @@ impl Compiler {
                             then_branch,
                             else_branch,
                             binding_var,
-                        } if binding_var.is_none() => {
-                            self.compile_if_value(cond, then_branch, else_branch);
+                        } => {
+                            self.compile_if_value(cond, then_branch, else_branch, binding_var);
                             self.code.emit(OpCode::SetTopic);
                             continue;
                         }

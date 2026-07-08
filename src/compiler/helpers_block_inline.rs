@@ -147,13 +147,17 @@ impl Compiler {
                     // taken branch's value (like `do if ...`), not Nil. This
                     // matters e.g. for `do { if $c { ... } }` and statement-form
                     // `with`/`without` (lowered to an `if`) used as expressions.
+                    // The topic-binding form (`if EXPR -> $x { ... }` / an `elsif`
+                    // with a pointy) must go through `compile_do_if_expr_bound` so
+                    // the taken branch's value still flows out (matching the
+                    // `given`/`when` tail path in `compile_when_tail_stmt`).
                     Stmt::If {
                         cond,
                         then_branch,
                         else_branch,
                         binding_var,
-                    } if binding_var.is_none() => {
-                        self.compile_do_if_expr(cond, then_branch, else_branch);
+                    } => {
+                        self.compile_do_if_expr_bound(cond, then_branch, else_branch, binding_var);
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
