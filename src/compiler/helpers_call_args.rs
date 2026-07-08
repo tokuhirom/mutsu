@@ -97,13 +97,41 @@ impl Compiler {
         false
     }
 
+    /// Methods that STORE their closure argument for later invocation on
+    /// another thread rather than calling it immediately. A closure passed to
+    /// `Promise.then` runs on the thread pool when the promise is kept, so it
+    /// genuinely escapes the call frame — the locals it captures-and-mutates must
+    /// be promoted to shared `ContainerRef` cells (the same escape rule that
+    /// `start {...}` uses). Without this a lexical the parent thread reassigns
+    /// after registering the continuation is invisible to the continuation body,
+    /// which reads a stale clone-time snapshot.
+    ///
+    /// NB: `tap`/`act` are deliberately NOT here. They escape too (the
+    /// socket-listener worker drives them — roast S32-io/socket-recv-vs-read.t
+    /// test 11), but escape-boxing a `.tap` accumulator (`$x ~= $_`) exposes a
+    /// pre-existing double-delivery in the Proc::Async tap path (the live-channel
+    /// async loop AND the await-time replay both fire the tap; the duplicate
+    /// write was silently lost while the capture was a by-value snapshot, but a
+    /// shared cell keeps both — S17-procasync/basic.t test 37). Boxing tap/act
+    /// must wait until that double-delivery is resolved.
+    pub(super) fn method_escapes_closure_args(name: &str) -> bool {
+        matches!(name, "then")
+    }
+
     /// Compile a method call argument. Named args (AssignExpr) are
     /// compiled as Pair values so they survive VM execution.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
-        // A method argument is passed to the callee, not stored in the caller
-        // frame, so a closure argument is conservatively NON-escaping (same
-        // #2746 guard as compile_call_arg).
-        self.with_escape(false, |s| {
+        self.compile_method_arg_with_escape(arg, false);
+    }
+
+    /// Like [`compile_method_arg`] but lets the caller force the closure
+    /// argument into an escaping position (for supply-consuming methods; see
+    /// [`method_escapes_closure_args`]).
+    pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // A method argument is normally passed to the callee, not stored in the
+        // caller frame, so a closure argument is conservatively NON-escaping
+        // (the #2746 guard). `tap`/`act` override this with `escaping = true`.
+        self.with_escape(escaping, |s| {
             s.with_suppress_pair_capture(true, |s| {
                 if let Expr::AssignExpr { name, expr, .. } = arg {
                     // `foo(arg = 1)` in method-call argument position is treated as a

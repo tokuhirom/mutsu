@@ -101,8 +101,9 @@ impl Compiler {
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
+        let esc = Self::method_escapes_closure_args(&name.resolve());
         for arg in args {
-            self.compile_method_arg(arg);
+            self.compile_method_arg_with_escape(arg, esc);
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
@@ -424,8 +425,9 @@ impl Compiler {
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);
+        let esc = Self::method_escapes_closure_args(&name.resolve());
         for arg in args {
-            self.compile_method_arg(arg);
+            self.compile_method_arg_with_escape(arg, esc);
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
