@@ -97,13 +97,34 @@ impl Compiler {
         false
     }
 
+    /// Methods that STORE their closure argument for later invocation on
+    /// another thread rather than calling it immediately. A closure passed to
+    /// one of these genuinely escapes the call frame (it is registered in a
+    /// Supply/Tap and driven asynchronously — see the socket-listener worker in
+    /// `dispatch_socket_async_listen`), so the locals it captures-and-mutates
+    /// must be promoted to shared `ContainerRef` cells (same escape rule that
+    /// `start {...}` uses). Without this a lexical the parent thread reassigns
+    /// after registering the tap (e.g. `$send-rest = Promise.new`) is invisible
+    /// to the tap body, which reads a stale clone-time snapshot
+    /// (roast S32-io/socket-recv-vs-read.t test 11).
+    pub(super) fn method_escapes_closure_args(name: &str) -> bool {
+        matches!(name, "tap" | "act")
+    }
+
     /// Compile a method call argument. Named args (AssignExpr) are
     /// compiled as Pair values so they survive VM execution.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
-        // A method argument is passed to the callee, not stored in the caller
-        // frame, so a closure argument is conservatively NON-escaping (same
-        // #2746 guard as compile_call_arg).
-        self.with_escape(false, |s| {
+        self.compile_method_arg_with_escape(arg, false);
+    }
+
+    /// Like [`compile_method_arg`] but lets the caller force the closure
+    /// argument into an escaping position (for supply-consuming methods; see
+    /// [`method_escapes_closure_args`]).
+    pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
+        // A method argument is normally passed to the callee, not stored in the
+        // caller frame, so a closure argument is conservatively NON-escaping
+        // (the #2746 guard). `tap`/`act` override this with `escaping = true`.
+        self.with_escape(escaping, |s| {
             s.with_suppress_pair_capture(true, |s| {
                 if let Expr::AssignExpr { name, expr, .. } = arg {
                     // `foo(arg = 1)` in method-call argument position is treated as a
