@@ -153,8 +153,9 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 ## 4. 並行・非同期（S17）
 
 単一スレッドの supply/react/promise 基盤は完了した（semaphore.t、then.t、scheduler/basic.t、
-supply/migrate.t、supply/stable.t、**supply/syntax.t（90/90・#4326/#4327）**、S17-promise/start.t、
-S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowlevel/lock.t — 詳細は
+supply/migrate.t、supply/stable.t、**supply/syntax.t（90/90・#4326/#4327 + 並列負荷レース本修正で
+test 53 の supply-block whenever 相互排他 / test 57 の Channel close-before-drain を解消）**、
+S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowlevel/lock.t — 詳細は
 `news/2026-06.md` / `news/2026-07.md`）。残るは cross-thread lexical writeback と async IO 系。
 
 ### 4.1 cross-thread plain-scalar lexical writeback

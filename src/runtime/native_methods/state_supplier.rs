@@ -191,6 +191,131 @@ fn supplier_subscriptions_map() -> &'static SupplierSubscriptionsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+// ---------------------------------------------------------------------------
+// Supply-block `whenever` serialization
+//
+// Raku guarantees "you can only be in one `whenever` block at a time" for a
+// given `supply {}` / `react {}` instance: while one `whenever` handler runs
+// (even while it is blocked inside `await`), no sibling `whenever` of the same
+// block may run. mutsu delivers a live `whenever` callback synchronously on the
+// thread that emitted into the source Supplier (e.g. `$trigger.emit(...)`
+// running inside a `start { }`), so two sibling `whenever`s fed by two
+// different triggers on two worker threads would otherwise run concurrently and
+// interleave their emits (roast S17-supply/syntax.t test 53).
+//
+// We serialize them with a per-supply-block lock. Every `whenever` registered
+// during one on-demand supply-block body shares the block's emitter
+// `supplier_id` as its "serialize group". A side map records, for each source
+// trigger `supplier_id`, which group its `whenever` tap belongs to. At emit
+// time the group lock is held across the callback invocation. The lock is
+// re-entrant per thread (a `whenever` body that synchronously re-triggers a
+// same-group source on its own thread must not self-deadlock) and blocks across
+// threads via a condvar.
+type SupplierSerializeGroupsMap = std::sync::Mutex<HashMap<u64, u64>>;
+
+fn supplier_serialize_groups() -> &'static SupplierSerializeGroupsMap {
+    static MAP: OnceLock<SupplierSerializeGroupsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Record that `whenever` taps on `trigger_supplier_id` belong to the supply
+/// block identified by `group` (the block's emitter supplier id).
+pub(in crate::runtime) fn set_supplier_serialize_group(trigger_supplier_id: u64, group: u64) {
+    if let Ok(mut map) = supplier_serialize_groups().lock() {
+        map.insert(trigger_supplier_id, group);
+    }
+}
+
+/// Look up the serialize group for `whenever` taps on `trigger_supplier_id`.
+pub(in crate::runtime) fn supplier_serialize_group(trigger_supplier_id: u64) -> Option<u64> {
+    supplier_serialize_groups()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&trigger_supplier_id).copied())
+}
+
+struct GroupLock {
+    state: std::sync::Mutex<GroupLockState>,
+    cv: std::sync::Condvar,
+}
+
+struct GroupLockState {
+    owner: Option<std::thread::ThreadId>,
+    depth: u32,
+}
+
+fn group_locks() -> &'static std::sync::Mutex<HashMap<u64, std::sync::Arc<GroupLock>>> {
+    static MAP: OnceLock<std::sync::Mutex<HashMap<u64, std::sync::Arc<GroupLock>>>> =
+        OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// RAII guard for a held supply-block serialize group. Dropping it releases the
+/// group (decrements the re-entrancy depth; when it reaches zero, clears the
+/// owner and wakes a waiting thread).
+pub(in crate::runtime) struct SupplySerializeGuard {
+    lock: std::sync::Arc<GroupLock>,
+}
+
+impl Drop for SupplySerializeGuard {
+    fn drop(&mut self) {
+        if let Ok(mut st) = self.lock.state.lock() {
+            st.depth = st.depth.saturating_sub(1);
+            if st.depth == 0 {
+                st.owner = None;
+                self.lock.cv.notify_one();
+            }
+        }
+    }
+}
+
+/// Acquire the serialize group `group`, blocking the current thread until no
+/// other thread holds it. Re-entrant on the same thread.
+pub(in crate::runtime) fn acquire_supply_serialize(group: u64) -> SupplySerializeGuard {
+    let lock = {
+        let mut map = group_locks().lock().unwrap();
+        map.entry(group)
+            .or_insert_with(|| {
+                std::sync::Arc::new(GroupLock {
+                    state: std::sync::Mutex::new(GroupLockState {
+                        owner: None,
+                        depth: 0,
+                    }),
+                    cv: std::sync::Condvar::new(),
+                })
+            })
+            .clone()
+    };
+    let me = std::thread::current().id();
+    let mut st = lock.state.lock().unwrap();
+    loop {
+        match st.owner {
+            None => {
+                st.owner = Some(me);
+                st.depth = 1;
+                break;
+            }
+            Some(owner) if owner == me => {
+                st.depth += 1;
+                break;
+            }
+            Some(_) => {
+                st = lock.cv.wait(st).unwrap();
+            }
+        }
+    }
+    drop(st);
+    SupplySerializeGuard { lock }
+}
+
+/// Drop the serialize-group registration for a torn-down trigger supplier so
+/// the side map does not grow without bound across many supply blocks.
+pub(in crate::runtime) fn clear_supplier_serialize_group(trigger_supplier_id: u64) {
+    if let Ok(mut map) = supplier_serialize_groups().lock() {
+        map.remove(&trigger_supplier_id);
+    }
+}
+
 /// Monotonic count of `Supplier.done` invocations. Used to detect whether a
 /// QUIT phaser called `done` (which completes the supply via the emitter):
 /// snapshot before running the phaser, compare after.
@@ -350,6 +475,9 @@ pub(in crate::runtime) fn close_all_supplier_taps(supplier_id: u64) {
         subs.quit_callbacks.clear();
         subs.whenever_quit_callbacks.clear();
     }
+    // The trigger's `whenever` taps are gone; drop its serialize-group mapping
+    // so the side map does not grow across many supply blocks.
+    clear_supplier_serialize_group(supplier_id);
 }
 
 /// Return the id of the most recently registered tap on the given supplier,

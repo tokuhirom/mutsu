@@ -356,6 +356,18 @@ impl SharedChannel {
         !lock.lock().unwrap().send_closed
     }
 
+    /// True once the channel is closed *and* every queued value has been
+    /// drained. Unlike `can_send()` (which flips the instant `close()` runs,
+    /// even with values still queued), this is set atomically inside the lock
+    /// only when the queue empties on a closed channel. A poller that marks a
+    /// subscription done on `!can_send()` would drop a value enqueued in the
+    /// TOCTOU window between a `poll_result()` (seen empty) and the close check;
+    /// gating on this flag instead keeps polling until the value is delivered.
+    pub(crate) fn is_drained_closed(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().drained_closed
+    }
+
     pub(crate) fn add_supplier(&self, supplier_id: u64) {
         let (lock, _) = &*self.inner;
         lock.lock().unwrap().supplier_ids.push(supplier_id);

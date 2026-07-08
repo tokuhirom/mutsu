@@ -300,6 +300,15 @@ impl Interpreter {
                             {
                                 let supplier_id = sid as u64;
                                 register_supplier_tap(supplier_id, body_cb, 0.0);
+                                // Raku serializes all `whenever` handlers of one
+                                // supply block ("only in one whenever block at a
+                                // time"). Tag this source trigger with the block's
+                                // emitter id so a cross-thread emit into it holds
+                                // the block's serialize lock while the handler runs.
+                                crate::runtime::native_methods::set_supplier_serialize_group(
+                                    supplier_id,
+                                    emitter_supplier_id,
+                                );
                                 // Register the outer tap callback on the emitter
                                 // so that `$emitter.emit(val)` inside the body
                                 // forwards values to the outer tap subscriber.
