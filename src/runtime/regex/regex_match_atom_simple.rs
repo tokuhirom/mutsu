@@ -635,9 +635,14 @@ impl Interpreter {
                         }
                     }
                 };
-                let pos_match = positive
-                    .iter()
-                    .any(|item| match_class_item(item, &chars_to_check));
+                // An empty `positive` means "any character" (a purely-negated
+                // enumerated class like `<-restricted +subrule>` after the
+                // positive user-subrule is desugared into an alternation branch):
+                // the class matches any char that is not in `negative`.
+                let pos_match = positive.is_empty()
+                    || positive
+                        .iter()
+                        .any(|item| match_class_item(item, &chars_to_check));
                 let neg_match = negative
                     .iter()
                     .any(|item| match_class_item(item, &chars_to_check));
