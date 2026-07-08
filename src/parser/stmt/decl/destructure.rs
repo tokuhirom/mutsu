@@ -644,7 +644,7 @@ fn parse_named_destructuring(
         } else {
             &dvar.name
         };
-        let mut value_expr = Expr::Index {
+        let index_expr = Expr::Index {
             target: Box::new(Expr::HashVar(hash_bare.clone())),
             index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
             is_positional: false,
@@ -654,15 +654,34 @@ fn parse_named_destructuring(
         // array. mutsu's destructure lowers to assignment, so de-itemize the value
         // via `.list` for `@`-targets — a no-op for a plain list, but it unwraps a
         // single itemized array so `my (:@even) := classify(...)` yields `[2,4]`.
-        if dvar.name.starts_with('@') {
-            value_expr = Expr::MethodCall {
-                target: Box::new(value_expr),
-                name: crate::symbol::Symbol::intern("list"),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-            };
-        }
+        //
+        // When the key is ABSENT the named-array bind must yield an empty array
+        // (Rakudo parameter-binding semantics), not `[Any]`: a bare `%h<absent>`
+        // is `Any`, and `Any.list` is `(Any,)`, so guard with `:exists` and fall
+        // back to an empty list. `my (:@paths, :@uris) := <a>.classify(...)` must
+        // leave the unmatched `@uris` empty, or a downstream `%(... )` init sees a
+        // stray `(Any,)` and dies with X::Hash::Store::OddNumber.
+        let value_expr = if dvar.name.starts_with('@') {
+            Expr::Ternary {
+                cond: Box::new(Expr::Exists {
+                    target: Box::new(index_expr.clone()),
+                    negated: false,
+                    delete: false,
+                    arg: None,
+                    adverb: crate::ast::ExistsAdverb::None,
+                }),
+                then_expr: Box::new(Expr::MethodCall {
+                    target: Box::new(index_expr),
+                    name: crate::symbol::Symbol::intern("list"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                else_expr: Box::new(Expr::ArrayLiteral(Vec::new())),
+            }
+        } else {
+            index_expr
+        };
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
             expr: value_expr,
