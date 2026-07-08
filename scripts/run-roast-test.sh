@@ -28,6 +28,16 @@ per_file_timeout() {
       # This test uses sleep 2*$_ with $_ up to 9, parallel start blocks take ~18s.
       echo 60
       ;;
+    roast/S17-promise/start.t)
+      # Spawns ^300 `start` blocks plus several `sleep 1` waits. Standalone it
+      # runs in ~7.5s even under the gc-stress config (GC=on + VERIFY, release),
+      # but under `prove -j4` the 300-thread spawn contends for cores with the
+      # other three roast processes and blew the default 30s (x2 = 60s under
+      # MUTSU_ROAST_TIMEOUT_SCALE) budget at 49/65 tests. Give it explicit
+      # headroom so parallel CPU contention can't time it out. See
+      # docs/gc-level1-detailed-design.md 9.3a.
+      echo 60
+      ;;
     roast/S29-context/sleep.t)
       # This test has four 3-second sleep calls plus a subprocess, totalling ~18s locally
       # and potentially more on slower CI machines.

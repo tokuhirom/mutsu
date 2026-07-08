@@ -18,9 +18,25 @@ impl Interpreter {
         let declared_constraint = base_constraint
             .split_once('(')
             .map_or(base_constraint, |(target, _)| target);
-        let value = self.stack.last().expect("TypeCheck: empty stack").clone();
+        let mut value = self.stack.last().expect("TypeCheck: empty stack").clone();
         if var_name.is_some_and(|name| name.starts_with('%')) {
             return Ok(());
+        }
+        // A *non-lazy* lazy-positional RHS (e.g. a plain `gather` coroutine, whose
+        // view is `LazyList`, not `Array`/`Seq`) is reified here so both native and
+        // boxed typed arrays check/coerce its elements through the normal eager-list
+        // paths below. A single-shot coroutine must be reified exactly once, so
+        // replace the stack value too (the later SetLocal reuses it). A *genuinely*
+        // lazy list is left untouched: native arrays reject it just below as
+        // X::Cannot::Lazy, and boxed arrays keep it lazy (Rakudo checks its
+        // elements only when reified at access time).
+        if var_name.is_some_and(|name| name.starts_with('@'))
+            && let ValueView::LazyList(list) = value.view()
+            && !list.is_genuinely_lazy()
+        {
+            let items = self.force_lazy_list_vm(list)?;
+            value = Value::real_array(items);
+            *self.stack.last_mut().unwrap() = value.clone();
         }
         // Lazy values cannot be stored in native typed arrays
         if var_name.is_some_and(|name| name.starts_with('@'))
@@ -40,6 +56,13 @@ impl Interpreter {
                 .into_iter()
                 .collect(),
             ));
+        }
+        // A genuinely-lazy list bound to a *boxed* typed array stays lazy; accept it
+        // without eager element checking (its elements are checked on reification).
+        if var_name.is_some_and(|name| name.starts_with('@'))
+            && matches!(value.view(), ValueView::LazyList(_))
+        {
+            return Ok(());
         }
         if var_name.is_some_and(|name| name.starts_with('@'))
             && matches!(value.view(), ValueView::Array(..) | ValueView::Seq(_))
