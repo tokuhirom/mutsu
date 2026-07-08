@@ -2064,6 +2064,8 @@ impl Interpreter {
             supply_emit_buffer: Vec::new(),
             supply_emit_timed_buffer: Vec::new(),
             supply_stream_consumers: Vec::new(),
+            react_active: 0,
+            pending_tap_closes: Vec::new(),
             shared_vars: Arc::new(RwLock::new(HashMap::new())),
             shared_vars_active: false,
             sigilless_attrs_active: false,

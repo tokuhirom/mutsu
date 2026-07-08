@@ -959,6 +959,7 @@ roast/S17-supply/stable.t
 roast/S17-supply/start.t
 roast/S17-supply/supplier-preserving.t
 roast/S17-supply/syntax-nonblocking-await.t
+roast/S17-supply/syntax.t
 roast/S17-supply/tail.t
 roast/S17-supply/throttle.t
 roast/S17-supply/unique.t

@@ -120,6 +120,15 @@ pub(crate) struct Compiler {
     pub(crate) lexically_in_method: bool,
     /// When true, the current VarDecl is from a `:=` bind declaration.
     bind_vardecl: bool,
+    /// True while compiling a `do whenever $s {...}` in expression position
+    /// (e.g. `my $tap = do whenever $s {...}`). The whenever's tap handle is
+    /// bridged out through `env[$s]` (see `run_whenever_with_value`), so the
+    /// `WheneverScope` op is emitted with the supply-var name as its target so
+    /// the enclosing `do` can read the tap back. A bare `whenever $s {...}`
+    /// statement leaves this false, so it does NOT clobber `$s` — important when
+    /// the same `$s` is tapped again on a later iteration (e.g. a nested
+    /// `whenever` inside `whenever Supply.interval(...)`).
+    whenever_bind_target: bool,
     /// When true, Index expressions should emit IndexAutovivify instead of
     /// Index.  Set only during scalar `:=` bind VarDecl compilation so that
     /// `my $b := %h<foo><baz>` creates a HashEntryRef.
@@ -252,6 +261,7 @@ impl Compiler {
             lexically_in_routine: false,
             lexically_in_method: false,
             bind_vardecl: false,
+            whenever_bind_target: false,
             scalar_bind_autovivify: false,
             bind_terminal: false,
             bind_target_direct: false,

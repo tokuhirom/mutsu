@@ -151,6 +151,47 @@ impl Interpreter {
     /// [`SupplyDrivePolicy`]).
     pub(crate) fn drive_react_subscriptions_nested(
         &mut self,
+        react_subs: Vec<ReactSubscription>,
+        policy: SupplyDrivePolicy,
+    ) -> Result<(), RuntimeError> {
+        // Mark the drive loop active so a `whenever` that taps an on-demand
+        // supply from inside a running react routes the supply's
+        // `closing => { ... }` callbacks to this (main) thread via
+        // `pending_tap_closes`, rather than firing them on an async body's
+        // worker thread (see `native_supply_mut_methods` tap on-demand path).
+        self.react_active += 1;
+        let result = self.drive_react_subscriptions_inner(react_subs, policy);
+        self.react_active -= 1;
+        // Fire any close callbacks whose emitter completed but was not drained
+        // in-loop (e.g. the final tap's emitter finishing as the react ended).
+        let _ = self.fire_ready_tap_closes();
+        result
+    }
+
+    /// Fire the `closing => { ... }` callbacks of any nested-`whenever` on-demand
+    /// tap whose emitter has signalled `done`/`quit`, on the current (main react)
+    /// thread. Draining removes each serviced entry so a callback runs once per
+    /// tap. Runs both each drive-loop poll and once when the loop exits.
+    fn fire_ready_tap_closes(&mut self) -> Result<(), RuntimeError> {
+        if self.pending_tap_closes.is_empty() {
+            return Ok(());
+        }
+        let mut i = 0;
+        while i < self.pending_tap_closes.len() {
+            if self.pending_tap_closes[i].0.is_resolved() {
+                let (_, cbs) = self.pending_tap_closes.remove(i);
+                for cb in cbs {
+                    let _ = self.call_react_callback(&cb, Vec::new());
+                }
+            } else {
+                i += 1;
+            }
+        }
+        Ok(())
+    }
+
+    fn drive_react_subscriptions_inner(
+        &mut self,
         mut react_subs: Vec<ReactSubscription>,
         mut policy: SupplyDrivePolicy,
     ) -> Result<(), RuntimeError> {
@@ -199,6 +240,9 @@ impl Interpreter {
             if self.drain_supplier_subs_ordered(&mut react_subs)? {
                 break 'react_loop;
             }
+            // Service any nested-`whenever` on-demand taps whose emitter finished,
+            // firing their `closing => { ... }` callbacks on this thread.
+            self.fire_ready_tap_closes()?;
             // Phase 2: poll the non-supplier subscriptions (on-demand / channel /
             // receiver sources).
             let mut all_done = true;
