@@ -144,12 +144,32 @@ impl Interpreter {
             "can-install" => {
                 // Mirror rakudo's CompUnit::Repository::Installation.can-install:
                 // writable if the prefix is writable, or it does not yet exist and
-                // its parent directory is writable (so it can be created on install).
+                // it can be *created* — i.e. the nearest already-existing ancestor
+                // directory is writable. Checking only the immediate parent is
+                // wrong when several path components are missing at once (mutsu's
+                // default `home`/`site` repos live under a not-yet-created
+                // `~/.local/share/mutsu/repo/`; `zef install`'s `auto` target
+                // selection then found no installable repo and died with "Need a
+                // valid installation target to continue").
                 use crate::runtime::native_io::path_is_writable;
                 let prefix_path = std::path::Path::new(&prefix);
-                let can = path_is_writable(prefix_path)
-                    || (!prefix_path.exists()
-                        && prefix_path.parent().map(path_is_writable).unwrap_or(false));
+                let can = if path_is_writable(prefix_path) {
+                    true
+                } else if prefix_path.exists() {
+                    // Exists but not writable.
+                    false
+                } else {
+                    // Walk up to the nearest existing ancestor and check whether
+                    // the missing prefix could be created under it.
+                    let mut ancestor = prefix_path.parent();
+                    loop {
+                        match ancestor {
+                            Some(dir) if dir.exists() => break path_is_writable(dir),
+                            Some(dir) => ancestor = dir.parent(),
+                            None => break false,
+                        }
+                    }
+                };
                 Some(Ok(Value::truth(can)))
             }
             "path-spec" => Some(Ok(Value::str(format!("inst#{prefix}")))),
