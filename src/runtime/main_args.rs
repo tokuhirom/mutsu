@@ -191,11 +191,19 @@ impl Interpreter {
                     match self.call_main_with_parsed_args(candidate, &parsed, &sub_main_opts) {
                         Ok(()) => return Ok(()),
                         Err(e) => {
-                            let msg = e.message.to_lowercase();
-                            if msg.contains("constraint")
-                                || msg.contains("type check")
-                                || msg.contains("where")
-                            {
+                            // Fall through to the next candidate ONLY when argument
+                            // binding was rejected (a parameter type / `where`
+                            // constraint mismatch or an arity mismatch) — i.e. this
+                            // candidate does not accept these args. An error raised
+                            // from the *body* of a matched candidate must propagate,
+                            // not be masked as a dispatch failure that prints Usage.
+                            // A broad substring match on "type check"/"where"
+                            // previously swallowed body errors like "Type check
+                            // failed for return value" (X::TypeCheck::Return) and
+                            // "... where hash initializer expected"
+                            // (X::Hash::Store::OddNumber), so `zef install` reported
+                            // Usage instead of the real failure.
+                            if Self::is_main_binding_rejection(&e) {
                                 continue;
                             }
                             return Err(e);
@@ -437,6 +445,30 @@ impl Interpreter {
             i += 1;
         }
         Ok(ParsedMainArgs { positional, named })
+    }
+
+    /// Whether a `MAIN` candidate call error represents *argument binding
+    /// rejection* (so multi-dispatch should try the next candidate) rather than
+    /// an error thrown from a matched candidate's body (which must propagate).
+    ///
+    /// Discriminated by exception class, not a substring match: a parameter type
+    /// / `where` constraint failure is `X::TypeCheck::Argument` /
+    /// `X::TypeCheck::Binding::*`, and an arity mismatch carries a "Too
+    /// few/many positionals passed" message. Body errors such as
+    /// `X::TypeCheck::Return` or `X::Hash::Store::OddNumber` are excluded.
+    fn is_main_binding_rejection(e: &RuntimeError) -> bool {
+        if e.message.contains("Too few positionals passed")
+            || e.message.contains("Too many positionals passed")
+        {
+            return true;
+        }
+        if let Some(ex) = e.exception.as_ref()
+            && let ValueView::Instance { class_name, .. } = ex.as_ref().view()
+        {
+            let name = class_name.resolve();
+            return name == "X::TypeCheck::Argument" || name.starts_with("X::TypeCheck::Binding");
+        }
+        false
     }
 
     fn call_main_with_parsed_args(

@@ -88,7 +88,7 @@ impl Interpreter {
             // to the topic `$_` (see `eval_map_over_items`).
             let compiler = crate::compiler::Compiler::new();
             let normalized_body =
-                super::resolution_map_grep::normalize_tail_call_for_value(&data.body);
+                super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
             let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
@@ -271,7 +271,9 @@ impl Interpreter {
             // a routine is currently on the dynamic call stack.
             let mut compiler = crate::compiler::Compiler::new();
             compiler.lexically_in_routine = !self.routine_stack.is_empty();
-            let (code, compiled_fns) = compiler.compile(&data.body);
+            let normalized_body =
+                super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
+            let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();

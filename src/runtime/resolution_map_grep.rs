@@ -28,25 +28,49 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
     }
 }
 
-/// If the last non-`SetLine` statement of `body` is a bare `Stmt::Call`, replace
-/// it with `Stmt::Expr(Expr::Call)` so the re-compiled block leaves the call's
-/// value on the stack (otherwise a named/slip-arg tail call is compiled as a
-/// value-discarding statement and the map result wrongly falls back to `$_`).
-pub(super) fn normalize_tail_call_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
-    use crate::ast::{Expr, Stmt};
+/// Normalize the last non-`SetLine` statement of a `.map`/`.grep` block `body`
+/// so the re-compiled block leaves its value on the stack (otherwise the map/grep
+/// result wrongly falls back to the topic `$_`). Two statement shapes compile as
+/// value-discarding statements and need rewriting into their expression form:
+///
+/// - a bare `Stmt::Call` carrying named/slip args (`f(k => v)`) → `Stmt::Expr(Call)`
+/// - a plain `Stmt::Assign` to an already-declared variable (`$x = 9`) →
+///   `Stmt::Expr(AssignExpr)`, so `(1, 2, 3).map({ $x = 9 })` yields the assigned
+///   value, not the topic. Using the assignment *expression* keeps the normal
+///   store (readonly / type-constraint checks) intact.
+pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<crate::ast::Stmt> {
+    use crate::ast::{AssignOp, Expr, Stmt};
     let Some(last_idx) = body.iter().rposition(|s| !matches!(s, Stmt::SetLine(_))) else {
         return body.to_vec();
     };
-    if let Stmt::Call { name, args } = &body[last_idx] {
-        let expr_args = args.iter().map(call_arg_to_expr).collect();
-        let mut out = body.to_vec();
-        out[last_idx] = Stmt::Expr(Expr::Call {
-            name: *name,
-            args: expr_args,
-        });
-        out
-    } else {
-        body.to_vec()
+    match &body[last_idx] {
+        Stmt::Call { name, args } => {
+            let expr_args = args.iter().map(call_arg_to_expr).collect();
+            let mut out = body.to_vec();
+            out[last_idx] = Stmt::Expr(Expr::Call {
+                name: *name,
+                args: expr_args,
+            });
+            out
+        }
+        // A plain assignment to an existing variable; compound ops desugar the
+        // operator into the RHS, so `op` is always `Assign` here. A `Feed`-RHS
+        // assignment (`@x = SOURCE ==> SINK`) is left alone — it has its own
+        // sink-context statement lowering.
+        Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+        } if !matches!(expr, Expr::Feed { .. }) => {
+            let mut out = body.to_vec();
+            out[last_idx] = Stmt::Expr(Expr::AssignExpr {
+                name: name.clone(),
+                expr: Box::new(expr.clone()),
+                is_bind: false,
+            });
+            out
+        }
+        _ => body.to_vec(),
     }
 }
 
@@ -208,7 +232,7 @@ impl Interpreter {
             // `f(k => v)` parses) is compiled as a value-discarding statement, so
             // the result would wrongly fall back to the topic. Normalize such a
             // tail into `Stmt::Expr(Expr::Call)` so its value is preserved.
-            let normalized_body = normalize_tail_call_for_value(&data.body);
+            let normalized_body = normalize_tail_stmt_for_value(&data.body);
             let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
