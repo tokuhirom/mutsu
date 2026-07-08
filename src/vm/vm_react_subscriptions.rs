@@ -288,8 +288,17 @@ impl Interpreter {
                             sub.emit_count += 1;
                         }
                         Ok(None) => {
-                            // No value available yet; if channel is closed, mark done
-                            if !ch.can_send() {
+                            // No value available yet. Only mark done once the
+                            // channel is closed *and* fully drained. Gating on
+                            // `!can_send()` here would race: a value `send`+`close`d
+                            // between this `poll_result()` (seen empty) and the
+                            // close check is still queued, but `can_send()` already
+                            // reports closed, so the value would be dropped
+                            // (roast S17-supply/syntax.t test 57 lost the final
+                            // channel value under load). `is_drained_closed()` flips
+                            // only when the queue empties on a closed channel, so we
+                            // keep polling until that late value is delivered.
+                            if ch.is_drained_closed() {
                                 for callback in &sub.last_callbacks {
                                     self.call_react_callback(&callback.clone(), Vec::new())?;
                                 }

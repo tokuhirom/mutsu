@@ -479,6 +479,16 @@ impl Interpreter {
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
                 {
                     let sid = supplier_id as u64;
+                    // If this trigger feeds a `whenever` in a supply block, hold
+                    // the block's serialize lock across the whole callback
+                    // dispatch. A sibling `whenever` emitted on another thread
+                    // then waits — even while this handler is blocked inside
+                    // `await` — enforcing "only in one whenever block at a time"
+                    // (roast S17-supply/syntax.t test 53). Non-block suppliers are
+                    // absent from the side map, so this is a no-op for them.
+                    let _serialize_guard =
+                        crate::runtime::native_methods::supplier_serialize_group(sid)
+                            .map(crate::runtime::native_methods::acquire_supply_serialize);
                     let actions = supplier_emit_callbacks(sid, &value);
                     for action in actions {
                         match action {
