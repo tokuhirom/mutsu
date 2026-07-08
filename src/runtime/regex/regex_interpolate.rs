@@ -388,6 +388,17 @@ impl Interpreter {
                 i += 1;
                 continue;
             }
+            // `<( ... )>` is the capture-marker construct (set match start/end),
+            // NOT a subrule call `<name(args)>`. Emit the `<(` verbatim and keep
+            // scanning the inner pattern (any real subrule calls inside it are
+            // still processed), so its content is not mis-read as an argument
+            // expression.
+            if chars.get(i + 1) == Some(&'(') {
+                out.push('<');
+                out.push('(');
+                i += 2;
+                continue;
+            }
 
             let mut depth = 1usize;
             let start = i + 1;
