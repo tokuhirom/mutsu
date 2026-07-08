@@ -380,6 +380,59 @@ impl Interpreter {
         Some((body.to_string(), count_spec.to_string()))
     }
 
+    /// Strip a trailing simple quantifier from a whole-atom `[...]` group, e.g.
+    /// `[.]+` -> `("[.]", "1..*")`, `[[.]+?]*` -> `("[[.]+?]", "0..*")`. Returns
+    /// `None` unless the atom is exactly one balanced `[...]` group followed by a
+    /// single `?`/`+`/`*`. Used by the separator (`%`/`%%`) LTM expansion so a
+    /// bracket-group atom is quantified once per separated item (`[.]+ %% X` ->
+    /// `[.] (X [.])*`), not double-quantified (`[.]+ (X [.]+)*`).
+    fn strip_group_quantifier(atom: &str) -> Option<(String, String)> {
+        let quant = atom.chars().last()?;
+        if !matches!(quant, '?' | '+' | '*') {
+            return None;
+        }
+        let body = &atom[..atom.len() - quant.len_utf8()];
+        if !body.starts_with('[') || !body.ends_with(']') {
+            return None;
+        }
+        // The `[...]` group must be balanced and span the entire body (it closes
+        // only at the final `]`), tracking backslash escapes and quotes so a `]`
+        // inside `[ '\]' ]` / `[ \] ]` doesn't end it early.
+        let mut depth = 0i32;
+        let mut escaped = false;
+        let mut quote: Option<char> = None;
+        let cs: Vec<char> = body.chars().collect();
+        for (i, &ch) in cs.iter().enumerate() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match ch {
+                '\\' => escaped = true,
+                '\'' | '"' if quote.is_none() => quote = Some(ch),
+                c if quote == Some(c) => quote = None,
+                '[' if quote.is_none() => depth += 1,
+                ']' if quote.is_none() => {
+                    depth -= 1;
+                    if depth == 0 && i != cs.len() - 1 {
+                        return None; // group closes before the end
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth != 0 {
+            return None;
+        }
+        let count_spec = match quant {
+            '*' => "0..*",
+            '+' => "1..*",
+            '?' => "0..1",
+            _ => return None,
+        };
+        Some((body.to_string(), count_spec.to_string()))
+    }
+
     /// Split `'u'<cp>+` into `("'u'", "<cp>", "1..*")`.
     /// Returns `(prefix, bracket_atom, count_spec)` when the atom ends with a
     /// bracket-delimited sub-rule + simple quantifier, and there is a non-empty
@@ -769,6 +822,11 @@ impl Interpreter {
             }
             // Handle bracket-delimited atoms with quantifiers (e.g. `<value>*`)
             if let Some((base, count_spec)) = Self::strip_bracket_quantifier(&atom) {
+                return build_with_rest(expand(&base, &count_spec, sep_mode, sep));
+            }
+            // Handle a `[...]` group atom with a trailing quantifier (`[.]+`,
+            // `[[.]+?]*`): quantify the group once per separated item.
+            if let Some((base, count_spec)) = Self::strip_group_quantifier(&atom) {
                 return build_with_rest(expand(&base, &count_spec, sep_mode, sep));
             }
             return build_with_rest(expand(&atom, "1..*", sep_mode, sep));
