@@ -179,9 +179,20 @@ impl Interpreter {
                     }
                 }
 
+                // A Proc::Async output supply (`proc_output` marker) is delivered
+                // exactly once, by the await/result-time `replay_proc_taps` — the
+                // tap was registered in the global registry above. Consuming the
+                // live channel (or the collected output) here as well would
+                // deliver the same output twice once the tap closure's captured
+                // lexicals are shared cells (S17-procasync/basic.t test 37), and
+                // taking the channel would starve `react whenever` / `bind-stdin`
+                // consumers of the same stream.
+                let is_proc_output = attrs.contains_key("proc_output");
+
                 // For live/async supplies (e.g., signal), spawn a background thread
                 // to consume events from the channel and call the callback.
-                if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
+                if !is_proc_output
+                    && let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
                     && let Some(rx) = take_supply_channel(sid as u64)
                 {
                     let mut thread_interp = self.clone_for_thread();
@@ -193,7 +204,8 @@ impl Interpreter {
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
                 }
-                if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
+                if !is_proc_output
+                    && let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
                     && let Some(collected) = get_supply_collected_output(sid as u64)
                     && !collected.is_empty()
                 {

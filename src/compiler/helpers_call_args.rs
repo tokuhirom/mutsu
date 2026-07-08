@@ -106,16 +106,16 @@ impl Compiler {
     /// after registering the continuation is invisible to the continuation body,
     /// which reads a stale clone-time snapshot.
     ///
-    /// NB: `tap`/`act` are deliberately NOT here. They escape too (the
-    /// socket-listener worker drives them — roast S32-io/socket-recv-vs-read.t
-    /// test 11), but escape-boxing a `.tap` accumulator (`$x ~= $_`) exposes a
-    /// pre-existing double-delivery in the Proc::Async tap path (the live-channel
-    /// async loop AND the await-time replay both fire the tap; the duplicate
-    /// write was silently lost while the capture was a by-value snapshot, but a
-    /// shared cell keeps both — S17-procasync/basic.t test 37). Boxing tap/act
-    /// must wait until that double-delivery is resolved.
+    /// `tap`/`act` escape too: a supply tap callback is stored and later driven
+    /// by whatever thread emits into the supply (e.g. the socket-listener worker
+    /// — roast S32-io/socket-recv-vs-read.t test 11). Boxing their accumulators
+    /// became safe once the Proc::Async tap path was unified to a single
+    /// delivery (the await-time `replay_proc_taps`; the tap-time live-channel
+    /// loop used to fire the same collected output a second time, which a
+    /// by-value snapshot silently swallowed but a shared cell keeps —
+    /// S17-procasync/basic.t test 37).
     pub(super) fn method_escapes_closure_args(name: &str) -> bool {
-        matches!(name, "then")
+        matches!(name, "then" | "tap" | "act")
     }
 
     /// Compile a method call argument. Named args (AssignExpr) are
