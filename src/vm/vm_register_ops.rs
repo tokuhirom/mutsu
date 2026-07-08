@@ -23,9 +23,19 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
+            // Box captured-and-mutated lexicals the gather body reads into shared
+            // ContainerRef cells BEFORE snapshotting the env: the body pulls
+            // lazily after this frame moves on, so a by-value copy would miss
+            // later writes (`my $x = 1; my $s = gather { take $x }; $x = 2` must
+            // take 2). The analysis closure (compiled from the same body by
+            // surface_stashed_body_free_vars) names the free vars; the boxing
+            // rules are exactly the closure-capture ones.
+            let analysis_cc = Self::resolve_closure_code(code, cc_idx);
+            self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
             // Compile the gather body to bytecode for Interpreter-native forcing
@@ -46,6 +56,7 @@ impl Interpreter {
                     stack: Vec::new(),
                     env: crate::env::Env::new(),
                     finished: false,
+                    started: false,
                     for_loop_resume: None,
                 })),
                 lazy_pipe: None,
@@ -516,36 +527,44 @@ impl Interpreter {
                 continue;
             }
             let needs_cell = code.needs_cell_locals.contains(sym);
-            let Some(idx) = sym.with_str(|s| {
-                if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
-                    return None;
+            // Resolve to an owned String instead of `with_str`: `with_str` holds
+            // the global symbol table's READ lock across its closure, and the
+            // checks below (`var_type_constraint`, env access) can intern a NEW
+            // string — a same-thread read→write reacquire of the RwLock, which
+            // deadlocks. (Surfaced by the MakeGather boxing path; the closure
+            // creation ops share this code, so keep it lock-free for all.)
+            let s = sym.resolve();
+            if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
+                continue;
+            }
+            let is_loop_local = self
+                .loop_local_vars
+                .iter()
+                .any(|set| set.contains(s.as_str()));
+            if !is_loop_local {
+                // Non-loop escaping path (B) only.
+                if !needs_cell {
+                    continue;
                 }
-                let is_loop_local = self.loop_local_vars.iter().any(|set| set.contains(s));
-                if !is_loop_local {
-                    // Non-loop escaping path (B) only.
-                    if !needs_cell {
-                        return None;
-                    }
-                    // A type/`where`-constrained scalar must keep flowing through
-                    // the assignment chokepoint so each mutation re-checks the
-                    // constraint; the ContainerRef write-through bypasses it. Skip
-                    // boxing it (inline `where` desugars to an anonymous subset, so
-                    // var_type_constraint catches block/whatever/`&pred` forms).
-                    // Applied to (B) only — the loop path (A) is left unchanged.
-                    // EXCEPTION: `Mu` is the universal type — every value satisfies
-                    // it, so the ContainerRef write-through bypasses no real check.
-                    // Box `my Mu $s` so captured-outer thunks (metaop `Xxx`/`Zand`)
-                    // share its cell and stay coherent without the blanket reconcile.
-                    let mut tc = loan_env!(self, var_type_constraint(s));
-                    if tc.is_none() {
-                        tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
-                    }
-                    if matches!(tc.as_deref(), Some(t) if t != "Mu") {
-                        return None;
-                    }
+                // A type/`where`-constrained scalar must keep flowing through
+                // the assignment chokepoint so each mutation re-checks the
+                // constraint; the ContainerRef write-through bypasses it. Skip
+                // boxing it (inline `where` desugars to an anonymous subset, so
+                // var_type_constraint catches block/whatever/`&pred` forms).
+                // Applied to (B) only — the loop path (A) is left unchanged.
+                // EXCEPTION: `Mu` is the universal type — every value satisfies
+                // it, so the ContainerRef write-through bypasses no real check.
+                // Box `my Mu $s` so captured-outer thunks (metaop `Xxx`/`Zand`)
+                // share its cell and stay coherent without the blanket reconcile.
+                let mut tc = loan_env!(self, var_type_constraint(&s));
+                if tc.is_none() {
+                    tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
                 }
-                code.locals.iter().rposition(|n| n == s)
-            }) else {
+                if matches!(tc.as_deref(), Some(t) if t != "Mu") {
+                    continue;
+                }
+            }
+            let Some(idx) = code.locals.iter().rposition(|n| *n == s) else {
                 continue;
             };
             let cur = &self.locals[idx];
@@ -569,20 +588,18 @@ impl Interpreter {
             }
             let container = cur.clone().into_container_ref();
             self.locals[idx] = container.clone();
-            sym.with_str(|s| {
-                self.env_mut().insert(s.to_string(), container.clone());
-                // Track C: if a thread is already running (shared_vars active) and a
-                // stale plain snapshot of this name lives in `shared_vars` (seeded
-                // by an earlier `start` before this local was boxed), replace it
-                // with the cell. Otherwise the stale value, marked dirty, would be
-                // written back over the cell by `sync_shared_vars_to_env` after the
-                // next await — disconnecting the parent from the shared cell.
-                // `set_shared_var` only updates entries that already exist, so this
-                // is a no-op when the name was never snapshotted.
-                if self.shared_vars_active {
-                    loan_env!(self, set_shared_var(s, container.clone()));
-                }
-            });
+            self.env_mut().insert(s.clone(), container.clone());
+            // Track C: if a thread is already running (shared_vars active) and a
+            // stale plain snapshot of this name lives in `shared_vars` (seeded
+            // by an earlier `start` before this local was boxed), replace it
+            // with the cell. Otherwise the stale value, marked dirty, would be
+            // written back over the cell by `sync_shared_vars_to_env` after the
+            // next await — disconnecting the parent from the shared cell.
+            // `set_shared_var` only updates entries that already exist, so this
+            // is a no-op when the name was never snapshotted.
+            if self.shared_vars_active {
+                loan_env!(self, set_shared_var(&s, container.clone()));
+            }
         }
     }
 }

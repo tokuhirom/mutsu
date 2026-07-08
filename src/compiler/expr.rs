@@ -402,8 +402,11 @@ impl Compiler {
                 && Self::is_dostmt_for(target) =>
             {
                 if let Some(gather_block) = Self::make_lazy_for_gather(target) {
-                    let idx = self.code.add_stmt(Stmt::Block(gather_block));
-                    self.code.emit(OpCode::MakeGather(idx));
+                    let idx = self.code.add_stmt(Stmt::Block(gather_block.clone()));
+                    // Lazy body: cell-promote captured-and-mutated lexicals, as
+                    // for Expr::Gather below.
+                    let cc_idx = self.surface_stashed_body_free_vars(&[], &gather_block);
+                    self.code.emit(OpCode::MakeGather(idx, Some(cc_idx)));
                 } else {
                     self.compile_expr_method_generic(target, name, args, &None, false);
                 }
@@ -701,7 +704,13 @@ impl Compiler {
             Expr::Gather(_) => {
                 if let Expr::Gather(body) = expr {
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
-                    self.code.emit(OpCode::MakeGather(idx));
+                    // A gather body pulls lazily after this frame moves on, so a
+                    // captured-and-mutated lexical it reads must be cell-promoted
+                    // or the pull sees a stale env snapshot (`my $x = 1; my $s =
+                    // gather { take $x }; $x = 2` must take 2, not 1). See
+                    // surface_stashed_body_free_vars for the mechanism.
+                    let cc_idx = self.surface_stashed_body_free_vars(&[], body);
+                    self.code.emit(OpCode::MakeGather(idx, Some(cc_idx)));
                 }
             }
             Expr::Eager(inner) => {

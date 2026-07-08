@@ -1299,6 +1299,13 @@ pub(crate) struct GatherCoroutineState {
     pub(crate) stack: Vec<Value>,
     pub(crate) env: Env,
     pub(crate) finished: bool,
+    /// True once the body has run and suspended at least once. The resume
+    /// check must use this, NOT `ip > 0`: a body that is a single compound
+    /// loop op (`gather { loop { take ... } }`) suspends with `ip == 0` and
+    /// its position in `for_loop_resume`, and re-running it from scratch
+    /// instead of resuming double-applies the body's side effects on
+    /// cell-promoted captured lexicals.
+    pub(crate) started: bool,
     /// Saved for-loop iteration state when suspended inside a for loop.
     pub(crate) for_loop_resume: Option<ForLoopResumeState>,
 }

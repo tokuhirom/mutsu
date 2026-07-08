@@ -79,7 +79,7 @@ impl Interpreter {
 
         if let Some(ref coro_mutex) = list.coroutine {
             let coro = coro_mutex.lock().unwrap();
-            if !coro.finished && coro.ip > 0 {
+            if !coro.finished && (coro.ip > 0 || coro.started) {
                 // Resume from saved state
                 ip = coro.ip;
                 self.locals = coro.locals.clone();
@@ -206,6 +206,7 @@ impl Interpreter {
                 stack: self.stack.clone(),
                 env: self.env().clone(),
                 finished: false,
+                started: true,
                 for_loop_resume,
             };
             if let Some(ref coro_mutex) = list.coroutine {

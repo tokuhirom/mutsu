@@ -735,7 +735,13 @@ pub(crate) enum OpCode {
     DoGivenExpr {
         body_end: u32,
     },
-    MakeGather(u32),
+    /// Create a lazy gather list from `stmt_pool[.0]`. `.1` indexes the
+    /// analysis-only escaping closure compiled from the same body
+    /// (`surface_stashed_body_free_vars`): exec boxes the captured-and-mutated
+    /// lexicals it names (`box_captured_lexicals`) BEFORE snapshotting the env,
+    /// so a lazy pull after the frame moves on reads the live cell, not a stale
+    /// by-value copy.
+    MakeGather(u32, Option<u32>),
     /// Force eager evaluation of the top-of-stack value (LazyList → Array)
     Eager,
     CallOnValue {
@@ -1731,7 +1737,7 @@ impl CompiledCode {
                 OpCode::ForLoop(..)
                     | OpCode::BlockScope { .. }
                     | OpCode::BlockLocalScope { .. }
-                    | OpCode::MakeGather(_)
+                    | OpCode::MakeGather(..)
                     | OpCode::WheneverScope { .. }
             )
         });
