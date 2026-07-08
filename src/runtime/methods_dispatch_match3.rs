@@ -285,6 +285,28 @@ impl Interpreter {
                 self.dispatch_join_method(target, args)
             }
             "grep" => {
+                // `Supply.grep` on a *live* (Supplier-backed) supply must stay
+                // live: register a filter transform tap that forwards matching
+                // values to a derived supply. A materialized supply
+                // (`Supply.from-list`, on-demand) falls through to `dispatch_grep`
+                // below, which already filters its buffered values with correct
+                // smart-match semantics (grep(Int)/grep(/rx/) etc.).
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = target.view()
+                    && class_name == "Supply"
+                    && crate::runtime::native_methods::supplier_id_from_attrs(&attributes.as_map())
+                        .is_some()
+                {
+                    let matcher = args.first().cloned().unwrap_or(Value::NIL);
+                    if let Some(live) =
+                        self.make_live_transform_supply(&attributes.as_map(), matcher, true)
+                    {
+                        return Some(Ok(live));
+                    }
+                }
                 // In Raku, `.grep` always returns a `Seq` — including over an
                 // Array. `dispatch_grep` builds a `List`-kind array whose elements
                 // are the matched source slots as shared `ContainerRef` cells (so a

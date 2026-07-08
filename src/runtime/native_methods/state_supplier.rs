@@ -72,10 +72,27 @@ struct SupplierTapSubscription {
     /// supplier (used by `migrate` to pipe the currently-active inner supply
     /// into the migrate output supplier).
     forward_downstream: Option<u64>,
+    /// Transform tap: each emitted value is passed through a `grep`/`map`
+    /// callable and the (filtered or mapped) result is re-emitted to a
+    /// downstream supplier. Used by `Supply.grep`/`Supply.map` on a live
+    /// (Supplier-backed) supply so the transform stays live rather than
+    /// snapshotting the source.
+    transform_state: Option<TransformState>,
     /// Stable identifier so taps can be closed individually.
     tap_id: u64,
     /// When set, this tap is closed and should no longer receive emits.
     closed: bool,
+}
+
+#[derive(Clone)]
+struct TransformState {
+    /// The `grep`/`map` callable applied to each emitted value.
+    callable: Value,
+    /// `true` for `grep` (filter: forward the original value when the callable
+    /// is truthy), `false` for `map` (forward the callable's return value).
+    is_grep: bool,
+    /// The downstream supplier that receives the forwarded/transformed values.
+    downstream_supplier_id: u64,
 }
 
 #[derive(Clone)]
@@ -243,6 +260,7 @@ pub(in crate::runtime) fn register_supplier_migrate_tap(master_sid: u64, downstr
                     current_inner_tap_id: None,
                 }),
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -279,6 +297,7 @@ fn register_supplier_forward_tap(inner_sid: u64, downstream_sid: u64) -> u64 {
                 closed: false,
                 migrate_state: None,
                 forward_downstream: Some(downstream_sid),
+                transform_state: None,
             });
     }
     tap_id
@@ -379,6 +398,7 @@ pub(in crate::runtime) fn register_supplier_channel_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -432,6 +452,7 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -470,6 +491,7 @@ pub(in crate::runtime) fn register_supplier_tap_with_head_limit(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -508,6 +530,7 @@ pub(in crate::runtime) fn register_supplier_lines_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -545,6 +568,7 @@ pub(in crate::runtime) fn register_supplier_words_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -589,6 +613,7 @@ pub(in crate::runtime) fn register_supplier_elems_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -663,6 +688,15 @@ pub(in crate::runtime) enum SupplierEmitAction {
     /// Forward: re-emit a value verbatim to the given downstream supplier.
     ForwardEmit {
         downstream_supplier_id: u64,
+        value: Value,
+    },
+    /// Transform: run the `grep`/`map` callable on the value, then forward the
+    /// (filtered or mapped) result to the downstream supplier. Needs the
+    /// interpreter to invoke the callable.
+    TransformCall {
+        downstream_supplier_id: u64,
+        callable: Value,
+        is_grep: bool,
         value: Value,
     },
 }
@@ -865,6 +899,13 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     downstream_supplier_id: downstream_sid,
                     value: emitted_value.clone(),
                 });
+            } else if let Some(ref ts) = tap.transform_state {
+                actions.push(SupplierEmitAction::TransformCall {
+                    downstream_supplier_id: ts.downstream_supplier_id,
+                    callable: ts.callable.clone(),
+                    is_grep: ts.is_grep,
+                    value: emitted_value.clone(),
+                });
             } else {
                 actions.push(SupplierEmitAction::Call(
                     tap.callback.clone(),
@@ -958,6 +999,7 @@ pub(in crate::runtime) fn register_supplier_unique_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -999,6 +1041,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -1042,6 +1085,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -1127,6 +1171,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -1410,6 +1455,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -1449,8 +1495,72 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
+}
+
+/// Register a `grep`/`map` transform tap on a live supplier: each emitted value
+/// is passed through `callable` and the result forwarded to
+/// `downstream_supplier_id` (for `grep`, the original value is forwarded when
+/// the callable is truthy; for `map`, the callable's return value is forwarded).
+pub(in crate::runtime) fn register_supplier_transform_tap(
+    supplier_id: u64,
+    downstream_supplier_id: u64,
+    callable: Value,
+    is_grep: bool,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::NIL,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                flat_downstream: None,
+                channel_sink: None,
+                zip_tap: None,
+                zip_latest_tap: None,
+                tap_id: next_tap_id(),
+                closed: false,
+                migrate_state: None,
+                forward_downstream: None,
+                transform_state: Some(TransformState {
+                    callable,
+                    is_grep,
+                    downstream_supplier_id,
+                }),
+            });
+    }
+}
+
+/// Get the downstream supplier ids of all `grep`/`map` transform taps on this
+/// supplier, so a source `done` can be propagated to the derived supplies.
+pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) -> Vec<u64> {
+    let mut result = Vec::new();
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        for tap in &subs.taps {
+            if let Some(ref ts) = tap.transform_state {
+                result.push(ts.downstream_supplier_id);
+            }
+        }
+    }
+    result
 }
 
 /// Flush any remaining values in batch tap buffers when the supplier is done.
@@ -1538,6 +1648,7 @@ pub(in crate::runtime) fn register_supplier_zip_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }
@@ -1578,6 +1689,7 @@ pub(in crate::runtime) fn register_supplier_zip_latest_tap(
                 closed: false,
                 migrate_state: None,
                 forward_downstream: None,
+                transform_state: None,
             });
     }
 }

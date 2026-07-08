@@ -159,9 +159,22 @@ pub(in crate::runtime) fn supply_channel_map_pub()
 #[derive(Debug, Default)]
 struct SupplierRuntimeState {
     emitted: Vec<Value>,
+    /// Global monotonic sequence number for each emitted value, parallel to
+    /// `emitted`. Assigned at `emit` time from a process-wide counter so the
+    /// react drive loop can merge values from several supplier-backed
+    /// subscriptions (e.g. two `whenever $s.grep(...)` derived supplies) back
+    /// into their original cross-supplier emit order.
+    emit_seqs: Vec<u64>,
     done: bool,
     quit_reason: Option<Value>,
     pending_promises: Vec<SharedPromise>,
+}
+
+/// Process-wide monotonic counter handing out an emit sequence number for every
+/// `supplier_emit`, so cross-supplier delivery order can be reconstructed.
+pub(crate) fn next_emit_seq() -> u64 {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 type SupplierStateMap = std::sync::Mutex<HashMap<u64, SupplierRuntimeState>>;
@@ -329,12 +342,32 @@ pub(crate) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise
 }
 
 pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
+    let seq = next_emit_seq();
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if state.done || state.quit_reason.is_some() {
             return;
         }
         state.emitted.push(value);
+        state.emit_seqs.push(seq);
+    }
+}
+
+/// Like [`supplier_snapshot`], but also returns the per-value emit sequence
+/// numbers (parallel to the values), for cross-supplier order reconstruction.
+pub(crate) fn supplier_snapshot_seqs(
+    supplier_id: u64,
+) -> (Vec<Value>, Vec<u64>, bool, Option<Value>) {
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        (
+            state.emitted.clone(),
+            state.emit_seqs.clone(),
+            state.done,
+            state.quit_reason.clone(),
+        )
+    } else {
+        (Vec::new(), Vec::new(), false, None)
     }
 }
 
@@ -395,6 +428,7 @@ pub(in crate::runtime) fn supplier_reset(supplier_id: u64) {
         state.done = false;
         state.quit_reason = None;
         state.emitted.clear();
+        state.emit_seqs.clear();
     }
 }
 
