@@ -538,6 +538,31 @@ Level 1a では **collectable でない**もの:
 
 random は常設 CI に必須ではないが、少なくとも release 前や nightly では回したい。
 
+### 9.3a gc-stress ジョブで観測した失敗ログ
+
+gc-stress ジョブ (`ci.yml` の `gc-stress`: `GC=on` + `MUTSU_GC_EVERY_CANDIDATE=1024`
++ `MUTSU_GC_VERIFY=1` + `MUTSU_ROAST_TIMEOUT_SCALE=2`) は BLOCKING ゲートなので、
+失敗したら「flaky だから再実行」で済ませず、必ず原因を分類してここに記録する。
+
+分類の指針:
+
+- **`VERIFY FAIL` が出た** → heap corruption。GC の本物のバグ。最優先で修正。
+- **`exit 124` + `Failed: 0` (Bad plan, planned N ran M<N)** → per-file timeout。
+  corruption ではない。標準単独実行では通るのに `prove -j4` の並列 CPU 競合下で
+  budget を超えたスレッド多用テスト、というのが典型。`VERIFY FAIL` は出ていないこと
+  を確認したうえで、対象テストの単独実行時間を release + GC-on 設定で測り、負荷 timeout
+  なら `run-roast-test.sh` の per-file timeout を引き上げる。
+- **具体 subtest の `not ok`** → GC のロジック回帰の可能性が高い。単独再現して調査。
+
+観測記録:
+
+- **2026-07-08, PR #4325 (fix-typed-array-gather-init):** `roast/S17-promise/start.t`
+  が `exit 124` (planned 65 / ran 49) で timeout。PR 内容 (typed array の gather init)
+  とは無関係。`VERIFY FAIL` なし。release + GC-on 設定の単独実行では 65/65 pass・~7.5s
+  で安定して通る (3 回計測)。原因は `^300` 個の `start` ブロック生成が `prove -j4` の
+  並列負荷下で 60s (=30s×2) budget を超過したこと。対策として `run-roast-test.sh` で
+  `start.t` の per-file timeout を 60 (scale 後 120) に引き上げた。GC 回帰ではない。
+
 ### 9.4 GC ログは必須
 
 GC はログなしでは壊れたときに追跡不能になる。最初から段階別ログを入れる。
