@@ -1428,6 +1428,17 @@ impl Interpreter {
                                     value = self.coerce_value_for_constraint(tc, value);
                                 }
                                 let coerced = Self::coerce_attr_value_by_sigil(value, sigil);
+                                // A `%`-sigil attribute bound to a non-Hash object
+                                // list-contextualizes it (Raku's Hash.STORE): an
+                                // object with a custom `.iterator`/`.list` (e.g.
+                                // `handles`) contributes its pairs.
+                                let coerced = if sigil == '%'
+                                    && matches!(coerced.view(), ValueView::Instance { .. })
+                                {
+                                    self.coerce_object_to_hash(coerced)
+                                } else {
+                                    coerced
+                                };
                                 // An `is Type` container attribute (`has @.a is
                                 // Buf`) coerces its provided value to the declared
                                 // container type (Buf, BagHash, Array[T], ...).

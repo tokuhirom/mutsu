@@ -91,7 +91,7 @@ impl Interpreter {
             None
         };
         let mut val = if name.starts_with('%') {
-            let hash_val = runtime::coerce_to_hash(raw_val);
+            let hash_val = self.coerce_object_to_hash(raw_val);
             // Resolve hash sentinel entries (bound variable refs) when assigning
             // to a new hash variable. Assignment creates new containers, so bound
             // refs must be resolved to their current values.

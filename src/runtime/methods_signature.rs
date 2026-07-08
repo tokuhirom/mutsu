@@ -71,6 +71,27 @@ impl Interpreter {
         }
     }
 
+    /// Coerce a value bound to a `%`-sigil target (variable or attribute) to a
+    /// Hash, list-contextualizing a non-Hash object the way Raku's `Hash.STORE`
+    /// does. An object with a custom `.iterator`/`.list` (e.g. delegated via
+    /// `handles <iterator list>`) contributes its pairs, so `my %h = $obj` /
+    /// `has %.x` bound to such an object materializes those pairs into the hash
+    /// instead of degrading to a single stringified key.
+    ///
+    /// A plain object without a custom list interface has `.list` == `(self,)`,
+    /// which coerces to the same scalar fallback as the object itself, so this
+    /// is safe for any Instance. `Match` keeps its dedicated `%(...)` handling
+    /// in `coerce_to_hash`.
+    pub(crate) fn coerce_object_to_hash(&mut self, value: Value) -> Value {
+        if let ValueView::Instance { class_name, .. } = value.view()
+            && class_name != "Match"
+            && let Ok(listed) = self.call_method_with_values(value.clone(), "list", Vec::new())
+        {
+            return crate::runtime::utils::coerce_to_hash(listed);
+        }
+        crate::runtime::utils::coerce_to_hash(value)
+    }
+
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {

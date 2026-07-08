@@ -42,7 +42,7 @@ impl Interpreter {
             let coerced_initial = if name.starts_with('@') {
                 runtime::coerce_to_array(init_val)
             } else if name.starts_with('%') {
-                runtime::coerce_to_hash(init_val)
+                self.coerce_object_to_hash(init_val)
             } else {
                 init_val
             };
@@ -87,7 +87,7 @@ impl Interpreter {
             let coerced = if name.starts_with('@') {
                 runtime::coerce_to_array(init_val)
             } else if name.starts_with('%') {
-                runtime::coerce_to_hash(init_val)
+                self.coerce_object_to_hash(init_val)
             } else {
                 init_val
             };
