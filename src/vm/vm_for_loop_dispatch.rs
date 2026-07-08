@@ -143,9 +143,13 @@ impl Interpreter {
 
         // A bare `Seq` is single-shot: a `for` loop consumes its iterator, so a
         // second iteration of the SAME Seq throws X::Seq::Consumed (Rakudo). A Seq
-        // assigned into an `@`-array is reified there and stays re-iterable, so
-        // this only fires for a Seq iterated directly (`my \s = …Seq; for s {…}`).
-        if let ValueView::Seq(arc) = iterable.view() {
+        // that was array-contextualized (`@$s`, which marks it cached) stays
+        // re-iterable, so a `for @$s` loop must NOT consume it — otherwise a
+        // second `for @$s` would spuriously throw (surfaced by Zef::Pluggable
+        // iterating `@$backend` across two calls).
+        if let ValueView::Seq(arc) = iterable.view()
+            && !crate::value::seq_is_cached(arc)
+        {
             crate::value::seq_consume(arc)?;
         }
         let raw_items = if let ValueView::LazyList(ll) = iterable.view() {
