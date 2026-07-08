@@ -1308,6 +1308,20 @@ pub struct Interpreter {
     /// infinite synchronous body (`supply { loop { emit(...) } }`) can be
     /// terminated by the consumer's `done` on emit-to-dead-consumer.
     pub(super) supply_stream_consumers: Vec<crate::runtime::subtest::StreamConsumer>,
+    /// Nesting depth of the running `react` drive loop. `> 0` while the event
+    /// loop is polling subscriptions and dispatching `whenever`/`LAST`/`QUIT`
+    /// callbacks. Used so a `whenever` that taps an on-demand supply from inside
+    /// a running react (`whenever $outer { whenever $sod { } }`) routes the
+    /// supply's `closing => { ... }` callbacks to the main react thread instead
+    /// of firing them on an async body's worker thread (where a write to a
+    /// captured react-block lexical would be lost).
+    pub(super) react_active: usize,
+    /// Async on-demand supplies tapped by a nested `whenever` while a react drive
+    /// loop is running: `(done_signal_promise, closing_callbacks)`. The drive
+    /// loop fires each entry's `closing` callbacks on the main thread once the
+    /// promise resolves (the emitter signalled `done`), so per-tap
+    /// `closing => { ... }` runs on the react thread rather than a worker thread.
+    pub(super) pending_tap_closes: Vec<(crate::value::SharedPromise, Vec<Value>)>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,

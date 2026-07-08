@@ -3000,7 +3000,15 @@ impl Compiler {
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
-                let target_var_idx = if let Expr::Var(name) = supply {
+                // Only bridge the tap handle out through `env[$s]` when this
+                // whenever is the value of a `do whenever $s {...}` expression
+                // (`whenever_bind_target`). A bare `whenever $s {...}` statement
+                // must NOT clobber `$s` with its Tap — otherwise re-tapping the
+                // same supply on a later iteration (a nested `whenever` inside
+                // `whenever Supply.interval(...)`) would see a Tap, not the Supply.
+                let target_var_idx = if self.whenever_bind_target
+                    && let Expr::Var(name) = supply
+                {
                     Some(self.code.add_constant(Value::str(name.clone())))
                 } else {
                     None

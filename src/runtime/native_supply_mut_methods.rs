@@ -220,6 +220,19 @@ impl Interpreter {
                     // are found, to avoid double-delivery for plain `emit` calls.
                     let emitter_supplier_id = next_supplier_id();
                     close_supplier_id = Some(emitter_supplier_id);
+                    // When tapped by a nested `whenever` during a running react,
+                    // register a done-signal promise BEFORE running the body so an
+                    // async `start { emit; done }` body's later `done` (on a worker
+                    // thread) is observable on the main thread — `supplier_done`
+                    // resolves this promise, and the resolution survives the
+                    // `supplier_reset` that clears the raw done flag afterward.
+                    let close_done_promise = if self.react_active > 0 {
+                        let p = crate::value::SharedPromise::new();
+                        supplier_register_promise(emitter_supplier_id, p.clone());
+                        Some(p)
+                    } else {
+                        None
+                    };
                     let (callback_result, emitted, body_ran_done) =
                         self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
                     if let Err(err) = callback_result {
@@ -429,7 +442,33 @@ impl Interpreter {
                         };
                     if !own_close_cbs.is_empty() {
                         let (_, emitter_done, _) = supplier_snapshot(emitter_supplier_id);
-                        if body_done || emitter_done {
+                        if self.react_active > 0 {
+                            // Tapped by a nested `whenever` while a react drive
+                            // loop is running (`whenever $outer { whenever $sod {} }`).
+                            // Fire the `closing => { ... }` callbacks on the main
+                            // react thread so a write to a captured react-block
+                            // lexical is not lost on an async `start { emit; done }`
+                            // body's worker thread.
+                            if body_done {
+                                // Synchronous body already closed: fire now.
+                                for cb in &own_close_cbs {
+                                    let _ = self.call_sub_value(cb.clone(), vec![], true);
+                                }
+                            } else if let Some(p) = close_done_promise {
+                                // Async body: the drive loop fires the callbacks
+                                // once the emitter's done-signal promise resolves.
+                                self.pending_tap_closes.push((p, own_close_cbs));
+                                if !outer_tap_registered
+                                    && Self::supply_has_active_callback(&tap_cb)
+                                {
+                                    register_supplier_tap(
+                                        emitter_supplier_id,
+                                        tap_cb.clone(),
+                                        delay_seconds,
+                                    );
+                                }
+                            }
+                        } else if body_done || emitter_done {
                             for cb in &own_close_cbs {
                                 self.call_sub_value(cb.clone(), vec![], true)?;
                             }
