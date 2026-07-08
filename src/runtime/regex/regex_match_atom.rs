@@ -197,6 +197,14 @@ impl Interpreter {
                     .positional_quantified
                     .append(&mut inner_caps.positional_quantified);
                 new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                // A `<(` / `)>` capture marker inside the group sets the match
+                // boundaries for the whole pattern; propagate it out of the group.
+                if inner_caps.capture_start.is_some() {
+                    new_caps.capture_start = inner_caps.capture_start;
+                }
+                if inner_caps.capture_end.is_some() {
+                    new_caps.capture_end = inner_caps.capture_end;
+                }
                 out.push((end, new_caps));
             }
             // Reverse inner match order so LIFO stack respects frugal/greedy priority.

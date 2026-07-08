@@ -499,6 +499,16 @@ pub(super) fn merge_regex_captures(
     for (k, v) in src.hash_captures.drain() {
         dst.hash_captures.entry(k).or_default().extend(v);
     }
+    // Propagate `<(` / `)>` capture-marker positions from the merged-in side so a
+    // sub-pattern that sets the match boundaries is not lost when its captures are
+    // folded into an outer result — e.g. `'<' ~ '>' [<( \w+ )>]`, where the
+    // goalpost merges the inner (marker-carrying) captures into the goal's.
+    if src.capture_start.is_some() {
+        dst.capture_start = src.capture_start;
+    }
+    if src.capture_end.is_some() {
+        dst.capture_end = src.capture_end;
+    }
     dst
 }
 
