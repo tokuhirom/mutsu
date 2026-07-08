@@ -18,7 +18,7 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Return(Expr::Literal(Value::NIL))));
     }
-    let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
+    let (rest, expr) = parse_comma_or_expr_item(rest).map_err(|err| PError {
         messages: merge_expected_messages("expected return value expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(rest.len())),
         exception: None,

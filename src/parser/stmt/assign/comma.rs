@@ -2,12 +2,32 @@ use super::*;
 
 /// Parse a comma expression (may produce a list).
 pub(in crate::parser) fn parse_comma_or_expr(input: &str) -> PResult<'_, Expr> {
+    parse_comma_or_expr_impl(input, false)
+}
+
+/// Like [`parse_comma_or_expr`], but in *item* context: a bare single element
+/// with a trailing comma (`return 5,`) yields the scalar element, not a
+/// 1-element list. Rakudo distinguishes bare `5,` (scalar) from the
+/// parenthesized `(5,)` (a 1-element List, parsed by the circumfix parser and so
+/// unaffected). Used by `return` (and `fail`), where `return sprintf(...),`
+/// must yield the scalar so a `--> Str` routine does not see a `List`.
+pub(in crate::parser) fn parse_comma_or_expr_item(input: &str) -> PResult<'_, Expr> {
+    parse_comma_or_expr_impl(input, true)
+}
+
+fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr> {
     let (rest, first) = expression(input)?;
     let (r, _) = ws(rest)?;
     if r.starts_with(',') && !r.starts_with(",,") {
         let (r, _) = parse_char(r, ',')?;
         let (r, _) = ws(r)?;
         if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
+            // Single element with a trailing comma. In list context this is a
+            // 1-element list (`@a = 1..5,` keeps the Range unflattened); in item
+            // context it collapses to the element (`return 5,` -> `5`).
+            if item_context {
+                return Ok((r, first));
+            }
             return Ok((r, Expr::ArrayLiteral(vec![first])));
         }
         let mut items = vec![first];
