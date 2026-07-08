@@ -814,7 +814,12 @@ impl Compiler {
                             else_branch,
                             binding_var,
                         } => {
-                            sub_compiler.compile_if_value(cond, then_branch, else_branch, binding_var);
+                            sub_compiler.compile_if_value(
+                                cond,
+                                then_branch,
+                                else_branch,
+                                binding_var,
+                            );
                             continue;
                         }
                         Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
