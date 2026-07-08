@@ -526,9 +526,9 @@ impl Interpreter {
                             .collect();
                         Value::real_array(pairs)
                     }
-                    // Array-contextualizing a Seq (`@$s`) reifies and caches it, so
-                    // it may be read repeatedly. If the Seq's iterator was already
-                    // taken (e.g. by `.skip`/`.iterator`) and not cached, throw.
+                    // Array-contextualizing a Seq (`@$s`) caches it, so it may be
+                    // read repeatedly. If the Seq's iterator was already taken
+                    // (e.g. by `.skip`/`.iterator`) and not cached, throw.
                     ValueView::Seq(items) => {
                         if crate::value::seq_is_consumed(items)
                             && !crate::value::seq_is_cached(items)
