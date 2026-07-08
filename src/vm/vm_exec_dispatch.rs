@@ -3745,8 +3745,8 @@ impl Interpreter {
             }
 
             // -- Closures and registration --
-            OpCode::MakeGather(idx) => {
-                self.exec_make_gather_op(code, *idx)?;
+            OpCode::MakeGather(idx, cc_idx) => {
+                self.exec_make_gather_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
             OpCode::Eager => {

@@ -529,6 +529,36 @@ impl Compiler {
         }
     }
 
+    /// Surface the free variables of a stmt_pool-stashed body (`gather` /
+    /// `whenever`) to this frame's escape analysis. Such a body is
+    /// runtime-compiled against the live env (exec_make_gather_op /
+    /// exec_whenever_scope_op), so the nested-closure free-var scan in
+    /// `compute_free_vars` cannot see which lexicals it reads or writes — a
+    /// captured-and-mutated lexical would stay a stale by-value env snapshot
+    /// instead of being promoted to a shared ContainerRef cell (a gather body
+    /// pulls lazily after the frame moves on; a whenever body fires
+    /// asynchronously, often on another thread). Compile the body once more as
+    /// an ANALYSIS-ONLY escaping closure: only its free-var/needs-cell metadata
+    /// feeds `compute_free_vars`; the compiled code itself is never executed.
+    /// Named subs the analysis compile registers are dropped — the runtime
+    /// compile of the stashed body registers the real ones, and a junk
+    /// duplicate under the analysis closure's package could split `state`
+    /// scoping if a loose lookup resolved to it.
+    /// Returns the analysis closure's index into `closure_compiled_codes` so
+    /// the emitting op can hand it to `box_captured_lexicals` at runtime.
+    pub(crate) fn surface_stashed_body_free_vars(
+        &mut self,
+        params: &[String],
+        body: &[Stmt],
+    ) -> u32 {
+        let fn_keys_before: std::collections::HashSet<String> =
+            self.compiled_functions.keys().cloned().collect();
+        let analysis = self.compile_closure_body(params, &[], body);
+        self.compiled_functions
+            .retain(|k, _| fn_keys_before.contains(k));
+        self.code.add_closure_code(analysis, true)
+    }
+
     /// Compile a closure body to a `CompiledCode` (not stored in compiled_functions).
     /// Used for Lambda, AnonSub, AnonSubParams, and BlockClosure.
     pub(crate) fn compile_closure_body(

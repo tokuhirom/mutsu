@@ -2997,30 +2997,14 @@ impl Compiler {
             } => {
                 self.compile_expr(supply);
                 let body_idx = self.code.add_stmt(Stmt::Block(body.clone()));
-                // The whenever body is stashed in `stmt_pool` and runtime-compiled
-                // against the live env (exec_whenever_scope_op), so the nested-
-                // closure free-var scan in `compute_free_vars` cannot see which
-                // lexicals it reads or writes. Compile the body once more here as
-                // an ANALYSIS-ONLY escaping closure so those free variables surface
-                // in this frame's escape analysis: a whenever body fires
-                // asynchronously (often on another thread), so a captured-and-
-                // mutated lexical must be promoted to a shared ContainerRef cell in
-                // the frame that declares it — otherwise the body reads a stale
-                // by-value env snapshot (Case B: `start { react { whenever $ch {
-                // ...read $gate... } } }` missing the parent's post-registration
-                // `$gate = True`). The compiled code itself is never executed; only
-                // its free-var/needs-cell metadata feeds `compute_free_vars`.
+                // Case B (cross-thread lexicals): surface the runtime-compiled
+                // body's free vars so a captured-and-mutated lexical read
+                // directly in the whenever body (`start { react { whenever $ch
+                // { ...read $gate... } } }`) is cell-promoted and sees the
+                // parent's post-registration writes. See
+                // surface_stashed_body_free_vars for the mechanism.
                 let analysis_param = vec![param.clone().unwrap_or_else(|| "$_".to_string())];
-                let fn_keys_before: std::collections::HashSet<String> =
-                    self.compiled_functions.keys().cloned().collect();
-                let analysis = self.compile_closure_body(&analysis_param, &[], body);
-                // Drop named subs the analysis compile registered: the runtime
-                // compile of the stashed body registers the real ones, and a junk
-                // duplicate under the analysis closure's package could split
-                // `state` scoping if a loose lookup resolved to it.
-                self.compiled_functions
-                    .retain(|k, _| fn_keys_before.contains(k));
-                self.code.add_closure_code(analysis, true);
+                self.surface_stashed_body_free_vars(&analysis_param, body);
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
