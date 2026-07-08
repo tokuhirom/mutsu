@@ -29,6 +29,59 @@ impl Value {
         }
     }
 
+    /// Ensure array element `idx` exists and is a descendable Array, creating
+    /// it (and filling any gap with the element type object) when missing or a
+    /// scalar hole. Returns the child Array value (sharing the inner `Arc`, so a
+    /// later leaf promotion lands in the real container) — the array analogue of
+    /// `hash_autovivify` for an *intermediate* multi-dim descent level. Returns
+    /// `None` if `self` is not an Array or the existing element is a non-array
+    /// container (a Hash — a shape the caller cannot descend as an array index).
+    pub fn ensure_array_child(&self, idx: usize) -> Option<Value> {
+        let Value::Array(arc, _kind) = self else {
+            return None;
+        };
+        // SAFETY: aliased in-place mutation of a shared container; see
+        // `arc_contents_mut`. No borrow into the items is live across the write.
+        let data = unsafe { crate::value::gc_contents_mut(arc) };
+        let hole = data
+            .default
+            .as_ref()
+            .map(|d| (**d).clone())
+            .unwrap_or_else(|| {
+                Value::Package(Symbol::intern(data.value_type.as_deref().unwrap_or("Any")))
+            });
+        while data.len() <= idx {
+            data.push(hole.clone());
+        }
+        // Only vivify an empty slot (`Nil`/type-object hole). A real scalar leaf
+        // (`Int`/`Str`/…) or a `Hash` is NOT overwritten — returning `None` there
+        // makes the caller fall back to a plain read, so a read-only use of the
+        // subscript cannot corrupt existing data.
+        let is_hole = |v: &Value| matches!(v, Value::Nil | Value::Package(..));
+        // Deref an existing ContainerRef cell so we inspect/replace its inner value.
+        if let Value::ContainerRef(cell) = &data[idx] {
+            let inner = cell.lock().unwrap().clone();
+            match &inner {
+                Value::Array(..) => return Some(inner),
+                v if is_hole(v) => {
+                    let fresh = Value::real_array(Vec::new());
+                    *cell.lock().unwrap() = fresh.clone();
+                    return Some(fresh);
+                }
+                _ => return None,
+            }
+        }
+        match &data[idx] {
+            Value::Array(..) => Some(data[idx].clone()),
+            v if is_hole(v) => {
+                let fresh = Value::real_array(Vec::new());
+                data[idx] = fresh.clone();
+                Some(fresh)
+            }
+            _ => None,
+        }
+    }
+
     /// Bind to array element `idx`, promoting it to a first-class container
     /// (Phase 2). The element is replaced in place with a shared
     /// `ContainerRef` cell (reusing an existing one), and that same cell is

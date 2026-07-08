@@ -7,8 +7,60 @@ impl Interpreter {
     /// cleared on every redeclaration of the same name. See the write-through
     /// checks in `vm_var_assign_local.rs` and this file's non-bind path for
     /// why "elements are cells" alone is not a safe trigger.
-    pub(super) fn bound_array_slice_marker_key(name: &str) -> String {
+    pub(crate) fn bound_array_slice_marker_key(name: &str) -> String {
         format!("__mutsu_bound_array_slice::{name}")
+    }
+
+    /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
+    /// bind time by `is_multidim_slice_cells`) whose current value `holder` is a
+    /// non-empty list of `ContainerRef` cells, distribute `rhs` element-wise
+    /// through the cells (mutating the real nested container) and return the
+    /// value to push as the assignment result. Returns `None` when this is not
+    /// such a binding, so the caller falls back to normal assignment.
+    ///
+    /// The bind-time marker — NOT "all elements are cells" — is the trigger:
+    /// `.grep`'s rw-topic promotion can also leave a cell-list in an unrelated
+    /// scalar (`$x = $x.grep(...)`, roast S03-operators/assign.t) that must keep
+    /// plain replace semantics.
+    pub(crate) fn distribute_bound_multidim_slice(
+        &mut self,
+        name: &str,
+        holder: &Value,
+        rhs: &Value,
+    ) -> Option<Result<(), RuntimeError>> {
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            return None;
+        }
+        if !matches!(
+            self.env()
+                .get(&Self::bound_array_slice_marker_key(name))
+                .map(Value::view),
+            Some(ValueView::Bool(true))
+        ) {
+            return None;
+        }
+        let cells: Vec<Value> = match holder.view() {
+            ValueView::Array(items, ..)
+                if !items.is_empty() && items.iter().all(Value::is_container_ref) =>
+            {
+                items.iter().cloned().collect()
+            }
+            _ => return None,
+        };
+        let rhs_vals = match self.assignment_rhs_values(rhs) {
+            Ok(v) => v,
+            Err(e) => return Some(Err(e)),
+        };
+        for (i, cell_val) in cells.iter().enumerate() {
+            let v = rhs_vals
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
+            if let ValueView::ContainerRef(cell) = cell_val.view() {
+                cell.lock().unwrap().clone_from(&v);
+            }
+        }
+        Some(Ok(()))
     }
 
     pub(super) fn exec_set_local_op(
@@ -148,6 +200,21 @@ impl Interpreter {
         {
             let name = &code.locals[idx];
             self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
+        }
+        // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
+        // plain whole-value reassignment (`target = values`, e.g. as a sub's
+        // bare-statement return value) element-wise through its cells — the
+        // `SetLocal` counterpart of the same write-through in
+        // `exec_assign_expr_local_op_inner` / `exec_assign_expr_op_inner`.
+        // Excluded for a `:=` bind / declaration, which replaces the binding.
+        if !is_bind && !is_vardecl && !is_rebind && !scalar_bind {
+            let name = code.locals[idx].clone();
+            let holder = self.locals[idx].clone();
+            if let Some(res) = self.distribute_bound_multidim_slice(&name, &holder, &raw_popped) {
+                res?;
+                self.stack.push(raw_popped);
+                return Ok(());
+            }
         }
         // A redeclaration (`my @a` in a new scope) must not inherit the
         // `is default(...)` trait from an earlier same-named variable,

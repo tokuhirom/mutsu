@@ -344,6 +344,18 @@ impl Interpreter {
                     return Ok(());
                 }
             }
+            // A sigilless `\target` bound to a multi-dim slice lvalue distributes
+            // the RHS element-wise through its cells (the env-named counterpart
+            // of the `exec_assign_expr_local_op_inner` write-through — reached
+            // when the assignment happens inside a closure that captured
+            // `target`, e.g. a `subtest { ... }` block).
+            if let Some(holder) = current.clone()
+                && let Some(res) = self.distribute_bound_multidim_slice(&name, &holder, &val)
+            {
+                res?;
+                self.stack.push(val);
+                return Ok(());
+            }
         }
         // Circular hash reference fixup
         if name.starts_with('%') {

@@ -1048,6 +1048,7 @@ roast/S32-array/end.t
 roast/S32-array/exists-adverb.t
 roast/S32-array/keys_values.t
 roast/S32-array/kv.t
+roast/S32-array/multislice-6e.t
 roast/S32-array/pairs.t
 roast/S32-array/perl.t
 roast/S32-array/pop.t

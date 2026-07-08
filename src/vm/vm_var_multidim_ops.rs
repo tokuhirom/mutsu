@@ -11,6 +11,7 @@ impl Interpreter {
             dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
+        let dims = Self::expand_pipe_multidim_dims(dims);
         let target = self.stack.pop().unwrap_or(Value::NIL);
 
         // For shaped arrays, check bounds before reading
@@ -39,15 +40,151 @@ impl Interpreter {
             dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
+        let dims = Self::expand_pipe_multidim_dims(dims);
         let target = self.stack.pop().unwrap_or(Value::NIL);
 
         if let Some(slot) = self.multi_dim_slot_ref(&target, &dims)? {
             self.stack.push(slot);
-        } else {
-            let result = self.multi_dim_index_read(&target, &dims)?;
-            self.stack.push(result);
+            return Ok(());
         }
+        // A subscript containing a slice dimension (`*` or an index list) over
+        // ALREADY-EXISTING leaves selects several leaves that cannot collapse to
+        // one cell. Promote each selected leaf to a shared `ContainerRef` cell
+        // and hand back a plain list of those cells — the array analogue of the
+        // `@slice := @array[1,2]` bound-slice (see `array_slot_ref` /
+        // `slice_bind_indices`). A `\raw` / `is rw` parameter bound to this list
+        // then distributes a `target = values` assignment element-wise through
+        // the cells (see the sigilless bound-slice write-through in the assign
+        // ops), while a read decontainerizes each cell transparently. Missing
+        // leaves and hash roots fall back to the plain (non-aliasing) read.
+        let is_slice = dims.iter().any(|d| {
+            matches!(
+                Self::normalize_multidim_dim(d).view(),
+                ValueView::Whatever | ValueView::Array(..)
+            )
+        });
+        if is_slice {
+            let deref_target = match target.view() {
+                ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                ValueView::Scalar(inner) => inner.clone(),
+                _ => target.clone(),
+            };
+            if !matches!(deref_target.view(), ValueView::Hash(..)) {
+                let mut cells = Vec::new();
+                if self
+                    .collect_multi_dim_leaf_cells(&deref_target, &dims, &mut cells)
+                    .is_some()
+                {
+                    self.stack.push(Value::array(cells));
+                    return Ok(());
+                }
+            }
+        } else if let Some(cell) = self.multi_dim_scalar_autoviv_cell(&target, &dims) {
+            // All-scalar dims over a MISSING leaf: autovivify the path (creating
+            // any absent intermediate arrays) and promote the terminal element
+            // to a shared `ContainerRef` cell, so a `\raw` / `is rw` bind can
+            // write to a not-yet-existent leaf (`@a[0;0;3] = v`). Eager, like the
+            // single-index `:=` bind (`my $s := @a[5]`). Restricted to holes by
+            // `ensure_array_child` / `array_slot_ref`, so a read-only use over an
+            // existing structure is untouched.
+            self.stack.push(cell);
+            return Ok(());
+        }
+        let result = self.multi_dim_index_read(&target, &dims)?;
+        self.stack.push(result);
         Ok(())
+    }
+
+    /// Autovivifying all-scalar-dimension descent for `MultiDimIndexBindRef`.
+    /// Walks each scalar index, creating any missing intermediate array level,
+    /// and returns the terminal element promoted to a shared `ContainerRef`
+    /// cell. Returns `None` if a dimension is non-numeric, or the descent meets a
+    /// real (non-hole) scalar / hash where a further array index still needs to
+    /// descend — the caller then falls back to a plain (non-aliasing) read.
+    fn multi_dim_scalar_autoviv_cell(&mut self, target: &Value, dims: &[Value]) -> Option<Value> {
+        if dims.is_empty() {
+            return None;
+        }
+        let mut cur = match target.view() {
+            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::Scalar(inner) => inner.clone(),
+            _ => target.clone(),
+        };
+        if !matches!(cur.view(), ValueView::Array(..)) {
+            return None;
+        }
+        for (i, dim) in dims.iter().enumerate() {
+            let terminal = i + 1 == dims.len();
+            let resolved = self
+                .resolve_whatever_code_index(dim, &cur)
+                .unwrap_or_else(|| dim.clone());
+            let idx = Self::index_to_usize(&resolved)?;
+            if terminal {
+                return cur.array_slot_ref(idx, true);
+            }
+            cur = cur.ensure_array_child(idx)?;
+        }
+        None
+    }
+
+    /// Descend a nested array through the (possibly slice) dimensions, promoting
+    /// every selected leaf to a shared `ContainerRef` cell and pushing the cells
+    /// into `out` in row-major order. Returns `None` (caller falls back to a
+    /// plain read) if any selected path is missing, out of bounds, or reaches a
+    /// non-array where a further dimension still needs to descend — autovivifying
+    /// a missing slot here would corrupt a read-only use of the same subscript.
+    fn collect_multi_dim_leaf_cells(
+        &mut self,
+        cur: &Value,
+        dims: &[Value],
+        out: &mut Vec<Value>,
+    ) -> Option<()> {
+        if dims.is_empty() {
+            return None;
+        }
+        let items_len = match cur.view() {
+            ValueView::Array(items, ..) => items.len(),
+            _ => return None,
+        };
+        let dim = Self::normalize_multidim_dim(&dims[0]);
+        let rest = &dims[1..];
+        let terminal = rest.is_empty();
+
+        // Resolve this dimension into the concrete list of integer indices it
+        // selects against the CURRENT container.
+        let indices: Vec<usize> = match dim.view() {
+            ValueView::Whatever => (0..items_len).collect(),
+            ValueView::Array(idxs, ..) => {
+                let mut v = Vec::with_capacity(idxs.len());
+                for it in idxs.iter() {
+                    let resolved = self
+                        .resolve_whatever_code_index(it, cur)
+                        .unwrap_or_else(|| it.clone());
+                    v.push(Self::index_to_usize(&resolved)?);
+                }
+                v
+            }
+            _ => {
+                let resolved = self
+                    .resolve_whatever_code_index(&dim, cur)
+                    .unwrap_or_else(|| dim.clone());
+                vec![Self::index_to_usize(&resolved)?]
+            }
+        };
+
+        // A `Whatever` (`*`) dimension only ever yields existing indices, so a
+        // bare-slice read over an existing structure adds no elements. A missing
+        // index reached through an EXPLICIT index (a list dim or the terminal
+        // dim) autovivifies, matching the assignment semantics.
+        for i in indices {
+            if terminal {
+                out.push(cur.array_slot_ref(i, true)?);
+            } else {
+                let child = cur.ensure_array_child(i)?;
+                self.collect_multi_dim_leaf_cells(&child, rest, out)?;
+            }
+        }
+        Some(())
     }
 
     /// Descend a nested array/hash through all-scalar dimensions, promoting the
@@ -461,6 +598,22 @@ impl Interpreter {
     /// it is expanded into an explicit `Array` of indices (matching how a bare
     /// `(0,1,2)` list dimension is already handled). Scalars, `Whatever`,
     /// `WhateverCode` (`Sub`), and `Array` dimensions are returned unchanged.
+    /// Expand a `||`-spread subscript's single dimension into the real
+    /// dimensions. `@a[|| @list]` parses to a one-dimension `MultiDimIndex`
+    /// whose sole dimension is the `||` operand list; each ELEMENT of that list
+    /// is a subscript dimension (`@a[|| ((0,1),0)]` ≡ `@a[(0,1);0]`). A single-
+    /// dimension `MultiDimIndex` is produced ONLY by `||` (a `;`-list has 2+
+    /// dims and a lone index parses to `Index`), so this expansion is
+    /// unambiguous. A scalar operand (`@a[|| 5]` ≡ `@a[5]`) stays one dimension.
+    pub(super) fn expand_pipe_multidim_dims(dims: Vec<Value>) -> Vec<Value> {
+        if dims.len() == 1
+            && let Some(items) = dims[0].as_list_items()
+        {
+            return items.to_vec();
+        }
+        dims
+    }
+
     pub(super) fn normalize_multidim_dim(dim: &Value) -> Value {
         match dim.view() {
             ValueView::Range(..)
@@ -520,6 +673,7 @@ impl Interpreter {
             dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
+        let dims = Self::expand_pipe_multidim_dims(dims);
         let value = self.stack.pop().unwrap_or(Value::NIL);
 
         let var_name = Self::const_str(code, name_idx).to_string();
@@ -641,6 +795,7 @@ impl Interpreter {
             dims.push(self.stack.pop().unwrap_or(Value::NIL));
         }
         dims.reverse();
+        let dims = Self::expand_pipe_multidim_dims(dims);
         let mut target = self.stack.pop().unwrap_or(Value::NIL);
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
         if is_shaped {
