@@ -469,7 +469,16 @@ pub(crate) fn find_first_match_generic(
         let actual_idx = if from_end { len - 1 - idx } else { idx };
         let item = list_items[actual_idx].clone();
         let matched = match pattern {
-            Some(p) => matcher.item_matches(p, &item)?,
+            // A block matcher may run `next`/`last` (loop control). `next` skips
+            // the current element (treat as non-matching); `last` stops the scan
+            // and returns the CURRENT element as the match (Rakudo behaviour, e.g.
+            // `(5,1,2).first({ last if $_ == 1; $_ > 10 })` returns 1).
+            Some(p) => match matcher.item_matches(p, &item) {
+                Ok(m) => m,
+                Err(e) if e.is_next() => false,
+                Err(e) if e.is_last() => return Ok(Some((actual_idx, item))),
+                Err(e) => return Err(e),
+            },
             None => true,
         };
         if matched {
