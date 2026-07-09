@@ -90,17 +90,27 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     rest = after;
                     continue;
                 }
-                // Version/auth/api selectors (`:ver<...>`, `:auth<...>`, `:api<...>`)
-                // are NOT import tags — they refine which distribution to load.
-                // Consume their `<...>` value and discard, instead of treating the
-                // name as an import tag (which produced `no such tag 'ver'`).
-                let is_dist_selector =
-                    matches!(tag_name.as_str(), "ver" | "auth" | "api") && r.starts_with('<');
-                if is_dist_selector {
+                // Version/auth/api selectors are NOT import tags — they refine
+                // which distribution to load. Both the angle-bracket literal form
+                // (`:ver<1.0>`, `:auth<github:foo>`) and the parenthesized-expression
+                // form (`use Zef:ver($?DISTRIBUTION.meta<version>):auth(Zef.^auth)`,
+                // used throughout zef) must be consumed and discarded, instead of
+                // treating the name as an import tag (which produced `no such tag
+                // 'ver'` / `'auth'`).
+                let is_dist_selector = matches!(tag_name.as_str(), "ver" | "auth" | "api");
+                if is_dist_selector && r.starts_with('<') {
                     let after = match r[1..].find('>') {
                         Some(end) => &r[end + 2..],
                         None => return Err(PError::expected("closing '>' in version adverb")),
                     };
+                    let (after, _) = ws(after)?;
+                    let after = after.strip_prefix(',').unwrap_or(after);
+                    let (after, _) = ws(after)?;
+                    rest = after;
+                    continue;
+                }
+                if is_dist_selector && r.starts_with('(') {
+                    let after = skip_balanced_parens(r);
                     let (after, _) = ws(after)?;
                     let after = after.strip_prefix(',').unwrap_or(after);
                     let (after, _) = ws(after)?;
