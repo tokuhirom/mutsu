@@ -134,6 +134,52 @@ impl LazyList {
         self.sequence_spec.is_some() || self.closure_seq.is_some()
     }
 
+    /// Whether this `.map`/`.grep` lazy pipe bottoms out in a *definitively
+    /// finite* source, so a strict reification (`.List`/`for`/`.flat`/gist) can
+    /// force it to completion instead of keeping it lazy. Conservative: returns
+    /// `true` ONLY when every stage of the source chain is provably finite
+    /// (a `gather` coroutine — gathers always terminate —, a finite `Array`/
+    /// `Seq`/`Slip`, or a finite `Range`); returns `false` for an infinite range,
+    /// an infinite sequence/closure spec, a `cat_pull`, or any unrecognized
+    /// source. Worst case a genuinely-finite pipe stays lazy (status quo) — it
+    /// never turns an infinite pipe into a hang.
+    pub(crate) fn pipe_bottoms_out_finite(&self) -> bool {
+        let spec = match self.lazy_pipe.as_ref() {
+            Some(p) => p,
+            None => return false,
+        };
+        let source = spec.lock().unwrap().source.clone();
+        Self::value_source_is_finite(&source)
+    }
+
+    fn value_source_is_finite(source: &Value) -> bool {
+        match source.view() {
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => true,
+            // A finite integer range has a concrete end (`i64::MAX` is the
+            // sentinel for `..*`/`..Inf`, i.e. infinite).
+            ValueView::Range(_, b)
+            | ValueView::RangeExcl(_, b)
+            | ValueView::RangeExclStart(_, b)
+            | ValueView::RangeExclBoth(_, b) => b != i64::MAX,
+            ValueView::GenericRange { end, .. } => {
+                let end_f = end.to_f64();
+                !(end_f.is_infinite() && end_f.is_sign_positive())
+            }
+            ValueView::LazyList(ll) => {
+                if ll.lazy_pipe.is_some() {
+                    ll.pipe_bottoms_out_finite()
+                } else if ll.is_infinite_spec() || ll.cat_pull.is_some() {
+                    false
+                } else {
+                    // A gather coroutine (or an already-materialized gather body)
+                    // is finite; sequence/closure/cat specs were ruled out above.
+                    ll.coroutine.is_some() || ll.is_from_gather() || !ll.body.is_empty()
+                }
+            }
+            _ => false,
+        }
+    }
+
     /// Gate for the VM force/incremental-pull dispatch block: a gather-sourced
     /// list (eager or `lazy`), an infinite sequence/closure spec, or a lazy
     /// `WALK(method)()` candidate-invocation list.
