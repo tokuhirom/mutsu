@@ -227,6 +227,7 @@ mod vm_var_assign_post_incdec;
 mod vm_var_assign_set_local;
 mod vm_var_assign_typed;
 mod vm_var_delete_ops;
+mod vm_var_elem_mutate;
 mod vm_var_exists_ops;
 mod vm_var_get_ops;
 mod vm_var_index_ops;

@@ -1364,10 +1364,14 @@ impl Interpreter {
                     return Ok(());
                 }
                 // Fast path for shift/pop on array values in the non-mutating
-                // (CallMethod) path. Returns the removed element without modifying
-                // any variable. This handles cases like [1,2,3].shift where there
-                // is no variable to mutate. The CallMethodMut path handles variable
-                // targets separately.
+                // (CallMethod) path. Handles value invocants with no simple
+                // variable name to write back through: literals ([1,2,3].shift),
+                // function results (f().pop), element reads. Container identity
+                // (§3.2): the removal goes through the SHARED backing node (no
+                // COW), so when the invocant aliases a live container (`f()`
+                // returning `@a[0]`) the holder observes the removal, matching
+                // Raku. A literal's node has no other holder, so the in-place
+                // write is unobservable there.
                 // Slice 6.3: assume the dispatch dirties the caller env; only a
                 // proven-pure compiled method path clears this (sets it true),
                 // letting the opcode tail skip the env_dirty mark + per-call pull.
@@ -1376,24 +1380,31 @@ impl Interpreter {
                     && args.is_empty()
                     && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
                 {
-                    // Native array read on a by-value target: env-pure.
+                    // Native array node mutation on a by-value target: env-pure
+                    // (no named binding is written).
                     self.method_dispatch_pure = true;
                     if let ValueView::Array(_, kind) = target.view()
                         && kind.is_lazy()
                     {
                         return Err(RuntimeError::cannot_lazy(method));
                     }
-                    if let ValueView::Array(items, _) = target.view() {
-                        Ok(if items.is_empty() {
+                    let mut invocant = target.clone();
+                    let removed = invocant.with_array_mut(|arc_items, _| {
+                        if arc_items.is_empty() {
                             crate::runtime::make_empty_array_failure(method)
-                        } else if method == "shift" {
-                            items[0].clone()
                         } else {
-                            items[items.len() - 1].clone()
-                        })
-                    } else {
-                        unreachable!()
-                    }
+                            // SAFETY: audited aliased in-place container write
+                            // (see value::aliased_mut); no other borrow into
+                            // this node is live across the mutation below.
+                            let items = unsafe { crate::value::gc_contents_mut(arc_items) };
+                            if method == "shift" {
+                                items.remove(0)
+                            } else {
+                                items.pop().unwrap_or(Value::NIL)
+                            }
+                        }
+                    });
+                    Ok(removed.unwrap_or(Value::NIL))
                 } else if !skip_native {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.

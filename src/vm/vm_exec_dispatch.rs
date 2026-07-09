@@ -3054,6 +3054,21 @@ impl Interpreter {
                 self.mirror_array_hash_attr_to_cell(code, *name_idx, pre);
                 *ip += 1;
             }
+            OpCode::IndexElemAutoviv {
+                name_idx,
+                is_positional,
+                target_slot,
+                autoviv,
+            } => {
+                self.exec_index_elem_autoviv_op(
+                    code,
+                    *name_idx,
+                    *is_positional,
+                    *target_slot,
+                    *autoviv,
+                )?;
+                *ip += 1;
+            }
             OpCode::IndexAssignPseudoStashNamed {
                 stash_name_idx,
                 key_name_idx,

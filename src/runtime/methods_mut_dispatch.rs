@@ -936,6 +936,38 @@ impl Interpreter {
                             }
                         }
                     }
+                    // A subscripted element dispatched through a temp binding
+                    // (`@x[0].splice(...)` with `my Array of Int @x`) has no
+                    // name-based constraint; enforce the element type embedded
+                    // in the node's metadata instead (container identity §3.2 —
+                    // the post-call writeback that used to re-validate the
+                    // element is gone). Array replacement args are flattened
+                    // exactly like `do_splice` flattens them (so a self-splice
+                    // `@a.splice(10,0,@a)` checks the elements, not the array).
+                    if args.len() > 2
+                        && self.var_type_constraint(&key).is_none()
+                        && let Some(info) = self.container_type_metadata(&target)
+                        && !matches!(info.value_type.as_str(), "" | "Any" | "Mu")
+                    {
+                        let constraint = info.value_type;
+                        for arg in args.iter().skip(2) {
+                            let candidates: Vec<Value> = match arg.view() {
+                                ValueView::Array(items, ..) => items.to_vec(),
+                                _ => vec![arg.clone()],
+                            };
+                            for v in &candidates {
+                                if !v.is_nil() && !self.type_matches_value(&constraint, v) {
+                                    return Err(
+                                        crate::runtime::utils::type_check_element_typed_error(
+                                            "@_",
+                                            &constraint,
+                                            v,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
                     let mut resolved_args = args.clone();
                     // Resolve callable for offset (arg 0) with array length
                     if let Some(arg) = args.first()
