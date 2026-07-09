@@ -61,6 +61,15 @@ impl Interpreter {
         };
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack_depth = self.stack.len();
+        // Isolate the caller's loop-body-local declaration scope. `run()` saves
+        // and restores these per invocation; this fast path bypasses `run()` and
+        // drives the body via `exec_one`, so without this a callee's `my $x`
+        // (or its own for/while loop) would register in the *caller's* active
+        // loop-local scope and get restored (clobbered) at the caller's loop
+        // exit. Repro: `sub f { my $r=0; for ^2 { f() if ...; $r+=100 }; $r }` —
+        // the inner `my $r` polluted the outer loop's scope, resetting $r to 0.
+        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
+        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
@@ -173,6 +182,8 @@ impl Interpreter {
 
         // Restore state
         self.locals = saved_locals;
+        self.loop_local_vars = saved_loop_local_vars;
+        self.loop_local_saved_env = saved_loop_local_saved_env;
 
         // Restore env: if env was mutated, merge non-local changes back.
         // When has_locals is false, saved_env is None and no restore is needed

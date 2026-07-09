@@ -1621,6 +1621,32 @@ pub(crate) struct CompiledCode {
 }
 
 impl CompiledCode {
+    /// Names that are *local* to this body: declared local slots plus the
+    /// parameter names bound by any `for` loop in the body. Used by the
+    /// interpreter sub-call path to keep a callee's `for`-loop parameter (or a
+    /// body-local `my`) from being written back into a same-named *caller*
+    /// lexical during the return env merge (a callee that recurses into a
+    /// same-named `for` loop and early-returns would otherwise leak its last
+    /// loop value into the caller). Mirrors `CompiledFunction::compute_declared_locals`.
+    pub(crate) fn body_local_names(&self) -> std::collections::HashSet<String> {
+        let mut names: std::collections::HashSet<String> =
+            self.locals.iter().cloned().collect();
+        for op in &self.ops {
+            if let OpCode::ForLoop(spec) = op {
+                if let Some(idx) = spec.param_idx
+                    && let Some(crate::value::ValueView::Str(name)) =
+                        self.constants.get(idx as usize).map(crate::value::Value::view)
+                {
+                    names.insert(name.to_string());
+                }
+                for name in &spec.multi_param_names {
+                    names.insert(name.clone());
+                }
+            }
+        }
+        names
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
@@ -2890,16 +2916,40 @@ impl CompiledFunction {
         for p in &self.params {
             declared.insert(p.clone());
         }
-        // Scan opcodes for SetVarDynamic which marks `my` declarations
+        // Scan opcodes for SetVarDynamic which marks `my` declarations, and
+        // ForLoop which binds its loop parameter(s). A `for` param (`-> $idx`) is
+        // callee-local: it is bound by the ForLoop op into env, not via a `my`
+        // (SetVarDynamic) or the function signature, so without collecting it here
+        // the scoped-overlay return merge would leak the callee's last loop value
+        // into a caller lexical of the same name (recursion into a same-named
+        // `for` loop that early-returns).
         for op in &self.code.ops {
-            if let OpCode::SetVarDynamic { name_idx, .. } = op
-                && let Some(crate::value::ValueView::Str(name)) = self
-                    .code
-                    .constants
-                    .get(*name_idx as usize)
-                    .map(crate::value::Value::view)
-            {
-                declared.insert(name.to_string());
+            match op {
+                OpCode::SetVarDynamic { name_idx, .. } => {
+                    if let Some(crate::value::ValueView::Str(name)) = self
+                        .code
+                        .constants
+                        .get(*name_idx as usize)
+                        .map(crate::value::Value::view)
+                    {
+                        declared.insert(name.to_string());
+                    }
+                }
+                OpCode::ForLoop(spec) => {
+                    if let Some(idx) = spec.param_idx
+                        && let Some(crate::value::ValueView::Str(name)) = self
+                            .code
+                            .constants
+                            .get(idx as usize)
+                            .map(crate::value::Value::view)
+                    {
+                        declared.insert(name.to_string());
+                    }
+                    for name in &spec.multi_param_names {
+                        declared.insert(name.clone());
+                    }
+                }
+                _ => {}
             }
         }
         self.declared_locals = Some(declared);
