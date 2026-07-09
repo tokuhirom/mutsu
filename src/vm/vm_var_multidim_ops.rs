@@ -994,7 +994,7 @@ impl Interpreter {
                 Self::ensure_array_size(target, i + 1);
                 target
                     .with_array_mut(|items, _| {
-                        let items = crate::gc::Gc::make_mut(items);
+                        let items = crate::value::gc_data_mut(items);
                         self.multi_dim_assign_slice(&mut items[i], rest, values, vi)
                     })
                     .transpose()?;
@@ -1002,7 +1002,7 @@ impl Interpreter {
                 Self::ensure_hash(target);
                 target
                     .with_hash_mut(|map| {
-                        let map = crate::gc::Gc::make_mut(map);
+                        let map = crate::value::gc_data_mut(map);
                         let entry = map.entry(s.as_str().to_string()).or_insert_with(|| {
                             Value::package(crate::symbol::Symbol::intern("Any"))
                         });
@@ -1041,7 +1041,7 @@ impl Interpreter {
             Self::ensure_array_size(target, i + 1);
             target
                 .with_array_mut(|items, _| {
-                    let items = crate::gc::Gc::make_mut(items);
+                    let items = crate::value::gc_data_mut(items);
                     self.multi_dim_assign_scalar(&mut items[i], rest, value)
                 })
                 .transpose()?;
@@ -1049,7 +1049,7 @@ impl Interpreter {
             Self::ensure_hash(target);
             target
                 .with_hash_mut(|map| {
-                    let map = crate::gc::Gc::make_mut(map);
+                    let map = crate::value::gc_data_mut(map);
                     let entry = map
                         .entry(s.as_str().to_string())
                         .or_insert_with(|| Value::package(crate::symbol::Symbol::intern("Any")));
@@ -1144,7 +1144,7 @@ impl Interpreter {
         if target
             .with_array_mut(|items, _| {
                 if items.len() < min_size {
-                    let items = crate::gc::Gc::make_mut(items);
+                    let items = crate::value::gc_data_mut(items);
                     items.resize(
                         min_size,
                         Value::package(crate::symbol::Symbol::intern("Any")),

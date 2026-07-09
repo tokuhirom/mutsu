@@ -110,7 +110,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         if matches!(target.view(), ValueView::Hash(..)) {
             return target
                 .with_hash_mut(|map| {
-                    let map_mut = crate::gc::Gc::make_mut(map);
+                    let map_mut = crate::value::gc_data_mut(map);
                     if indices.len() == 1 {
                         let out: Vec<Value> = map_mut.drain().map(|(_, v)| v).collect();
                         Value::array(out)
@@ -126,7 +126,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         }
         return target
             .with_array_mut(|items, _kind| {
-                let items = crate::gc::Gc::make_mut(items);
+                let items = crate::value::gc_data_mut(items);
                 let mut out = Vec::with_capacity(items.len());
                 for item in items.iter_mut() {
                     out.push(multidim_delete(item, &indices[1..]));
@@ -159,10 +159,10 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
         return target
             .with_hash_mut(|map| {
                 if indices.len() == 1 {
-                    let map_mut = crate::gc::Gc::make_mut(map);
+                    let map_mut = crate::value::gc_data_mut(map);
                     return map_mut.remove(&key).unwrap_or_else(default);
                 }
-                let map_mut = crate::gc::Gc::make_mut(map);
+                let map_mut = crate::value::gc_data_mut(map);
                 match map_mut.get_mut(&key) {
                     Some(inner) => multidim_delete(inner, &indices[1..]),
                     None => default(),
@@ -188,7 +188,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
                 ValueView::Num(f) => f as usize,
                 _ => return default(),
             };
-            let items = crate::gc::Gc::make_mut(items_gc);
+            let items = crate::value::gc_data_mut(items_gc);
             if i >= items.len() {
                 return default();
             }

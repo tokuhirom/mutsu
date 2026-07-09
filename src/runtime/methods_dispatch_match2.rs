@@ -612,7 +612,10 @@ impl Interpreter {
             return Err(RuntimeError::cannot_lazy("pop"));
         }
         if let Some(result) = target.with_array_mut(|items, _| {
-            let items_mut = crate::gc::Gc::make_mut(items);
+            // The mutated node may be shared with a live holder (this fallback
+            // takes `target` by value with no write-back), so write through
+            // the shared node — container identity (§3).
+            let items_mut = crate::value::gc_data_mut(items);
             if items_mut.is_empty() {
                 make_empty_array_failure("pop")
             } else {

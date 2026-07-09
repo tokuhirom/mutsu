@@ -220,7 +220,13 @@ impl Interpreter {
                     Some(ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)) => {
                         true
                     }
-                    _ => false,
+                    Some(ValueView::Nil) | Some(ValueView::Package(_)) | None => false,
+                    // A scalar initializer — `my %s is SetHash = <a>` (a single
+                    // angle-quoted word is a Str, not a List), a Pair, an Int
+                    // weight, ... — is an init value to coerce; treating it as
+                    // "no initializer" would overwrite the slot with an EMPTY
+                    // QuantHash and silently drop the initialization.
+                    Some(_) => true,
                 };
                 let mut instance = if has_init_values {
                     let init_val = current_val.unwrap();

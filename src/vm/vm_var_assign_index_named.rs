@@ -669,10 +669,26 @@ impl Interpreter {
                 self.remove_bound_index(&var_name, &encoded_idx);
             }
         }
-        if !self.env().contains_key(&var_name)
+        let env_needs_slot_pull = match self.env().get(&var_name).map(Value::view) {
+            None => true,
+            // A hoisted declaration placeholder (type object / Nil) is NOT the
+            // live container — the real value may live only in the local slot
+            // (e.g. `my %s is SetHash = <a>`). Writing against the placeholder
+            // would autovivify a fresh container and clobber the slot value.
+            Some(ValueView::Nil) | Some(ValueView::Package(_)) => true,
+            Some(_) => false,
+        };
+        if env_needs_slot_pull
             && let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
         {
-            self.set_env_with_main_alias(&var_name, self.locals[slot].clone());
+            let slot_val = self.locals[slot].clone();
+            // Only override an existing env placeholder with a real container;
+            // when env lacks the key entirely, mirror the slot as before.
+            if !self.env().contains_key(&var_name)
+                || !matches!(slot_val.view(), ValueView::Nil | ValueView::Package(_))
+            {
+                self.set_env_with_main_alias(&var_name, slot_val);
+            }
         }
         // Junction autothreading: when writing back with a junction index,
         // expand the junction and assign each element separately.
@@ -705,7 +721,7 @@ impl Interpreter {
                     }
                     if let Some(container) = self.env_root_descended_mut(&var_name) {
                         let _ = container.with_hash_mut(|hash| {
-                            let h = crate::gc::Gc::make_mut(hash);
+                            let h = crate::value::gc_data_mut(hash);
                             h.insert(k, v);
                         });
                     }
@@ -715,7 +731,7 @@ impl Interpreter {
                     self.env_root_descended_mut(&var_name)
                         .and_then(|container| {
                             container.with_array_mut(|items, _| -> Result<(), RuntimeError> {
-                                let arr = crate::gc::Gc::make_mut(items);
+                                let arr = crate::value::gc_data_mut(items);
                                 Self::autoviv_resize(arr, idx_usize + 1, native_fill.clone())?;
                                 arr[idx_usize] = v;
                                 Ok(())
@@ -757,7 +773,7 @@ impl Interpreter {
                     if let Some(max_idx) = max_index {
                         container
                             .with_array_mut(|items, _| -> Result<(), RuntimeError> {
-                                let arr = crate::gc::Gc::make_mut(items);
+                                let arr = crate::value::gc_data_mut(items);
                                 Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                                 Ok(())
                             })
@@ -1025,7 +1041,7 @@ impl Interpreter {
                 )> = Vec::new();
                 if let Some(entry) = self.env_mut().get_mut(&var_name) {
                     let _ = entry.with_hash_mut(|hash| {
-                        let h = crate::gc::Gc::make_mut(hash);
+                        let h = crate::value::gc_data_mut(hash);
                         for (i, key) in keys.iter().enumerate() {
                             let k = if slice_is_object_hash {
                                 runtime::utils::value_which_key(key)
@@ -1578,7 +1594,7 @@ impl Interpreter {
                         } else if let Some((slice_indices, vals)) = &range_slice {
                             container
                                 .with_array_mut(|items, _| -> Result<(), RuntimeError> {
-                                    let arr = crate::gc::Gc::make_mut(items);
+                                    let arr = crate::value::gc_data_mut(items);
                                     if let Some(max_idx) = slice_indices.last().copied()
                                         && max_idx >= arr.len()
                                     {
@@ -1728,7 +1744,7 @@ impl Interpreter {
                         if !*is_mutable {
                             return Err(RuntimeError::assignment_ro(Some("Set")));
                         }
-                        let s = crate::gc::Gc::make_mut(set);
+                        let s = crate::value::gc_data_mut(set);
                         let present = val.truthy();
                         if present {
                             s.insert(key.clone());
@@ -1745,7 +1761,7 @@ impl Interpreter {
                         if !*is_mutable {
                             return Err(RuntimeError::assignment_ro(Some("Bag")));
                         }
-                        let b = crate::gc::Gc::make_mut(bag);
+                        let b = crate::value::gc_data_mut(bag);
                         let count = Self::bag_assignment_count(&val)?;
                         if count == num_bigint::BigInt::from(0) {
                             b.remove(&key);
@@ -1761,7 +1777,7 @@ impl Interpreter {
                         if !*is_mutable {
                             return Err(RuntimeError::assignment_ro(Some("Mix")));
                         }
-                        let m = crate::gc::Gc::make_mut(mix);
+                        let m = crate::value::gc_data_mut(mix);
                         let weight = Self::mix_assignment_weight(&val)?;
                         if weight == 0.0 {
                             m.remove(&key);
@@ -2522,7 +2538,7 @@ impl Interpreter {
                     if let Some(next) =
                         cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
                             if let Ok(i) = key.parse::<usize>() {
-                                let arr = crate::gc::Gc::make_mut(arr_arc);
+                                let arr = crate::value::gc_data_mut(arr_arc);
                                 Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                                 // Autovivify if needed. A `ContainerRef` is a
                                 // `:=`-bound cell that holds (and is descended to)
@@ -2549,7 +2565,7 @@ impl Interpreter {
                     {
                         current = next?;
                     } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
-                        let hash = crate::gc::Gc::make_mut(hash_arc);
+                        let hash = crate::value::gc_data_mut(hash_arc);
                         if !hash.contains_key(key.as_str()) {
                             let new_val = if next_positional {
                                 Value::real_array(Vec::new())
@@ -2572,7 +2588,7 @@ impl Interpreter {
                         if let Some(next) =
                             cur.with_array_mut(|arr_arc, _| -> Result<*mut Value, RuntimeError> {
                                 if let Ok(i) = key.parse::<usize>() {
-                                    let arr = crate::gc::Gc::make_mut(arr_arc);
+                                    let arr = crate::value::gc_data_mut(arr_arc);
                                     Self::autoviv_resize(
                                         arr,
                                         i + 1,
@@ -2591,7 +2607,7 @@ impl Interpreter {
                         {
                             current = next?;
                         } else if let Some(next) = cur.with_hash_mut(|hash_arc| {
-                            let hash = crate::gc::Gc::make_mut(hash_arc);
+                            let hash = crate::value::gc_data_mut(hash_arc);
                             let new_val = if next_positional {
                                 Value::real_array(Vec::new())
                             } else {
@@ -2617,7 +2633,7 @@ impl Interpreter {
                     let cur = &mut *current;
                     if let Some(r) = cur.with_array_mut(|arr_arc, _| -> Result<(), RuntimeError> {
                         if let Ok(i) = key.parse::<usize>() {
-                            let arr = crate::gc::Gc::make_mut(arr_arc);
+                            let arr = crate::value::gc_data_mut(arr_arc);
                             Self::autoviv_resize(arr, i + 1, native_fill.clone())?;
                             if bind_cell.is_some() {
                                 arr[i] = leaf_val.clone();
@@ -2630,7 +2646,7 @@ impl Interpreter {
                         r?;
                     } else if cur
                         .with_hash_mut(|hash_arc| {
-                            let hash = crate::gc::Gc::make_mut(hash_arc);
+                            let hash = crate::value::gc_data_mut(hash_arc);
                             if bind_cell.is_some() {
                                 hash.insert(key.clone(), leaf_val.clone());
                             } else {

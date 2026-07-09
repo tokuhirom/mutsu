@@ -216,7 +216,7 @@ impl Interpreter {
                     return Err(RuntimeError::assignment_ro(None));
                 };
                 if let Some(res) = container.with_array_mut(|items, _| {
-                    let arr = crate::gc::Gc::make_mut(items);
+                    let arr = crate::value::gc_data_mut(items);
                     Self::autoviv_resize(arr, i + 1, Value::package(Symbol::intern("Any")))?;
                     arr[i] = value.take().unwrap_or(Value::NIL);
                     Ok(())
@@ -231,7 +231,7 @@ impl Interpreter {
                 .get_mut(source_name)
                 .and_then(|v| {
                     v.with_hash_mut(|hash| {
-                        let h = crate::gc::Gc::make_mut(hash);
+                        let h = crate::value::gc_data_mut(hash);
                         h.insert(idx_str.to_string(), value);
                     })
                 })
@@ -246,7 +246,7 @@ impl Interpreter {
                 return Err(RuntimeError::assignment_ro(None));
             };
             let Some(res) = container.with_array_mut(|items, _| {
-                let arr = crate::gc::Gc::make_mut(items);
+                let arr = crate::value::gc_data_mut(items);
                 Self::autoviv_resize(arr, i + 1, Value::package(Symbol::intern("Any")))?;
                 arr[i] = value;
                 Ok(())

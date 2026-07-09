@@ -354,7 +354,7 @@ impl Interpreter {
                         entry.with_array_mut(|live, _| {
                             let hole_value =
                                 Value::package(crate::symbol::Symbol::intern(&hole_type));
-                            let arr = crate::gc::Gc::make_mut(live);
+                            let arr = crate::value::gc_data_mut(live);
                             for i in &leaves {
                                 if *i >= 0 && (*i as usize) < arr.len() {
                                     arr[*i as usize] = hole_value.clone();
@@ -465,7 +465,7 @@ impl Interpreter {
             && let Some(entry) = self.env.get_mut(var_name)
         {
             entry.with_hash_mut(|map| {
-                let h = crate::gc::Gc::make_mut(map);
+                let h = crate::value::gc_data_mut(map);
                 for idx in &indices {
                     h.remove(&idx.to_string_value());
                 }
