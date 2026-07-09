@@ -25,6 +25,7 @@ impl Interpreter {
                 // propagate back to the parent thread.
                 if key == "_"
                     || key == "@_"
+                    || key == "%_"
                     || key == "/"
                     || key == "!"
                     || key == "$/"

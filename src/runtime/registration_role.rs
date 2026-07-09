@@ -675,7 +675,7 @@ impl Interpreter {
                 Stmt::MethodDecl {
                     name: method_name,
                     name_expr,
-                    params,
+                    params: _,
                     param_defs,
                     body: method_body,
                     multi,
@@ -761,9 +761,20 @@ impl Interpreter {
                     } else {
                         method_name.resolve()
                     };
+                    // A method always carries an implicit `*%_` slurpy so callers
+                    // can pass (or forward) named arguments the signature does not
+                    // name. Class methods get this via `effective_method_param_defs`
+                    // at registration; role methods must too, so a role-composed
+                    // method absorbs stray named args the same way a class-declared
+                    // one does.
+                    let effective_param_defs = Self::effective_method_param_defs(param_defs, false);
+                    let effective_params: Vec<String> = effective_param_defs
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect();
                     let def = MethodDef {
-                        params: params.clone(),
-                        param_defs: param_defs.clone(),
+                        params: effective_params,
+                        param_defs: effective_param_defs,
                         body: std::sync::Arc::new(method_body.clone()),
                         is_rw: *is_rw,
                         is_private: *is_private,
