@@ -1066,7 +1066,14 @@ impl Interpreter {
                 continue;
             }
             if arg_idx < args.len() {
-                let val = args[arg_idx].clone();
+                let mut val = args[arg_idx].clone();
+                // `is copy` container param owns a DISTINCT container: element
+                // mutations write through the shared backing node (container
+                // identity §3), so an undetached copy would leak `@a.push`
+                // back to the caller's array.
+                if pd.is_some_and(|pd| pd.traits.iter().any(|t| t == "copy")) {
+                    val = val.detach_shared_container();
+                }
                 if let Some(constraint) = pd.and_then(|pd| pd.type_constraint.as_ref())
                     && !self.type_matches_value(constraint, &val)
                 {

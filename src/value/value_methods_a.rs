@@ -443,6 +443,16 @@ impl Value {
     /// READ-ONLY (no autovivification). Returns `Any` if any intermediate level
     /// is missing or not a hash, or if the terminal key is absent — so a bind to
     /// a not-yet-existent entry reads as `Any` without polluting `:exists`.
+    ///
+    /// A deferred missing-key bind connects ONLY when written THROUGH the
+    /// bound var (`store_through_cell` installs a `ContainerRef` cell at the
+    /// path on first write). A terminal holding a plain value was written
+    /// independently through the hash path AFTER the bind — rakudo does not
+    /// retro-bind that (t/phantom-entry-bind.t), so it reads as `Any` here.
+    /// (Pre-§3, the independent write COW-detached the root and the token's
+    /// captured `Gc` stayed empty, which masked this; in-place hash writes
+    /// now reach the captured root, so the connect condition must be the
+    /// cell identity, not mere path existence.)
     pub fn hash_entry_read(&self) -> Value {
         let Value::HashEntryRef { hash, path } = self else {
             return self.clone();
@@ -458,7 +468,12 @@ impl Value {
         }
         let last = path.last().unwrap();
         let ptr = crate::gc::Gc::as_ptr(&cur);
-        unsafe { (*ptr).get(last.as_str()).cloned().unwrap_or_else(any) }
+        match unsafe { (*ptr).get(last.as_str()) } {
+            Some(Value::ContainerRef(cell)) => {
+                cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
+            }
+            _ => any(),
+        }
     }
 
     /// Walk-CREATE the intermediate hashes of a `HashEntryRef`'s `path` and
