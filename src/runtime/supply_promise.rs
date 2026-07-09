@@ -40,7 +40,48 @@ impl Interpreter {
     ) -> Result<Vec<Value>, RuntimeError> {
         if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
             let (_, emitted, _) = self.run_on_demand_body(on_demand_cb.clone(), None);
-            Ok(emitted)
+            // Expand `whenever` subscription markers: a cold (supplier-less)
+            // source is replayed synchronously so the body's emissions appear
+            // in source order. A live (supplier-backed) source cannot be
+            // driven synchronously here and is dropped (previously the raw
+            // 4-element marker array leaked through as a value).
+            let mut out = Vec::with_capacity(emitted.len());
+            for item in emitted {
+                let marker = if let ValueView::Array(arr, ..) = item.view()
+                    && arr.len() == 4
+                    && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+                {
+                    Some((
+                        arr[0].clone(),
+                        arr[1].clone(),
+                        arr[2].clone(),
+                        arr[3].clone(),
+                    ))
+                } else {
+                    None
+                };
+                let Some((source, body_cb, last_arr, quit_arr)) = marker else {
+                    out.push(item);
+                    continue;
+                };
+                let is_live = matches!(
+                    source.view(),
+                    ValueView::Instance { attributes: a, .. }
+                        if a.as_map().contains_key("supplier_id")
+                );
+                if is_live {
+                    continue;
+                }
+                let last_cbs = Self::value_array_items(&last_arr).unwrap_or_default();
+                let quit_cbs = Self::value_array_items(&quit_arr).unwrap_or_default();
+                let (mut captured, unhandled_quit) =
+                    self.replay_cold_whenever_capture(&source, &body_cb, &last_cbs, &quit_cbs);
+                out.append(&mut captured);
+                if let Some(reason) = unhandled_quit {
+                    return Err(Self::runtime_error_from_supply_reason(reason));
+                }
+            }
+            Ok(out)
         } else {
             Ok(match attributes.get("values").map(Value::view) {
                 Some(ValueView::Array(items, ..)) => items.to_vec(),
@@ -230,6 +271,110 @@ impl Interpreter {
         // CP-3 collapse: run the react drive loop with fresh execution registers
         // in place instead of the `mem::take(self)` + `VM::new` sub-VM.
         self.with_nested_registers(|vm| vm.drive_react_subscriptions_nested(react_subs, policy))
+    }
+
+    /// Replay a cold (supplier-less, channel-less) `whenever` subscription
+    /// marker synchronously, capturing every value the body and its phasers
+    /// emit, in order. Used by the `tap`/`act` path and `supply_get_values`
+    /// (`.list`/`.wait`/combinators) to deliver a `supply { whenever
+    /// Supply.from-list(...) { emit ... } }` block's emissions outside a react
+    /// loop. Lazy source elements are forced; a `done`/`last` from the body
+    /// stops the replay; `next`/`redo` skip to the next value; a `die` runs
+    /// the whenever's QUIT phasers if any are registered, otherwise its reason
+    /// is returned as the second tuple element for the caller to deliver
+    /// (quit callback or hard error). LAST phasers run on normal completion.
+    pub(crate) fn replay_cold_whenever_capture(
+        &mut self,
+        source: &Value,
+        callback: &Value,
+        last_cbs: &[Value],
+        quit_cbs: &[Value],
+    ) -> (Vec<Value>, Option<Value>) {
+        // Materialize the source through `supply_get_values` so a nested
+        // on-demand source (`whenever (supply { ... }) { ... }`) is itself
+        // replayed rather than read as an (empty) values snapshot.
+        let (values, mut quit_reason) = match source.view() {
+            ValueView::Instance { attributes, .. } => {
+                match self.supply_get_values(&attributes.as_map()) {
+                    Ok(items) => (items, None),
+                    Err(err) => (
+                        Vec::new(),
+                        Some(
+                            err.exception
+                                .as_deref()
+                                .cloned()
+                                .unwrap_or_else(|| Value::str(err.message.clone())),
+                        ),
+                    ),
+                }
+            }
+            _ => (Vec::new(), None),
+        };
+
+        fn run_capture(
+            this: &mut Interpreter,
+            cb: Value,
+            args: Vec<Value>,
+            captured: &mut Vec<Value>,
+        ) -> Result<(), RuntimeError> {
+            this.supply_emit_buffer.push(Vec::new());
+            let res = this.call_sub_value(cb, args, true);
+            let mut emitted = this.supply_emit_buffer.pop().unwrap_or_default();
+            captured.append(&mut emitted);
+            res.map(|_| ())
+        }
+
+        let err_to_value = |err: &RuntimeError| -> Value {
+            err.exception
+                .as_deref()
+                .cloned()
+                .unwrap_or_else(|| Value::str(err.message.clone()))
+        };
+
+        let mut captured: Vec<Value> = Vec::new();
+        'replay: for v in values {
+            let lazy = if let ValueView::LazyList(ll) = v.view() {
+                Some(ll.clone())
+            } else {
+                None
+            };
+            let items: Vec<Value> = match lazy {
+                Some(ll) => match self.force_lazy_list(&ll) {
+                    Ok(items) => items,
+                    Err(err) => {
+                        quit_reason = Some(err_to_value(&err));
+                        break 'replay;
+                    }
+                },
+                None => vec![v],
+            };
+            for item in items {
+                if let Err(err) = run_capture(self, callback.clone(), vec![item], &mut captured) {
+                    if err.is_react_done() || err.is_last() {
+                        break 'replay;
+                    }
+                    if err.is_next() || err.is_redo() {
+                        continue;
+                    }
+                    quit_reason = Some(err_to_value(&err));
+                    break 'replay;
+                }
+            }
+        }
+
+        if let Some(reason) = quit_reason {
+            if quit_cbs.is_empty() {
+                return (captured, Some(reason));
+            }
+            for q in quit_cbs {
+                let _ = run_capture(self, q.clone(), vec![reason.clone()], &mut captured);
+            }
+        } else {
+            for l in last_cbs {
+                let _ = run_capture(self, l.clone(), Vec::new(), &mut captured);
+            }
+        }
+        (captured, None)
     }
 
     /// On the `await`/`.Promise` path, replay a finite/static `whenever` source

@@ -158,6 +158,23 @@ impl Interpreter {
                 // callbacks; remember its id on the Tap so `.close` fires them.
                 let mut close_supplier_id: Option<u64> = None;
 
+                // A live (Supplier-backed) supply carries `.on-close(...)` /
+                // `closing =>` callbacks in its attributes. Register them on
+                // the source supplier and point the Tap handle at it so
+                // `Tap.close` (and a supplier `done`) fires them; previously
+                // they were never wired on this path.
+                if !attrs.contains_key("on_demand_callback")
+                    && let Some(ValueView::Int(sid)) = attrs.get("supplier_id").map(Value::view)
+                    && let Some(ValueView::Array(cbs, ..)) =
+                        attrs.get("on_close_callbacks").map(Value::view)
+                    && !cbs.is_empty()
+                {
+                    for cb in cbs.iter() {
+                        register_supplier_close_callback(sid as u64, cb.clone());
+                    }
+                    close_supplier_id = Some(sid as u64);
+                }
+
                 // If this Supply has a supply_id (belongs to Proc::Async),
                 // register tap in the global registry so .start can find it
                 if let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view) {
@@ -390,39 +407,38 @@ impl Interpreter {
                                     whenever_on_close.extend(cbs.iter().cloned());
                                 }
                             } else {
-                                let inner_vals =
-                                    if let ValueView::Instance { attributes: a, .. } =
-                                        inner_supply.view()
-                                    {
-                                        self.supply_list_values(&a.as_map(), true)?
+                                // Cold (supplier-less) whenever source: replay it
+                                // synchronously, capturing the body's emissions so
+                                // they reach the tap subscriber (and do_callbacks)
+                                // via plain_values below, in source order. Before
+                                // this the body's `$emitter.emit` had no registered
+                                // tap and the values were silently dropped. When a
+                                // preceding supplier-backed whenever already
+                                // registered the outer tap on the emitter, the
+                                // emissions were dispatched live during the replay,
+                                // so the captured copies are discarded.
+                                let last_cbs = Self::value_array_items(&arr[2]).unwrap_or_default();
+                                let quit_cbs = Self::value_array_items(&arr[3]).unwrap_or_default();
+                                let (mut captured, unhandled_quit) = self
+                                    .replay_cold_whenever_capture(
+                                        inner_supply,
+                                        &body_cb,
+                                        &last_cbs,
+                                        &quit_cbs,
+                                    );
+                                if !outer_tap_registered {
+                                    plain_values.append(&mut captured);
+                                }
+                                if let Some(reason) = unhandled_quit {
+                                    if let Some(ref qf) = quit_cb {
+                                        self.call_supply_quit_handler(qf.clone(), reason)?;
                                     } else {
-                                        self.supply_list_values(&HashMap::new(), true)?
-                                    };
-                                for v in inner_vals {
-                                    match self.call_sub_value(body_cb.clone(), vec![v], true) {
-                                        Ok(_) => {}
-                                        Err(err) => {
-                                            let reason = err
-                                                .exception
-                                                .as_deref()
-                                                .cloned()
-                                                .unwrap_or_else(|| Value::str(err.message));
-                                            if let Some(ref qf) = quit_cb {
-                                                self.call_supply_quit_handler(qf.clone(), reason)?;
-                                            } else {
-                                                return Err(
-                                                    Self::runtime_error_from_supply_reason(reason),
-                                                );
-                                            }
-                                            return Ok((
-                                                Value::make_instance(
-                                                    Symbol::intern("Tap"),
-                                                    HashMap::new(),
-                                                ),
-                                                attrs,
-                                            ));
-                                        }
+                                        return Err(Self::runtime_error_from_supply_reason(reason));
                                     }
+                                    return Ok((
+                                        Value::make_instance(Symbol::intern("Tap"), HashMap::new()),
+                                        attrs,
+                                    ));
                                 }
                             }
                         } else {

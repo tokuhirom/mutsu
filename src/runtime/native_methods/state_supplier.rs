@@ -84,13 +84,22 @@ struct SupplierTapSubscription {
     closed: bool,
 }
 
+/// How a live transform tap forwards each emitted value to its downstream
+/// supplier: `Map` forwards the callable's return value, `Grep` forwards the
+/// original value when the callable (smart-)matches, `Do` calls the callable
+/// for its side effect and forwards the original value unchanged.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::runtime) enum TransformMode {
+    Map,
+    Grep,
+    Do,
+}
+
 #[derive(Clone)]
 struct TransformState {
-    /// The `grep`/`map` callable applied to each emitted value.
+    /// The `grep`/`map`/`do` callable applied to each emitted value.
     callable: Value,
-    /// `true` for `grep` (filter: forward the original value when the callable
-    /// is truthy), `false` for `map` (forward the callable's return value).
-    is_grep: bool,
+    mode: TransformMode,
     /// The downstream supplier that receives the forwarded/transformed values.
     downstream_supplier_id: u64,
 }
@@ -818,13 +827,13 @@ pub(in crate::runtime) enum SupplierEmitAction {
         downstream_supplier_id: u64,
         value: Value,
     },
-    /// Transform: run the `grep`/`map` callable on the value, then forward the
-    /// (filtered or mapped) result to the downstream supplier. Needs the
-    /// interpreter to invoke the callable.
+    /// Transform: run the `grep`/`map`/`do` callable on the value, then forward
+    /// the (filtered, mapped, or original) result to the downstream supplier.
+    /// Needs the interpreter to invoke the callable.
     TransformCall {
         downstream_supplier_id: u64,
         callable: Value,
-        is_grep: bool,
+        mode: TransformMode,
         value: Value,
     },
 }
@@ -1031,7 +1040,7 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                 actions.push(SupplierEmitAction::TransformCall {
                     downstream_supplier_id: ts.downstream_supplier_id,
                     callable: ts.callable.clone(),
-                    is_grep: ts.is_grep,
+                    mode: ts.mode,
                     value: emitted_value.clone(),
                 });
             } else {
@@ -1628,15 +1637,15 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
     }
 }
 
-/// Register a `grep`/`map` transform tap on a live supplier: each emitted value
-/// is passed through `callable` and the result forwarded to
-/// `downstream_supplier_id` (for `grep`, the original value is forwarded when
-/// the callable is truthy; for `map`, the callable's return value is forwarded).
+/// Register a `grep`/`map`/`do` transform tap on a live supplier: each emitted
+/// value is passed through `callable` and the result forwarded to
+/// `downstream_supplier_id` (see [`TransformMode`] for what each mode
+/// forwards).
 pub(in crate::runtime) fn register_supplier_transform_tap(
     supplier_id: u64,
     downstream_supplier_id: u64,
     callable: Value,
-    is_grep: bool,
+    mode: TransformMode,
 ) {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         map.entry(supplier_id)
@@ -1668,7 +1677,7 @@ pub(in crate::runtime) fn register_supplier_transform_tap(
                 forward_downstream: None,
                 transform_state: Some(TransformState {
                     callable,
-                    is_grep,
+                    mode,
                     downstream_supplier_id,
                 }),
             });

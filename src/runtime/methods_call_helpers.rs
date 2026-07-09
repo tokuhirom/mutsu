@@ -45,6 +45,11 @@ impl Interpreter {
         attributes: &HashMap<String, Value>,
         wait_until_done: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
+        // An on-demand supply (`supply { ... }` block) materializes by running
+        // its body and replaying cold `whenever` sources synchronously.
+        if attributes.contains_key("on_demand_callback") {
+            return self.supply_get_values(attributes);
+        }
         let mut items = match attributes.get("values").map(Value::view) {
             Some(ValueView::Array(values, ..)) => values.to_vec(),
             _ => Vec::new(),

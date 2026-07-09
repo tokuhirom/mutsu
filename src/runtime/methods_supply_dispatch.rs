@@ -456,7 +456,11 @@ impl Interpreter {
         let mapper = args.first().cloned().unwrap_or(Value::NIL);
         // Live (Supplier-backed) supply: register a transform tap so the map
         // stays live and forwards each mapped value to the derived supply.
-        if let Some(live) = self.make_live_transform_supply(attributes, mapper.clone(), false) {
+        if let Some(live) = self.make_live_transform_supply(
+            attributes,
+            mapper.clone(),
+            crate::runtime::native_methods::TransformMode::Map,
+        ) {
             return Ok(live);
         }
         let source_values = if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
@@ -493,11 +497,11 @@ impl Interpreter {
     /// that receives the filtered/mapped values. Returns `None` for a
     /// materialized (snapshot) supply so the caller applies the transform
     /// eagerly instead.
-    pub(super) fn make_live_transform_supply(
+    pub(in crate::runtime) fn make_live_transform_supply(
         &mut self,
         attributes: &HashMap<String, Value>,
         callable: Value,
-        is_grep: bool,
+        mode: crate::runtime::native_methods::TransformMode,
     ) -> Option<Value> {
         let source_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes)?;
         let downstream_sid = crate::runtime::native_methods::next_supplier_id();
@@ -505,7 +509,7 @@ impl Interpreter {
             source_sid,
             downstream_sid,
             callable,
-            is_grep,
+            mode,
         );
         let mut new_attrs = HashMap::new();
         new_attrs.insert("values".to_string(), Value::array(Vec::new()));
@@ -620,26 +624,36 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Handle a `grep`/`map` transform tap emission on a live supply: run the
-    /// callable on the value, then forward the (filtered or mapped) result to
-    /// the downstream supplier and drive its taps.
+    /// Handle a `grep`/`map`/`do` transform tap emission on a live supply: run
+    /// the callable on the value, then forward the (filtered, mapped, or
+    /// original) result to the downstream supplier and drive its taps.
     pub(in crate::runtime) fn handle_supply_transform_emit(
         &mut self,
         downstream_supplier_id: u64,
         callable: Value,
-        is_grep: bool,
+        mode: crate::runtime::native_methods::TransformMode,
         value: Value,
     ) -> Result<(), RuntimeError> {
-        if is_grep {
-            // `grep` uses smart-match semantics (`$_ ~~ matcher`), so a Callable
-            // is called, a type object type-checks, a Regex matches, etc.
-            let keep = self.smart_match_values(&value, &callable);
-            if keep {
+        use crate::runtime::native_methods::TransformMode;
+        match mode {
+            TransformMode::Grep => {
+                // `grep` uses smart-match semantics (`$_ ~~ matcher`), so a
+                // Callable is called, a type object type-checks, a Regex
+                // matches, etc.
+                let keep = self.smart_match_values(&value, &callable);
+                if keep {
+                    self.handle_supply_forward(downstream_supplier_id, value)?;
+                }
+            }
+            TransformMode::Map => {
+                let mapped = self.call_sub_value(callable, vec![value], true)?;
+                self.handle_supply_forward(downstream_supplier_id, mapped)?;
+            }
+            TransformMode::Do => {
+                // Side-effect only: the original value passes through.
+                self.call_sub_value(callable, vec![value.clone()], true)?;
                 self.handle_supply_forward(downstream_supplier_id, value)?;
             }
-        } else {
-            let mapped = self.call_sub_value(callable, vec![value], true)?;
-            self.handle_supply_forward(downstream_supplier_id, mapped)?;
         }
         Ok(())
     }
