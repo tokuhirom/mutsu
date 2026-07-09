@@ -450,10 +450,10 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
         language_version: super::super::simple::current_language_version(),
         custom_traits,
     };
-    // Emit __MUTSU_SET_META__ calls for ver/auth traits (like class declarations)
+    // Emit __MUTSU_SET_META__ calls for ver/auth/api traits (like class declarations)
     let mut meta_stmts = Vec::new();
     for (trait_name, trait_value) in traits {
-        if trait_name == "ver" || trait_name == "auth" {
+        if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
             meta_stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
         }
     }

@@ -92,6 +92,28 @@ impl Interpreter {
                 };
                 Ok(Value::str(value.to_string_value()))
             }
+            "api" if args.len() == 1 => {
+                let invocant_name = match args[0].view() {
+                    ValueView::Package(name) => name,
+                    ValueView::Instance { class_name, .. } => class_name,
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "X::Method::NotFound: Unknown method value dispatch (fallback disabled): api",
+                        ));
+                    }
+                };
+                // A declared `:api(...)` is stored in type_metadata; a type with no
+                // `:api` has an empty-string api in Rakudo (`class C {}; C.^api` eq
+                // ""), so default to "" rather than throwing.
+                if let Some(value) = self
+                    .type_metadata
+                    .get(&invocant_name.resolve())
+                    .and_then(|meta| meta.get("api").cloned())
+                {
+                    return Ok(Value::str(value.to_string_value()));
+                }
+                Ok(Value::str(String::new()))
+            }
             "isa" if args.len() == 2 => {
                 // Allow calling .^isa on an instance: use the instance's class.
                 let class_name = match args[0].view() {
