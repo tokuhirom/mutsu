@@ -91,11 +91,10 @@ impl Interpreter {
         for pd in &def.param_defs {
             Self::collect_sub_signature_names(&pd.sub_signature, &mut names);
         }
-        for stmt in &def.body {
-            if let Stmt::VarDecl { name, .. } = stmt {
-                names.insert(name.clone());
-            }
-        }
+        // Collect for-loop parameters and *nested* `my` declarations (not just
+        // top-level VarDecls) so a callee's body-local binding never leaks into a
+        // same-named caller lexical on the return env merge.
+        crate::ast::collect_routine_body_local_names(&def.body, &mut names);
         names
     }
 

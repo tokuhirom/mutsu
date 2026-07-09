@@ -284,6 +284,15 @@ pub(crate) struct VmCallFrame {
     /// state. Light-frame method path counterpart to `readonly_added`.
     pub readonly_removed: Vec<String>,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
+    /// The caller's loop-body-local declaration scopes. These VM fields track
+    /// which `my` names a `for`/`while` body declared so they can be restored at
+    /// loop exit (see `pop_loop_local_scope`). A compiled-function body runs via
+    /// its own `exec_one` mini-loop (not `run()`, which saves them), so without
+    /// snapshotting them here a callee invoked from inside a loop body would
+    /// register its own `my` declarations in the *caller's* active loop scope and
+    /// have them clobbered at the caller's loop exit.
+    pub saved_loop_local_vars: Vec<HashSet<String>>,
+    pub saved_loop_local_saved_env: Vec<HashMap<String, Value>>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

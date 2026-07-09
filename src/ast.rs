@@ -976,6 +976,73 @@ pub(crate) enum AssignOp {
 ///
 /// This is used at parse time to detect implicit block parameters so that
 /// constructs like `{ $^a + $^b }` automatically introduce parameters.
+/// Collect the names a routine body binds *locally* — `for`/`while`/`loop`/`given`
+/// pointy parameters and every nested `my` declaration — so the interpreter's
+/// return env merge does not write them back over a same-named *caller* lexical.
+/// Without this, a routine that recurses into a same-named `for` loop and
+/// early-returns (e.g. Zef's `system-collapse`) leaks its inner loop parameter's
+/// last value into the caller (the caller's loop variable / hash key is corrupted).
+/// Scalar names only (matching the caller's scalar-writeback filter); `@`/`%`
+/// binders are handled by the Array/Hash writeback path.
+pub(crate) fn collect_routine_body_local_names(
+    stmts: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+) {
+    fn add_scalar(name: &str, out: &mut std::collections::HashSet<String>) {
+        let bare = name.strip_prefix('\\').unwrap_or(name);
+        if !bare.is_empty() && !bare.starts_with('@') && !bare.starts_with('%') {
+            out.insert(bare.to_string());
+        }
+    }
+    for stmt in stmts {
+        match stmt {
+            Stmt::VarDecl { name, .. } => add_scalar(name, out),
+            Stmt::For {
+                param,
+                params,
+                body,
+                ..
+            } => {
+                if let Some(p) = param {
+                    add_scalar(p, out);
+                }
+                for p in params {
+                    add_scalar(p, out);
+                }
+                collect_routine_body_local_names(body, out);
+            }
+            Stmt::If {
+                then_branch,
+                else_branch,
+                binding_var,
+                ..
+            } => {
+                if let Some(v) = binding_var {
+                    add_scalar(v, out);
+                }
+                collect_routine_body_local_names(then_branch, out);
+                collect_routine_body_local_names(else_branch, out);
+            }
+            Stmt::While { body, .. }
+            | Stmt::Loop { body, .. }
+            | Stmt::React { body }
+            | Stmt::Block(body)
+            | Stmt::SyntheticBlock(body)
+            | Stmt::Default(body)
+            | Stmt::Catch(body)
+            | Stmt::Control(body) => collect_routine_body_local_names(body, out),
+            Stmt::Given { body, .. } | Stmt::When { body, .. } => {
+                collect_routine_body_local_names(body, out)
+            }
+            Stmt::Whenever { body, .. } => collect_routine_body_local_names(body, out),
+            Stmt::Label { stmt, .. } => {
+                collect_routine_body_local_names(std::slice::from_ref(stmt), out)
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(crate) fn collect_placeholders(stmts: &[Stmt]) -> Vec<String> {
     let mut names = Vec::new();
     for stmt in stmts {
