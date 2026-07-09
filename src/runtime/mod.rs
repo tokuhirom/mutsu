@@ -1522,6 +1522,10 @@ pub struct Interpreter {
     pub(crate) scalar_bind_context: bool,
     pub(crate) bound_decont_active: bool,
     pub(crate) rebind_context: bool,
+    /// Set by `MarkAccessorRefContext` immediately before a CallMethod(Mut)
+    /// whose result is wanted as a container (`:=` bind RHS / `.VAR` chain).
+    /// Consumed and unconditionally cleared at CallMethod entry.
+    pub(crate) accessor_ref_pending: bool,
     pub(crate) constant_context: bool,
     /// Slice 2a (`docs/scalar-array-sharing.md`): set by `MarkArrayShareContext`
     /// just before a `SetLocal` for `$scalar = @arr` / `$scalar = %hash`. Tells

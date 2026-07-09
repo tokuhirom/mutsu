@@ -2,6 +2,38 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Whether the role attribute backing a mixin override key
+    /// (`__mutsu_attr__{method}`) is declared `is rw`. Scans the mixin's
+    /// `__mutsu_role__*` entries for a role that declares the attribute; an
+    /// ad-hoc mixin with no declaring role stays writable (matching the
+    /// lenient ad-hoc branch of the Instance mixin path).
+    fn mixin_attr_is_rw(
+        &self,
+        mixins: &std::collections::HashMap<String, Value>,
+        method: &str,
+    ) -> bool {
+        let mut found_attr = false;
+        for role_name in mixins
+            .keys()
+            .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        {
+            let base = role_name.split('[').next().unwrap_or(role_name);
+            for candidate in [role_name, base] {
+                for (attr_name, is_public, _default, is_rw, _is_required, sigil, ..) in
+                    self.collect_role_attributes_for_class(candidate)
+                {
+                    if attr_name == method && is_public {
+                        if is_rw || sigil == '@' || sigil == '%' {
+                            return true;
+                        }
+                        found_attr = true;
+                    }
+                }
+            }
+        }
+        !found_attr
+    }
+
     pub(crate) fn assign_method_lvalue_with_values(
         &mut self,
         target_var: Option<&str>,
@@ -728,6 +760,38 @@ impl Interpreter {
             }
         }
 
+        // Assignment through a first-class container (`$obj.attr.VAR.name = v`
+        // after `$obj.attr.VAR does Role`): the target is the attribute slot's
+        // `ContainerRef` cell. A role-mixin attribute write updates the mixin
+        // override in place through the cell (visible to every alias); any
+        // other method-lvalue delegates to the inner value.
+        if let ValueView::ContainerRef(cell) = target.view() {
+            let inner = cell.lock().unwrap().clone();
+            if let ValueView::Mixin(minner, mixins) = inner.view() {
+                let mixin_attr_key = format!("__mutsu_attr__{}", method);
+                if mixins.contains_key(&mixin_attr_key) {
+                    if !self.mixin_attr_is_rw(mixins, method) {
+                        return Err(RuntimeError::new(format!(
+                            "X::Assignment::RO: method '{}' is not rw",
+                            method
+                        )));
+                    }
+                    let mut updated = (**mixins).clone();
+                    updated.insert(mixin_attr_key, value.clone());
+                    *cell.lock().unwrap() =
+                        Value::mixin_parts(minner.clone(), std::sync::Arc::new(updated));
+                    return Ok(value);
+                }
+            }
+            return self.assign_method_lvalue_with_values(
+                target_var,
+                inner,
+                method,
+                method_args,
+                value,
+            );
+        }
+
         // Handle Mixin-wrapped instances (e.g. from role punning) by updating
         // the mixin attribute entry directly.
         if let ValueView::Mixin(inner, mixins) = target.view()
@@ -902,8 +966,14 @@ impl Interpreter {
                     method.to_string()
                 };
                 let mut updated = attributes.to_map();
-                let mut assigned_value =
-                    Self::normalize_rw_accessor_assignment(updated.get(&attr_key).cloned(), value);
+                // A slot promoted to a `ContainerRef` cell (a `:=` bind / `.VAR`
+                // mixin took the attribute's container identity) is transparent
+                // to the accessor write: normalize against the inner value and
+                // (below) write through the cell instead of replacing it.
+                let mut assigned_value = Self::normalize_rw_accessor_assignment(
+                    updated.get(&attr_key).cloned().map(|v| v.deref_container()),
+                    value,
+                );
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
                 if assigned_value.is_nil()
@@ -943,7 +1013,10 @@ impl Interpreter {
                     };
                     assigned_value = self.tag_container_metadata(assigned_value, info);
                 }
-                updated.insert(attr_key.clone(), assigned_value.clone());
+                // Write through an existing `ContainerRef` slot (preserving any
+                // `:=`-bound alias of the attribute container); otherwise replace
+                // the entry as a bare value.
+                Value::hash_insert_through(&mut updated, attr_key.clone(), assigned_value.clone());
                 // Always propagate the change into this instance's live shared
                 // cell. This handles chained accessor assignment like
                 // `$outer.inner.arr = ...` where target_var may be None but the

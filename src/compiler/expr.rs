@@ -331,6 +331,35 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+            } if name == "VAR"
+                && args.is_empty()
+                && modifier.is_none()
+                && !quoted
+                && matches!(target.as_ref(), Expr::MethodCall { .. }) =>
+            {
+                // `.VAR` on a method-call result (`$obj.attr.VAR`): flag the
+                // inner dispatch so a public attribute accessor returns the
+                // attribute slot's `ContainerRef` cell — `.VAR` then yields the
+                // attribute's real container (for `does` mixins / `.VAR.attr =`
+                // rw writes) instead of a detached value copy. A non-accessor
+                // inner method ignores the flag (identity `.VAR`, as before).
+                self.compile_expr(target);
+                self.mark_trailing_method_call_as_accessor_ref();
+                let name_idx = self.code.add_constant(Value::str("VAR".to_string()));
+                self.code.emit(OpCode::CallMethod {
+                    name_idx,
+                    arity: 0,
+                    modifier_idx: None,
+                    quoted: false,
+                    arg_sources_idx: None,
+                });
+            }
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_)

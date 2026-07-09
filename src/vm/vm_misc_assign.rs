@@ -349,7 +349,9 @@ impl Interpreter {
                 // existing whole-reassignment semantics here.
                 let scalar = !name.starts_with('@') && !name.starts_with('%');
                 if scalar && !(self.array_share_active && self.is_array_share_scalar(&name)) {
-                    Value::store_through_cell(arc, &val);
+                    let arc = arc.clone();
+                    self.check_container_cell_constraint(&arc, &val)?;
+                    Value::store_through_cell(&arc, &val);
                     self.stack.push(val);
                     return Ok(());
                 }

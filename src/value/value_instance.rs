@@ -60,9 +60,18 @@ impl Clone for InstanceAttrs {
     /// share the cell — sharing flows through `crate::gc::Gc<InstanceAttrs>`. The copy does
     /// not participate in DESTROY refcounting (`queue_destroy = false`).
     fn clone(&self) -> Self {
+        let mut map = read_attrs(&self.attributes).clone();
+        // Snapshot any `ContainerRef`-promoted slot (a `:=`-bound attribute):
+        // an independent copy must not alias the original's attribute cell.
+        for v in map.values_mut() {
+            if let Value::ContainerRef(cell) = v {
+                let inner = cell.lock().unwrap().clone();
+                *v = inner;
+            }
+        }
         Self {
             class_name: self.class_name,
-            attributes: Arc::new(RwLock::new(read_attrs(&self.attributes).clone())),
+            attributes: Arc::new(RwLock::new(map)),
             id: self.id,
             queue_destroy: false,
             finalized: std::sync::atomic::AtomicBool::new(false),
@@ -156,6 +165,30 @@ impl InstanceAttrs {
     /// idiom), in place under the write lock.
     pub(crate) fn insert_if_absent(&self, key: String, value: Value) {
         write_attrs(&self.attributes).entry(key).or_insert(value);
+    }
+
+    /// Promote the attribute at `key` to a shared `ContainerRef` cell (in place,
+    /// under a single write lock) and return the cell value. If the slot already
+    /// holds a `ContainerRef`, the existing cell is returned — repeated `:=`
+    /// binds / `.VAR` chains on the same attribute alias one container. An
+    /// absent key materializes as a fresh cell holding `Nil`. This gives an
+    /// accessor result container identity: writes through the accessor and reads
+    /// through the bound alias observe the same slot.
+    pub(crate) fn promote_attr_to_container(&self, key: &str) -> Value {
+        let mut guard = write_attrs(&self.attributes);
+        match guard.get_mut(key) {
+            Some(Value::ContainerRef(cell)) => Value::ContainerRef(cell.clone()),
+            Some(slot) => {
+                let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(slot, Value::Nil)));
+                *slot = Value::ContainerRef(cell.clone());
+                Value::ContainerRef(cell)
+            }
+            None => {
+                let cell = crate::gc::Gc::new(Mutex::new(Value::Nil));
+                guard.insert(key.to_string(), Value::ContainerRef(cell.clone()));
+                Value::ContainerRef(cell)
+            }
+        }
     }
 
     /// Phase 3 registry-removal: replace the whole attribute map in place through

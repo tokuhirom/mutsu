@@ -315,6 +315,15 @@ pub(crate) enum OpCode {
     /// Signal that the next SetLocal is a `:=` rebind (not a VarDecl).
     /// Triggers cleanup of old bind pairs and reverse aliases.
     MarkRebindContext,
+    /// Emitted immediately before a `CallMethod`/`CallMethodMut` whose result is
+    /// wanted as a *container* rather than a value copy (a `:=` bind RHS like
+    /// `my $ref := $obj.attr`, or the inner call of a `.VAR` chain like
+    /// `$obj.attr.VAR`). When the call resolves to a public attribute accessor
+    /// read, the attribute slot is promoted to a shared `ContainerRef` cell and
+    /// the cell itself is returned, giving the caller the attribute's container
+    /// identity. Consumed (and unconditionally cleared) at CallMethod entry, so
+    /// it cannot leak past the one dispatch it was emitted for.
+    MarkAccessorRefContext,
     /// Slice 2a/2b (`docs/scalar-array-sharing.md`): signal that the next
     /// SetLocal/AssignExpr assigns to a `$` scalar via plain `=` and that the
     /// named source variable's container should be shared by reference. The

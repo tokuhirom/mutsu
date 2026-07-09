@@ -1100,6 +1100,17 @@ impl Compiler {
                         expr
                     };
                     self.compile_assignment_rhs_for_target(name, rhs_expr);
+                    // `my $ref := $obj.attr`: flag the trailing accessor
+                    // dispatch to return the attribute slot's ContainerRef cell
+                    // (see MarkAccessorRefContext). Done HERE, on the normal
+                    // assignment-RHS route, rather than by re-routing MethodCall
+                    // RHS through compile_call_arg — that route compiles closure
+                    // args as NON-escaping (the #2746 guard), which would unbox
+                    // the captured outer writes of e.g. `my $v := lazy { $x++ }`
+                    // (statement prefixes like `lazy`/`do` parse as MethodCall).
+                    if scalar_bind_decont && matches!(rhs_expr, Expr::MethodCall { .. }) {
+                        self.mark_trailing_method_call_as_accessor_ref();
+                    }
                 }
                 if let Some(start_idx) = constant_init_phaser_start {
                     self.code.emit(OpCode::CheckPhaserEnd);

@@ -958,6 +958,16 @@ impl Interpreter {
             }
             if method == "clone" {
                 let mut attrs: HashMap<String, Value> = attributes.to_map();
+                // A slot promoted to a `ContainerRef` cell (a `:=`-bound
+                // attribute) must not leak its cell into the clone: snapshot
+                // the inner value so a write to the clone's attribute stays
+                // invisible to the original (raku clones get fresh containers).
+                for v in attrs.values_mut() {
+                    if matches!(v.view(), ValueView::ContainerRef(_)) {
+                        let taken = std::mem::replace(v, Value::NIL);
+                        *v = taken.deref_container();
+                    }
+                }
                 // Build sigil map from class attributes to coerce values properly
                 let class_attrs_info = self.collect_class_attributes(&class_name.resolve());
                 let sigil_map: HashMap<String, char> = class_attrs_info

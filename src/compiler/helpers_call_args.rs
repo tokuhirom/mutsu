@@ -296,6 +296,35 @@ impl Compiler {
         } else if let Some(name) = source_name {
             let name_idx = self.code.add_constant(Value::str(name));
             self.code.emit(OpCode::WrapVarRef(name_idx));
+        } else if is_bind_target && matches!(arg, Expr::MethodCall { .. }) {
+            // `:=` bind to a method-call RHS (`my $ref := $obj.attr`): flag the
+            // dispatch so a public attribute accessor returns the attribute
+            // slot's `ContainerRef` cell instead of a value copy — the bound
+            // variable then aliases the attribute container (writes through
+            // either side are seen by both). A non-accessor method ignores the
+            // flag and the bind degrades to today's bind-by-value.
+            self.mark_trailing_method_call_as_accessor_ref();
+        }
+    }
+
+    /// Insert a `MarkAccessorRefContext` immediately before the trailing
+    /// `CallMethod`/`CallMethodMut` op (skipping the post-call `Decont` /
+    /// `ContainerizePair` the arg compile may have appended), so that ONE
+    /// dispatch sees the accessor-ref flag. Inserting (rather than emitting
+    /// after the fact) is safe here: any jump patched to the call op's old
+    /// index now lands on the marker and falls through to the same call.
+    /// No-op when the compiled tail is not a method call.
+    pub(super) fn mark_trailing_method_call_as_accessor_ref(&mut self) {
+        let mut i = self.code.ops.len();
+        while i > 0 {
+            match &self.code.ops[i - 1] {
+                OpCode::Decont | OpCode::ContainerizePair => i -= 1,
+                OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. } => {
+                    self.code.ops.insert(i - 1, OpCode::MarkAccessorRefContext);
+                    return;
+                }
+                _ => return,
+            }
         }
     }
 

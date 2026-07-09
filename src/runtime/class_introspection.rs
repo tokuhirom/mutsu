@@ -225,6 +225,33 @@ impl Interpreter {
             .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
     }
 
+    /// Accessor-slot promotion gate: when `method_name` is a public `is rw`
+    /// attribute accessor, return `Some(declared type constraint)` (`Some(None)`
+    /// for an untyped rw attribute). `None` means the accessor is not rw — a
+    /// want-ref read must NOT promote the slot (raku returns the decont'd value
+    /// there, so `my $r := $obj.ro-attr; $r = v` stays an immutable-value error).
+    pub(crate) fn rw_accessor_type_constraint(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<Option<String>> {
+        let attrs = self.collect_class_attributes(class_name);
+        let is_rw = attrs
+            .iter()
+            .any(|(attr_name, is_public, _default, is_rw, ..)| {
+                *is_public && *is_rw && attr_name == method_name
+            });
+        if !is_rw {
+            return None;
+        }
+        for cn in self.class_mro(class_name) {
+            if let Some(tc) = self.get_attr_type_constraint(&cn, method_name) {
+                return Some(Some(tc));
+            }
+        }
+        Some(None)
+    }
+
     /// Check if an attribute is buildable (can be set via .new).
     pub(crate) fn is_attribute_buildable(&self, class_name: &str, attr_name: &str) -> bool {
         if let Some(class_def) = self.registry().classes.get(class_name) {
