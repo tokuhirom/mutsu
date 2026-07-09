@@ -327,6 +327,7 @@ impl Interpreter {
             scalar_bind_context: false,
             bound_decont_active: false,
             rebind_context: false,
+            accessor_ref_pending: false,
             constant_context: false,
             array_share_context: false,
             array_share_source: None,

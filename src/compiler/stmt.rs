@@ -1056,6 +1056,7 @@ impl Compiler {
                     self.bind_terminal = false;
                 } else if scalar_bind_decont
                     && (matches!(expr, Expr::ArrayVar(_) | Expr::HashVar(_))
+                        || matches!(expr, Expr::MethodCall { .. })
                         || matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. })))
                 {
                     // A scalar `:=` bind to a *whole* container variable

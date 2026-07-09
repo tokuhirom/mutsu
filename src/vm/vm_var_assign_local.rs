@@ -119,6 +119,7 @@ impl Interpreter {
                     if scalar {
                         val = Self::normalize_scalar_assignment_value(val);
                     }
+                    self.check_container_cell_constraint(&arc, &val)?;
                     Value::store_through_cell(&arc, &val);
                     self.stack.push(val);
                     self.flush_local_to_env(code, idx);
@@ -396,6 +397,7 @@ impl Interpreter {
             let scalar = !name.starts_with('@') && !name.starts_with('%');
             if scalar && !(self.array_share_active && self.is_array_share_scalar(name)) {
                 let arc = arc.clone();
+                self.check_container_cell_constraint(&arc, &val)?;
                 Value::store_through_cell(&arc, &val);
                 self.flush_local_to_env(code, idx);
                 self.stack.push(val);

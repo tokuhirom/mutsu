@@ -1,6 +1,25 @@
 use super::*;
 
 impl Interpreter {
+    /// Enforce a `ContainerRef` cell's registered `of`-type constraint before a
+    /// write-through (`$ref = v` on a `:=`-bound typed slot — a typed rw
+    /// attribute accessor bind, or a `my T $` anonymous typed scalar). Mirrors
+    /// the Pair.value enforcement in `methods_mut_method_lvalue.rs`.
+    pub(super) fn check_container_cell_constraint(
+        &mut self,
+        cell: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        val: &Value,
+    ) -> Result<(), RuntimeError> {
+        if let Some(constraint) = crate::value::lookup_container_constraint(cell)
+            && !matches!(constraint.as_str(), "Any" | "Mu")
+            && !val.is_nil()
+            && !self.type_matches_value(&constraint, val)
+        {
+            return Err(RuntimeError::typecheck_assignment(&constraint, val, None));
+        }
+        Ok(())
+    }
+
     /// Slice 2a: clear the aggregate held inside a shared `ContainerRef` cell
     /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
     /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is

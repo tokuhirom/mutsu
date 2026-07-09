@@ -381,6 +381,9 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // Consume (and unconditionally clear) the accessor-ref marker: it is
+        // emitted immediately before this opcode and scoped to this one dispatch.
+        let want_ref = std::mem::take(&mut self.accessor_ref_pending);
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.set_pending_call_arg_sources(arg_sources.clone());
@@ -576,9 +579,14 @@ impl Interpreter {
         // potential invocant write-back, so accessor reads land here -- without
         // this they all fell back to the interpreter. The read does not mutate
         // the invocant, so no write-back to `target_name` is needed.
-        if let Some(val) =
-            self.try_fast_accessor_read(&target, &method, &args, modifier.is_some(), quoted)
-        {
+        if let Some(val) = self.try_fast_accessor_read(
+            &target,
+            &method,
+            &args,
+            modifier.is_some(),
+            quoted,
+            want_ref,
+        ) {
             // Pure attribute read: does not mutate the invocant (see comment
             // above), so it does not dirty the caller's locals (Slice 6.3).
             self.stack.push(val);

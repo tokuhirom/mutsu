@@ -661,6 +661,12 @@ impl Interpreter {
                 let is_bind_ctx = self.bind_context;
                 let is_rebind = self.rebind_context;
                 self.bind_context = false;
+                // Consume the scalar-bind marker here too: a topic bind
+                // (`$_ := $d`) compiles MarkScalarBindContext + SetGlobal, so
+                // without this the flag leaks into the NEXT SetLocal (e.g. a
+                // following `my $a = 0`), which would spuriously treat it as a
+                // value-bind and mark it readonly.
+                self.scalar_bind_context = false;
                 // Slice 2a: `our $n = @z` / a global scalar target reaches SetGlobal,
                 // not SetLocal/AssignExpr. Consume the array-share flag here (the
                 // global copies for now — reference sharing for globals is Slice 2d)
@@ -1118,6 +1124,7 @@ impl Interpreter {
                     if let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
+                        self.check_container_cell_constraint(arc, &val)?;
                         // Preserve the inner container's identity (§3): a boxed
                         // captured `@a`/`%h` whole-reassigned here must keep its
                         // backing `Gc` so by-value holders observe the update.
@@ -1132,6 +1139,7 @@ impl Interpreter {
                         && let Some(cell_val) = self.env().get(alias_target.as_str()).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
+                        self.check_container_cell_constraint(arc, &val)?;
                         Self::cell_store_preserving_container_identity(arc, &val);
                         *ip += 1;
                         return Ok(());
@@ -1605,6 +1613,10 @@ impl Interpreter {
             }
             OpCode::MarkRebindContext => {
                 self.rebind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkAccessorRefContext => {
+                self.accessor_ref_pending = true;
                 *ip += 1;
             }
             OpCode::MarkArrayShareSource(name_idx) => {

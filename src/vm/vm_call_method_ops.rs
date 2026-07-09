@@ -69,6 +69,7 @@ impl Interpreter {
         args: &[Value],
         has_modifier: bool,
         quoted: bool,
+        want_ref: bool,
     ) -> Option<Value> {
         if !args.is_empty() || has_modifier || quoted {
             return None;
@@ -139,12 +140,50 @@ impl Interpreter {
         // type); extending it to the mut path means an accessor read on a
         // *variable* (`$obj.x`, compiled as CallMethodMut) no longer falls back
         // to the interpreter.
-        let map = attributes.as_map();
         let priv_key = format!("{}!", method);
-        let val = map.get(method).or_else(|| map.get(&priv_key));
-        match val {
+        let (key, out) = {
+            let map = attributes.as_map();
+            match map.get(method) {
+                Some(v) => (method.to_string(), Some(v.clone())),
+                None => (priv_key.clone(), map.get(&priv_key).cloned()),
+            }
+        };
+        // `:=` bind RHS / `.VAR` chain: return the attribute slot's container
+        // identity (promoting the slot to a shared `ContainerRef` cell) instead
+        // of a value copy. Restricted to scalar-shaped slots — an `@`/`%`
+        // attribute value is already a shared container Arc, and the aggregate
+        // accessor path (with its container type metadata) lives on the
+        // interpreter side.
+        if want_ref
+            && matches!(
+                out,
+                Some(ref v) if !matches!(
+                    v.view(),
+                    ValueView::Array(..) | ValueView::Hash(_) | ValueView::Mixin(..)
+                )
+            )
+            && let Some(type_constraint) = self.rw_accessor_type_constraint(&cn, method)
+        {
+            let cell_val = attributes.promote_attr_to_container(&key);
+            // A typed rw attribute's constraint travels with the cell, so a
+            // later write through the bound alias (`$ref = v`) type-checks
+            // exactly like `$obj.x = v` does.
+            if let ValueView::ContainerRef(cell) = cell_val.view()
+                && let Some(tc) = type_constraint.as_ref()
+                && !matches!(tc.as_str(), "Mu" | "Any")
+            {
+                crate::value::register_container_constraint(cell, tc);
+            }
+            if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
+                loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
+            }
+            return Some(cell_val);
+        }
+        match out {
             Some(v) => {
-                let out = v.clone();
+                // A slot promoted to a `ContainerRef` cell (a prior `:=` bind /
+                // `.VAR` mixin) is transparent to a plain accessor read.
+                let out = v.deref_container();
                 if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                     loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
                 }
@@ -284,6 +323,9 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // Consume (and unconditionally clear) the accessor-ref marker: it is
+        // emitted immediately before this opcode and scoped to this one dispatch.
+        let want_ref = std::mem::take(&mut self.accessor_ref_pending);
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         self.set_pending_call_arg_sources(arg_sources.clone());
         let method_raw = Self::const_str(code, name_idx);
@@ -327,8 +369,18 @@ impl Interpreter {
         // (`ContainerRef`, e.g. a `.grep` rw alias / `:=`-bound slot extracted via
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it
         // so the method runs on the inner value (Raku container semantics). `.VAR`
-        // is the one introspection method that wants the container itself.
+        // is the one introspection method that wants the container itself, and
+        // `^name`/`WHAT` right after a `.VAR` report the container type (raku:
+        // `$obj.attr.VAR.^name` is "Scalar", not the inner value's type).
         let target = if matches!(target.view(), ValueView::ContainerRef(_)) && method != "VAR" {
+            if args.is_empty() && matches!(method, "^name" | "WHAT") {
+                self.stack.push(if method == "^name" {
+                    Value::str("Scalar".to_string())
+                } else {
+                    Value::package(crate::symbol::Symbol::intern("Scalar"))
+                });
+                return Ok(());
+            }
             target.deref_container()
         } else {
             target
@@ -443,9 +495,14 @@ impl Interpreter {
         // overlay env (the common `$.attr` read inside a scoped method body) --
         // hence the `flatten_scoped_env` below is placed *after* it, so an
         // accessor read does not collapse the caller's scoped overlay.
-        if let Some(val) =
-            self.try_fast_accessor_read(&target, method, &args, modifier_idx.is_some(), quoted)
-        {
+        if let Some(val) = self.try_fast_accessor_read(
+            &target,
+            method,
+            &args,
+            modifier_idx.is_some(),
+            quoted,
+            want_ref,
+        ) {
             // Pure attribute read: touches no env (see comment above), so it does
             // not dirty the caller's locals (Slice 6.3 — removes the per-accessor
             // env->locals pull that dominated method-heavy code like bench-class).

@@ -287,6 +287,7 @@ impl Interpreter {
         self.scalar_bind_context = false;
         self.bound_decont_active = false;
         self.rebind_context = false;
+        self.accessor_ref_pending = false;
         self.constant_context = false;
         self.array_share_context = false;
         self.array_share_source = None;

@@ -201,6 +201,28 @@ impl Interpreter {
             let name = &code.locals[idx];
             self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
         }
+        // A scalar `:=` bound to a plain VALUE with no named source (`my $r :=
+        // $obj.ro-attr` — a non-rw accessor result, or any value-producing
+        // expression) is bound to that value itself, not a container: a later
+        // `$r = v` is "Cannot assign to an immutable value" in raku. Literal
+        // binds (`my $x := 5`) get this from the parser's MarkReadonly; this
+        // covers the runtime-only cases. Container-valued binds (ContainerRef /
+        // Array / Hash) stay writable through their container, and a Proxy
+        // stays writable through its STORE.
+        if scalar_bind
+            && bind_source.is_none()
+            && !matches!(
+                raw_popped.view(),
+                ValueView::ContainerRef(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(_)
+                    | ValueView::Proxy { .. }
+            )
+        {
+            let bare = code.locals[idx].trim_start_matches(['$', '@', '%', '&']);
+            let bare = bare.to_string();
+            self.mark_readonly(&bare);
+        }
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
         // bare-statement return value) element-wise through its cells — the
@@ -328,6 +350,7 @@ impl Interpreter {
                     if scalar {
                         val = Self::normalize_scalar_assignment_value(val);
                     }
+                    self.check_container_cell_constraint(&arc, &val)?;
                     Value::store_through_cell(&arc, &val);
                     self.flush_local_to_env(code, idx);
                     return Ok(());
@@ -1445,6 +1468,7 @@ impl Interpreter {
                     let old = arc.lock().unwrap().clone();
                     val = self.array_container_writethrough_value(&name, val, &old)?;
                 }
+                self.check_container_cell_constraint(&arc, &val)?;
                 Value::store_through_cell(&arc, &val);
                 self.flush_local_to_env(code, idx);
                 return Ok(());

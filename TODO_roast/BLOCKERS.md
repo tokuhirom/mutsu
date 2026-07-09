@@ -98,10 +98,9 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 - `S26-documentation/12-non-breaking-space.t`（top-level BEGIN compile-time hoist）→ `news/2026-07.md`
 - `S02-names-vars/variables-and-packages.t`（nested-block BEGIN hoist）→ `news/2026-07.md`
 
-**残る別軸の残課題**（属性 slot の完全な cell 化待ち・§3.2 item 2）:
-`$my_ref := $obj.attr`（scalar accessor への `:=` 束縛）・`$obj.attr.VAR.role = v`
-（mixin accessor への rw 書込）。closure-captured shared-cell を list へ by-value 捕捉した
-ときのスナップショット追従（return-writeback 系・`splice.t` の `ident4`）も同族。
+**残る別軸の残課題**: closure-captured shared-cell を list へ by-value 捕捉した
+ときのスナップショット追従（return-writeback 系・`splice.t` の `ident4`）。
+（`$my_ref := $obj.attr` と `$obj.attr.VAR.role = v` は §3.2 item 2 で DONE。）
 
 ### 3.2 サブキャンペーンと choke point
 
@@ -110,11 +109,18 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
    - 変更レイヤ: `value/mod.rs`、`vm_var_assign_ops.rs`、`vm_var_index_ops.rs`
    - 対象: `splice.t`（multislice は §2.3 で完了・#4355）
    - 完了条件: element bind / take-rw / deep nested write が post-call writeback なしで成立
-2. **属性 accessor を value copy ではなく slot 経由にする**
-   - 変更レイヤ: attribute read/write path、instance attr storage
-   - 対象: `Attribute.container.VAR does Role` は #4314 で完了（§3.1 参照）。残りは
-     `$my_ref := $obj.attr`（scalar accessor への `:=` 束縛）・`$obj.attr.VAR.role = v`
-     （mixin accessor への rw 書込）
+2. **属性 accessor を value copy ではなく slot 経由にする** — **DONE**
+   - `Attribute.container.VAR does Role` は #4314 で完了（§3.1 参照）。
+   - `$my_ref := $obj.attr`（rw scalar accessor への `:=` 束縛が属性 slot の
+     `ContainerRef` cell を共有・双方向追従・型制約は cell に登録して enforce）と
+     `$obj.attr.VAR does Role` + `$obj.attr.VAR.name = v`（mixin accessor への
+     rw 書込が cell 経由で永続化）を実装。仕組み: `MarkAccessorRefContext`
+     opcode（`:=` bind RHS / `.VAR` チェーンの内側 CallMethod 直前に emit、
+     dispatch 入口で take して 1 dispatch に閉じる）→ fast accessor read が
+     attr slot を cell 昇格して返す。非-rw accessor は raku 同様 decont 値
+     （bind 後の代入は immutable エラー）。Pin: `t/attr-accessor-slot.t`（18、
+     raku 一致）。副産物: `$_ := $d`（SetGlobal 経由 topic bind）が
+     `scalar_bind_context` を消費せず次の SetLocal に残留するバグを修正。
 3. **BEGIN/EVAL/lexical 配列変更の永続化** — **DONE**。
    - top-level BEGIN 版（`S26-documentation/12-non-breaking-space.t`、`run_toplevel_begin_phasers`）・
      nested-block BEGIN 版（`S02-names-vars/variables-and-packages.t`、`reorder_at_level`）とも
@@ -166,11 +172,11 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    multislice hash 側の slot identity を前に進める。
    これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-   **進捗（2026-07-08）**: whole-container 代入の container-identity（`splice.t`）と
-   属性 container mixin（`S14-traits/attributes.t`・#4314）は完了・whitelist 済み
-   （§3.1 参照）。残るは closure-captured shared-cell を list へ by-value 捕捉したときの
-   スナップショット追従（return-writeback 系）と、属性 slot の完全な cell 化
-   （`:=` 束縛・mixin accessor への rw 書込）。
+   **進捗（2026-07-09）**: whole-container 代入の container-identity（`splice.t`）、
+   属性 container mixin（`S14-traits/attributes.t`・#4314）、属性 slot の完全な
+   cell 化（`:=` 束縛・mixin accessor への rw 書込、§3.2 item 2）は完了。
+   残るは closure-captured shared-cell を list へ by-value 捕捉したときの
+   スナップショット追従（return-writeback 系・`splice.t` の `ident4`）。
 
 かつて 2 番手だった cross-thread lexical writeback campaign（旧 §4.1）は完了
 （`S17-lowlevel/lock.t`・`S32-io/socket-recv-vs-read.t` とも whitelist 済み、

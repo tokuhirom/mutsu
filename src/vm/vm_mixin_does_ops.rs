@@ -346,6 +346,18 @@ impl Interpreter {
         // Snapshot for the precise BUILD/TWEAK captured-outer writeback (see
         // exec_does_var_op).
         let pre_env = self.snapshot_carrier_overwritable_env(code);
+        // `does` on a first-class container (`$obj.attr.VAR does Role`): compose
+        // onto the inner value and store the mixin back *through* the cell, so
+        // every alias of the container (the attribute slot, a `:=`-bound var)
+        // observes the mixin. The expression yields the container itself, so a
+        // chained `.name` read/write keeps the container identity.
+        if let ValueView::ContainerRef(cell) = left.view() {
+            let inner = cell.lock().unwrap().clone();
+            let result = self.vm_does_values(inner, right)?;
+            *cell.lock().unwrap() = result;
+            self.stack.push(left);
+            return Ok(());
+        }
         // `$a.container.VAR does Role(...)` inside a custom `trait_mod:<is>`:
         // record the role mixin against the owning attribute so construction
         // applies it to each instance's attribute value.
