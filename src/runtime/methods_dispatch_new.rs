@@ -242,7 +242,7 @@ impl Interpreter {
         // Initialize with default attribute values
         let mut attributes = HashMap::new();
         if self.registry().classes.contains_key(&class_name.resolve()) {
-            for (attr_name, _is_public, default, _is_rw, _, _, _) in
+            for (attr_name, _is_public, default, _is_rw, _, sigil, _) in
                 self.collect_class_attributes(&class_name.resolve())
             {
                 let val = if let Some(Expr::Literal(ref lit_val)) = default {
@@ -251,6 +251,31 @@ impl Interpreter {
                     lit_val.clone()
                 } else if let Some(expr) = default {
                     self.eval_block_value(&[Stmt::Expr(expr)])?
+                } else if sigil == '@' {
+                    // A `@`-sigil attribute with no default is an empty Array,
+                    // not Nil (matches `dispatch_new`). Leaving it Nil makes
+                    // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
+                    let mut arr = Value::real_array(Vec::new());
+                    let tc = self
+                        .registry()
+                        .classes
+                        .get(&class_name.resolve())
+                        .and_then(|cd| cd.attribute_types.get(&attr_name))
+                        .cloned();
+                    if let Some(tc) = tc {
+                        arr = self.tag_container_metadata(
+                            arr,
+                            super::ContainerTypeInfo {
+                                value_type: tc,
+                                key_type: None,
+                                declared_type: None,
+                            },
+                        );
+                    }
+                    arr
+                } else if sigil == '%' {
+                    // A `%`-sigil attribute with no default is an empty Hash.
+                    Value::hash(HashMap::new())
                 } else {
                     // Native types have zero/empty defaults instead of Nil
                     let type_constraint =
