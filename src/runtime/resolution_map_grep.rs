@@ -139,6 +139,7 @@ impl Interpreter {
                     // parameter binds the missing slot to its default / `Any`.
                     let value =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                    let value = self.reify_finite_pipe_value(value)?;
                     match value.view() {
                         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
                         _ => result.push(value),
@@ -173,6 +174,7 @@ impl Interpreter {
                     };
                     let value =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                    let value = self.reify_finite_pipe_value(value)?;
                     match value.view() {
                         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
                         _ => result.push(value),
@@ -197,6 +199,7 @@ impl Interpreter {
                     };
                     let value =
                         self.call_sub_value(Value::sub_value(data.clone()), chunk, false)?;
+                    let value = self.reify_finite_pipe_value(value)?;
                     match value.view() {
                         ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
                         _ => result.push(value),
@@ -346,6 +349,11 @@ impl Interpreter {
                                 .cloned()
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
+                            // A callback that returns a finite lazy `.map`/`.grep`
+                            // pipe (e.g. `{ gather {...}.grep(...) }`) must reify
+                            // it here — the result array's static readers (`.flat`,
+                            // `for`) can't run the VM to force a nested pipe.
+                            let val = vm.reify_finite_pipe_value(val)?;
                             match val.view() {
                                 ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
                                 _ => result.push(val),
@@ -411,6 +419,7 @@ impl Interpreter {
             let mut result = Vec::new();
             for item in list_items {
                 let value = self.call_sub_value(func.clone(), vec![item], false)?;
+                let value = self.reify_finite_pipe_value(value)?;
                 match value.view() {
                     ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
                     _ => result.push(value),

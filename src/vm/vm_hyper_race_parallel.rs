@@ -75,10 +75,19 @@ impl Interpreter {
                         match call_result {
                             Ok(val) => {
                                 if is_map_flag {
-                                    if let ValueView::Slip(s) = val.view() {
-                                        results.extend(s.iter().cloned());
-                                    } else {
-                                        results.push(val);
+                                    // A callback returning a finite lazy `.map`/
+                                    // `.grep` pipe must reify here — the wrapped
+                                    // HyperSeq's downstream `.flat`/`for` use static
+                                    // readers that cannot force a nested pipe.
+                                    match vm.reify_finite_pipe_value(val) {
+                                        Ok(val) => {
+                                            if let ValueView::Slip(s) = val.view() {
+                                                results.extend(s.iter().cloned());
+                                            } else {
+                                                results.push(val);
+                                            }
+                                        }
+                                        Err(e) => error = Some(e),
                                     }
                                 } else if val.truthy() {
                                     results.push(item.clone());

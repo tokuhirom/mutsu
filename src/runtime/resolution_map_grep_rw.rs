@@ -58,6 +58,7 @@ impl Interpreter {
                     {
                         list_items[i] = mutated;
                     }
+                    let value = self.reify_finite_pipe_value(value)?;
                     if let ValueView::Slip(elems) = value.view() {
                         result.extend(elems.iter().cloned());
                     } else {
@@ -174,6 +175,7 @@ impl Interpreter {
                             {
                                 list_items[i] = mutated;
                             }
+                            let val = vm.reify_finite_pipe_value(val)?;
                             if let ValueView::Slip(elems) = val.view() {
                                 result.extend(elems.iter().cloned());
                             } else {
