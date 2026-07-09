@@ -1480,7 +1480,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
             continue;
         }
 
-        // Hash hyperindex: %hash{||@keys} or %hash{|| <a b>, "d"}
+        // Hash dimension splat: %hash{||@keys} or %hash{|| <a b>, "d"} — the
+        // single list expression supplies the semicolon dimensions. Parses to a
+        // one-dimension `MultiDimIndex` (mirroring the array-side `@a[||@i]`),
+        // which the runtime spreads via `expand_pipe_multidim_dims`; the plain
+        // lvalue rewrite (`MultiDimIndexAssign`) and subscript adverbs then
+        // apply unchanged.
         if rest.starts_with("{||")
             && matches!(&expr, Expr::HashVar(_) | Expr::Var(_) | Expr::Index { .. })
         {
@@ -1505,9 +1510,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     r = r2;
                 }
                 let (r2, _) = parse_char(r, '}')?;
-                expr = Expr::HyperIndex {
+                expr = Expr::MultiDimIndex {
                     target: Box::new(expr),
-                    keys: Box::new(Expr::ArrayLiteral(items)),
+                    dimensions: vec![Expr::ArrayLiteral(items)],
                 };
                 rest = r2;
                 continue;
@@ -1515,9 +1520,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 first
             };
             let (r, _) = parse_char(r, '}')?;
-            expr = Expr::HyperIndex {
+            expr = Expr::MultiDimIndex {
                 target: Box::new(expr),
-                keys: Box::new(keys_expr),
+                dimensions: vec![keys_expr],
             };
             rest = r;
             continue;

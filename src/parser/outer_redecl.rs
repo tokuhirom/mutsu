@@ -514,10 +514,6 @@ fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
             walk_expr(value, ctx);
         }
         Expr::HyperSlice { target, .. } => walk_expr(target, ctx),
-        Expr::HyperIndex { target, keys } => {
-            walk_expr(target, ctx);
-            walk_expr(keys, ctx);
-        }
         Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) | Expr::CaptureLiteral(items) => {
             for it in items {
                 walk_expr(it, ctx);

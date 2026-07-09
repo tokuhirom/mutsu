@@ -478,12 +478,6 @@ impl Compiler {
                 self.compile_expr(target);
                 self.code.emit(OpCode::HyperSlice(*adverb as u8));
             }
-            // Hash hyperindex: %hash{||@keys}
-            Expr::HyperIndex { target, keys } => {
-                self.compile_expr(target);
-                self.compile_expr(keys);
-                self.code.emit(OpCode::HyperIndex);
-            }
             // Deferred heredoc interpolation
             Expr::HeredocInterpolation(content) => {
                 let resolved = crate::parser::interpolate_heredoc_content(content);

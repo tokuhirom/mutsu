@@ -495,11 +495,6 @@ pub(crate) enum Expr {
         target: Box<Expr>,
         adverb: HyperSliceAdverb,
     },
-    /// Hash hyperindex: %hash{||@keys}
-    HyperIndex {
-        target: Box<Expr>,
-        keys: Box<Expr>,
-    },
 }
 
 /// Secondary adverb on :exists subscript adverb

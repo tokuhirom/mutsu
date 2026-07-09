@@ -245,9 +245,6 @@ fn expr_contains_whatever(expr: &Expr) -> bool {
             .iter()
             .any(|(_, value)| value.as_ref().is_some_and(expr_contains_whatever)),
         Expr::HyperSlice { target, .. } => expr_contains_whatever(target),
-        Expr::HyperIndex { target, keys } => {
-            expr_contains_whatever(target) || expr_contains_whatever(keys)
-        }
         _ => false,
     }
 }

@@ -2896,11 +2896,6 @@ impl Interpreter {
                 self.exec_hyper_slice_op(*adverb)?;
                 *ip += 1;
             }
-            OpCode::HyperIndex => {
-                self.exec_hyper_index_op()?;
-                *ip += 1;
-            }
-
             // -- String interpolation --
             OpCode::StringConcat(n) => {
                 self.exec_string_concat_op(*n)?;

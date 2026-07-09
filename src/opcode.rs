@@ -805,9 +805,6 @@ pub(crate) enum OpCode {
     /// Hash hyperslice: recursively iterate hash with given adverb mode.
     /// Stack: [target] → [result list]
     HyperSlice(u8),
-    /// Hash hyperindex: drill into nested hash by key path.
-    /// Stack: [target, keys] → [value]
-    HyperIndex,
 
     // -- String interpolation --
     StringConcat(u32),
