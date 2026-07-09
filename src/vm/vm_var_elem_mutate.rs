@@ -30,6 +30,28 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let key = self.stack.pop().unwrap_or(Value::NIL);
         let container = self.stack.pop().unwrap_or(Value::NIL);
+        // A Junction key (`%h{ any ^2 }.push: 42`) threads the whole
+        // element-for-mutation load over its values, so every addressed
+        // element is autovivified and the following method call autothreads
+        // over a Junction of the stored shared nodes (the old post-call
+        // writeback stored through the junction subscript instead).
+        if let ValueView::Junction { kind, values } = key.view() {
+            let mut elems = Vec::with_capacity(values.len());
+            for v in values.iter() {
+                self.stack.push(container.clone());
+                self.stack.push(v.clone());
+                self.exec_index_elem_autoviv_op(
+                    code,
+                    name_idx,
+                    is_positional,
+                    target_slot,
+                    autoviv,
+                )?;
+                elems.push(self.stack.pop().unwrap_or(Value::NIL));
+            }
+            self.stack.push(Value::junction(kind.clone(), elems));
+            return Ok(());
+        }
         self.stack.push(container);
         self.stack.push(key.clone());
         self.exec_index_op_with_positional(is_positional)?;

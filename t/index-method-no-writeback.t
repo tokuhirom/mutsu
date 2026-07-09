@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 30;
+plan 32;
 
 # Mutating methods on subscripted elements mutate the element's shared node
 # in place — no post-call writeback (container identity §3.2).
@@ -131,6 +131,18 @@ plan 30;
     my $x = g().shift;
     is $x, 1, 'shift on a function result returns the element';
     is @a.raku, '[[2, 3],]', 'shift on a function result mutates the source';
+}
+
+# --- Junction subscript: autovivify every addressed element ---
+{
+    my %h;
+    %h{ any ^2 }.push: 42;
+    is-deeply %h, %(0 => [42], 1 => [42]), 'junction hash subscript autovivifies all keys';
+}
+{
+    my @a;
+    @a[any(0,2)].push(9);
+    is @a.raku, '[[9], Any, [9]]', 'junction array subscript autovivifies all indices';
 }
 
 # --- defaults: raku does not store the pushed default into the container ---
