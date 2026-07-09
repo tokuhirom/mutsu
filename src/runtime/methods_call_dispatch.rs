@@ -3345,6 +3345,36 @@ impl Interpreter {
                     return Ok(value.clone());
                 }
             }
+            // A user-declared method not overridden by the mixin roles is an
+            // inherited class method. Run it with `self` bound to the MIXIN
+            // wrapper (not the bare inner instance) so a nested `self.foo`
+            // re-dispatches through the mixin roles and finds their overrides —
+            // e.g. `C.new but role { method who {...} }` where the class's
+            // inherited `call-who` does `self.who` must reach the role's
+            // override, not the base `who`. Auto-generated attribute accessors
+            // and native/builtin methods are NOT declared class methods, so
+            // they keep the plain inner-delegation path below (which resolves
+            // them) — and they never do nested self-dispatch, so the invocant
+            // binding does not matter for them.
+            if let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = inner.as_ref().view()
+            {
+                let cls = class_name.resolve().to_string();
+                if self.class_has_method(&cls, method) {
+                    let attrs = attributes.to_map();
+                    let (result, updated) =
+                        self.run_instance_method(&cls, attrs, method, args, Some(target.clone()))?;
+                    // Propagate attribute mutations back to the inner instance so
+                    // state changes made by the class method persist.
+                    if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
+                        attributes.commit_attrs(updated);
+                    }
+                    return Ok(result);
+                }
+            }
             return self.call_method_with_values(inner.as_ref().clone(), method, args);
         }
 
