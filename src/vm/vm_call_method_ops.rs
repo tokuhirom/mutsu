@@ -842,8 +842,14 @@ impl Interpreter {
             // dispatch) — neither forces.
             && !(matches!(method, "map" | "grep")
                 && (ll.lazy_pipe.is_some() || ll.is_infinite_spec() || ll.is_from_gather() || ll.cat_pull.is_some()))
+            // A laziness-preserving coercion (`.List`/`.list`/`.Array`/`.values`/
+            // `.cache`) returns an infinite pipe unchanged, but a FINITE pipe
+            // (one bottoming out in a `gather`/finite source) must reify — else
+            // `gather { … }.grep(…).List` yields an unforced `(...)` and `.flat`/
+            // `for` see nothing.
             && !((ll.lazy_pipe.is_some() || ll.is_infinite_spec())
-                && Self::lazy_pipe_preserving_coercion(method))
+                && Self::lazy_pipe_preserving_coercion(method)
+                && !ll.pipe_bottoms_out_finite())
             // On an infinite sequence/closure spec the count/numeric coercions
             // produce a *soft* X::Cannot::Lazy Failure (recoverable with `//`),
             // emitted by the 0-arg native dispatch — they must not be hard-forced.
@@ -856,8 +862,11 @@ impl Interpreter {
                 Some(n) => self.force_lazy_list_vm_n(ll, n)?,
                 // A strict force of an infinite list (lazy pipeline / infinite
                 // sequence / closure spec) cannot terminate: raise
-                // X::Cannot::Lazy with this method's name.
-                None if ll.lazy_pipe.is_some() || ll.is_infinite_spec() => {
+                // X::Cannot::Lazy with this method's name. A finite pipe (gather/
+                // finite source) is forceable, so it falls through to the force.
+                None if (ll.lazy_pipe.is_some() || ll.is_infinite_spec())
+                    && !ll.pipe_bottoms_out_finite() =>
+                {
                     return Err(RuntimeError::cannot_lazy(method));
                 }
                 None => self.force_lazy_list_vm(ll)?,
