@@ -83,6 +83,63 @@ impl Interpreter {
         Err(err)
     }
 
+    /// Identity-preserving STORE for a declared QuantHash variable:
+    /// `%s = <a b>` on a `my %s is SetHash` writes the coerced contents INTO
+    /// the variable's existing container node (keeping the node's embedded
+    /// type metadata), so every holder of that node — the env mirror the
+    /// trait op installed, `:=` binds, by-value captures — observes the
+    /// reassignment (container identity §3). Without this, the coercion
+    /// returns a fresh node that `SetLocal` stores only into the local slot,
+    /// leaving the env mirror stale (a later name-based subscript assign then
+    /// mutates the stale empty container and clobbers the slot on writeback).
+    /// Falls through when the variable has no existing same-kind container.
+    fn quanthash_store_preserving_identity(&mut self, name: &str, coerced: Value) -> Value {
+        let existing = self.env().get(name).cloned();
+        match (existing.as_ref().map(Value::view), coerced.view()) {
+            (Some(ValueView::Set(old, mutable)), ValueView::Set(new, _))
+                if !crate::gc::Gc::ptr_eq(old, new) =>
+            {
+                let mut data = (**new).clone();
+                data.value_type = old.value_type.clone();
+                data.key_type = old.key_type.clone();
+                data.declared_type = old.declared_type.clone();
+                // SAFETY: audited aliased in-place container write; see
+                // `value::aliased_mut` (no other borrow live, single write).
+                unsafe {
+                    *crate::value::gc_contents_mut(old) = data;
+                }
+                Value::set_parts(old.clone(), mutable)
+            }
+            (Some(ValueView::Bag(old, mutable)), ValueView::Bag(new, _))
+                if !crate::gc::Gc::ptr_eq(old, new) =>
+            {
+                let mut data = (**new).clone();
+                data.value_type = old.value_type.clone();
+                data.key_type = old.key_type.clone();
+                data.declared_type = old.declared_type.clone();
+                // SAFETY: as above.
+                unsafe {
+                    *crate::value::gc_contents_mut(old) = data;
+                }
+                Value::bag_parts(old.clone(), mutable)
+            }
+            (Some(ValueView::Mix(old, mutable)), ValueView::Mix(new, _))
+                if !crate::gc::Gc::ptr_eq(old, new) =>
+            {
+                let mut data = (**new).clone();
+                data.value_type = old.value_type.clone();
+                data.key_type = old.key_type.clone();
+                data.declared_type = old.declared_type.clone();
+                // SAFETY: as above.
+                unsafe {
+                    *crate::value::gc_contents_mut(old) = data;
+                }
+                Value::mix_parts(old.clone(), mutable)
+            }
+            _ => coerced,
+        }
+    }
+
     pub(super) fn coerce_hash_var_value(
         &mut self,
         name: &str,
@@ -100,7 +157,8 @@ impl Interpreter {
                 Some(ValueView::Bag(_, _) | ValueView::Mix(_, _) | ValueView::Set(_, _))
             );
             if is_quanthash_container {
-                return self.try_compiled_method_or_interpret(value, trait_name, vec![]);
+                let coerced = self.try_compiled_method_or_interpret(value, trait_name, vec![])?;
+                return Ok(self.quanthash_store_preserving_identity(name, coerced));
             }
         }
         if self.check_readonly_for_modify(name).is_err()
@@ -139,7 +197,8 @@ impl Interpreter {
             let result = runtime::utils::coerce_value_to_quanthash(&value);
             // SetHash should be mutable
             if let ValueView::Set(items, _) = result.view() {
-                return Ok(Value::set_parts(items.clone(), true));
+                let coerced = Value::set_parts(items.clone(), true);
+                return Ok(self.quanthash_store_preserving_identity(name, coerced));
             }
             return Ok(result);
         }
