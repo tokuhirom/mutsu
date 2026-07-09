@@ -1629,13 +1629,14 @@ impl CompiledCode {
     /// same-named `for` loop and early-returns would otherwise leak its last
     /// loop value into the caller). Mirrors `CompiledFunction::compute_declared_locals`.
     pub(crate) fn body_local_names(&self) -> std::collections::HashSet<String> {
-        let mut names: std::collections::HashSet<String> =
-            self.locals.iter().cloned().collect();
+        let mut names: std::collections::HashSet<String> = self.locals.iter().cloned().collect();
         for op in &self.ops {
             if let OpCode::ForLoop(spec) = op {
                 if let Some(idx) = spec.param_idx
-                    && let Some(crate::value::ValueView::Str(name)) =
-                        self.constants.get(idx as usize).map(crate::value::Value::view)
+                    && let Some(crate::value::ValueView::Str(name)) = self
+                        .constants
+                        .get(idx as usize)
+                        .map(crate::value::Value::view)
                 {
                     names.insert(name.to_string());
                 }
