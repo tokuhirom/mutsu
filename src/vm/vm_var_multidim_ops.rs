@@ -69,15 +69,13 @@ impl Interpreter {
                 ValueView::Scalar(inner) => inner.clone(),
                 _ => target.clone(),
             };
-            if !matches!(deref_target.view(), ValueView::Hash(..)) {
-                let mut cells = Vec::new();
-                if self
-                    .collect_multi_dim_leaf_cells(&deref_target, &dims, &mut cells)
-                    .is_some()
-                {
-                    self.stack.push(Value::array(cells));
-                    return Ok(());
-                }
+            let mut cells = Vec::new();
+            if self
+                .collect_multi_dim_leaf_cells(&deref_target, &dims, &mut cells)
+                .is_some()
+            {
+                self.stack.push(Value::array(cells));
+                return Ok(());
             }
         } else if let Some(cell) = self.multi_dim_scalar_autoviv_cell(&target, &dims) {
             // All-scalar dims over a MISSING leaf: autovivify the path (creating
@@ -142,13 +140,51 @@ impl Interpreter {
         if dims.is_empty() {
             return None;
         }
+        let dim = Self::normalize_multidim_dim(&dims[0]);
+        let rest = &dims[1..];
+        let terminal = rest.is_empty();
+
+        // Hash level: an explicit key (or key list) selects entries by name.
+        // A `*` dimension over a hash falls back to the plain read — hash
+        // iteration order is unspecified, so a positional `target = values`
+        // distribution over it would be meaningless.
+        if matches!(cur.view(), ValueView::Hash(..)) {
+            let keys: Vec<String> = match dim.view() {
+                ValueView::Whatever => return None,
+                ValueView::Array(idxs, ..) => idxs.iter().map(Value::hash_key_encode).collect(),
+                _ => vec![Value::hash_key_encode(&dim)],
+            };
+            for key in keys {
+                if terminal {
+                    let slot = cur.hash_slot_ref(&key, true)?;
+                    // A missing key yields a `HashEntryRef` vivification token,
+                    // which must not leak into a plain slice READ of the same
+                    // subscript (`is-deeply %h{"a";"b";("c","x")}, (42, Any)`)
+                    // — fall back to the non-aliasing read instead.
+                    if matches!(slot.view(), ValueView::HashEntryRef { .. }) {
+                        return None;
+                    }
+                    out.push(slot);
+                } else {
+                    let child = match cur.hash_slot_ref(&key, false)? {
+                        v if matches!(v.view(), ValueView::ContainerRef(_)) => {
+                            v.with_deref(|inner| inner.clone())
+                        }
+                        v => v,
+                    };
+                    if !matches!(child.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                        return None;
+                    }
+                    self.collect_multi_dim_leaf_cells(&child, rest, out)?;
+                }
+            }
+            return Some(());
+        }
+
         let items_len = match cur.view() {
             ValueView::Array(items, ..) => items.len(),
             _ => return None,
         };
-        let dim = Self::normalize_multidim_dim(&dims[0]);
-        let rest = &dims[1..];
-        let terminal = rest.is_empty();
 
         // Resolve this dimension into the concrete list of integer indices it
         // selects against the CURRENT container.
@@ -218,12 +254,6 @@ impl Interpreter {
             ValueView::Scalar(inner) => inner.clone(),
             _ => target.clone(),
         };
-        // A hash-rooted multislice is intentionally not aliased: promoting a hash
-        // leaf to a cell mutates the shared hash `Arc` in place, corrupting other
-        // values that alias it. Fall back to a plain read for hash roots.
-        if matches!(cur.view(), ValueView::Hash(..)) {
-            return Ok(None);
-        }
 
         for (i, dim) in dims.iter().enumerate() {
             let terminal = i + 1 == dims.len();
@@ -253,7 +283,17 @@ impl Interpreter {
                 ValueView::Hash(map, ..) => {
                     let key = Value::hash_key_encode(&resolved);
                     if !map.contains_key(&key) {
-                        return Ok(None);
+                        // Missing key: defer vivification with a deep-path
+                        // `HashEntryRef` covering this and all remaining keys.
+                        // A read resolves it to `Any` (`hash_entry_read`); the
+                        // first write walk-creates the intermediate hashes
+                        // (`hash_entry_terminal`), so `%h{$a;$b;$c} = v` through
+                        // a `\target` / `is rw` bind autovivifies like raku.
+                        let mut path = vec![key];
+                        for d in &dims[i + 1..] {
+                            path.push(Value::hash_key_encode(d));
+                        }
+                        return Ok(Some(Value::hash_entry_ref(map.clone(), path)));
                     }
                     match cur.hash_slot_ref(&key, terminal) {
                         Some(v) => v,

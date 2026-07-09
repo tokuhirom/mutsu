@@ -61,38 +61,31 @@ cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→Co
   (v2022.12=6.d) でもこのテスト自体がコンパイルに失敗するため、参照実装での検証すらできない。
 - **評価**: 深い機能待ちで、局所修正では進まない。優先度は低い。
 
-### 2.3 multislice lvalue（array/hash）
+### 2.3 multislice lvalue（hash 側の残件）
 
-- **対象**: `S32-array/multislice-6e.t`（784/812、28 失敗）、
-  `S32-hash/multislice-6e.t`（318 実行時点で plan mismatch、90 失敗——ファイルが途中で中断）。
-- **論点**: `@a[0;0;0] = 999`、`%h<a;b;c> = 999` の lvalue 書き戻し経路。
-- **根本原因**: single subscript と multislice が同じ「書き戻し可能 target 集合」抽象を
-  返していない。array 側はかなり前進した（605→157→28 まで縮小）が、hash 側はまだ
-  Track B（要素 cell 化・ADR-0001 層3a・GC と統合キャンペーン）待ちで大きく残っている。
-- **変更レイヤ**: `vm_var_index_ops` / `vm_var_assign_ops` / lvalue binding surface
-- **Next slice**: array 側の残り 28 件から着手し、hash 側の plan mismatch（中断の原因）を
-  先に切り分ける。
-- **Primary files**: `src/vm/vm_var_index_ops.rs`, `src/vm/vm_var_assign_ops.rs`
-- **調査結果（2026-07-02）**: array 側の 28 失敗（例: test 245, line 120）を再現したところ、
-  直接代入 `@array[0;0;3] = 999`（境界外インデックスへの自動延伸）自体は正しく動く：
-  ```
-  my @array = [[[42,666,[314]],],];
-  @array[0;0;3] = 999;  # OK: [[[42, 666, [314], 999],],]
-  ```
-  失敗するのは、この**境界外・自動延伸が必要な多次元インデックス式を sigilless bind
-  （`\target`）でサブルーチン引数として渡し、後から `target = 999` で代入する**ケース
-  （テストの `assignable-ok(\target, \values, @result)` ヘルパーが使うパターン）：
-  ```
-  sub f(\target, \values) { target = values }
-  f(@array[0;0;3], 999);  # mutsu: 何もしない（Nil を返す）; raku: 正しく延伸して代入
-  ```
-  つまり根本原因は「lvalue 書き戻し経路」一般ではなく、**§3 のコンテナ id キャンペーン
-  （配列/ハッシュ要素の cell 化）そのもの**——多次元インデックス式が返す「書き込み可能な
-  参照」が、値としてキャプチャされた後もオリジナルの配列への自動延伸込みの書き込みを
-  実現できる第一級コンテナ（cell）になっていない。§2 の「局所修正」の範疇を超え、§3.2 の
-  「配列/ハッシュ要素 cell 化」（`docs/container-identity.md`、対象に `splice.t` と並記）と
-  同一の基盤工事が前提条件。単体の parser/dispatch 修正では閉じない。
-  次に着手するなら §3 のキャンペーンとして本腰を入れる想定で計画すること。
+- **対象**: `S32-hash/multislice-6e.t`。array 側（`S32-array/multislice-6e.t`）は
+  **812/812 全通過・whitelist 済み**（この文書の旧「28 失敗」は stale だった）。
+- **進捗（2026-07-09 container-identity slice）**: hash 側 269 fails + test 318 で
+  中断 → **32 fails・535/549 実行**まで前進。直ったもの:
+  - Test 関数の `&` 参照（`my &fn = &is-deeply`）が Nil だった → Routine 値化
+    （318 中断の正体は block 3 冒頭の `(?? &is-deeply !! &non-assignable-ok)(...)`）。
+  - hash multislice の Whatever / key-list 次元 × 全 adverb（:k/:kv/:p/:v/:exists/
+    :delete）— leaf 収集を `Value` パス化し hash 対応。
+  - `\target` bind：hash root の cell 昇格解禁・欠落キーは deep-path `HashEntryRef`、
+    materialize を AssignExprLocal / AssignExpr / SetGlobal / boxed-cell
+    write-through（`Value::store_through_cell`）に配線。
+  - boxed captured `@a`/`%h` の whole-container 再代入が container identity を保持
+    （`cell_store_preserving_container_identity`）。
+  - Pin: `t/hash-multislice-container.t`。
+- **残る根本原因（32 fails・multislice ではない）**: sigilless map param を入れ子
+  呼び出しの引数に渡すと（`.map(-> \k, \v { Pair.new(k,v) })`）、varref の名前ベース
+  再解決が stale env を読む。値が List のとき `k` が最初の chunk の値を繰り返す
+  （文をまたいでも漏れる）。再現:
+  `((1,2),"A",(3,4),"B").map(-> \k, \v { Pair.new(k,v) })` →
+  `((1,2)=>"A", (1,2)=>"B")`。plain read（`k.raku`）は正しく、call-arg 位置のみ壊れる。
+  main でも再現する pre-existing。**Next slice = この varref-by-name 再解決の修正**
+  （`compile_call_arg` の WrapVarRef / binding_signature の
+  `resolve_sigilless_alias_source_name` 系）。plan mismatch（535/549）も残件。
 
 ---
 

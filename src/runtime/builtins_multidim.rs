@@ -21,14 +21,24 @@ pub(super) fn multidim_index(target: &Value, indices: &[Value]) -> Value {
     let head = &indices[0];
     // Whatever (*) means "all elements of this dimension"
     if matches!(head.view(), ValueView::Whatever) {
-        let ValueView::Array(items, ..) = target.view() else {
-            return Value::NIL;
-        };
-        let mut out = Vec::with_capacity(items.len());
-        for item in items.iter() {
-            out.push(multidim_index(item, &indices[1..]));
+        match target.view() {
+            ValueView::Array(items, ..) => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items.iter() {
+                    out.push(multidim_index(item, &indices[1..]));
+                }
+                return Value::array(out);
+            }
+            // Hash level: `*` selects every value at this level.
+            ValueView::Hash(map) => {
+                let mut out = Vec::with_capacity(map.len());
+                for v in map.values() {
+                    out.push(multidim_index(v, &indices[1..]));
+                }
+                return Value::array(out);
+            }
+            _ => return Value::NIL,
         }
-        return Value::array(out);
     }
     // List/Array as index means "multiple indices in this dimension"
     if let ValueView::Array(idx_items, ..) = head.view() {
@@ -95,6 +105,25 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
     let head = &indices[0];
     // Whatever (*) means "all elements of this dimension"
     if matches!(head.view(), ValueView::Whatever) {
+        // Hash level: `*` deletes through every value at this level (a
+        // terminal `*` removes all entries).
+        if matches!(target.view(), ValueView::Hash(..)) {
+            return target
+                .with_hash_mut(|map| {
+                    let map_mut = crate::gc::Gc::make_mut(map);
+                    if indices.len() == 1 {
+                        let out: Vec<Value> = map_mut.drain().map(|(_, v)| v).collect();
+                        Value::array(out)
+                    } else {
+                        let mut out = Vec::with_capacity(map_mut.len());
+                        for v in map_mut.values_mut() {
+                            out.push(multidim_delete(v, &indices[1..]));
+                        }
+                        Value::array(out)
+                    }
+                })
+                .unwrap_or_else(default);
+        }
         return target
             .with_array_mut(|items, _kind| {
                 let items = crate::gc::Gc::make_mut(items);
@@ -202,13 +231,15 @@ pub(super) fn make_key_tuple(indices: &[Value]) -> Value {
     )
 }
 
-/// Collect (path, value) leaves from a multi-dimensional array,
-/// expanding Whatever and Array indices along the way.
+/// Collect (path, value) leaves from a multi-dimensional array or hash,
+/// expanding Whatever and Array indices along the way. Path elements are the
+/// concrete index/key values (`Int` for array levels, `Str` for hash keys), so
+/// the `:k`/`:kv`/`:p` adverbs can rebuild the key tuple losslessly.
 pub(super) fn multidim_collect_leaves(
     target: &Value,
     indices: &[Value],
-    prefix: &[i64],
-    out: &mut Vec<(Vec<i64>, Value)>,
+    prefix: &[Value],
+    out: &mut Vec<(Vec<Value>, Value)>,
 ) {
     if let ValueView::ContainerRef(_) | ValueView::Scalar(_) = target.view() {
         return target.with_deref(|inner| {
@@ -224,36 +255,52 @@ pub(super) fn multidim_collect_leaves(
     let rest = &indices[1..];
 
     if matches!(head.view(), ValueView::Whatever) {
-        if let ValueView::Array(items, ..) = target.view() {
-            for (i, item) in items.iter().enumerate() {
-                let mut p = prefix.to_vec();
-                p.push(i as i64);
-                multidim_collect_leaves(item, rest, &p, out);
+        match target.view() {
+            ValueView::Array(items, ..) => {
+                for (i, item) in items.iter().enumerate() {
+                    let mut p = prefix.to_vec();
+                    p.push(Value::int(i as i64));
+                    multidim_collect_leaves(item, rest, &p, out);
+                }
             }
+            // Hash level: `*` walks every entry, recording the (typed) key.
+            ValueView::Hash(map) => {
+                for (k, v) in map.iter() {
+                    let mut p = prefix.to_vec();
+                    p.push(map.typed_key(k));
+                    multidim_collect_leaves(v, rest, &p, out);
+                }
+            }
+            _ => {}
         }
         return;
     }
     if let ValueView::Array(idx_items, ..) = head.view() {
         for idx in idx_items.iter() {
-            let i = match idx.view() {
-                ValueView::Int(n) => n,
-                _ => idx.to_string_value().parse::<i64>().unwrap_or(0),
-            };
             let mut p = prefix.to_vec();
-            p.push(i);
+            p.push(idx.clone());
             let child = multidim_index(target, std::slice::from_ref(idx));
             multidim_collect_leaves(&child, rest, &p, out);
         }
         return;
     }
-    let i = match head.view() {
-        ValueView::Int(n) => n,
-        _ => head.to_string_value().parse::<i64>().unwrap_or(0),
-    };
     let mut p = prefix.to_vec();
-    p.push(i);
+    p.push(head.clone());
     let child = multidim_index(target, std::slice::from_ref(head));
     multidim_collect_leaves(&child, rest, &p, out);
+}
+
+/// Build the key tuple for one collected leaf path: a single-dimension path is
+/// the bare key; a multi-dimension path is a List of the keys.
+pub(super) fn leaf_key_tuple(path: Vec<Value>) -> Value {
+    if path.len() == 1 {
+        path.into_iter().next().unwrap()
+    } else {
+        Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(path)),
+            ArrayKind::List,
+        )
+    }
 }
 
 /// Check if any index in the list is a Whatever or an Array (multi-index).

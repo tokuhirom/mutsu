@@ -1236,8 +1236,10 @@ impl Interpreter {
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);
-                        if matches!(value.view(), ValueView::ContainerRef(_))
-                            || is_multidim_slice_cells(&value)
+                        if matches!(
+                            value.view(),
+                            ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
+                        ) || is_multidim_slice_cells(&value)
                         {
                             // A multi-dimensional subscript lvalue (`@a[0;1;2]`)
                             // arrives as a shared `ContainerRef` cell aliasing the
