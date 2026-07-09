@@ -1328,14 +1328,22 @@ impl Interpreter {
                 // binding survives method returns (env restore) without
                 // reverting to a stale value (same as the scalar path below).
                 for frame in self.call_frames.iter_mut().rev() {
+                    // Only touch a parent frame that genuinely shares this lexical
+                    // (its saved env holds the name). `code.locals` is THIS frame's
+                    // slot layout, NOT the parent's, so a slot index `i` found here
+                    // means a different variable in a frame that does not have the
+                    // source — writing `saved_locals[i]` there would clobber an
+                    // unrelated same-index local (e.g. a callee's `@p` landing on a
+                    // caller's `$config`). Gate the locals write on the frame owning
+                    // the name.
                     if frame.saved_env.contains_key(&effective_source) {
                         frame
                             .saved_env
                             .insert(effective_source.clone(), container.clone());
-                    }
-                    for (i, local_name) in code.locals.iter().enumerate() {
-                        if local_name == &effective_source && i < frame.saved_locals.len() {
-                            frame.saved_locals[i] = container.clone();
+                        for (i, local_name) in code.locals.iter().enumerate() {
+                            if local_name == &effective_source && i < frame.saved_locals.len() {
+                                frame.saved_locals[i] = container.clone();
+                            }
                         }
                     }
                 }
@@ -1386,14 +1394,19 @@ impl Interpreter {
                 // so the binding survives method returns (env restore) and a
                 // later restore doesn't overwrite with stale values.
                 for frame in self.call_frames.iter_mut().rev() {
+                    // See the note in the outer-frame bind path above: `code.locals`
+                    // is this frame's slot layout, not the parent's, so only write a
+                    // parent frame's `saved_locals` when that frame actually owns the
+                    // source lexical (its saved env holds the name) — otherwise the
+                    // callee's slot index clobbers an unrelated same-index local.
                     if frame.saved_env.contains_key(&resolved_source) {
                         frame
                             .saved_env
                             .insert(resolved_source.clone(), container.clone());
-                    }
-                    for (i, local_name) in code.locals.iter().enumerate() {
-                        if local_name == &resolved_source && i < frame.saved_locals.len() {
-                            frame.saved_locals[i] = container.clone();
+                        for (i, local_name) in code.locals.iter().enumerate() {
+                            if local_name == &resolved_source && i < frame.saved_locals.len() {
+                                frame.saved_locals[i] = container.clone();
+                            }
                         }
                     }
                 }

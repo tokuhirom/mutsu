@@ -524,14 +524,18 @@ impl Interpreter {
         // Propagate the shared cell into saved call frames so the sharing
         // survives method returns (env restore).
         for frame in self.call_frames.iter_mut().rev() {
+            // `code.locals` is this frame's slot layout, not the parent's; only
+            // write a parent frame's `saved_locals` when that frame owns the source
+            // lexical (its saved env holds the name), else the callee slot index
+            // clobbers an unrelated same-index local.
             if frame.saved_env.contains_key(&resolved_source) {
                 frame
                     .saved_env
                     .insert(resolved_source.clone(), container.clone());
-            }
-            for (i, local_name) in code.locals.iter().enumerate() {
-                if local_name == &resolved_source && i < frame.saved_locals.len() {
-                    frame.saved_locals[i] = container.clone();
+                for (i, local_name) in code.locals.iter().enumerate() {
+                    if local_name == &resolved_source && i < frame.saved_locals.len() {
+                        frame.saved_locals[i] = container.clone();
+                    }
                 }
             }
         }
