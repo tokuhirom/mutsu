@@ -328,7 +328,7 @@ impl Interpreter {
                     if scalar {
                         val = Self::normalize_scalar_assignment_value(val);
                     }
-                    arc.lock().unwrap().clone_from(&val);
+                    Value::store_through_cell(&arc, &val);
                     self.flush_local_to_env(code, idx);
                     return Ok(());
                 }
@@ -1445,7 +1445,7 @@ impl Interpreter {
                     let old = arc.lock().unwrap().clone();
                     val = self.array_container_writethrough_value(&name, val, &old)?;
                 }
-                arc.lock().unwrap().clone_from(&val);
+                Value::store_through_cell(&arc, &val);
                 self.flush_local_to_env(code, idx);
                 return Ok(());
             }

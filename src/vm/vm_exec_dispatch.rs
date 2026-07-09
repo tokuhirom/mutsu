@@ -1118,7 +1118,10 @@ impl Interpreter {
                     if let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        arc.lock().unwrap().clone_from(&val);
+                        // Preserve the inner container's identity (§3): a boxed
+                        // captured `@a`/`%h` whole-reassigned here must keep its
+                        // backing `Gc` so by-value holders observe the update.
+                        Self::cell_store_preserving_container_identity(arc, &val);
                         *ip += 1;
                         return Ok(());
                     }
@@ -1129,7 +1132,32 @@ impl Interpreter {
                         && let Some(cell_val) = self.env().get(alias_target.as_str()).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        arc.lock().unwrap().clone_from(&val);
+                        Self::cell_store_preserving_container_identity(arc, &val);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // First write through a missing-key bind reached as a captured
+                    // free variable (an env entry holding a `HashEntryRef` deferred
+                    // token, e.g. a `\target` bound to `%h{$a;$b;$c}` written from
+                    // a closure invoked by name): materialize the path into a
+                    // shared `ContainerRef` cell — the SetGlobal counterpart of the
+                    // SetLocal / AssignExpr materialization.
+                    if !name.starts_with('@')
+                        && !name.starts_with('%')
+                        && let Some(token) = self.env().get(&name).cloned()
+                        && matches!(token.view(), ValueView::HashEntryRef { .. })
+                        && let Some((arc, key)) = token.hash_entry_terminal()
+                    {
+                        let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
+                        // SAFETY: aliased in-place mutation of a shared hash; see
+                        // `arc_contents_mut`. No live borrow into the map.
+                        let hd = unsafe { crate::value::gc_contents_mut(&arc) };
+                        Value::hash_insert_through(
+                            &mut hd.map,
+                            key,
+                            Value::container_ref(cell.clone()),
+                        );
+                        self.set_env_with_main_alias(&name, Value::container_ref(cell));
                         *ip += 1;
                         return Ok(());
                     }

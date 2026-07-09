@@ -323,6 +323,13 @@ impl Interpreter {
             sub_val
         } else if Self::is_builtin_function(lookup_name) {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
+        } else if self.test_module_loaded() && Self::is_test_function_name(lookup_name) {
+            // Test-framework functions (&is-deeply, &pass, ...) are implemented
+            // as Rust methods (runtime/test_functions.rs), not declared subs, so
+            // the function-def lookup above misses them. Expose them as Routine
+            // values so `my &fn = &is-deeply; fn(...)` dispatches through the
+            // Routine call path, which routes test names to the Test dispatcher.
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if bare_name.starts_with('*') {
             // Dynamic code vars (&*foo) can point to routines that are resolved
             // at call time (including builtins not listed in is_builtin_function).

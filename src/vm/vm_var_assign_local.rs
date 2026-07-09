@@ -69,6 +69,21 @@ impl Interpreter {
             }
         }
 
+        // First write through a missing-key bind (a local holding a
+        // `HashEntryRef` deferred token, e.g. a `\target` bound to
+        // `%h{$a;$b;$c}` with a not-yet-existent key): materialize the path
+        // into a shared `ContainerRef` cell. Mirrors the statement-form
+        // `SetLocal` path; without this the expression-context assignment
+        // (`(target = v)`) replaces the token and the hash never sees the write.
+        if matches!(self.locals[idx].view(), ValueView::HashEntryRef { .. }) {
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            if self.materialize_bound_slot_to_cell(code, idx, val.clone()) {
+                self.stack.push(val);
+                return Ok(());
+            }
+            self.stack.push(val);
+        }
+
         // Fast path for simple scalar variables — skip all metadata checks
         if code.simple_locals[idx] {
             let mut val = self.stack.pop().unwrap_or(Value::NIL);
@@ -105,7 +120,7 @@ impl Interpreter {
                     if scalar {
                         val = Self::normalize_scalar_assignment_value(val);
                     }
-                    arc.lock().unwrap().clone_from(&val);
+                    Value::store_through_cell(&arc, &val);
                     self.stack.push(val);
                     self.flush_local_to_env(code, idx);
                     return Ok(());
@@ -382,7 +397,7 @@ impl Interpreter {
             let scalar = !name.starts_with('@') && !name.starts_with('%');
             if scalar && !(self.array_share_active && self.is_array_share_scalar(name)) {
                 let arc = arc.clone();
-                arc.lock().unwrap().clone_from(&val);
+                Value::store_through_cell(&arc, &val);
                 self.flush_local_to_env(code, idx);
                 self.stack.push(val);
                 return Ok(());

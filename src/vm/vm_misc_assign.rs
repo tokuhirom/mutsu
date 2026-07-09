@@ -52,7 +52,9 @@ impl Interpreter {
             } else {
                 (raw_val, None)
             };
-        // Capture old hash Arc pointer for circular reference fixup.
+        // Capture old hash Arc pointer for circular reference fixup, and the
+        // backing `Gc` for the in-place whole-container reassignment below.
+        let mut inplace_old_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
         let old_hash_arc = if name.starts_with('%') {
             let current = self.get_env_with_main_alias(&name).or_else(|| {
                 code.locals.iter().position(|n| n == &name).and_then(|idx| {
@@ -64,6 +66,9 @@ impl Interpreter {
                 })
             });
             if let Some(ValueView::Hash(arc)) = current.as_ref().map(Value::view) {
+                if !name.contains("__ANON") {
+                    inplace_old_hash = Some(arc.clone());
+                }
                 Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
@@ -71,7 +76,9 @@ impl Interpreter {
         } else {
             None
         };
-        // Capture old array Arc pointer for circular reference fixup.
+        // Capture old array Arc pointer for circular reference fixup, and the
+        // backing `Gc` for the in-place whole-container reassignment below.
+        let mut inplace_old_array: Option<crate::gc::Gc<crate::value::ArrayData>> = None;
         let old_array_arc = if name.starts_with('@') {
             let current = self.get_env_with_main_alias(&name).or_else(|| {
                 code.locals.iter().position(|n| n == &name).and_then(|idx| {
@@ -83,6 +90,9 @@ impl Interpreter {
                 })
             });
             if let Some(ValueView::Array(arc, _)) = current.as_ref().map(Value::view) {
+                if !name.contains("__ANON") {
+                    inplace_old_array = Some(arc.clone());
+                }
                 Some(crate::gc::Gc::as_ptr(arc) as usize)
             } else {
                 None
@@ -339,10 +349,39 @@ impl Interpreter {
                 // existing whole-reassignment semantics here.
                 let scalar = !name.starts_with('@') && !name.starts_with('%');
                 if scalar && !(self.array_share_active && self.is_array_share_scalar(&name)) {
-                    arc.lock().unwrap().clone_from(&val);
+                    Value::store_through_cell(arc, &val);
                     self.stack.push(val);
                     return Ok(());
                 }
+            }
+            // First write through a missing-key bind reached by name (a
+            // `HashEntryRef` deferred token, e.g. a `\target` bound to
+            // `%h{$a;$b;$c}` written inside a closure that captured `target`,
+            // like a `subtest { ... }` block): materialize the path into a
+            // shared `ContainerRef` cell. The name-based counterpart of the
+            // SetLocal / AssignExprLocal materialization.
+            if matches!(
+                current.as_ref().map(Value::view),
+                Some(ValueView::HashEntryRef { .. })
+            ) && !name.starts_with('@')
+                && !name.starts_with('%')
+                && let Some(token) = current.as_ref()
+                && let Some((arc, key)) = token.hash_entry_terminal()
+            {
+                let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
+                // SAFETY: aliased in-place mutation of a shared hash; see
+                // `arc_contents_mut`. No live borrow into the map.
+                let hd = unsafe { crate::value::gc_contents_mut(&arc) };
+                Value::hash_insert_through(&mut hd.map, key, Value::container_ref(cell.clone()));
+                let cell_val = Value::container_ref(cell);
+                if let Some(idx) = code.locals.iter().position(|n| n == &name)
+                    && idx < self.locals.len()
+                {
+                    self.locals[idx] = cell_val.clone();
+                }
+                self.set_env_with_main_alias(&name, cell_val);
+                self.stack.push(val);
+                return Ok(());
             }
             // A sigilless `\target` bound to a multi-dim slice lvalue distributes
             // the RHS element-wise through its cells (the env-named counterpart
@@ -396,6 +435,24 @@ impl Interpreter {
                     *stack_top = val.clone();
                 }
             }
+        }
+        // Container identity (§3, splice.t): a plain whole-hash/array
+        // reassignment reached by NAME (e.g. a captured outer `%h = ...` inside
+        // a sub) mutates the EXISTING container in place, mirroring the SetLocal
+        // slot path, so every other holder of the same backing `Gc` (a by-value
+        // capture in a list, the caller's local slot) observes the update.
+        if let Some(old_gc) = &inplace_old_hash
+            && let ValueView::Hash(new_gc) = val.view()
+            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+        {
+            let new_gc = new_gc.clone();
+            val = Self::hash_inplace_reassign(old_gc, &new_gc);
+        } else if let Some(old_gc) = &inplace_old_array
+            && let ValueView::Array(new_gc, kind) = val.view()
+            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+        {
+            let (new_gc, kind) = (new_gc.clone(), kind);
+            val = Self::array_inplace_reassign(old_gc, &new_gc, kind);
         }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());

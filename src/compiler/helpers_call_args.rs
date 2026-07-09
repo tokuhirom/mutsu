@@ -208,21 +208,15 @@ impl Compiler {
         // doc on `bind_target_direct`.
         let is_bind_target = self.bind_target_direct;
         self.bind_target_direct = false;
-        // An array multi-dimensional subscript (`@a[0;1;2]`) passed as a raw
-        // `\target` / `is rw` argument must alias the underlying nested array
+        // A multi-dimensional subscript (`@a[0;1;2]`, `%h{"a";"b"}`) passed as a
+        // raw `\target` / `is rw` argument must alias the underlying nested
         // slot, so a later `target = v` inside the callee mutates the real
         // container and is visible immediately. Emit a `MultiDimIndexBindRef`
         // that descends to the leaf and promotes it to a shared `ContainerRef`
-        // cell; the callee binds through it. Slice dimensions (`@a[*; 0,1]`)
-        // can't collapse to a single cell, so the op pushes the read value as a
-        // fallback. A HASH subscript (`%h{"a";"b"}`) is deliberately NOT routed
-        // here: promoting a hash leaf to a cell mutates the shared hash `Arc`
-        // in place, which would corrupt other values that alias it (e.g. a
-        // snapshot captured into a `for` list), so hash multislices keep the
-        // plain read path below.
-        if let Expr::MultiDimIndex { target, dimensions } = arg
-            && !matches!(target.as_ref(), Expr::HashVar(_))
-        {
+        // cell (a missing hash leaf gets a deferred `HashEntryRef`); the callee
+        // binds through it. Slice dimensions that can't collapse to one cell
+        // yield a list of leaf cells, or fall back to the plain read value.
+        if let Expr::MultiDimIndex { target, dimensions } = arg {
             self.compile_expr(target);
             for dim in dimensions {
                 self.compile_expr(dim);

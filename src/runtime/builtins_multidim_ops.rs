@@ -2,8 +2,8 @@ use super::*;
 use crate::value::ArrayKind;
 
 use super::builtins_multidim::{
-    array_to_list, has_multi_indices, make_key_tuple, multidim_collect_leaves, multidim_delete,
-    multidim_index,
+    array_to_list, has_multi_indices, leaf_key_tuple, make_key_tuple, multidim_collect_leaves,
+    multidim_delete, multidim_index,
 };
 
 impl Interpreter {
@@ -139,14 +139,7 @@ impl Interpreter {
         let mut out = Vec::new();
         for (path, value) in leaves {
             let exists = !value.is_nil();
-            let key = if path.len() == 1 {
-                Value::int(path[0])
-            } else {
-                Value::array_with_kind(
-                    crate::gc::Gc::new(path.into_iter().map(Value::int).collect()),
-                    ArrayKind::List,
-                )
-            };
+            let key = leaf_key_tuple(path);
             match adverb {
                 "k" => {
                     if exists {
@@ -418,14 +411,7 @@ impl Interpreter {
         for (path, value) in leaves {
             let raw_exists = !value.is_nil();
             let exists = if negated { !raw_exists } else { raw_exists };
-            let key = if path.len() == 1 {
-                Value::int(path[0])
-            } else {
-                Value::array_with_kind(
-                    crate::gc::Gc::new(path.into_iter().map(Value::int).collect()),
-                    ArrayKind::List,
-                )
-            };
+            let key = leaf_key_tuple(path);
             match adverb {
                 "none" => out.push(Value::truth(exists)),
                 "kv" => {
@@ -727,14 +713,7 @@ impl Interpreter {
             let mut out = Vec::new();
             for (path, value) in leaves {
                 let exists = !value.is_nil();
-                let key = if path.len() == 1 {
-                    Value::int(path[0])
-                } else {
-                    Value::array_with_kind(
-                        crate::gc::Gc::new(path.into_iter().map(Value::int).collect()),
-                        ArrayKind::List,
-                    )
-                };
+                let key = leaf_key_tuple(path);
                 match adverb.as_str() {
                     "k" => {
                         if exists {
@@ -850,14 +829,7 @@ impl Interpreter {
             for (path, value) in leaves {
                 let raw_exists = !value.is_nil();
                 let exists = if negated { !raw_exists } else { raw_exists };
-                let key = if path.len() == 1 {
-                    Value::int(path[0])
-                } else {
-                    Value::array_with_kind(
-                        crate::gc::Gc::new(path.into_iter().map(Value::int).collect()),
-                        ArrayKind::List,
-                    )
-                };
+                let key = leaf_key_tuple(path);
                 match adverb.as_str() {
                     "none" => out.push(Value::truth(exists)),
                     "kv" => {

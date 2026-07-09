@@ -229,6 +229,27 @@ impl Value {
         }
     }
 
+    /// Store `val` through a `ContainerRef` cell. If the cell currently holds a
+    /// `HashEntryRef` deferred token (a boxed `\target` bound to a
+    /// not-yet-existent hash key — e.g. the escape analysis boxed a captured
+    /// sigilless param before its first write), first materialize the binding:
+    /// this cell ITSELF is installed at the token's path (walk-creating any
+    /// intermediate hashes), so the hash entry and every holder of the cell
+    /// alias the same container from then on. A plain `clone_from` would
+    /// overwrite the token and silently drop the hash alias.
+    pub(crate) fn store_through_cell(arc: &crate::gc::Gc<Mutex<Value>>, val: &Value) {
+        let mut inner = arc.lock().unwrap();
+        if matches!(&*inner, Value::HashEntryRef { .. })
+            && let Some((hash_arc, key)) = inner.hash_entry_terminal()
+        {
+            // SAFETY: aliased in-place mutation of a shared container; see
+            // `arc_contents_mut`. No borrow into the map is live across the write.
+            let hd = unsafe { crate::value::gc_contents_mut(&hash_arc) };
+            Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(arc.clone()));
+        }
+        inner.clone_from(val);
+    }
+
     /// Assign a value into a `ContainerRef`.
     /// Returns `true` if the value was a ContainerRef and the assignment happened.
     pub fn assign_into_container(&self, new_val: Value) -> bool {

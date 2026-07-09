@@ -593,6 +593,46 @@ impl Interpreter {
         }
     }
 
+    /// Store a whole-container reassignment through a `ContainerRef` cell while
+    /// PRESERVING the inner container's identity: when the cell currently holds
+    /// an Array/Hash and the new value is the same container kind, copy the new
+    /// contents into the EXISTING backing `Gc` (via `*_inplace_reassign`) instead
+    /// of swapping the cell to a fresh pointer. A boxed captured `@a`/`%h`
+    /// (escape analysis promotes captured+mutated outer containers to cells)
+    /// whole-reassigned from a nested frame otherwise orphans every by-value
+    /// holder of the old backing `Gc` (e.g. `%h` captured into a list). Non
+    /// matching shapes fall back to a plain store.
+    pub(super) fn cell_store_preserving_container_identity(
+        arc: &crate::gc::Gc<std::sync::Mutex<Value>>,
+        val: &Value,
+    ) {
+        let mut inner = arc.lock().unwrap();
+        let replacement = match (&*inner, val) {
+            (Value::Hash(old_gc), Value::Hash(new_gc))
+                if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+            {
+                Some(Self::hash_inplace_reassign(old_gc, new_gc))
+            }
+            (Value::Array(old_gc, _), Value::Array(new_gc, kind))
+                if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+            {
+                Some(Self::array_inplace_reassign(old_gc, new_gc, *kind))
+            }
+            _ => None,
+        };
+        match replacement {
+            Some(v) => *inner = v,
+            None => {
+                drop(inner);
+                // A cell holding a `HashEntryRef` deferred token (a boxed
+                // `\target` bound to a missing hash key) materializes on first
+                // write: `store_through_cell` installs the cell at the token's
+                // path before storing, so the hash and the binding stay aliased.
+                Value::store_through_cell(arc, val);
+            }
+        }
+    }
+
     /// The `Hash` analogue of [`array_inplace_reassign`]. Redirects any
     /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
     pub(super) fn hash_inplace_reassign(
