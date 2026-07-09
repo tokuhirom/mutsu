@@ -294,14 +294,10 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
 
     let rest = input;
     let mut type_constraint = None;
-    let rest = if let Ok((r, tc)) = ident(rest) {
-        // Preserve type smileys :D, :U, :_ as part of the type constraint.
-        let (r, tc) = if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
-            let smiley = &r[..2];
-            (&r[2..], format!("{}{}", tc, smiley))
-        } else {
-            (r, tc)
-        };
+    // Use parse_type_constraint_expr so coercion types (`IO()`, `Int(Str)`),
+    // qualified names, generics (`Array[Int]`) and definedness smileys (:D/:U)
+    // are all consumed before the loop variable (e.g. `-> IO() $current`).
+    let rest = if let Some((r, tc)) = super::super::sub_param::parse_type_constraint_expr(rest) {
         let (r2, _) = ws(r)?;
         if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
         {

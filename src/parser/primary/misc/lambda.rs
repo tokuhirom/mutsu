@@ -194,7 +194,14 @@ pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
             && first.where_constraint.is_none()
             && first.sub_signature.is_none()
             && first.outer_sub_signature.is_none()
-            && first.code_signature.is_none();
+            && first.code_signature.is_none()
+            // `@_`/`%_` must NOT use the sigil-stripping Lambda path: stripping
+            // leaves the name `_`, and the body's `@_`/`%_` references then
+            // resolve to the shadowing implicit-args / named-args env keys
+            // instead of the bound param. Route them through the param_defs
+            // (AnonSubParams) path, which binds `@_`/`%_` correctly.
+            && first.name != "@_"
+            && first.name != "%_";
         if simple_single {
             // Strip sigil prefix for Lambda (it handles sigils internally)
             let lambda_name = first
