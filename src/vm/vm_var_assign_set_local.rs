@@ -201,22 +201,27 @@ impl Interpreter {
             let name = &code.locals[idx];
             self.update_bound_decont_marker(name, scalar_bind || is_bind, &raw_popped);
         }
-        // A scalar `:=` bound to a plain VALUE with no named source (`my $r :=
-        // $obj.ro-attr` — a non-rw accessor result, or any value-producing
-        // expression) is bound to that value itself, not a container: a later
-        // `$r = v` is "Cannot assign to an immutable value" in raku. Literal
-        // binds (`my $x := 5`) get this from the parser's MarkReadonly; this
-        // covers the runtime-only cases. Container-valued binds (ContainerRef /
-        // Array / Hash) stay writable through their container, and a Proxy
-        // stays writable through its STORE.
+        // A scalar `:=` bound to a plain immutable VALUE with no named source
+        // (`my $r := $obj.ro-attr` — a non-rw accessor result) is bound to that
+        // value itself, not a container: a later `$r = v` is "Cannot assign to
+        // an immutable value" in raku. Literal binds (`my $x := 5`) get this
+        // from the parser's MarkReadonly; this covers the runtime-only cases.
+        // Deliberately an ALLOWLIST of pure immutable scalar kinds: anything
+        // container-like or writable-through (ContainerRef, Proxy STORE,
+        // HashEntryRef deferred binds, `is raw` results, ...) must stay
+        // writable, and an overlooked kind here turns into a hard runtime
+        // error, so the conservative direction is to mark less.
         if scalar_bind
             && bind_source.is_none()
-            && !matches!(
+            && matches!(
                 raw_popped.view(),
-                ValueView::ContainerRef(_)
-                    | ValueView::Array(..)
-                    | ValueView::Hash(_)
-                    | ValueView::Proxy { .. }
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::Complex(..)
             )
         {
             let bare = code.locals[idx].trim_start_matches(['$', '@', '%', '&']);
