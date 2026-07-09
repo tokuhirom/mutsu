@@ -31,6 +31,7 @@ impl Interpreter {
                 | "name"
                 | "ver"
                 | "auth"
+                | "api"
                 | "mro"
                 | "mro_unhidden"
                 | "methods"
