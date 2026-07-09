@@ -1953,7 +1953,7 @@ impl Interpreter {
             .entry(attr_name.to_string())
             .or_insert_with(|| Value::real_array(Vec::new()));
         if let Some(result) = arr.with_array_mut(|items, _| -> Result<Value, RuntimeError> {
-            let items = crate::gc::Gc::make_mut(items);
+            let items = crate::value::gc_data_mut(items);
             match method {
                 "push" => {
                     for arg in args {

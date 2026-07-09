@@ -475,7 +475,8 @@ impl Interpreter {
                 sv.insert(key.to_string(), shared_value);
             }
         }
-        // Fallback for non-shared arrays: use Arc::make_mut for COW
+        // Fallback for non-shared arrays: write through the shared node so
+        // same-thread by-value holders observe the push (container identity §3).
         if matches!(
             self.env.get(key).map(Value::view),
             Some(ValueView::Array(..))
@@ -485,7 +486,7 @@ impl Interpreter {
                 .get_mut(key)
                 .unwrap()
                 .with_array_mut(|arc_items, kind| {
-                    let items = crate::gc::Gc::make_mut(arc_items);
+                    let items = crate::value::gc_data_mut(arc_items);
                     items.extend(values);
                     // Normalize @-variables only from List to Array while preserving Shaped.
                     if key.starts_with('@') && *kind == ArrayKind::List {

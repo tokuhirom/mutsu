@@ -24,7 +24,10 @@ impl Interpreter {
                 if items.is_empty() {
                     make_empty_array_failure("shift")
                 } else {
-                    crate::gc::Gc::make_mut(&mut items).remove(0)
+                    // Write through the shared node: the arg is the caller's
+                    // own array container (container identity, §3) — a COW
+                    // detach here would silently drop the removal.
+                    crate::value::gc_data_mut(&mut items).remove(0)
                 }
             }
             _ => make_empty_array_failure("shift"),
@@ -56,11 +59,13 @@ impl Interpreter {
         }
         Ok(match args.first().cloned().and_then(|v| v.into_array()) {
             Some((mut items, _)) => {
-                let items_mut = crate::gc::Gc::make_mut(&mut items);
-                if items_mut.is_empty() {
+                if items.is_empty() {
                     make_empty_array_failure("pop")
                 } else {
-                    items_mut.pop().unwrap_or(Value::NIL)
+                    // Same shared-node write-through as `builtin_shift` above.
+                    crate::value::gc_data_mut(&mut items)
+                        .pop()
+                        .unwrap_or(Value::NIL)
                 }
             }
             _ => make_empty_array_failure("pop"),

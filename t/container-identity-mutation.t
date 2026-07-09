@@ -8,7 +8,7 @@ use Test;
 # Copies (`my @b = @a`, `is copy` params, `.clone`) stay detached: `=` copy
 # semantics are enforced at copy time, not by copy-on-write at mutation time.
 
-plan 55;
+plan 60;
 
 # --- array method mutations visible through a by-value capture ---
 { my @a = 1,2;   my $c = (0, @a); @a.push(9);        is $c[1].join(','), '1,2,9',   'push visible through capture'; }
@@ -101,6 +101,13 @@ plan 55;
     is g(%h), 'a,z', 'is copy hash param gets its own container';
     is %h.keys.join(','), 'a', 'is copy hash param mutation does not reach caller';
 }
+
+# --- multidim (semicolon) subscript mutations visible through a capture ---
+{ my @a = [1,2],[3,4]; my $c = (0, @a); @a[0;1] = 99;      is $c[1][0][1], 99,  'multidim element assign visible'; }
+{ my %h = a=>{x=>1};   my $c = (0, %h); %h{'a';'x'} = 42;  is $c[1]<a><x>, 42,  'multidim hash assign visible'; }
+{ my @a = [1,2],[3,4]; my $c = (0, @a); @a[*;*] = 9,8,7,6; is $c[1][1].join(','), '7,6', 'multidim whatever-slice assign visible'; }
+{ my @a = [1,2],[3,4]; my $c = (0, @a); @a[0;1]:delete;    is $c[1][0].elems, 1, 'multidim delete visible'; }
+{ my @a = [1,2],[3,4]; my $c = (0, @a); @a[0;3] = 9;       is $c[1][0].elems, 4, 'multidim autoviv grow visible'; }
 
 # --- reference holders keep tracking (non-copy '=' targets) ---
 { my @a = 1,2; my @outer; @outer[0] = @a; @a.push(9); is @outer[0].join(','), '1,2,9', 'element holding array tracks push'; }
