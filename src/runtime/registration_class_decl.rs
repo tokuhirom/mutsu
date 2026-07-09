@@ -1807,7 +1807,24 @@ impl Interpreter {
                     }
                 }
                 Stmt::DoesDecl { name: role_name } => {
-                    let role_name_str = role_name.resolve();
+                    let raw_role_name = role_name.resolve();
+                    // An imported role referenced by its short alias (`does
+                    // PackageRepo` where the role is registered as
+                    // `MyMod::PackageRepo`) must be resolved to its qualified
+                    // name. `does_parents` on a named class already resolves via
+                    // `resolve_declared_type_name`; the body `DoesDecl` emitted
+                    // for an anonymous `class :: does R` did not, so it failed
+                    // with "Unknown role" for module-exported roles.
+                    let role_name_str = if self.registry().roles.contains_key(&raw_role_name) {
+                        raw_role_name.clone()
+                    } else {
+                        let resolved = self.resolve_declared_type_name(&raw_role_name);
+                        if self.registry().roles.contains_key(&resolved) {
+                            resolved
+                        } else {
+                            raw_role_name.clone()
+                        }
+                    };
                     if !self.registry().roles.contains_key(&role_name_str)
                         && matches!(
                             role_name_str.as_str(),
