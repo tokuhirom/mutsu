@@ -98,17 +98,29 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 - `S26-documentation/12-non-breaking-space.t`（top-level BEGIN compile-time hoist）→ `news/2026-07.md`
 - `S02-names-vars/variables-and-packages.t`（nested-block BEGIN hoist）→ `news/2026-07.md`
 
-**残る別軸の残課題**: closure-captured shared-cell を list へ by-value 捕捉した
-ときのスナップショット追従（return-writeback 系・`splice.t` の `ident4`）。
+**closure-captured shared-cell の by-value list 捕捉スナップショット追従
+（return-writeback 系・`splice.t` の `ident4`）は DONE** — §3.2 item 1 の
+element-mutation in-place 化で一括解決（`t/container-identity-mutation.t` の
+cell:/returned-capture ケースが pin）。
 （`$my_ref := $obj.attr` と `$obj.attr.VAR.role = v` は §3.2 item 2 で DONE。）
 
 ### 3.2 サブキャンペーンと choke point
 
-1. **配列/ハッシュ要素 cell 化**
+1. **配列/ハッシュ要素 cell 化** — **element mutation の in-place 化は DONE**
    - 依存文書: `docs/container-identity.md`
    - 変更レイヤ: `value/mod.rs`、`vm_var_assign_ops.rs`、`vm_var_index_ops.rs`
-   - 対象: `splice.t`（multislice は §2.3 で完了・#4355）
-   - 完了条件: element bind / take-rw / deep nested write が post-call writeback なしで成立
+   - **DONE (2026-07-09)**: 全 element-level mutation（push/pop/shift/unshift/
+     splice/append/prepend・要素/slice 代入・hash key write/:delete/++/--・
+     multidim・nested・typed/defaulted・ContainerRef cell 経路）を
+     `Gc::make_mut`（COW detach）から共有ノードへの in-place 書込
+     （`gc_data_mut`/`gc_contents_mut`）へ切替。copy 独立性は copy 時 detach
+     （`Value::detach_shared_container` — `my @b = @a` / `is copy` param）が担保。
+     by-value holder（`(0, @a)` capture・要素・scalar）が全 mutation を追従。
+     副修正: `@a[i].splice` の返り値誤 writeback（compiler の pop/shift ブランチへ
+     合流）・slow-path `do_splice` の self-splice replacement 読みを drain 前へ。
+     Pin: `t/container-identity-mutation.t`（55、raku 一致）。
+   - 残: post-call writeback 機構そのものの削減（push 系 method-on-index の
+     result-writeback は in-place により冗長になったが残置・害なし）。
 2. **属性 accessor を value copy ではなく slot 経由にする** — **DONE**
    - `Attribute.container.VAR does Role` は #4314 で完了（§3.1 参照）。
    - `$my_ref := $obj.attr`（rw scalar accessor への `:=` 束縛が属性 slot の
@@ -133,10 +145,11 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 - whole-container / env-local coherence: `docs/env-locals-coherence.md`,
   `src/vm/vm_env_helpers.rs`, `SetLocal` / `flush_local_to_env` / bound-container metadata
 
-- **Next slice**: `splice.t` の self-splice ケースから、配列 write を helper 経由へさらに
-  寄せて post-call writeback 依存を 1 段減らす。
+- **Next slice**: 残る `Gc::make_mut` サイト（`vm_var_multidim_ops.rs`・
+  `runtime/builtins_multidim.rs`・shared_vars 経路等）の棚卸し — 変数自身の
+  コンテナ mutation なら `gc_data_mut` へ、派生コピーの構築なら現状維持。
 - **Canary tests**: `roast/S32-array/splice.t`,
-  `roast/S02-names-vars/variables-and-packages.t`
+  `roast/S02-names-vars/variables-and-packages.t`, `t/container-identity-mutation.t`
 
 ---
 
@@ -170,13 +183,12 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 「次に何をやるか」を 1 本だけ選ぶなら、これ:
 
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
-   multislice hash 側の slot identity を前に進める。
-   これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
+   進める。これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
    **進捗（2026-07-09）**: whole-container 代入の container-identity（`splice.t`）、
    属性 container mixin（`S14-traits/attributes.t`・#4314）、属性 slot の完全な
-   cell 化（`:=` 束縛・mixin accessor への rw 書込、§3.2 item 2）は完了。
-   残るは closure-captured shared-cell を list へ by-value 捕捉したときの
-   スナップショット追従（return-writeback 系・`splice.t` の `ident4`）。
+   cell 化（§3.2 item 2）、**element mutation の in-place 化（§3.2 item 1）と
+   ident4 系スナップショット追従**まで完了。残るは §3.2 の Next slice
+   （残 `make_mut` サイトの棚卸し）と post-call writeback 機構の削減。
 
 かつて 2 番手だった cross-thread lexical writeback campaign（旧 §4.1）は完了
 （`S17-lowlevel/lock.t`・`S32-io/socket-recv-vs-read.t` とも whitelist 済み、

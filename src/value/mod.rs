@@ -306,6 +306,7 @@ mod value_methods_c;
 mod value_setbagmix;
 mod view;
 pub(crate) use crate::gc::gc_contents_mut;
+pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use types::what_type_name;
 pub use view::ValueView;
 

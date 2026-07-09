@@ -480,10 +480,11 @@ impl Interpreter {
                 self.decrement_value_smart(&effective)?
             };
             let mut updated = inner;
+            // Container identity (§3): write through the shared backing node.
             if updated
                 .with_hash_mut(|h| {
                     Value::hash_insert_through(
-                        &mut crate::gc::Gc::make_mut(h).map,
+                        &mut crate::value::gc_data_mut(h).map,
                         key.clone(),
                         new_val.clone(),
                     );
@@ -492,7 +493,7 @@ impl Interpreter {
                 && let Some(arr_result) =
                     updated.with_array_mut(|arr, _kind| -> Result<(), RuntimeError> {
                         if let Ok(i) = key.parse::<usize>() {
-                            let a = crate::gc::Gc::make_mut(arr);
+                            let a = crate::value::gc_data_mut(arr);
                             Self::autoviv_resize(a, i + 1, Value::NIL)?;
                             a[i] = new_val.clone();
                         }
@@ -638,7 +639,9 @@ impl Interpreter {
                 // in place so the caller observes the change. `Arc::make_mut`
                 // would COW-detach and silently drop the write (the array
                 // path already special-cased this; the hash path did not).
-                let use_inplace = crate::gc::Gc::strong_count_of(h) > 1 && !name.starts_with('%');
+                // Container identity (§3): no sigil carve-out — a shared hash
+                // mutates through the backing node for every holder.
+                let use_inplace = crate::gc::Gc::strong_count_of(h) > 1;
                 if use_inplace {
                     // SAFETY: aliased in-place mutation of a shared hash
                     // (strong_count > 1, the shared-cell case); mirrors the
@@ -658,11 +661,10 @@ impl Interpreter {
             } else if let Some(res) =
                 container_value.with_array_mut(|arr, _| -> Result<bool, RuntimeError> {
                     if let Ok(i) = idx_val.to_string_value().parse::<usize>() {
-                        // Use in-place mutation when the array is shared
-                        // (strong_count > 1) to preserve identity semantics,
-                        // matching the behavior of index assignment.
-                        let use_inplace =
-                            crate::gc::Gc::strong_count(arr) > 1 && !name.starts_with('@');
+                        // Container identity (§3): no sigil carve-out — a
+                        // shared array mutates through the backing node for
+                        // every holder, matching index assignment.
+                        let use_inplace = crate::gc::Gc::strong_count(arr) > 1;
                         let a: &mut crate::value::ArrayData = if use_inplace {
                             // SAFETY: aliased in-place mutation of a shared array
                             // (strong_count > 1, the case that needs the shared
@@ -691,7 +693,8 @@ impl Interpreter {
                         return Err(RuntimeError::assignment_ro(Some("Mix")));
                     }
                     let weight = Self::mix_assignment_weight(&new_val)?;
-                    let m = crate::gc::Gc::make_mut(mix);
+                    // Container identity (§3): write through a shared node.
+                    let m = crate::value::gc_data_mut(mix);
                     if new_val.truthy() {
                         m.insert(key.clone(), weight);
                     } else {
@@ -706,7 +709,8 @@ impl Interpreter {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Set")));
                     }
-                    let s = crate::gc::Gc::make_mut(set);
+                    // Container identity (§3): write through a shared node.
+                    let s = crate::value::gc_data_mut(set);
                     if new_val.truthy() {
                         s.insert(key.clone());
                     } else {
@@ -721,7 +725,8 @@ impl Interpreter {
                     if !*is_mutable {
                         return Err(RuntimeError::assignment_ro(Some("Bag")));
                     }
-                    let b = crate::gc::Gc::make_mut(bag);
+                    // Container identity (§3): write through a shared node.
+                    let b = crate::value::gc_data_mut(bag);
                     let n = match new_val.view() {
                         ValueView::Int(i) => num_bigint::BigInt::from(i),
                         ValueView::BigInt(big) => (**big).clone(),

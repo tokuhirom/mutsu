@@ -149,27 +149,29 @@ impl Interpreter {
             // The shared cell itself keeps every alias coherent.
             if let ValueView::ContainerRef(cell) = target.view() {
                 let cell = cell.clone();
-                let mut guard = cell.lock().unwrap();
+                let guard = cell.lock().unwrap();
+                let inner = guard.clone();
+                drop(guard);
+                // Container identity (§3): write through the shared backing
+                // node so by-value holders of the same array observe the push.
                 let mut val_slot = Some(val);
-                let arr_result = (*guard).with_array_mut(|arr, kind| {
-                    let kind = *kind;
-                    let items = crate::gc::Gc::make_mut(arr);
-                    let val = val_slot.take().expect("push value present");
-                    match val.view() {
-                        ValueView::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
-                        _ => items.push(val),
-                    }
-                    Value::array_with_kind(arr.clone(), kind)
-                });
-                if let Some(result) = arr_result {
-                    drop(guard);
-                    self.stack.push(result);
+                let pushed = inner
+                    .with_array_inplace(|data, _| {
+                        let val = val_slot.take().expect("push value present");
+                        match val.view() {
+                            ValueView::Slip(slip_items) => {
+                                data.items.extend(slip_items.iter().cloned())
+                            }
+                            _ => data.items.push(val),
+                        }
+                    })
+                    .is_some();
+                if pushed {
+                    self.stack.push(inner);
                     return Ok(());
                 }
                 // Non-array inner (e.g. Hash): generic clone-and-write-back.
                 let val = val_slot.take().expect("push value present");
-                let inner = guard.clone();
-                drop(guard);
                 let result = loan_env!(self, call_method_with_values(inner, "push", vec![val]))?;
                 *cell.lock().unwrap() = result.clone();
                 self.stack.push(result);
@@ -201,26 +203,22 @@ impl Interpreter {
             }
         }
 
-        // Find the local slot and drop it to allow in-place mutation
-        let local_slot = self.find_local_slot(code, target_name);
-        if let Some(slot) = local_slot {
-            self.locals[slot] = Value::NIL;
-        }
-
         let mut val_slot = Some(val);
-        let pushed = self.env_mut().get_mut(target_name).and_then(|v| {
-            v.with_array_mut(|arr, kind| {
-                let items = crate::gc::Gc::make_mut(arr);
+        // Container identity (§3): append through the shared backing node —
+        // no COW, no local-slot zeroing dance — so every by-value holder of
+        // the same array (a `(0, @a)` capture, an element) sees the push.
+        let target = self.env().get(target_name).cloned();
+        let pushed = target.as_ref().and_then(|v| {
+            v.with_array_inplace(|data, _| {
                 let val = val_slot.take().expect("push value present");
                 match val.view() {
-                    ValueView::Slip(slip_items) => items.extend(slip_items.iter().cloned()),
-                    _ => items.push(val),
+                    ValueView::Slip(slip_items) => data.items.extend(slip_items.iter().cloned()),
+                    _ => data.items.push(val),
                 }
-                Value::array_with_kind(arr.clone(), *kind)
             })
         });
         let result = match pushed {
-            Some(result) => result,
+            Some(()) => target.expect("array target present"),
             None => {
                 let val = val_slot.take().expect("push value present");
                 // Auto-vivify: create new array
@@ -233,10 +231,8 @@ impl Interpreter {
             }
         };
 
-        // Restore local slot
-        if let Some(slot) = local_slot {
-            self.locals[slot] = result.clone();
-        }
+        // Keep the local slot coherent with env (dual-store write-through).
+        self.update_local_if_exists(code, target_name, &result);
 
         self.stack.push(result);
         // Slice 6.3 step 2: no env_dirty mark. This native push path mutates only

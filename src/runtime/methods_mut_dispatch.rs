@@ -630,7 +630,8 @@ impl Interpreter {
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
-                            let items = crate::gc::Gc::make_mut(arc_items);
+                            // Container identity (§3): append through a shared node.
+                            let items = crate::value::gc_data_mut(arc_items);
                             items.extend(flat_values.iter().cloned());
                             Value::array_with_kind(crate::gc::Gc::clone(arc_items), kind)
                         }) {
@@ -654,7 +655,8 @@ impl Interpreter {
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
-                            let items = crate::gc::Gc::make_mut(arc_items);
+                            // Container identity (§3): insert through a shared node.
+                            let items = crate::value::gc_data_mut(arc_items);
                             for (i, arg) in normalized_args.iter().enumerate() {
                                 items.insert(i, arg.clone());
                             }
@@ -681,7 +683,8 @@ impl Interpreter {
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
-                            let items = crate::gc::Gc::make_mut(arc_items);
+                            // Container identity (§3): insert through a shared node.
+                            let items = crate::value::gc_data_mut(arc_items);
                             for (i, arg) in flat_values.iter().enumerate() {
                                 items.insert(i, arg.clone());
                             }
@@ -731,7 +734,8 @@ impl Interpreter {
                             .get_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
-                                crate::gc::Gc::make_mut(arc_items)
+                                // Container identity (§3): pop through a shared node.
+                                crate::value::gc_data_mut(arc_items)
                                     .pop()
                                     .unwrap_or(Value::NIL)
                             })
@@ -771,7 +775,8 @@ impl Interpreter {
                             .get_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
-                                crate::gc::Gc::make_mut(arc_items).remove(0)
+                                // Container identity (§3): shift through a shared node.
+                                crate::value::gc_data_mut(arc_items).remove(0)
                             })
                             .unwrap()
                     } else {
@@ -818,8 +823,11 @@ impl Interpreter {
                             .unwrap_or(len.saturating_sub(start) as i64)
                             .max(0) as usize;
                         let end = (start + count).min(len);
-                        let removed: Vec<Value> = items.drain(start..end).collect();
-                        // Collect all replacement values from args[2..]
+                        // Collect all replacement values from args[2..] BEFORE
+                        // draining: `items` is now mutated in place through the
+                        // shared backing node (container identity §3), so a
+                        // self-splice replacement (`splice(@a, .., @a)`) aliases
+                        // `items` and must be snapshotted pre-drain.
                         let mut new_items: Vec<Value> = Vec::new();
                         for arg in args.iter().skip(2) {
                             match arg.view() {
@@ -829,6 +837,7 @@ impl Interpreter {
                                 _ => new_items.push(arg.clone()),
                             }
                         }
+                        let removed: Vec<Value> = items.drain(start..end).collect();
                         for (i, item) in new_items.into_iter().enumerate() {
                             items.insert(start + i, item);
                         }
@@ -1022,7 +1031,8 @@ impl Interpreter {
                     }
                     let removed = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, _| {
-                            let items = crate::gc::Gc::make_mut(arc_items);
+                            // Container identity (§3): splice through a shared node.
+                            let items = crate::value::gc_data_mut(arc_items);
                             do_splice(items, &resolved_args)
                         }) {
                         r
@@ -1174,7 +1184,8 @@ impl Interpreter {
                                 .get_mut(&key)
                                 .unwrap()
                                 .with_hash_mut(|arc_hash| {
-                                    let hash = crate::gc::Gc::make_mut(arc_hash);
+                                    // Container identity (§3): push through a shared node.
+                                    let hash = crate::value::gc_data_mut(arc_hash);
                                     for (k, v) in kv_pairs {
                                         let wk = if is_object_hash {
                                             crate::runtime::utils::value_which_key(&k)
@@ -1230,7 +1241,8 @@ impl Interpreter {
                             .get_mut(&key)
                             .unwrap()
                             .with_hash_mut(|arc_hash| {
-                                let hash = crate::gc::Gc::make_mut(arc_hash);
+                                // Container identity (§3): push through a shared node.
+                                let hash = crate::value::gc_data_mut(arc_hash);
                                 for (k, v) in pairs {
                                     Self::hash_push_insert(hash, k, v, is_push);
                                 }

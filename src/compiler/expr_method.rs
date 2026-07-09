@@ -152,7 +152,12 @@ impl Compiler {
             let name_resolved = name.resolve();
             let arity = args.len() as u32;
             let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
-            if matches!(name_resolved.as_str(), "pop" | "shift") {
+            // pop/shift/splice return something OTHER than the mutated array
+            // (the removed element(s)), so the writeback must store the
+            // mutated INVOCANT back into the element and yield the method
+            // result separately. push/append/unshift/prepend return the
+            // array itself, so the plain result-writeback branch suffices.
+            if matches!(name_resolved.as_str(), "pop" | "shift" | "splice") {
                 let tmp_target_name = format!(
                     "__mutsu_tmp_index_method_target_{}",
                     self.code.constants.len()
