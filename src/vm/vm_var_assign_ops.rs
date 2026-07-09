@@ -607,16 +607,16 @@ impl Interpreter {
         val: &Value,
     ) {
         let mut inner = arc.lock().unwrap();
-        let replacement = match (&*inner, val) {
-            (Value::Hash(old_gc), Value::Hash(new_gc))
+        let replacement = match (inner.view(), val.view()) {
+            (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
                 if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
             {
                 Some(Self::hash_inplace_reassign(old_gc, new_gc))
             }
-            (Value::Array(old_gc, _), Value::Array(new_gc, kind))
+            (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
                 if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
             {
-                Some(Self::array_inplace_reassign(old_gc, new_gc, *kind))
+                Some(Self::array_inplace_reassign(old_gc, new_gc, kind))
             }
             _ => None,
         };

@@ -156,7 +156,15 @@ impl Interpreter {
             };
             for key in keys {
                 if terminal {
-                    out.push(cur.hash_slot_ref(&key, true)?);
+                    let slot = cur.hash_slot_ref(&key, true)?;
+                    // A missing key yields a `HashEntryRef` vivification token,
+                    // which must not leak into a plain slice READ of the same
+                    // subscript (`is-deeply %h{"a";"b";("c","x")}, (42, Any)`)
+                    // — fall back to the non-aliasing read instead.
+                    if matches!(slot.view(), ValueView::HashEntryRef { .. }) {
+                        return None;
+                    }
+                    out.push(slot);
                 } else {
                     let child = match cur.hash_slot_ref(&key, false)? {
                         v if matches!(v.view(), ValueView::ContainerRef(_)) => {
