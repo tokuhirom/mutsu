@@ -607,6 +607,10 @@ impl Compiler {
         // so carry the method context down. A nested *named sub* is not a method
         // and gets a fresh compiler via compile_sub_body, so it correctly resets.
         sub_compiler.lexically_in_method = self.lexically_in_method;
+        // Propagate the distribution context so `$?DISTRIBUTION` resolves to the
+        // owning module's distribution inside a routine/method body (which is
+        // compiled through this closure-body path), not Nil.
+        sub_compiler.current_distribution = self.current_distribution.clone();
         // Propagate last_source_line so closures inside blocks that
         // lack their own SetLine can still inherit the line from the
         // enclosing statement.
