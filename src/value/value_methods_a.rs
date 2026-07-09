@@ -332,9 +332,13 @@ impl Value {
                 let new_hash = Value::hash(HashMap::new());
                 data.map.insert(key.to_string(), new_hash);
             }
+            // The entry exists (created just above if missing): an EAGER token,
+            // whose reads see through to the plain entry value (`is raw`
+            // reduce lvalue descent).
             Some(Value::HashEntryRef {
                 hash: arc.clone(),
                 path: vec![key.to_string()],
+                eager: true,
             })
         } else {
             None
@@ -416,6 +420,7 @@ impl Value {
                 None => Some(Value::HashEntryRef {
                     hash: arc.clone(),
                     path: vec![key.to_string()],
+                    eager: false,
                 }),
             }
         } else {
@@ -453,8 +458,11 @@ impl Value {
     /// captured `Gc` stayed empty, which masked this; in-place hash writes
     /// now reach the captured root, so the connect condition must be the
     /// cell identity, not mere path existence.)
+    /// An EAGER token (`hash_autovivify`, `is raw` reduce descent) reads
+    /// through to the plain entry value — its entry was created with the
+    /// token, so path existence IS the connection.
     pub fn hash_entry_read(&self) -> Value {
-        let Value::HashEntryRef { hash, path } = self else {
+        let Value::HashEntryRef { hash, path, eager } = self else {
             return self.clone();
         };
         let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
@@ -472,6 +480,7 @@ impl Value {
             Some(Value::ContainerRef(cell)) => {
                 cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
             }
+            Some(v) if *eager => v.clone(),
             _ => any(),
         }
     }
@@ -481,7 +490,7 @@ impl Value {
     /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
     /// (interior mutation, so all holders of the shared Arc observe them).
     pub(crate) fn hash_entry_terminal(&self) -> Option<(Gc<HashData>, String)> {
-        let Value::HashEntryRef { hash, path } = self else {
+        let Value::HashEntryRef { hash, path, .. } = self else {
             return None;
         };
         let mut cur = hash.clone();

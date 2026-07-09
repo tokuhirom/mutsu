@@ -785,6 +785,7 @@ mod tests {
         let value = Value::HashEntryRef {
             hash,
             path: vec!["k".to_string()],
+            eager: false,
         };
         assert_eq!(gc_trace_node_count(&value), 1);
     }

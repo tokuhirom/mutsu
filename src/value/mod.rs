@@ -1081,10 +1081,17 @@ pub enum Value {
     ///   at a time by `exec_index_autovivify_lazy_op`.
     ///
     /// It also serves `is raw` reduce lvalue descent (`hash_autovivify`), where
-    /// the entry is eagerly created first so the path is always length 1.
+    /// the entry is eagerly created first so the path is always length 1 —
+    /// those tokens set `eager: true` and reads see through to the (already
+    /// created) plain entry value. A deferred bind token (`eager: false`)
+    /// connects on read ONLY via the `ContainerRef` cell installed by a write
+    /// through the bound var: with in-place hash writes (container identity
+    /// §3) an independent `%g<x><y> = 42` reaches the token's captured root,
+    /// and rakudo does not retro-bind that (t/phantom-entry-bind.t).
     HashEntryRef {
         hash: Gc<HashData>,
         path: Vec<String>,
+        eager: bool,
     },
 }
 

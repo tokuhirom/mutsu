@@ -121,6 +121,7 @@ pub enum ValueView<'a> {
     HashEntryRef {
         hash: &'a Gc<HashData>,
         path: &'a Vec<String>,
+        eager: bool,
     },
 }
 
@@ -246,7 +247,11 @@ impl Value {
                 kv: *kv,
                 words: *words,
             },
-            Value::HashEntryRef { hash, path } => ValueView::HashEntryRef { hash, path },
+            Value::HashEntryRef { hash, path, eager } => ValueView::HashEntryRef {
+                hash,
+                path,
+                eager: *eager,
+            },
         }
     }
 
@@ -506,10 +511,15 @@ impl Value {
         Value::LazyList(l)
     }
 
-    /// Construct a `HashEntryRef` vivification token.
+    /// Construct a DEFERRED `HashEntryRef` vivification token (`eager: false`
+    /// — connects on read only through the cell a bound-var write installs).
     #[inline]
     pub(crate) fn hash_entry_ref(hash: Gc<HashData>, path: Vec<String>) -> Self {
-        Value::HashEntryRef { hash, path }
+        Value::HashEntryRef {
+            hash,
+            path,
+            eager: false,
+        }
     }
 
     /// Construct a `LazyIoLines` iterator over a file handle (boxing the
@@ -793,7 +803,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<HashData>, &mut Vec<String>) -> R,
     ) -> Option<R> {
         match self {
-            Value::HashEntryRef { hash, path } => Some(f(hash, path)),
+            Value::HashEntryRef { hash, path, .. } => Some(f(hash, path)),
             _ => None,
         }
     }

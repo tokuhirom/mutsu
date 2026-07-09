@@ -40,9 +40,12 @@ impl Interpreter {
         // uses `set_state_var` directly, never a cell) is unaffected.
         let val = if self.shared_vars_active {
             let coerced_initial = if name.starts_with('@') {
-                runtime::coerce_to_array(init_val)
+                // `=` init copies (container identity §3) — see the non-shared
+                // branch below.
+                runtime::coerce_to_array(init_val).detach_shared_container()
             } else if name.starts_with('%') {
                 self.coerce_object_to_hash(init_val)
+                    .detach_shared_container()
             } else {
                 init_val
             };
@@ -83,11 +86,16 @@ impl Interpreter {
             }
         } else {
             // Coerce @ variables to Array and % variables to Hash,
-            // matching the behavior of SetLocal for these sigils.
+            // matching the behavior of SetLocal for these sigils. Like
+            // SetLocal, the `=` initialization COPIES (container identity §3):
+            // detach a backing node shared with the initializer so a later
+            // `@foo[0]++` on the state var does not reach the source array
+            // (`(state @foo) = @bar`, S04-declarations/state.t).
             let coerced = if name.starts_with('@') {
-                runtime::coerce_to_array(init_val)
+                runtime::coerce_to_array(init_val).detach_shared_container()
             } else if name.starts_with('%') {
                 self.coerce_object_to_hash(init_val)
+                    .detach_shared_container()
             } else {
                 init_val
             };
