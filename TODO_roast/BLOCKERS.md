@@ -61,31 +61,21 @@ cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→Co
   (v2022.12=6.d) でもこのテスト自体がコンパイルに失敗するため、参照実装での検証すらできない。
 - **評価**: 深い機能待ちで、局所修正では進まない。優先度は低い。
 
-### 2.3 multislice lvalue（hash 側の残件）
+### 2.3 multislice lvalue（hash 側）— **DONE (#4355)**
 
-- **対象**: `S32-hash/multislice-6e.t`。array 側（`S32-array/multislice-6e.t`）は
-  **812/812 全通過・whitelist 済み**（この文書の旧「28 失敗」は stale だった）。
-- **進捗（2026-07-09 container-identity slice）**: hash 側 269 fails + test 318 で
-  中断 → **32 fails・535/549 実行**まで前進。直ったもの:
-  - Test 関数の `&` 参照（`my &fn = &is-deeply`）が Nil だった → Routine 値化
-    （318 中断の正体は block 3 冒頭の `(?? &is-deeply !! &non-assignable-ok)(...)`）。
-  - hash multislice の Whatever / key-list 次元 × 全 adverb（:k/:kv/:p/:v/:exists/
-    :delete）— leaf 収集を `Value` パス化し hash 対応。
-  - `\target` bind：hash root の cell 昇格解禁・欠落キーは deep-path `HashEntryRef`、
-    materialize を AssignExprLocal / AssignExpr / SetGlobal / boxed-cell
-    write-through（`Value::store_through_cell`）に配線。
-  - boxed captured `@a`/`%h` の whole-container 再代入が container identity を保持
-    （`cell_store_preserving_container_identity`）。
-  - Pin: `t/hash-multislice-container.t`。
-- **残る根本原因（32 fails・multislice ではない）**: sigilless map param を入れ子
-  呼び出しの引数に渡すと（`.map(-> \k, \v { Pair.new(k,v) })`）、varref の名前ベース
-  再解決が stale env を読む。値が List のとき `k` が最初の chunk の値を繰り返す
-  （文をまたいでも漏れる）。再現:
-  `((1,2),"A",(3,4),"B").map(-> \k, \v { Pair.new(k,v) })` →
-  `((1,2)=>"A", (1,2)=>"B")`。plain read（`k.raku`）は正しく、call-arg 位置のみ壊れる。
-  main でも再現する pre-existing。**Next slice = この varref-by-name 再解決の修正**
-  （`compile_call_arg` の WrapVarRef / binding_signature の
-  `resolve_sigilless_alias_source_name` 系）。plan mismatch（535/549）も残件。
+- `S32-hash/multislice-6e.t` **549/549 whitelist 済み**（#4354 で 269→32 fails、
+  #4355 で完了）。array 側も whitelist 済み。#4355 の内訳:
+  - 「sigilless map param の varref stale-env」の正体は **stale
+    `pending_call_arg_sources` 残留**: CallMethod(Mut) opcode が callee bind 用に
+    arg-source 名をセットするが、native dispatch（Pair.new 等）は bind しないため
+    残留 → Rust 駆動 `.map` ループの次チャンク bind が残留名で env 再解決し、
+    caller env に漏れた Array 値だけ stale 化。opcode 終了時に names/slots を
+    クリア（CallFunc の set→clear ペアと同じ規約）。Pin: `t/sigilless-map-args.t`。
+  - plan mismatch (535/549) は未実装 2 機能: `%h{|| @list}` 次元 splat
+    （array 側 `@a[||@i]` と同じ 1-dim MultiDimIndex に parse、HyperIndex
+    AST/opcode 削除）と unbounded-end range 次元（`@a[1^..*;1]` を各レベル長で
+    clamp 展開、`1..*` の capacity-overflow panic 修正、multi-`:exists` が
+    `Package("Any")` hole を非存在扱い）。Pin: `t/multidim-splat-lazy.t`。
 
 ---
 
@@ -94,8 +84,8 @@ cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→Co
 かつて element/attribute slot の書き戻しが未整備だった項目が集まっていたが、大半は
 whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314）・`temp.t`・
 `adverbs.t` の typed-hash default・`capture.t`・`is_default.t`・`walk.t` など。詳細は
-`news/2026-06.md` / `news/2026-07.md`）。残るのは multislice hash 側（§2.3）と、
-下記サブキャンペーンの深い残課題。
+`news/2026-06.md` / `news/2026-07.md`）。multislice は array/hash 両側とも完了
+（§2.3、#4355）。残るのは下記サブキャンペーンの深い残課題。
 
 ### 3.1 完了済み（whitelist 済み・詳細は news）
 
@@ -118,7 +108,7 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 1. **配列/ハッシュ要素 cell 化**
    - 依存文書: `docs/container-identity.md`
    - 変更レイヤ: `value/mod.rs`、`vm_var_assign_ops.rs`、`vm_var_index_ops.rs`
-   - 対象: `splice.t`, multislice（§2.3）
+   - 対象: `splice.t`（multislice は §2.3 で完了・#4355）
    - 完了条件: element bind / take-rw / deep nested write が post-call writeback なしで成立
 2. **属性 accessor を value copy ではなく slot 経由にする**
    - 変更レイヤ: attribute read/write path、instance attr storage
