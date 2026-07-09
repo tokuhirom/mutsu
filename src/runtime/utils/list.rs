@@ -426,3 +426,55 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         _ => vec![val.clone()],
     }
 }
+
+/// True when a subscript range dimension has no usable finite end: `1..*` /
+/// `1^..Inf` style (a Whatever end lowers to `Inf`, and an integer-range end of
+/// `i64::MAX` is the same thing forced through an int range). Expanding such a
+/// range eagerly would allocate ~2^63 elements; a subscript instead clamps it
+/// to the axis length (see `expand_unbounded_range_dim`).
+pub(crate) fn subscript_range_end_unbounded(dim: &Value) -> bool {
+    match dim.view() {
+        ValueView::Range(_, b)
+        | ValueView::RangeExcl(_, b)
+        | ValueView::RangeExclStart(_, b)
+        | ValueView::RangeExclBoth(_, b) => b == i64::MAX,
+        ValueView::GenericRange { end, .. } => match end.as_ref().view() {
+            ValueView::Whatever => true,
+            ValueView::Int(i) => i == i64::MAX,
+            ValueView::Num(f) => f.is_infinite() && f.is_sign_positive(),
+            ValueView::Rat(n, 0) | ValueView::FatRat(n, 0) => n > 0,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Expand an unbounded-end subscript range dimension against a known axis
+/// length: `@a[1^..*;1]` selects rows 2..len-1 at that level. Only
+/// unbounded-end ranges are handled — a bounded range keeps the generic
+/// expansion (preserving its out-of-bounds Nil semantics). Returns None for
+/// non-ranges, bounded ranges, or a non-integer start.
+pub(crate) fn expand_unbounded_range_dim(dim: &Value, len: usize) -> Option<Vec<Value>> {
+    if !subscript_range_end_unbounded(dim) {
+        return None;
+    }
+    let (start, excl_start) = match dim.view() {
+        ValueView::Range(a, _) | ValueView::RangeExcl(a, _) => (a, false),
+        ValueView::RangeExclStart(a, _) | ValueView::RangeExclBoth(a, _) => (a, true),
+        ValueView::GenericRange {
+            start, excl_start, ..
+        } => match start.as_ref().view() {
+            ValueView::Int(i) => (i, excl_start),
+            ValueView::Num(f) if f.fract() == 0.0 => (f as i64, excl_start),
+            ValueView::Rat(n, d) if d != 0 && n % d == 0 => (n / d, excl_start),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let start = if excl_start { start + 1 } else { start };
+    let start = start.max(0);
+    if len == 0 || start >= len as i64 {
+        return Some(Vec::new());
+    }
+    Some((start..len as i64).map(Value::int).collect())
+}

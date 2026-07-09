@@ -409,7 +409,11 @@ impl Interpreter {
 
         let mut out = Vec::new();
         for (path, value) in leaves {
-            let raw_exists = !value.is_nil();
+            // A deleted/uninitialized array slot holds the `Package("Any")`
+            // hole mark (same convention as `nested_exists_slice`), so
+            // `@a[...]:exists` after `:delete` reports False, not True.
+            let raw_exists = !value.is_nil()
+                && !matches!(value.view(), ValueView::Package(name) if name == "Any");
             let exists = if negated { !raw_exists } else { raw_exists };
             let key = leaf_key_tuple(path);
             match adverb {
@@ -569,10 +573,14 @@ impl Interpreter {
         // (`%h{1;1..3}`), so expand it to its element list up front — then the
         // existing multi-index path (`has_multi_indices` / collect-leaves) walks
         // each key, exactly as it already does for a comma list (`%h{1;2,3}`).
+        // An unbounded-end range (`1^..*`) is deferred to the per-level walk
+        // below, which knows the axis length to clamp against.
         let indices: Vec<Value> = indices
             .iter()
             .map(|idx| {
-                if idx.is_range() || matches!(idx.view(), ValueView::Seq(_)) {
+                if (idx.is_range() || matches!(idx.view(), ValueView::Seq(_)))
+                    && !crate::runtime::utils::subscript_range_end_unbounded(idx)
+                {
                     Value::array(crate::runtime::utils::value_to_list(idx))
                 } else {
                     idx.clone()
@@ -596,6 +604,20 @@ impl Interpreter {
                     let resolved_idx = result.clone();
                     current = multidim_index(&current, std::slice::from_ref(&resolved_idx));
                     resolved.push(result);
+                }
+                _ if crate::runtime::utils::subscript_range_end_unbounded(idx) => {
+                    // Unbounded-end range dimension (`1^..*`): clamp to this
+                    // level's length now that it is known.
+                    let len = match current.view() {
+                        ValueView::Array(items, ..) => items.len(),
+                        _ => 0,
+                    };
+                    let expanded = Value::array(
+                        crate::runtime::utils::expand_unbounded_range_dim(idx, len)
+                            .unwrap_or_default(),
+                    );
+                    current = multidim_index(&current, std::slice::from_ref(&expanded));
+                    resolved.push(expanded);
                 }
                 _ => {
                     // Coerce a non-Int scalar array index (`"0"`, `0e0`, `0/1`)

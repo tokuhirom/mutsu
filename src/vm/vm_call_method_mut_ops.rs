@@ -347,6 +347,39 @@ impl Interpreter {
         quoted: bool,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        let result = self.exec_call_method_mut_op_impl(
+            code,
+            name_idx,
+            arity,
+            target_name_idx,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        );
+        // The pending arg-source names/slots are scoped to THIS dispatch: a
+        // callee signature bind consumes them, but a native/builtin dispatch
+        // never binds and would leave them behind. A later bind with no
+        // interleaving call opcode (e.g. the next chunk call of a Rust-driven
+        // `.map` loop) would then re-resolve its sigilless params from the
+        // leftover names against stale env keys (S32-hash/multislice-6e.t:
+        // `-> \k, \v { Pair.new(k,v) }` repeated the first chunk). Clear on
+        // every exit, mirroring the CallFunc/CallOnCodeVar set-then-clear pair.
+        self.set_pending_call_arg_sources(None);
+        self.pending_call_arg_source_slots.clear();
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn exec_call_method_mut_op_impl(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        target_name_idx: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+        arg_sources_idx: Option<u32>,
+    ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         // Set pending arg sources for `is rw` dispatch matching
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);

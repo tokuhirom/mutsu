@@ -140,7 +140,17 @@ impl Interpreter {
         if dims.is_empty() {
             return None;
         }
-        let dim = Self::normalize_multidim_dim(&dims[0]);
+        // An unbounded-end range dimension (`1^..*`) expands against the
+        // current level's length (normalize alone classifies it as an empty
+        // slice, which would select nothing).
+        let dim = if let ValueView::Array(items, ..) = cur.view()
+            && let Some(indices) =
+                crate::runtime::utils::expand_unbounded_range_dim(&dims[0], items.len())
+        {
+            Value::array(indices)
+        } else {
+            Self::normalize_multidim_dim(&dims[0])
+        };
         let rest = &dims[1..];
         let terminal = rest.is_empty();
 
@@ -420,7 +430,17 @@ impl Interpreter {
             let single = Value::array(vec![target.clone()]);
             return self.multi_dim_index_read(&single, dims);
         }
-        let dim = Self::normalize_multidim_dim(&dims[0]);
+        // An unbounded-end range dimension (`1^..*`, `1..Inf`) selects "from
+        // start to the end of this axis" — expand it against the current
+        // level's length (the target-blind normalize below cannot know it).
+        let dim = if let ValueView::Array(items, ..) = target.view()
+            && let Some(indices) =
+                crate::runtime::utils::expand_unbounded_range_dim(&dims[0], items.len())
+        {
+            Value::array(indices)
+        } else {
+            Self::normalize_multidim_dim(&dims[0])
+        };
         let dim = &dim;
         let rest = &dims[1..];
 
@@ -655,6 +675,13 @@ impl Interpreter {
     }
 
     pub(super) fn normalize_multidim_dim(dim: &Value) -> Value {
+        // An unbounded-end range (`1..*` lowered to an Inf / i64::MAX end)
+        // cannot be expanded eagerly (capacity overflow); the indexing sites
+        // expand it per level via `expand_unbounded_range_dim`. Classify it as
+        // an (empty) slice dimension here without materializing anything.
+        if crate::runtime::utils::subscript_range_end_unbounded(dim) {
+            return Value::array(Vec::new());
+        }
         match dim.view() {
             ValueView::Range(..)
             | ValueView::RangeExcl(..)

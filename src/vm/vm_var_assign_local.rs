@@ -1,7 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 impl Interpreter {
     pub(crate) fn exec_assign_expr_local_op_inner(
@@ -646,36 +645,6 @@ impl Interpreter {
                 }
             }
         }
-    }
-
-    /// Execute HyperIndex opcode: drill into nested hash by key path.
-    pub(super) fn exec_hyper_index_op(&mut self) -> Result<(), RuntimeError> {
-        let keys = self.stack.pop().unwrap();
-        let target = self.stack.pop().unwrap();
-
-        let key_list = match keys.view() {
-            ValueView::Array(items, ..) => items.clone(),
-            ValueView::Seq(items) => {
-                crate::value::Value::array_arc(Arc::new(items.to_vec()).to_vec())
-            }
-            _ => crate::value::Value::array_arc(Arc::new(vec![keys.clone()]).to_vec()),
-        };
-
-        let mut current = target;
-        for key in key_list.iter() {
-            if let Some(next) = current.with_hash_mut(|h| {
-                let k = key.to_string_value();
-                h.get(&k).cloned().unwrap_or(Value::NIL)
-            }) {
-                current = next;
-            } else {
-                current = Value::NIL;
-                break;
-            }
-        }
-
-        self.stack.push(current);
-        Ok(())
     }
 
     /// Wrap an integer value to fit within a native integer type's range.

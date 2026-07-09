@@ -386,7 +386,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             expr: Box::new(rhs),
             is_bind: false,
         },
-        // Fallback for other lvalue expressions (e.g. HyperIndex %h{|| @a})
+        // Fallback for other lvalue expressions
         other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
     };
     if is_atomic {
