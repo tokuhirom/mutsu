@@ -9,6 +9,9 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Bool(_) => "Bool",
         ValueView::Array(_, kind) if kind.is_real_array() => "Array",
         ValueView::Array(_, _) => "List",
+        // A `gather` block evaluates to a `Seq` in Raku; other lazy lists
+        // (`lazy for`, arithmetic/closure sequences) present as `Array`/`List`.
+        ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
         ValueView::LazyList(_) => "Array",
         ValueView::Hash(_) => "Hash",
         ValueView::Range(_, _)
