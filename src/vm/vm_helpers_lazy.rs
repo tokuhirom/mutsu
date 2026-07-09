@@ -181,6 +181,29 @@ impl Interpreter {
         r
     }
 
+    /// If `val` is a lazy `.map`/`.grep` pipe whose source chain bottoms out in
+    /// a provably-finite source (a `gather`, or a finite Array/Seq/Range), force
+    /// it to a reified `Seq` and return that; otherwise return `val` unchanged.
+    ///
+    /// Used when `map`/`grep` collects a callback result that is itself such a
+    /// pipe as an element of the result array. Those elements would otherwise
+    /// reach a container whose *static* readers (`flat_val`/`value_to_list`,
+    /// used by `.flat`/`for`) cannot run the VM to force a pipe, so they pull the
+    /// still-empty pipe cache and yield `()`. Reifying here keeps the element as
+    /// a single `Seq` (raku `(1,).map({(10,20)})` == `((10 20),)`, never
+    /// flattened). An infinite pipe (`(1,).map({1..Inf})`) bottoms out `false`
+    /// and stays lazy, so this can never turn an infinite pipe into a hang.
+    pub(crate) fn reify_finite_pipe_value(&mut self, val: Value) -> Result<Value, RuntimeError> {
+        if let ValueView::LazyList(ll) = val.view()
+            && ll.lazy_pipe.is_some()
+            && ll.pipe_bottoms_out_finite()
+        {
+            let items = self.force_lazy_list_vm(ll)?;
+            return Ok(Value::seq(items));
+        }
+        Ok(val)
+    }
+
     fn force_lazy_list_vm_inner(&mut self, list: &LazyList) -> Result<Vec<Value>, RuntimeError> {
         // A lazy `WALK(method)()` list is finite (one element per MRO-level
         // candidate): force them all by invoking every remaining candidate.
