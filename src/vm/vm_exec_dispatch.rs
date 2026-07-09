@@ -1071,16 +1071,23 @@ impl Interpreter {
                         }
                         // Propagate to saved call frames (env AND locals)
                         for frame in self.call_frames.iter_mut().rev() {
+                            // `code.locals` is this frame's slot layout, not the
+                            // parent's; only write a parent frame's `saved_locals`
+                            // when that frame owns the source lexical (its saved env
+                            // holds the name), else the callee slot index clobbers an
+                            // unrelated same-index local.
                             if frame.saved_env.contains_key(&resolved_source) {
                                 frame
                                     .saved_env
                                     .insert(resolved_source.clone(), container.clone());
-                            }
-                            // Also update saved locals so a later restore doesn't
-                            // overwrite the ContainerRef with a stale plain value.
-                            for (i, local_name) in code.locals.iter().enumerate() {
-                                if local_name == &resolved_source && i < frame.saved_locals.len() {
-                                    frame.saved_locals[i] = container.clone();
+                                // Also update saved locals so a later restore doesn't
+                                // overwrite the ContainerRef with a stale plain value.
+                                for (i, local_name) in code.locals.iter().enumerate() {
+                                    if local_name == &resolved_source
+                                        && i < frame.saved_locals.len()
+                                    {
+                                        frame.saved_locals[i] = container.clone();
+                                    }
                                 }
                             }
                         }
