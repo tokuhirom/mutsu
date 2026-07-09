@@ -5,9 +5,11 @@
 個々の失敗を片端から潰すためではなく、
 **今どこを直せば何がまとめて動くか**を判断するために使う。
 
-**最終更新 2026-07-08**（whitelist 済みになった `S17-supply/syntax.t`（90/90・test 75=#4327 /
-test 90=#4326）を削除し `news/2026-07.md` へ移動。完了済みだった §4「真の lazy 配列 / 無限列」・
-§5「dispatch cluster」はセクションごと削除。§6 の並行基盤は async IO 系のみ残存）
+**最終更新 2026-07-09**（旧 §4「並行・非同期（S17）」をセクションごと削除。S17 配下の全 99 ファイル
+（S17-supply / S17-lowlevel / S17-promise / S17-procasync / S17-scheduler ほか）と socket 系
+（`S32-io/IO-Socket-Async*`・`socket-recv-vs-read.t` 等）がすべて whitelist 済みになり、
+cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→ContainerRef セル昇格の
+キャンペーン（#4336/#4340/#4345/#4348）で解消。詳細は `news/2026-07.md`）
 
 ## この文書の読み方
 
@@ -29,13 +31,12 @@ test 90=#4326）を削除し `news/2026-07.md` へ移動。完了済みだった
 
 ## 現在の前提
 
-- whitelist は **1371**（2026-07-08 時点、`wc -l roast-whitelist.txt`）。
-- 安い 1 ファイル勝ちはほぼ枯渇している。残件の大半は少数の根本原因に集約される:
-  1. **第一級コンテナ / container identity** — 配列・ハッシュ要素・属性 slot の書き戻し（§3）。
-  2. **並行実行基盤（S17）** — 単一スレッド supply/react は完了。残るは async IO /
-     Proc::Async / socket supplies のみ（§4）。
-- かつてここにあった「真の lazy 配列 / 無限列」「dispatch / 演算子 sugar の desugar surface」は
-  いずれも完了済み（詳細は `news/2026-06.md` / `news/2026-07.md`）。
+- whitelist は **1372**（2026-07-09 時点、`wc -l roast-whitelist.txt`）。
+- 安い 1 ファイル勝ちはほぼ枯渇している。残件の大半は
+  **第一級コンテナ / container identity** — 配列・ハッシュ要素・属性 slot の書き戻し（§3）—
+  に集約される。
+- かつてここにあった「真の lazy 配列 / 無限列」「dispatch / 演算子 sugar の desugar surface」
+  「並行・非同期（S17）」はいずれも完了済み（詳細は `news/2026-06.md` / `news/2026-07.md`）。
 
 ---
 
@@ -150,37 +151,9 @@ whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314
 
 ---
 
-## 4. 並行・非同期（S17）
+## 4. whitelist を目標にしない項目
 
-単一スレッドの supply/react/promise 基盤は完了した（semaphore.t、then.t、scheduler/basic.t、
-supply/migrate.t、supply/stable.t、**supply/syntax.t（90/90・#4326/#4327 + 並列負荷レース本修正で
-test 53 の supply-block whenever 相互排他 / test 57 の Channel close-before-drain を解消）**、
-S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowlevel/lock.t — 詳細は
-`news/2026-06.md` / `news/2026-07.md`）。残るは cross-thread lexical writeback と async IO 系。
-
-### 4.1 cross-thread plain-scalar lexical writeback
-
-- **根本原因**: worker スレッドが caller の plain-scalar lexical（`$closed++` など）を書いても
-  main の lexical へ伝播しない（captured-as-defined な value 共有や Arc 共有コンテナは伝播するが、
-  plain scalar の再代入は非共有）。`S17-lowlevel/lock.t` の 10-24、旧 `syntax.t` test 75 系が同族。
-- **評価**: cross-thread-lexical campaign 待ち。単発では閉じない。
-
-### 4.2 async IO / Proc::Async / socket supplies
-
-- **対象**: `procasync/*`、`IO-Socket-Async*`、`S32-io/socket-recv-vs-read.t`（test 11 が blocker=
-  async callback が main の再代入を観測できない・§4.1 と同根）。
-- **根本原因**: encoding、stdin/stdout/stderr supply bridge、socket/listener 駆動が未成熟。
-- **変更レイヤ**: `methods_object_native_ctors_io.rs`、`native_methods/socket_*`、encoding layer
-- **Next slice**: encoding 無しの `Proc::Async` happy-path を supply bridge と done/quit
-  delivery まで揃える。
-- **Primary files**: `src/runtime/methods_object_native_ctors_io.rs`,
-  `src/runtime/native_proc_async.rs`, `src/runtime/native_methods/socket_async_conn.rs`
-
----
-
-## 5. whitelist を目標にしない項目
-
-### 5.1 rakudo 側も失敗する、または roast 側の問題が強いもの
+### 4.1 rakudo 側も失敗する、または roast 側の問題が強いもの
 
 ここは mutsu 側で一般改善が入るのはよいが、
 **そのファイルを whitelist すること自体を目標にしない**。
@@ -197,15 +170,15 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
 - `S12-class/open_closed.t`
 - `S32-str/sprintf.t`
 
-### 5.2 低 ROI で後回しにすべきもの
+### 4.2 低 ROI で後回しにすべきもの
 
 - `S32-str/format.t` — `RakuAST` が無い限り最後まで通しにくい（§1.1 参照）。
 
 ---
 
-## 6. 今のおすすめ着手順
+## 5. 今のおすすめ着手順
 
-「次に何をやるか」を 1 本だけ選ぶなら、順番はこう見るのが妥当。
+「次に何をやるか」を 1 本だけ選ぶなら、これ:
 
 1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
    multislice hash 側の slot identity を前に進める。
@@ -215,9 +188,10 @@ S17-promise/start.t、S07-hyperrace/basics.t、S17-lowlevel/cas-int.t、S17-lowl
    （§3.1 参照）。残るは closure-captured shared-cell を list へ by-value 捕捉したときの
    スナップショット追従（return-writeback 系）と、属性 slot の完全な cell 化
    （`:=` 束縛・mixin accessor への rw 書込）。
-2. **cross-thread lexical writeback campaign**（§4.1）— `S17-lowlevel/lock.t` 10-24 と
-   `S32-io/socket-recv-vs-read.t` test 11 をまとめて解ける基盤。worker→main の plain-scalar
-   再代入を共有する仕組みが要る。
 
-whitelist を目標にしない §5 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、
+かつて 2 番手だった cross-thread lexical writeback campaign（旧 §4.1）は完了
+（`S17-lowlevel/lock.t`・`S32-io/socket-recv-vs-read.t` とも whitelist 済み、
+詳細は `news/2026-07.md`）。
+
+whitelist を目標にしない §4 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、
 そのファイル単体を通すことを目的にしない。
