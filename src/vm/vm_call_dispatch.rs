@@ -145,12 +145,9 @@ impl Interpreter {
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 compiler.set_current_package(pkg.to_string());
             }
-            // Resolve $?DISTRIBUTION from the function's defining package
-            compiler.current_distribution = self
-                .package_distributions
-                .get(&pkg)
-                .cloned()
-                .or_else(|| self.current_distribution.clone());
+            // Resolve $?DISTRIBUTION from the function's defining package (or an
+            // enclosing module's distribution for a nested package / role method).
+            compiler.current_distribution = self.resolve_package_distribution(&pkg);
             compiler.compile_routine_closure_body(&def.params, &def.param_defs, &def.body)
         };
         let deprecated_info = def.deprecated_message.as_ref().map(|msg| {

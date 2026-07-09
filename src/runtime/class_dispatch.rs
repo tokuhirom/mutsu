@@ -284,7 +284,8 @@ impl Interpreter {
         // the attr ops and the `final_attrs` commit below.
         let mut method_def = method_def;
         if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
-            Self::compile_method_def_in_place(&mut method_def, owner_class);
+            let dist = self.resolve_package_distribution(owner_class);
+            Self::compile_method_def_in_place_with_dist(&mut method_def, owner_class, dist);
         }
         let writeback_safe_compiled =
             method_def.compiled_code.is_some() && method_def.delegation.is_none();

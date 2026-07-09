@@ -112,6 +112,27 @@ impl Interpreter {
         Value::hash_with_data(Value::hash_arc(result))
     }
 
+    /// Resolve the distribution for a routine's defining package when compiling
+    /// its body on-the-fly (`$?DISTRIBUTION` in the body is a compile-time
+    /// constant). Tries the exact package, then progressively shorter `::`
+    /// prefixes: a method of a nested package/role (e.g. `Zef::Pluggable`) or a
+    /// role composed into another package inherits the distribution recorded for
+    /// its enclosing module (`Zef`), which is the compilation unit that owns the
+    /// source file. Falls back to the currently-loading distribution.
+    pub(crate) fn resolve_package_distribution(&self, pkg: &str) -> Option<Value> {
+        if let Some(dist) = self.package_distributions.get(pkg) {
+            return Some(dist.clone());
+        }
+        let mut rest = pkg;
+        while let Some(idx) = rest.rfind("::") {
+            rest = &rest[..idx];
+            if let Some(dist) = self.package_distributions.get(rest) {
+                return Some(dist.clone());
+            }
+        }
+        self.current_distribution.clone()
+    }
+
     /// Detect a distribution (META6.json) for the given module source path.
     pub(super) fn detect_distribution(source_path: &Path) -> Option<Value> {
         let mut dir = source_path.parent()?;

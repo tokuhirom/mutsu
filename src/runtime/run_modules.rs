@@ -381,7 +381,23 @@ impl Interpreter {
         let saved_distribution = self.current_distribution.clone();
         // First try inst# installation repos (source files have no META6.json nearby)
         let inst_dist = self.detect_inst_distribution(module);
-        if let Some(dist) = inst_dist.or_else(|| Self::detect_distribution(&source_path)) {
+        // Classes/roles this module declares belong to its distribution too, so a
+        // later OTF compile of one of their methods can resolve `$?DISTRIBUTION`
+        // (e.g. a role method reads `$?DISTRIBUTION.meta` — zef's `Pluggable`).
+        // Snapshot the pre-load names so we can record the dist for the new ones.
+        let module_dist = inst_dist.or_else(|| Self::detect_distribution(&source_path));
+        let (before_class_names, before_role_names): (
+            std::collections::HashSet<String>,
+            std::collections::HashSet<String>,
+        ) = if module_dist.is_some() {
+            (
+                self.registry().classes.keys().cloned().collect(),
+                self.registry().roles.keys().cloned().collect(),
+            )
+        } else {
+            Default::default()
+        };
+        if let Some(dist) = &module_dist {
             self.current_distribution = Some(dist.clone());
             // Record the distribution for the module's package name
             // so OTF compilation can resolve $?DISTRIBUTION later.
@@ -391,7 +407,7 @@ impl Interpreter {
             // for unit modules) since the interpreter's current_package may not
             // match the module name during function body evaluation.
             self.package_distributions
-                .insert(self.current_package(), dist);
+                .insert(self.current_package(), dist.clone());
         }
         // Save and restore the language version around module loading.
         // Each module may set its own `use v6.*` which should not leak
@@ -444,6 +460,28 @@ impl Interpreter {
                 &before_function_keys,
                 main_exported,
             );
+        }
+        // Record the module's distribution for every class/role it just declared,
+        // so an OTF compile of one of their methods resolves `$?DISTRIBUTION`.
+        if let Some(dist) = &module_dist {
+            let new_names: Vec<String> = self
+                .registry()
+                .classes
+                .keys()
+                .filter(|k| !before_class_names.contains(*k))
+                .chain(
+                    self.registry()
+                        .roles
+                        .keys()
+                        .filter(|k| !before_role_names.contains(*k)),
+                )
+                .cloned()
+                .collect();
+            for name in new_names {
+                self.package_distributions
+                    .entry(name)
+                    .or_insert_with(|| dist.clone());
+            }
         }
         crate::parser::set_current_language_version(&saved_language_version);
         self.current_distribution = saved_distribution;

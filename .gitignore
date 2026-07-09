@@ -37,3 +37,6 @@ target-local/
 
 # prove --state=save state file (CI roast failure-summary re-run; ephemeral)
 .prove
+
+# Raku precompilation cache dirs left by running `raku` on a test fixture lib
+.precomp/

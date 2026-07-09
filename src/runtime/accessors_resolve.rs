@@ -3,14 +3,22 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Compile all uncompiled method bodies in a method map.
     /// Compile a single method/submethod body to bytecode in place if it is not
     /// already compiled. Shared by the bulk registration pass and the on-demand
     /// compile in `run_resolved_method_compiled_or_treewalk`. An empty body is
     /// compiled too (to a trivial body returning Nil/self) so that empty `BUILD`/
     /// `TWEAK`/`method foo {}` stubs no longer fall through to the tree-walk
     /// `run_instance_method_resolved` — leaving only delegation forwarders there.
-    pub(crate) fn compile_method_def_in_place(def: &mut super::MethodDef, package_name: &str) {
+    ///
+    /// Seeds the compiler's distribution context so `$?DISTRIBUTION` inside the
+    /// method body resolves to the owning module's distribution (rather than Nil).
+    /// The caller resolves the dist via `resolve_package_distribution` before
+    /// taking the `&mut` registry borrow.
+    pub(crate) fn compile_method_def_in_place_with_dist(
+        def: &mut super::MethodDef,
+        package_name: &str,
+        distribution: Option<Value>,
+    ) {
         // A delegation forwarder (`handles`) has a synthesized/empty body and must
         // keep its delegation routing — compiling its empty body would make paths
         // that check `compiled_code.is_some()` run the empty body (returning Nil)
@@ -25,6 +33,7 @@ impl Interpreter {
             .or(def.role_origin.as_deref())
             .unwrap_or(package_name);
         compiler.set_current_package(method_package.to_string());
+        compiler.current_distribution = distribution;
         // A method always carries an implicit `*%_` / `*@_` slurpy, so `%_` / `@_`
         // are valid lexicals throughout the body (including a nested signature-less
         // `do {}` block). Mark the method context so the do-block placeholder check
@@ -47,10 +56,15 @@ impl Interpreter {
     fn compile_methods_for_map(
         methods: &mut HashMap<String, Vec<super::MethodDef>>,
         package_name: &str,
+        distribution: Option<Value>,
     ) {
         for overloads in methods.values_mut() {
             for def in overloads.iter_mut() {
-                Self::compile_method_def_in_place(def, package_name);
+                Self::compile_method_def_in_place_with_dist(
+                    def,
+                    package_name,
+                    distribution.clone(),
+                );
             }
         }
     }
@@ -93,15 +107,17 @@ impl Interpreter {
 
     /// Compile method bodies for a given class using the bytecode compiler.
     pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
+        let dist = self.resolve_package_distribution(class_name);
         if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
-            Self::compile_methods_for_map(&mut class_def.methods, class_name);
+            Self::compile_methods_for_map(&mut class_def.methods, class_name, dist);
         }
     }
 
     /// Compile method bodies for a given role.
     pub(crate) fn compile_role_methods(&mut self, role_name: &str) {
+        let dist = self.resolve_package_distribution(role_name);
         if let Some(role_def) = self.registry_mut().roles.get_mut(role_name) {
-            Self::compile_methods_for_map(&mut role_def.methods, role_name);
+            Self::compile_methods_for_map(&mut role_def.methods, role_name, dist);
         }
     }
 

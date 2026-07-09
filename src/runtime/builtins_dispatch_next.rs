@@ -276,7 +276,8 @@ impl Interpreter {
             // `forward_resolved_delegation` was deleted (#3680). Delegation forwarders
             // keep their synthesized empty body uncompiled.
             if method_def.compiled_code.is_none() && method_def.delegation.is_none() {
-                Self::compile_method_def_in_place(&mut method_def, &owner_class);
+                let dist = self.resolve_package_distribution(&owner_class);
+                Self::compile_method_def_in_place_with_dist(&mut method_def, &owner_class, dist);
             }
             // nextsame/callsame+rw chaining for methods (§D capstone): the stored
             // method args are plain values (no varref), so without an arg source the
