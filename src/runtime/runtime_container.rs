@@ -39,14 +39,16 @@ impl Interpreter {
                 }
             }
         }
-        let result = Value::real_array(items);
+        let mut result = Value::real_array(items);
         if let Some(constraint) = inner {
             let info = ContainerTypeInfo {
                 value_type: constraint,
                 key_type: None,
                 declared_type: Some(type_name.to_string()),
             };
-            self.register_container_type_metadata(&result, info);
+            // Array metadata is embedded in `ArrayData`; the pointer-keyed
+            // `register_container_type_metadata` path panics for arrays.
+            result = self.tag_container_metadata(result, info);
         }
         Ok(Some(result))
     }

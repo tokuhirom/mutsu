@@ -131,8 +131,17 @@ impl Compiler {
         }
     }
 
-    /// Compile method call on indexed target with mutating method (needs writeback).
+    /// Compile method call on indexed target with mutating method.
     /// e.g., %hash<key>.push(4) or @array[0].push(5)
+    ///
+    /// Container identity (§3.2): the method mutates the element's shared
+    /// node in place, so there is NO post-call writeback. push/append/
+    /// unshift/prepend autovivify a missing element via `IndexElemAutoviv`
+    /// before the call (`my @a; @a[2].push(3)`); pop/shift/splice do not
+    /// autovivify (Raku dies without growing the container) and dispatch
+    /// through `CallMethodMut` on a temp binding so the full mut-path
+    /// semantics (WhateverCode splice offsets, X::OutOfRange, typed empty
+    /// Failures, ...) apply to the removed-element result.
     pub(super) fn compile_expr_method_on_index(
         &mut self,
         target: &Expr,
@@ -144,7 +153,7 @@ impl Compiler {
         if let Expr::Index {
             target: idx_target,
             index: idx_key,
-            ..
+            is_positional,
         } = target
         {
             let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
@@ -152,26 +161,23 @@ impl Compiler {
             let name_resolved = name.resolve();
             let arity = args.len() as u32;
             let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
-            // pop/shift/splice return something OTHER than the mutated array
-            // (the removed element(s)), so the writeback must store the
-            // mutated INVOCANT back into the element and yield the method
-            // result separately. push/append/unshift/prepend return the
-            // array itself, so the plain result-writeback branch suffices.
             if matches!(name_resolved.as_str(), "pop" | "shift" | "splice") {
                 let tmp_target_name = format!(
                     "__mutsu_tmp_index_method_target_{}",
                     self.code.constants.len()
                 );
-                let tmp_result_name = format!(
-                    "__mutsu_tmp_index_method_result_{}",
-                    self.code.constants.len()
-                );
-                let tmp_target_idx = self.code.add_constant(Value::str(tmp_target_name.clone()));
-                let tmp_result_idx = self.code.add_constant(Value::str(tmp_result_name.clone()));
+                let tmp_target_idx = self.code.add_constant(Value::str(tmp_target_name));
                 let name_idx = self.code.add_constant(Value::str(name_resolved));
                 let var_name_idx = self.code.add_constant(Value::str(var_name));
 
-                self.compile_expr(target);
+                self.compile_expr(idx_target);
+                self.compile_expr(idx_key);
+                self.code.emit(OpCode::IndexElemAutoviv {
+                    name_idx: var_name_idx,
+                    is_positional: *is_positional,
+                    target_slot,
+                    autoviv: false,
+                });
                 self.code.emit(OpCode::SetGlobal(tmp_target_idx));
                 self.code.emit(OpCode::GetGlobal(tmp_target_idx));
                 for arg in args {
@@ -186,18 +192,16 @@ impl Compiler {
                     quoted,
                     arg_sources_idx: None,
                 });
-                self.code.emit(OpCode::SetGlobal(tmp_result_idx));
-                self.code.emit(OpCode::GetGlobal(tmp_target_idx));
-                self.compile_expr(idx_key);
-                self.code.emit(OpCode::IndexAssignExprNamed {
-                    name_idx: var_name_idx,
-                    is_positional: true,
-                    target_slot,
-                });
-                self.code.emit(OpCode::Pop);
-                self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             } else {
-                self.compile_expr(target);
+                let var_name_idx = self.code.add_constant(Value::str(var_name));
+                self.compile_expr(idx_target);
+                self.compile_expr(idx_key);
+                self.code.emit(OpCode::IndexElemAutoviv {
+                    name_idx: var_name_idx,
+                    is_positional: *is_positional,
+                    target_slot,
+                    autoviv: true,
+                });
                 for arg in args {
                     self.compile_method_arg(arg);
                 }
@@ -209,13 +213,6 @@ impl Compiler {
                     modifier_idx,
                     quoted,
                     arg_sources_idx: None,
-                });
-                self.compile_expr(idx_key);
-                let var_name_idx = self.code.add_constant(Value::str(var_name));
-                self.code.emit(OpCode::IndexAssignExprNamed {
-                    name_idx: var_name_idx,
-                    is_positional: true,
-                    target_slot,
                 });
             }
         } else {

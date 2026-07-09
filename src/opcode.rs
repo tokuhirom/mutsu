@@ -894,6 +894,25 @@ pub(crate) enum OpCode {
         stash_name_idx: u32,
         key_name_idx: u32,
     },
+    /// Element-for-mutation load for `@a[i].push(...)` / `%h<k>.pop` etc.:
+    /// read the element like a plain subscript; with `autoviv` set (push/
+    /// append/unshift/prepend), a missing element (Nil / Any / Mu hole) is
+    /// autovivified to a fresh empty Array through the normal index-assign
+    /// machinery and the stored shared node is yielded. Elements of a
+    /// parameterized container (`my Array of Int @x`) get the element type
+    /// tagged onto their node so the method's own type check fires. The
+    /// following method call mutates the element's node in place (container
+    /// identity §3.2), so no post-call writeback is emitted.
+    /// Stack: [container, key] → [element]
+    IndexElemAutoviv {
+        name_idx: u32,
+        is_positional: bool,
+        /// §1.4 shadow-slot (same contract as `IndexAssignExprNamed`).
+        target_slot: Option<u32>,
+        /// True for push/append/unshift/prepend (Raku autovivifies);
+        /// false for pop/shift/splice (Raku dies without growing).
+        autoviv: bool,
+    },
 
     // -- Assignment as expression --
     AssignExpr(u32),
@@ -1935,7 +1954,8 @@ impl CompiledCode {
         match op {
             OpCode::IndexAssignExprNamed { name_idx, .. }
             | OpCode::IndexAssignExprNested { name_idx, .. }
-            | OpCode::IndexAssignDeepNested { name_idx, .. } => Some(*name_idx),
+            | OpCode::IndexAssignDeepNested { name_idx, .. }
+            | OpCode::IndexElemAutoviv { name_idx, .. } => Some(*name_idx),
             OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
             OpCode::ArrayPush {
                 target_name_idx, ..
@@ -2423,6 +2443,7 @@ impl CompiledCode {
                     | OpCode::IndexAssignDeepNested { .. }
                     | OpCode::IndexAssignGeneric
                     | OpCode::IndexAssignPseudoStashNamed { .. }
+                    | OpCode::IndexElemAutoviv { .. }
                     | OpCode::PostIncrement(..)
                     | OpCode::PostDecrement(..)
                     | OpCode::PostIncrementIndex(_)
