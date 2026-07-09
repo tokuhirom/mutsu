@@ -542,22 +542,8 @@ impl Interpreter {
                 for pd in &data.param_defs {
                     Self::collect_sub_signature_names(&pd.sub_signature, &mut subsig_names);
                 }
-                // A `for`-loop parameter (or body-local `my`) is NOT a captured
-                // outer variable: it is declared by this body and must not be
-                // written back over a same-named caller lexical (a callee that
-                // recurses into a same-named `for` loop and early-returns would
-                // otherwise leak its last loop value into the caller).
-                let body_local_names = data
-                    .compiled_code
-                    .as_ref()
-                    .map(|cc| cc.body_local_names())
-                    .unwrap_or_default();
                 for (k, v) in self.env.iter() {
-                    if k == "_"
-                        || k == "@_"
-                        || subsig_names.contains(&k.resolve())
-                        || k.with_str(|s| body_local_names.contains(s))
-                    {
+                    if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
                         continue;
                     }
                     if matches!(v.view(), ValueView::Array(..)) {

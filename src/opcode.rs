@@ -1621,33 +1621,6 @@ pub(crate) struct CompiledCode {
 }
 
 impl CompiledCode {
-    /// Names that are *local* to this body: declared local slots plus the
-    /// parameter names bound by any `for` loop in the body. Used by the
-    /// interpreter sub-call path to keep a callee's `for`-loop parameter (or a
-    /// body-local `my`) from being written back into a same-named *caller*
-    /// lexical during the return env merge (a callee that recurses into a
-    /// same-named `for` loop and early-returns would otherwise leak its last
-    /// loop value into the caller). Mirrors `CompiledFunction::compute_declared_locals`.
-    pub(crate) fn body_local_names(&self) -> std::collections::HashSet<String> {
-        let mut names: std::collections::HashSet<String> = self.locals.iter().cloned().collect();
-        for op in &self.ops {
-            if let OpCode::ForLoop(spec) = op {
-                if let Some(idx) = spec.param_idx
-                    && let Some(crate::value::ValueView::Str(name)) = self
-                        .constants
-                        .get(idx as usize)
-                        .map(crate::value::Value::view)
-                {
-                    names.insert(name.to_string());
-                }
-                for name in &spec.multi_param_names {
-                    names.insert(name.clone());
-                }
-            }
-        }
-        names
-    }
-
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
