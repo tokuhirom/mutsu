@@ -47,11 +47,11 @@ pub(in crate::runtime) use state_scheduler::{
     fake_scheduler_cue_counter, fake_scheduler_init, next_fake_scheduler_id,
 };
 pub(in crate::runtime) use state_supplier::{
-    SupplierEmitAction, ZipAction, acquire_supply_serialize, bump_supplier_done_count,
-    close_all_supplier_taps, close_supplier_channel_taps, create_whenever_done_group,
-    flush_supplier_batch_taps, flush_supplier_line_taps, flush_supplier_words_taps,
-    get_classify_state, get_classify_sub_supplier_ids, get_start_output_supplier_ids,
-    get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids,
+    SupplierEmitAction, TransformMode, ZipAction, acquire_supply_serialize,
+    bump_supplier_done_count, close_all_supplier_taps, close_supplier_channel_taps,
+    create_whenever_done_group, flush_supplier_batch_taps, flush_supplier_line_taps,
+    flush_supplier_words_taps, get_classify_state, get_classify_sub_supplier_ids,
+    get_start_output_supplier_ids, get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids,
     get_transform_output_supplier_ids, last_supplier_tap_id, migrate_switch_inner,
     register_supplier_batch_tap, register_supplier_channel_tap, register_supplier_classify_tap,
     register_supplier_close_callback, register_supplier_done_callback, register_supplier_elems_tap,

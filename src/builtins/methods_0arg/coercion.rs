@@ -410,6 +410,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     attributes,
                     ..
                 } if class_name == "Supply" => {
+                    // An on-demand supply (`supply { ... }` block) has no
+                    // materialized values; its body must be run by the
+                    // stateful slow path (`supply_list_values`). Decline so
+                    // dispatch falls through.
+                    if attributes.as_map().contains_key("on_demand_callback") {
+                        return None;
+                    }
                     let items = match attributes.as_map().get("values").map(Value::view) {
                         Some(ValueView::Array(items, ..)) => items.to_vec(),
                         _ => Vec::new(),

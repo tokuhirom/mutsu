@@ -280,13 +280,13 @@ impl Interpreter {
                             SupplierEmitAction::TransformCall {
                                 downstream_supplier_id,
                                 callable,
-                                is_grep,
+                                mode,
                                 value: val,
                             } => {
                                 self.handle_supply_transform_emit(
                                     downstream_supplier_id,
                                     callable,
-                                    is_grep,
+                                    mode,
                                     val,
                                 )?;
                             }
@@ -700,13 +700,13 @@ impl Interpreter {
                             SupplierEmitAction::TransformCall {
                                 downstream_supplier_id,
                                 callable,
-                                is_grep,
+                                mode,
                                 value: val,
                             } => {
                                 self.handle_supply_transform_emit(
                                     downstream_supplier_id,
                                     callable,
-                                    is_grep,
+                                    mode,
                                     val,
                                 )?;
                             }

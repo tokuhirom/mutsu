@@ -301,9 +301,11 @@ impl Interpreter {
                         .is_some()
                 {
                     let matcher = args.first().cloned().unwrap_or(Value::NIL);
-                    if let Some(live) =
-                        self.make_live_transform_supply(&attributes.as_map(), matcher, true)
-                    {
+                    if let Some(live) = self.make_live_transform_supply(
+                        &attributes.as_map(),
+                        matcher,
+                        crate::runtime::native_methods::TransformMode::Grep,
+                    ) {
                         return Some(Ok(live));
                     }
                 }

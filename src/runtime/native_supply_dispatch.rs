@@ -373,8 +373,18 @@ impl Interpreter {
             }
             "do" => {
                 // Supply.do($callback) — create a new Supply that calls $callback
-                // as a side-effect for each value, passing values through
+                // as a side-effect for each value, passing values through.
+                // Live (Supplier-backed) supply: register a transform tap so the
+                // callback fires on each live emission (previously the derived
+                // supply dropped the supplier link and the callback never ran).
                 let callback = args.first().cloned().unwrap_or(Value::NIL);
+                if let Some(live) = self.make_live_transform_supply(
+                    attributes,
+                    callback.clone(),
+                    crate::runtime::native_methods::TransformMode::Do,
+                ) {
+                    return Ok(live);
+                }
                 let values = attributes
                     .get("values")
                     .cloned()
