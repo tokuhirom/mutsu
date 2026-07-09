@@ -407,6 +407,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Pair(key, _) => Some(Ok(Value::seq(vec![Value::str(key.clone())]))),
                 ValueView::ValuePair(key, _) => Some(Ok(Value::seq(vec![key.clone()]))),
                 ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
+                // `.keys` reports positional indices of the array's own elements,
+                // independent of itemization: an itemized array (`$[...]`) is still
+                // an Array here, not a single opaque list element. Using the backing
+                // `items` directly avoids `value_to_list`, which (correctly, for
+                // flattening) collapses an itemized array to one element and would
+                // make `.keys` yield only `(0,)`.
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_keys(items)))),
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|k| s.typed_key(k)).collect())))
                 }
@@ -442,6 +449,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(vec![value.clone()])))
                 }
                 ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
+                // Mirror the `.keys` arm: `.values` yields the array's own elements
+                // regardless of itemization, so an itemized array (`$[...]`) does not
+                // collapse to a single element via `value_to_list`.
+                ValueView::Array(items, _) => Some(Ok(Value::seq(items.to_vec()))),
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|_| Value::TRUE).collect())))
                 }
@@ -497,6 +508,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(vec![key.clone(), value.clone()])))
                 }
                 ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
+                // Index/value pairs of the array's own elements, itemization-agnostic
+                // (an itemized `$[...]` must not collapse to one element).
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_kv(items)))),
                 ValueView::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
@@ -594,6 +608,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
                     Some(Ok(Value::seq(vec![target.clone()])))
                 }
+                // Index => value pairs of the array's own elements, itemization-agnostic.
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_pairs(items)))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => Some(Ok(Value::seq(positional_pairs(
                     &crate::runtime::utils::value_to_list(target),
@@ -701,6 +717,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                     Some(Ok(Value::seq(pairs)))
                 }
+                // Value => index pairs of the array's own elements, itemization-agnostic.
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_antipairs(items)))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => {
                     let values = crate::runtime::utils::value_to_list(target);

@@ -117,6 +117,30 @@ impl Interpreter {
         {
             return self.dispatch_new(Value::package(class_name), args);
         }
+        // Calling .new() on a Mixin(Package, roles) — a *type object* with roles
+        // mixed in via `TypeObject but Role` (`(Base but R).new`, which produces a
+        // `Base+{R}` subtype). Construct the base instance, then compose each
+        // mixed-in role onto it, exactly as `$instance but Role` does (this runs
+        // the roles' BUILD/TWEAK submethods and gives them fresh attribute
+        // defaults on the new instance).
+        if let ValueView::Mixin(inner, mixins) = target.view()
+            && let ValueView::Package(_) = inner.as_ref().view()
+        {
+            let base_instance = self.dispatch_new(inner.as_ref().clone(), args)?;
+            // Composed role names are recorded as `__mutsu_role__<name>` markers in
+            // the mixin map. Sort for a deterministic composition order.
+            let mut role_names: Vec<String> = mixins
+                .keys()
+                .filter_map(|k| k.strip_prefix("__mutsu_role__").map(str::to_string))
+                .collect();
+            role_names.sort();
+            let mut result = base_instance;
+            for role_name in role_names {
+                result =
+                    self.eval_does_values(result, Value::package(Symbol::intern(&role_name)))?;
+            }
+            return Ok(result);
+        }
         // Calling .new() on a concrete Array delegates to the type constructor.
         // If the array has type metadata (e.g. array[str]), use the declared type.
         if let ValueView::Array(..) = target.view() {
