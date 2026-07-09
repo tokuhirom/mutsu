@@ -127,7 +127,8 @@ impl Interpreter {
             if i >= items.len() {
                 return Err(RuntimeError::new("Index out of bounds"));
             }
-            let arr = crate::gc::Gc::make_mut(items);
+            // Container identity (§3): write through a shared backing node.
+            let arr = crate::value::gc_data_mut(items);
             if indices.len() == 1 {
                 Value::assign_element_slot(&mut arr[i], val);
             } else {
@@ -168,7 +169,8 @@ impl Interpreter {
             if i >= items.len() {
                 return Ok(hole_value());
             }
-            let arr = crate::gc::Gc::make_mut(items);
+            // Container identity (§3): write through a shared backing node.
+            let arr = crate::value::gc_data_mut(items);
             if indices.len() == 1 {
                 let prev = arr[i].clone();
                 arr[i] = hole_value();

@@ -63,11 +63,17 @@ impl Clone for InstanceAttrs {
         let mut map = read_attrs(&self.attributes).clone();
         // Snapshot any `ContainerRef`-promoted slot (a `:=`-bound attribute):
         // an independent copy must not alias the original's attribute cell.
+        // Likewise detach Array/Hash attribute values: element mutations write
+        // through the shared backing node (container identity §3), so a copy
+        // sharing the `Gc` would observe the original's `@!attr.push` — an
+        // independent copy must own distinct containers (rakudo `.clone`
+        // clones each `has` container too).
         for v in map.values_mut() {
             if let Value::ContainerRef(cell) = v {
                 let inner = cell.lock().unwrap().clone();
                 *v = inner;
             }
+            *v = std::mem::replace(v, Value::NIL).detach_shared_container();
         }
         Self {
             class_name: self.class_name,

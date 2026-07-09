@@ -881,7 +881,8 @@ impl Interpreter {
                         if let Some(max_idx) = Self::slice_key_tree_max_index(top_tree) {
                             container
                                 .with_array_mut(|items, _| -> Result<(), RuntimeError> {
-                                    let arr = crate::gc::Gc::make_mut(items);
+                                    // Container identity (§3): resize in place.
+                                    let arr = crate::value::gc_data_mut(items);
                                     Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                                     Ok(())
                                 })
@@ -907,7 +908,8 @@ impl Interpreter {
                             .unwrap_or(0);
                         container
                             .with_array_mut(|items, _| -> Result<(), RuntimeError> {
-                                let arr = crate::gc::Gc::make_mut(items);
+                                // Container identity (§3): resize in place.
+                                let arr = crate::value::gc_data_mut(items);
                                 Self::autoviv_resize(arr, max_idx + 1, native_fill.clone())?;
                                 Ok(())
                             })
@@ -1509,25 +1511,17 @@ impl Interpreter {
                                 val.view(),
                                 ValueView::Hash(source_hash) if crate::gc::Gc::ptr_eq(hash, source_hash)
                             );
-                            // Use in-place mutation instead of Arc::make_mut when the
-                            // hash is shared (strong_count > 1) AND the variable is a
-                            // scalar ($) container.  This preserves Raku's object
-                            // identity semantics: when a hash is stored in an array
-                            // slot via `$arr[i] = $hash`, mutations through the original
-                            // variable must be visible through the array.
+                            // Container identity (§3): a key write on a SHARED
+                            // hash mutates through the backing node so every
+                            // by-value holder of the same container (`(0, %h)`,
+                            // `$arr[i] = %h`, a `:=` bound alias) observes it.
+                            // COW here would detach the container from its
+                            // aliases; Raku `=` copy semantics are enforced at
+                            // copy time instead (`detach_shared_container`).
                             // In-place mutation goes through the audited
-                            // `arc_contents_mut` choke point below, guarded by
+                            // `gc_contents_mut` choke point below, guarded by
                             // `strong_count > 1` (see its safety contract).
-                            // For %-sigiled hash variables (e.g. `%h is copy`),
-                            // normally use COW.  For scalar ($) variables holding
-                            // hashes, use in-place mutation to preserve identity.
-                            // Exception: when a %-sigiled variable is bound via
-                            // `:=` (marked readonly), use in-place mutation so
-                            // modifications propagate to the bound source.
-                            // %-sigiled vars have names like "%h", scalar vars
-                            // have names without a sigil prefix (e.g. "bar").
-                            let use_inplace = crate::gc::Gc::strong_count_of(hash) > 1
-                                && (!var_name.starts_with('%') || is_bound_hash_var);
+                            let use_inplace = crate::gc::Gc::strong_count_of(hash) > 1;
                             // Mutate the whole `HashData` (map + embedded
                             // object-hash original keys) so the original-key map
                             // travels with the hash through copy-on-write.
@@ -1614,11 +1608,13 @@ impl Interpreter {
                                         val.view(),
                                         ValueView::Array(source_items, ..) if crate::gc::Gc::ptr_eq(items, source_items)
                                     );
-                                    // Use in-place mutation when the array is shared
-                                    // (strong_count > 1) to preserve identity semantics
-                                    // and support shared `ContainerRef` cell binding.
-                                    let use_inplace = crate::gc::Gc::strong_count(items) > 1
-                                        && !var_name.starts_with('@');
+                                    // Container identity (§3): an element write
+                                    // on a SHARED array mutates through the
+                                    // backing node so every by-value holder of
+                                    // the same container observes it (COW would
+                                    // detach; copies detach at copy time via
+                                    // `detach_shared_container`).
+                                    let use_inplace = crate::gc::Gc::strong_count(items) > 1;
                                     let arr: &mut crate::value::ArrayData = if use_inplace {
                                         // SAFETY: aliased in-place mutation of a
                                         // shared array; see `arc_contents_mut`.
@@ -2192,7 +2188,8 @@ impl Interpreter {
                     let Ok(inner_i) = inner_key.parse::<usize>() else {
                         return Ok(false);
                     };
-                    let arr = crate::gc::Gc::make_mut(outer_arr);
+                    // Container identity (§3): write through a shared node.
+                    let arr = crate::value::gc_data_mut(outer_arr);
                     Self::autoviv_resize(arr, inner_i + 1, native_fill.clone())?;
                     // Autovivify the slot if it's not already a container. A
                     // `:=`-bound element is a shared `ContainerRef` cell holding a
@@ -2220,21 +2217,12 @@ impl Interpreter {
                     } else if let Some(r) =
                         arr[inner_i].with_array_mut(|inner_arr, _| -> Result<(), RuntimeError> {
                             if let Ok(j) = outer_key.parse::<usize>() {
-                                // Use interior mutation when the inner array is shared
-                                // (e.g., by a `ContainerRef` cell from := binding).
-                                if crate::gc::Gc::strong_count(inner_arr) > 1 {
-                                    // SAFETY: aliased in-place mutation of a shared array
-                                    // (strong_count > 1); see `arc_contents_mut`.
-                                    let v =
-                                        &mut unsafe { crate::value::gc_contents_mut(inner_arr) }
-                                            .items;
-                                    Self::autoviv_resize(v, j + 1, native_fill.clone())?;
-                                    Value::assign_element_slot(&mut v[j], val.clone());
-                                } else {
-                                    let inner = crate::gc::Gc::make_mut(inner_arr);
-                                    Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
-                                    Value::assign_element_slot(&mut inner[j], val.clone());
-                                }
+                                // Container identity (§3): write through a
+                                // shared inner node (a `ContainerRef` cell
+                                // alias, a by-value holder).
+                                let inner = crate::value::gc_data_mut(inner_arr);
+                                Self::autoviv_resize(inner, j + 1, native_fill.clone())?;
+                                Value::assign_element_slot(&mut inner[j], val.clone());
                             }
                             Ok(())
                         })
@@ -2242,19 +2230,10 @@ impl Interpreter {
                         r?;
                     } else {
                         let _ = arr[inner_i].with_hash_mut(|inner_hash| {
-                            if crate::gc::Gc::strong_count_of(inner_hash) > 1 {
-                                // SAFETY: aliased in-place mutation of a shared hash
-                                // (strong_count > 1); see `arc_contents_mut`.
-                                let hd = unsafe { crate::value::gc_contents_mut(inner_hash) };
-                                Value::hash_insert_through(
-                                    &mut hd.map,
-                                    outer_key.clone(),
-                                    val.clone(),
-                                );
-                            } else {
-                                let h = crate::gc::Gc::make_mut(inner_hash);
-                                Value::hash_insert_through(h, outer_key.clone(), val.clone());
-                            }
+                            // Container identity (§3): write through a shared
+                            // inner node.
+                            let hd = crate::value::gc_data_mut(inner_hash);
+                            Value::hash_insert_through(&mut hd.map, outer_key.clone(), val.clone());
                         });
                     }
                     Ok(true)
@@ -2279,22 +2258,18 @@ impl Interpreter {
         self.env_root_descended_mut(&var_name)
             .and_then(|container| {
                 container.with_hash_mut(|outer_hash| -> Result<(), RuntimeError> {
-                    // At refcount 1, write in place via the raw pointer (same pattern
-                    // as the bound-cell Array arm below): `Arc::make_mut` relocates a
-                    // Weak-guarded (metadata-bearing, e.g. object-hash / `is default`)
-                    // hash even when it is the only strong holder, which would break
-                    // `.WHICH` pointer identity. When shared, keep the make_mut COW
-                    // detach. The cast MUST target `HashData` (not its inner map) —
-                    // see docs/hashdata-migration-plan.md "Latent UB found & fixed".
+                    // Container identity (§3): write in place via the raw
+                    // pointer both when exclusively owned (`Arc::make_mut`
+                    // would relocate a Weak-guarded metadata-bearing hash and
+                    // break `.WHICH` pointer identity — see
+                    // docs/hashdata-migration-plan.md "Latent UB found &
+                    // fixed") and when shared (COW would detach the container
+                    // from its by-value holders). The cast MUST target
+                    // `HashData` (not its inner map).
+                    // SAFETY: audited aliased in-place container write; no
+                    // other borrow into this node is live across the write.
                     let oh: &mut crate::value::HashData =
-                        if crate::gc::Gc::strong_count_of(outer_hash) == 1 {
-                            // SAFETY: single strong holder; in-place avoids the make_mut
-                            // relocation that would break `.WHICH` identity. See
-                            // `arc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(outer_hash) }
-                        } else {
-                            crate::gc::Gc::make_mut(outer_hash)
-                        };
+                        unsafe { crate::value::gc_contents_mut(outer_hash) };
                     // Vivify the missing entry as Array if the OUTER (second) subscript
                     // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
@@ -2336,25 +2311,19 @@ impl Interpreter {
                 // a direct `@a[i] = v`), not `Nil`. A nested hash/array element
                 // container is untyped here, so `Any` is the correct hole.
                 let fill = Value::package(crate::symbol::Symbol::intern("Any"));
-                if crate::gc::Gc::strong_count(arr) > 1 {
-                    // SAFETY: aliased in-place mutation of a shared array
-                    // (strong_count > 1); see `arc_contents_mut`.
-                    let v = &mut unsafe { crate::value::gc_contents_mut(arr) }.items;
-                    Self::autoviv_resize(v, i + 1, fill)?;
-                    Value::assign_element_slot(&mut v[i], val.clone());
-                } else {
-                    let a = crate::gc::Gc::make_mut(arr);
-                    Self::autoviv_resize(a, i + 1, fill)?;
-                    Value::assign_element_slot(&mut a[i], val.clone());
-                }
+                // Container identity (§3): write through a shared node.
+                let a = crate::value::gc_data_mut(arr);
+                Self::autoviv_resize(a, i + 1, fill)?;
+                Value::assign_element_slot(&mut a[i], val.clone());
             }
             Ok(())
         }) {
             r?;
         } else {
             let _ = target.with_hash_mut(|h| {
+                // Container identity (§3): write through a shared node.
                 Value::hash_insert_through(
-                    &mut crate::gc::Gc::make_mut(h).map,
+                    &mut crate::value::gc_data_mut(h).map,
                     outer_key.to_string(),
                     val.clone(),
                 );

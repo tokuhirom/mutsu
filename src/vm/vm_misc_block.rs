@@ -291,34 +291,35 @@ impl Interpreter {
             ValueView::ContainerRef(arc) => arc.lock().unwrap().clone(),
             _ => old_val.clone(),
         };
-        // For temp, deep-copy Array/Hash so the snapshot is independent of
-        // future mutations (Arc is shared, so a shallow clone wouldn't work).
-        let save_val = if is_temp {
-            Self::deep_copy_value(&old_val)
-        } else {
-            old_val
-        };
+        // Deep-copy Array/Hash so the snapshot is independent of future
+        // mutations: element writes go through the shared backing node
+        // (container identity §3), so a shallow clone would observe every
+        // later `@a[i] = v` / `%h<k> = v` and the restore would be a no-op.
+        // `let` needs this as much as `temp` (it restores on block failure).
+        let save_val = Self::deep_copy_value(&old_val);
         self.let_saves_push(name, save_val, is_temp, slot);
     }
 
     /// Recursively deep-copy a Value so that Array/Hash snapshots are
-    /// independent of future in-place mutations (the inner Arc would otherwise
-    /// be shared).
+    /// independent of future in-place mutations (the backing node is shared,
+    /// so a shallow clone wouldn't work). Preserves the container's embedded
+    /// metadata (type parameters, defaults, shape, object-hash keys) so a
+    /// restored `my %h{Pair}` / `my @a is default(...)` keeps its identity.
     fn deep_copy_value(val: &Value) -> Value {
         match val.view() {
             ValueView::Array(arc_vec, kind) => {
-                let copied: Vec<Value> = arc_vec.iter().map(Self::deep_copy_value).collect();
-                Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(copied)),
-                    kind,
-                )
+                let mut data = (**arc_vec).clone();
+                for v in data.items.iter_mut() {
+                    *v = Self::deep_copy_value(v);
+                }
+                Value::array_with_kind(crate::gc::Gc::new(data), kind)
             }
             ValueView::Hash(arc_map) => {
-                let copied: std::collections::HashMap<String, Value> = arc_map
-                    .iter()
-                    .map(|(k, v)| (k.clone(), Self::deep_copy_value(v)))
-                    .collect();
-                Value::hash_with_data(Value::hash_arc(copied))
+                let mut data = (**arc_map).clone();
+                for v in data.map.values_mut() {
+                    *v = Self::deep_copy_value(v);
+                }
+                Value::hash_with_data(crate::gc::Gc::new(data))
             }
             _ => val.clone(),
         }

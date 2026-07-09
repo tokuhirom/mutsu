@@ -332,9 +332,13 @@ impl Value {
                 let new_hash = Value::hash(HashMap::new());
                 data.map.insert(key.to_string(), new_hash);
             }
+            // The entry exists (created just above if missing): an EAGER token,
+            // whose reads see through to the plain entry value (`is raw`
+            // reduce lvalue descent).
             Some(Value::HashEntryRef {
                 hash: arc.clone(),
                 path: vec![key.to_string()],
+                eager: true,
             })
         } else {
             None
@@ -416,6 +420,7 @@ impl Value {
                 None => Some(Value::HashEntryRef {
                     hash: arc.clone(),
                     path: vec![key.to_string()],
+                    eager: false,
                 }),
             }
         } else {
@@ -443,8 +448,21 @@ impl Value {
     /// READ-ONLY (no autovivification). Returns `Any` if any intermediate level
     /// is missing or not a hash, or if the terminal key is absent — so a bind to
     /// a not-yet-existent entry reads as `Any` without polluting `:exists`.
+    ///
+    /// A deferred missing-key bind connects ONLY when written THROUGH the
+    /// bound var (`store_through_cell` installs a `ContainerRef` cell at the
+    /// path on first write). A terminal holding a plain value was written
+    /// independently through the hash path AFTER the bind — rakudo does not
+    /// retro-bind that (t/phantom-entry-bind.t), so it reads as `Any` here.
+    /// (Pre-§3, the independent write COW-detached the root and the token's
+    /// captured `Gc` stayed empty, which masked this; in-place hash writes
+    /// now reach the captured root, so the connect condition must be the
+    /// cell identity, not mere path existence.)
+    /// An EAGER token (`hash_autovivify`, `is raw` reduce descent) reads
+    /// through to the plain entry value — its entry was created with the
+    /// token, so path existence IS the connection.
     pub fn hash_entry_read(&self) -> Value {
-        let Value::HashEntryRef { hash, path } = self else {
+        let Value::HashEntryRef { hash, path, eager } = self else {
             return self.clone();
         };
         let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
@@ -458,7 +476,13 @@ impl Value {
         }
         let last = path.last().unwrap();
         let ptr = crate::gc::Gc::as_ptr(&cur);
-        unsafe { (*ptr).get(last.as_str()).cloned().unwrap_or_else(any) }
+        match unsafe { (*ptr).get(last.as_str()) } {
+            Some(Value::ContainerRef(cell)) => {
+                cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
+            }
+            Some(v) if *eager => v.clone(),
+            _ => any(),
+        }
     }
 
     /// Walk-CREATE the intermediate hashes of a `HashEntryRef`'s `path` and
@@ -466,7 +490,7 @@ impl Value {
     /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
     /// (interior mutation, so all holders of the shared Arc observe them).
     pub(crate) fn hash_entry_terminal(&self) -> Option<(Gc<HashData>, String)> {
-        let Value::HashEntryRef { hash, path } = self else {
+        let Value::HashEntryRef { hash, path, .. } = self else {
             return None;
         };
         let mut cur = hash.clone();

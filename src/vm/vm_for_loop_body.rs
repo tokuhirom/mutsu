@@ -184,7 +184,17 @@ impl Interpreter {
                 }
             };
         let total_items = chunked_items.len();
+        // `is copy` loop param (is_rw set, do_writeback suppressed): the param
+        // owns a DISTINCT container per iteration. Mutations write through the
+        // shared backing node (container identity §3), so binding the element
+        // value as-is would let `@row[0] = v` reach the source element.
+        let param_is_copy = spec.is_rw && !spec.do_writeback;
         'for_loop: for (idx, item) in chunked_items.into_iter().enumerate().skip(resume_index) {
+            let item = if param_is_copy {
+                item.detach_shared_container()
+            } else {
+                item
+            };
             // `topic_source_var` drives the whole-topic writeback for a scalar
             // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to
             // `$x`). For a `.values` loop over a mutable QuantHash the topic is a

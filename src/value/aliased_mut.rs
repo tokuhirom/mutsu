@@ -87,3 +87,32 @@ pub(crate) unsafe fn gc_contents_mut<T: crate::gc::Trace + 'static>(
     // SAFETY: delegated to the caller per the same contract as arc_contents_mut.
     unsafe { &mut *(crate::gc::Gc::as_ptr(gc) as *mut T) }
 }
+
+/// Shared-aware mutable access to a container's backing data for a mutation
+/// of the *variable's own container* (container identity, §3): when the node
+/// is aliased (`strong_count > 1` — e.g. the array was captured by value into
+/// a list `(0, @a)`, stored in an element, or bound), write THROUGH the
+/// shared node so every holder observes the mutation; when exclusively owned,
+/// plain `Gc::make_mut` access (which does not clone at `strong_count == 1`).
+///
+/// This is the mutation-side counterpart of `detach_shared_container`: Raku
+/// `=` copy semantics are enforced at copy time (detach), so a mutation must
+/// never COW-detach the container from its aliases.
+///
+/// # Safety (inherited)
+///
+/// The aliased branch is [`gc_contents_mut`] — the caller must uphold the
+/// same contract: no other borrow into this node live for the duration of
+/// the returned `&mut`, and no concurrent access from another thread.
+pub(crate) fn gc_data_mut<T: crate::gc::Trace + Clone + 'static>(
+    gc: &mut crate::gc::Gc<T>,
+) -> &mut T {
+    if crate::gc::Gc::strong_count(gc) > 1 {
+        // SAFETY: audited aliased in-place container write per the module
+        // contract; callers keep no competing borrow live across the returned
+        // `&mut` (single-threaded VM mutation paths).
+        unsafe { gc_contents_mut(gc) }
+    } else {
+        crate::gc::Gc::make_mut(gc)
+    }
+}

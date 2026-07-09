@@ -121,6 +121,7 @@ pub enum ValueView<'a> {
     HashEntryRef {
         hash: &'a Gc<HashData>,
         path: &'a Vec<String>,
+        eager: bool,
     },
 }
 
@@ -246,7 +247,11 @@ impl Value {
                 kv: *kv,
                 words: *words,
             },
-            Value::HashEntryRef { hash, path } => ValueView::HashEntryRef { hash, path },
+            Value::HashEntryRef { hash, path, eager } => ValueView::HashEntryRef {
+                hash,
+                path,
+                eager: *eager,
+            },
         }
     }
 
@@ -506,10 +511,15 @@ impl Value {
         Value::LazyList(l)
     }
 
-    /// Construct a `HashEntryRef` vivification token.
+    /// Construct a DEFERRED `HashEntryRef` vivification token (`eager: false`
+    /// — connects on read only through the cell a bound-var write installs).
     #[inline]
     pub(crate) fn hash_entry_ref(hash: Gc<HashData>, path: Vec<String>) -> Self {
-        Value::HashEntryRef { hash, path }
+        Value::HashEntryRef {
+            hash,
+            path,
+            eager: false,
+        }
     }
 
     /// Construct a `LazyIoLines` iterator over a file handle (boxing the
@@ -677,6 +687,51 @@ impl Value {
         }
     }
 
+    /// Container-identity in-place mutation (§3): run `f` on the SHARED
+    /// `ArrayData` backing this `Array` value, writing through the node so
+    /// every by-value holder of the same container (an `@a` captured into a
+    /// list, a `\(@a)`, an element holding the array) observes the write.
+    /// `Gc::make_mut` (COW) is wrong for a mutation of a variable's own
+    /// container — it detaches the container from its aliases the moment the
+    /// backing is shared; Raku `=` copy semantics are enforced at copy time
+    /// instead (`detach_shared_container`). Returns `None` for non-`Array`.
+    #[inline]
+    pub(crate) fn with_array_inplace<R>(
+        &self,
+        f: impl FnOnce(&mut ArrayData, ArrayKind) -> R,
+    ) -> Option<R> {
+        match self {
+            Value::Array(gc, kind) => {
+                // SAFETY: audited aliased in-place container write (see
+                // value::aliased_mut) — callers ensure no other borrow into
+                // this node is live across `f` and no cross-thread access.
+                let data = unsafe { crate::value::gc_contents_mut(gc) };
+                Some(f(data, *kind))
+            }
+            _ => None,
+        }
+    }
+
+    /// Raku `=` copy semantics: if this Array/Hash's backing `Gc` is SHARED
+    /// with another holder, return a fresh-`Gc` shallow copy (elements/values
+    /// stay shared references — only the outer container is duplicated); a
+    /// singly-owned container or non-container value passes through
+    /// unchanged. This is the copy-time counterpart of the in-place mutation
+    /// paths (container identity §3): mutations write through the shared
+    /// node, so every place with copy semantics (`my @b = @a`, `is copy`
+    /// params) must detach at copy time.
+    pub(crate) fn detach_shared_container(self) -> Value {
+        match &self {
+            Value::Array(gc, kind) if gc.strong_count() > 1 => {
+                Value::array_with_kind(crate::gc::Gc::new((**gc).clone()), *kind)
+            }
+            Value::Hash(gc) if gc.strong_count() > 1 => {
+                Value::hash_with_data(crate::gc::Gc::new((**gc).clone()))
+            }
+            _ => self,
+        }
+    }
+
     /// Run `f` on the hash payload if this is exactly a `Hash`.
     /// Returns `None` (without calling `f`) otherwise.
     #[inline]
@@ -748,7 +803,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<HashData>, &mut Vec<String>) -> R,
     ) -> Option<R> {
         match self {
-            Value::HashEntryRef { hash, path } => Some(f(hash, path)),
+            Value::HashEntryRef { hash, path, .. } => Some(f(hash, path)),
             _ => None,
         }
     }

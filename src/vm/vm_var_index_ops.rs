@@ -238,7 +238,7 @@ impl Interpreter {
             // the deferred bind autovivifies the full path on write.
             _ if matches!(target.view(), ValueView::HashEntryRef { .. }) => {
                 let key = Value::hash_key_encode(&index);
-                let ValueView::HashEntryRef { hash, path } = target.view() else {
+                let ValueView::HashEntryRef { hash, path, .. } = target.view() else {
                     unreachable!()
                 };
                 let hash = hash.clone();

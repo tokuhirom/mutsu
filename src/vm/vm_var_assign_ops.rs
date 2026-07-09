@@ -580,17 +580,10 @@ impl Interpreter {
     /// historical copy-on-write masking (a shared `Gc` that only *appears*
     /// independent because the next mutation reallocated) breaks once whole-
     /// container reassignment writes in place (§3): the in-place write would reach
-    /// the aliased source.
+    /// the aliased source. Thin wrapper over [`Value::detach_shared_container`]
+    /// (also used by `is copy` parameter binding).
     pub(super) fn detach_shared_container(val: Value) -> Value {
-        match val.view() {
-            ValueView::Array(gc, kind) if gc.strong_count() > 1 => {
-                Value::array_with_kind(crate::gc::Gc::new((**gc).clone()), kind)
-            }
-            ValueView::Hash(gc) if gc.strong_count() > 1 => {
-                Value::hash_with_data(crate::gc::Gc::new((**gc).clone()))
-            }
-            _ => val,
-        }
+        val.detach_shared_container()
     }
 
     /// Store a whole-container reassignment through a `ContainerRef` cell while

@@ -1233,6 +1233,14 @@ impl Interpreter {
                         .clone()
                         .or_else(|| pd.type_constraint.clone());
                     let mut value = unwrap_varref_value(raw_arg.clone());
+                    // Container identity (§3): an `is copy` container param owns
+                    // a DISTINCT container. Mutations now write through the
+                    // shared backing node (no COW detach), so the copy must
+                    // detach HERE or `@b.push` inside the sub would reach the
+                    // caller's `@a`.
+                    if is_copy {
+                        value = value.detach_shared_container();
+                    }
                     if pd.sigilless {
                         let alias_key = sigilless_alias_key(&pd.name);
                         let readonly_key = sigilless_readonly_key(&pd.name);

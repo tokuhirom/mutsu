@@ -207,7 +207,7 @@ impl Interpreter {
     /// is missing or not a hash (the deferred path is not yet materialized, so it
     /// has no stable container identity).
     fn extract_hash_ref(val: &Value) -> Option<(crate::gc::Gc<crate::value::HashData>, String)> {
-        let ValueView::HashEntryRef { hash, path } = val.view() else {
+        let ValueView::HashEntryRef { hash, path, .. } = val.view() else {
             return None;
         };
         let mut cur = hash.clone();

@@ -89,15 +89,21 @@ impl Interpreter {
             crate::runtime::utils::mark_shaped_array(&value, Some(dims));
             return Ok(value);
         }
-        let child = Self::make_shaped_array(&dims[1..])?;
-        crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
         let mut items = Vec::new();
         items.try_reserve(len).map_err(|_| {
             RuntimeError::new(format!(
                 "Cannot allocate shaped array of {len} elements: memory allocation failed"
             ))
         })?;
-        items.extend((0..len).map(|_| child.clone()));
+        // Each row must be a DISTINCT container (fresh backing `Gc` per row):
+        // element writes mutate through the shared node (container identity
+        // §3), so rows cloned from one child would all observe each other's
+        // writes (`@md[0;0] = v` would set `[1;0]` too).
+        for _ in 0..len {
+            let child = Self::make_shaped_array(&dims[1..])?;
+            crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
+            items.push(child);
+        }
         let value = Value::shaped_array(items);
         crate::runtime::utils::mark_shaped_array(&value, Some(dims));
         Ok(value)

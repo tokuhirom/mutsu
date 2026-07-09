@@ -242,8 +242,23 @@ impl Interpreter {
             return Ok(Value::seq(Vec::new()));
         }
 
+        // Snapshot the env BY VALUE (container contents detached): the eager
+        // pass below runs the user callbacks whose side effects (`@with.push`)
+        // now mutate containers IN PLACE through the shared backing node
+        // (container identity §3) — a plain `env.clone()` would share those
+        // nodes, making the changed-value diff below blind and the revert a
+        // no-op, so the lazy iterator's re-run would double the side effects.
         let env_before_callbacks = if as_func.is_some() || with_func.is_some() {
-            Some(self.env.clone())
+            let mut snapshot = self.env.clone();
+            let detach: Vec<(crate::symbol::Symbol, Value)> = snapshot
+                .iter()
+                .filter(|(_, v)| matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))
+                .map(|(k, v)| (*k, v.clone().detach_shared_container()))
+                .collect();
+            for (k, v) in detach {
+                snapshot.insert_sym(k, v);
+            }
+            Some(snapshot)
         } else {
             None
         };

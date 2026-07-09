@@ -46,7 +46,8 @@ impl Interpreter {
             return;
         };
         container.with_array_mut(|items, _| {
-            let arr = crate::gc::Gc::make_mut(items);
+            // Container identity (§3): trim through the shared backing node.
+            let arr = crate::value::gc_data_mut(items);
             // The explicitly-assigned indices travel with the array (embedded set).
             let initialized = arr.initialized.clone().unwrap_or_default();
             while let Some(last) = arr.last() {
@@ -131,7 +132,9 @@ impl Interpreter {
                     .env_mut()
                     .get_mut(var_name)
                     .and_then(|v| {
-                        v.with_hash_mut(|hash| crate::gc::Gc::make_mut(hash).remove(&key))
+                        // Container identity (§3): remove through the shared
+                        // backing node.
+                        v.with_hash_mut(|hash| crate::value::gc_data_mut(hash).remove(&key))
                     })
                     .flatten();
                 let removed = removed.or(container_default).unwrap_or(Value::NIL);
@@ -593,28 +596,30 @@ impl Interpreter {
         idx: Value,
         hole_type: &str,
     ) -> Result<Value, RuntimeError> {
+        // Container identity (§3): delete through the shared backing node so
+        // every by-value holder of the same container observes the removal.
         if let Some(removed) = container.with_hash_mut(|hash| match idx.view() {
             ValueView::Whatever => {
-                let h = crate::gc::Gc::make_mut(hash);
+                let h = crate::value::gc_data_mut(hash);
                 let removed: Vec<Value> = h.values().cloned().collect();
                 h.clear();
                 Value::array(removed)
             }
             ValueView::Num(f) if f.is_infinite() && f.is_sign_positive() => {
-                let h = crate::gc::Gc::make_mut(hash);
+                let h = crate::value::gc_data_mut(hash);
                 let removed: Vec<Value> = h.values().cloned().collect();
                 h.clear();
                 Value::array(removed)
             }
             ValueView::Array(keys, ..) => {
-                let h = crate::gc::Gc::make_mut(hash);
+                let h = crate::value::gc_data_mut(hash);
                 let removed = keys
                     .iter()
                     .map(|key| h.remove(&key.to_string_value()).unwrap_or(Value::NIL))
                     .collect();
                 Value::array(removed)
             }
-            _ => crate::gc::Gc::make_mut(hash)
+            _ => crate::value::gc_data_mut(hash)
                 .remove(&idx.to_string_value())
                 .unwrap_or(Value::NIL),
         }) {
@@ -633,20 +638,20 @@ impl Interpreter {
         }
         if let Some(removed) = container.with_set_mut(|set, _| match idx.view() {
             ValueView::Array(keys, ..) => {
-                let s = crate::gc::Gc::make_mut(set);
+                let s = crate::value::gc_data_mut(set);
                 let removed = keys
                     .iter()
                     .map(|key| Value::truth(s.remove(&key.to_string_value())))
                     .collect();
                 Value::array(removed)
             }
-            _ => Value::truth(crate::gc::Gc::make_mut(set).remove(&idx.to_string_value())),
+            _ => Value::truth(crate::value::gc_data_mut(set).remove(&idx.to_string_value())),
         }) {
             return Ok(removed);
         }
         if let Some(removed) = container.with_bag_mut(|bag, _| match idx.view() {
             ValueView::Array(keys, ..) => {
-                let b = crate::gc::Gc::make_mut(bag);
+                let b = crate::value::gc_data_mut(bag);
                 let removed = keys
                     .iter()
                     .map(|key| {
@@ -656,7 +661,7 @@ impl Interpreter {
                 Value::array(removed)
             }
             _ => Value::from_bigint(
-                crate::gc::Gc::make_mut(bag)
+                crate::value::gc_data_mut(bag)
                     .remove(&idx.to_string_value())
                     .unwrap_or_default(),
             ),
@@ -665,7 +670,7 @@ impl Interpreter {
         }
         if let Some(removed) = container.with_mix_mut(|mix, _| match idx.view() {
             ValueView::Array(keys, ..) => {
-                let m = crate::gc::Gc::make_mut(mix);
+                let m = crate::value::gc_data_mut(mix);
                 let removed = keys
                     .iter()
                     .map(|key| Value::num(m.remove(&key.to_string_value()).unwrap_or(0.0)))
@@ -673,7 +678,7 @@ impl Interpreter {
                 Value::array(removed)
             }
             _ => Value::num(
-                crate::gc::Gc::make_mut(mix)
+                crate::value::gc_data_mut(mix)
                     .remove(&idx.to_string_value())
                     .unwrap_or(0.0),
             ),

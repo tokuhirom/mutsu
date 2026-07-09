@@ -53,7 +53,11 @@ impl Interpreter {
                 (raw_val, None)
             };
         // Capture old hash Arc pointer for circular reference fixup, and the
-        // backing `Gc` for the in-place whole-container reassignment below.
+        // backing `Gc` for the in-place whole-container reassignment below. A
+        // celled `@`/`%` aggregate (a `state @foo` / captured boxed container)
+        // holds a `ContainerRef` — capture the cell so the store below goes
+        // THROUGH it (identity + copy semantics) instead of clobbering it.
+        let mut inplace_container_cell: Option<crate::gc::Gc<std::sync::Mutex<Value>>> = None;
         let mut inplace_old_hash: Option<crate::gc::Gc<crate::value::HashData>> = None;
         let old_hash_arc = if name.starts_with('%') {
             let current = self.get_env_with_main_alias(&name).or_else(|| {
@@ -65,13 +69,18 @@ impl Interpreter {
                     }
                 })
             });
-            if let Some(ValueView::Hash(arc)) = current.as_ref().map(Value::view) {
-                if !name.contains("__ANON") {
-                    inplace_old_hash = Some(arc.clone());
+            match current.as_ref().map(Value::view) {
+                Some(ValueView::Hash(arc)) => {
+                    if !name.contains("__ANON") {
+                        inplace_old_hash = Some(arc.clone());
+                    }
+                    Some(crate::gc::Gc::as_ptr(arc) as usize)
                 }
-                Some(crate::gc::Gc::as_ptr(arc) as usize)
-            } else {
-                None
+                Some(ValueView::ContainerRef(cell)) => {
+                    inplace_container_cell = Some(cell.clone());
+                    None
+                }
+                _ => None,
             }
         } else {
             None
@@ -89,13 +98,18 @@ impl Interpreter {
                     }
                 })
             });
-            if let Some(ValueView::Array(arc, _)) = current.as_ref().map(Value::view) {
-                if !name.contains("__ANON") {
-                    inplace_old_array = Some(arc.clone());
+            match current.as_ref().map(Value::view) {
+                Some(ValueView::Array(arc, _)) => {
+                    if !name.contains("__ANON") {
+                        inplace_old_array = Some(arc.clone());
+                    }
+                    Some(crate::gc::Gc::as_ptr(arc) as usize)
                 }
-                Some(crate::gc::Gc::as_ptr(arc) as usize)
-            } else {
-                None
+                Some(ValueView::ContainerRef(cell)) => {
+                    inplace_container_cell = Some(cell.clone());
+                    None
+                }
+                _ => None,
             }
         } else {
             None
@@ -455,6 +469,19 @@ impl Interpreter {
         {
             let (new_gc, kind) = (new_gc.clone(), kind);
             val = Self::array_inplace_reassign(old_gc, &new_gc, kind);
+        } else if let Some(cell) = &inplace_container_cell {
+            // A celled `@`/`%` aggregate (`(state @foo) = @bar`): store through
+            // the cell with the inner container's identity preserved (contents
+            // copied — `=` copy semantics — so a later `@foo[0]++` cannot reach
+            // the RHS source array), and keep the CELL installed in env/locals.
+            Self::cell_store_preserving_container_identity(cell, &val);
+            let cell_val = Value::container_ref(cell.clone());
+            self.update_local_if_exists(code, &name, &cell_val);
+            self.set_env_with_main_alias(&name, cell_val);
+            self.sync_anon_state_value(&name, &val);
+            self.stack
+                .push(Self::itemize_scalar_assign_result(&name, val));
+            return Ok(());
         }
         self.update_local_if_exists(code, &name, &val);
         self.set_env_with_main_alias(&name, val.clone());

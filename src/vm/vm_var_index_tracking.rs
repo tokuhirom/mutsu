@@ -109,22 +109,21 @@ impl Interpreter {
         let Ok(idx) = encoded.parse::<usize>() else {
             return;
         };
-        // Mutate the array in place when it is shared by-ref through a scalar
-        // ($) container, mirroring the assignment path's `use_inplace` choice
-        // (vm_var_assign_index_named). Using `Arc::make_mut` here would clone a
-        // shared array and sever the by-ref alias, so a subsequent `.push` on
-        // the original would be lost (t/array-push-byref-coherence).
-        let use_inplace = !var_name.starts_with('@');
+        // Mutate the array in place when it is shared, mirroring the
+        // assignment path's `use_inplace` choice (vm_var_assign_index_named,
+        // container identity §3 — no sigil carve-out). Using `Arc::make_mut`
+        // here would clone a shared array and sever the by-ref alias, so a
+        // subsequent `.push` on the original would be lost
+        // (t/array-push-byref-coherence).
         if let Some(root) = self.env_root_descended_mut(var_name) {
             root.with_array_mut(|items, _| {
-                let data: &mut crate::value::ArrayData =
-                    if use_inplace && crate::gc::Gc::strong_count(items) > 1 {
-                        // SAFETY: aliased in-place mutation of a shared array; same
-                        // contract as the assignment site's `arc_contents_mut` use.
-                        unsafe { crate::value::gc_contents_mut(items) }
-                    } else {
-                        crate::gc::Gc::make_mut(items)
-                    };
+                let data: &mut crate::value::ArrayData = if crate::gc::Gc::strong_count(items) > 1 {
+                    // SAFETY: aliased in-place mutation of a shared array; same
+                    // contract as the assignment site's `arc_contents_mut` use.
+                    unsafe { crate::value::gc_contents_mut(items) }
+                } else {
+                    crate::gc::Gc::make_mut(items)
+                };
                 data.initialized
                     .get_or_insert_with(std::collections::HashSet::new)
                     .insert(idx);
@@ -234,7 +233,8 @@ impl Interpreter {
         }
         if let Some(root) = self.env_root_descended_mut(var_name) {
             root.with_array_mut(|items, _| {
-                let data = crate::gc::Gc::make_mut(items);
+                // Container identity (§3): write through a shared node.
+                let data = crate::value::gc_data_mut(items);
                 // A freshly-built array tracks "all present" as `initialized = None`.
                 // Materialize the set (0..len) before removing the deleted indices so
                 // the hole is recorded IN the ArrayData — not only in the name-keyed

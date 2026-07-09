@@ -1934,16 +1934,22 @@ impl Interpreter {
         if matches!(method, "pop" | "shift") && !args.is_empty() {
             return None;
         }
-        // The receiver must be exactly the array currently bound to this name, so
-        // an in-place `Arc::make_mut` writeback is correct. Descend through a
-        // whole-container `:=` bound cell (`my @x := @a`) so the mutation writes
-        // back through the shared cell (every alias observes it).
+        // The receiver must be exactly the array currently bound to this name.
+        // Container identity (§3): mutate through the SHARED backing node
+        // (`gc_contents_mut`, no COW) so every by-value holder of the same
+        // array — a `(0, @a)` capture, an element holding the array — observes
+        // the mutation. Descend through a whole-container `:=` bound cell
+        // (`my @x := @a`) so the mutation writes through the shared cell.
         let result =
             self.env_root_descended_mut(target_name)?
                 .with_array_mut(|arc_items, kind| {
                     if !matches!(*kind, crate::value::ArrayKind::Array) {
                         return None;
                     }
+                    // SAFETY: audited aliased in-place container write (see
+                    // value::aliased_mut); no other borrow into this node is
+                    // live across the mutation below.
+                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
                     Some(match method {
                         "push" => {
                             // `@a.push` compiles to `ArrayPush` only for single-arg pushes on
@@ -1953,7 +1959,7 @@ impl Interpreter {
                             let norm = crate::runtime::Interpreter::normalize_push_unshift_args(
                                 args.to_vec(),
                             );
-                            crate::gc::Gc::make_mut(arc_items).extend(norm);
+                            items.extend(norm);
                             Value::array_with_kind(
                                 crate::gc::Gc::clone(arc_items),
                                 crate::value::ArrayKind::Array,
@@ -1961,7 +1967,6 @@ impl Interpreter {
                         }
                         "append" | "prepend" => {
                             let flat = crate::runtime::flatten_append_args(args.to_vec());
-                            let items = crate::gc::Gc::make_mut(arc_items);
                             if method == "append" {
                                 items.extend(flat);
                             } else {
@@ -1978,7 +1983,6 @@ impl Interpreter {
                             let norm = crate::runtime::Interpreter::normalize_push_unshift_args(
                                 args.to_vec(),
                             );
-                            let items = crate::gc::Gc::make_mut(arc_items);
                             for (i, v) in norm.into_iter().enumerate() {
                                 items.insert(i, v);
                             }
@@ -1988,21 +1992,19 @@ impl Interpreter {
                             )
                         }
                         "pop" => {
-                            if arc_items.is_empty() {
+                            if items.is_empty() {
                                 crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
                             } else {
-                                crate::gc::Gc::make_mut(arc_items)
-                                    .pop()
-                                    .unwrap_or(Value::NIL)
+                                items.pop().unwrap_or(Value::NIL)
                             }
                         }
                         "shift" => {
-                            if arc_items.is_empty() {
+                            if items.is_empty() {
                                 crate::runtime::utils::make_empty_array_failure_what(
                                     "shift", "Array",
                                 )
                             } else {
-                                crate::gc::Gc::make_mut(arc_items).remove(0)
+                                items.remove(0)
                             }
                         }
                         _ => unreachable!(),
@@ -2239,10 +2241,12 @@ impl Interpreter {
                 }
             }
         }
-        // The receiver must be exactly the array currently bound to this name, so
-        // an in-place `Arc::make_mut` writeback is correct. Compute the splice
-        // bounds from the live binding's length (not `target`). Descend through a
-        // whole-container `:=` bound cell so the splice writes through the cell.
+        // The receiver must be exactly the array currently bound to this name.
+        // Container identity (§3): splice through the SHARED backing node (no
+        // COW) so by-value holders of the same array observe it. Compute the
+        // splice bounds from the live binding's length (not `target`). Descend
+        // through a whole-container `:=` bound cell so the splice writes
+        // through the cell.
         let removed =
             self.env_root_descended_mut(target_name)?
                 .with_array_mut(|arc_items, kind| {
@@ -2257,7 +2261,10 @@ impl Interpreter {
                     }
                     let count = raw_count.unwrap_or(len - start);
                     let end = (start + count).min(len);
-                    let items = crate::gc::Gc::make_mut(arc_items);
+                    // SAFETY: audited aliased in-place container write (see
+                    // value::aliased_mut); no other borrow into this node is
+                    // live across the mutation below.
+                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
                     let removed: Vec<Value> = items.drain(start..end).collect();
                     for (i, item) in replacement.into_iter().enumerate() {
                         items.insert(start + i, item);

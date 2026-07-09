@@ -177,11 +177,36 @@ pub(super) fn dispatch(
                 // `shape`, element type) survives the copy — e.g.
                 // `@a[3]:delete; my @b := @a.clone` keeps `@b[3]:exists` False
                 // (S02-types/array.t test 108). Elements are `Value`-cloned
-                // (shared handles), matching a shallow `.clone`.
-                ValueView::Array(items, kind) => Some(Some(Ok(Value::array_with_kind(
-                    crate::gc::Gc::new((**items).clone()),
-                    kind,
-                )))),
+                // (shared handles), matching a shallow `.clone` — EXCEPT for a
+                // shaped array, whose rows are its own storage: rakudo's
+                // `.clone` gives independent containers per dimension
+                // (rakudo#3334, S09-multidim/methods.t), and with in-place
+                // element writes (container identity §3) shared rows would
+                // alias `@a[1;1] = v` into the clone.
+                ValueView::Array(items, kind) => {
+                    let mut data = (**items).clone();
+                    if kind == crate::value::ArrayKind::Shaped || data.shape.is_some() {
+                        fn clone_rows(v: &Value) -> Value {
+                            match v.view() {
+                                ValueView::Array(rows, k) => {
+                                    let mut d = (**rows).clone();
+                                    for item in d.items.iter_mut() {
+                                        *item = clone_rows(item);
+                                    }
+                                    Value::array_with_kind(crate::gc::Gc::new(d), k)
+                                }
+                                _ => v.clone(),
+                            }
+                        }
+                        for item in data.items.iter_mut() {
+                            *item = clone_rows(item);
+                        }
+                    }
+                    Some(Some(Ok(Value::array_with_kind(
+                        crate::gc::Gc::new(data),
+                        kind,
+                    ))))
+                }
                 ValueView::Hash(map) => Some(Some(Ok(Value::hash_with_data(Value::hash_arc(
                     (**map).clone(),
                 ))))),
