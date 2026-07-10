@@ -167,6 +167,24 @@ impl Interpreter {
         sv.get(key).cloned()
     }
 
+    /// Snapshot the set of keys currently present in `shared_vars`. Used by the
+    /// synchronous hyper/race parallel path to record the pre-op shared state so
+    /// its ephemeral env->shared migrations can be rolled back after all batch
+    /// threads join (see `retain_shared_var_keys`).
+    pub(crate) fn shared_var_keys_snapshot(&self) -> std::collections::HashSet<String> {
+        let sv = self.shared_vars.read().unwrap();
+        sv.keys().cloned().collect()
+    }
+
+    /// Drop every `shared_vars` entry whose key is not in `keep`. Used by the
+    /// hyper/race path to remove the read-only lexicals a completed synchronous
+    /// parallel op migrated in, so a later op's freshly-bound same-named lexical
+    /// isn't shadowed by the stale value.
+    pub(crate) fn retain_shared_var_keys(&mut self, keep: &std::collections::HashSet<String>) {
+        let mut sv = self.shared_vars.write().unwrap();
+        sv.retain(|k, _| keep.contains(k));
+    }
+
     /// Returns true if the given key is in the shared_vars_dirty set
     /// (i.e., was modified by an atomic/CAS operation).
     pub(crate) fn is_shared_var_dirty(&self, key: &str) -> bool {

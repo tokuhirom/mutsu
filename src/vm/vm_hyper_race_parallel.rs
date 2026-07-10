@@ -37,6 +37,17 @@ impl Interpreter {
             .map(|chunk| chunk.to_vec())
             .collect();
         let num_batches = batches.len();
+        // Snapshot the shared-var keys that exist *before* this op migrates the
+        // parent's lexicals into `shared_vars` (each `clone_for_thread` below
+        // copies the current env in). Because every batch thread is JOINED before
+        // this method returns (unlike a detached `start`/Promise), the read-only
+        // lexicals this op migrates — e.g. the map block's captured `@search-for`
+        // — are dead once the op completes. `clone_for_thread` inserts with
+        // `.or_insert_with`, so if left behind they shadow a *later* hyper op's
+        // freshly-bound same-named lexical (thread-clone `@`/`%` reads prefer
+        // `shared_vars`), freezing it at this op's value. We roll back the keys
+        // this op added after joining + syncing dirty mutations back to env.
+        let pre_shared_keys = self.shared_var_keys_snapshot();
         type ThreadResult = (
             crate::runtime::Interpreter,
             Result<Vec<Value>, RuntimeError>,
@@ -144,6 +155,13 @@ impl Interpreter {
         crate::gc::gc_safepoint(crate::gc::SafepointKind::ThreadJoin);
         // Sync any shared variable updates from threads back to our env
         self.sync_shared_vars_to_env();
+        // Roll back this op's ephemeral env->shared migrations (see
+        // `pre_shared_keys`). Dirty mutations were just synced to env, so
+        // dropping their shared entries is safe; pre-existing shared vars — and
+        // any concurrent sibling's updates to them — are preserved (their keys
+        // are in the pre-op snapshot). This keeps a later hyper op from reading a
+        // stale value for a same-named but freshly-bound lexical.
+        self.retain_shared_var_keys(&pre_shared_keys);
         if let Some(e) = first_error {
             return Err(e);
         }
