@@ -4016,8 +4016,9 @@ impl Interpreter {
                 name_idx,
                 trait_name_idx,
                 has_arg,
+                slot,
             } => {
-                self.exec_apply_var_trait_op(code, *name_idx, *trait_name_idx, *has_arg)?;
+                self.exec_apply_var_trait_op(code, *name_idx, *trait_name_idx, *has_arg, *slot)?;
                 *ip += 1;
             }
             OpCode::GetCallerVar { name_idx, depth } => {

@@ -253,6 +253,33 @@ broadcast = touches every slot with the name.
       ON green: `S04-declarations/state.t` 46/46. Pin:
       `t/shadow-slot-state-paren-decl.t` (OFF, ON, real raku). *(this branch)*
 
+- [x] **S16 — `ApplyVarTrait` slot bake (`is default` / QuantHash / Buf / Map
+      traits on a shadowing declaration).** The earlier survey note guessed the
+      hazard was the initializer's `AssignExprLocal` hitting the outer slot via
+      an env-only (`SetVarDynamic`) declaration; the actual root cause is
+      simpler: `exec_apply_var_trait_op` resolved the declared variable by
+      NAME (`locals_get_by_name`/`locals_set_by_name` = `position` = the
+      OUTER same-named slot). For `my @a is default(42) = ^10` shadowing an
+      outer `@a`, the `default` branch read the OUTER container, tagged it,
+      wrote it back to the outer slot AND broadcast it to env — so the
+      env-first `GetArrayVar` read returned the outer contents with the inner
+      default (`advent2013-day12.t` #11/31-32: slice reads returned 42 for
+      every element). Fix: bake `slot: Option<u32>` onto `ApplyVarTrait` at
+      the three emit sites (statement-position VarDecl bakes `local_map` right
+      after `declare_local`, so it carries the fresh shadow slot; the
+      expression-position sites bake what `emit_set_named_var` stored to, or
+      `None` for the pure-`SetGlobal` path) and route all eleven declared-var
+      resolver sites in `vm_var_trait_ops.rs` through the slot-preferring
+      helpers (`read_local_slot_or_name`, a new read mirror of
+      `write_local_slot_or_name`, + the existing write helper), gated on
+      `shadow_slots_active()` — OFF passes `None` and stays on the by-name
+      path byte-identically. ON green: `integration/advent2013-day12.t` 32/32.
+      Pin: `t/shadow-slot-var-trait.t` (OFF, ON, real raku — covers
+      `is default` on `@`/`%` shadows, `:delete` holes, outer intactness, and
+      an `is Bag` QuantHash shadow). Residual (pre-existing, both modes): the
+      name-keyed `var_defaults` side table and the `trait_mod:<is>` fallback's
+      `env().get(name)` are still by-name — §1.3 territory. *(this branch)*
+
 ## Fresh full toggle-ON survey (2026-07-10, post-S13, release, 1373 files)
 
 Only **4 genuine ON failures** remain; all were verified pre-existing on `main`
