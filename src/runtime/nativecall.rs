@@ -154,8 +154,13 @@ fn load_library_cached(
             Err(e) => last_err = format!("{cand}: {e}"),
         }
     }
+    // Match Rakudo's message shape so code that inspects the failure text works
+    // (e.g. zef's `!native-library-is-installed` does
+    // `.payload.starts-with("Cannot locate native library")`). `candidates[0]`
+    // is the primary (unversioned) library file name.
+    let primary = candidates.first().map(String::as_str).unwrap_or("");
     Err(RuntimeError::new(format!(
-        "NativeCall: cannot load library {candidates:?}: {last_err}"
+        "Cannot locate native library '{primary}': {last_err}"
     )))
 }
 

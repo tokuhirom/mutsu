@@ -835,6 +835,22 @@ impl Interpreter {
                     self.class_mro(&class_name.resolve()).contains(&target_name),
                 ));
             }
+            // `X::AdHoc.payload` returns the value passed to `die` (mutsu stores
+            // it under `payload`). An X::AdHoc synthesized from an internal
+            // `RuntimeError` — a native dlopen failure, a parse error inside
+            // EVAL, … — carries only a `message` attr (no `payload`), so fall
+            // back to that string so `.payload.starts-with(...)` / `.payload.Str`
+            // keep working (raku: `X::AdHoc` made from `die "msg"` has
+            // `.payload eq "msg"`).
+            if method == "payload" && args.is_empty() && class_name.resolve() == "X::AdHoc" {
+                let m = attributes.as_map();
+                if let Some(p) = m.get("payload") {
+                    return Ok(p.clone());
+                }
+                if let Some(msg) = m.get("message") {
+                    return Ok(Value::str(msg.to_string_value()));
+                }
+            }
             // An Exception instance stringifies (.Str/.gist/~) and reports via its
             // `.message` (raku: Exception.Str and .gist both return .message). Detect
             // it via the MRO so a user `class E is Exception` (whose name is not
