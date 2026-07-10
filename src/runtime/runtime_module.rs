@@ -274,34 +274,49 @@ impl Interpreter {
                 tags.iter().cloned().collect()
             };
             let want_all = requested_tags.contains("ALL");
-            // Check exports registered under GLOBAL (for unit modules) and under module name
-            let export_sources = ["GLOBAL", module];
-            for source in &export_sources {
-                if let Some(subs) = self.exported_subs.get(*source) {
-                    for (name, symbol_tags) in subs {
-                        let is_mandatory = symbol_tags.contains("MANDATORY");
-                        if !want_all && !is_mandatory && symbol_tags.is_disjoint(&requested_tags) {
-                            // This export should NOT be imported — remove from GLOBAL
-                            let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
-                            if !func_keys_before.contains(&global_key) {
-                                self.registry_mut().functions.remove(&global_key);
-                            }
-                            // Also remove multi-dispatch variants
-                            let prefix = format!("GLOBAL::{}/", name);
-                            let multi_keys: Vec<Symbol> = self
-                                .registry()
-                                .functions
-                                .keys()
-                                .filter(|k| {
-                                    let ks = k.resolve();
-                                    ks.starts_with(&prefix) && !func_keys_before.contains(k)
-                                })
-                                .copied()
-                                .collect();
-                            for mk in multi_keys {
-                                self.registry_mut().functions.remove(&mk);
-                            }
-                        }
+            // Collect the exports THIS module owns: everything it registered
+            // while loading (attributed via `module_owned_exports`) plus any
+            // exports registered directly under its package name. Deliberately
+            // does NOT consult the blanket `exported_subs["GLOBAL"]`, which also
+            // pools exports pulled in by transitive `use`s inside this module
+            // (e.g. a nested `use Other :tag`). Those are legitimately imported
+            // into the inner module and its methods must still resolve them, so
+            // hiding them here would break the inner module.
+            let mut owned_exports: HashMap<String, HashSet<String>> = self
+                .module_owned_exports
+                .get(module)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(pkg_subs) = self.exported_subs.get(module) {
+                for (name, symbol_tags) in pkg_subs {
+                    owned_exports
+                        .entry(name.clone())
+                        .or_default()
+                        .extend(symbol_tags.iter().cloned());
+                }
+            }
+            for (name, symbol_tags) in &owned_exports {
+                let is_mandatory = symbol_tags.contains("MANDATORY");
+                if !want_all && !is_mandatory && symbol_tags.is_disjoint(&requested_tags) {
+                    // This export should NOT be imported — remove from GLOBAL
+                    let global_key = Symbol::intern(&format!("GLOBAL::{}", name));
+                    if !func_keys_before.contains(&global_key) {
+                        self.registry_mut().functions.remove(&global_key);
+                    }
+                    // Also remove multi-dispatch variants
+                    let prefix = format!("GLOBAL::{}/", name);
+                    let multi_keys: Vec<Symbol> = self
+                        .registry()
+                        .functions
+                        .keys()
+                        .filter(|k| {
+                            let ks = k.resolve();
+                            ks.starts_with(&prefix) && !func_keys_before.contains(k)
+                        })
+                        .copied()
+                        .collect();
+                    for mk in multi_keys {
+                        self.registry_mut().functions.remove(&mk);
                     }
                 }
             }
