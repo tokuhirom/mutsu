@@ -314,8 +314,16 @@ impl Interpreter {
                     return Err(runtime::utils::type_check_element_typed_error(
                         var_name, constraint, item,
                     ));
+                } else if native_constraint {
+                    // A native element type has no type object; Nil reverts to the
+                    // array's numeric/string zero.
+                    coerced_items.push(Self::native_fill_for_constraint(Some(constraint)));
                 } else {
-                    coerced_items.push(item.clone());
+                    // Raku: Nil assigned to a typed container element reverts to the
+                    // element type's default, i.e. the type object itself
+                    // (`my Bool @a = Nil` -> Array[Bool].new(Bool)).
+                    let base = crate::runtime::types::strip_type_smiley(constraint).0;
+                    coerced_items.push(Value::package(crate::symbol::Symbol::intern(base)));
                 }
                 continue;
             }
