@@ -290,11 +290,11 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .package_scope_lexical(name)
+            .escaping_our_write_cell(code, name)
+            .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
-            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int
@@ -407,11 +407,11 @@ impl Interpreter {
             return Ok(());
         }
         let val = self
-            .package_scope_lexical(name)
+            .escaping_our_write_cell(code, name)
+            .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
-            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::int(0));
         // ContainerRef (box-on-capture / `:=`): mutate the shared cell in place so
         // closures over this lexical observe the change and the smart string/Int

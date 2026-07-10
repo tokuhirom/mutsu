@@ -73,13 +73,17 @@ impl Interpreter {
         // Default to Nil (NOT Int(0) like `++`) so `my $w; $w ~= "z"` yields "z",
         // not "0z"; the binary op descalarizes/numifies/stringifies Nil itself.
         let raw_val = self
+            // A block lexical captured by an escaped `our` sub resolves through
+            // its persisted shared cell FIRST, mirroring the read side — see
+            // `escaping_our_write_cell`.
+            .escaping_our_write_cell(code, name)
             // A package-scope free variable (`our $X` / `package { my $X }`)
             // reached by bare name from inside a named sub is not in the local
             // env; read it from the canonical package store so the fused RMW
             // operates on the current value, not Nil (mirrors `GetGlobal`). A
             // boxed lexical's cell is authoritative and must win over a stale
             // plain `env` copy left by a prior call's return-merge.
-            .package_scope_lexical(name)
+            .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
@@ -226,11 +230,11 @@ impl Interpreter {
             return Ok(());
         }
         let raw_val = self
-            .package_scope_lexical(name)
+            .escaping_our_write_cell(code, name)
+            .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
-            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::int(0));
         // ContainerRef: deref for increment, write back through the shared container.
         // Use an atomic read-modify-write under the cell lock so concurrent
@@ -320,11 +324,11 @@ impl Interpreter {
             return Ok(());
         }
         let raw_val = self
-            .package_scope_lexical(name)
+            .escaping_our_write_cell(code, name)
+            .or_else(|| self.package_scope_lexical(name))
             .or_else(|| self.get_env_with_main_alias(name))
             .or_else(|| self.read_package_scope_var(name))
             .or_else(|| self.anon_state_value(name))
-            .or_else(|| self.escaping_our_incdec_cell(code, name))
             .unwrap_or(Value::int(0));
         // ContainerRef: deref for decrement, write back through the shared container.
         // Atomic RMW under the cell lock for concurrent `start` blocks (Track C).
