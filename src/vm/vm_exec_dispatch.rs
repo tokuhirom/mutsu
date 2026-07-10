@@ -544,6 +544,12 @@ impl Interpreter {
                 let val = val.into_deref();
                 // When @-sigil dereferences a Hash, convert to a list of pairs
                 let val = match val.view() {
+                    // An `@`-sigil read strips the Scalar container: `@$x` on an
+                    // itemized `$x = [1,2,3]` yields the plain Array (flattens /
+                    // iterates element-wise).
+                    ValueView::Array(items, kind) if kind.is_itemized() => {
+                        Value::array_with_kind(items.clone(), kind.decontainerize())
+                    }
                     ValueView::Hash(map) => {
                         let pairs: Vec<Value> = map
                             .iter()
@@ -1539,6 +1545,18 @@ impl Interpreter {
             OpCode::Itemize => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 self.stack.push(Self::itemize_value(val));
+                *ip += 1;
+            }
+            OpCode::DeitemizeZen => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let deitemized = match val.view() {
+                    ValueView::Array(items, kind) if kind.is_itemized() => {
+                        Value::array_with_kind(items.clone(), kind.decontainerize())
+                    }
+                    ValueView::Scalar(inner) => (*inner).clone(),
+                    _ => val,
+                };
+                self.stack.push(deitemized);
                 *ip += 1;
             }
             OpCode::DeitemizeForBind => {

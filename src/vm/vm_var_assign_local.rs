@@ -117,7 +117,10 @@ impl Interpreter {
                 } else {
                     let arc = arc.clone();
                     if scalar {
-                        val = Self::normalize_scalar_assignment_value(val);
+                        val = Self::itemize_scalar_store(
+                            name,
+                            Self::normalize_scalar_assignment_value(val),
+                        );
                     }
                     self.check_container_cell_constraint(&arc, &val)?;
                     Value::store_through_cell(&arc, &val);
@@ -127,7 +130,8 @@ impl Interpreter {
                 }
             }
             if !name.starts_with('@') && !name.starts_with('%') {
-                val = Self::normalize_scalar_assignment_value(val);
+                val =
+                    Self::itemize_scalar_store(name, Self::normalize_scalar_assignment_value(val));
             }
             if val.is_nil()
                 && !self.locals[idx].is_nil()
@@ -306,7 +310,7 @@ impl Interpreter {
             }
             assigned
         } else {
-            Self::normalize_scalar_assignment_value(raw_val)
+            Self::itemize_scalar_store(name, Self::normalize_scalar_assignment_value(raw_val))
         };
         if val.is_nil()
             && let Some(def) = self.var_default(name)

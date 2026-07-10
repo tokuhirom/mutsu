@@ -12,6 +12,11 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
+        let left_itemized = Self::is_itemized_operand(&left);
+        let right_itemized = Self::is_itemized_operand(&right);
+        // Hyper descends through Scalar containers (see deitemize_hyper_operand).
+        let right = Self::deitemize_hyper_operand(&right);
+        let left = Self::deitemize_hyper_operand(&left);
         let name = Self::const_str(code, name_idx).to_string();
         // QuantHash (Set/Bag/Mix) operands: reuse the plain-Hash hyper logic by
         // projecting each to a `key => weight` Hash, then convert the result
@@ -198,6 +203,16 @@ impl Interpreter {
         // For writeback, push the mutated-left value first (consumed by the
         // store op) and leave the function results on top as the expression
         // value.
+        // The result inherits the itemization of the structure-donating operand
+        // (matching exec_hyper_op).
+        let itemize_result = left_itemized || (!Self::is_listy(&left) && right_itemized);
+        let finish = |v: Value| -> Value {
+            if itemize_result {
+                Self::itemize_value(v)
+            } else {
+                v
+            }
+        };
         if writeback {
             let writeback_val = if do_writeback {
                 wrap(mutated_left)
@@ -206,10 +221,10 @@ impl Interpreter {
                 // compiler-emitted store is a harmless no-op.
                 left.clone()
             };
-            self.stack.push(wrap(results));
+            self.stack.push(finish(wrap(results)));
             self.stack.push(writeback_val);
         } else {
-            self.stack.push(wrap(results));
+            self.stack.push(finish(wrap(results)));
         }
         Ok(())
     }

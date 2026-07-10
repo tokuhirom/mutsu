@@ -1990,7 +1990,7 @@ impl Interpreter {
             } else if env_key.starts_with('%') {
                 self.coerce_hash_var_value(&env_key, val)?
             } else {
-                Self::normalize_scalar_assignment_value(val)
+                Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val))
             };
             self.env_mut().insert(env_key, val.clone());
             // An assignment is an expression: leave the assigned value on the
@@ -2022,7 +2022,10 @@ impl Interpreter {
             } else if resolved_name.starts_with('%') {
                 self.coerce_hash_var_value(&resolved_name, val)?
             } else {
-                Self::normalize_scalar_assignment_value(val)
+                Self::itemize_scalar_store(
+                    &resolved_name,
+                    Self::normalize_scalar_assignment_value(val),
+                )
             };
 
             self.check_readonly_for_modify(&resolved_name)?;

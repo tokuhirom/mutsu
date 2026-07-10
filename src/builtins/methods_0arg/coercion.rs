@@ -389,6 +389,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 let items = crate::runtime::utils::value_to_list(target);
                 Some(Ok(Value::array(items)))
             }
+            // `$x<>` decontainerizes: an itemized Array/List drops its Scalar
+            // container (same backing data), matching rakudo's `postcircumfix:«< >»`.
+            ValueView::Array(items, kind) if kind.is_itemized() => Some(Ok(
+                Value::array_with_kind(items.clone(), kind.decontainerize()),
+            )),
+            ValueView::Scalar(inner) => Some(Ok((*inner).clone())),
             ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..) => {
                 Some(Ok(target.clone()))
             }

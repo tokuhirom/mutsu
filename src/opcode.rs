@@ -284,6 +284,11 @@ pub(crate) enum OpCode {
     /// array's element type (see `Expr::DeitemizeForBind`). Falls back to plain
     /// list flattening for non-array values.
     DeitemizeForBind,
+    /// Strip ONE level of itemization for a zen slice (`$a[]` / `$a<>`):
+    /// an itemized Array/List drops its Scalar container (kind flag) so a
+    /// following list context flattens it; a `Scalar` wrapper unwraps.
+    /// Everything else passes through unchanged.
+    DeitemizeZen,
     /// Like `Itemize`, but skips itemization when the named scalar variable is
     /// bound (`:=`) to a Positional value. A bound scalar is NOT a Scalar
     /// container, so `@a = $bound` must flatten (matching Raku). The argument is

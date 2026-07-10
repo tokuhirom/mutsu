@@ -231,7 +231,7 @@ impl Interpreter {
             }
             assigned
         } else {
-            Self::normalize_scalar_assignment_value(raw_val)
+            Self::itemize_scalar_store(&name, Self::normalize_scalar_assignment_value(raw_val))
         };
         if val.is_nil()
             && let Some(def) = self.var_default(&name)

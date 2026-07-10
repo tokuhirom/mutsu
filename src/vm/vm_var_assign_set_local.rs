@@ -354,6 +354,9 @@ impl Interpreter {
                     let arc = arc.clone();
                     if scalar {
                         val = Self::normalize_scalar_assignment_value(val);
+                        if !is_constant {
+                            val = Self::itemize_scalar_store(name, val);
+                        }
                     }
                     self.check_container_cell_constraint(&arc, &val)?;
                     Value::store_through_cell(&arc, &val);
@@ -387,6 +390,10 @@ impl Interpreter {
             }
             if !name.starts_with('@') && !name.starts_with('%') {
                 val = Self::normalize_scalar_assignment_value(val);
+                // `constant $c = [...]` binds the value itself, no Scalar container.
+                if !is_constant && !Self::is_identity_scalar_restore(&self.locals[idx], &val) {
+                    val = Self::itemize_scalar_store(name, val);
+                }
             }
             if val.is_nil()
                 && let Some(def) = self.var_default(name)
@@ -948,6 +955,11 @@ impl Interpreter {
                         let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
                         Value::real_array(runtime::value_to_list(&forced))
                     }
+                    // `@a := $x` strips the Scalar container: the @-var binds the
+                    // Array itself (same backing data, plain kind), not the item.
+                    ValueView::Array(items, kind) if kind.is_itemized() => {
+                        Value::array_with_kind(items.clone(), kind.decontainerize())
+                    }
                     _ => raw_popped.clone(),
                 }
             } else {
@@ -1094,7 +1106,19 @@ impl Interpreter {
             }
             assigned
         } else {
-            Self::normalize_scalar_assignment_value(raw_popped)
+            let v = Self::normalize_scalar_assignment_value(raw_popped);
+            // Only a plain `=` assignment installs a Scalar container; binds
+            // (`:=`), rebinds, and `constant` install the value itself.
+            if is_bind
+                || scalar_bind
+                || is_rebind
+                || is_constant
+                || Self::is_identity_scalar_restore(&self.locals[idx], &v)
+            {
+                v
+            } else {
+                Self::itemize_scalar_store(name, v)
+            }
         };
         if val.is_nil()
             && !self.locals[idx].is_nil()
@@ -1475,7 +1499,10 @@ impl Interpreter {
             } else {
                 let arc = arc.clone();
                 if scalar {
-                    val = Self::normalize_scalar_assignment_value(val);
+                    val = Self::itemize_scalar_store(
+                        name,
+                        Self::normalize_scalar_assignment_value(val),
+                    );
                 } else {
                     // Container identity (§3.1): re-apply the element-type +
                     // `array[T]` metadata so a typed native array written through
