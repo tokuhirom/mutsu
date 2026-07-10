@@ -33,6 +33,16 @@ impl Interpreter {
         }
 
         let saved_locals = std::mem::take(&mut self.locals);
+        // Isolate the caller's loop-body-local declaration scope (mirrors
+        // `call_compiled_function` in vm_call_fast.rs). This fast path bypasses
+        // `push_call_frame`/`run()`, so without clearing these a callee's
+        // body-local `my $x` — e.g. a recursive call from inside the caller's
+        // `while`/`for` loop — would register in the *caller's* active loop-local
+        // scope and be restored (clobbered) at the caller's loop exit. Repro:
+        // `sub f($n){ my $r=0; my @w=(1,); while @w.splice { f($n-1) if $n>0; $r+=10 }; $r }`
+        // returned 0 instead of 10. Restored on every exit path.
+        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
+        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / local env writes land in a
@@ -74,6 +84,8 @@ impl Interpreter {
                     self.restore_readonly_vars(saved_readonly);
                     self.set_env(caller_env);
                     self.locals = saved_locals;
+                    self.loop_local_vars = saved_loop_local_vars;
+                    self.loop_local_saved_env = saved_loop_local_saved_env;
                     {
                         let param_name = &cf.param_defs[param_idx].name;
                         let got = runtime::value_type_name(&val);
@@ -170,6 +182,8 @@ impl Interpreter {
         self.stack.truncate(saved_stack_depth);
 
         self.locals = saved_locals;
+        self.loop_local_vars = saved_loop_local_vars;
+        self.loop_local_saved_env = saved_loop_local_saved_env;
         self.restore_readonly_vars(saved_readonly);
 
         // Restore the caller env and merge the overlay (the callee's own writes)
