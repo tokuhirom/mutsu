@@ -162,6 +162,42 @@ impl Interpreter {
     pub fn add_default_site_repo(&mut self) {
         if let Some(dir) = Self::default_repo_dir("site") {
             self.add_lib_path(format!("inst#{}", dir.display()));
+
+            // Hang a CompUnit::Repository::Installation for the site repo off the
+            // tail of $*REPO's chain, so `$*REPO.repo-chain` exposes it as an
+            // Installation repository the way real Raku always does (real Raku's
+            // chain contains several Installation repos; mutsu's default was a
+            // FileSystem-only chain). zef's `list-installed`/`locate` grep the
+            // chain for CompUnit::Repository::Installation entries -- without an
+            // Installation repo present those commands reported nothing installed
+            // even when the site repo held modules.
+            let mut site_attrs = HashMap::new();
+            site_attrs.insert("prefix".to_string(), Value::str(dir.display().to_string()));
+            let site_repo = Value::make_instance(
+                Symbol::intern("CompUnit::Repository::Installation"),
+                site_attrs,
+            );
+            let mut cursor = self.env.get("*REPO").cloned();
+            while let Some(node) = cursor {
+                let ValueView::Instance { attributes, .. } = node.view() else {
+                    break;
+                };
+                // Read the current `next-repo` and release the read lock before
+                // taking the write lock below (holding both on the same
+                // interior-mutable cell would self-deadlock).
+                let next = attributes.as_map().get("next-repo").cloned();
+                match next {
+                    Some(next)
+                        if next.truthy() && matches!(next.view(), ValueView::Instance { .. }) =>
+                    {
+                        cursor = Some(next);
+                    }
+                    _ => {
+                        attributes.insert("next-repo".to_string(), site_repo);
+                        break;
+                    }
+                }
+            }
         }
     }
 
