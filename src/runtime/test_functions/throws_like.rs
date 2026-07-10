@@ -238,12 +238,19 @@ impl Interpreter {
         let (type_ok, exception_val, err_message) = match &result {
             Ok(_) => (false, None, String::new()),
             Err(err) => {
-                // Check exception field first for structured exceptions
+                // Check exception field first for structured exceptions. See
+                // through a `but role` mixin (`X::Foo.new but role {…}`) to the
+                // wrapped instance so a mixed-in exception is matched by its type.
                 let ex_class = err.exception.as_ref().and_then(|ex| {
-                    if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
-                        Some(class_name.resolve())
-                    } else {
-                        None
+                    let mut cur = ex.as_ref().clone();
+                    loop {
+                        match cur.view() {
+                            ValueView::Instance { class_name, .. } => {
+                                break Some(class_name.resolve());
+                            }
+                            ValueView::Mixin(inner, _) => cur = inner.as_ref().clone(),
+                            _ => break None,
+                        }
                     }
                 });
                 let type_matched = if expected_normalized.is_empty()
