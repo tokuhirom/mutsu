@@ -214,6 +214,7 @@ impl Interpreter {
             exported_sub_values: self.exported_sub_values.clone(),
             unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
+            module_owned_exports: self.module_owned_exports.clone(),
             suppress_exports: false,
             in_lvalue_assignment: false,
             in_does_rhs: false,

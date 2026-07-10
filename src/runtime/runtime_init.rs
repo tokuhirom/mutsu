@@ -2035,6 +2035,7 @@ impl Interpreter {
             exported_vars: HashMap::new(),
             unit_module_exported_subs: HashMap::new(),
             unit_module_loading_stack: Vec::new(),
+            module_owned_exports: HashMap::new(),
             suppress_exports: false,
             in_lvalue_assignment: false,
             in_does_rhs: false,

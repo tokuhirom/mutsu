@@ -69,6 +69,21 @@ impl Interpreter {
                 mirror.insert(tag.clone());
             }
         }
+        // Attribute this export to the module currently being loaded (any kind:
+        // unit, package-block, or bare-file). The `use MOD` tag-filter uses this
+        // to hide only MOD's own exports, never a symbol MOD imported from a
+        // transitively-`use`d module.
+        if let Some(owner) = self.module_load_stack.last().cloned() {
+            let owned = self
+                .module_owned_exports
+                .entry(owner)
+                .or_default()
+                .entry(name.clone())
+                .or_default();
+            for tag in &tags {
+                owned.insert(tag.clone());
+            }
+        }
         let entry = self
             .exported_subs
             .entry(package)
@@ -185,7 +200,20 @@ impl Interpreter {
         // rather than polluting the GLOBAL namespace.
         let target_pkg = self.current_package();
 
-        for (name, symbol_tags) in subs {
+        // For a `unit module Foo`, the actual exports live in
+        // `unit_module_exported_subs[Foo]` (runtime registration used the
+        // GLOBAL package), while `exported_subs[Foo]` is empty. Merge both so a
+        // re-import (`use Foo; use Foo :tag`) of a unit-module export is
+        // actually re-installed, not just tag-validated.
+        let mut merged_subs = subs;
+        for (name, tags) in unit_global_subs.iter() {
+            merged_subs
+                .entry(name.clone())
+                .or_default()
+                .extend(tags.iter().cloned());
+        }
+
+        for (name, symbol_tags) in merged_subs {
             // MANDATORY exports are always imported regardless of requested tags
             let is_mandatory = symbol_tags.contains("MANDATORY");
             if !import_all && !is_mandatory && symbol_tags.is_disjoint(&requested) {
@@ -208,7 +236,7 @@ impl Interpreter {
             let target_single = format!("{target_pkg}::{name}");
             let target_prefix = format!("{target_pkg}::{name}/");
 
-            let function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
+            let mut function_entries: Vec<(Symbol, Arc<FunctionDef>)> = self
                 .registry()
                 .functions
                 .iter()
@@ -226,6 +254,29 @@ impl Interpreter {
                     }
                 })
                 .collect();
+            // Fallback for a re-import (`use Foo; use Foo :tag`) of a `unit
+            // module Foo` sub: the sub is registered under `GLOBAL::name`, not
+            // `Foo::name`, and an earlier default `use Foo` already stripped the
+            // `GLOBAL::name` alias for a non-DEFAULT export. Restore it from the
+            // stable `EXPORT::ALL::name` alias (registered for every non-ALL
+            // export) so the tagged re-import makes the sub callable again.
+            if function_entries.is_empty() {
+                for alias in [
+                    format!("{module}::EXPORT::ALL::{name}"),
+                    format!("GLOBAL::EXPORT::ALL::{name}"),
+                    format!("EXPORT::ALL::{name}"),
+                ] {
+                    if let Some(def) = self
+                        .registry()
+                        .functions
+                        .get(&Symbol::intern(&alias))
+                        .cloned()
+                    {
+                        function_entries.push((Symbol::intern(&target_single), def));
+                        break;
+                    }
+                }
+            }
             for (k, v) in function_entries {
                 self.registry_mut().functions.insert(k, v);
             }

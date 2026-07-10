@@ -1178,6 +1178,14 @@ pub struct Interpreter {
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     unit_module_loading_stack: Vec<String>,
+    /// Exports each module registered while it was the module currently being
+    /// loaded (attributed via `module_load_stack`), mapping module -> name ->
+    /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
+    /// export ever hoisted, this correctly attributes an export to the module
+    /// that declared it. The `use MOD` tag-filter consults this so it only
+    /// hides MOD's *own* exports and never a symbol MOD imported from a
+    /// transitively-`use`d module (which MOD's methods must still resolve).
+    module_owned_exports: HashMap<String, HashMap<String, HashSet<String>>>,
     /// When true, `is export` trait is ignored (used by `need` to load without importing).
     pub(crate) suppress_exports: bool,
     /// When true, rw routine calls should not auto-FETCH Proxy return values.
