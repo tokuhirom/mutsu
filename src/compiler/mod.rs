@@ -442,6 +442,33 @@ impl Compiler {
         self.code.add_closure_code(compiled, esc)
     }
 
+    /// Resolve the local slot of the binding of `name` visible `depth` lexical
+    /// scopes out from the current one (`$OUTER::name` = depth 1), by unwinding
+    /// the shadow records in `local_scopes`: each frame that declares `name`
+    /// stores the pre-declaration slot (`Some(outer)` for a genuine ancestor
+    /// shadow, `None` for a first declaration), so unwinding the frames deeper
+    /// than the target scope leaves the slot the target scope sees. Returns
+    /// `None` when the depth crosses this frame's boundary or the name is not
+    /// a local binding at that scope (the runtime falls back to its existing
+    /// by-name / env resolution). §1.3 S14 (GetOuterVar slot bake) — only
+    /// meaningful under `MUTSU_SHADOW_SLOTS` (the default build records `None`
+    /// for every declaration, so this resolves `None` whenever a shadow is
+    /// involved, and the runtime read is gated anyway).
+    fn resolve_outer_var_slot(&self, name: &str, depth: usize) -> Option<u32> {
+        let n = self.local_scopes.len();
+        if depth >= n {
+            return None;
+        }
+        let target = n - 1 - depth;
+        let mut slot = self.local_map.get(name).copied();
+        for frame in self.local_scopes[target + 1..].iter().rev() {
+            if let Some(prev) = frame.get(name) {
+                slot = *prev;
+            }
+        }
+        slot
+    }
+
     /// Record the compiler-authoritative positional-parameter → local-slot map
     /// into `code.param_local_slots`, so the VM's `precompute_param_local_slots`
     /// need not re-resolve parameter names by searching `locals` (§1.5).

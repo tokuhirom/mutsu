@@ -1382,9 +1382,17 @@ pub(crate) enum OpCode {
 
     /// Get a variable from an outer lexical scope ($OUTER::varname).
     /// `depth` indicates how many OUTER:: prefixes (1 = $OUTER::x, 2 = $OUTER::OUTER::x).
+    /// `slot` is the emit-point local slot of the binding visible `depth` lexical
+    /// scopes out (resolved by walking the compiler's `local_scopes` shadow
+    /// records; §1.3 S14). `None` = the name is not a local binding there (it
+    /// crosses a frame boundary, or is first declared deeper than the target
+    /// scope). Read only under `MUTSU_SHADOW_SLOTS`: with shadow slots a name
+    /// occupies several `locals` slots and the runtime's position search always
+    /// picks the outermost, wrong for any depth short of the outermost binding.
     GetOuterVar {
         name_idx: u32,
         depth: u32,
+        slot: Option<u32>,
     },
 
     /// Get a variable by searching the dynamic call stack ($DYNAMIC::varname).

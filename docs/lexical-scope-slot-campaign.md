@@ -212,7 +212,48 @@ broadcast = touches every slot with the name.
       (AssignExprLocal `@`/`%` parity) remains, plus pre-existing
       `outer-topic.t` #4. Pin: `t/shadow-slot-closure-capture.t` (OFF, ON, and
       real raku). *(this branch)*
-- [ ] S14+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+- [x] **S14 — `$OUTER::name` slot bake.** Under shadow slots, `get_outer_var`'s
+      inline nested-block path searched `code.locals` by `position` (the
+      OUTERMOST same-named slot), so `$OUTER::a` at depth 1 of a triple shadow
+      returned the outermost binding (`variables-and-packages.t` #10/#15; the
+      depth-2 `$OUTER::OUTER::a` only passed by coincidence). The compiler now
+      resolves the emit-point slot of the binding visible `depth` scopes out by
+      unwinding the `local_scopes` shadow records (`resolve_outer_var_slot`:
+      each frame that declares the name stores its pre-declaration slot, so
+      unwinding the frames deeper than the target scope yields the target's
+      slot; `None` when the depth crosses the frame boundary or the name is
+      first-declared deeper) and bakes it onto `GetOuterVar`. The runtime
+      (gated ON) returns the LIVE `self.locals[slot]` — with shadow slots each
+      binding owns its slot, so the live value IS the outer binding, matching
+      raku's live-binding semantics with no snapshot indexing at all; OFF stays
+      on the existing snapshot/env paths byte-identically. ON green:
+      `variables-and-packages.t` 39/39 AND `t/outer-topic.t` #4 (the
+      `$OUTER::_` read — the toggle-ON `prove t/` suite is now fully green).
+      Pin: `t/shadow-slot-outer-var.t` (OFF, ON, real raku). Known pre-existing
+      default-build gaps left as-is (they fail OFF on main identically):
+      depth-2 access in a second block group, `$OUTER::` from a block that
+      doesn't declare the name, and `$OUTER::` seeing post-entry mutations
+      (raku reads the live binding; the OFF snapshot path reads block-entry
+      values). *(this branch)*
+
+## Fresh full toggle-ON survey (2026-07-10, post-S13, release, 1373 files)
+
+Only **4 genuine ON failures** remain; all were verified pre-existing on `main`
+(A/B via `git checkout main -- src/` + rebuild — S13 introduced zero
+regressions). Earlier surveys re-probed only the survey-#2 regression set, so
+three of these were missed until now — re-run the FULL survey periodically.
+
+- `S02-names-vars/variables-and-packages.t` #10/#15 — `$OUTER::a` × shadow
+  (**fixed by S14**, this branch)
+- `S04-declarations/state.t` #13 — `(state @foo) = @bar` paren-decl lvalue ×
+  shadow
+- `integration/advent2013-day12.t` #11/31-32 — `@a[2,3,4]` slice + `is default`
+  under ON returns the default for all elements
+- `S32-array/perl.t` #7 — known (#4086 AssignExprLocal `@`/`%` attr-mirror
+  parity; bad-plan abort)
+- (`t/` side: only `outer-topic.t` #4, pre-existing)
+
+- [ ] S15+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
       nested/deep/generic index-assign
       variants (`IndexAssignExprNested`/`DeepNested`/`Generic`), computed-attr twigil
       cells, hyper `»=»` multi-key writeback, and the remaining `update_local_if_exists`

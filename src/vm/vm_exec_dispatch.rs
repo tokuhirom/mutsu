@@ -4042,9 +4042,13 @@ impl Interpreter {
                 self.bind_caller_var(target, source, *depth as usize)?;
                 *ip += 1;
             }
-            OpCode::GetOuterVar { name_idx, depth } => {
+            OpCode::GetOuterVar {
+                name_idx,
+                depth,
+                slot,
+            } => {
                 let name = Self::const_str(code, *name_idx);
-                let val = self.get_outer_var(code, name, *depth as usize);
+                let val = self.get_outer_var(code, name, *depth as usize, *slot);
                 self.stack.push(val);
                 *ip += 1;
             }

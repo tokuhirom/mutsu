@@ -549,10 +549,12 @@ impl Compiler {
         }
         // $OUTER:: / $OUTER::OUTER:: variable access
         if let Some((bare_name, depth)) = Self::parse_outer_prefix(name) {
+            let slot = self.resolve_outer_var_slot(&bare_name, depth);
             let name_idx = self.code.add_constant(Value::str(bare_name));
             self.code.emit(OpCode::GetOuterVar {
                 name_idx,
                 depth: depth as u32,
+                slot,
             });
             return;
         }
