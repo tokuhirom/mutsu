@@ -39,6 +39,21 @@ impl Interpreter {
             return err;
         }
 
+        // See through a `but role` mixin (`X::Foo.new but role { … }`) to the
+        // wrapped instance so a mixed-in exception is still recognized as an
+        // exception (and matched by `CATCH { when X::Foo }`) instead of being
+        // wrapped in X::AdHoc. Walk nested mixins to the innermost instance.
+        let underlying_class: Option<Symbol> = {
+            let mut cur = value.clone();
+            loop {
+                match cur.view() {
+                    ValueView::Instance { class_name, .. } => break Some(class_name),
+                    ValueView::Mixin(inner, _) => cur = inner.as_ref().clone(),
+                    _ => break None,
+                }
+            }
+        };
+
         let message = if let ValueView::Instance { attributes, .. } = value.view() {
             attributes
                 .as_map()
@@ -50,6 +65,13 @@ impl Interpreter {
                         .map(|v| v.to_string_value())
                         .unwrap_or_else(|_| value.to_string_value())
                 })
+        } else if matches!(value.view(), ValueView::Mixin(..)) {
+            // A mixed-in exception may override `.message`/`.Str`; dispatch through
+            // the mixin so the override is honored, falling back to stringification.
+            self.vm_call_method_with_values(value.clone(), "message", vec![])
+                .or_else(|_| self.vm_call_method_with_values(value.clone(), "Str", vec![]))
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|_| value.to_string_value())
         } else if let ValueView::Array(items, _) = value.view() {
             // Multi-arg die: concatenate .Str of each element
             let mut parts = Vec::new();
@@ -68,7 +90,7 @@ impl Interpreter {
         if is_fail {
             err.control = Some(crate::value::Control::Fail);
         }
-        if let ValueView::Instance { class_name, .. } = value.view() {
+        if let Some(class_name) = underlying_class {
             let cn = class_name.resolve();
             let is_exception = cn == "Exception"
                 || cn.starts_with("X::")
@@ -78,6 +100,9 @@ impl Interpreter {
                     .iter()
                     .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::"));
             if is_exception {
+                // Preserve the value verbatim (including a `but role` mixin) so its
+                // type still matches `when X::Foo` and any overridden `.message`
+                // dispatches through the mixin.
                 err.exception = Some(Box::new(value));
             } else {
                 // Non-exception instance: wrap in X::AdHoc with payload
