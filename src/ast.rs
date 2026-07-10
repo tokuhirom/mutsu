@@ -979,6 +979,95 @@ pub(crate) enum AssignOp {
 /// last value into the caller (the caller's loop variable / hash key is corrupted).
 /// Scalar names only (matching the caller's scalar-writeback filter); `@`/`%`
 /// binders are handled by the Array/Hash writeback path.
+/// Collect every `my`-declared lexical name (scalars, arrays, hashes) that a
+/// body introduces, recursing through the control-flow constructs whose bodies
+/// run in the *same* env scope (for/while/loop/if/block/given/when/gather/...),
+/// but NOT into nested `sub`/method/closure bodies (those are separate scopes).
+///
+/// Used to seed `CompiledCode::env_only_decls` so the method-dispatch return
+/// merge treats a `my @x` declared inside a deferred body (e.g. a `gather` block,
+/// stashed in `stmt_pool` and run by-name against the method env) as method-local
+/// and does not leak it into a same-named caller lexical across (self-)recursion.
+pub(crate) fn collect_all_my_decl_names(
+    stmts: &[Stmt],
+    out: &mut std::collections::HashSet<String>,
+) {
+    fn add(name: &str, out: &mut std::collections::HashSet<String>) {
+        let bare = name.strip_prefix('\\').unwrap_or(name);
+        if !bare.is_empty() {
+            out.insert(bare.to_string());
+        }
+    }
+    // A `my` declaration can hide inside a *condition* expression — e.g.
+    // `next unless my @x = ...` parses to `If { cond: !DoStmt(VarDecl @x) }`,
+    // and `while my $x = ...` puts the decl in the loop condition. Walk the
+    // condition Expr for embedded statement bodies (DoStmt/Block/Gather) so those
+    // env-only lexicals are collected too. Stops at closure boundaries (Lambda /
+    // AnonSub) — those are separate scopes.
+    fn add_from_expr(expr: &Expr, out: &mut std::collections::HashSet<String>) {
+        match expr {
+            Expr::DoStmt(s) => collect_all_my_decl_names(std::slice::from_ref(s), out),
+            Expr::Block(stmts) | Expr::Gather(stmts) => collect_all_my_decl_names(stmts, out),
+            Expr::DoBlock { body, .. } => collect_all_my_decl_names(body, out),
+            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => add_from_expr(expr, out),
+            Expr::Binary { left, right, .. } => {
+                add_from_expr(left, out);
+                add_from_expr(right, out);
+            }
+            _ => {}
+        }
+    }
+    for stmt in stmts {
+        match stmt {
+            Stmt::VarDecl { name, .. } => add(name, out),
+            Stmt::For {
+                param,
+                params,
+                body,
+                ..
+            } => {
+                if let Some(p) = param {
+                    add(p, out);
+                }
+                for p in params {
+                    add(p, out);
+                }
+                collect_all_my_decl_names(body, out);
+            }
+            Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+            } => {
+                add_from_expr(cond, out);
+                if let Some(v) = binding_var {
+                    add(v, out);
+                }
+                collect_all_my_decl_names(then_branch, out);
+                collect_all_my_decl_names(else_branch, out);
+            }
+            Stmt::While { cond, body, .. } => {
+                add_from_expr(cond, out);
+                collect_all_my_decl_names(body, out);
+            }
+            Stmt::Loop { body, .. }
+            | Stmt::React { body }
+            | Stmt::Block(body)
+            | Stmt::SyntheticBlock(body)
+            | Stmt::Default(body)
+            | Stmt::Catch(body)
+            | Stmt::Control(body) => collect_all_my_decl_names(body, out),
+            Stmt::Given { body, .. } | Stmt::When { body, .. } => {
+                collect_all_my_decl_names(body, out)
+            }
+            Stmt::Whenever { body, .. } => collect_all_my_decl_names(body, out),
+            Stmt::Label { stmt, .. } => collect_all_my_decl_names(std::slice::from_ref(stmt), out),
+            _ => {}
+        }
+    }
+}
+
 pub(crate) fn collect_routine_body_local_names(
     stmts: &[Stmt],
     out: &mut std::collections::HashSet<String>,
@@ -2228,5 +2317,65 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
             is_rw: false,
             is_whatever_code: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod env_only_decl_tests {
+    use super::*;
+
+    fn vardecl(name: &str) -> Stmt {
+        Stmt::VarDecl {
+            name: name.to_string(),
+            expr: Expr::Literal(crate::value::Value::NIL),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: Vec::new(),
+            where_constraint: None,
+        }
+    }
+
+    // `my @needed` declared inside a `next unless my @needed = ...` condition
+    // parses to `If { cond: !DoStmt(VarDecl @needed) }`. The declaration is in the
+    // condition Expr, not the then/else body, so the collector must walk the
+    // condition. Regression for the zef `!find-prereq-candidates` `@needed` leak.
+    #[test]
+    fn collects_my_decl_embedded_in_if_condition() {
+        let inner_if = Stmt::If {
+            cond: Expr::Unary {
+                op: crate::token_kind::TokenKind::Bang,
+                expr: Box::new(Expr::DoStmt(Box::new(vardecl("@needed")))),
+            },
+            then_branch: vec![Stmt::Next(None)],
+            else_branch: vec![],
+            binding_var: None,
+        };
+        // Wrapped in a gather-shaped Block([While { body: [...] }]).
+        let body = vec![Stmt::Block(vec![Stmt::While {
+            cond: Expr::Literal(crate::value::Value::NIL),
+            body: vec![inner_if],
+            label: None,
+        }])];
+        let mut out = std::collections::HashSet::new();
+        collect_all_my_decl_names(&body, &mut out);
+        assert!(
+            out.contains("@needed"),
+            "expected @needed to be collected from the If condition, got {out:?}"
+        );
+    }
+
+    // Array/hash `my` names in a plain body must be collected (not just scalars).
+    #[test]
+    fn collects_array_and_hash_decls() {
+        let body = vec![vardecl("@arr"), vardecl("%hash"), vardecl("$scalar")];
+        let mut out = std::collections::HashSet::new();
+        collect_all_my_decl_names(&body, &mut out);
+        assert!(out.contains("@arr"));
+        assert!(out.contains("%hash"));
+        assert!(out.contains("$scalar"));
     }
 }
