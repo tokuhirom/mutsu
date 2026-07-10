@@ -236,6 +236,23 @@ broadcast = touches every slot with the name.
       (raku reads the live binding; the OFF snapshot path reads block-entry
       values). *(this branch)*
 
+- [x] **S15 — `(state @foo) = @bar` paren-decl assignment must stay by-name.**
+      Under shadow slots the parenthesized-declaration lvalue store
+      (`__mutsu_assign_callable_lvalue` branch 1, from #4086) emitted
+      `AssignExprLocal(slot)` — but a state AGGREGATE lives in a shared
+      `ContainerRef` cell (StateVarInit) aliased by the persisted state store,
+      and `exec_assign_expr_local_op` deliberately REPLACES the slot for
+      `@`/`%` targets (whole-reassignment semantics; cell write-through is
+      scalar-only, `vm_var_assign_local.rs`). The replace detached the slot
+      from the persisted cell, so the next call restored the stale cell and
+      the per-call reassignment was lost (`state.t` #13 ON: second call
+      returned the mutated previous contents). Fix: when the paren-decl is
+      `is_state`, always emit the by-name `AssignExpr` (what the default build
+      emits anyway — byte-identical OFF), which writes through the state cell;
+      state shadowing stays coherent via cell identity, not slot position.
+      ON green: `S04-declarations/state.t` 46/46. Pin:
+      `t/shadow-slot-state-paren-decl.t` (OFF, ON, real raku). *(this branch)*
+
 ## Fresh full toggle-ON survey (2026-07-10, post-S13, release, 1373 files)
 
 Only **4 genuine ON failures** remain; all were verified pre-existing on `main`
@@ -246,7 +263,7 @@ three of these were missed until now — re-run the FULL survey periodically.
 - `S02-names-vars/variables-and-packages.t` #10/#15 — `$OUTER::a` × shadow
   (**fixed by S14**, this branch)
 - `S04-declarations/state.t` #13 — `(state @foo) = @bar` paren-decl lvalue ×
-  shadow
+  shadow (**fixed by S15**, this branch)
 - `integration/advent2013-day12.t` #11/31-32 — `@a[2,3,4]` slice + `is default`
   under ON returns the default for all elements
 - `S32-array/perl.t` #7 — known (#4086 AssignExprLocal `@`/`%` attr-mirror

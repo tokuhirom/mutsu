@@ -39,8 +39,13 @@ impl Compiler {
         if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
             && let Expr::DoStmt(stmt) = &args[0]
-            && let Stmt::VarDecl { name: var_name, .. } = stmt.as_ref()
+            && let Stmt::VarDecl {
+                name: var_name,
+                is_state,
+                ..
+            } = stmt.as_ref()
         {
+            let is_state = *is_state;
             // 1. Compile the VarDecl (handles state init)
             self.compile_stmt(stmt);
             // VarDecl doesn't push to stack, so no pop needed.
@@ -50,8 +55,26 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
             // 4. Assign to the variable (prefer the baked slot so a `(my $a)`
             //    that shadows an enclosing `$a` writes its own slot — §1.4).
+            //    EXCEPTION: a `(state @x) = …` / `(state %x)` target must stay
+            //    on the by-name `AssignExpr` even under shadow slots (§1.3 S15):
+            //    a state aggregate lives in a shared `ContainerRef` cell
+            //    (StateVarInit) that the persisted state store, the slot, and
+            //    the env all alias, and the by-name assign writes THROUGH that
+            //    cell. `AssignExprLocal` deliberately REPLACES the slot for
+            //    `@`/`%` targets (whole-reassignment semantics), detaching the
+            //    slot from the persisted cell — the next call then restores the
+            //    stale cell and the per-call reassignment is lost
+            //    (S04-declarations/state.t #13). By-name is what the default
+            //    build emits anyway, so this is byte-identical OFF; state var
+            //    shadowing stays coherent through cell identity, not slot
+            //    position.
             let var_name = var_name.clone();
-            self.emit_assign_local_or_name(&var_name);
+            if is_state {
+                let name_idx = self.code.add_constant(Value::str(var_name));
+                self.code.emit(OpCode::AssignExpr(name_idx));
+            } else {
+                self.emit_assign_local_or_name(&var_name);
+            }
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
