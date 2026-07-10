@@ -522,6 +522,18 @@ impl Value {
         }
     }
 
+    /// Construct an EAGER `HashEntryRef` that reads the current node value on
+    /// each access (used for live `for %h -> $p` iteration pairs, whose
+    /// `.value` must reflect an in-loop `%h{$p.key} = X`).
+    #[inline]
+    pub(crate) fn hash_entry_ref_eager(hash: Gc<HashData>, path: Vec<String>) -> Self {
+        Value::HashEntryRef {
+            hash,
+            path,
+            eager: true,
+        }
+    }
+
     /// Construct a `LazyIoLines` iterator over a file handle (boxing the
     /// handle internally, mirroring `Value::pair`/`Value::scalar`).
     #[inline]

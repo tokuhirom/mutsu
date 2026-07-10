@@ -59,6 +59,31 @@ impl Interpreter {
         None
     }
 
+    /// Expand a plain (non-itemized) `Hash` into the `Pair` items a `for %h`
+    /// loop iterates, but with each pair's value bound to an *eager*
+    /// `HashEntryRef` into the shared hash node (rather than a decontainerized
+    /// snapshot). Raku's hash-iteration pairs are live: a `%h{$p.key} = X` in
+    /// the loop body is observable through `$p.value` on a later read (zef's
+    /// `Zef::Config::parse-file` chains `%config{k} = $node.value.subst(...)`
+    /// this way). The ref reads the current node value on each access; hash
+    /// element writes mutate the same `Gc` node in place, so the read tracks
+    /// them. Falls back to the plain snapshot pairs (`typed_pair`) for an
+    /// itemized hash, which iterates as a single element.
+    pub(super) fn hash_live_pairs(gc: &crate::gc::Gc<crate::value::HashData>) -> Vec<Value> {
+        if gc.itemized {
+            return vec![Value::hash_with_data(gc.clone())];
+        }
+        gc.keys()
+            .map(|k| {
+                let vref = Value::hash_entry_ref_eager(gc.clone(), vec![k.clone()]);
+                match gc.typed_key(k).view() {
+                    ValueView::Str(s) => Value::pair((**s).clone(), vref),
+                    _ => Value::value_pair(gc.typed_key(k), vref),
+                }
+            })
+            .collect()
+    }
+
     pub(crate) fn control_signal_topic_value(signal: &RuntimeError) -> Option<Value> {
         // User-defined classes doing X::Control carry their original
         // exception instance. Surface it directly so CONTROL blocks see the
