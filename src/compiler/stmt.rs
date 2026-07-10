@@ -1383,6 +1383,7 @@ impl Compiler {
                         name_idx,
                         trait_name_idx,
                         has_arg: trait_arg.is_some(),
+                        slot: self.local_map.get(name.as_str()).copied(),
                     });
                 }
                 // Deferred type constraint registration after traits are applied

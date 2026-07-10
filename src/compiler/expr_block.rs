@@ -108,10 +108,13 @@ impl Compiler {
                         }
                         let trait_name_idx =
                             self.code.add_constant(Value::str("default".to_string()));
+                        // Expression-position declarations are env-only (stored
+                        // via SetGlobal, no local slot) — nothing to bake.
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,
                             has_arg: trait_arg.is_some(),
+                            slot: None,
                         });
                     }
                     // Tag the container's element-type metadata so `.of` survives
@@ -358,10 +361,13 @@ impl Compiler {
                         self.compile_expr(arg);
                     }
                     let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
+                    // Bake the same slot `emit_set_named_var` stored to (None
+                    // when the value went to env via SetGlobal instead).
                     self.code.emit(OpCode::ApplyVarTrait {
                         name_idx,
                         trait_name_idx,
                         has_arg: trait_arg.is_some(),
+                        slot: self.local_map.get(name.as_str()).copied(),
                     });
                 }
                 // An uninitialized scalar declared `is default(V)` used as an

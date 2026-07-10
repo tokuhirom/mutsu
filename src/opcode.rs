@@ -1352,10 +1352,14 @@ pub(crate) enum OpCode {
     },
     /// Apply a custom variable trait via trait_mod:<is>.
     /// When `has_arg` is true, pops trait argument value from stack.
+    /// `slot` is the compile-time-baked local slot of the declared variable
+    /// (§1.5; scope-correct under shadow slots). `None` for env-only
+    /// expression-position declarations, which have no local slot to bake.
     ApplyVarTrait {
         name_idx: u32,
         trait_name_idx: u32,
         has_arg: bool,
+        slot: Option<u32>,
     },
 
     /// Get a variable from the caller's scope ($CALLER::varname).

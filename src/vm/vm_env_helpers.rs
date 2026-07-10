@@ -1086,6 +1086,18 @@ impl Interpreter {
         }
     }
 
+    /// Read the local resolved by [`Self::resolve_local_slot`] when it exists.
+    /// §1.5 slot-preferring mirror of [`Self::locals_get_by_name`].
+    pub(super) fn read_local_slot_or_name(
+        &self,
+        code: &CompiledCode,
+        slot: Option<u32>,
+        name: &str,
+    ) -> Option<Value> {
+        self.resolve_local_slot(code, slot, name)
+            .map(|s| self.locals[s].clone())
+    }
+
     /// Write `val` into the slot resolved by [`Self::resolve_local_slot`] when it
     /// exists (no-op otherwise). §1.5 slot-preferring mirror write.
     pub(super) fn write_local_slot_or_name(

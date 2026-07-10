@@ -8,9 +8,20 @@ impl Interpreter {
         name_idx: u32,
         trait_name_idx: u32,
         has_arg: bool,
+        slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let trait_name = Self::const_str(code, trait_name_idx).to_string();
+        // Under shadow slots a by-name `position` search resolves to the OUTER
+        // same-named slot, so the trait would tag/replace the wrong container
+        // (e.g. `my @a is default(42)` shadowing an outer `@a` tagged the outer
+        // array and clobbered env with it). Prefer the compile-time-baked slot
+        // of the declared variable; OFF keeps the by-name path byte-identical.
+        let eff_slot = if crate::compiler::shadow_slots_active() {
+            slot
+        } else {
+            None
+        };
 
         // Handle `is default(...)` as a built-in variable trait.
         if trait_name == "default" {
@@ -29,11 +40,11 @@ impl Interpreter {
             // otherwise be skipped and lost when the value flows out.
             if (name.starts_with('@') || name.starts_with('%'))
                 && let Some(container) = self
-                    .locals_get_by_name(code, &name)
+                    .read_local_slot_or_name(code, eff_slot, &name)
                     .or_else(|| self.get_env_with_main_alias(&name))
             {
                 let container = self.tag_container_default(container, default_value.clone());
-                self.locals_set_by_name(code, &name, container.clone());
+                self.write_local_slot_or_name(code, eff_slot, &name, container.clone());
                 self.set_env_with_main_alias(&name, container.clone());
                 // Replace existing Nil and uninitialized (Package("Any"))
                 // elements with the default value (Raku container semantics:
@@ -62,19 +73,19 @@ impl Interpreter {
                             kind,
                         );
                         let new_arr = self.tag_container_default(new_arr, default_value.clone());
-                        self.locals_set_by_name(code, &name, new_arr.clone());
+                        self.write_local_slot_or_name(code, eff_slot, &name, new_arr.clone());
                         self.set_env_with_main_alias(&name, new_arr);
                     }
                 }
             }
             // If the variable is currently Nil (uninitialized scalar), set it to the default.
             if !name.starts_with('@') && !name.starts_with('%') {
-                let current = self.locals_get_by_name(code, &name);
+                let current = self.read_local_slot_or_name(code, eff_slot, &name);
                 if matches!(
                     current.as_ref().map(Value::view),
                     Some(ValueView::Nil) | None
                 ) {
-                    self.locals_set_by_name(code, &name, default_value.clone());
+                    self.write_local_slot_or_name(code, eff_slot, &name, default_value.clone());
                     self.set_env_with_main_alias(&name, default_value);
                 }
             }
@@ -137,7 +148,9 @@ impl Interpreter {
                 // The value might be an Array (from the initializer) or already
                 // a Buf/Blob Instance (if SetLocal coerced through an old Buf
                 // container in the same slot, e.g. in a loop redeclaration).
-                let current = self.locals_get_by_name(code, name).unwrap_or(Value::NIL);
+                let current = self
+                    .read_local_slot_or_name(code, eff_slot, name)
+                    .unwrap_or(Value::NIL);
                 let items = match current.view() {
                     ValueView::Array(items, ..) => items
                         .iter()
@@ -160,7 +173,7 @@ impl Interpreter {
                 };
                 let buf = self.try_compiled_method_or_interpret(buf_type, "new", items)?;
                 let name_str = name.to_string();
-                self.locals_set_by_name(code, &name_str, buf.clone());
+                self.write_local_slot_or_name(code, eff_slot, &name_str, buf.clone());
                 self.set_env_with_main_alias(&name_str, buf);
                 return Ok(());
             }
@@ -174,7 +187,7 @@ impl Interpreter {
             }
             let name_str = name.to_string();
             // Register container type metadata with declared_type "Map"
-            if let Some(container) = self.locals_get_by_name(code, &name_str) {
+            if let Some(container) = self.read_local_slot_or_name(code, eff_slot, &name_str) {
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,
@@ -183,7 +196,7 @@ impl Interpreter {
                 // Hashes embed metadata in `HashData`; store the tagged value
                 // back into both the local slot and env.
                 let tagged = self.tag_container_metadata(container, info);
-                self.locals_set_by_name(code, &name_str, tagged.clone());
+                self.write_local_slot_or_name(code, eff_slot, &name_str, tagged.clone());
                 self.set_env_with_main_alias(&name_str, tagged);
             }
             // Mark the variable read-only to prevent mutation
@@ -208,7 +221,7 @@ impl Interpreter {
                 // Check if the variable already has initial values from the declaration.
                 // If so, construct the QuantHash from those values instead of creating
                 // an empty one. This handles `my %h is Bag = <a b b c>`.
-                let current_val = self.locals_get_by_name(code, &name_str);
+                let current_val = self.read_local_slot_or_name(code, eff_slot, &name_str);
                 let has_init_values = match current_val.as_ref().map(Value::view) {
                     Some(ValueView::Hash(h)) => !h.is_empty(),
                     Some(ValueView::Array(a, _)) => !a.is_empty(),
@@ -336,7 +349,7 @@ impl Interpreter {
                     declared_type: Some(trait_name.clone()),
                 };
                 let instance = self.tag_container_metadata(instance, info);
-                self.locals_set_by_name(code, &name_str, instance.clone());
+                self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
                 self.set_env_with_main_alias(&name_str, instance.clone());
                 // Set type constraint so future assignments are coerced correctly
                 self.vm_set_var_type_constraint(&name_str, Some(trait_name.clone()));
