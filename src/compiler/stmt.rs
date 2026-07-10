@@ -707,6 +707,11 @@ impl Compiler {
                     if let Stmt::VarDecl { name, .. } = s
                         && sigilless_readonly_names.contains(name)
                     {
+                        // Register the sigilless name BEFORE compiling its
+                        // VarDecl so the decl emits MarkConstantContext (a raw
+                        // `\x = ...` binds the value itself — no Scalar
+                        // container, so SetLocal must not itemize it).
+                        self.sigilless_locals.insert(name.clone());
                         let key = format!("__mutsu_sigilless_readonly::{}", name);
                         let key_idx = self.code.add_constant(Value::str(key));
                         let false_idx = self.code.add_constant(Value::FALSE);
@@ -1197,7 +1202,10 @@ impl Compiler {
                     }
                     // Mark constant context so SetLocal uses List coercion for @ and
                     // skips Hash coercion for %, matching Raku's constant semantics.
-                    if is_constant && (name.starts_with('@') || name.starts_with('%')) {
+                    // Scalar constants and sigilless declarations (`my \x = ...`)
+                    // also carry the mark: both bind the value itself (no Scalar
+                    // container), so SetLocal must not itemize it.
+                    if is_constant || self.sigilless_locals.contains(name.as_str()) {
                         self.code.emit(OpCode::MarkConstantContext);
                     }
                     if has_explicit_initializer {

@@ -670,6 +670,47 @@ impl Interpreter {
         }
     }
 
+    /// Itemize an aggregate VALUE stored into a `$` scalar container by
+    /// assignment (`=`), so a later read reflects the Scalar container:
+    /// `my $x = [1,2,3]; $x.raku` is `$[1, 2, 3]` (rakudo checks
+    /// `nqp::iscont(SELF)` in `Array.raku`). Only the Value-level `ArrayKind`
+    /// flips (identity of the backing `ArrayData` is preserved, so `=`-shared
+    /// containers keep aliasing). Binds (`:=`) must NOT go through this — they
+    /// install the value itself, not a Scalar container. The topic `_` is
+    /// excluded (container-alias writeback, see `itemize_scalar_assign_result`),
+    /// as are `&`-sigiled and internal `__mutsu_` names.
+    ///
+    /// TODO: a Hash stored in a scalar should render `${...}` the same way,
+    /// but `HashData.itemized` lives INSIDE the shared data (flipping it via
+    /// `hash_arc_itemized` clones the `HashData`, silently detaching `=`-shared
+    /// hashes like `my $h = f(%x)`). Representing per-holder hash itemization
+    /// needs a Value-level flag (Value-repr rework, ADR-0001 layer 3b).
+    pub(crate) fn itemize_scalar_store(name: &str, val: Value) -> Value {
+        if name == "_" || name.starts_with('&') || name.starts_with("__mutsu") {
+            return val;
+        }
+        match val.view() {
+            ValueView::Array(items, kind) if !kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.itemize())
+            }
+            _ => val,
+        }
+    }
+
+    /// True when a scalar store is an identity restore: the incoming value is
+    /// the SAME backing array with the SAME kind the slot already holds (the
+    /// compiler-emitted hyper-func-op writeback re-storing an unmutated left
+    /// operand). Skipping itemization then preserves a `:=`-bound bare List —
+    /// re-storing what was read must not manufacture a Scalar container.
+    pub(crate) fn is_identity_scalar_restore(current: &Value, val: &Value) -> bool {
+        if let (ValueView::Array(cur, ck), ValueView::Array(new, nk)) = (current.view(), val.view())
+        {
+            crate::gc::Gc::ptr_eq(cur, new) && ck == nk
+        } else {
+            false
+        }
+    }
+
     /// The rvalue produced by a *scalar* assignment expression is the itemized
     /// container value, so a following list context sees it as one element:
     /// `@p = ($x = 3, 4)` gives `((3,4),)`. `@`/`%`/`&` names keep their value.

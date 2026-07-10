@@ -149,6 +149,22 @@ impl Interpreter {
         err
     }
 
+    /// Strip ONE level of itemization from a hyper operand. Hyper ops descend
+    /// into itemized Arrays/Lists at every depth (raku: `$i >>+>> 10` with
+    /// `$i = [[1,2],[3,4]]` distributes into the nested arrays), so the Scalar
+    /// container is transparent here. Without this an itemized operand is
+    /// kept single by `value_to_list`, which mis-numifies it (func form) or
+    /// recurses forever (`hyper_op_pair` sees the same listy value again).
+    pub(super) fn deitemize_hyper_operand(v: &Value) -> Value {
+        match v.view() {
+            ValueView::Array(items, kind) if kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.decontainerize())
+            }
+            ValueView::Scalar(inner) => (*inner).clone(),
+            _ => v.clone(),
+        }
+    }
+
     pub(super) fn exec_hyper_op(
         &mut self,
         code: &CompiledCode,
@@ -158,6 +174,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
+        let left_itemized = Self::is_itemized_operand(&left);
+        let right_itemized = Self::is_itemized_operand(&right);
+        let right = Self::deitemize_hyper_operand(&right);
+        let left = Self::deitemize_hyper_operand(&left);
         let op = Self::const_str(code, op_idx).to_string();
         // X::HyperOp::Infinite: when the result length is determined by an
         // infinite/lazy operand, the hyper op cannot produce a finite result.
@@ -180,8 +200,22 @@ impl Interpreter {
             }
         }
         let result = self.hyper_op_pair(&op, &left, &right, dwim_left, dwim_right)?;
+        // The result inherits the itemization of the operand that donated its
+        // structure (the left when listy, else the right): raku renders
+        // `($a >>+<< (2,4,6)).raku` as `$(3, 6, 9)` for an itemized `$a`.
+        let result = if left_itemized || (!Self::is_listy(&left) && right_itemized) {
+            Self::itemize_value(result)
+        } else {
+            result
+        };
         self.stack.push(result);
         Ok(())
+    }
+
+    /// Is this operand an itemized Array/List (Scalar-held container)?
+    pub(super) fn is_itemized_operand(v: &Value) -> bool {
+        matches!(v.view(), ValueView::Array(_, kind) if kind.is_itemized())
+            || matches!(v.view(), ValueView::Scalar(_))
     }
 
     /// Apply a hyper binary op to a pair of values, recursing into nested
@@ -195,6 +229,11 @@ impl Interpreter {
         dwim_left: bool,
         dwim_right: bool,
     ) -> Result<Value, RuntimeError> {
+        // Hyper descends through Scalar containers at every depth.
+        let (left, right) = (
+            &Self::deitemize_hyper_operand(left),
+            &Self::deitemize_hyper_operand(right),
+        );
         // Hyper op on two hashes: combine values key-by-key, with the dwim arrows
         // selecting the resulting key set. A missing value on either side uses the
         // operator's identity element (e.g. 0 for `+`).

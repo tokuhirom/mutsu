@@ -1244,6 +1244,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     rest = after;
                     continue;
                 }
+                // A bare zen slice (`$a[]`) decontainerizes — keep the node so
+                // the compiler can emit the deitemization (it is NOT a plain
+                // identity for an itemized scalar-held array).
+                expr = Expr::ZenSlice(Box::new(expr));
                 rest = after;
                 continue;
             }

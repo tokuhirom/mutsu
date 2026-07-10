@@ -99,6 +99,19 @@ impl Interpreter {
             let inner = inner.clone();
             return self.call_method_with_values(inner, method, args);
         }
+        // An itemized Array/List invocant is likewise a Scalar container:
+        // method dispatch decontainerizes it (`$list.tail` reaches the last
+        // element, not the container treated as one item by `value_to_list`).
+        // The kind flip keeps the same backing data, so mutators (`.push`)
+        // still write through. `.raku`/`.perl`/`.item`/`.VAR`/`.self` must
+        // see the container itself (the `$` sigil / itemization is the point).
+        if let ValueView::Array(items, kind) = target.view()
+            && kind.is_itemized()
+            && !matches!(method, "raku" | "perl" | "item" | "VAR" | "self")
+        {
+            let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
+            return self.call_method_with_values(deconted, method, args);
+        }
         // `Rakudo::Internals::JSON.from-json` / `.to-json`: a core Rakudo class
         // routed to the native JSON implementation (used by OpenSSL, JSON::JWT).
         if let Some(result) = self.try_rakudo_internals_json_method(&target, method, &args) {

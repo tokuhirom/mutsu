@@ -156,7 +156,7 @@ impl Interpreter {
         // `$::('x') = 1, 2` is already parsed item-assignment (RHS is `1`), so a
         // list value here is a genuine `$::('x') = (1, 2)` and must be kept whole.
         let value = if sigil == "$" {
-            Self::normalize_scalar_assignment_value(raw_value)
+            Self::itemize_scalar_store(&name, Self::normalize_scalar_assignment_value(raw_value))
         } else {
             raw_value
         };

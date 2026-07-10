@@ -568,8 +568,11 @@ impl Compiler {
                 self.compile_expr_exists(target, *negated, *delete, arg, adverb);
             }
             Expr::ZenSlice(inner) => {
-                // Outside of :exists, zen slice is identity
+                // Outside of :exists, a zen slice decontainerizes: `$a[]` on an
+                // itemized `$a = (1,2,3)` yields the plain List (flattens in a
+                // following list context); non-containers pass through as-is.
                 self.compile_expr(inner);
+                self.code.emit(OpCode::DeitemizeZen);
             }
             // Reduction ([+] @arr)
             Expr::Reduction { op, expr } => {

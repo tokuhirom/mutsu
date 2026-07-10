@@ -11,7 +11,7 @@ plan 31;
     my @a = 1, 2, 3;
     my $r = @a.append(4, 5);
     is @a.raku, '[1, 2, 3, 4, 5]', 'append multiple scalars';
-    is $r.raku, '[1, 2, 3, 4, 5]', 'append returns the array';
+    is $r.raku, '$[1, 2, 3, 4, 5]', 'append returns the array';
 }
 {
     # one-arg rule: a single list argument is flattened
@@ -31,7 +31,7 @@ plan 31;
     my @a = 5, 6;
     my $r = @a.prepend((1, 2));
     is @a.raku, '[1, 2, 5, 6]', 'prepend flattening';
-    is $r.raku, '[1, 2, 5, 6]', 'prepend returns the array';
+    is $r.raku, '$[1, 2, 5, 6]', 'prepend returns the array';
 }
 
 # --- unshift ---
@@ -39,7 +39,7 @@ plan 31;
     my @a = 3;
     my $r = @a.unshift(1, 2);
     is @a.raku, '[1, 2, 3]', 'unshift multiple scalars';
-    is $r.raku, '[1, 2, 3]', 'unshift returns the array';
+    is $r.raku, '$[1, 2, 3]', 'unshift returns the array';
 }
 
 # --- pop ---
