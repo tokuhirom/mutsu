@@ -188,6 +188,22 @@ fn expr_ends_with_block(expr: &Expr) -> bool {
     }
 }
 
+/// Like [`expr_ends_with_block`] but for a whole statement: it also unwraps a
+/// `my $x = EXPR` / `$x = EXPR` whose initializer expression ends in a block
+/// (`my @a = gather { ... }`, `my @a = do for ... { ... }`). Such a declaration
+/// or assignment is equally self-terminating when its trailing `}` sits at the
+/// end of a line, so the next line's `if`/`for`/etc. must NOT be swallowed as a
+/// postfix modifier. Without this, `my @a = gather { ... }\nif COND { ... }`
+/// mis-parses `if COND` as a modifier (rewriting the decl to run its init only
+/// when COND) and turns the `{ ... }` into a separate bare block.
+fn stmt_ends_with_block(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr(e) => expr_ends_with_block(e),
+        Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => expr_ends_with_block(expr),
+        _ => false,
+    }
+}
+
 /// After a statement-modifier keyword's condition, a `{` block (or `-> ... {`
 /// pointy header) means this is actually a full control statement (`if COND
 /// { ... }`), not a postfix modifier — modifiers never take a block. Mirrors
@@ -208,13 +224,12 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             return Ok((input, stmt));
         }
     }
-    // Block-valued expressions (`try { ... }`, `do { ... }`, etc.):
-    // a newline after the closing brace should terminate the statement,
+    // Block-valued expressions (`try { ... }`, `do { ... }`, etc.), including a
+    // `my @a = gather { ... }` / `$x = do { ... }` whose initializer ends in a
+    // block: a newline after the closing brace should terminate the statement,
     // preventing the next line's `if`/`for`/etc. from being treated as a
     // statement modifier.
-    if let Stmt::Expr(ref expr) = stmt
-        && expr_ends_with_block(expr)
-    {
+    if stmt_ends_with_block(&stmt) {
         let consumed_len = input.len().saturating_sub(rest.len());
         if input[..consumed_len].contains('\n') {
             return Ok((input, stmt));
@@ -289,11 +304,12 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
 /// Try to parse a single statement modifier. Returns None if no modifier matched.
 fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>, PError> {
     // Whether the statement being modified itself ends in a `{ ... }` block
-    // (`$lock.protect: { ... }`). Only then does a `{` after the modifier's
-    // condition mean "this `if` starts a new control statement" rather than a
-    // postfix modifier. For a non-block statement (`die X if COND { ... }`) the
-    // `if` IS a modifier and the trailing block is a separate statement.
-    let modified_ends_block = matches!(&stmt, Stmt::Expr(e) if expr_ends_with_block(e));
+    // (`$lock.protect: { ... }`, `my @a = gather { ... }`). Only then does a `{`
+    // after the modifier's condition mean "this `if` starts a new control
+    // statement" rather than a postfix modifier. For a non-block statement
+    // (`die X if COND { ... }`) the `if` IS a modifier and the trailing block is
+    // a separate statement.
+    let modified_ends_block = stmt_ends_with_block(&stmt);
     // Try statement modifiers
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
