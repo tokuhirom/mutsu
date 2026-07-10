@@ -181,7 +181,38 @@ broadcast = touches every slot with the name.
       clobber at its source is the sound slice. Pin:
       `t/shadow-slot-env-broadcast.t` (passes OFF, ON, and real raku).
       *(this branch)*
-- [ ] S13+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+- [x] **S13 — closure-capture slot bake + shadow cell trigger (§1.3 slice 2:
+      "make closure capture slot-addressed").** Root cause of the `wrap.t`
+      toggle-ON failures (tests 63/66): a closure passed as a CALL ARGUMENT
+      (`.wrap({...})`, `@cs.push({...})`) is classified non-escaping by the
+      escape analysis, so `box_captured_lexicals` never gives its
+      captured-and-mutated lexical a shared `ContainerRef` cell; the non-cell
+      coherence path then writes the mutation back BY NAME (position = the
+      OUTER slot), so a closure over an inner shadow updated the wrong slot.
+      Two coupled fixes, both gated on `shadow_slots_active()`:
+      1. **Emit-point capture slots.** `Compiler::add_closure_code_baked` (the
+         single `add_closure_code` chokepoint, 6 call sites) bakes the parent
+         `local_map` slot for every child `free_var_syms`/`upvalue_syms` entry
+         into new `CompiledCode::free_var_parent_slots`/`upvalue_parent_slots`.
+         The four runtime capture resolvers (`capture_closure_env` ×2,
+         `capture_upvalues`, `box_captured_lexicals`) go through the shared
+         `resolve_capture_slot` helper: baked slot first (validated against the
+         slot name), `rposition` fallback. This also fixes the latent
+         pre-shadow hazard — `rposition` always picks the INNERMOST same-named
+         slot, wrong for a closure created before/outside the shadow block.
+      2. **Shadow boxing trigger (path C).** A captured-and-mutated scalar
+         whose baked slot is dup-named (`code.dup_named_locals`, S12) gets a
+         cell REGARDLESS of the escape analysis — by-name writeback cannot
+         disambiguate duplicate names, and the cell mechanism is the sound one
+         (per the roles-6e.t lesson). The early-return gate gains a matching
+         `dup_shadow_possible` arm. OFF is byte-identical: no duplicate names
+         exist, `resolve_capture_slot` reduces to the old `rposition`.
+      ON green: `S06-advanced/wrap.t` (90/90), and `S02-types/whatever.t` +
+      `S02-types/hash.t` now pass ON too (same capture root cause). `perl.t` #7
+      (AssignExprLocal `@`/`%` parity) remains, plus pre-existing
+      `outer-topic.t` #4. Pin: `t/shadow-slot-closure-capture.t` (OFF, ON, and
+      real raku). *(this branch)*
+- [ ] S14+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
       nested/deep/generic index-assign
       variants (`IndexAssignExprNested`/`DeepNested`/`Generic`), computed-attr twigil
       cells, hyper `»=»` multi-key writeback, and the remaining `update_local_if_exists`
@@ -451,6 +482,9 @@ Concrete first slices (each behavior-preserving with the gate OFF; roast is the 
    slot (or its `ContainerRef` cell), not `env[name]`, so a wrapper/closure over an
    inner shadow reads the inner cell (fixes `wrap.t`). This overlaps ADR-0001 layer-3a
    (container cells) — coordinate with GC, do NOT box scalars eagerly.
+   **DONE — see S13 in the slice checklist** (emit-point capture slots + the
+   dup-named shadow boxing trigger; boxing stays scoped to captured-and-mutated
+   scalars, no eager scalar boxing).
 3. **Slot-key the regex-interp / smartmatch env sync** so `$/`/`$0` and a shadowed
    `%h` don't collide (fixes `hash.t`).
 4. **Remove the `exec_block_scope_op` `locals.clone()`** once 1-3 hold, then flip the

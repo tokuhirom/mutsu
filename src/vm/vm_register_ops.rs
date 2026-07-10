@@ -79,6 +79,32 @@ impl Interpreter {
         cc_idx.map(|i| code.closure_compiled_codes[i as usize].clone())
     }
 
+    /// Resolve the creating frame's local slot for a captured free var / upvalue
+    /// (`parent_slots[i]` parallel to the sym list, baked at the closure's emit
+    /// point by `Compiler::add_closure_code_baked`). With `MUTSU_SHADOW_SLOTS`
+    /// active the baked slot wins — a name can occupy several creator slots and
+    /// the `rposition` name search always picks the innermost shadow, which is
+    /// wrong for a closure created outside that shadow's block. Gated: with the
+    /// gate off (default / CI) this is byte-identical to the pre-campaign
+    /// `rposition` search. The baked slot is validated against the slot's name
+    /// (stale/hand-built chunks fall back to the search). §1.3 closure-capture
+    /// slot bake.
+    fn resolve_capture_slot(
+        code: &CompiledCode,
+        parent_slots: &[Option<u32>],
+        i: usize,
+        sym: crate::symbol::Symbol,
+    ) -> Option<usize> {
+        if crate::compiler::shadow_slots_active()
+            && let Some(baked) = parent_slots.get(i).copied().flatten()
+            && let Some(name) = code.locals.get(baked as usize)
+            && sym.with_str(|s| name == s)
+        {
+            return Some(baked as usize);
+        }
+        sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+    }
+
     pub(super) fn exec_make_anon_sub_op(
         &mut self,
         code: &CompiledCode,
@@ -342,8 +368,9 @@ impl Interpreter {
             // e.g. `-> $r { * ~~ /<$r>/ }` where `$r` is read only inside a stored
             // regex) can be missing from the cloned env. Pull this frame's
             // free-var slots from the live local store so such captures survive.
-            for sym in &cc.free_var_syms {
-                if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+            for (i, sym) in cc.free_var_syms.iter().enumerate() {
+                if let Some(slot) =
+                    Self::resolve_capture_slot(code, &cc.free_var_parent_slots, i, *sym)
                     && let Some(val) = self.locals.get(slot)
                 {
                     flat.insert_sym(*sym, val.clone());
@@ -410,8 +437,8 @@ impl Interpreter {
         // Upvalue read: override this frame's own free-var slots with the live
         // local value. Authoritative even after the closure-driven env flush is
         // gone (a slot-only local is no longer mirrored into `env`).
-        for sym in &cc.free_var_syms {
-            if let Some(slot) = sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+        for (i, sym) in cc.free_var_syms.iter().enumerate() {
+            if let Some(slot) = Self::resolve_capture_slot(code, &cc.free_var_parent_slots, i, *sym)
                 && let Some(val) = self.locals.get(slot)
             {
                 map.insert(*sym, val.clone());
@@ -442,11 +469,12 @@ impl Interpreter {
         }
         cc.upvalue_syms
             .iter()
-            .map(|sym| {
+            .enumerate()
+            .map(|(i, sym)| {
                 // Resolve the creating frame's current binding: own local slot
                 // first (authoritative in the single-store model), then env.
                 let resolved = if let Some(slot) =
-                    sym.with_str(|s| code.locals.iter().rposition(|n| n == s))
+                    Self::resolve_capture_slot(code, &cc.upvalue_parent_slots, i, *sym)
                     && let Some(val) = self.locals.get(slot)
                 {
                     val.clone()
@@ -517,12 +545,24 @@ impl Interpreter {
         //       (`lives-ok {...}` / `map {...}`, call args / control blocks),
         //       bounding boxing cost and avoiding the broad-boxing perf blowup.
         // Read-only loop captures are handled by `owned_captures` (value-freeze).
+        // §1.3 (shadow slots only): a captured-and-mutated local whose name
+        // occupies MORE THAN ONE slot (a genuine inner-block shadow under
+        // `MUTSU_SHADOW_SLOTS`) must get a cell even when the closure does not
+        // escape: the non-cell coherence path writes the mutation back BY NAME
+        // (position = the outer slot), so a non-escaping closure over the inner
+        // shadow would update the wrong slot (S06-advanced/wrap.t). With the
+        // gate off `alloc_local` get-or-creates by name, so duplicates are
+        // structurally impossible and this is byte-identical.
+        let dup_shadow_possible =
+            crate::compiler::shadow_slots_active() && code.dup_named_locals.iter().any(|d| *d);
         if code.captured_mutated_locals.is_empty()
-            || (self.loop_local_vars.is_empty() && code.needs_cell_locals.is_empty())
+            || (self.loop_local_vars.is_empty()
+                && code.needs_cell_locals.is_empty()
+                && !dup_shadow_possible)
         {
             return;
         }
-        for sym in &cc.free_var_syms {
+        for (fv_i, sym) in cc.free_var_syms.iter().enumerate() {
             if !code.captured_mutated_locals.contains(sym) {
                 continue;
             }
@@ -541,9 +581,20 @@ impl Interpreter {
                 .loop_local_vars
                 .iter()
                 .any(|set| set.contains(s.as_str()));
+            // Emit-point slot (§1.3 slot bake, gated): the creator slot this
+            // closure actually captures. Falls back to the rposition name
+            // search (byte-identical with the gate off / for hand-built cc).
+            let baked_idx = Self::resolve_capture_slot(code, &cc.free_var_parent_slots, fv_i, *sym);
+            // Shadow trigger (C): the captured slot is one of several
+            // same-named slots — by-name writeback cannot disambiguate, so a
+            // cell is required regardless of the escape analysis (see the
+            // `dup_shadow_possible` gate above).
+            let is_dup_shadow = dup_shadow_possible
+                && baked_idx
+                    .is_some_and(|b| code.dup_named_locals.get(b).copied().unwrap_or(false));
             if !is_loop_local {
-                // Non-loop escaping path (B) only.
-                if !needs_cell {
+                // Non-loop escaping path (B) / shadow path (C) only.
+                if !needs_cell && !is_dup_shadow {
                     continue;
                 }
                 // A type/`where`-constrained scalar must keep flowing through
@@ -564,7 +615,7 @@ impl Interpreter {
                     continue;
                 }
             }
-            let Some(idx) = code.locals.iter().rposition(|n| *n == s) else {
+            let Some(idx) = baked_idx else {
                 continue;
             };
             let cur = &self.locals[idx];
