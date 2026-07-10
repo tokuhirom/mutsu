@@ -1532,6 +1532,21 @@ pub(crate) struct CompiledCode {
     /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
     /// runs (during `compute_needs_env_sync`).
     pub(crate) free_var_syms: Vec<Symbol>,
+    /// §1.3 closure-capture slot bake: parallel to `free_var_syms`, the CREATING
+    /// frame's compile-time local slot for each free variable (`local_map` at the
+    /// closure's emit point, baked by `Compiler::add_closure_code_baked`), or
+    /// `None` when the name is not a local there (an ancestor lexical / global).
+    /// Under `MUTSU_SHADOW_SLOTS` a name can occupy several creator slots, so the
+    /// runtime capture paths (`capture_closure_env`, `capture_upvalues`,
+    /// `box_captured_lexicals`) must resolve the emit-point slot, not an
+    /// `rposition` name search (which always picks the innermost shadow, wrong
+    /// for a closure created outside that shadow's block). Read only when shadow
+    /// slots are active; empty for hand-built chunks (falls back to the name
+    /// search).
+    pub(crate) free_var_parent_slots: Vec<Option<u32>>,
+    /// Parallel to `upvalue_syms`: the creating frame's compile-time local slot
+    /// for each upvalue, baked exactly like `free_var_parent_slots` (see there).
+    pub(crate) upvalue_parent_slots: Vec<Option<u32>>,
     /// Bare names this code reads through an `$OUTER::` reference (`$OUTER::x` →
     /// `x`). Populated by `compute_free_vars` from `GetOuterVar` ops. The closure
     /// snapshots each such name's captured enclosing value under a reserved
@@ -1703,6 +1718,8 @@ impl CompiledCode {
             needs_env_sync: Vec::new(),
             dup_named_locals: Vec::new(),
             free_var_syms: Vec::new(),
+            free_var_parent_slots: Vec::new(),
+            upvalue_parent_slots: Vec::new(),
             outer_ref_names: Vec::new(),
             free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),

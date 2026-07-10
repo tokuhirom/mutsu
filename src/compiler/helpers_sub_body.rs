@@ -556,7 +556,7 @@ impl Compiler {
         let analysis = self.compile_closure_body(params, &[], body);
         self.compiled_functions
             .retain(|k, _| fn_keys_before.contains(k));
-        self.code.add_closure_code(analysis, true)
+        self.add_closure_code_baked(analysis, true)
     }
 
     /// Compile a closure body to a `CompiledCode` (not stored in compiled_functions).

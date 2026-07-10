@@ -418,6 +418,30 @@ impl Compiler {
         slot
     }
 
+    /// Store a finalized closure body in this frame's `closure_compiled_codes`,
+    /// first baking the CREATING frame's compile-time slot for each of the
+    /// closure's free variables / upvalues (`local_map` at this emit point) into
+    /// `free_var_parent_slots` / `upvalue_parent_slots`. Under
+    /// `MUTSU_SHADOW_SLOTS` a name can occupy several creator slots, so the
+    /// runtime capture paths must use the emit-point slot instead of an
+    /// `rposition` name search; with the gate off the baked data is inert
+    /// (§1.3 closure-capture slot bake). Scalar free vars are stored sigil-less
+    /// ("x") and `@`/`%`/`&` keep their sigil — the same convention `local_map`
+    /// uses, so a direct lookup lines up.
+    pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
+        compiled.free_var_parent_slots = compiled
+            .free_var_syms
+            .iter()
+            .map(|sym| sym.with_str(|s| self.local_map.get(s).copied()))
+            .collect();
+        compiled.upvalue_parent_slots = compiled
+            .upvalue_syms
+            .iter()
+            .map(|sym| sym.with_str(|s| self.local_map.get(s).copied()))
+            .collect();
+        self.code.add_closure_code(compiled, esc)
+    }
+
     /// Record the compiler-authoritative positional-parameter → local-slot map
     /// into `code.param_local_slots`, so the VM's `precompute_param_local_slots`
     /// need not re-resolve parameter names by searching `locals` (§1.5).
