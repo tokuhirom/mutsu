@@ -15,6 +15,12 @@ for arg in "$@"; do
 done
 
 MUTSU=./target/release/mutsu
+# Absolute path so tests can be launched with CWD=roast/ (see the run loop):
+# many roast tests read data files via paths relative to the roast/ directory
+# (e.g. `"S32-str".IO.d ?? "S32-str" !! "t/spec/S32-str"`), so they only resolve
+# when run from inside roast/ -- exactly as `scripts/run-roast-test.sh` (used by
+# `make roast`) does. Running from the repo root would spuriously fail them.
+MUTSU_ABS="$PWD/target/release/mutsu"
 # Roast tests rely on fudge directives, which mutsu only processes when
 # MUTSU_FUDGE is set (so ordinary scripts are not affected by stray #? comments).
 export MUTSU_FUDGE=1
@@ -120,7 +126,10 @@ for f in "${TEST_FILES[@]}"; do
   # Run with timeout, capture stdout and stderr separately
   EXIT_CODE=0
   STDERR_FILE=$(mktemp)
-  OUTPUT=$(timeout "$FILE_TIMEOUT" "$MUTSU" "$f" 2>"$STDERR_FILE" | tr -d '\0') || EXIT_CODE=$?
+  # Run with CWD=roast/ and a roast-relative path, matching run-roast-test.sh,
+  # so tests that read sample data via roast-relative paths resolve correctly.
+  REL_F="${f#roast/}"
+  OUTPUT=$( (cd roast && timeout "$FILE_TIMEOUT" "$MUTSU_ABS" "$REL_F") 2>"$STDERR_FILE" | tr -d '\0') || EXIT_CODE=$?
   STDERR_CONTENT=$(<"$STDERR_FILE")
   rm -f "$STDERR_FILE"
 
