@@ -173,7 +173,7 @@ impl Interpreter {
         let mut updated = hash_items.as_ref().clone();
         updated.insert(key.clone(), current);
         let updated_value = Value::hash_with_data(Value::hash_arc(updated));
-        self.write_back_container_source(code, source, &raw_source, updated_value);
+        self.write_back_container_source(code, source, None, &raw_source, updated_value);
     }
 
     /// Write back modified loop variable to the original scalar variable.
@@ -262,7 +262,13 @@ impl Interpreter {
                         let key_str = key.to_string_value();
                         updated.insert(key_str, val);
                         let updated_value = Value::hash_with_data(Value::hash_arc(updated));
-                        self.write_back_container_source(code, source, &source_val, updated_value);
+                        self.write_back_container_source(
+                            code,
+                            source,
+                            None,
+                            &source_val,
+                            updated_value,
+                        );
                     }
                 } else if !kv_mode {
                     // %hash.values -> $val is rw: positional writeback using pre-captured key order
@@ -281,7 +287,13 @@ impl Interpreter {
                         let mut updated = hash_items.as_ref().clone();
                         updated.insert(keys[idx].clone(), val);
                         let updated_value = Value::hash_with_data(Value::hash_arc(updated));
-                        self.write_back_container_source(code, source, &source_val, updated_value);
+                        self.write_back_container_source(
+                            code,
+                            source,
+                            None,
+                            &source_val,
+                            updated_value,
+                        );
                     }
                 }
                 return;
@@ -298,7 +310,13 @@ impl Interpreter {
                         crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                         kind,
                     );
-                    self.write_back_container_source(code, source, &source_val, updated_value);
+                    self.write_back_container_source(
+                        code,
+                        source,
+                        None,
+                        &source_val,
+                        updated_value,
+                    );
                 }
             } else if arity > 1 && !rw_param_names.is_empty() {
                 // Multi-param rw: read each named param and write back to the array
@@ -315,7 +333,7 @@ impl Interpreter {
                     crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
-                self.write_back_container_source(code, source, &source_val, updated_value);
+                self.write_back_container_source(code, source, None, &source_val, updated_value);
             } else {
                 // Single-param rw: read the named param (or $_) and write back
                 let var_name = param_name.as_deref().unwrap_or("_");
@@ -337,7 +355,7 @@ impl Interpreter {
                     crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
                     kind,
                 );
-                self.write_back_container_source(code, source, &source_val, updated_value);
+                self.write_back_container_source(code, source, None, &source_val, updated_value);
             }
         } else if source.starts_with('%') {
             // Hash writeback: not straightforward by index; skip for now

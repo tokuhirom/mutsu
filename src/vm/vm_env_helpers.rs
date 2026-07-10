@@ -774,6 +774,15 @@ impl Interpreter {
 
     pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
+            // §1.4 shadow slots: a name occupying several slots (an inner-block
+            // shadow under MUTSU_SHADOW_SLOTS) cannot be broadcast — env holds
+            // one value per name, and pushing an arbitrary (last-iterated)
+            // same-named slot clobbers the live value with an uninitialized
+            // sibling's. The per-write mirror (`flush_local_to_env`) keeps env
+            // tracking the live slot instead. All-false with the gate off.
+            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
+                continue;
+            }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
@@ -786,6 +795,11 @@ impl Interpreter {
                 || name == "\u{a2}"
                 || name.chars().all(|ch| ch.is_ascii_digit())
             {
+                continue;
+            }
+            // A shadow-duplicated name cannot be broadcast by name — see
+            // `sync_env_from_locals` above.
+            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
                 continue;
             }
             // Only sync locals that already exist in the env.  This prevents

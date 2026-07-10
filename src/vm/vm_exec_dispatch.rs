@@ -3004,15 +3004,15 @@ impl Interpreter {
             OpCode::ReactDone => {
                 return Err(RuntimeError::react_done_signal());
             }
-            OpCode::TagContainerRef(name_idx) => {
+            OpCode::TagContainerRef(name_idx, slot) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.container_ref_var = Some(name);
+                self.container_ref_var = Some((name, *slot));
                 self.container_ref_reversed = false;
                 *ip += 1;
             }
-            OpCode::TagContainerRefReversed(name_idx) => {
+            OpCode::TagContainerRefReversed(name_idx, slot) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.container_ref_var = Some(name);
+                self.container_ref_var = Some((name, *slot));
                 self.container_ref_reversed = true;
                 *ip += 1;
             }

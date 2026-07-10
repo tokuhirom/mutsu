@@ -207,8 +207,10 @@ impl Compiler {
         let normalized_iterable = self.normalize_for_iterable(iterable);
         self.compile_expr(&normalized_iterable);
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+            let source_slot = self.local_map.get(source_name.as_str()).copied();
             let source_idx = self.code.add_constant(Value::str(source_name));
-            self.code.emit(OpCode::TagContainerRef(source_idx));
+            self.code
+                .emit(OpCode::TagContainerRef(source_idx, source_slot));
         }
         let param_local = param
             .as_ref()

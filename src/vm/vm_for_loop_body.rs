@@ -66,7 +66,13 @@ impl Interpreter {
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
         let saved_quanthash_bind = std::mem::take(&mut self.quanthash_bind_params);
-        let container_binding = self.container_ref_var.take();
+        // The tagged source name plus its compile-time-baked local slot (§1.5):
+        // the slot lets the topic writeback target the exact `locals` slot when
+        // shadow slots are active (a shadowed name occupies several slots and
+        // the by-name `position` search resolves to the outer one).
+        let container_binding_full = self.container_ref_var.take();
+        let container_source_slot = container_binding_full.as_ref().and_then(|(_, s)| *s);
+        let container_binding = container_binding_full.map(|(n, _)| n);
         // A sigilless/`is rw` for-param aliases the source element, but an
         // *immutable* Mix/Set/Bag yields immutable weights — assigning to the
         // alias must throw X::Assignment::RO, and no writeback may run (it would
@@ -335,6 +341,7 @@ impl Interpreter {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                container_source_slot,
                                 &param_name,
                                 idx,
                                 container_reversed,
@@ -366,7 +373,7 @@ impl Interpreter {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
                                 let val = self.stack.pop().unwrap();
-                                let deferred_ref = self.container_ref_var.take();
+                                let deferred_ref = self.container_ref_var.take().map(|(n, _)| n);
                                 let coll_start_len = coll.len();
                                 Self::collect_loop_value(coll, val);
                                 if let Some(name) = deferred_ref
@@ -385,6 +392,7 @@ impl Interpreter {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                container_source_slot,
                                 &param_name,
                                 idx,
                                 container_reversed,
@@ -436,6 +444,7 @@ impl Interpreter {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                container_source_slot,
                                 &param_name,
                                 idx,
                                 container_reversed,
@@ -481,6 +490,7 @@ impl Interpreter {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                container_source_slot,
                                 &param_name,
                                 idx,
                                 container_reversed,
@@ -516,6 +526,7 @@ impl Interpreter {
                             self.write_back_for_topic_item(
                                 code,
                                 &container_binding,
+                                container_source_slot,
                                 &param_name,
                                 idx,
                                 container_reversed,

@@ -1756,11 +1756,14 @@ impl Compiler {
                 let normalized_iterable = self.normalize_for_iterable(iterable);
                 self.compile_expr(&normalized_iterable);
                 if let Some(source_name) = Self::for_iterable_source_name(iterable) {
+                    let source_slot = self.local_map.get(source_name.as_str()).copied();
                     let source_idx = self.code.add_constant(Value::str(source_name));
                     if Self::for_iterable_is_reversed(iterable) {
-                        self.code.emit(OpCode::TagContainerRefReversed(source_idx));
+                        self.code
+                            .emit(OpCode::TagContainerRefReversed(source_idx, source_slot));
                     } else {
-                        self.code.emit(OpCode::TagContainerRef(source_idx));
+                        self.code
+                            .emit(OpCode::TagContainerRef(source_idx, source_slot));
                     }
                 }
                 // If the for-loop parameter name already has a local slot
@@ -2222,8 +2225,10 @@ impl Compiler {
                         }
                     };
                     if let Some(source_name) = source_name {
+                        let source_slot = self.local_map.get(source_name.as_str()).copied();
                         let name_idx = self.code.add_constant(Value::str(source_name));
-                        self.code.emit(OpCode::TagContainerRef(name_idx));
+                        self.code
+                            .emit(OpCode::TagContainerRef(name_idx, source_slot));
                     }
                     // The topic is read-only unless it is a bare scalar variable
                     // (`given $x` aliases `$x` rw), a scalar declaration topic

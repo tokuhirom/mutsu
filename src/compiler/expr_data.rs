@@ -22,8 +22,10 @@ impl Compiler {
                 self.code.emit(OpCode::GetGlobal(name_idx));
             }
             // Tag for container-ref consumers.
+            let source_slot = self.local_map.get(name).copied();
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
-            self.code.emit(OpCode::TagContainerRef(name_idx));
+            self.code
+                .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;
         }
         // $.attr = expr — In Raku, this first resolves self.attr (method call),
@@ -55,8 +57,10 @@ impl Compiler {
         // plain env-named scalars; the fused op leaves the new value on the
         // stack, exactly what expression context wants.
         if self.try_compile_fused_compound_assign(name, expr) {
+            let source_slot = self.local_map.get(name).copied();
             let name_idx = self.code.add_constant(Value::str(name.to_string()));
-            self.code.emit(OpCode::TagContainerRef(name_idx));
+            self.code
+                .emit(OpCode::TagContainerRef(name_idx, source_slot));
             return;
         }
         self.compile_expr(expr);
@@ -68,8 +72,10 @@ impl Compiler {
         }
         // Preserve lvalue container identity for expression-context consumers
         // (e.g. collected postfix `for` results).
+        let source_slot = self.local_map.get(name).copied();
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
-        self.code.emit(OpCode::TagContainerRef(name_idx));
+        self.code
+            .emit(OpCode::TagContainerRef(name_idx, source_slot));
     }
 
     /// Compile CaptureVar ($0, $1, etc.).

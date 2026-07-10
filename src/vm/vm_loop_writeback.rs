@@ -10,6 +10,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         source: &Option<String>,
+        source_slot: Option<u32>,
         pointy_param: &Option<String>,
     ) {
         let Some(source) = source else {
@@ -18,6 +19,14 @@ impl Interpreter {
         if !source.starts_with('@') && !source.starts_with('%') {
             return;
         }
+        // §1.4: with shadow slots active, target the compile-time-baked slot —
+        // the by-name `position` search resolves a shadowed source to the OUTER
+        // slot. OFF keeps `None` = the by-name path, byte-identical.
+        let eff_slot = if crate::compiler::shadow_slots_active() {
+            source_slot
+        } else {
+            None
+        };
         // For a pointy block, write back the bound parameter's final value
         // (`@p` after `@p.push`); otherwise the topic `$_`.
         let current = match pointy_param {
@@ -33,7 +42,7 @@ impl Interpreter {
             return;
         }
         self.set_env_with_main_alias(source, current.clone());
-        self.update_local_if_exists(code, source, &current);
+        self.write_local_slot_or_name(code, eff_slot, source, current);
     }
 
     /// Write the final `$_` back to an lvalue container element (`given %h<k>`
@@ -134,14 +143,24 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         source: &str,
+        source_slot: Option<u32>,
         raw_source: &Option<Value>,
         updated_value: Value,
     ) {
         if let Some(ValueView::ContainerRef(arc)) = raw_source.as_ref().map(Value::view) {
             arc.lock().unwrap().clone_from(&updated_value);
         } else {
+            // §1.4: prefer the compile-time-baked slot under the shadow-slot
+            // gate (a shadowed source name occupies several slots and the
+            // by-name `position` search hits the outer one); OFF passes `None`
+            // = the original by-name update, byte-identical.
+            let eff_slot = if crate::compiler::shadow_slots_active() {
+                source_slot
+            } else {
+                None
+            };
             self.set_env_with_main_alias(source, updated_value.clone());
-            self.update_local_if_exists(code, source, &updated_value);
+            self.write_local_slot_or_name(code, eff_slot, source, updated_value);
         }
     }
 
@@ -150,6 +169,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         source_var: &Option<String>,
+        source_slot: Option<u32>,
         param_name: &Option<String>,
         idx: usize,
         reversed: bool,
@@ -190,7 +210,19 @@ impl Interpreter {
         // share one outer cell (Stage 1 / env-locals coherence). Deref to inspect
         // the inner Array; when present, the rebuilt array must be written THROUGH
         // the cell so the bound source (`@b`) observes the topic mutation.
-        let raw_source = self.get_env_with_main_alias(source);
+        // §1.4: under the shadow-slot gate, read the baked slot first — the env
+        // entry for a shadowed name may hold a stale/other-slot Arc (clobbered
+        // by the whole-locals `sync_env_from_locals` broadcast), so rebuilding
+        // from it would base the writeback on the wrong array.
+        let slot_source = if crate::compiler::shadow_slots_active() {
+            source_slot
+                .and_then(|s| self.locals.get(s as usize))
+                .filter(|v| !v.is_nil())
+                .cloned()
+        } else {
+            None
+        };
+        let raw_source = slot_source.or_else(|| self.get_env_with_main_alias(source));
         let Some((items, kind)) = raw_source
             .as_ref()
             .and_then(|v| v.deref_container().into_array())
@@ -223,6 +255,6 @@ impl Interpreter {
         let mut new_data = (*items).clone();
         new_data.items[actual_idx] = current_topic;
         let updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
-        self.write_back_container_source(code, source, &raw_source, updated_value);
+        self.write_back_container_source(code, source, source_slot, &raw_source, updated_value);
     }
 }

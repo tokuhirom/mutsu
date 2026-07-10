@@ -31,7 +31,9 @@ impl Interpreter {
         let saved_topic_source = self.topic_source_var.take();
         let saved_container_source = self.topic_container_source.take();
         let saved_element_source = self.element_source.take();
-        let container_binding = self.container_ref_var.take();
+        let container_binding_full = self.container_ref_var.take();
+        let container_source_slot = container_binding_full.as_ref().and_then(|(_, s)| *s);
+        let container_binding = container_binding_full.map(|(n, _)| n);
         // An element-source topic (`given %h<k>` / `given @a[i]`) aliases an
         // lvalue element: the final `$_` is written back to that element below,
         // so `$_ = ...` (whole reassign) AND `.push` both propagate. Don't set
@@ -76,7 +78,12 @@ impl Interpreter {
                 if let Some(src) = &element_source {
                     this.write_back_element_source(code, src, &pointy_param);
                 } else {
-                    this.write_back_given_topic(code, &container_binding, &pointy_param);
+                    this.write_back_given_topic(
+                        code,
+                        &container_binding,
+                        container_source_slot,
+                        &pointy_param,
+                    );
                 }
             }
             this.set_when_matched(saved_when);
@@ -185,7 +192,8 @@ impl Interpreter {
             Err(mut e) if e.is_succeed() => {
                 // Take the container name before moving `return_value` out (a
                 // method borrow of `e` cannot coexist with a partial move).
-                self.container_ref_var = e.take_container_name();
+                // The signal carries only the name — no compile-time slot.
+                self.container_ref_var = e.take_container_name().map(|n| (n, None));
                 if let Some(v) = e.return_value {
                     last = v;
                 }
@@ -295,7 +303,7 @@ impl Interpreter {
                 let last = self.stack.last().cloned().unwrap_or(Value::NIL);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
-                sig.set_container_name(self.container_ref_var.take());
+                sig.set_container_name(self.container_ref_var.take().map(|(n, _)| n));
                 return Err(sig);
             }
         }
@@ -324,7 +332,7 @@ impl Interpreter {
         let last = self.stack.last().cloned().unwrap_or(Value::NIL);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
-        sig.set_container_name(self.container_ref_var.take());
+        sig.set_container_name(self.container_ref_var.take().map(|(n, _)| n));
         *ip = end;
         Err(sig)
     }
