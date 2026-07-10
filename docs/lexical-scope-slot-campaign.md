@@ -280,6 +280,29 @@ broadcast = touches every slot with the name.
       name-keyed `var_defaults` side table and the `trait_mod:<is>` fallback's
       `env().get(name)` are still by-name — §1.3 territory. *(this branch)*
 
+- [x] **S17 — `(my @x)`/`(my %h)` paren-decl assignment must stay by-name
+      (generalizes S15 from state aggregates to ALL aggregates).** Under
+      shadow slots the paren-decl lvalue store emitted `AssignExprLocal(slot)`
+      for `@`/`%` targets, which REPLACES the slot, while the by-name
+      `AssignExpr` assigns IN PLACE through container identity. The circular
+      `.raku.EVAL` roundtrip shape `((my @y) = [42, @y])` needs the in-place
+      write: the RHS captures the container the declaration just created, and
+      the in-place assign makes element 1 that SAME container (a cycle); the
+      slot replace left the captured container empty, broke the cycle, and
+      `S32-array/perl.t` #7 then aborted downstream indexing `Any` ("Any
+      cannot be parameterized" — a red herring; the plan abort was the
+      symptom). Fix: extend the `is_state` exception in
+      `compile_expr_call`'s paren-decl branch to any `@`/`%` target — always
+      emit the by-name `AssignExpr`, which is what the default build emits
+      anyway (byte-identical OFF). Aggregate shadowing stays coherent through
+      container/env identity (aggregate reads are env-first), not slot
+      position. ON green: `S32-array/perl.t` 9/9 — **the last remaining
+      toggle-ON failure from the 2026-07-10 full survey; the known ON
+      burndown list is now EMPTY** (a fresh full survey is the next step to
+      confirm). Pin: `t/shadow-slot-paren-decl-aggregate.t` (OFF, ON, real
+      raku — circular roundtrip, RHS self-reference identity, shadow
+      correctness for `@`/`%` paren-decls). *(this branch)*
+
 ## Fresh full toggle-ON survey (2026-07-10, post-S13, release, 1373 files)
 
 Only **4 genuine ON failures** remain; all were verified pre-existing on `main`

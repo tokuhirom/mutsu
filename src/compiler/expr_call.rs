@@ -55,21 +55,30 @@ impl Compiler {
             self.code.emit(OpCode::Dup);
             // 4. Assign to the variable (prefer the baked slot so a `(my $a)`
             //    that shadows an enclosing `$a` writes its own slot — §1.4).
-            //    EXCEPTION: a `(state @x) = …` / `(state %x)` target must stay
-            //    on the by-name `AssignExpr` even under shadow slots (§1.3 S15):
-            //    a state aggregate lives in a shared `ContainerRef` cell
-            //    (StateVarInit) that the persisted state store, the slot, and
-            //    the env all alias, and the by-name assign writes THROUGH that
-            //    cell. `AssignExprLocal` deliberately REPLACES the slot for
-            //    `@`/`%` targets (whole-reassignment semantics), detaching the
-            //    slot from the persisted cell — the next call then restores the
-            //    stale cell and the per-call reassignment is lost
-            //    (S04-declarations/state.t #13). By-name is what the default
-            //    build emits anyway, so this is byte-identical OFF; state var
-            //    shadowing stays coherent through cell identity, not slot
-            //    position.
+            //    EXCEPTION: any AGGREGATE (`@`/`%`) paren-decl target must stay
+            //    on the by-name `AssignExpr` even under shadow slots (§1.3
+            //    S15/S17). `AssignExprLocal` deliberately REPLACES the slot for
+            //    `@`/`%` targets (whole-reassignment semantics), while the
+            //    by-name assign writes IN PLACE through container identity.
+            //    Two ways the replace breaks:
+            //    - `(state @x) = …`: a state aggregate lives in a shared
+            //      `ContainerRef` cell (StateVarInit) that the persisted state
+            //      store, the slot, and the env all alias; replacing the slot
+            //      detaches it from the persisted cell, so the next call
+            //      restores the stale cell and the per-call reassignment is
+            //      lost (S04-declarations/state.t #13).
+            //    - `(my @y) = [42, @y]` (the `.raku.EVAL` circular-roundtrip
+            //      shape): the RHS captures the container the declaration just
+            //      created; the in-place assign makes element 1 that SAME
+            //      container (a cycle), while the slot replace leaves the
+            //      captured container empty and the cycle broken
+            //      (S32-array/perl.t #7).
+            //    By-name is what the default build emits anyway, so this is
+            //    byte-identical OFF; aggregate shadowing stays coherent through
+            //    container/env identity (aggregate reads are env-first), not
+            //    slot position.
             let var_name = var_name.clone();
-            if is_state {
+            if is_state || var_name.starts_with('@') || var_name.starts_with('%') {
                 let name_idx = self.code.add_constant(Value::str(var_name));
                 self.code.emit(OpCode::AssignExpr(name_idx));
             } else {
