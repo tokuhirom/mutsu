@@ -1240,6 +1240,12 @@ pub struct Interpreter {
     /// a read before the block correctly yields the undefined value (the cell is not
     /// recorded yet). Empty for ordinary programs: zero cost.
     pub(crate) escaping_our_lexical_names: std::collections::HashSet<String>,
+    /// Names of the `our`-scoped subs declared in bare blocks (the subs whose
+    /// free-variable reads/writes may resolve through `escaped_our_lexical_cells`).
+    /// The cell resolution fires ONLY while the innermost named routine frame is
+    /// one of these subs — a plain `my sub` that merely shares a captured
+    /// variable's name must keep resolving through its own live env capture.
+    pub(crate) escaped_our_sub_names: std::collections::HashSet<String>,
     state_vars: HashMap<String, Value>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot

@@ -270,6 +270,12 @@ impl Interpreter {
             if custom_traits.iter().any(|(t, _)| t == "__our_scoped")
                 && !self.escaping_our_lexical_names.is_empty()
             {
+                // Record the sub itself: the cell resolution
+                // (`escaping_our_read`/`escaping_our_write_cell`) fires only while
+                // the innermost named routine frame is one of these subs, so a
+                // plain `my sub` sharing a captured variable's name keeps using
+                // its own live env capture.
+                self.escaped_our_sub_names.insert(resolved_name.clone());
                 let names: Vec<String> = self.escaping_our_lexical_names.iter().cloned().collect();
                 for name in names {
                     if let Some(cell) = self.env().get(&name).cloned()

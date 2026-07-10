@@ -158,6 +158,7 @@ impl Interpreter {
             || self.routine_stack.is_empty()
             || name.contains("::")
             || !self.escaping_our_lexical_names.contains(name)
+            || !self.in_escaped_our_sub()
         {
             return None;
         }
@@ -169,21 +170,51 @@ impl Interpreter {
         )
     }
 
-    /// Resolve a bare-name increment/decrement (`$a++`, `--$a`) of a block
+    /// Whether the innermost NAMED routine frame is one of the `our`-scoped
+    /// subs recorded by `RegisterSub` (`escaped_our_sub_names`). Anonymous
+    /// block/closure frames (`<pointy-block>`, `<anon>`, empty names) are
+    /// transparent — a nested `if`/bare block inside the sub still counts.
+    /// Gates the escaped-cell resolution so a plain `my sub` that merely
+    /// shares a captured variable's name — called while its declaring block is
+    /// still live — keeps resolving through its own env capture instead of the
+    /// escaped sub's persisted cell. Note: an escaped sub reached through a
+    /// code var (`&OUR::f()`) is pushed as a *block* frame with its real name,
+    /// so the walk keys on the NAME, not `is_block`.
+    fn in_escaped_our_sub(&self) -> bool {
+        for frame in self.routine_stack.iter().rev() {
+            if self.escaped_our_sub_names.contains(&frame.name)
+                || frame
+                    .name
+                    .rsplit("::")
+                    .next()
+                    .is_some_and(|bare| self.escaped_our_sub_names.contains(bare))
+            {
+                return true;
+            }
+            // A real (named) routine that is NOT an escaped our sub: its own
+            // captures win — stop walking.
+            if !frame.name.is_empty() && !frame.name.starts_with('<') {
+                return false;
+            }
+        }
+        false
+    }
+
+    /// Resolve a bare-name WRITE (`$a = v`, `$a++`, `$a += v`) of a block
     /// lexical captured by an escaped `our` sub through its persisted shared
-    /// cell. Consulted as the LAST resort in the inc/dec read chain, AFTER the
-    /// env/package lookups: a plain `my sub` that merely shares the variable name
-    /// is called while its declaring block is still live, so its captured `$a`
-    /// resolves through the env cell earlier in the chain and never reaches here.
-    /// Only an escaped `our` sub — whose declaring block has exited, leaving no
-    /// env entry, yet which outlives it in the package registry — falls through
-    /// to the persisted cell. This mirrors what makes reads of such a capture
-    /// work (`escaping_our_read`).
+    /// cell. Consulted FIRST in the write chains, mirroring the read side
+    /// (`escaping_our_read` short-circuits the env lookup): the shared env may
+    /// hold a stale leaked value for the name (e.g. `sync_env_from_locals`
+    /// flushing the declaring block's dead top-level slot as Nil), which would
+    /// otherwise absorb the write into a plain env copy the next read (which
+    /// resolves through the cell) never sees.
     ///
     /// Returns the `ContainerRef` cell only when one is actually recorded (and
     /// `name` is neither a local nor an upvalue of `code`), so unrelated
-    /// same-named locals/captures and pre-block calls stay untouched.
-    pub(crate) fn escaping_our_incdec_cell(
+    /// same-named locals/captures and pre-block calls stay untouched. A plain
+    /// `my sub` sharing the variable name is called while its declaring block
+    /// is live, so its captured `$a` is an upvalue/local and is excluded here.
+    pub(crate) fn escaping_our_write_cell(
         &self,
         code: &crate::opcode::CompiledCode,
         name: &str,

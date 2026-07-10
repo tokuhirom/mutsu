@@ -1170,6 +1170,19 @@ impl Interpreter {
                         *ip += 1;
                         return Ok(());
                     }
+                    // A block `my` lexical captured by an escaped `our` sub: reads
+                    // resolve through the persisted shared cell (`escaping_our_read`
+                    // short-circuits env), so a plain assignment must reach the SAME
+                    // cell — a by-name env write would land only on this call's env
+                    // copy (or a stale leaked entry) and be dropped on return.
+                    if let Some(cell_val) = self.escaping_our_write_cell(code, &name)
+                        && let ValueView::ContainerRef(arc) = cell_val.view()
+                    {
+                        self.check_container_cell_constraint(arc, &val)?;
+                        Self::cell_store_preserving_container_identity(arc, &val);
+                        *ip += 1;
+                        return Ok(());
+                    }
                     // Also check alias target for sigilless attributes
                     let alias_key_check = format!("__mutsu_sigilless_alias::{}", name);
                     if let Some(alias_val) = self.env().get(&alias_key_check).cloned()
