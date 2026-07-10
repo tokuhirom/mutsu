@@ -871,10 +871,16 @@ impl Compiler {
                         op: crate::token_kind::TokenKind::Pipe,
                         expr: Box::new(slice_expr),
                     }]);
-                    bind_stmts.push(decl_stmt(sub.name.clone(), capture_expr));
+                    // Positional destructure targets keep `Stmt::Assign` binding:
+                    // a fresh `my` declaration would copy an `is raw` / `is default`
+                    // container and drop its `.VAR.default` (roast
+                    // S02-names/is_default.t `-> (..., %a is raw, ...)`). Only the
+                    // NAMED branch above declares (to shadow an outer same-named
+                    // var, which positional destructure does not need).
+                    bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
                     // No need to increment positional_index; capture consumes all remaining
                 } else {
-                    bind_stmts.push(decl_stmt(
+                    bind_stmts.push(bind_stmt(
                         sub.name.clone(),
                         Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
