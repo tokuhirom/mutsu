@@ -896,6 +896,21 @@ impl Interpreter {
             if matches!(method, "push" | "append" | "unshift" | "prepend") {
                 self.check_array_value_element_types(&target, &args)?;
             }
+            // Splice replacements land in the shared node in place now, so
+            // type-check them up front (flattened like do_splice flattens).
+            if method == "splice" && args.len() > 2 {
+                let mut replacement: Vec<Value> = Vec::new();
+                for arg in args.iter().skip(2) {
+                    match arg.view() {
+                        ValueView::Array(items, ..) => replacement.extend(items.iter().cloned()),
+                        ValueView::Seq(items) | ValueView::Slip(items) => {
+                            replacement.extend(items.iter().cloned())
+                        }
+                        _ => replacement.push(arg.clone()),
+                    }
+                }
+                self.check_array_value_element_types(&target, &replacement)?;
+            }
             return self.array_mutate_copy(target, method, args);
         }
         // push/append on Hash: merge Pairs into the hash.

@@ -218,68 +218,40 @@ impl Interpreter {
         Ok(Some(Value::truth(super::to_int(&count) > 0)))
     }
 
-    /// Produce a modified copy of an Array value for push/pop/shift/unshift/append/prepend.
-    /// Used when the target is not a named variable (e.g., a hash or array element).
+    /// Mutate an Array value in place for push/pop/shift/unshift/append/
+    /// prepend/splice on a by-value invocant (function results, element
+    /// reads, literals). Container identity (§3.2): the mutation writes
+    /// through the SHARED backing node, so any live holder of the same
+    /// container (`f()` returning `@a`, an element holding the array)
+    /// observes it; a literal's node has no other holder, so the in-place
+    /// write is unobservable there.
     pub(super) fn array_mutate_copy(
         &self,
         target: Value,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        // Interior mutation: if the target Array has shared references
-        // (Arc refcount > 1), mutate in-place so all references see the
-        // change. This matches Raku's container semantics.
-        if matches!(method, "push" | "append" | "unshift" | "prepend")
-            && matches!(target.view(), ValueView::Array(arc, _) if crate::gc::Gc::strong_count(arc) > 1)
-        {
-            let vals: Vec<Value> = match method {
-                "push" => Self::normalize_push_args_for_copy(args),
-                "append" => flatten_append_args(args),
-                "unshift" => Self::normalize_push_args_for_copy(args),
-                "prepend" => flatten_append_args(args),
-                _ => unreachable!(),
-            };
-            if let ValueView::Array(arc, _) = target.view() {
-                // SAFETY: aliased in-place mutation of a shared array (guarded by
-                // strong_count > 1, the exact case that needs the shared write); see
-                // `arc_contents_mut`. No borrow into the items is live across this.
-                let data = unsafe { crate::value::gc_contents_mut(arc) };
-                if matches!(method, "unshift" | "prepend") {
-                    let mut combined = vals;
-                    combined.append(&mut data.items);
-                    data.items = combined;
-                } else {
-                    data.items.extend(vals);
-                }
-            }
-            return Ok(target);
-        }
-        let mut items = match target.view() {
-            ValueView::Array(v, ..) => v.to_vec(),
-            _ => Vec::new(),
-        };
         let kind = match target.view() {
             ValueView::Array(_, k) => k,
             _ => crate::value::ArrayKind::Array,
         };
         match method {
-            "push" => {
-                let normalized = Self::normalize_push_args_for_copy(args);
-                items.extend(normalized);
-                Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    kind,
-                ))
+            "push" | "append" | "unshift" | "prepend" => {
+                let vals: Vec<Value> = match method {
+                    "push" | "unshift" => Self::normalize_push_args_for_copy(args),
+                    _ => flatten_append_args(args),
+                };
+                let front = matches!(method, "unshift" | "prepend");
+                target.with_array_inplace(|data, _| {
+                    if front {
+                        data.items.splice(0..0, vals);
+                    } else {
+                        data.items.extend(vals);
+                    }
+                });
+                Ok(target)
             }
-            "append" => {
-                let flat = flatten_append_args(args);
-                items.extend(flat);
-                Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    kind,
-                ))
-            }
-            "pop" => {
+            "pop" | "shift" => {
                 if !args.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "Too many positionals passed; expected 1 argument but got {}",
@@ -287,90 +259,69 @@ impl Interpreter {
                     )));
                 }
                 if kind.is_lazy() {
-                    return Err(RuntimeError::cannot_lazy("pop"));
+                    return Err(RuntimeError::cannot_lazy(method));
                 }
-                if items.is_empty() {
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                        kind,
-                    ))
-                } else {
-                    items.pop();
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                        kind,
-                    ))
-                }
-            }
-            "shift" => {
-                if !args.is_empty() {
-                    return Err(RuntimeError::new(format!(
-                        "Too many positionals passed; expected 1 argument but got {}",
-                        args.len() + 1
-                    )));
-                }
-                if items.is_empty() {
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                        kind,
-                    ))
-                } else {
-                    items.remove(0);
-                    Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                        kind,
-                    ))
-                }
-            }
-            "unshift" | "prepend" => {
-                let normalized = Self::normalize_push_args_for_copy(args);
-                for (i, arg) in normalized.into_iter().enumerate() {
-                    items.insert(i, arg);
-                }
-                Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    kind,
-                ))
+                let removed = target
+                    .with_array_inplace(|data, _| {
+                        if data.items.is_empty() {
+                            None
+                        } else if method == "shift" {
+                            Some(data.items.remove(0))
+                        } else {
+                            data.items.pop()
+                        }
+                    })
+                    .flatten();
+                Ok(removed
+                    .unwrap_or_else(|| crate::runtime::utils::make_empty_array_failure(method)))
             }
             "splice" => {
-                // On a bare Array value (not a named variable) there is no
-                // container to write back to, so return the removed elements as
-                // a List, matching `@a.splice(...)`'s return value.
-                let len = items.len();
-                let resolve = |v: &Value| -> i64 {
-                    match v.view() {
-                        ValueView::Int(i) => i,
-                        ValueView::Whatever => len as i64,
-                        ValueView::Num(n) => n as i64,
-                        ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
-                        ValueView::Mixin(inner, _) => match inner.as_ref().view() {
-                            ValueView::Int(i) => i,
-                            _ => 0,
-                        },
-                        _ => 0,
-                    }
-                };
-                let start = (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
-                let count = args
-                    .get(1)
-                    .map(&resolve)
-                    .unwrap_or((len - start) as i64)
-                    .max(0) as usize;
-                let end = (start + count).min(len);
-                let removed: Vec<Value> = items.drain(start..end).collect();
-                let mut replacement: Vec<Value> = Vec::new();
-                for arg in args.iter().skip(2) {
-                    match arg.view() {
-                        ValueView::Array(arr, ..) => replacement.extend(arr.iter().cloned()),
-                        ValueView::Seq(arr) | ValueView::Slip(arr) => {
-                            replacement.extend(arr.iter().cloned())
+                let removed = target
+                    .with_array_inplace(|data, _| {
+                        let len = data.items.len();
+                        let resolve = |v: &Value| -> i64 {
+                            match v.view() {
+                                ValueView::Int(i) => i,
+                                ValueView::Whatever => len as i64,
+                                ValueView::Num(n) => n as i64,
+                                ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+                                ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                                    ValueView::Int(i) => i,
+                                    _ => 0,
+                                },
+                                _ => 0,
+                            }
+                        };
+                        let start =
+                            (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
+                        let count = args
+                            .get(1)
+                            .map(&resolve)
+                            .unwrap_or((len - start) as i64)
+                            .max(0) as usize;
+                        let end = (start + count).min(len);
+                        // Snapshot the replacement BEFORE draining: a
+                        // self-splice (`f().splice(1, 0, f())`) aliases the
+                        // items being mutated in place.
+                        let mut replacement: Vec<Value> = Vec::new();
+                        for arg in args.iter().skip(2) {
+                            match arg.view() {
+                                ValueView::Array(arr, ..) => {
+                                    replacement.extend(arr.iter().cloned())
+                                }
+                                ValueView::Seq(arr) | ValueView::Slip(arr) => {
+                                    replacement.extend(arr.iter().cloned())
+                                }
+                                _ => replacement.push(arg.clone()),
+                            }
                         }
-                        _ => replacement.push(arg.clone()),
-                    }
-                }
-                for (i, item) in replacement.into_iter().enumerate() {
-                    items.insert(start + i, item);
-                }
+                        let removed: Vec<Value> = data.items.drain(start..end).collect();
+                        for (i, item) in replacement.into_iter().enumerate() {
+                            data.items.insert(start + i, item);
+                        }
+                        removed
+                    })
+                    .unwrap_or_default();
                 Ok(Value::real_array(removed))
             }
             _ => unreachable!(),
