@@ -912,6 +912,12 @@ pub(crate) enum OpCode {
         /// True for push/append/unshift/prepend (Raku autovivifies);
         /// false for pop/shift/splice (Raku dies without growing).
         autoviv: bool,
+        /// Autovivify a missing element to an empty Hash instead of an
+        /// empty Array. Used for the *intermediate* levels of a nested
+        /// subscript chain (`%h<a><b>.push`): the fresh container's kind
+        /// follows the NEXT subscript (positional → Array, associative →
+        /// Hash), while the final level always vivifies an Array.
+        viv_hash: bool,
     },
 
     // -- Assignment as expression --

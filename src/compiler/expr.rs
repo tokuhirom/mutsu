@@ -411,8 +411,9 @@ impl Compiler {
                 self.code.emit(OpCode::LoadConst(idx));
                 self.code.emit(OpCode::Die);
             }
-            // Method call on nested-index target with mutating method -- writeback via IndexAssign.
-            // e.g. %h<a><b>.push(1, 2) => %h<a><b> = %h<a><b>.push(1, 2)
+            // Method call on nested-index target with mutating method — chained
+            // element-for-mutation loads, no writeback (container identity §3.2).
+            // e.g. %h<a><b>.push(1, 2)
             Expr::MethodCall {
                 target,
                 name,
@@ -420,7 +421,7 @@ impl Compiler {
                 modifier,
                 quoted,
             } if Self::is_nested_mutating_method_on_index(target, name) => {
-                self.compile_expr_nested_method_writeback(target, name, args, modifier, *quoted);
+                self.compile_expr_nested_method_on_index(target, name, args, modifier, *quoted);
             }
             // `lazy for ITERABLE { BODY }` => MakeGather wrapping the for loop
             // so the body is not evaluated prematurely.

@@ -177,6 +177,7 @@ impl Compiler {
                     is_positional: *is_positional,
                     target_slot,
                     autoviv: false,
+                    viv_hash: false,
                 });
                 self.code.emit(OpCode::SetGlobal(tmp_target_idx));
                 self.code.emit(OpCode::GetGlobal(tmp_target_idx));
@@ -201,6 +202,7 @@ impl Compiler {
                     is_positional: *is_positional,
                     target_slot,
                     autoviv: true,
+                    viv_hash: false,
                 });
                 for arg in args {
                     self.compile_method_arg(arg);
@@ -220,12 +222,18 @@ impl Compiler {
         }
     }
 
-    /// Compile mutating method on a nested Index target by rewriting as
-    /// IndexAssign writeback. E.g. `%h<a><b>.push(1,2)` becomes
-    /// `do { my $__tmp = %h<a><b>.push(1,2); %h<a><b> = $__tmp }`.
-    /// Uses compile_expr_method_generic for the method call to avoid
-    /// infinite recursion.
-    pub(super) fn compile_expr_nested_method_writeback(
+    /// Compile a mutating method on a *nested* Index target
+    /// (`%h<a><b>.push(1)`, `@a[0]<x>[1].pop`) with NO post-call writeback
+    /// (container identity §3.2), mirroring `compile_expr_method_on_index`:
+    /// each intermediate subscript is loaded as an element-for-mutation via
+    /// `IndexElemAutoviv` and bound to a temp, so a missing intermediate is
+    /// autovivified (push family only — Raku's pop/shift/splice die without
+    /// growing anything) through the named index-assign machinery into the
+    /// parent's shared node. The fresh intermediate's kind follows the NEXT
+    /// subscript (positional → Array, associative → Hash). The final level
+    /// reuses the single-level machinery on `tmp[last_key]`, whose CallMethod
+    /// mutates the element's shared node in place.
+    pub(super) fn compile_expr_nested_method_on_index(
         &mut self,
         target: &Expr,
         name: &Symbol,
@@ -233,33 +241,76 @@ impl Compiler {
         modifier: &Option<char>,
         quoted: bool,
     ) {
-        if let Expr::Index {
-            target: idx_target,
-            index: idx_key,
+        // Flatten the subscript chain: chain[0] is the innermost key
+        // (closest to the base expression).
+        let mut chain: Vec<(&Expr, bool)> = Vec::new();
+        let mut base = target;
+        while let Expr::Index {
+            target: inner,
+            index,
             is_positional,
-        } = target
+        } = base
         {
-            // Compile the method call (generic path, no recursion risk)
-            self.compile_expr_method_generic(target, name, args, modifier, quoted);
-            // Now stack has the method result. Write it back to the slot.
-            // Create an IndexAssign expression: target[key] = <stack top>.
-            // We store the result in a temp global, then compile the assignment.
-            let tmp_name = format!("__mutsu_nested_method_wb_{}", self.code.constants.len());
-            let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
-            self.code.emit(OpCode::SetGlobal(tmp_idx));
-            // Now compile the IndexAssign
-            let tmp_var = Expr::Var(tmp_name);
-            let writeback = Expr::IndexAssign {
-                target: idx_target.clone(),
-                index: idx_key.clone(),
-                value: Box::new(tmp_var),
-                is_positional: *is_positional,
-            };
-            self.compile_expr(&writeback);
-        } else {
-            // Fallback: compile normally
-            self.compile_expr_method_generic(target, name, args, modifier, quoted);
+            chain.push((index.as_ref(), *is_positional));
+            base = inner;
         }
+        chain.reverse();
+        debug_assert!(chain.len() >= 2);
+        let autoviv = !matches!(name.resolve().as_str(), "pop" | "shift" | "splice");
+
+        // Load the base container and pick the name the first level's
+        // autoviv stores through. A non-variable base (`f()<x><y>.push`,
+        // `$obj.attr<a><b>.push`) is bound to a temp: the temp's value is
+        // node-shared with the produced container, so a store through the
+        // temp name writes through to the real container.
+        let (mut cur_name, mut cur_slot) = match Self::postfix_index_name(base) {
+            Some(n) => {
+                let slot = self.local_map.get(&n).copied();
+                self.compile_expr(base);
+                (n, slot)
+            }
+            None => {
+                self.compile_expr(base);
+                let tmp = format!("__mutsu_tmp_nested_base_{}", self.code.constants.len());
+                let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
+                self.code.emit(OpCode::SetGlobal(tmp_idx));
+                self.code.emit(OpCode::GetGlobal(tmp_idx));
+                (tmp, None)
+            }
+        };
+
+        // Chain the intermediate levels (every key but the last): the stack
+        // holds the current container; load/autoviv the element and rebind
+        // the temp that the next level stores through.
+        let (&(last_key, last_positional), inters) = chain.split_last().unwrap();
+        for (j, &(key, is_positional)) in inters.iter().enumerate() {
+            let next_positional = chain[j + 1].1;
+            let name_idx = self.code.add_constant(Value::str(cur_name.clone()));
+            self.compile_expr(key);
+            self.code.emit(OpCode::IndexElemAutoviv {
+                name_idx,
+                is_positional,
+                target_slot: cur_slot,
+                autoviv,
+                viv_hash: !next_positional,
+            });
+            let tmp = format!("__mutsu_tmp_nested_lvl_{}", self.code.constants.len());
+            let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
+            self.code.emit(OpCode::SetGlobal(tmp_idx));
+            if j + 1 < inters.len() {
+                self.code.emit(OpCode::GetGlobal(tmp_idx));
+            }
+            cur_name = tmp;
+            cur_slot = None;
+        }
+
+        // Final level: single-level element-mutation machinery on the temp.
+        let final_target = Expr::Index {
+            target: Box::new(Expr::Var(cur_name)),
+            index: Box::new(last_key.clone()),
+            is_positional: last_positional,
+        };
+        self.compile_expr_method_on_index(&final_target, name, args, modifier, quoted);
     }
 
     /// Compile method call on non-variable target (no writeback needed).

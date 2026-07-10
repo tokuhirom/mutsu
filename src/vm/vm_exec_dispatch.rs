@@ -3059,6 +3059,7 @@ impl Interpreter {
                 is_positional,
                 target_slot,
                 autoviv,
+                viv_hash,
             } => {
                 self.exec_index_elem_autoviv_op(
                     code,
@@ -3066,6 +3067,7 @@ impl Interpreter {
                     *is_positional,
                     *target_slot,
                     *autoviv,
+                    *viv_hash,
                 )?;
                 *ip += 1;
             }

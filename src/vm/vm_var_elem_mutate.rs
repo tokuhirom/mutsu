@@ -27,6 +27,7 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
         autoviv: bool,
+        viv_hash: bool,
     ) -> Result<(), RuntimeError> {
         let key = self.stack.pop().unwrap_or(Value::NIL);
         let container = self.stack.pop().unwrap_or(Value::NIL);
@@ -46,6 +47,7 @@ impl Interpreter {
                     is_positional,
                     target_slot,
                     autoviv,
+                    viv_hash,
                 )?;
                 elems.push(self.stack.pop().unwrap_or(Value::NIL));
             }
@@ -74,12 +76,19 @@ impl Interpreter {
                 )
             });
         if missing && autoviv {
-            // Store a fresh empty Array into the element (same machinery as
-            // `@a[i] = []`), then re-read from the live variable: the store
-            // may itemize (hash elements), fill holes, or create the
-            // variable's container itself (`my $x; $x<k>.push(1)`), so the
-            // held container value can be stale.
-            self.stack.push(Value::real_array(Vec::new()));
+            // Store a fresh empty Array (or Hash, for the intermediate level
+            // of a nested chain whose next subscript is associative) into the
+            // element (same machinery as `@a[i] = []`), then re-read from the
+            // live variable: the store may itemize (hash elements), fill
+            // holes, or create the variable's container itself
+            // (`my $x; $x<k>.push(1)`), so the held container value can be
+            // stale.
+            let fresh = if viv_hash {
+                Value::hash(std::collections::HashMap::new())
+            } else {
+                Value::real_array(Vec::new())
+            };
+            self.stack.push(fresh);
             self.stack.push(key.clone());
             let pre = self.array_hash_attr_env_snapshot(code, name_idx);
             self.exec_index_assign_expr_named_op(code, name_idx, is_positional, target_slot)?;
