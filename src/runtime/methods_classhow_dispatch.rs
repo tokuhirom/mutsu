@@ -8,13 +8,66 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "set_name" if args.len() == 2 => {
+                // `$type.^set_name($name)` renames a metaobject (Rakudo's ClassHOW
+                // method). It is most often applied to a freshly-composed
+                // anonymous type, e.g. `Foo.new but role {...}`, to give it a
+                // human-readable name for display. Persist the name so a later
+                // `.^name` returns it.
+                let new_name = args[1].to_string_value();
+                match args[0].view() {
+                    ValueView::Mixin(_, overrides) => {
+                        // Store the friendly name on the shared overrides map so a
+                        // later `.^name` on any alias of this mixed-in object
+                        // returns it. The metamethod receives a clone of the
+                        // invocant, but the clone shares the overrides `Arc`, so an
+                        // in-place write reaches the caller's value too — matching
+                        // Rakudo's in-place mutation of the anonymous metaobject.
+                        // SAFETY: aliased in-place mutation of a shared container
+                        // (see `arc_contents_mut`); no borrow into the map is live
+                        // across the insert.
+                        let map = unsafe { crate::value::arc_contents_mut(overrides) };
+                        map.insert(
+                            "__mutsu_type_name__".to_string(),
+                            Value::str(new_name.clone()),
+                        );
+                    }
+                    ValueView::Package(name) => {
+                        self.type_metadata
+                            .entry(name.resolve())
+                            .or_default()
+                            .insert("__set_name__".to_string(), Value::str(new_name.clone()));
+                    }
+                    ValueView::Instance { class_name, .. } => {
+                        self.type_metadata
+                            .entry(class_name.resolve())
+                            .or_default()
+                            .insert("__set_name__".to_string(), Value::str(new_name.clone()));
+                    }
+                    _ => {}
+                }
+                Ok(Value::str(new_name))
+            }
             "name" if args.len() == 1 => Ok(Value::str(match args[0].view() {
-                ValueView::Package(name) => {
-                    crate::value::user_facing_type_name(&name.resolve()).to_string()
+                ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_type_name__") => {
+                    overrides["__mutsu_type_name__"].to_string_value()
                 }
-                ValueView::Instance { class_name, .. } => {
-                    crate::value::user_facing_type_name(&class_name.resolve()).to_string()
-                }
+                ValueView::Package(name) => self
+                    .type_metadata
+                    .get(&name.resolve())
+                    .and_then(|m| m.get("__set_name__"))
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| {
+                        crate::value::user_facing_type_name(&name.resolve()).to_string()
+                    }),
+                ValueView::Instance { class_name, .. } => self
+                    .type_metadata
+                    .get(&class_name.resolve())
+                    .and_then(|m| m.get("__set_name__"))
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| {
+                        crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+                    }),
                 ValueView::ParametricRole {
                     base_name,
                     type_args,

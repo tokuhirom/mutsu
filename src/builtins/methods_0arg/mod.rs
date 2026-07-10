@@ -486,6 +486,15 @@ pub(crate) fn native_method_0arg(
         {
             return Some(Ok(Value::str(raku_repr::raku_value(target))));
         }
+        // A `.^set_name`-renamed anonymous mixin reports its friendly name for
+        // `.^name` (e.g. `Foo.new but role {...}` then `.^set_name('X')` — used
+        // by zef's plugin loader). Without this the caret-name would delegate to
+        // the inner value and report the un-renamed base type.
+        if method == "^name"
+            && let Some(name_val) = mixins.get("__mutsu_type_name__")
+        {
+            return Some(Ok(name_val.clone()));
+        }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
         if let Some(mixin_val) = mixins.get(method) {

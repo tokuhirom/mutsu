@@ -29,6 +29,7 @@ impl Interpreter {
                 | "compose"
                 | "archetypes"
                 | "name"
+                | "set_name"
                 | "ver"
                 | "auth"
                 | "api"
