@@ -472,6 +472,12 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let (r, _) = parse_char(rest, '[')?;
         let (r, _) = ws(r)?;
         let mut items = Vec::new();
+        // Track a trailing comma: `:name[X,]` is an itemized 1-list (the element
+        // is not flattened, so a single-pair Hash stays a Hash), matching a plain
+        // `[X,]` literal. Without it, `:name[X]` flattens the element in list
+        // context (a single-pair Hash collapses to a Pair) — see the
+        // `single_with_trailing_comma` branch in `compile_expr_bracket_array`.
+        let mut trailing_comma = false;
         let mut r = r;
         while !r.starts_with(']') {
             let (r2, item) = expression(r)?;
@@ -481,8 +487,10 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 let (r2, _) = parse_char(r2, ',')?;
                 let (r2, _) = ws(r2)?;
                 r = r2;
+                trailing_comma = true;
             } else {
                 r = r2;
+                trailing_comma = false;
             }
         }
         let (r, _) = parse_char(r, ']')?;
@@ -491,7 +499,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::BracketArray(items, false)),
+                right: Box::new(Expr::BracketArray(items, trailing_comma)),
             },
         ));
     }
