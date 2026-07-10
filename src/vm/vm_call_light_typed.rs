@@ -18,6 +18,13 @@ impl Interpreter {
         self.record_cf_deprecation(cf);
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
+        // Isolate the caller's loop-body-local declaration scope (mirrors
+        // vm_call_fast.rs / the positional-light path). Without this a callee's
+        // body-local `my $x` — e.g. a recursive call from inside the caller's
+        // `while` loop — registers in the caller's active loop-local scope and is
+        // clobbered at the caller's loop exit. Restored on every exit path.
+        let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
+        let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
@@ -121,6 +128,8 @@ impl Interpreter {
                 } else if pd.required {
                     self.set_env(caller_env);
                     self.locals = saved_locals;
+                    self.loop_local_vars = saved_loop_local_vars;
+                    self.loop_local_saved_env = saved_loop_local_saved_env;
                     // Missing required named parameter is a runtime X::AdHoc in
                     // Raku (see binding.rs); carry the typed exception so it does
                     // not fall back to the bare "Exception" default.
@@ -147,6 +156,8 @@ impl Interpreter {
                 } else if pd.required {
                     self.set_env(caller_env);
                     self.locals = saved_locals;
+                    self.loop_local_vars = saved_loop_local_vars;
+                    self.loop_local_saved_env = saved_loop_local_saved_env;
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} arguments but got {}",
                         cf.param_defs.iter().filter(|p| !p.named).count(),
@@ -322,6 +333,8 @@ impl Interpreter {
 
         // Restore locals
         self.locals = saved_locals;
+        self.loop_local_vars = saved_loop_local_vars;
+        self.loop_local_saved_env = saved_loop_local_saved_env;
 
         // Restore readonly vars
         self.restore_readonly_vars(saved_readonly);
