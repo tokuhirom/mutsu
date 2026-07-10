@@ -240,7 +240,7 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 ## 4. 🟢 roast backlog（[TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) 駆動・インパクト順）
 
-現状 whitelist は **1350 / 1463**。診断には `./scripts/roast-history.sh` を使う
+現状 whitelist は **1373 / 1463**（2026-07-10）。診断には `./scripts/roast-history.sh` を使う
 （出力は `tmp/roast-{panic,timeout,error,fail,pass}.txt`）。
 
 - [ ] **★lazy-seq（残 ④のみ）**: `.List`/`.Array` の laziness 保持・`eqv` lazy ガード・Seq single-pass
@@ -356,7 +356,7 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 | **同梱ライブラリ（vendored＋ドキュメント付き）** | **0**（動作実績 10+ が t/lib・外部取得のまま） | **10+ を同梱・全てドキュメント付き** |
 | mzef | CLI 起動＋dispatch ✅／install→use 橋 ✅ | 実 zef バイナリでの実 install（残 2 バグ＋network fetch） |
 | バイナリ配布 | なし | mise / GitHub Releases で単一コマンド導入 |
-| Whitelist | **1350**（全 .t 1463 中） | 1300+ ✅ 達成済み・現状維持以上 |
+| Whitelist | **1373**（全 .t 1463 中） | 1300+ ✅ 達成済み・現状維持以上 |
 | GC | **default on ✅**（2026-07-05・ADR-0003） | 達成（残 perf は層 3b へ） |
 | fib(25) vs raku | **1.0x** | <10x ✅ |
 | method-call vs raku | **2.7x** | <1.5x |

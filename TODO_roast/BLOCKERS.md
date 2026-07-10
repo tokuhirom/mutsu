@@ -5,11 +5,12 @@
 個々の失敗を片端から潰すためではなく、
 **今どこを直せば何がまとめて動くか**を判断するために使う。
 
-**最終更新 2026-07-09**（旧 §4「並行・非同期（S17）」をセクションごと削除。S17 配下の全 99 ファイル
-（S17-supply / S17-lowlevel / S17-promise / S17-procasync / S17-scheduler ほか）と socket 系
-（`S32-io/IO-Socket-Async*`・`socket-recv-vs-read.t` 等）がすべて whitelist 済みになり、
-cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→ContainerRef セル昇格の
-キャンペーン（#4336/#4340/#4345/#4348）で解消。詳細は `news/2026-07.md`）
+**最終更新 2026-07-10**（旧 §3「第一級コンテナ / container identity」と旧 §2.3（hash
+multislice）をセクションごと削除 — 全サブキャンペーン完了: element mutation in-place 化
+#4362/#4366・post-call writeback 全廃 #4370/#4372/#4377・attr accessor slot 化 #4360・
+multislice #4354/#4355・scalar itemization #4382・escaped our-sub lexical write #4385。
+詳細は `news/2026-07.md`。それ以前: 旧 §4「並行・非同期（S17）」削除＝S17 全 99 ファイル＋
+socket 系 whitelist 済み・cross-thread lexical writeback 解消（#4336/#4340/#4345/#4348））
 
 ## この文書の読み方
 
@@ -31,12 +32,14 @@ cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→Co
 
 ## 現在の前提
 
-- whitelist は **1372**（2026-07-09 時点、`wc -l roast-whitelist.txt`）。
-- 安い 1 ファイル勝ちはほぼ枯渇している。残件の大半は
-  **第一級コンテナ / container identity** — 配列・ハッシュ要素・属性 slot の書き戻し（§3）—
-  に集約される。
+- whitelist は **1373**（2026-07-10 時点、`wc -l roast-whitelist.txt`）。
+- 安い 1 ファイル勝ちはほぼ枯渇している。roast 由来の大型ブロッカーは出尽くしており、
+  残件は本ファイルの §1/§2（深い基盤待ち・低優先）と §4（whitelist 非目標）のみ。
+  次の構造工事の選定は [PLAN.md](../PLAN.md)（lexical-scope slot campaign / GC post-3a /
+  Batteries）を正とする。
 - かつてここにあった「真の lazy 配列 / 無限列」「dispatch / 演算子 sugar の desugar surface」
-  「並行・非同期（S17）」はいずれも完了済み（詳細は `news/2026-06.md` / `news/2026-07.md`）。
+  「並行・非同期（S17）」「第一級コンテナ / container identity（§3）」はいずれも完了済み
+  （詳細は `news/2026-06.md` / `news/2026-07.md`）。
 
 ---
 
@@ -60,96 +63,6 @@ cross-thread plain-scalar lexical writeback（旧 §4.1）も escape 解析→Co
 - **論点**: 6.e の coercion type 項 + `Array[T]` サブクラス化が必要。ローカル raku
   (v2022.12=6.d) でもこのテスト自体がコンパイルに失敗するため、参照実装での検証すらできない。
 - **評価**: 深い機能待ちで、局所修正では進まない。優先度は低い。
-
-### 2.3 multislice lvalue（hash 側）— **DONE (#4355)**
-
-- `S32-hash/multislice-6e.t` **549/549 whitelist 済み**（#4354 で 269→32 fails、
-  #4355 で完了）。array 側も whitelist 済み。#4355 の内訳:
-  - 「sigilless map param の varref stale-env」の正体は **stale
-    `pending_call_arg_sources` 残留**: CallMethod(Mut) opcode が callee bind 用に
-    arg-source 名をセットするが、native dispatch（Pair.new 等）は bind しないため
-    残留 → Rust 駆動 `.map` ループの次チャンク bind が残留名で env 再解決し、
-    caller env に漏れた Array 値だけ stale 化。opcode 終了時に names/slots を
-    クリア（CallFunc の set→clear ペアと同じ規約）。Pin: `t/sigilless-map-args.t`。
-  - plan mismatch (535/549) は未実装 2 機能: `%h{|| @list}` 次元 splat
-    （array 側 `@a[||@i]` と同じ 1-dim MultiDimIndex に parse、HyperIndex
-    AST/opcode 削除）と unbounded-end range 次元（`@a[1^..*;1]` を各レベル長で
-    clamp 展開、`1..*` の capacity-overflow panic 修正、multi-`:exists` が
-    `Package("Any")` hole を非存在扱い）。Pin: `t/multidim-splat-lazy.t`。
-
----
-
-## 3. 第一級コンテナ / container identity
-
-かつて element/attribute slot の書き戻しが未整備だった項目が集まっていたが、大半は
-whitelist 済み（`splice.t`・`whatever.t`・`S14-traits/attributes.t`（#4314）・`temp.t`・
-`adverbs.t` の typed-hash default・`capture.t`・`is_default.t`・`walk.t` など。詳細は
-`news/2026-06.md` / `news/2026-07.md`）。multislice は array/hash 両側とも完了
-（§2.3、#4355）。残るのは下記サブキャンペーンの深い残課題。
-
-### 3.1 完了済み（whitelist 済み・詳細は news）
-
-この節の対象はすべて whitelist 済みになった。詳細は各 news を参照:
-
-- `S14-traits/attributes.t`（#4314・`Attribute.container.VAR does Role`）→ `news/2026-07.md`
-- `S32-array/splice.t`（whole-container 代入の in-place 化）→ `news/2026-07.md`
-- `S02-types/whatever.t`（#4067・WhateverCode over-currying）→ `news/2026-07.md`
-- `S12-subset/subtypes.t`（92/92）→ `news/2026-07.md`
-- `S26-documentation/12-non-breaking-space.t`（top-level BEGIN compile-time hoist）→ `news/2026-07.md`
-- `S02-names-vars/variables-and-packages.t`（nested-block BEGIN hoist）→ `news/2026-07.md`
-
-**closure-captured shared-cell の by-value list 捕捉スナップショット追従
-（return-writeback 系・`splice.t` の `ident4`）は DONE** — §3.2 item 1 の
-element-mutation in-place 化で一括解決（`t/container-identity-mutation.t` の
-cell:/returned-capture ケースが pin）。
-（`$my_ref := $obj.attr` と `$obj.attr.VAR.role = v` は §3.2 item 2 で DONE。）
-
-### 3.2 サブキャンペーンと choke point
-
-1. **配列/ハッシュ要素 cell 化** — **element mutation の in-place 化は DONE**
-   - 依存文書: `docs/container-identity.md`
-   - 変更レイヤ: `value/mod.rs`、`vm_var_assign_ops.rs`、`vm_var_index_ops.rs`
-   - **DONE (2026-07-09)**: 全 element-level mutation（push/pop/shift/unshift/
-     splice/append/prepend・要素/slice 代入・hash key write/:delete/++/--・
-     multidim・nested・typed/defaulted・ContainerRef cell 経路）を
-     `Gc::make_mut`（COW detach）から共有ノードへの in-place 書込
-     （`gc_data_mut`/`gc_contents_mut`）へ切替。copy 独立性は copy 時 detach
-     （`Value::detach_shared_container` — `my @b = @a` / `is copy` param）が担保。
-     by-value holder（`(0, @a)` capture・要素・scalar）が全 mutation を追従。
-     副修正: `@a[i].splice` の返り値誤 writeback（compiler の pop/shift ブランチへ
-     合流）・slow-path `do_splice` の self-splice replacement 読みを drain 前へ。
-     Pin: `t/container-identity-mutation.t`（55、raku 一致）。
-   - 残: post-call writeback 機構そのものの削減（push 系 method-on-index の
-     result-writeback は in-place により冗長になったが残置・害なし）。
-2. **属性 accessor を value copy ではなく slot 経由にする** — **DONE**
-   - `Attribute.container.VAR does Role` は #4314 で完了（§3.1 参照）。
-   - `$my_ref := $obj.attr`（rw scalar accessor への `:=` 束縛が属性 slot の
-     `ContainerRef` cell を共有・双方向追従・型制約は cell に登録して enforce）と
-     `$obj.attr.VAR does Role` + `$obj.attr.VAR.name = v`（mixin accessor への
-     rw 書込が cell 経由で永続化）を実装。仕組み: `MarkAccessorRefContext`
-     opcode（`:=` bind RHS / `.VAR` チェーンの内側 CallMethod 直前に emit、
-     dispatch 入口で take して 1 dispatch に閉じる）→ fast accessor read が
-     attr slot を cell 昇格して返す。非-rw accessor は raku 同様 decont 値
-     （bind 後の代入は immutable エラー）。Pin: `t/attr-accessor-slot.t`（18、
-     raku 一致）。副産物: `$_ := $d`（SetGlobal 経由 topic bind）が
-     `scalar_bind_context` を消費せず次の SetLocal に残留するバグを修正。
-3. **BEGIN/EVAL/lexical 配列変更の永続化** — **DONE**。
-   - top-level BEGIN 版（`S26-documentation/12-non-breaking-space.t`、`run_toplevel_begin_phasers`）・
-     nested-block BEGIN 版（`S02-names-vars/variables-and-packages.t`、`reorder_at_level`）とも
-     whitelist 済み（§3.1 参照）。
-
-コード choke point:
-
-- 要素 write 集約: `src/value/mod.rs::assign_element_slot`, `src/value/mod.rs::hash_insert_through`
-- 要素 read decont: `resolve_array_entry`, `resolve_hash_entry`
-- whole-container / env-local coherence: `docs/env-locals-coherence.md`,
-  `src/vm/vm_env_helpers.rs`, `SetLocal` / `flush_local_to_env` / bound-container metadata
-
-- **Next slice**: 残る `Gc::make_mut` サイト（`vm_var_multidim_ops.rs`・
-  `runtime/builtins_multidim.rs`・shared_vars 経路等）の棚卸し — 変数自身の
-  コンテナ mutation なら `gc_data_mut` へ、派生コピーの構築なら現状維持。
-- **Canary tests**: `roast/S32-array/splice.t`,
-  `roast/S02-names-vars/variables-and-packages.t`, `t/container-identity-mutation.t`
 
 ---
 
@@ -180,19 +93,17 @@ cell:/returned-capture ケースが pin）。
 
 ## 5. 今のおすすめ着手順
 
-「次に何をやるか」を 1 本だけ選ぶなら、これ:
+**roast 由来の大型ブロッカーは出尽くした。** 第一級コンテナ / container identity
+campaign（旧 §3）は 2026-07-10 に全サブキャンペーン完了（element mutation in-place 化
+#4362/#4366・post-call writeback 全廃 #4370/#4372/#4377・attr accessor slot 化 #4360・
+hash multislice #4354/#4355・scalar itemization #4382・escaped our-sub lexical write
+#4385 — 詳細は `news/2026-07.md`）。cross-thread lexical writeback campaign（旧 §4.1）
+も完了済み。
 
-1. **第一級コンテナ campaign**（§3）— `docs/container-identity.md` に沿って
-   進める。これは腰を据えた基盤工事で、個々のテストを直接潰すより効果が大きい。
-   **進捗（2026-07-09）**: whole-container 代入の container-identity（`splice.t`）、
-   属性 container mixin（`S14-traits/attributes.t`・#4314）、属性 slot の完全な
-   cell 化（§3.2 item 2）、**element mutation の in-place 化（§3.2 item 1）と
-   ident4 系スナップショット追従**まで完了。残るは §3.2 の Next slice
-   （残 `make_mut` サイトの棚卸し）と post-call writeback 機構の削減。
-
-かつて 2 番手だった cross-thread lexical writeback campaign（旧 §4.1）は完了
-（`S17-lowlevel/lock.t`・`S32-io/socket-recv-vs-read.t` とも whitelist 済み、
-詳細は `news/2026-07.md`）。
+残っているのは §1（RakuAST 待ち・据え置き）・§2.2（6.e generics・深い機能待ち）・
+§4（whitelist 非目標）のみで、いずれも「次の 1 本」には適さない。
+**次の構造工事の選定は [PLAN.md](../PLAN.md) を正とする**（lexical-scope slot campaign
+完遂〔PLAN §6〕/ GC post-3a ロードマップ〔PLAN §2〕/ Batteries〔PLAN §1〕）。
 
 whitelist を目標にしない §4 の項目は、mutsu 側の一般改善のついでに触れるのはよいが、
 そのファイル単体を通すことを目的にしない。
