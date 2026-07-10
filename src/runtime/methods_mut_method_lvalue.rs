@@ -337,6 +337,20 @@ impl Interpreter {
                 _ => None,
             };
             if let Some((key, current_value)) = pair_data {
+                // A Pair whose value is a live `HashEntryRef` (a `for %h -> $p`
+                // loop pair) writes `.value` straight through to the shared hash
+                // node in place, so `$p.value = X` updates `%h{$p.key}` and the
+                // ref keeps reading the new value.
+                if let ValueView::HashEntryRef { .. } = current_value.as_ref().view()
+                    && let Some((node, last_key)) = current_value.hash_entry_terminal()
+                {
+                    // SAFETY: aliased in-place mutation of a shared hash node;
+                    // mirrors `hash_entry_terminal`'s own interior mutation. No
+                    // borrow into the map is held across the write.
+                    let data = unsafe { crate::value::gc_contents_mut(&node) };
+                    data.map.insert(last_key, value.clone());
+                    return Ok(value);
+                }
                 // A Pair whose value is a shared `ContainerRef` (built by `key =>
                 // $var`) aliases the source variable's container. Writing `.value`
                 // updates the cell in place, so `$pair.value = X` writes through to

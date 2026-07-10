@@ -169,7 +169,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             _ => None,
         },
         "value" => match target.view() {
-            ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => Some(Ok(v.clone())),
+            // `hash_entry_read` returns the live node value for a `for %h -> $p`
+            // pair's HashEntryRef (so `$p.value` in arithmetic sees the plain
+            // value and tracks in-loop `%h{$p.key} = X` writes), and is a plain
+            // clone for any other pair value.
+            ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => Some(Ok(v.hash_entry_read())),
             ValueView::Instance {
                 class_name,
                 attributes,
