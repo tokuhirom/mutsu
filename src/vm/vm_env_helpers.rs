@@ -321,11 +321,18 @@ impl Interpreter {
     }
 
     fn get_env_with_main_alias_inner(&self, name: &str) -> Option<Value> {
-        // Atomic array CAS stores the authoritative copy under an internal key.
-        // Always check it first so both thread-clone and non-clone reads
-        // observe the latest CAS'd value.
+        // Atomic array/hash CAS stores the authoritative copy under an internal
+        // key. Always check it first so both thread-clone and non-clone reads
+        // observe the latest CAS'd value. Without the hash arm, a thread's own
+        // `%h{$k} = $v` (routed through `shared_hash_elem_set`) was invisible
+        // to its own re-read: the base-key snapshot below is stale.
         if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
+            if let Some(v) = self.get_shared_var(&atomic_key) {
+                return Some(v);
+            }
+        } else if name.starts_with('%') {
+            let atomic_key = format!("__mutsu_atomic_hash::{name}");
             if let Some(v) = self.get_shared_var(&atomic_key) {
                 return Some(v);
             }

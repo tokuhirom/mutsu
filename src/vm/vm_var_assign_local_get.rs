@@ -106,10 +106,19 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // Atomic array CAS stores the authoritative array under an internal
-        // shared key.  Check it first so reads pick up the latest CAS'd value.
+        // Atomic array/hash CAS stores the authoritative container under an
+        // internal shared key. Check it first so reads pick up the latest
+        // CAS'd value (for `%`: a thread's own `%h{$k} = $v` lands in the
+        // atomic entry, and the base-key snapshot below is stale).
         if name.starts_with('@') {
             let atomic_key = format!("__mutsu_atomic_arr::{name}");
+            if let Some(shared_val) = self.get_shared_var(&atomic_key) {
+                self.locals[idx] = shared_val.clone();
+                self.stack.push(shared_val);
+                return Ok(());
+            }
+        } else if name.starts_with('%') {
+            let atomic_key = format!("__mutsu_atomic_hash::{name}");
             if let Some(shared_val) = self.get_shared_var(&atomic_key) {
                 self.locals[idx] = shared_val.clone();
                 self.stack.push(shared_val);
