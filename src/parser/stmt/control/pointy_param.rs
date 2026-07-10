@@ -29,6 +29,20 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             },
         ));
     }
+    // Positional destructuring sub-signature: `-> [$a, $b] { ... }`.
+    // A bare `[...]` binds a single Positional argument and unpacks it — an
+    // anonymous `@` param carrying the sub-signature (mirrors `sub f([$a,$b])`).
+    if input.starts_with('[') {
+        let (r, _) = parse_char(input, '[')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = super::sub::parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
+        let mut p = crate::parser::stmt::sub_param::make_param("@".to_string());
+        p.sub_signature = Some(sub_params);
+        return Ok((r, p));
+    }
+
     // Optional type constraint before the variable
     // Use parse_type_constraint_expr to handle coercion types (e.g., Numeric(Cool)),
     // qualified names (Int::Odd), definedness markers (:D/:U), etc.
@@ -374,7 +388,9 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     }
 
     // Optional unpacking sub-signature: `-> Pair $p (:$key, :$value) { ... }`
-    // Parse and preserve the sub-signature for runtime binding.
+    // Also the bracket form used for hash/positional destructure of the bound
+    // value: `-> % [:$k, :@v] { ... }` / `-> @a [$x, $y] { ... }` (mirrors the
+    // `sub f(% [:$k])` path in sub_param). Parse and preserve for runtime binding.
     let mut sub_signature = None;
     let (r, _) = ws(rest)?;
     if r.starts_with('(') {
@@ -383,6 +399,14 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         let (r, sub_params) = super::sub::parse_param_list(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
+        sub_signature = Some(sub_params);
+        rest = r;
+    } else if r.starts_with('[') {
+        let (r, _) = parse_char(r, '[')?;
+        let (r, _) = ws(r)?;
+        let (r, sub_params) = super::sub::parse_param_list(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ']')?;
         sub_signature = Some(sub_params);
         rest = r;
     } else {
