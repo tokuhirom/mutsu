@@ -157,7 +157,7 @@ impl Interpreter {
                 class_name
             )));
         }
-        let (raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
+        let (mut raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
         let is_bind = self.bind_context || bind_source.is_some();
         let is_rebind = self.rebind_context;
         let is_constant = self.constant_context;
@@ -663,17 +663,27 @@ impl Interpreter {
                 self.coerce_hash_var_value(name, raw_popped)?
             }
         } else if name.starts_with('@') {
-            if has_explicit_initializer
+            if (has_explicit_initializer || !is_vardecl)
                 && !is_constant
                 && !is_bind
                 && raw_popped.is_nil()
                 && let Some(constraint) = loan_env!(self, var_type_constraint(name))
             {
-                return Err(runtime::utils::type_check_assignment_typed_error(
-                    name,
-                    &constraint,
-                    &Value::NIL,
-                ));
+                // A bare Nil assigned to a typed `@` array reverts to the element
+                // type's default. A definite (`:D`) element type has no default
+                // type object, so it dies (`my Int:D @a = Nil`); a non-definite
+                // element type produces the element type object
+                // (`my Bool @a = Nil` -> `Array[Bool].new(Bool)`). Rewrite the
+                // bare Nil into a single-element `[Nil]` so the element coercion
+                // below turns it into that type object.
+                if self.is_definite_constraint(&constraint) {
+                    return Err(runtime::utils::type_check_assignment_typed_error(
+                        name,
+                        &constraint,
+                        &Value::NIL,
+                    ));
+                }
+                raw_popped = Value::real_array(vec![Value::NIL]);
             }
             // Native typed arrays cannot store lazy sequences — check before
             // eager evaluation so the error is raised even if the sequence is

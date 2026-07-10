@@ -3391,6 +3391,38 @@ impl Interpreter {
             } = inner.as_ref().view()
             {
                 let cls = class_name.resolve().to_string();
+                // A private method (`self!inner`) on the mixin: resolve it on the
+                // inner class MRO and run it with `self` bound to the MIXIN wrapper
+                // (not the bare inner instance) so a nested `self.foo` inside the
+                // private method re-dispatches through the mixin roles and finds
+                // their overrides — mirroring the public-method case below.
+                if let Some(private_rest) = method.strip_prefix('!') {
+                    let resolved = if let Some((owner_class, pm_name)) =
+                        private_rest.split_once("::")
+                    {
+                        self.resolve_private_method_with_owner(&cls, owner_class, pm_name, &args)
+                            .map(|r| (r, pm_name))
+                    } else {
+                        self.resolve_private_method_any_owner(&cls, private_rest, &args)
+                            .map(|r| (r, private_rest))
+                    };
+                    if let Some(((resolved_owner, method_def), pm_name)) = resolved {
+                        let attrs = attributes.to_map();
+                        let (result, updated) = self.run_resolved_method_compiled_or_treewalk(
+                            &cls,
+                            &resolved_owner,
+                            pm_name,
+                            method_def,
+                            attrs,
+                            args,
+                            Some(target.clone()),
+                        )?;
+                        if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
+                            attributes.commit_attrs(updated);
+                        }
+                        return Ok(result);
+                    }
+                }
                 if self.class_has_method(&cls, method) {
                     let attrs = attributes.to_map();
                     let (result, updated) =
