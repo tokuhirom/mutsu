@@ -22,8 +22,10 @@ impl Compiler {
                     Expr::HashVar(name) => Some(format!("%{}", name)),
                     _ => None,
                 } {
+                    let source_slot = self.local_map.get(source_name.as_str()).copied();
                     let name_idx = self.code.add_constant(Value::str(source_name));
-                    self.code.emit(OpCode::TagContainerRef(name_idx));
+                    self.code
+                        .emit(OpCode::TagContainerRef(name_idx, source_slot));
                 }
                 let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
                 self.compile_block_inline(body);

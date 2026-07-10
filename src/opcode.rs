@@ -833,10 +833,15 @@ pub(crate) enum OpCode {
     Succeed,
     /// `done` — terminate the innermost react event loop
     ReactDone,
-    /// Tag the current value as coming from a named container (for Scalar binding)
-    TagContainerRef(u32),
-    /// Tag the current value as coming from a reversed named container (for `@a.reverse` writeback)
-    TagContainerRefReversed(u32),
+    /// Tag the current value as coming from a named container (for Scalar binding).
+    /// The second field is the compile-time-resolved local slot for the source
+    /// name (§1.5 slot baking; `None` = non-local): with shadow slots active the
+    /// container writeback targets `locals[slot]` instead of the ambiguous
+    /// by-name (`position`) resolution.
+    TagContainerRef(u32, Option<u32>),
+    /// Tag the current value as coming from a reversed named container (for
+    /// `@a.reverse` writeback); same slot-baking contract as `TagContainerRef`.
+    TagContainerRefReversed(u32, Option<u32>),
     /// Topicalize a container *element* (`given %h<k>` / `given @a[i]`) as an
     /// lvalue: pop the index from the stack, read element `container[index]`,
     /// push it as the topic value, and record the (container, index) source so
@@ -1509,6 +1514,16 @@ pub(crate) struct CompiledCode {
     /// Locals that are only accessed via GetLocal don't need env sync,
     /// reducing env size and clone cost.
     pub(crate) needs_env_sync: Vec<bool>,
+    /// Bitmap: true if local[i]'s NAME occupies more than one `locals` slot —
+    /// a genuine inner-block shadow under the `MUTSU_SHADOW_SLOTS` gate (§1.4).
+    /// The name-keyed env can hold only ONE value per name, so the whole-locals
+    /// env broadcast (`sync_env_from_locals` and the regex-interpolation sync)
+    /// must skip these slots: pushing an arbitrary (last-iterated) same-named
+    /// slot clobbers the live value with an uninitialized/stale sibling's. The
+    /// per-write mirror (`flush_local_to_env`) keeps env tracking the live
+    /// slot's writes instead. With the gate off `alloc_local` get-or-creates by
+    /// name, so names are unique and this is all-false (byte-identical).
+    pub(crate) dup_named_locals: Vec<bool>,
     /// Free variables this code (and its nested closures) reference from an
     /// enclosing scope: names used via GetGlobal-family ops that are not this
     /// code's own locals. For a closure body this is the set of captured
@@ -1686,6 +1701,7 @@ impl CompiledCode {
             has_env_writes: false,
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
+            dup_named_locals: Vec::new(),
             free_var_syms: Vec::new(),
             outer_ref_names: Vec::new(),
             free_var_writes: Vec::new(),
@@ -1814,6 +1830,31 @@ impl CompiledCode {
         });
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
+        // §1.4 shadow slots: flag every slot whose name occupies more than one
+        // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
+        // so the whole-locals env broadcasts skip them — see `dup_named_locals`.
+        // Computed before the early returns below so it is populated for
+        // BlockScope-carrying frames too (the very frames that shadow).
+        self.dup_named_locals = vec![false; n];
+        {
+            let mut first_seen: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::with_capacity(n);
+            let mut dups: Vec<usize> = Vec::new();
+            for (i, name) in self.locals.iter().enumerate() {
+                match first_seen.get(name.as_str()) {
+                    Some(&first) => {
+                        dups.push(first);
+                        dups.push(i);
+                    }
+                    None => {
+                        first_seen.insert(name.as_str(), i);
+                    }
+                }
+            }
+            for i in dups {
+                self.dup_named_locals[i] = true;
+            }
+        }
         if n == 0 {
             return;
         }

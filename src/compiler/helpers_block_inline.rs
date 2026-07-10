@@ -19,8 +19,10 @@ impl Compiler {
             Stmt::Expr(expr) => {
                 self.compile_expr(expr);
                 if let Expr::Var(name) = expr {
+                    let source_slot = self.local_map.get(name.as_str()).copied();
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::TagContainerRef(name_idx));
+                    self.code
+                        .emit(OpCode::TagContainerRef(name_idx, source_slot));
                 }
                 true
             }

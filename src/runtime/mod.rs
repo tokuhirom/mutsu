@@ -1485,7 +1485,12 @@ pub struct Interpreter {
     pub(crate) substitution_in_smartmatch: bool,
     pub(crate) last_topic_value: Option<Value>,
     pub(crate) topic_save_stack: Vec<Value>,
-    pub(crate) container_ref_var: Option<String>,
+    /// The named container the current topic/loop source came from
+    /// (`TagContainerRef`), paired with its compile-time-baked local slot
+    /// (§1.5; `None` = non-local or runtime-derived). The slot lets the
+    /// for/given container writeback target the exact `locals` slot when
+    /// shadow slots are active, instead of the by-name `position` search.
+    pub(crate) container_ref_var: Option<(String, Option<u32>)>,
     pub(crate) container_ref_reversed: bool,
     pub(crate) topic_source_var: Option<String>,
     /// The `@`/`%` source variable when `$_` is a whole-container topic

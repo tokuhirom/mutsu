@@ -153,10 +153,36 @@ broadcast = touches every slot with the name.
       byte-identical. `roast/S13-overloading/metaoperators.t` #14-16 green ON.
       Validated OFF with `make roast` (map.t/hash.t transient failures were CPU-
       starvation flaky, not this change). *(#4090-pending)*
-- [ ] S12+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
-      for-loop *container* source writeback (`write_back_container_source`,
-      `write_back_for_topic_item`, resolved by the runtime-derived
-      `container_ref_var` name — a §1.3 concern); the nested/deep/generic index-assign
+- [x] **S12 — env-broadcast duplicate-name skip + for/given container-writeback
+      slot bake.** Root cause of the `reverse.t`/`hash.t`/`native-str.t` toggle-ON
+      regressions: the whole-locals env broadcasts (`sync_env_from_locals`, run
+      unconditionally by `Say`/`Put`/`Print`/`Note`, and
+      `sync_regex_interpolation_env_from_locals`) push EVERY slot into the
+      name-keyed env, so with shadow slots a later same-named sibling slot
+      (uninitialized `Nil`, or a stale copy) clobbers the live value — reads
+      (`GetArrayVar`/`GetHashVar` are env-first) then observe it. Fix:
+      `CompiledCode::dup_named_locals` (computed in `compute_needs_env_sync`)
+      flags every slot whose name occupies >1 slot; both broadcasts skip flagged
+      slots (the per-write `flush_local_to_env` mirror keeps env tracking the
+      live slot). Intrinsically byte-identical OFF — without the gate,
+      `alloc_local` get-or-creates by name so no duplicates exist. Also bakes a
+      compile-time slot onto `TagContainerRef`/`TagContainerRefReversed`
+      (`container_ref_var` is now `(name, Option<slot>)`) and threads it through
+      `write_back_for_topic_item`/`write_back_container_source`/
+      `write_back_given_topic` (gated ON), so the `$_ = ++$i for @a.reverse`
+      rebuild reads and writes the shadowed source's own slot instead of the
+      by-name `position` (outer) slot. ★**Rejected approach (tried first): a
+      baked-slot-first READ on `GetArrayVar`/`GetHashVar`.** It fixed the same
+      files but broke 4 `t/` files ON (`shared-array-push`, `shared-elem-assign`,
+      `slurpy-is-raw`, `subscript-adverbs`): many writeback paths (rw-arg drain,
+      pair-lvalue `.value =`, cross-thread `__mutsu_atomic_arr::` stores) still
+      write env-only, so a slot-first read observes stale slots. Reads must stay
+      env-first until §1.3 makes writes slot-complete — fixing the broadcast
+      clobber at its source is the sound slice. Pin:
+      `t/shadow-slot-env-broadcast.t` (passes OFF, ON, and real raku).
+      *(this branch)*
+- [ ] S13+ — remaining leaf `update_local_if_exists`/`find_local_slot` sites: the
+      nested/deep/generic index-assign
       variants (`IndexAssignExprNested`/`DeepNested`/`Generic`), computed-attr twigil
       cells, hyper `»=»` multi-key writeback, and the remaining `update_local_if_exists`
       callers — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
