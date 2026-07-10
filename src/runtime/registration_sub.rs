@@ -908,12 +908,26 @@ impl Interpreter {
             self.env
                 .insert(format!("__mutsu_method_value::{}", name), Value::TRUE);
         }
+        // An `is native(...)` sub routes calls through NativeCall (libffi)
+        // instead of its body. The bytecode registration path
+        // (`vm_register_sub_ops`) records the C-FFI descriptor; the interpreter
+        // path (used by EVAL'd source, e.g. zef's `!native-library-is-installed`
+        // probe) must do the same, and must NOT reject `native`/`symbol`/… as
+        // unknown user traits.
+        if custom_traits.iter().any(|(t, _)| t == "native") {
+            self.register_native_call_sub(name, param_defs, return_type, custom_traits)?;
+        }
         // Apply custom trait_mod:<is> for each non-builtin trait
         let has_trait_mod =
             self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
         {
             for (trait_name, trait_arg) in custom_traits.iter().filter(|(t, _)| {
-                !t.starts_with("__") && t != "default" && !t.starts_with("DEPRECATED")
+                !t.starts_with("__")
+                    && t != "default"
+                    && !t.starts_with("DEPRECATED")
+                    // NativeCall traits are consumed by `register_native_call_sub`
+                    // above, not by `trait_mod:<is>`.
+                    && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
             }) {
                 if !has_trait_mod {
                     // In EVAL context, report the error. Outside EVAL

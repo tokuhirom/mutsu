@@ -293,7 +293,7 @@ impl Interpreter {
     /// The library name comes from the `native` trait argument, the C symbol
     /// from an optional `is symbol('...')` trait (defaulting to the sub name),
     /// and the C signature from the parameter / return type constraints.
-    fn register_native_call_sub(
+    pub(crate) fn register_native_call_sub(
         &mut self,
         name: &str,
         param_defs: &[crate::ast::ParamDef],
