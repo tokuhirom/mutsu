@@ -739,6 +739,30 @@ impl Compiler {
             }
         };
 
+        // A destructured sub-signature target (`-> % [:@dists]`, `-> @ ($a,@b)`)
+        // is a fresh block-scoped lexical that must SHADOW any outer variable of
+        // the same name -- a plain `Stmt::Assign` would instead resolve up the
+        // scope chain and clobber the outer var (e.g. zef's
+        // `my Candidate @dists = gather for @x -> % [:@dists] {...}`, where the
+        // inner `:@dists` collided with the outer typed `@dists`). Declare it.
+        let decl_stmt = |name: String, expr: Expr| {
+            let is_dynamic_target = name
+                .trim_start_matches(['$', '@', '%', '&'])
+                .starts_with('*');
+            Stmt::VarDecl {
+                name,
+                expr,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: is_dynamic_target,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            }
+        };
+
         let mut bind_stmts = Vec::new();
         if let Some(single_param) = param
             && param_idx.is_none()
@@ -760,23 +784,41 @@ impl Compiler {
                     // attribute readers), otherwise by hash key (Hash/Map, which
                     // have no method named after an arbitrary key). Decide at
                     // runtime: `$_.^can("key") ?? $_.key !! $_<key>`.
+                    //
+                    // A scalar named sub-param `:$curi` stores its name sigil-
+                    // stripped ("curi"), but an `@`/`%` named sub-param `:@dists`
+                    // keeps its sigil in `sub.name` ("@dists"). The accessor and
+                    // hash key must use the *key* name ("dists"), so strip a
+                    // leading array/hash sigil (and any twigil) before looking up;
+                    // the sigil is kept only for the bind target below so the
+                    // value lands in an `@`/`%` container.
+                    let after_sigil = sub
+                        .name
+                        .strip_prefix('@')
+                        .or_else(|| sub.name.strip_prefix('%'))
+                        .unwrap_or(&sub.name);
+                    let lookup_name = after_sigil
+                        .strip_prefix('!')
+                        .or_else(|| after_sigil.strip_prefix('.'))
+                        .unwrap_or(after_sigil)
+                        .to_string();
                     let method_call = Expr::MethodCall {
                         target: Box::new(Expr::Var(target_name.clone())),
-                        name: Symbol::intern(&sub.name),
+                        name: Symbol::intern(&lookup_name),
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
                     };
                     let hash_lookup = Expr::Index {
                         target: Box::new(Expr::Var(target_name.clone())),
-                        index: Box::new(Expr::Literal(Value::str(sub.name.clone()))),
+                        index: Box::new(Expr::Literal(Value::str(lookup_name.clone()))),
                         is_positional: false,
                     };
                     let method_result = Expr::Ternary {
                         cond: Box::new(Expr::MethodCall {
                             target: Box::new(Expr::Var(target_name.clone())),
                             name: Symbol::intern("can"),
-                            args: vec![Expr::Literal(Value::str(sub.name.clone()))],
+                            args: vec![Expr::Literal(Value::str(lookup_name.clone()))],
                             modifier: Some('^'),
                             quoted: false,
                         }),
@@ -789,11 +831,29 @@ impl Compiler {
                         for inner in inner_params {
                             if !inner.name.is_empty() {
                                 bind_stmts
-                                    .push(bind_stmt(inner.name.clone(), method_result.clone()));
+                                    .push(decl_stmt(inner.name.clone(), method_result.clone()));
                             }
                         }
                     } else {
-                        bind_stmts.push(bind_stmt(sub.name.clone(), method_result));
+                        // An `@`-sigil named sub-param binds like a signature
+                        // parameter: it flattens the (Positional) value's elements
+                        // into the array (shallow), unlike plain `my @x = $val`
+                        // assignment which keeps an itemized List as one element.
+                        // e.g. zef's `-> % [:@dists]` over `dists => $repo.installed`
+                        // (a 1-element List) must yield `@dists[0]` = the dist, not
+                        // a List wrapping it. `.list` gives the shallow flatten.
+                        let target_expr = if sub.name.starts_with('@') {
+                            Expr::MethodCall {
+                                target: Box::new(method_result),
+                                name: Symbol::intern("list"),
+                                args: Vec::new(),
+                                modifier: None,
+                                quoted: false,
+                            }
+                        } else {
+                            method_result
+                        };
+                        bind_stmts.push(decl_stmt(sub.name.clone(), target_expr));
                     }
                 } else if sub.slurpy && sub.sigilless {
                     // |rest capture parameter: collect remaining elements into a Capture
@@ -811,10 +871,10 @@ impl Compiler {
                         op: crate::token_kind::TokenKind::Pipe,
                         expr: Box::new(slice_expr),
                     }]);
-                    bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
+                    bind_stmts.push(decl_stmt(sub.name.clone(), capture_expr));
                     // No need to increment positional_index; capture consumes all remaining
                 } else {
-                    bind_stmts.push(bind_stmt(
+                    bind_stmts.push(decl_stmt(
                         sub.name.clone(),
                         Expr::Index {
                             target: Box::new(Expr::Var(target_name.clone())),
