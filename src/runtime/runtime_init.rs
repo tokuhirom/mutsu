@@ -1930,7 +1930,10 @@ impl Interpreter {
                             is_submethod: false,
                         };
                         let mut methods = HashMap::new();
-                        for name in ["id", "need", "load", "loaded"] {
+                        // Rakudo's CompUnit::Repository role requires exactly
+                        // `id`, `need`, and `loaded` (a class doing the role must
+                        // implement those three). `load` is NOT a required method.
+                        for name in ["id", "need", "loaded"] {
                             methods.insert(name.to_string(), vec![stub_method(stub_body.clone())]);
                         }
                         roles.insert(
