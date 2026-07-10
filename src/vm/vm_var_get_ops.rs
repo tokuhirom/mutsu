@@ -349,9 +349,28 @@ impl Interpreter {
     /// Get a variable from an outer lexical scope.
     /// `depth` is the number of OUTER:: prefixes (1 = immediate outer, 2 = two levels up).
     /// Uses the `outer_scope_locals` stack which is populated by BlockScope operations.
-    pub(super) fn get_outer_var(&self, code: &CompiledCode, name: &str, depth: usize) -> Value {
+    pub(super) fn get_outer_var(
+        &self,
+        code: &CompiledCode,
+        name: &str,
+        depth: usize,
+        slot: Option<u32>,
+    ) -> Value {
         if depth == 0 {
             return Value::NIL;
+        }
+        // §1.3 S14 (shadow slots only): the compiler baked the emit-point slot
+        // of the binding visible `depth` scopes out (resolve_outer_var_slot).
+        // With shadow slots each binding owns its slot, so the LIVE local value
+        // IS the outer binding — no snapshot indexing, and no position search
+        // (which picks the outermost same-named slot, wrong for depth < max).
+        // Gated: the default build never bakes a meaningful slot for shadows
+        // (declaration records are all `None`), and stays on the paths below.
+        if crate::compiler::shadow_slots_active()
+            && let Some(b) = slot
+            && let Some(val) = self.locals.get(b as usize)
+        {
+            return val.clone();
         }
         let stack_len = self.outer_scope_locals.len();
         // Inline nested-block path: `outer_scope_locals` (runtime-saved slots)
