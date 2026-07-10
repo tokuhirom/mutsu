@@ -1028,6 +1028,7 @@ impl Interpreter {
                     "name",
                     "auth",
                     "version",
+                    "osname",
                     "precomp-ext",
                     "precomp-target",
                     "request-garbage-collection",

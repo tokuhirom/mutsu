@@ -161,6 +161,25 @@ impl Interpreter {
             }
         }
 
+        // Bind `self` for the block to the *enclosing* method's invocant. The
+        // block runs inline in the current env, and a free `self` read
+        // (GetSelfOrNoSelf / a bare `self!priv` invocant) consults env "self".
+        // Without this, env "self" still holds the OUTER caller's self — e.g.
+        // `Repo.update` calls `$fetcher.fetch`, whose `$lock.protect: {...}`
+        // block does `self!try-load`, and self would wrongly resolve to the Repo
+        // rather than the Fetch that lexically encloses the block. Prefer the
+        // enclosing frame's `self` local, then the block's captured env.
+        let enclosing_self = outer_local_slots
+            .get("self")
+            .and_then(|s| saved_locals.get(*s))
+            .filter(|v| !matches!(v.view(), ValueView::Nil))
+            .cloned()
+            .or_else(|| captured_env.and_then(|e| e.get("self").cloned()));
+        let saved_self = self.get_env_with_main_alias("self");
+        if let Some(ref s) = enclosing_self {
+            self.set_env_with_main_alias("self", s.clone());
+        }
+
         // Execute the block's opcodes inline
         let mut sub_ip = 0;
         let mut exec_err = None;
@@ -213,6 +232,14 @@ impl Interpreter {
                         self.env_mut().insert(name.clone(), __v);
                     }
                 }
+            }
+        }
+
+        // Restore the caller's `self` binding (see the enclosing-self setup above).
+        match saved_self {
+            Some(s) => self.set_env_with_main_alias("self", s),
+            None => {
+                self.env_mut().remove("self");
             }
         }
 

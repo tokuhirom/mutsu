@@ -173,7 +173,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "name" | "auth" | "version" | "precomp-ext" | "precomp-target" | "prefix" | "desc"
-            | "signature" | "config" | "properties" => {
+            | "signature" | "config" | "properties" | "osname" => {
                 Ok(attributes.get(method).cloned().unwrap_or(Value::NIL))
             }
             "raku" => {

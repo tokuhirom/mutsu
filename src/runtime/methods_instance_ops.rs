@@ -595,11 +595,17 @@ impl Interpreter {
                         return Err(RuntimeError::new("Cannot install on CUR::FileSystem"));
                     }
                     "need" => {
-                        let short_name = match args.first().map(Value::view) {
-                            Some(ValueView::CompUnitDepSpec { short_name }) => short_name,
-                            _ => return Ok(Value::NIL),
-                        };
-                        let short_name_str = short_name.resolve();
+                        // A depspec may arrive either as the native `CompUnitDepSpec`
+                        // value (short-name only) or as a full
+                        // `CompUnit::DependencySpecification` instance carrying
+                        // auth/api/version matchers (zef's plugin loader builds the
+                        // latter). Extract the short-name from either form; the
+                        // FileSystem repo resolves purely by name.
+                        let depspec = args.first().cloned().unwrap_or(Value::NIL);
+                        let (short_name_str, ..) = self.extract_depspec_fields(&depspec);
+                        if short_name_str.is_empty() {
+                            return Ok(Value::NIL);
+                        }
                         let prefix = attributes
                             .as_map()
                             .get("prefix")

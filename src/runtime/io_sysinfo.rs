@@ -374,6 +374,14 @@ impl Interpreter {
             }),
         );
         attrs.insert("desc".to_string(), Value::str_from("mutsu virtual machine"));
+        // osname mirrors the build-time OS name MoarVM exposes via `$*VM.osname`
+        // (e.g. "linux", "darwin", "mswin32"); zef branches on it (tar/CLI).
+        let osname = match std::env::consts::OS {
+            "macos" => "darwin",
+            "windows" => "mswin32",
+            other => other,
+        };
+        attrs.insert("osname".to_string(), Value::str_from(osname));
         attrs.insert("precomp-ext".to_string(), Value::str_from("mutsu"));
         attrs.insert("precomp-target".to_string(), Value::str_from("mutsu"));
         attrs.insert("prefix".to_string(), Value::str_from("mutsu"));
