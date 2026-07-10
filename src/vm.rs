@@ -294,6 +294,15 @@ pub(crate) struct VmCallFrame {
     /// have them clobbered at the caller's loop exit.
     pub saved_loop_local_vars: Vec<HashSet<String>>,
     pub saved_loop_local_saved_env: Vec<HashMap<String, Value>>,
+    /// The caller's block-scope `my`-declaration tracking stack. A `BlockScope`
+    /// pushes a frame here and, on exit, reverts every name it records to the
+    /// pre-block value (block-local `my` must not leak out). A compiled-function
+    /// body runs via its own `exec_one` mini-loop, so without snapshotting this a
+    /// callee's routine-level `my $x` (which runs before the callee enters any of
+    /// its own blocks) would register in the *caller's* active `BlockScope` frame
+    /// and get reverted at the caller's block exit — clobbering a same-named
+    /// caller variable across a recursive call.
+    pub saved_block_declared_vars: Vec<HashSet<String>>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

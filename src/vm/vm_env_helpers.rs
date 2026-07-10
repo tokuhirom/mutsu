@@ -37,6 +37,7 @@ impl Interpreter {
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
             saved_loop_local_vars: std::mem::take(&mut self.loop_local_vars),
             saved_loop_local_saved_env: std::mem::take(&mut self.loop_local_saved_env),
+            saved_block_declared_vars: std::mem::take(&mut self.block_declared_vars),
         };
         self.call_frames.push(frame);
     }
@@ -58,6 +59,7 @@ impl Interpreter {
             saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
             saved_loop_local_vars: std::mem::take(&mut self.loop_local_vars),
             saved_loop_local_saved_env: std::mem::take(&mut self.loop_local_saved_env),
+            saved_block_declared_vars: std::mem::take(&mut self.block_declared_vars),
         };
         self.call_frames.push(frame);
     }
@@ -77,6 +79,7 @@ impl Interpreter {
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         self.loop_local_vars = std::mem::take(&mut frame.saved_loop_local_vars);
         self.loop_local_saved_env = std::mem::take(&mut frame.saved_loop_local_saved_env);
+        self.block_declared_vars = std::mem::take(&mut frame.saved_block_declared_vars);
         if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
             // Slow path: restore the whole snapshot (covers any `:=` marking).
             self.restore_readonly_vars(readonly);

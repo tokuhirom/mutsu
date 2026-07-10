@@ -70,6 +70,11 @@ impl Interpreter {
         // the inner `my $r` polluted the outer loop's scope, resetting $r to 0.
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // Isolate the caller's block-scope `my`-declaration tracking (see the
+        // matching comment in `call_compiled_function_positional_light`): a
+        // callee's routine-level `my $x` must not register in the caller's active
+        // `BlockScope` frame and be reverted at the caller's block exit.
+        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
 
         // Raku: routines get their own $_ initialized to (Any).
         let saved_topic = if cf.code.is_routine {
@@ -184,6 +189,7 @@ impl Interpreter {
         self.locals = saved_locals;
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.block_declared_vars = saved_block_declared_vars;
 
         // Restore env: if env was mutated, merge non-local changes back.
         // When has_locals is false, saved_env is None and no restore is needed

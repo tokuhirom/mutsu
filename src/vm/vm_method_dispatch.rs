@@ -686,6 +686,15 @@ impl Interpreter {
                     method_local_keys.insert(local_name.clone());
                 }
             }
+            // Env-only `my` declarations (no compiled slot, e.g. a `my @x`
+            // declared in a `next unless my @x = ...` condition) are callee-local
+            // too: without excluding them, a self-recursive method leaks the
+            // callee's `my @x` value back into the caller's same-named `@x`
+            // (zef `!find-prereq-candidates` `@needed`). The light-call merge
+            // already excludes these via `declared_locals`.
+            for name in &cc.env_only_decls {
+                method_local_keys.insert(name.clone());
+            }
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {

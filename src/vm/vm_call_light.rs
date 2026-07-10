@@ -43,6 +43,13 @@ impl Interpreter {
         // returned 0 instead of 10. Restored on every exit path.
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // Isolate the caller's block-scope `my`-declaration tracking (mirrors the
+        // loop-local isolation above). Without this, the callee's routine-level
+        // `my $x` — which runs before the callee enters any of its own blocks —
+        // registers in the *caller's* active `BlockScope` frame and gets reverted
+        // to the pre-block value at the caller's block exit. Repro:
+        // `sub f($n){ my $r=0; { $r=10; f($n-1) if $n>0 }; $r }` returned 0.
+        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / local env writes land in a
@@ -86,6 +93,7 @@ impl Interpreter {
                     self.locals = saved_locals;
                     self.loop_local_vars = saved_loop_local_vars;
                     self.loop_local_saved_env = saved_loop_local_saved_env;
+                    self.block_declared_vars = saved_block_declared_vars;
                     {
                         let param_name = &cf.param_defs[param_idx].name;
                         let got = runtime::value_type_name(&val);
@@ -184,6 +192,7 @@ impl Interpreter {
         self.locals = saved_locals;
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.block_declared_vars = saved_block_declared_vars;
         self.restore_readonly_vars(saved_readonly);
 
         // Restore the caller env and merge the overlay (the callee's own writes)

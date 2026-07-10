@@ -25,6 +25,11 @@ impl Interpreter {
         // clobbered at the caller's loop exit. Restored on every exit path.
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // Isolate the caller's block-scope `my`-declaration tracking (see the
+        // matching comment in `call_compiled_function_positional_light`): a
+        // callee's routine-level `my $x` must not register in the caller's active
+        // `BlockScope` frame and be reverted at the caller's block exit.
+        let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
@@ -130,6 +135,7 @@ impl Interpreter {
                     self.locals = saved_locals;
                     self.loop_local_vars = saved_loop_local_vars;
                     self.loop_local_saved_env = saved_loop_local_saved_env;
+                    self.block_declared_vars = saved_block_declared_vars;
                     // Missing required named parameter is a runtime X::AdHoc in
                     // Raku (see binding.rs); carry the typed exception so it does
                     // not fall back to the bare "Exception" default.
@@ -158,6 +164,7 @@ impl Interpreter {
                     self.locals = saved_locals;
                     self.loop_local_vars = saved_loop_local_vars;
                     self.loop_local_saved_env = saved_loop_local_saved_env;
+                    self.block_declared_vars = saved_block_declared_vars;
                     return Err(RuntimeError::new(format!(
                         "Too few positionals passed; expected {} arguments but got {}",
                         cf.param_defs.iter().filter(|p| !p.named).count(),
@@ -335,6 +342,7 @@ impl Interpreter {
         self.locals = saved_locals;
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.block_declared_vars = saved_block_declared_vars;
 
         // Restore readonly vars
         self.restore_readonly_vars(saved_readonly);

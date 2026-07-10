@@ -1649,6 +1649,16 @@ pub(crate) struct CompiledCode {
     /// for closures with no upvalue-eligible free variables. Populated by
     /// `compute_upvalues` (called only for anonymous-closure bodies).
     pub(crate) upvalue_syms: Vec<Symbol>,
+    /// Names declared with `my` in this body that have NO compiled local slot —
+    /// i.e. env-only lexicals emitted via `SetVarDynamic` (e.g. a `my @x`
+    /// declared inside a statement-modifier condition like
+    /// `next unless my @x = ...`). The scoped-overlay return merges exclude
+    /// slotted locals via `code.locals` and the light path also excludes these
+    /// via `CompiledFunction::declared_locals`; the method-dispatch merge
+    /// (`merge_method_env`) has no `CompiledFunction`, so it consults this set to
+    /// avoid leaking a callee's env-only `my` back into a same-named caller
+    /// lexical across (self-)recursion. Populated by `compute_needs_env_sync`.
+    pub(crate) env_only_decls: Vec<String>,
 }
 
 impl CompiledCode {
@@ -1688,6 +1698,7 @@ impl CompiledCode {
             captures_env_by_name: false,
             sub_fingerprints: std::collections::HashMap::new(),
             upvalue_syms: Vec::new(),
+            env_only_decls: Vec::new(),
         }
     }
 
@@ -1740,6 +1751,30 @@ impl CompiledCode {
     pub(crate) fn compute_needs_env_sync(&mut self) {
         self.compute_locals_sym();
         self.compute_free_vars();
+        // Collect env-only `my` declarations so the method-dispatch return merge
+        // can treat them as callee-local and not propagate them into a same-named
+        // caller lexical across (self-)recursion. Two sources:
+        //  (1) top-level `SetVarDynamic` ops (a `my $x`/`@x`/`%x` with no slot),
+        //  (2) `my` declarations inside a *deferred* body stashed in `stmt_pool`
+        //      (a `gather`/block/`while` body run by-name against the method env,
+        //      e.g. zef `!find-prereq-candidates`'s `my @needed`), which never
+        //      reaches the top-level op scan.
+        let mut decls: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for op in &self.ops {
+            if let OpCode::SetVarDynamic { name_idx, .. } = op
+                && let Some(crate::value::ValueView::Str(name)) =
+                    self.constants.get(*name_idx as usize).map(Value::view)
+            {
+                decls.insert(name.to_string());
+            }
+        }
+        crate::ast::collect_all_my_decl_names(&self.stmt_pool, &mut decls);
+        // Keep only names that are NOT compiled local slots (those are already
+        // excluded from the merge via `method_local_keys`/`code.locals`).
+        self.env_only_decls = decls
+            .into_iter()
+            .filter(|n| !self.locals.iter().any(|l| l == n))
+            .collect();
         // Always scan for reflective caller-lexical access (independent of the
         // needs_env_sync early returns below), so the global flag is set even for
         // loop/block or zero-local frames.
