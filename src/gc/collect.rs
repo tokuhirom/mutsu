@@ -1,25 +1,25 @@
 //! GC Level 1a synchronous cycle collector (ADR-0001 §3-8,
 //! `docs/gc-level1-detailed-design.md` §5 / §9.4 / §9.5 / §11 step 8).
 //!
-//! Bacon-Rajan trial-deletion over the process-global candidate buffer. This is
-//! the first slice that actually *reclaims* garbage: everything before it
-//! (§11 steps 1-7) only built the `Gc` node graph and the candidate buffer.
+//! Bacon-Rajan trial-deletion over the process-global candidate buffer built by
+//! the `Gc` node graph (`gc_ptr`, §11 steps 1-7).
 //!
 //! Debug surface: `MUTSU_GC_LOG=summary|detail|trace` emits per-collect log
 //! lines (§9.4); `MUTSU_GC_VERIFY=1` checks the collector's soundness invariants
-//! around every collect (§9.5). Both are opt-in and cost nothing on the default
-//! (GC-off) path.
+//! around every collect (§9.5). Both are opt-in and cost nothing when unset.
 //!
-//! Scope of this cut:
-//! - **Opt-in.** Reclaim runs from [`collect_cycles`], invoked either manually
-//!   (`gc_debug_collect_now`) or automatically at VM safepoints when a
-//!   `MUTSU_GC` trigger is set (see [`super::safepoint`]). With `MUTSU_GC` unset
-//!   (default) the candidate buffer stays empty, so a call reclaims nothing and
-//!   normal execution is unaffected.
-//! - **Container cycles.** It walks whatever `Trace` exposes, so it already
-//!   handles the migrated container types (`Array`/`Hash`/`Set`/`Bag`/`Mix`/
-//!   `ContainerRef`). Async graphs (`Promise`/`Channel`/supply registries, §11
-//!   steps 6-7) are covered once those migrate and gain `Trace`/`drop_gc_edges`.
+//! Scope:
+//! - **Default on.** Reclaim runs from [`collect_cycles_at`], invoked at VM
+//!   safepoints under the ADR-0003 adaptive size threshold (see
+//!   [`super::safepoint`]) and once at program end
+//!   ([`collect_at_program_end`]). `MUTSU_GC=off` disarms safepoints and keeps
+//!   the candidate buffer empty, so a call reclaims nothing.
+//! - **Container cycles.** It walks whatever `Trace` exposes — all migrated
+//!   container kinds (`Array`/`Hash`/`Set`/`Bag`/`Mix`/`ContainerRef`/`Sub`/
+//!   `Instance`/`LazyList`) and the async graph (`Promise`/`Channel`, §11
+//!   steps 6-7).
+//! - **Cross-thread.** A collect first brings every other mutator to
+//!   quiescence via the cooperative stop-the-world (`gc::stw`, §6.1).
 //!
 //! ## Algorithm (Bacon & Rajan, "Concurrent Cycle Collection in Reference
 //! Counted Systems", synchronous variant)
@@ -37,12 +37,6 @@
 //! The GC strong count (`GcBox::gc_strong*`) is the scratch count trial-deletion
 //! mutates; `scan_black` restores it for every survivor, so the heap's refcounts
 //! are pristine afterward (only genuine garbage is disturbed).
-
-// The collector has no production caller yet: it runs only via the manual
-// `gc_debug_collect_now` hook / unit tests until safepoint wiring lands (§11
-// step 8, second half). Module-wide dead-code allow until then, mirroring
-// `gc_ptr`; removed when a safepoint / builtin invokes `collect_cycles`.
-#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -499,26 +493,10 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     }
 }
 
-/// Run one collection attributed to `manual` (used by the debug hook / tests).
+/// Run one collection attributed to `manual` (unit tests' entry point).
+#[cfg(test)]
 pub(crate) fn collect_cycles() -> CollectStats {
     collect_cycles_at("manual")
-}
-
-/// Debug hook (design doc §9.5): force a collect now, regardless of triggers.
-/// The entry point a future `gc_debug_collect_now` builtin / REPL command and
-/// the integration tests call.
-pub(crate) fn gc_debug_collect_now() -> CollectStats {
-    collect_cycles_at("manual")
-}
-
-/// Run a collection at a named safepoint if `MUTSU_GC=on`. No-op with GC off, so
-/// the wired call sites are free on the default path. Logging/verify happen
-/// inside [`collect_cycles_at`] under `MUTSU_GC_LOG` / `MUTSU_GC_VERIFY`.
-pub(crate) fn collect_if_enabled(safepoint: &str) {
-    if !super::gc_ptr::gc_enabled() {
-        return;
-    }
-    collect_cycles_at(safepoint);
 }
 
 /// The program-end collect. Its only *observable* effect is delivering Raku

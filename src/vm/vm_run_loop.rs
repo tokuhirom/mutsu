@@ -114,16 +114,16 @@ impl Interpreter {
         let mut ip = 0;
         while ip < code.ops.len() {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
-            // container borrow, so a cycle collect may run here. Off by default —
-            // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
-            // enables an automatic trigger. Fires on worker threads too: the
-            // collector itself splits the work by thread-safety — the dead sweep
-            // (refcount-dead candidates, plain `Arc` drops) runs even while other
-            // mutators are live, while the trial-deletion cycle scan defers until
-            // `mutator_workers_active()` clears (cross-thread cooperative STW is
-            // not implemented yet, design §6). Without in-thread sweeps, threaded
-            // mutation-heavy loops grew the candidate buffer — and their dead
-            // snapshots' memory — unboundedly until the post-join collect.
+            // container borrow, so a cycle collect may run here.
+            // `gc_safepoints_armed()` is a single cached load (false only with
+            // `MUTSU_GC=off`). Fires on worker threads too: the collector splits
+            // the work by thread-safety — the dead sweep (refcount-dead
+            // candidates, plain `Arc` drops) runs even while other mutators are
+            // live, while the trial-deletion cycle scan first brings them to
+            // quiescence via the cooperative stop-the-world (`gc::stw`, design
+            // §6.1). Without in-thread sweeps, threaded mutation-heavy loops grew
+            // the candidate buffer — and their dead snapshots' memory —
+            // unboundedly until the post-join collect.
             if crate::gc::gc_safepoints_armed() {
                 crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
             }
@@ -371,16 +371,16 @@ impl Interpreter {
         let mut ip = 0;
         while ip < code.ops.len() {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
-            // container borrow, so a cycle collect may run here. Off by default —
-            // `gc_safepoints_armed()` is a single cached load unless `MUTSU_GC`
-            // enables an automatic trigger. Fires on worker threads too: the
-            // collector itself splits the work by thread-safety — the dead sweep
-            // (refcount-dead candidates, plain `Arc` drops) runs even while other
-            // mutators are live, while the trial-deletion cycle scan defers until
-            // `mutator_workers_active()` clears (cross-thread cooperative STW is
-            // not implemented yet, design §6). Without in-thread sweeps, threaded
-            // mutation-heavy loops grew the candidate buffer — and their dead
-            // snapshots' memory — unboundedly until the post-join collect.
+            // container borrow, so a cycle collect may run here.
+            // `gc_safepoints_armed()` is a single cached load (false only with
+            // `MUTSU_GC=off`). Fires on worker threads too: the collector splits
+            // the work by thread-safety — the dead sweep (refcount-dead
+            // candidates, plain `Arc` drops) runs even while other mutators are
+            // live, while the trial-deletion cycle scan first brings them to
+            // quiescence via the cooperative stop-the-world (`gc::stw`, design
+            // §6.1). Without in-thread sweeps, threaded mutation-heavy loops grew
+            // the candidate buffer — and their dead snapshots' memory —
+            // unboundedly until the post-join collect.
             if crate::gc::gc_safepoints_armed() {
                 crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
             }
