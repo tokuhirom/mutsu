@@ -141,6 +141,18 @@ new number; `scripts/check-value-wall.sh --update` rewrites it).
 
 ## 7. Next-session kickoff: 3b-1 (seal folded in)
 
+> **Step A landed (2026-07-11).** `Value` is now `pub struct Value(ValueRepr)`
+> with `ValueRepr` private to `crate::value`: writing `Value::Int(3)` or
+> matching a variant outside `src/value/` is a **compile error** (E0624 /
+> unnameable type), not just a ratchet failure. Inside `src/value/`, patterns
+> and struct-like variant expressions use `Value(ValueRepr::..)`; tuple/unit
+> variant *expressions* go through variant-named constructor shims on `Value`
+> (private to `crate::value`) — the single funnel step B will turn into the
+> NaN-box tag-packing constructors. `mem::discriminant`-based variant
+> comparisons moved to the wall API `Value::same_variant()`. The ratchet stays
+> as a cheap regression net. Step B (representation flip) remains gated on
+> ADR-0005 acceptance.
+
 The wall is at 0 but not yet *sealed* — nothing stops a future PR from writing
 `Value::Int(3)` again (the ratchet catches it in `make test`, but only after the
 fact). **Decision (2026-07-07, [ADR-0005](adr/0005-nanbox-representation-encoding.md)

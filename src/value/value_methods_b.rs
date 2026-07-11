@@ -18,7 +18,7 @@ impl Value {
     /// Safety: same assumptions as hash_autovivify — callers ensure no
     /// concurrent reads/writes to the same Arc.
     pub fn array_push_in_place(&self, val: Value) -> bool {
-        if let Value::Array(arc, _) = self {
+        if let Value(ValueRepr::Array(arc, _)) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the push.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -37,7 +37,7 @@ impl Value {
     /// `None` if `self` is not an Array or the existing element is a non-array
     /// container (a Hash — a shape the caller cannot descend as an array index).
     pub fn ensure_array_child(&self, idx: usize) -> Option<Value> {
-        let Value::Array(arc, _kind) = self else {
+        let Value(ValueRepr::Array(arc, _kind)) = self else {
             return None;
         };
         // SAFETY: aliased in-place mutation of a shared container; see
@@ -57,12 +57,13 @@ impl Value {
         // (`Int`/`Str`/…) or a `Hash` is NOT overwritten — returning `None` there
         // makes the caller fall back to a plain read, so a read-only use of the
         // subscript cannot corrupt existing data.
-        let is_hole = |v: &Value| matches!(v, Value::Nil | Value::Package(..));
+        let is_hole =
+            |v: &Value| matches!(v, Value(ValueRepr::Nil) | Value(ValueRepr::Package(..)));
         // Deref an existing ContainerRef cell so we inspect/replace its inner value.
-        if let Value::ContainerRef(cell) = &data[idx] {
+        if let Value(ValueRepr::ContainerRef(cell)) = &data[idx] {
             let inner = cell.lock().unwrap().clone();
             match &inner {
-                Value::Array(..) => return Some(inner),
+                Value(ValueRepr::Array(..)) => return Some(inner),
                 v if is_hole(v) => {
                     let fresh = Value::real_array(Vec::new());
                     *cell.lock().unwrap() = fresh.clone();
@@ -72,7 +73,7 @@ impl Value {
             }
         }
         match &data[idx] {
-            Value::Array(..) => Some(data[idx].clone()),
+            Value(ValueRepr::Array(..)) => Some(data[idx].clone()),
             v if is_hole(v) => {
                 let fresh = Value::real_array(Vec::new());
                 data[idx] = fresh.clone();
@@ -92,7 +93,7 @@ impl Value {
     /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
     /// element at the single read chokepoint (`resolve_array_entry`).
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
-        if let Value::Array(arc, _kind) = self {
+        if let Value(ValueRepr::Array(arc, _kind)) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the
             // growth/promotion below.
@@ -112,7 +113,7 @@ impl Value {
                 data.push(hole.clone());
             }
             let elem = &mut data[idx];
-            if let Value::ContainerRef(cell) = elem {
+            if let Value(ValueRepr::ContainerRef(cell)) = elem {
                 return Some(Value::ContainerRef(cell.clone()));
             }
             // Only promote a *scalar* leaf to a cell. A container element
@@ -122,7 +123,12 @@ impl Value {
             // the next index op lands in the same physical Vec/HashMap the
             // stored element points to (Stage 2: no array element back-reference
             // back-reference needed).
-            if !terminal && matches!(elem, Value::Array(..) | Value::Hash(..)) {
+            if !terminal
+                && matches!(
+                    elem,
+                    Value(ValueRepr::Array(..)) | Value(ValueRepr::Hash(..))
+                )
+            {
                 return Some(elem.clone());
             }
             let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
@@ -137,7 +143,7 @@ impl Value {
     /// Regex values are encoded with a special prefix to preserve their identity.
     pub fn hash_key_encode(val: &Value) -> String {
         match val {
-            Value::Regex(pattern) => {
+            Value(ValueRepr::Regex(pattern)) => {
                 format!("\0rx:{}", pattern)
             }
             other => other.to_string_value(),
@@ -170,7 +176,7 @@ impl Value {
     /// returned as-is. See the decont family note above; this is the Scalar axis only.
     pub fn descalarize(&self) -> &Value {
         match self {
-            Value::Scalar(inner) => inner.descalarize(),
+            Value(ValueRepr::Scalar(inner)) => inner.descalarize(),
             other => other,
         }
     }
@@ -181,7 +187,7 @@ impl Value {
     /// `runtime::methods_mut::strip_scalar`.
     pub fn into_descalarized(self) -> Value {
         match self {
-            Value::Scalar(inner) => inner.into_descalarized(),
+            Value(ValueRepr::Scalar(inner)) => inner.into_descalarized(),
             other => other,
         }
     }
@@ -309,10 +315,10 @@ impl Value {
         Value::Slip(Arc::new(items))
     }
     pub fn junction(kind: JunctionKind, values: Vec<Value>) -> Self {
-        Value::Junction {
+        Value(ValueRepr::Junction {
             kind,
             values: Arc::new(values),
-        }
+        })
     }
 
     /// Create a new Sub value wrapping the given SubData in an Arc.
@@ -387,7 +393,7 @@ impl Value {
     #[allow(dead_code)]
     pub(crate) fn as_sub(&self) -> Option<&SubData> {
         match self {
-            Value::Sub(data) => Some(data),
+            Value(ValueRepr::Sub(data)) => Some(data),
             _ => None,
         }
     }
@@ -396,7 +402,7 @@ impl Value {
     #[allow(dead_code)]
     pub(crate) fn upgrade_weak(&self) -> Value {
         match self {
-            Value::WeakSub(weak) => match weak.upgrade() {
+            Value(ValueRepr::WeakSub(weak)) => match weak.upgrade() {
                 Some(strong) => Value::Sub(strong),
                 None => Value::Nil,
             },
@@ -459,11 +465,11 @@ impl Value {
         attributes: HashMap<String, Value>,
         id: u64,
     ) -> Self {
-        Value::Instance {
+        Value(ValueRepr::Instance {
             class_name,
             attributes: crate::gc::Gc::new(InstanceAttrs::new(class_name, attributes, id, true)),
             id,
-        }
+        })
     }
 
     /// Phase 3 registry-removal: return a `Value::Instance` that SHARES `attrs`'s
@@ -483,11 +489,11 @@ impl Value {
         } else {
             crate::gc::Gc::new(attrs.with_class(class_name))
         };
-        Value::Instance {
+        Value(ValueRepr::Instance {
             class_name,
             attributes,
             id,
-        }
+        })
     }
 
     /// Phase 3 registry-removal: write `map` into `attrs`'s shared cell in place
@@ -512,15 +518,15 @@ impl Value {
     /// independent for them.
     pub(crate) fn into_temp_snapshot(self) -> Value {
         match self {
-            Value::Instance {
+            Value(ValueRepr::Instance {
                 class_name,
                 attributes,
                 id,
-            } => Value::Instance {
+            }) => Value(ValueRepr::Instance {
                 class_name,
                 attributes: crate::gc::Gc::new((*attributes).clone()),
                 id,
-            },
+            }),
             other => other,
         }
     }
@@ -531,7 +537,7 @@ impl Value {
         queue_destroy: bool,
     ) -> Self {
         let id = next_instance_id();
-        Value::Instance {
+        Value(ValueRepr::Instance {
             class_name,
             attributes: crate::gc::Gc::new(InstanceAttrs::new(
                 class_name,
@@ -540,7 +546,7 @@ impl Value {
                 queue_destroy,
             )),
             id,
-        }
+        })
     }
 
     /// Create an Instant value from the current system time.

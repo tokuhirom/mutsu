@@ -132,122 +132,124 @@ impl Value {
     #[inline]
     pub fn view(&self) -> ValueView<'_> {
         match self {
-            Value::Int(n) => ValueView::Int(*n),
-            Value::BigInt(n) => ValueView::BigInt(n),
-            Value::Num(f) => ValueView::Num(*f),
-            Value::Str(s) => ValueView::Str(s),
-            Value::Bool(b) => ValueView::Bool(*b),
-            Value::Range(a, b) => ValueView::Range(*a, *b),
-            Value::RangeExcl(a, b) => ValueView::RangeExcl(*a, *b),
-            Value::RangeExclStart(a, b) => ValueView::RangeExclStart(*a, *b),
-            Value::RangeExclBoth(a, b) => ValueView::RangeExclBoth(*a, *b),
-            Value::GenericRange {
+            Value(ValueRepr::Int(n)) => ValueView::Int(*n),
+            Value(ValueRepr::BigInt(n)) => ValueView::BigInt(n),
+            Value(ValueRepr::Num(f)) => ValueView::Num(*f),
+            Value(ValueRepr::Str(s)) => ValueView::Str(s),
+            Value(ValueRepr::Bool(b)) => ValueView::Bool(*b),
+            Value(ValueRepr::Range(a, b)) => ValueView::Range(*a, *b),
+            Value(ValueRepr::RangeExcl(a, b)) => ValueView::RangeExcl(*a, *b),
+            Value(ValueRepr::RangeExclStart(a, b)) => ValueView::RangeExclStart(*a, *b),
+            Value(ValueRepr::RangeExclBoth(a, b)) => ValueView::RangeExclBoth(*a, *b),
+            Value(ValueRepr::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
-            } => ValueView::GenericRange {
+            }) => ValueView::GenericRange {
                 start,
                 end,
                 excl_start: *excl_start,
                 excl_end: *excl_end,
             },
-            Value::Array(items, kind) => ValueView::Array(items, *kind),
-            Value::Hash(h, _) => ValueView::Hash(h),
-            Value::Rat(n, d) => ValueView::Rat(*n, *d),
-            Value::FatRat(n, d) => ValueView::FatRat(*n, *d),
-            Value::BigRat(n, d) => ValueView::BigRat(n, d),
-            Value::Complex(r, i) => ValueView::Complex(*r, *i),
-            Value::Set(s, m) => ValueView::Set(s, *m),
-            Value::Bag(b, m) => ValueView::Bag(b, *m),
-            Value::Mix(x, m) => ValueView::Mix(x, *m),
-            Value::CompUnitDepSpec { short_name } => ValueView::CompUnitDepSpec {
+            Value(ValueRepr::Array(items, kind)) => ValueView::Array(items, *kind),
+            Value(ValueRepr::Hash(h, _)) => ValueView::Hash(h),
+            Value(ValueRepr::Rat(n, d)) => ValueView::Rat(*n, *d),
+            Value(ValueRepr::FatRat(n, d)) => ValueView::FatRat(*n, *d),
+            Value(ValueRepr::BigRat(n, d)) => ValueView::BigRat(n, d),
+            Value(ValueRepr::Complex(r, i)) => ValueView::Complex(*r, *i),
+            Value(ValueRepr::Set(s, m)) => ValueView::Set(s, *m),
+            Value(ValueRepr::Bag(b, m)) => ValueView::Bag(b, *m),
+            Value(ValueRepr::Mix(x, m)) => ValueView::Mix(x, *m),
+            Value(ValueRepr::CompUnitDepSpec { short_name }) => ValueView::CompUnitDepSpec {
                 short_name: *short_name,
             },
-            Value::Package(sym) => ValueView::Package(*sym),
-            Value::Routine {
+            Value(ValueRepr::Package(sym)) => ValueView::Package(*sym),
+            Value(ValueRepr::Routine {
                 package,
                 name,
                 is_regex,
-            } => ValueView::Routine {
+            }) => ValueView::Routine {
                 package: *package,
                 name: *name,
                 is_regex: *is_regex,
             },
-            Value::Pair(k, v) => ValueView::Pair(k, v),
-            Value::ValuePair(k, v) => ValueView::ValuePair(k, v),
-            Value::Enum {
+            Value(ValueRepr::Pair(k, v)) => ValueView::Pair(k, v),
+            Value(ValueRepr::ValuePair(k, v)) => ValueView::ValuePair(k, v),
+            Value(ValueRepr::Enum {
                 enum_type,
                 key,
                 value,
                 index,
-            } => ValueView::Enum {
+            }) => ValueView::Enum {
                 enum_type: *enum_type,
                 key: *key,
                 value,
                 index: *index,
             },
-            Value::Regex(r) => ValueView::Regex(r),
-            Value::RegexWithAdverbs(adv) => ValueView::RegexWithAdverbs(adv),
-            Value::Sub(s) => ValueView::Sub(s),
-            Value::WeakSub(w) => ValueView::WeakSub(w),
-            Value::Instance {
+            Value(ValueRepr::Regex(r)) => ValueView::Regex(r),
+            Value(ValueRepr::RegexWithAdverbs(adv)) => ValueView::RegexWithAdverbs(adv),
+            Value(ValueRepr::Sub(s)) => ValueView::Sub(s),
+            Value(ValueRepr::WeakSub(w)) => ValueView::WeakSub(w),
+            Value(ValueRepr::Instance {
                 class_name,
                 attributes,
                 id,
-            } => ValueView::Instance {
+            }) => ValueView::Instance {
                 class_name: *class_name,
                 attributes,
                 id: *id,
             },
-            Value::Junction { kind, values } => ValueView::Junction { kind, values },
-            Value::Seq(items) => ValueView::Seq(items),
-            Value::HyperSeq(items) => ValueView::HyperSeq(items),
-            Value::RaceSeq(items) => ValueView::RaceSeq(items),
-            Value::Slip(items) => ValueView::Slip(items),
-            Value::LazyList(l) => ValueView::LazyList(l),
-            Value::Version { parts, plus, minus } => ValueView::Version {
+            Value(ValueRepr::Junction { kind, values }) => ValueView::Junction { kind, values },
+            Value(ValueRepr::Seq(items)) => ValueView::Seq(items),
+            Value(ValueRepr::HyperSeq(items)) => ValueView::HyperSeq(items),
+            Value(ValueRepr::RaceSeq(items)) => ValueView::RaceSeq(items),
+            Value(ValueRepr::Slip(items)) => ValueView::Slip(items),
+            Value(ValueRepr::LazyList(l)) => ValueView::LazyList(l),
+            Value(ValueRepr::Version { parts, plus, minus }) => ValueView::Version {
                 parts,
                 plus: *plus,
                 minus: *minus,
             },
-            Value::Promise(p) => ValueView::Promise(p),
-            Value::Channel(c) => ValueView::Channel(c),
-            Value::Nil => ValueView::Nil,
-            Value::Whatever => ValueView::Whatever,
-            Value::HyperWhatever => ValueView::HyperWhatever,
-            Value::Mixin(inner, overrides) => ValueView::Mixin(inner, overrides),
-            Value::Capture { positional, named } => ValueView::Capture { positional, named },
-            Value::Uni(u) => ValueView::Uni(u),
-            Value::Proxy {
+            Value(ValueRepr::Promise(p)) => ValueView::Promise(p),
+            Value(ValueRepr::Channel(c)) => ValueView::Channel(c),
+            Value(ValueRepr::Nil) => ValueView::Nil,
+            Value(ValueRepr::Whatever) => ValueView::Whatever,
+            Value(ValueRepr::HyperWhatever) => ValueView::HyperWhatever,
+            Value(ValueRepr::Mixin(inner, overrides)) => ValueView::Mixin(inner, overrides),
+            Value(ValueRepr::Capture { positional, named }) => {
+                ValueView::Capture { positional, named }
+            }
+            Value(ValueRepr::Uni(u)) => ValueView::Uni(u),
+            Value(ValueRepr::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 decontainerized,
-            } => ValueView::Proxy {
+            }) => ValueView::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 decontainerized: *decontainerized,
             },
-            Value::ParametricRole {
+            Value(ValueRepr::ParametricRole {
                 base_name,
                 type_args,
-            } => ValueView::ParametricRole {
+            }) => ValueView::ParametricRole {
                 base_name: *base_name,
                 type_args,
             },
-            Value::CustomType(d) => ValueView::CustomType(d),
-            Value::CustomTypeInstance(d) => ValueView::CustomTypeInstance(d),
-            Value::Scalar(inner) => ValueView::Scalar(inner),
-            Value::ContainerRef(cell) => ValueView::ContainerRef(cell),
-            Value::LazyThunk(t) => ValueView::LazyThunk(t),
-            Value::LazyIoLines { handle, kv, words } => ValueView::LazyIoLines {
+            Value(ValueRepr::CustomType(d)) => ValueView::CustomType(d),
+            Value(ValueRepr::CustomTypeInstance(d)) => ValueView::CustomTypeInstance(d),
+            Value(ValueRepr::Scalar(inner)) => ValueView::Scalar(inner),
+            Value(ValueRepr::ContainerRef(cell)) => ValueView::ContainerRef(cell),
+            Value(ValueRepr::LazyThunk(t)) => ValueView::LazyThunk(t),
+            Value(ValueRepr::LazyIoLines { handle, kv, words }) => ValueView::LazyIoLines {
                 handle,
                 kv: *kv,
                 words: *words,
             },
-            Value::HashEntryRef { hash, path, eager } => ValueView::HashEntryRef {
+            Value(ValueRepr::HashEntryRef { hash, path, eager }) => ValueView::HashEntryRef {
                 hash,
                 path,
                 eager: *eager,
@@ -258,9 +260,9 @@ impl Value {
     // ---- representation-independent scalar constructors ----
 
     /// True boolean constant (post-box: a tag constant).
-    pub const TRUE: Value = Value::Bool(true);
+    pub const TRUE: Value = Value(ValueRepr::Bool(true));
     /// False boolean constant (post-box: a tag constant).
-    pub const FALSE: Value = Value::Bool(false);
+    pub const FALSE: Value = Value(ValueRepr::Bool(false));
     /// Nil constant (post-box: a tag constant).
     pub const NIL: Value = Value::Nil;
 
@@ -326,11 +328,11 @@ impl Value {
     /// Construct a `Routine` stub value.
     #[inline]
     pub(crate) fn routine_parts(package: Symbol, name: Symbol, is_regex: bool) -> Self {
-        Value::Routine {
+        Value(ValueRepr::Routine {
             package,
             name,
             is_regex,
-        }
+        })
     }
 
     /// Construct a `Pair` with a string key.
@@ -384,13 +386,13 @@ impl Value {
     /// Construct a `Version` value from its parts.
     #[inline]
     pub(crate) fn version(parts: Vec<VersionPart>, plus: bool, minus: bool) -> Self {
-        Value::Version { parts, plus, minus }
+        Value(ValueRepr::Version { parts, plus, minus })
     }
 
     /// Construct a `CompUnitDepSpec` from its short name.
     #[inline]
     pub(crate) fn comp_unit_dep_spec(short_name: Symbol) -> Self {
-        Value::CompUnitDepSpec { short_name }
+        Value(ValueRepr::CompUnitDepSpec { short_name })
     }
 
     /// Construct a `RegexWithAdverbs` from its adverb payload (boxing it).
@@ -469,14 +471,14 @@ impl Value {
     /// Construct a `Hash` from an existing backing store (non-itemized).
     #[inline]
     pub(crate) fn hash_with_data(h: Gc<HashData>) -> Self {
-        Value::Hash(h, false)
+        Value(ValueRepr::Hash(h, false))
     }
 
     /// Construct a `Hash` from an existing backing store, carrying the given
     /// per-holder itemization flag (mirrors `hash_with_data` + `.item`).
     #[inline]
     pub(crate) fn hash_with_data_itemized(h: Gc<HashData>, itemized: bool) -> Self {
-        Value::Hash(h, itemized)
+        Value(ValueRepr::Hash(h, itemized))
     }
 
     /// Construct a `Set` from an existing backing store and mutability flag.
@@ -505,11 +507,11 @@ impl Value {
         attributes: crate::gc::Gc<InstanceAttrs>,
         id: u64,
     ) -> Self {
-        Value::Instance {
+        Value(ValueRepr::Instance {
             class_name,
             attributes,
             id,
-        }
+        })
     }
 
     /// Construct a `LazyList` value from its shared payload.
@@ -522,11 +524,11 @@ impl Value {
     /// — connects on read only through the cell a bound-var write installs).
     #[inline]
     pub(crate) fn hash_entry_ref(hash: Gc<HashData>, path: Vec<String>) -> Self {
-        Value::HashEntryRef {
+        Value(ValueRepr::HashEntryRef {
             hash,
             path,
             eager: false,
-        }
+        })
     }
 
     /// Construct an EAGER `HashEntryRef` that reads the current node value on
@@ -534,22 +536,22 @@ impl Value {
     /// `.value` must reflect an in-loop `%h{$p.key} = X`).
     #[inline]
     pub(crate) fn hash_entry_ref_eager(hash: Gc<HashData>, path: Vec<String>) -> Self {
-        Value::HashEntryRef {
+        Value(ValueRepr::HashEntryRef {
             hash,
             path,
             eager: true,
-        }
+        })
     }
 
     /// Construct a `LazyIoLines` iterator over a file handle (boxing the
     /// handle internally, mirroring `Value::pair`/`Value::scalar`).
     #[inline]
     pub(crate) fn lazy_io_lines(handle: Value, kv: bool, words: bool) -> Self {
-        Value::LazyIoLines {
+        Value(ValueRepr::LazyIoLines {
             handle: Box::new(handle),
             kv,
             words,
-        }
+        })
     }
 
     /// Construct a `LazyThunk` from an existing shared thunk payload
@@ -574,12 +576,12 @@ impl Value {
         value: EnumValue,
         index: usize,
     ) -> Self {
-        Value::Enum {
+        Value(ValueRepr::Enum {
             enum_type,
             key,
             value,
             index,
-        }
+        })
     }
 
     /// Construct a `Proxy` from its parts.
@@ -590,21 +592,21 @@ impl Value {
         subclass: Option<(Symbol, ProxySubclassAttrs)>,
         decontainerized: bool,
     ) -> Self {
-        Value::Proxy {
+        Value(ValueRepr::Proxy {
             fetcher: Box::new(fetcher),
             storer: Box::new(storer),
             subclass,
             decontainerized,
-        }
+        })
     }
 
     /// Construct a `ParametricRole` type object.
     #[inline]
     pub(crate) fn parametric_role(base_name: Symbol, type_args: Vec<Value>) -> Self {
-        Value::ParametricRole {
+        Value(ValueRepr::ParametricRole {
             base_name,
             type_args,
-        }
+        })
     }
 
     // ---- single-variant probes (no coercion) ----
@@ -617,7 +619,7 @@ impl Value {
     #[inline]
     pub fn as_int(&self) -> Option<i64> {
         match self {
-            Value::Int(n) => Some(*n),
+            Value(ValueRepr::Int(n)) => Some(*n),
             _ => None,
         }
     }
@@ -626,7 +628,7 @@ impl Value {
     #[inline]
     pub fn as_num(&self) -> Option<f64> {
         match self {
-            Value::Num(f) => Some(*f),
+            Value(ValueRepr::Num(f)) => Some(*f),
             _ => None,
         }
     }
@@ -635,7 +637,7 @@ impl Value {
     #[inline]
     pub fn as_bool(&self) -> Option<bool> {
         match self {
-            Value::Bool(b) => Some(*b),
+            Value(ValueRepr::Bool(b)) => Some(*b),
             _ => None,
         }
     }
@@ -644,7 +646,7 @@ impl Value {
     #[inline]
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            Value::Str(s) => Some(s),
+            Value(ValueRepr::Str(s)) => Some(s),
             _ => None,
         }
     }
@@ -652,7 +654,7 @@ impl Value {
     /// Whether this is `Nil`.
     #[inline]
     pub fn is_nil(&self) -> bool {
-        matches!(self, Value::Nil)
+        matches!(self, Value(ValueRepr::Nil))
     }
 
     // ---- consuming extractors (move the payload out) ----
@@ -662,7 +664,7 @@ impl Value {
     #[inline]
     pub(crate) fn into_array(self) -> Option<(Gc<ArrayData>, ArrayKind)> {
         match self {
-            Value::Array(items, kind) => Some((items, kind)),
+            Value(ValueRepr::Array(items, kind)) => Some((items, kind)),
             _ => None,
         }
     }
@@ -675,12 +677,12 @@ impl Value {
         self,
     ) -> Option<(Value, Value, Option<(Symbol, ProxySubclassAttrs)>, bool)> {
         match self {
-            Value::Proxy {
+            Value(ValueRepr::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 decontainerized,
-            } => Some((*fetcher, *storer, subclass, decontainerized)),
+            }) => Some((*fetcher, *storer, subclass, decontainerized)),
             _ => None,
         }
     }
@@ -701,7 +703,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<ArrayData>, &mut ArrayKind) -> R,
     ) -> Option<R> {
         match self {
-            Value::Array(items, kind) => Some(f(items, kind)),
+            Value(ValueRepr::Array(items, kind)) => Some(f(items, kind)),
             _ => None,
         }
     }
@@ -720,7 +722,7 @@ impl Value {
         f: impl FnOnce(&mut ArrayData, ArrayKind) -> R,
     ) -> Option<R> {
         match self {
-            Value::Array(gc, kind) => {
+            Value(ValueRepr::Array(gc, kind)) => {
                 // SAFETY: audited aliased in-place container write (see
                 // value::aliased_mut) — callers ensure no other borrow into
                 // this node is live across `f` and no cross-thread access.
@@ -741,12 +743,12 @@ impl Value {
     /// params) must detach at copy time.
     pub(crate) fn detach_shared_container(self) -> Value {
         match &self {
-            Value::Array(gc, kind) if gc.strong_count() > 1 => {
+            Value(ValueRepr::Array(gc, kind)) if gc.strong_count() > 1 => {
                 Value::array_with_kind(crate::gc::Gc::new((**gc).clone()), *kind)
             }
-            Value::Hash(gc, itemized) if gc.strong_count() > 1 => {
-                Value::Hash(crate::gc::Gc::new((**gc).clone()), *itemized)
-            }
+            Value(ValueRepr::Hash(gc, itemized)) if gc.strong_count() > 1 => Value(
+                ValueRepr::Hash(crate::gc::Gc::new((**gc).clone()), *itemized),
+            ),
             _ => self,
         }
     }
@@ -756,7 +758,7 @@ impl Value {
     #[inline]
     pub(crate) fn with_hash_mut<R>(&mut self, f: impl FnOnce(&mut Gc<HashData>) -> R) -> Option<R> {
         match self {
-            Value::Hash(h, _) => Some(f(h)),
+            Value(ValueRepr::Hash(h, _)) => Some(f(h)),
             _ => None,
         }
     }
@@ -769,7 +771,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<SetData>, &mut bool) -> R,
     ) -> Option<R> {
         match self {
-            Value::Set(s, is_mut) => Some(f(s, is_mut)),
+            Value(ValueRepr::Set(s, is_mut)) => Some(f(s, is_mut)),
             _ => None,
         }
     }
@@ -782,7 +784,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<BagData>, &mut bool) -> R,
     ) -> Option<R> {
         match self {
-            Value::Bag(b, is_mut) => Some(f(b, is_mut)),
+            Value(ValueRepr::Bag(b, is_mut)) => Some(f(b, is_mut)),
             _ => None,
         }
     }
@@ -795,7 +797,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<MixData>, &mut bool) -> R,
     ) -> Option<R> {
         match self {
-            Value::Mix(m, is_mut) => Some(f(m, is_mut)),
+            Value(ValueRepr::Mix(m, is_mut)) => Some(f(m, is_mut)),
             _ => None,
         }
     }
@@ -808,7 +810,7 @@ impl Value {
         f: impl FnOnce(&mut crate::gc::Gc<SubData>) -> R,
     ) -> Option<R> {
         match self {
-            Value::Sub(data) => Some(f(data)),
+            Value(ValueRepr::Sub(data)) => Some(f(data)),
             _ => None,
         }
     }
@@ -822,7 +824,7 @@ impl Value {
         f: impl FnOnce(&mut Gc<HashData>, &mut Vec<String>) -> R,
     ) -> Option<R> {
         match self {
-            Value::HashEntryRef { hash, path, .. } => Some(f(hash, path)),
+            Value(ValueRepr::HashEntryRef { hash, path, .. }) => Some(f(hash, path)),
             _ => None,
         }
     }

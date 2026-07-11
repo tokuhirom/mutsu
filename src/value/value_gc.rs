@@ -24,7 +24,7 @@ use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
     ArrayData, BagData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList, MixData,
-    PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
+    PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value, ValueRepr,
 };
 
 /// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
@@ -73,19 +73,19 @@ impl Value {
             // Migrated `Gc<T>` node variants: yield the node itself. The
             // collector traces the node's own children via its `Trace` impl, so
             // we do NOT recurse into its contents here.
-            Value::Hash(data, _) => visit(&data.erased()),
-            Value::Array(data, _) => visit(&data.erased()),
-            Value::Set(data, _) => visit(&data.erased()),
-            Value::Bag(data, _) => visit(&data.erased()),
-            Value::Mix(data, _) => visit(&data.erased()),
-            Value::ContainerRef(cell) => visit(&cell.erased()),
-            Value::Sub(data) => visit(&data.erased()),
-            Value::Instance { attributes, .. } => visit(&attributes.erased()),
-            Value::LazyList(ll) => visit(&ll.erased()),
+            Value(ValueRepr::Hash(data, _)) => visit(&data.erased()),
+            Value(ValueRepr::Array(data, _)) => visit(&data.erased()),
+            Value(ValueRepr::Set(data, _)) => visit(&data.erased()),
+            Value(ValueRepr::Bag(data, _)) => visit(&data.erased()),
+            Value(ValueRepr::Mix(data, _)) => visit(&data.erased()),
+            Value(ValueRepr::ContainerRef(cell)) => visit(&cell.erased()),
+            Value(ValueRepr::Sub(data)) => visit(&data.erased()),
+            Value(ValueRepr::Instance { attributes, .. }) => visit(&attributes.erased()),
+            Value(ValueRepr::LazyList(ll)) => visit(&ll.erased()),
             // A hash-entry lvalue reference holds a strong `Gc<HashData>` node
             // (the hash it indexes into); yield it so a cycle routed through a
             // stored entry-ref is still reached.
-            Value::HashEntryRef { hash, .. } => visit(&hash.erased()),
+            Value(ValueRepr::HashEntryRef { hash, .. }) => visit(&hash.erased()),
 
             // Non-node wrappers that own/share `Value`s: recurse so a `Gc` node
             // nested inside is reached. `Box`-owned wrappers recurse
@@ -93,12 +93,12 @@ impl Value {
             // only when uniquely owned (see `uniquely_owned` for why a shared
             // wrapper would over-decrement). `WeakSub` is a WEAK edge — not
             // traced.
-            Value::Pair(_, v) | Value::Scalar(v) => v.gc_trace(visit),
-            Value::ValuePair(k, v) => {
+            Value(ValueRepr::Pair(_, v)) | Value(ValueRepr::Scalar(v)) => v.gc_trace(visit),
+            Value(ValueRepr::ValuePair(k, v)) => {
                 k.gc_trace(visit);
                 v.gc_trace(visit);
             }
-            Value::Capture { positional, named } => {
+            Value(ValueRepr::Capture { positional, named }) => {
                 for v in positional.iter() {
                     v.gc_trace(visit);
                 }
@@ -106,11 +106,11 @@ impl Value {
                     v.gc_trace(visit);
                 }
             }
-            Value::Seq(items)
-            | Value::HyperSeq(items)
-            | Value::RaceSeq(items)
-            | Value::Slip(items) => trace_shared_slice(items, visit),
-            Value::Mixin(inner, overrides) => {
+            Value(ValueRepr::Seq(items))
+            | Value(ValueRepr::HyperSeq(items))
+            | Value(ValueRepr::RaceSeq(items))
+            | Value(ValueRepr::Slip(items)) => trace_shared_slice(items, visit),
+            Value(ValueRepr::Mixin(inner, overrides)) => {
                 if uniquely_owned(inner) {
                     inner.gc_trace(visit);
                 }
@@ -120,32 +120,32 @@ impl Value {
                     }
                 }
             }
-            Value::Junction { values, .. } => trace_shared_slice(values, visit),
-            Value::GenericRange { start, end, .. } => {
+            Value(ValueRepr::Junction { values, .. }) => trace_shared_slice(values, visit),
+            Value(ValueRepr::GenericRange { start, end, .. }) => {
                 start.gc_trace(visit);
                 end.gc_trace(visit);
             }
-            Value::Proxy {
+            Value(ValueRepr::Proxy {
                 fetcher, storer, ..
-            } => {
+            }) => {
                 fetcher.gc_trace(visit);
                 storer.gc_trace(visit);
             }
             // Uniquely-owned `Box<Value>` wrappers: recurse (no sharing, so the
             // recursion visits each edge exactly once).
-            Value::LazyIoLines { handle, .. } => handle.gc_trace(visit),
+            Value(ValueRepr::LazyIoLines { handle, .. }) => handle.gc_trace(visit),
             // An enum value can carry an arbitrary `Value` payload.
-            Value::Enum {
+            Value(ValueRepr::Enum {
                 value: EnumValue::Generic(v),
                 ..
-            } => v.gc_trace(visit),
-            Value::ParametricRole { type_args, .. } => {
+            }) => v.gc_trace(visit),
+            Value(ValueRepr::ParametricRole { type_args, .. }) => {
                 for v in type_args.iter() {
                     v.gc_trace(visit);
                 }
             }
-            Value::CustomType(data) => data.how.gc_trace(visit),
-            Value::CustomTypeInstance(data) => {
+            Value(ValueRepr::CustomType(data)) => data.how.gc_trace(visit),
+            Value(ValueRepr::CustomTypeInstance(data)) => {
                 data.how.gc_trace(visit);
                 if uniquely_owned(&data.attributes) {
                     for v in data.attributes.values() {
@@ -155,7 +155,7 @@ impl Value {
             }
             // A lazy thunk holds its (possibly closure-capturing) block and any
             // cached forced result — both can close a cycle.
-            Value::LazyThunk(data) => {
+            Value(ValueRepr::LazyThunk(data)) => {
                 if uniquely_owned(data) {
                     data.thunk.gc_trace(visit);
                     if let Ok(cache) = data.cache.lock()
@@ -167,8 +167,8 @@ impl Value {
             }
             // Migrated async `Gc<T>` node variants (§11 steps 6-7): yield the
             // node; its `Trace` impl walks the held result / queue / callbacks.
-            Value::Promise(p) => visit(&p.erased()),
-            Value::Channel(c) => visit(&c.erased()),
+            Value(ValueRepr::Promise(p)) => visit(&p.erased()),
+            Value(ValueRepr::Channel(c)) => visit(&c.erased()),
             _ => {}
         }
     }
@@ -429,37 +429,37 @@ impl Value {
     #[allow(dead_code)]
     pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
         match self {
-            Value::Array(data, _) => data.visit_gc_children(visitor),
-            Value::Hash(data, _) => data.visit_gc_children(visitor),
-            Value::Set(data, _) => {
+            Value(ValueRepr::Array(data, _)) => data.visit_gc_children(visitor),
+            Value(ValueRepr::Hash(data, _)) => data.visit_gc_children(visitor),
+            Value(ValueRepr::Set(data, _)) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
                 }
             }
-            Value::Bag(data, _) => {
+            Value(ValueRepr::Bag(data, _)) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
                 }
             }
-            Value::Mix(data, _) => {
+            Value(ValueRepr::Mix(data, _)) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
                 }
             }
-            Value::Pair(_, v) => visitor.visit_value(v),
-            Value::ValuePair(k, v) => {
+            Value(ValueRepr::Pair(_, v)) => visitor.visit_value(v),
+            Value(ValueRepr::ValuePair(k, v)) => {
                 visitor.visit_value(k);
                 visitor.visit_value(v);
             }
-            Value::Sub(data) => data.visit_gc_children(visitor),
-            Value::Instance { attributes, .. } => attributes.visit_gc_children(visitor),
-            Value::ContainerRef(cell) => {
+            Value(ValueRepr::Sub(data)) => data.visit_gc_children(visitor),
+            Value(ValueRepr::Instance { attributes, .. }) => attributes.visit_gc_children(visitor),
+            Value(ValueRepr::ContainerRef(cell)) => {
                 if let Ok(guard) = cell.lock() {
                     visitor.visit_value(&guard);
                 }
             }
-            Value::Promise(p) => p.visit_gc_children(visitor),
-            Value::Channel(c) => c.visit_gc_children(visitor),
+            Value(ValueRepr::Promise(p)) => p.visit_gc_children(visitor),
+            Value(ValueRepr::Channel(c)) => c.visit_gc_children(visitor),
             _ => {}
         }
     }
@@ -592,7 +592,7 @@ mod tests {
             map,
             ..Default::default()
         };
-        let value = Value::Hash(crate::gc::Gc::new(data), false);
+        let value = Value(ValueRepr::Hash(crate::gc::Gc::new(data), false));
 
         let mut visitor = CountingVisitor { count: 0 };
         value.visit_gc_children(&mut visitor);
@@ -633,7 +633,10 @@ mod tests {
     }
 
     fn fresh_hash_node() -> Value {
-        Value::Hash(crate::gc::Gc::new(HashData::default()), false)
+        Value(ValueRepr::Hash(
+            crate::gc::Gc::new(HashData::default()),
+            false,
+        ))
     }
 
     /// Build a minimal `SubData` capturing `env`, for the shared-env trace tests.
@@ -692,7 +695,10 @@ mod tests {
         // One env map holding the hash, shared by TWO closures (and kept
         // shared through the collect by `env` itself — 3 Arc holders).
         let mut env = crate::env::Env::new();
-        env.insert("%h".to_string(), Value::Hash(hash.clone(), false));
+        env.insert(
+            "%h".to_string(),
+            Value(ValueRepr::Hash(hash.clone(), false)),
+        );
 
         // The closures form a genuine garbage cycle through `ContainerRef`
         // cells in their (owned, always-traced) assumed args:
@@ -782,11 +788,11 @@ mod tests {
         // A HashEntryRef holds a strong `Gc<HashData>`; gc_trace must yield it
         // so a cycle routed through a stored entry-ref is reachable.
         let hash = crate::gc::Gc::new(HashData::default());
-        let value = Value::HashEntryRef {
+        let value = Value(ValueRepr::HashEntryRef {
             hash,
             path: vec!["k".to_string()],
             eager: false,
-        };
+        });
         assert_eq!(gc_trace_node_count(&value), 1);
     }
 
@@ -804,12 +810,12 @@ mod tests {
 
     #[test]
     fn enum_generic_payload_is_traced() {
-        let value = Value::Enum {
+        let value = Value(ValueRepr::Enum {
             enum_type: crate::symbol::Symbol::intern("E"),
             key: crate::symbol::Symbol::intern("A"),
             value: crate::value::EnumValue::Generic(Box::new(fresh_hash_node())),
             index: 0,
-        };
+        });
         assert_eq!(gc_trace_node_count(&value), 1);
     }
 }

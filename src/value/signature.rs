@@ -1,4 +1,5 @@
 use super::Value;
+use super::ValueRepr;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use std::collections::HashMap;
@@ -101,11 +102,11 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     // Infer type from literal value if no explicit type constraint
     let type_constraint = p.type_constraint.clone().or_else(|| {
         p.literal_value.as_ref().map(|lit| match lit {
-            Value::Int(_) | Value::BigInt(_) => "Int".to_string(),
-            Value::Num(_) => "Num".to_string(),
-            Value::Str(_) => "Str".to_string(),
-            Value::Rat(_, _) => "Rat".to_string(),
-            Value::Bool(_) => "Bool".to_string(),
+            Value(ValueRepr::Int(_)) | Value(ValueRepr::BigInt(_)) => "Int".to_string(),
+            Value(ValueRepr::Num(_)) => "Num".to_string(),
+            Value(ValueRepr::Str(_)) => "Str".to_string(),
+            Value(ValueRepr::Rat(_, _)) => "Rat".to_string(),
+            Value(ValueRepr::Bool(_)) => "Bool".to_string(),
             _ => "Any".to_string(),
         })
     });
@@ -213,7 +214,7 @@ pub(crate) fn make_signature_value_with_owner(info: SigInfo, owner_key: Option<S
     );
     let val = Value::make_instance(Symbol::intern("Signature"), attrs);
     // Register the SigInfo for later lookup (smartmatch, etc.)
-    if let Value::Instance { id, .. } = &val {
+    if let Value(ValueRepr::Instance { id, .. }) = &val {
         register_sig_info(*id, info);
     }
     val
@@ -387,7 +388,7 @@ pub(crate) fn parameter_to_raku(attrs: &HashMap<String, Value>) -> String {
     let type_name = attrs
         .get("type")
         .map(|v| match v {
-            Value::Package(sym) => sym.resolve(),
+            Value(ValueRepr::Package(sym)) => sym.resolve(),
             _ => v.to_string_value(),
         })
         .unwrap_or_default();
@@ -448,10 +449,12 @@ pub(crate) fn parameter_to_raku(attrs: &HashMap<String, Value>) -> String {
     if let Some(default_val) = attrs.get("default")
         && matches!(
             default_val,
-            Value::Sub(_) | Value::WeakSub(_) | Value::Routine { .. }
+            Value(ValueRepr::Sub(_))
+                | Value(ValueRepr::WeakSub(_))
+                | Value(ValueRepr::Routine { .. })
         )
     {
-        if let Some(Value::Str(default_raku)) = attrs.get("default_raku") {
+        if let Some(Value(ValueRepr::Str(default_raku))) = attrs.get("default_raku") {
             parts.push(format!("= {}", default_raku));
         } else if name == "$_" || name == "$$_" {
             // Implicit topic parameter in a bare block defaults to OUTER::<$_>
@@ -524,7 +527,7 @@ pub(crate) fn make_params_value_from_param_defs(params: &[ParamDef]) -> Value {
 
 /// Extract SigInfo from a Signature Instance value.
 pub(crate) fn extract_sig_info(val: &Value) -> Option<SigInfo> {
-    if let Value::Instance { class_name, id, .. } = val {
+    if let Value(ValueRepr::Instance { class_name, id, .. }) = val {
         if class_name != "Signature" {
             return None;
         }

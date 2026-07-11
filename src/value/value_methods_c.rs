@@ -305,11 +305,11 @@ impl Value {
     pub(crate) fn is_range(&self) -> bool {
         matches!(
             self,
-            Value::Range(_, _)
-                | Value::RangeExcl(_, _)
-                | Value::RangeExclStart(_, _)
-                | Value::RangeExclBoth(_, _)
-                | Value::GenericRange { .. }
+            Value(ValueRepr::Range(_, _))
+                | Value(ValueRepr::RangeExcl(_, _))
+                | Value(ValueRepr::RangeExclStart(_, _))
+                | Value(ValueRepr::RangeExclBoth(_, _))
+                | Value(ValueRepr::GenericRange { .. })
         )
     }
 
@@ -317,8 +317,8 @@ impl Value {
     /// Returns the inner items if this value is an Array, Seq, or Slip.
     pub(crate) fn as_list_items(&self) -> Option<&[Value]> {
         match self {
-            Value::Array(items, _) => Some(&items.items[..]),
-            Value::Seq(items) | Value::Slip(items) => Some(&items[..]),
+            Value(ValueRepr::Array(items, _)) => Some(&items.items[..]),
+            Value(ValueRepr::Seq(items)) | Value(ValueRepr::Slip(items)) => Some(&items[..]),
             _ => None,
         }
     }
@@ -326,13 +326,13 @@ impl Value {
     pub(crate) fn is_numeric(&self) -> bool {
         matches!(
             self,
-            Value::Int(_)
-                | Value::BigInt(_)
-                | Value::Num(_)
-                | Value::Rat(_, _)
-                | Value::FatRat(_, _)
-                | Value::BigRat(_, _)
-                | Value::Whatever
+            Value(ValueRepr::Int(_))
+                | Value(ValueRepr::BigInt(_))
+                | Value(ValueRepr::Num(_))
+                | Value(ValueRepr::Rat(_, _))
+                | Value(ValueRepr::FatRat(_, _))
+                | Value(ValueRepr::BigRat(_, _))
+                | Value(ValueRepr::Whatever)
         )
     }
 
@@ -341,11 +341,11 @@ impl Value {
         match self {
             // Phase 2 element container: numify the inner value transparently
             // if a `:=`-bound element's cell leaks into a numeric context.
-            Value::ContainerRef(cell) => cell.lock().unwrap().to_f64(),
-            Value::Int(i) => *i as f64,
-            Value::BigInt(n) => n.to_f64().unwrap_or(0.0),
-            Value::Num(f) => *f,
-            Value::Rat(n, d) => {
+            Value(ValueRepr::ContainerRef(cell)) => cell.lock().unwrap().to_f64(),
+            Value(ValueRepr::Int(i)) => *i as f64,
+            Value(ValueRepr::BigInt(n)) => n.to_f64().unwrap_or(0.0),
+            Value(ValueRepr::Num(f)) => *f,
+            Value(ValueRepr::Rat(n, d)) => {
                 if *d != 0 {
                     *n as f64 / *d as f64
                 } else if *n == 0 {
@@ -356,7 +356,7 @@ impl Value {
                     f64::NEG_INFINITY
                 }
             }
-            Value::FatRat(n, d) => {
+            Value(ValueRepr::FatRat(n, d)) => {
                 if *d != 0 {
                     *n as f64 / *d as f64
                 } else if *n == 0 {
@@ -367,7 +367,7 @@ impl Value {
                     f64::NEG_INFINITY
                 }
             }
-            Value::BigRat(n, d) => {
+            Value(ValueRepr::BigRat(n, d)) => {
                 if !d.is_zero() {
                     n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
                 } else if n.is_zero() {
@@ -378,29 +378,31 @@ impl Value {
                     f64::NEG_INFINITY
                 }
             }
-            Value::Bool(b) => {
+            Value(ValueRepr::Bool(b)) => {
                 if *b {
                     1.0
                 } else {
                     0.0
                 }
             }
-            Value::Whatever => f64::INFINITY,
-            Value::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
-            Value::Array(items, ..) => items.len() as f64,
-            Value::Hash(map, _) => map.len() as f64,
-            Value::Instance {
+            Value(ValueRepr::Whatever) => f64::INFINITY,
+            Value(ValueRepr::Str(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
+            Value(ValueRepr::Array(items, ..)) => items.len() as f64,
+            Value(ValueRepr::Hash(map, _)) => map.len() as f64,
+            Value(ValueRepr::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Instant" || class_name == "Duration" => attributes
+            }) if class_name == "Instant" || class_name == "Duration" => attributes
                 .as_map()
                 .get("value")
                 .map(|v| v.to_f64())
                 .unwrap_or(0.0),
             // A subclass of native Int (e.g. `class Foo is Int`) carries its
             // integer payload in the reserved `__mutsu_int_value` attribute.
-            Value::Instance { attributes, .. } if attributes.contains_key("__mutsu_int_value") => {
+            Value(ValueRepr::Instance { attributes, .. })
+                if attributes.contains_key("__mutsu_int_value") =>
+            {
                 attributes
                     .as_map()
                     .get("__mutsu_int_value")
@@ -408,11 +410,11 @@ impl Value {
                     .unwrap_or(0.0)
             }
             // Match coerces to Numeric via its matched string
-            Value::Instance {
+            Value(ValueRepr::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Match" => attributes
+            }) if class_name == "Match" => attributes
                 .as_map()
                 .get("str")
                 .map(|v| v.to_string_value().trim().parse::<f64>().unwrap_or(0.0))
@@ -424,34 +426,34 @@ impl Value {
     /// Convert a Value to a num_bigint::BigInt for arbitrary-precision arithmetic.
     pub(crate) fn to_bigint(&self) -> NumBigInt {
         match self {
-            Value::Int(i) => NumBigInt::from(*i),
-            Value::BigInt(n) => (**n).clone(),
-            Value::Num(f) => NumBigInt::from(*f as i64),
-            Value::Rat(n, d) => {
+            Value(ValueRepr::Int(i)) => NumBigInt::from(*i),
+            Value(ValueRepr::BigInt(n)) => (**n).clone(),
+            Value(ValueRepr::Num(f)) => NumBigInt::from(*f as i64),
+            Value(ValueRepr::Rat(n, d)) => {
                 if *d != 0 {
                     NumBigInt::from(n / d)
                 } else {
                     NumBigInt::from(0)
                 }
             }
-            Value::BigRat(n, d) => {
+            Value(ValueRepr::BigRat(n, d)) => {
                 if !d.is_zero() {
                     n.as_ref() / d.as_ref()
                 } else {
                     NumBigInt::from(0)
                 }
             }
-            Value::Str(s) => s
+            Value(ValueRepr::Str(s)) => s
                 .parse::<NumBigInt>()
                 .unwrap_or_else(|_| NumBigInt::from(0)),
             // A subclass of native Int (e.g. `class Foo is Int`) carries its
             // integer payload in the reserved `__mutsu_int_value` attribute.
-            Value::Instance { attributes, .. } => attributes
+            Value(ValueRepr::Instance { attributes, .. }) => attributes
                 .as_map()
                 .get("__mutsu_int_value")
                 .map(|v| v.to_bigint())
                 .unwrap_or_else(|| NumBigInt::from(0)),
-            Value::Mixin(inner, _) => inner.to_bigint(),
+            Value(ValueRepr::Mixin(inner, _)) => inner.to_bigint(),
             _ => NumBigInt::from(0),
         }
     }

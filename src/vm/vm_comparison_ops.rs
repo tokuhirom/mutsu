@@ -280,8 +280,7 @@ impl Interpreter {
                     }
                     _ => {}
                 }
-                let needs_float =
-                    !std::mem::discriminant(&l).eq(&std::mem::discriminant(&r)) || l.is_nil();
+                let needs_float = !l.same_variant(&r) || l.is_nil();
                 if needs_float {
                     Ok(Value::truth(
                         runtime::to_float_value(&l) == runtime::to_float_value(&r),

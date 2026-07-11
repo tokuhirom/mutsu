@@ -295,9 +295,11 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       **[ADR-0005](docs/adr/0005-nanbox-representation-encoding.md)（Proposed・pointer-favored 推奨）**で決定。
       variant-privacy seal は単独ステップにしない（wall doc §7.1 の module-boundary 方式は seal に
       ならないと実証・真の seal=newtype=3b-1 の構造前半なので統合）。スライス:
-      (A) **newtype seal（byte-identical）**: `pub enum Value`→`struct Value(ValueRepr)`。
-          `src/value/` 内部 1293 サイトを `.0` 経由へ機械変換。`ValueRepr` は現行 48B enum のまま＝
-          挙動・サイズ不変、variant が compile-time seal される。
+      (A) ✅ **newtype seal（byte-identical）完了（2026-07-11）**: `pub enum Value`→
+          `struct Value(ValueRepr)`（repr は `crate::value` private）。パターン/struct-like 式
+          ~1800 サイトを `Value(ValueRepr::..)` へエラー span 駆動で機械変換、tuple/unit 式は
+          variant 名 shim（step B の tag-packing constructor 置き場）。外部からの variant
+          構築/match は compile error（実証済み）。挙動・サイズ不変（size guard 48B のまま）。
       (B) **表現差し替え**: `ValueRepr` を pointer-favored NaN-box（8B）へ置換。`view()`/constructor/
           accessor の中身のみ変更。小整数幅（48/32-bit inline vs `Gc<i64>`）は int-arith bench で決定。
           ゲート＝make test＋roast＋gc-stress green・§3.2 マイクロベンチ。ratchet は seal 後も残置。

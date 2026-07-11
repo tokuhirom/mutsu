@@ -1,7 +1,7 @@
 //! `RuntimeError` constructors for declaration/syntax/typecheck errors,
 //! plus JSON exception rendering (`to_json_exception`).
 use super::expected_type_object;
-use super::{RuntimeError, Value};
+use super::{RuntimeError, Value, ValueRepr};
 use std::collections::HashMap;
 
 impl RuntimeError {
@@ -434,11 +434,11 @@ impl RuntimeError {
     pub fn to_json_exception(&self) -> String {
         let (class_name, attrs): (String, HashMap<String, Value>) = match &self.exception {
             Some(boxed) => match boxed.as_ref() {
-                Value::Instance {
+                Value(ValueRepr::Instance {
                     class_name,
                     attributes,
                     ..
-                } => (
+                }) => (
                     class_name.resolve(),
                     attributes
                         .as_map()
@@ -504,22 +504,22 @@ fn json_string(s: &str) -> String {
 /// Encode a runtime Value as a JSON value for the exception handler.
 fn json_value(v: &Value) -> String {
     match v {
-        Value::Nil => "null".to_string(),
-        Value::Bool(b) => b.to_string(),
-        Value::Int(n) => n.to_string(),
-        Value::Num(f) => {
+        Value(ValueRepr::Nil) => "null".to_string(),
+        Value(ValueRepr::Bool(b)) => b.to_string(),
+        Value(ValueRepr::Int(n)) => n.to_string(),
+        Value(ValueRepr::Num(f)) => {
             if f.is_finite() {
                 f.to_string()
             } else {
                 "null".to_string()
             }
         }
-        Value::Str(s) => json_string(s),
-        Value::Array(items, _) => {
+        Value(ValueRepr::Str(s)) => json_string(s),
+        Value(ValueRepr::Array(items, _)) => {
             let elems: Vec<String> = items.iter().map(json_value).collect();
             format!("[{}]", elems.join(","))
         }
-        Value::Hash(map, _) => {
+        Value(ValueRepr::Hash(map, _)) => {
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort();
             let pairs: Vec<String> = keys
