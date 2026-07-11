@@ -1,6 +1,26 @@
 # Grammar-parse GC churn: acyclic Match garbage pushed as cycle candidates
 
-**Status:** finding / not-yet-actioned. Owner: GC campaign (PLAN.md §2).
+**Status:** RESOLVED (2026-07-11) — the candidate buffer now holds `Weak`
+handles (`ErasedWeakGc`), so buffering no longer extends any node's lifetime.
+Acyclic garbage (the `Match`/capture trees below) is freed inline at its last
+`Gc::drop`, exactly like `MUTSU_GC=off`; only self-sustaining cycle garbage is
+still upgradeable at drain time and gets trial-deleted. Measured on the
+`tmp/zbench.raku` microbench (debug, interleaved on/off runs):
+
+| metric | strong buffer (before) | weak buffer (after) |
+|---|---|---|
+| RSS GC-on vs GC-off | 153 MB vs 43 MB (**3.6x**) | 45.6 MB vs 42.8 MB (+6%) |
+| wall clock on vs off | ~+1% | ~+2% (noise-level) |
+| reclaimed_nodes (all dead-sweep) | 244,598 | **0** (freed inline instead) |
+| pause_ns_max | 41 ms | 3.6 ms |
+| pause_ns_total | 210 ms | 99 ms |
+
+`candidate_pushes` (~510-560k/200 parses) is unchanged — push suppression was
+out of scope; the churn's real damage was the deferred-death memory retention,
+which is gone. The collector-side off-thread dead-batch reclamation helper was
+removed with it (dead garbage can no longer accumulate in the buffer).
+
+Original finding below, kept for the record. Owner: GC campaign (PLAN.md §2).
 **Recorded:** 2026-07-11, from profiling zef's grammar dist-identity parse.
 
 ## TL;DR

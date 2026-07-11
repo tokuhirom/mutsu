@@ -15,6 +15,14 @@
 //!   collector. Object-safe so `GcBox<dyn Trace>` can be buffered type-erased.
 //! - the process-global candidate buffer — where a drop that leaves the node
 //!   with surviving handles records it as a possible cycle root (§4.2 / §5.2).
+//!   The buffer holds **`Weak` handles** ([`ErasedWeakGc`]), so buffering never
+//!   extends a node's lifetime: a candidate that later dies a plain refcount
+//!   death is freed inline at that drop (exactly like `MUTSU_GC=off`), and its
+//!   dead buffer entry simply fails to upgrade at the next drain. Only genuine
+//!   cycle garbage — which keeps itself alive by definition — survives to be
+//!   trial-deleted. (A strong-`Arc` buffer retained every dead acyclic
+//!   container until the next collect: grammar-parse workloads held ~3.6x RSS
+//!   in dead `Match` trees — `docs/grammar-parse-gc-churn.md`.)
 //!
 //! State of the migration (§11 step 5 — COMPLETE, layer 3a shipped):
 //! - Every container-kind variant is `Gc<_>`: `Hash`/`Array`/`ContainerRef`
@@ -88,9 +96,9 @@ pub(crate) trait Trace: Send + Sync {
 
     /// Run this node's *value-level* finalizer (Raku `DESTROY` queueing), once
     /// per node death. Decouples language-level finalization from Rust `Drop`:
-    /// with GC on, a node's memory drop can be arbitrarily deferred by the
-    /// candidate buffer's retained handle, so waiting for `Drop` would delay
-    /// (or, for a short program, entirely skip) `DESTROY`.
+    /// with GC on, a node's memory drop can be deferred onto the collector
+    /// thread (a mid-collect upgraded handle, or a reclaimed cycle member), so
+    /// waiting for `Drop` would run `DESTROY` at the wrong place or not at all.
     ///
     /// Called from exactly two places, both on an interpreter thread:
     /// - `Gc::drop`, when the *last live handle* goes away (GC on; the memory
@@ -142,8 +150,14 @@ pub(crate) struct GcBox<T: ?Sized> {
     value: T,
 }
 
-/// Type-erased managed node, as stored in the candidate buffer.
+/// Type-erased managed node, as handled by the collector.
 pub(crate) type ErasedGc = Arc<GcBox<dyn Trace>>;
+
+/// Non-owning candidate-buffer entry. The buffer deliberately holds `Weak`
+/// handles so a buffered node's lifetime is governed by refcounting alone:
+/// acyclic garbage is freed the moment its last live handle drops, and only
+/// self-sustaining cycle garbage is still upgradeable at drain time.
+pub(crate) type ErasedWeakGc = std::sync::Weak<GcBox<dyn Trace>>;
 
 /// A garbage-collected managed pointer (Bacon-Rajan level-1, ADR-0001).
 ///
@@ -335,8 +349,8 @@ impl<T: Trace + 'static> Gc<T> {
 
     /// A type-erased [`ErasedGc`] handle to this node (a fresh `Arc` clone
     /// coerced to `dyn Trace`). This is how a parent node exposes a `Gc` child
-    /// to the collector's tracer, and how a candidate is retained in the
-    /// buffer. Bumps the backing `Arc`'s count but NOT the GC-visible
+    /// to the collector's tracer, and how a drained candidate is held during a
+    /// collect. Bumps the backing `Arc`'s count but NOT the GC-visible
     /// `header.strong`, so an erased handle held by the collector does not read
     /// as a live program reference.
     pub(crate) fn erased(&self) -> ErasedGc {
@@ -510,10 +524,11 @@ impl<T: Trace + 'static> Drop for Gc<T> {
                     buffer_candidate(self.inner.clone());
                 }
             } else {
-                // Last live handle. The allocation may outlive this drop in the
-                // candidate buffer, deferring the value's Rust `Drop` (and with
-                // it any `Drop`-coupled Raku `DESTROY`) until some future
-                // collect — or forever, in a program too short to trigger one.
+                // Last live handle. The candidate buffer holds only a `Weak`
+                // entry, so the value's Rust `Drop` normally follows right
+                // after this — but a collector that upgraded the entry
+                // mid-collect can still defer it onto its own thread (where
+                // `Drop`-coupled work would run inert under `CollectGuard`).
                 // Run the value-level finalizer NOW, on the dropping
                 // (interpreter) thread, exactly when refcount death occurs.
                 self.inner.value.finalize();
@@ -594,14 +609,16 @@ pub(crate) unsafe fn gc_contents_mut<T: Trace + 'static>(gc: &Gc<T>) -> &mut T {
 }
 
 /// Process-global cycle-candidate buffer (design doc §5.2: "buffer は
-/// `Vec<GcId>` でよい"). Holds an `Arc` clone of each candidate so the
-/// collector can trace it. SHARDED by node address: candidates are pushed
-/// from every thread (`start`/`Promise`/`hyper`/`race` *and* the collector's
-/// own dead-sweep drop cascade), and one global `Mutex` measured ~250µs per
-/// push under thread churn (S17-lowlevel/thread.t: 16k-node dead sweeps went
-/// from 40ms to 3.5-4.7s purely on lock ping-pong). Dedup correctness does
-/// not live here — the per-node `buffered` bit is the authority — so a drain
-/// simply concatenates the shards.
+/// `Vec<GcId>` でよい"). Holds a `Weak` handle per candidate — see
+/// [`ErasedWeakGc`] — so buffering never delays a refcount death; the
+/// collector upgrades at drain time and skips entries that already died.
+/// SHARDED by node address: candidates are pushed from every thread
+/// (`start`/`Promise`/`hyper`/`race` *and* reclaim drop cascades), and one
+/// global `Mutex` measured ~250µs per push under thread churn
+/// (S17-lowlevel/thread.t: 16k-node sweeps went from 40ms to 3.5-4.7s purely
+/// on lock ping-pong). Dedup correctness does not live here — the per-node
+/// `buffered` bit is the authority — so a drain simply concatenates the
+/// shards.
 const CANDIDATE_SHARDS: usize = 64;
 
 /// Approximate total buffered count, maintained alongside the shards so the
@@ -610,8 +627,8 @@ const CANDIDATE_SHARDS: usize = 64;
 /// entries, never correctness.
 static APPROX_BUFFERED: AtomicUsize = AtomicUsize::new(0);
 
-fn candidate_shards() -> &'static Vec<Mutex<Vec<ErasedGc>>> {
-    static BUF: OnceLock<Vec<Mutex<Vec<ErasedGc>>>> = OnceLock::new();
+fn candidate_shards() -> &'static Vec<Mutex<Vec<ErasedWeakGc>>> {
+    static BUF: OnceLock<Vec<Mutex<Vec<ErasedWeakGc>>>> = OnceLock::new();
     BUF.get_or_init(|| {
         (0..CANDIDATE_SHARDS)
             .map(|_| Mutex::new(Vec::new()))
@@ -619,14 +636,17 @@ fn candidate_shards() -> &'static Vec<Mutex<Vec<ErasedGc>>> {
     })
 }
 
-fn candidate_shard_for(node: &ErasedGc) -> &'static Mutex<Vec<ErasedGc>> {
+fn candidate_shard_for(node: &ErasedGc) -> &'static Mutex<Vec<ErasedWeakGc>> {
     // Node addresses are allocator-aligned; drop the low bits before sharding.
     let id = erased_id(node) >> 6;
     &candidate_shards()[id & (CANDIDATE_SHARDS - 1)]
 }
 
-/// Record `node` as a possible cycle root: mark it `Purple` and push it, unless
-/// it is already buffered (deduped). Wires the design doc §8 candidate counters.
+/// Record `node` as a possible cycle root: mark it `Purple` and push a `Weak`
+/// handle to it, unless it is already buffered (deduped). Wires the design doc
+/// §8 candidate counters. The `node` argument is a transient strong clone made
+/// by the caller for header access; dropping it here is a plain `Arc` release
+/// (no `Gc` bookkeeping), so it cannot recurse into candidate registration.
 fn buffer_candidate(node: ErasedGc) {
     if node.header.buffered.swap(true, Ordering::Relaxed) {
         record_gc_candidate_dedup_hit();
@@ -647,7 +667,7 @@ fn buffer_candidate(node: ErasedGc) {
         .fetch_add(1, Ordering::Relaxed)
         .saturating_add(1);
     if let Ok(mut buf) = candidate_shard_for(&node).lock() {
-        buf.push(node);
+        buf.push(Arc::downgrade(&node));
     }
     record_gc_candidate_push();
     // May arm a pending collect (the MUTSU_GC_EVERY_CANDIDATE stress period,
@@ -695,27 +715,34 @@ pub(crate) fn mutator_worker_count() -> usize {
     MUTATOR_WORKER_THREADS.load(Ordering::Acquire)
 }
 
-/// Drain the candidate buffer, clearing each node's `buffered` flag, and return
-/// the nodes. The synchronous collector (§11 step 8) will consume this to run
-/// trial-deletion; exposed now as the seam between candidate registration and
-/// collection so the two land in separate slices.
+/// Drain the candidate buffer and return the still-live nodes as strong
+/// handles, clearing each one's `buffered` flag. A `Weak` entry whose node
+/// already died a refcount death fails to upgrade and is silently discarded —
+/// its memory was freed at that drop, so it was never a cycle suspect (there
+/// is no header left to clear; the flag died with the node). The synchronous
+/// collector consumes this to run trial-deletion.
 pub(crate) fn drain_candidates() -> Vec<ErasedGc> {
-    let mut drained = Vec::new();
+    let mut entries: Vec<ErasedWeakGc> = Vec::new();
     for shard in candidate_shards() {
         if let Ok(mut buf) = shard.lock() {
-            drained.append(&mut buf);
+            entries.append(&mut buf);
         }
     }
     // Saturating: with count-before-push on the producer side the counter can
     // only overshoot, never undershoot — but keep the subtraction saturating
     // so no interleaving can ever wrap it (the counter is an approximation
-    // that only steers the ADR-0003 trigger point).
-    let removed = drained.len();
+    // that only steers the ADR-0003 trigger point). Dead entries count too:
+    // they occupied buffer slots until this drain.
+    let removed = entries.len();
     let _ = APPROX_BUFFERED.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
         Some(v.saturating_sub(removed))
     });
-    for node in &drained {
-        node.header.buffered.store(false, Ordering::Relaxed);
+    let mut drained = Vec::new();
+    for weak in entries {
+        if let Some(node) = weak.upgrade() {
+            node.header.buffered.store(false, Ordering::Relaxed);
+            drained.push(node);
+        }
     }
     drained
 }
@@ -733,7 +760,7 @@ pub(crate) fn requeue_candidates(nodes: Vec<ErasedGc>) {
         // there for the underflow race this ordering prevents).
         APPROX_BUFFERED.fetch_add(1, Ordering::Relaxed);
         if let Ok(mut buf) = candidate_shard_for(&node).lock() {
-            buf.push(node);
+            buf.push(Arc::downgrade(&node));
         }
     }
 }
