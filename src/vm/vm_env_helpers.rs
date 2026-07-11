@@ -107,13 +107,16 @@ impl Interpreter {
     }
 
     fn main_unqualified_name(name: &str) -> Option<String> {
-        for sigil in ["$", "@", "%", "&"] {
-            let prefix = format!("{sigil}Main::");
-            if let Some(rest) = name.strip_prefix(&prefix) {
-                return Some(format!("{sigil}{rest}"));
-            }
+        // Sigils are single-byte ASCII, so `name[1..]` is a valid boundary once
+        // the first char is one of them. Check the constant `Main::` prefix
+        // directly instead of building `"{sigil}Main::"` for all four sigils on
+        // every call -- this runs on the variable-access hot path.
+        let sigil = name.chars().next()?;
+        if !matches!(sigil, '$' | '@' | '%' | '&') {
+            return None;
         }
-        None
+        let rest = name[1..].strip_prefix("Main::")?;
+        Some(format!("{sigil}{rest}"))
     }
 
     /// Look up an `our`-scoped variable by trying the bare (unqualified) name
@@ -267,21 +270,22 @@ impl Interpreter {
     /// sigiled variable name, returning the bare variable name.
     /// e.g. "$GLOBAL::x" → Some("x"), "$OUR::x" → Some("x")
     fn pseudo_package_unqualified_name(name: &str) -> Option<String> {
-        let pseudo = ["GLOBAL", "OUR", "MY"];
-        for sigil in ["$", "@", "%", "&"] {
-            if let Some(rest) = name.strip_prefix(sigil) {
-                for pkg in &pseudo {
-                    let prefix = format!("{pkg}::");
-                    if let Some(bare) = rest.strip_prefix(&prefix) {
-                        return Some(format!("{sigil}{bare}"));
-                    }
+        // The pseudo-package prefixes are constants -- match them directly
+        // rather than re-formatting `"{pkg}::"` on every variable access.
+        const PSEUDO: [&str; 3] = ["GLOBAL::", "OUR::", "MY::"];
+        let sigil = name.chars().next();
+        if matches!(sigil, Some('$' | '@' | '%' | '&')) {
+            // Sigils are single-byte ASCII, so `name[1..]` is a valid boundary.
+            let rest = &name[1..];
+            for prefix in PSEUDO {
+                if let Some(bare) = rest.strip_prefix(prefix) {
+                    return Some(format!("{}{bare}", sigil.unwrap()));
                 }
             }
         }
         // Also handle unsigiled forms (e.g. "GLOBAL::x")
-        for pkg in &pseudo {
-            let prefix = format!("{pkg}::");
-            if let Some(bare) = name.strip_prefix(&prefix) {
+        for prefix in PSEUDO {
+            if let Some(bare) = name.strip_prefix(prefix) {
                 return Some(bare.to_string());
             }
         }
