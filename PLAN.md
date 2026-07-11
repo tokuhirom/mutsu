@@ -191,6 +191,17 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
   層3b NaN-boxing のスライス計画（3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）・
   層3c 凍結条件は [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。
   続いて JIT（層4）= [ADR-0004（Accepted 2026-07-06）](docs/adr/0004-jit-strategy.md)。
+- [ ] **grammar パースの acyclic ゴミが cycle collector を無駄に回している**
+      （計測メモ = [docs/grammar-parse-gc-churn.md](docs/grammar-parse-gc-churn.md)）:
+      zef の dist-identity パースは `Match`/capture（`InstanceAttrs` =
+      `HashMap<String,Value>`）を大量に生むが全て非循環（Arc refcount で解放可能）。
+      にもかかわらず全 container Value が cycle 候補にバッファされ、collector は
+      全 collection で `reclaimed_cycles=0`。perf で CPU の ~54% が
+      `drop_in_place<HashMap<String,Value>>` under `collect_cycles_at`
+      （PR #4412 の char-class 修正後も候補 churn は依然 366k/200-parse）。
+      方向候補（GC owner 判断）: ① tree 形状/never-cyclic な instance 種を候補
+      バッファに入れない健全な基準 ② 候補集合の再 push 抑制/閾値調整
+      ③ `MUTSU_GC=0` で GC 分の天井を測る。
 - [ ] **層3a 監査性 sweep（ANALYSIS rev8 §2.1・低コスト・1 PR で済む）**:
       ① `gc/mod.rs`/`gc_ptr.rs`/`collect.rs` の stale な「default off / no production caller yet」
       ヘッダを default-on 後の実態に是正 ② `gc_ptr.rs`/`collect.rs` のモジュール全体
