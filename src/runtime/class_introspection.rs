@@ -218,6 +218,26 @@ impl Interpreter {
         false
     }
 
+    /// Whether the class hierarchy defines `method_name` *directly* (a method
+    /// written in a class body), as opposed to only inheriting it from a
+    /// composed role. Entities defined in a class are prioritized over role
+    /// entities: a role method must NOT shadow the class's own attribute
+    /// accessor of the same name (6.c S14-roles/attributes.t "Class
+    /// prioritization"). `role_origin.is_none()` marks a class-local method.
+    pub(crate) fn has_class_local_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        for cn in mro {
+            if let Some(class_def) = self.registry().classes.get(&cn)
+                && let Some(defs) = class_def.methods.get(method_name)
+            {
+                return defs
+                    .iter()
+                    .any(|d| !d.is_private && d.role_origin.is_none());
+            }
+        }
+        false
+    }
+
     /// Check if a class has a public attribute accessor for the given name.
     pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
         let attrs = self.collect_class_attributes(class_name);
