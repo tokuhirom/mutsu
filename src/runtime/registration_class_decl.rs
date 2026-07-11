@@ -2065,6 +2065,58 @@ impl Interpreter {
                 }
             }
         }
+        // Persist the class body's own `my` lexicals (`class C { my $x = ...;
+        // method m { $x } }`) into `package_lexicals[C]` so a method that reads
+        // them still resolves after the class-body env is gone. On the success
+        // path the body env is normally left intact, so a top-level `class`/`use`
+        // keeps the values in the mainline env and this store is merely a mirror.
+        // But when the class is loaded via `require` *inside a sub*, the loading
+        // frame's env (holding the body statics) is discarded on return, and a
+        // later method read would otherwise miss the value entirely (e.g. an
+        // initialized `my Lock $lock = Lock.new` reads back as `Any`). Mirrors
+        // the package-block store in `exec_package_scope_op`. `current_package`
+        // is still `name` here, which is exactly when a method of this class
+        // reads these names, so the store is correctly scoped.
+        let body_lexicals: Vec<(String, Value)> = self
+            .env
+            .iter()
+            .filter_map(|(k, v)| {
+                if saved_env.contains_key_sym(*k) {
+                    return None;
+                }
+                let bare = k.resolve();
+                if bare.contains("::")
+                    || bare.starts_with("__")
+                    || bare.starts_with('?')
+                    || bare.starts_with('!')
+                    || bare == "self"
+                    || bare == "_"
+                {
+                    return None;
+                }
+                // Skip `our` package vars: their authoritative value lives in the
+                // qualified `our` store and can be set from outside the package;
+                // a bare declaration-time snapshot here would stale-shadow it.
+                let qualified = format!("{name}::{bare}");
+                if self.get_our_var(&qualified).is_some() || self.env.contains_key(&qualified) {
+                    return None;
+                }
+                Some((bare, v.clone()))
+            })
+            .collect();
+        if !body_lexicals.is_empty() {
+            let marks = self
+                .class_body_static_names
+                .entry(name.to_string())
+                .or_default();
+            for (bare, _) in &body_lexicals {
+                marks.insert(bare.clone());
+            }
+            let store = self.package_lexicals.entry(name.to_string()).or_default();
+            for (bare, v) in body_lexicals {
+                store.insert(bare, v);
+            }
+        }
         self.set_current_package(saved_package);
         if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
             restore_previous_state(self);
