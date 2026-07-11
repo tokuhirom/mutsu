@@ -357,11 +357,27 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn optional_type_object_name(constraint: &str) -> String {
+        let bytes = constraint.as_bytes();
         let mut end = constraint.len();
-        for (idx, ch) in constraint.char_indices() {
-            if ch == '[' || ch == '(' || ch == ':' {
-                end = idx;
-                break;
+        let mut idx = 0;
+        while idx < bytes.len() {
+            match bytes[idx] {
+                b'[' | b'(' => {
+                    end = idx;
+                    break;
+                }
+                b':' => {
+                    // `::` is a namespace separator (e.g. `IO::Path`), NOT a type
+                    // smiley — keep it as part of the name. A lone `:` starts a
+                    // smiley (`:D`/`:U`/`:_`), so truncate there.
+                    if bytes.get(idx + 1) == Some(&b':') {
+                        idx += 2;
+                        continue;
+                    }
+                    end = idx;
+                    break;
+                }
+                _ => idx += 1,
             }
         }
         constraint[..end].to_string()
