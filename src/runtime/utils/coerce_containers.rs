@@ -213,12 +213,12 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
             }
             // A bare (non-itemized) hash in list context flattens into its
             // key=>value pairs (`%m = (%h,)` / `%(%h,)`). A hash sourced from a
-            // `$` scalar carries `HashData.itemized` (set by `itemize_value`) and
-            // stays an opaque single element — matching Raku, where `%m =
-            // ($hashitem,)` dies "Odd number". Keys are the source hash's string
-            // keys: flattening an object hash into a plain Hash/Map stringifies
-            // them (the target re-tags via its own key-type metadata).
-            ValueView::Hash(h) if !h.itemized => {
+            // `$` scalar carries the per-holder itemization flag (set by
+            // `itemize_value`) and stays an opaque single element — matching
+            // Raku, where `%m = ($hashitem,)` dies "Odd number". Keys are the
+            // source hash's string keys: flattening an object hash into a plain
+            // Hash/Map stringifies them (the target re-tags via its own metadata).
+            ValueView::Hash(h) if !item.hash_is_itemized() => {
                 for (k, v) in h.iter() {
                     map.insert(k.clone(), v.clone());
                 }
@@ -412,18 +412,18 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         ValueView::LazyList(_) => value.clone(),
         // A bare Hash assigned to an @-var flattens into its pairs
         // (`my @a = %h`). An *itemized* hash (`my $h = %(...); my @a = $h`)
-        // stays a single element — `ItemizeVar` now tags it with
-        // `HashData.itemized` rather than the old `Scalar(Hash)` wrapper, so it
-        // must be handled here too (the `Scalar(inner)` arm below covers the
-        // Set/Bag/Mix itemized forms, which still use the wrapper).
-        ValueView::Hash(map) if !map.itemized => {
+        // stays a single element — `ItemizeVar` now tags it with the per-holder
+        // per-holder Hash itemization flag rather than the old `Scalar(Hash)`
+        // wrapper, so it must be handled here too (the `Scalar(inner)` arm below
+        // covers the Set/Bag/Mix itemized forms, which still use the wrapper).
+        ValueView::Hash(map) if !value.hash_is_itemized() => {
             let pairs: Vec<Value> = map
                 .iter()
                 .map(|(k, v)| map.typed_pair(k, v.clone()))
                 .collect();
             Value::real_array(pairs)
         }
-        ValueView::Hash(map) => Value::real_array(vec![Value::hash_with_data(map.clone())]),
+        ValueView::Hash(_) => Value::real_array(vec![value.clone()]),
         // A scalar holding a Hash/Set/Bag/Mix (itemized by `ItemizeVar` as
         // `Scalar(container)`) stays a single element, but unwrap the Scalar so
         // `@a[0]` is the bare container (preserving its `.gist`/`.raku`/type),

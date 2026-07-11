@@ -149,7 +149,26 @@ impl Value {
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
     /// preserved) via `Into<HashData>`.
     pub fn hash(map: impl Into<HashData>) -> Self {
-        Value::Hash(Gc::new(map.into()))
+        Value::Hash(Gc::new(map.into()), false)
+    }
+
+    /// True when this value is a `$`-scalar-itemized hash (`$(%h)` / `.item` /
+    /// `my $h = %x`). The per-holder itemization flag lives on the `Value::Hash`
+    /// variant, not in the shared `HashData`, so two holders of the same hash
+    /// data can differ in itemization (`%x.raku` → `{...}`, `my $h = %x;
+    /// $h.raku` → `${...}`).
+    pub fn hash_is_itemized(&self) -> bool {
+        matches!(self, Value::Hash(_, true))
+    }
+
+    /// Return this value with its hash itemization flag set to `itemized`,
+    /// preserving the SAME `HashData` `Gc` (so `=`-shared mutation still tracks).
+    /// A non-hash value is returned unchanged.
+    pub fn with_hash_itemized(self, itemized: bool) -> Self {
+        match self {
+            Value::Hash(gc, _) => Value::Hash(gc, itemized),
+            other => other,
+        }
     }
 
     /// Build a `Gc<HashData>` from a map or `HashData`. Lets call sites that
@@ -166,32 +185,11 @@ impl Value {
     pub fn item(self) -> Self {
         match self {
             Value::Array(items, kind) => Value::Array(items, kind.itemize()),
-            Value::Hash(h) => Value::Hash(Self::hash_arc_itemized(h)),
+            // Itemization is a Value-level flag now, so `.item` keeps the SAME
+            // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
+            // `=`-shared mutation are preserved).
+            Value::Hash(h, _) => Value::Hash(h, true),
             other => other,
-        }
-    }
-
-    /// Return a `Value::Hash` Arc with its itemization flag set (copy-on-write
-    /// only when the flag actually changes, so `.WHICH` identity is preserved
-    /// for an already-itemized hash). Used by the `Itemize`/`ItemizeVar` opcodes
-    /// and `.item` to mark a `$`-sourced hash as a single list-context element.
-    pub(crate) fn hash_arc_itemized(h: Gc<HashData>) -> Gc<HashData> {
-        if h.itemized {
-            h
-        } else {
-            let mut data = (*h).clone();
-            data.itemized = true;
-            Gc::new(data)
-        }
-    }
-
-    pub(crate) fn hash_arc_deitemized(h: Gc<HashData>) -> Gc<HashData> {
-        if h.itemized {
-            let mut data = (*h).clone();
-            data.itemized = false;
-            Gc::new(data)
-        } else {
-            h
         }
     }
 
@@ -315,7 +313,7 @@ impl Value {
     /// Look up a key in a Hash value by string key.
     pub fn hash_get_str(&self, key: &str) -> Option<Value> {
         match self {
-            Value::Hash(arc) => arc.get(key).cloned(),
+            Value::Hash(arc, _) => arc.get(key).cloned(),
             Value::Mixin(inner, _) => inner.hash_get_str(key),
             Value::Scalar(inner) => inner.hash_get_str(key),
             _ => None,
@@ -324,7 +322,7 @@ impl Value {
 
     /// Returns `None` if `self` is not a `Value::Hash`.
     pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
-        if let Value::Hash(arc) = self {
+        if let Value::Hash(arc, _) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -357,7 +355,7 @@ impl Value {
     /// - a missing key is autovivified to an empty Hash (the old descent
     ///   behavior) and returned by value (shared Arc).
     pub fn hash_autovivify_cell(&self, key: &str) -> Option<Value> {
-        if let Value::Hash(arc) = self {
+        if let Value::Hash(arc, _) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -398,7 +396,7 @@ impl Value {
     /// Reads decontainerize at the single chokepoint (`resolve_hash_entry`);
     /// writes go through `hash_insert_through` (Stage 0).
     pub fn hash_slot_ref(&self, key: &str, terminal: bool) -> Option<Value> {
-        if let Value::Hash(arc) = self {
+        if let Value::Hash(arc, _) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -433,7 +431,7 @@ impl Value {
     /// Returns the value stored at the key after the operation.
     /// Uses the same interior-mutation approach as `hash_autovivify`.
     pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
-        if let Value::Hash(arc) = self {
+        if let Value::Hash(arc, _) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -470,7 +468,7 @@ impl Value {
         for k in &path[..path.len() - 1] {
             let ptr = crate::gc::Gc::as_ptr(&cur);
             match unsafe { (*ptr).get(k.as_str()) } {
-                Some(Value::Hash(inner)) => cur = inner.clone(),
+                Some(Value::Hash(inner, _)) => cur = inner.clone(),
                 _ => return any(),
             }
         }
@@ -500,11 +498,11 @@ impl Value {
             let next = {
                 let data = unsafe { gc_contents_mut(&cur) };
                 match data.map.get(k) {
-                    Some(Value::Hash(inner)) => inner.clone(),
+                    Some(Value::Hash(inner, _)) => inner.clone(),
                     _ => {
                         let new_hash = Value::hash(HashMap::new());
                         let arc = match &new_hash {
-                            Value::Hash(a) => a.clone(),
+                            Value::Hash(a, _) => a.clone(),
                             _ => unreachable!(),
                         };
                         Value::hash_insert_through(&mut data.map, k.clone(), new_hash);

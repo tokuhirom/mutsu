@@ -898,15 +898,6 @@ pub struct HashData {
     /// table broke whenever the backing `Arc` was rebuilt. Mirrors the array
     /// `ArrayData::default` field.
     pub default: Option<Box<Value>>,
-    /// Itemization flag: `true` when this hash came from a `$` scalar container
-    /// (`$(%h)` / `$hashitem` placed in a list / `.item`). Mirrors
-    /// `ArrayKind::ItemList`/`ItemArray` for arrays — value operations IGNORE it
-    /// (the value is still a plain `Value::Hash`, so it never leaks), but
-    /// list-context hash flattening (`build_hash_from_items`) treats an itemized
-    /// hash as a single opaque element instead of spilling its pairs. This is
-    /// what distinguishes `%m = (%h,)` (flattens) from `%m = ($hashitem,)`
-    /// (stays opaque → "Odd number"). Excluded from `PartialEq` (see below).
-    pub itemized: bool,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded
@@ -982,7 +973,14 @@ pub enum Value {
     /// GC-migrated (§11 step 5c first wave): backed by a cycle-collectable
     /// `Gc<ArrayData>` rather than a plain `crate::gc::Gc<ArrayData>`.
     Array(crate::gc::Gc<ArrayData>, ArrayKind),
-    Hash(Gc<HashData>),
+    /// The `bool` is the per-holder itemization flag (`true` when this hash sits
+    /// in a `$` scalar container: `$(%h)` / `.item` / `my $h = %x`). It mirrors
+    /// `ArrayKind::ItemArray` for arrays — a Value-level marker that shares the
+    /// SAME `HashData` `Gc` as the non-itemized holder (so `=`-shared mutation
+    /// still tracks), while `.raku` and list-context flattening read it to
+    /// distinguish `${...}` / opaque-single-element from the bare `{...}` /
+    /// spilled-pairs forms. Value equality/eqv IGNORE it (see `value_eq`).
+    Hash(Gc<HashData>, bool),
     Rat(i64, i64),
     FatRat(i64, i64),
     BigRat(Box<NumBigInt>, Box<NumBigInt>),

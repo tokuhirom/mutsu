@@ -23,7 +23,7 @@ impl Value {
             Value::Seq(_) => "Seq",
             Value::HyperSeq(_) => "HyperSeq",
             Value::RaceSeq(_) => "RaceSeq",
-            Value::Hash(_) => "Hash",
+            Value::Hash(..) => "Hash",
             Value::Set(_, is_mutable) => {
                 if *is_mutable {
                     "SetHash"
@@ -176,7 +176,7 @@ impl Value {
                         | Value::BigRat(_, _)
                         | Value::Complex(_, _)
                         | Value::Array(..)
-                        | Value::Hash(_)
+                        | Value::Hash(..)
                 ) || matches!(
                     self,
                     Value::Instance { class_name, .. }
@@ -303,7 +303,7 @@ impl Value {
             "Map" | "Associative" => {
                 matches!(
                     self,
-                    Value::Hash(_)
+                    Value::Hash(..)
                         | Value::Pair(_, _)
                         | Value::ValuePair(_, _)
                         | Value::Set(_, _)
@@ -321,7 +321,7 @@ impl Value {
             }
             "Iterable" => matches!(
                 self,
-                Value::Array(..) | Value::LazyList(_) | Value::Hash(_) | Value::Seq(_)
+                Value::Array(..) | Value::LazyList(_) | Value::Hash(..) | Value::Seq(_)
             ),
             "ObjAt" => {
                 // ValueObjAt is a subclass of ObjAt

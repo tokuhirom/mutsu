@@ -215,7 +215,21 @@ impl Interpreter {
         &mut self,
         map: &crate::value::HashData,
         info: &ContainerTypeInfo,
+        itemized: bool,
     ) -> Result<Value, RuntimeError> {
+        // A `$`-scalar-itemized typed hash wraps its repr with the itemization
+        // sigil: a paren/bracket literal (the `(my Int %{Int} = ...)` typed form)
+        // takes the bare `$` → `$(...)`; anything else (`Map.new(...)`) is
+        // paren-wrapped → `$(Map.new(...))`.
+        let itemize_wrap = |base: String| -> String {
+            if !itemized {
+                base
+            } else if base.starts_with(['{', '[', '(']) {
+                format!("${base}")
+            } else {
+                format!("$({base})")
+            }
+        };
         let mut sorted_keys: Vec<&String> = map.keys().collect();
         sorted_keys.sort();
         // An immutable Map renders as `Map.new((:k(v), ...))`, not the
@@ -248,7 +262,10 @@ impl Interpreter {
                     }
                     })
                     .collect();
-            return Ok(Value::str(format!("Map.new(({}))", parts.join(","))));
+            return Ok(Value::str(itemize_wrap(format!(
+                "Map.new(({}))",
+                parts.join(",")
+            ))));
         }
         let parts: Vec<String> = sorted_keys
             .iter()
@@ -295,7 +312,7 @@ impl Interpreter {
         } else {
             format!("(my {} %{} = {})", info.value_type, key_suffix, inner)
         };
-        Ok(Value::str(result))
+        Ok(Value::str(itemize_wrap(result)))
     }
 
     /// Dispatch Complex->Num conversion.

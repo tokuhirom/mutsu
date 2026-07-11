@@ -517,7 +517,7 @@ impl Value {
             }
             Value::LazyIoLines { .. } => "(...)".to_string(),
             Value::Uni(u) => u.text.clone(),
-            Value::Hash(items) => {
+            Value::Hash(items, _) => {
                 // Cycle detection for recursive hash structures
                 thread_local! {
                     static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };

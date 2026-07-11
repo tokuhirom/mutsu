@@ -359,6 +359,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             {
                 Some(Ok(Value::hash(std::collections::HashMap::new())))
             }
+            // `.hash` on a hash (`%$h`) IS that hash in Associative context:
+            // return it de-itemized (a `$`-held itemized hash contextualized as
+            // `%$h` spills to the hash, not an opaque single element), preserving
+            // the backing `HashData` (and its type metadata). Without this arm an
+            // itemized hash falls to the list path below and `value_to_list`
+            // treats it as one opaque element → spurious "Odd number of elements".
+            ValueView::Hash(_) => Some(Ok(target.clone().with_hash_itemized(false))),
             _ => {
                 // Iterate an Array/Seq/Slip's own elements as the hash
                 // initializer, even when the value is itemized (`$(:a, :b).hash`):

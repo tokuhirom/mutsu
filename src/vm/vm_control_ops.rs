@@ -69,9 +69,12 @@ impl Interpreter {
     /// element writes mutate the same `Gc` node in place, so the read tracks
     /// them. Falls back to the plain snapshot pairs (`typed_pair`) for an
     /// itemized hash, which iterates as a single element.
-    pub(super) fn hash_live_pairs(gc: &crate::gc::Gc<crate::value::HashData>) -> Vec<Value> {
-        if gc.itemized {
-            return vec![Value::hash_with_data(gc.clone())];
+    pub(super) fn hash_live_pairs(
+        gc: &crate::gc::Gc<crate::value::HashData>,
+        itemized: bool,
+    ) -> Vec<Value> {
+        if itemized {
+            return vec![Value::hash_with_data_itemized(gc.clone(), true)];
         }
         gc.keys()
             .map(|k| {

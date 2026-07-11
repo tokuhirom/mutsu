@@ -57,7 +57,7 @@ impl Value {
                     && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
             // Hashes: recursively use eqv for values
-            (Value::Hash(a), Value::Hash(b)) => {
+            (Value::Hash(a, _), Value::Hash(b, _)) => {
                 a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv(bv)))
             }
             // Pairs: recursively use eqv for values (Pair and ValuePair are equivalent)

@@ -141,7 +141,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
             Ok(SerValue::Array(ser_items?, *kind))
         }
-        Value::Hash(map) => {
+        Value::Hash(map, _) => {
             let ser_map: Result<HashMap<_, _>, _> = map
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))

@@ -73,7 +73,7 @@ impl Value {
             // Migrated `Gc<T>` node variants: yield the node itself. The
             // collector traces the node's own children via its `Trace` impl, so
             // we do NOT recurse into its contents here.
-            Value::Hash(data) => visit(&data.erased()),
+            Value::Hash(data, _) => visit(&data.erased()),
             Value::Array(data, _) => visit(&data.erased()),
             Value::Set(data, _) => visit(&data.erased()),
             Value::Bag(data, _) => visit(&data.erased()),
@@ -430,7 +430,7 @@ impl Value {
     pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
         match self {
             Value::Array(data, _) => data.visit_gc_children(visitor),
-            Value::Hash(data) => data.visit_gc_children(visitor),
+            Value::Hash(data, _) => data.visit_gc_children(visitor),
             Value::Set(data, _) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
@@ -592,7 +592,7 @@ mod tests {
             map,
             ..Default::default()
         };
-        let value = Value::Hash(crate::gc::Gc::new(data));
+        let value = Value::Hash(crate::gc::Gc::new(data), false);
 
         let mut visitor = CountingVisitor { count: 0 };
         value.visit_gc_children(&mut visitor);
@@ -633,7 +633,7 @@ mod tests {
     }
 
     fn fresh_hash_node() -> Value {
-        Value::Hash(crate::gc::Gc::new(HashData::default()))
+        Value::Hash(crate::gc::Gc::new(HashData::default()), false)
     }
 
     /// Build a minimal `SubData` capturing `env`, for the shared-env trace tests.
@@ -692,7 +692,7 @@ mod tests {
         // One env map holding the hash, shared by TWO closures (and kept
         // shared through the collect by `env` itself — 3 Arc holders).
         let mut env = crate::env::Env::new();
-        env.insert("%h".to_string(), Value::Hash(hash.clone()));
+        env.insert("%h".to_string(), Value::Hash(hash.clone(), false));
 
         // The closures form a genuine garbage cycle through `ContainerRef`
         // cells in their (owned, always-traced) assumed args:

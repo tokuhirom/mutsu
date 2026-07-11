@@ -58,7 +58,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
         // An itemized hash (`item %h` / `$(%h)`) is a single list element and does
         // NOT flatten to its pairs (mirrors the itemized-Array arm above).
-        ValueView::Hash(items) if items.itemized => vec![val.clone()],
+        ValueView::Hash(_) if val.hash_is_itemized() => vec![val.clone()],
         // `typed_pair` decontainerizes element cells so the pair value matches a
         // `%h<k>` read / `.values` (see t/bind-hash-value-pairs.t).
         ValueView::Hash(items) => items
