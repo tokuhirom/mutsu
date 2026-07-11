@@ -248,6 +248,15 @@ impl Interpreter {
     /// package-scope var (a fresh global, a dynamic var, `$_`, ...) returns
     /// `false` and the caller's normal store path applies unchanged.
     pub(super) fn writeback_package_scope_var(&mut self, name: &str, val: &Value) -> bool {
+        // Both branches below require a hit in `our_vars` (package-qualified `our`
+        // var) or `package_lexicals` (package-block `my` static). When both stores
+        // are empty — the common case for a plain-lexical hot loop — there is
+        // nothing to write back, so skip the `current_package()` RwLock read +
+        // `String` clone entirely. This is the dominant cost of the inc-dec
+        // write-back path once the type-constraint check is gated away.
+        if self.our_vars_is_empty() && self.package_lexicals.is_empty() {
+            return false;
+        }
         let cur = self.current_package();
         if let Some(candidate) = Self::package_qualified_candidate(name, &cur)
             && self.get_our_var(&candidate).is_some()
