@@ -9,25 +9,25 @@ use crate::value::Value;
 
 static STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// §1.4 shadow-slot activation gate (`MUTSU_SHADOW_SLOTS`).
+/// §1.4 shadow-slot activation gate.
 ///
-/// When set, [`Compiler::declare_local`] gives a shadowing inner-block `my $x`
+/// When active, [`Compiler::declare_local`] gives a shadowing inner-block `my $x`
 /// its **own** fresh local slot (instead of sharing the outer `$x`'s slot) and
 /// [`Compiler::pop_local_scope`] restores the outer binding in `local_map` on
-/// scope exit. The DEFAULT (unset) build is byte-identical: `declare_local`
-/// resolves like `alloc_local` (get-or-create by name), so shadowing correctness
-/// keeps relying on the runtime `BlockScope` env restore.
+/// scope exit, so shadowing correctness no longer relies on the runtime
+/// `BlockScope` whole-`locals` restore.
 ///
-/// Activation alone is NOT yet coherent: the name-keyed env store cannot hold two
-/// live `$x` (§1.3 dual-store) and ~80 by-name leaf writebacks resolve to the
-/// outer slot (§1.5 remaining leaf sites). This toggle is the development
-/// substrate the campaign greens slice-by-slice before the default is flipped —
-/// the same env-var-gated pattern the env_dirty campaign used. See
-/// docs/lexical-scope-slot-campaign.md and ANALYSIS.md §1.4.
+/// **Default ON since 2026-07-12.** A fresh full toggle-ON whitelist survey
+/// (1379 files) found **zero genuine regressions** — every file that fails ON
+/// also fails OFF — confirming the §1.5 leaf-slot bakes (S1–S17) plus the
+/// 2026-07-10 container-identity/cell work drove the §1.3 class-1 (name-keyed
+/// env dual-store) breakage to zero. `MUTSU_NO_SHADOW_SLOTS` is a temporary
+/// opt-out escape hatch (reverts to the old shared-slot + env-restore behavior).
+/// See docs/lexical-scope-slot-campaign.md and ANALYSIS.md §1.4.
 pub(crate) fn shadow_slots_active() -> bool {
     use std::sync::OnceLock;
     static ACTIVE: OnceLock<bool> = OnceLock::new();
-    *ACTIVE.get_or_init(|| std::env::var_os("MUTSU_SHADOW_SLOTS").is_some())
+    *ACTIVE.get_or_init(|| std::env::var_os("MUTSU_NO_SHADOW_SLOTS").is_none())
 }
 mod expr;
 mod expr_binary;
