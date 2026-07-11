@@ -126,8 +126,8 @@ fn scan_black(node: &ErasedGc, m: &mut Metrics) {
 /// it would strand the node White with strong 0 — deferred a full collect and
 /// flagged by `MUTSU_GC_VERIFY` as an inconsistent survivor. Reclaiming it
 /// here is sound: whiteness was proven on the frozen post-STW counts, and the
-/// buffer's retained handle merely keeps the (edge-cleared) shell allocated
-/// until the next collect's dead sweep drops it.
+/// re-buffered entry is only a `Weak` handle that fails to upgrade at the
+/// next drain once reclaim frees the node.
 fn collect_white(node: &ErasedGc, out: &mut Vec<ErasedGc>, seen: &mut HashSet<usize>) -> bool {
     if node.gc_color() != Color::White {
         return false;
@@ -302,25 +302,18 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     if drained.is_empty() {
         return CollectStats::default();
     }
-    // Partition off nodes whose GC-visible strong count already hit 0: they
-    // died a plain refcount death after being buffered, and only the buffer's
-    // retained handle keeps their allocation alive. They are not cycle
-    // suspects — trial deletion needs live handles to trial-decrement — so run
-    // their value-level finalizer (Raku DESTROY, attributes still intact) and
-    // drop them directly. Skipping mark/scan for these is the difference
-    // between O(live suspects) and O(every dead container snapshot) per
-    // collect: a mutation-heavy loop (e.g. a `cas %h{..}` loop COWing the hash
-    // per iteration) buffers thousands of soon-dead snapshots, which made a
-    // single collect pause for seconds (S17-lowlevel/thread.t under GC=on).
-    // Dropping them here cascades normally (children decrement / buffer /
-    // finalize through `Gc::drop` — no CollectGuard is active).
-    //
-    // This dead sweep is safe even while worker threads mutate the graph: it
-    // only performs ordinary atomic refcount operations (`Arc` drop cascades),
-    // never the trial-deletion bookkeeping. Without it, a threaded
-    // mutation-heavy program deferred EVERY release to one giant post-join
-    // collect and grew memory unboundedly in the meantime (page-fault churn
-    // dominated the profile).
+    // Partition off nodes whose GC-visible strong count already hit 0. With
+    // the weak candidate buffer, a refcount death normally frees the node
+    // inline at its last `Gc::drop` (its buffer entry then fails to upgrade
+    // in `drain_candidates`), so this catches only the narrow race: a mutator
+    // dropped its last handle between our upgrade and this check, leaving the
+    // drained strong handle as the survivor. Such a node is not a cycle
+    // suspect — trial deletion needs live handles to trial-decrement — so run
+    // its value-level finalizer (idempotent; the mutator's drop path already
+    // ran it) and drop it directly. The batch is bounded by what other
+    // threads can drop in that window, so an inline release suffices (the
+    // strong-buffer era's 16k-node sweeps with an off-thread reclamation
+    // helper are gone — dead garbage no longer accumulates in the buffer).
     let (dead, suspects): (Vec<ErasedGc>, Vec<ErasedGc>) =
         drained.into_iter().partition(|n| n.gc_strong() == 0);
     let dead_count = dead.len();
@@ -332,26 +325,7 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     for node in &dead {
         gc_finalize(node);
     }
-    // Release the dead batch's memory OFF the collector thread when it is
-    // large. Dropping refcount-dead nodes is pure memory work, but its volume
-    // is O(garbage): a thread-churn program (S17-lowlevel/thread.t) produces
-    // 16k-node batches of env-sized hashes whose serial release measured
-    // 3.5-5.5s per collect INSIDE the pause — work that under GC-off happened
-    // spread across the worker threads themselves. Finalizers (Raku DESTROY
-    // queueing) already ran above, on this interpreter thread, with the
-    // attributes intact; what remains is `Arc` teardown. The reclamation
-    // thread is a REGISTERED mutator (its drop cascade decrements child
-    // counts and can re-buffer survivors), so a later collect's cooperative
-    // STW correctly waits for it — or times out into the usual sound
-    // requeue+cooldown deferral while it churns. Small batches drop inline:
-    // a thread spawn per tiny sweep would cost more than it saves.
-    if dead_count >= 1024 {
-        drop(crate::runtime::builtins_system::spawn_user_thread(
-            move || drop(dead),
-        ));
-    } else {
-        drop(dead);
-    }
+    drop(dead);
 
     // Nothing left to scan: return WITHOUT entering the scan/reclaim tail.
     // Falling through used to run `reclaim(vec![], vec![])`, whose

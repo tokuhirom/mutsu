@@ -194,17 +194,12 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
   層3b NaN-boxing のスライス計画（3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）・
   層3c 凍結条件は [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。
   続いて JIT（層4）= [ADR-0004（Accepted 2026-07-06）](docs/adr/0004-jit-strategy.md)。
-- [ ] **grammar パースの acyclic ゴミが cycle collector を無駄に回している**
-      （計測メモ = [docs/grammar-parse-gc-churn.md](docs/grammar-parse-gc-churn.md)）:
-      zef の dist-identity パースは `Match`/capture（`InstanceAttrs` =
-      `HashMap<String,Value>`）を大量に生むが全て非循環（Arc refcount で解放可能）。
-      にもかかわらず全 container Value が cycle 候補にバッファされ、collector は
-      全 collection で `reclaimed_cycles=0`。perf で CPU の ~54% が
-      `drop_in_place<HashMap<String,Value>>` under `collect_cycles_at`
-      （PR #4412 の char-class 修正後も候補 churn は依然 366k/200-parse）。
-      方向候補（GC owner 判断）: ① tree 形状/never-cyclic な instance 種を候補
-      バッファに入れない健全な基準 ② 候補集合の再 push 抑制/閾値調整
-      ③ `MUTSU_GC=0` で GC 分の天井を測る。
+- ✅ **grammar パースの acyclic ゴミ churn 解消（2026-07-11）**: candidate buffer を
+      strong `Arc` から **`Weak` 保持**に変更。refcount 死は GC-off と同じくその場で
+      解放され、dead sweep がほぼ消滅（zbench: RSS 3.6x→+6%・pause_max 41ms→3.6ms）。
+      計測と結果 = [docs/grammar-parse-gc-churn.md](docs/grammar-parse-gc-churn.md)、
+      設計 = gc-level1-detailed-design.md §5.2。残る候補 push 自体（~510k/200-parse）の
+      抑制は未着手（実害はメモリ保持で、それは解消済み）。
 - ✅ **層3a 監査性 sweep 完了（2026-07-11）**: stale ヘッダ是正・モジュール全体
       `#![allow(dead_code)]` 撤去（dead API 5 件削除・test 専用 API `#[cfg(test)]` 化）・
       不変条件 debug assert 化・`make_mut` `Relaxed` ordering 検討（結論=健全、
