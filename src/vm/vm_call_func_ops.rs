@@ -1753,12 +1753,14 @@ impl Interpreter {
     ///     must survive across an `EVAL` boundary (t/sigilless-params).
     ///
     /// Formerly-excluded body constructs verified OTF-safe and now admitted
-    /// (§3 fallback removal, 2026-07-11): nested sub/proto/token decls
+    /// (§3 fallback removal, 2026-07-11/12): nested sub/proto/token decls
     /// (non-local `when` control flow stays inside the nested routine —
     /// Test::Util's `is-deeply-junction`), `subtest`, `CATCH`/`CONTROL`
-    /// handlers, phasers (ENTER/LEAVE), and `once`. All run through the same
-    /// VM ops the precompiled path uses; pinned by
-    /// t/module-sub-otf-interpreter-constructs.t.
+    /// handlers, phasers (ENTER/LEAVE), `once`, and nested class/role/grammar
+    /// decls (same-named `my` classes stay distinct via `decl_id`; captured
+    /// lexicals, inheritance, parameterized roles and grammar parsing all
+    /// match raku). All run through the same VM ops the precompiled path
+    /// uses; pinned by t/module-sub-otf-interpreter-constructs.t.
     ///
     /// `is rw`/`is raw`/`is copy`/`is readonly`/`is required` params are NOW
     /// allowed (§2 multi-dispatch VM-ization): the compiled binding already
@@ -1892,18 +1894,20 @@ impl Interpreter {
     fn module_otf_stmt_needs_interpreter(stmt: &crate::ast::Stmt) -> bool {
         use crate::ast::Stmt;
         match stmt {
-            // Nested class/role decls still couple to the interpreter's package
-            // registration context (same exclusion as
-            // `function_body_needs_interpreter`). Nested sub/proto/token decls,
-            // `subtest`, `CATCH`/`CONTROL` handlers and phasers are OTF-safe
-            // (verified 2026-07-11 against raku, incl. Test::Util's
-            // `is-deeply-junction` nested `when` control flow and
-            // `throws-like-any`'s CATCH+subtest): the compiled body registers
-            // nested routines and runs handlers/phasers through the same VM ops
-            // the precompiled path uses. OTF even fixes a tree-walk bug where a
-            // body-level CATCH swallowed the normal path's return value. Pinned
-            // by t/module-sub-otf-interpreter-constructs.t.
-            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => true,
+            // Nested sub/proto/token decls, `subtest`, `CATCH`/`CONTROL`
+            // handlers and phasers are OTF-safe (verified 2026-07-11 against
+            // raku, incl. Test::Util's `is-deeply-junction` nested `when`
+            // control flow and `throws-like-any`'s CATCH+subtest): the compiled
+            // body registers nested routines and runs handlers/phasers through
+            // the same VM ops the precompiled path uses. OTF even fixes a
+            // tree-walk bug where a body-level CATCH swallowed the normal
+            // path's return value. Nested class/role/grammar decls are also
+            // OTF-safe (verified 2026-07-12): RegisterClass/RegisterRole run
+            // identically under OTF — same-named `my` classes in different
+            // subs stay distinct via the parse-time `decl_id`, captured
+            // lexicals/params resolve per call, and inheritance/parameterized
+            // roles/grammar parsing all match raku. Pinned by
+            // t/module-sub-otf-interpreter-constructs.t.
             Stmt::If {
                 then_branch,
                 else_branch,
