@@ -1,28 +1,48 @@
-//! GC Level 1a infrastructure (ADR-0001 / ADR-0002,
-//! `docs/gc-level1-detailed-design.md`).
+//! GC Level 1a: the Bacon-Rajan cycle collector on `Arc` (ADR-0001 / ADR-0002 /
+//! ADR-0003, `docs/gc-level1-detailed-design.md`). **Default on** since
+//! 2026-07-05 (ADR-0003 §5); `MUTSU_GC=off` disarms it.
 //!
-//! Two concerns live here, both "compiled in, default off" (design doc §9.1)
-//! ahead of a running collector:
-//!
+//! - [`gc_ptr`] — [`Gc<T>`], its Bacon-Rajan node header, the [`Trace`] trait,
+//!   and the process-global cycle-candidate buffer. Every container-kind
+//!   `Value` variant is a `Gc<_>` node (layer 3a migration, complete).
+//! - [`collect`] — the synchronous trial-deletion collector that reclaims
+//!   cycles from the candidate buffer.
+//! - [`safepoint`] — the trigger policy (ADR-0003 adaptive size threshold, or
+//!   the `MUTSU_GC_EVERY_CANDIDATE` stress period) and the `gc_safepoint`
+//!   entry point the VM calls at re-entry boundaries (dispatch backedge).
+//! - [`stw`] — the cooperative stop-the-world (design §6.1): a collect waits
+//!   until every other mutator thread is parked at a safepoint or inside a
+//!   registered blocking wait, then scans.
 //! - [`root_visitor`] — the [`RootVisitor`] trait and `visit_*` helpers used by
 //!   `Interpreter::visit_roots` / `Env::visit_values` to enumerate every
-//!   `Value` reachable from execution state (§11 steps 1-2).
-//! - [`gc_ptr`] — [`Gc<T>`], its Bacon-Rajan node header, the [`Trace`] trait,
-//!   and the process-global cycle-candidate buffer (§11 step 4). The first wave
-//!   is migrated to `Gc<_>`: `Hash` (5b), `Array` (5c),
-//!   `ContainerRef` (5d).
-//! - [`collect`] — the synchronous Bacon-Rajan trial-deletion collector (§11
-//!   step 8) that reclaims cycles from the candidate buffer.
-//! - [`safepoint`] — the trigger policy and the `gc_safepoint` entry point the
-//!   VM calls at re-entry boundaries (dispatch backedge) to run a collect under
-//!   a `MUTSU_GC` stress mode. With `MUTSU_GC` unset, safepoints are disarmed
-//!   (one cached load) and a collect is a no-op — normal execution is unaffected.
+//!   `Value` reachable from execution state (§11 steps 1-2; verification /
+//!   future tracing infra — the candidate-buffer collector does not consume it).
 
 mod collect;
 mod gc_ptr;
 mod root_visitor;
 mod safepoint;
 mod stw;
+
+pub(crate) use collect::collect_at_program_end;
+#[cfg(test)]
+pub(crate) use collect::collect_cycles;
+#[cfg(test)]
+pub(crate) use gc_ptr::drain_candidates;
+pub(crate) use gc_ptr::{
+    ContainerMakeMut, ErasedGc, Gc, Trace, WeakGc, enter_mutator_worker, exit_mutator_worker,
+    gc_contents_mut,
+};
+pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
+pub(crate) use safepoint::{
+    SafepointKind, armed as gc_safepoints_armed,
+    current_size_threshold as gc_current_size_threshold, gc_safepoint,
+    startup_collect_if_requested,
+};
+pub(crate) use stw::{
+    block_quiescent, mark_thread_registered, park_at_safepoint as gc_park_point,
+    preregister_worker_quiescent, stw_aware_wait, worker_started,
+};
 
 /// Test-only serialization for every unit test that touches the process-global
 /// GC statics (candidate buffer, worker count, STW flags, cooldown). The
@@ -49,26 +69,3 @@ pub(crate) mod test_support {
         g
     }
 }
-
-#[allow(unused_imports)]
-pub(crate) use collect::{
-    CollectStats, LogMode, collect_at_program_end, collect_cycles, collect_cycles_at,
-    collect_if_enabled, gc_debug_collect_now, log_mode, verify_enabled,
-};
-#[allow(unused_imports)]
-pub(crate) use gc_ptr::{
-    Color, ContainerMakeMut, ErasedGc, Gc, Trace, WeakGc, drain_candidates, enter_mutator_worker,
-    exit_mutator_worker, gc_contents_mut, gc_enabled, mutator_workers_active,
-};
-pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
-#[allow(unused_imports)]
-pub(crate) use safepoint::{
-    SafepointKind, armed as gc_safepoints_armed,
-    current_size_threshold as gc_current_size_threshold, gc_safepoint,
-    startup_collect_if_requested,
-};
-#[allow(unused_imports)]
-pub(crate) use stw::{
-    block_quiescent, mark_thread_registered, park_at_safepoint as gc_park_point,
-    preregister_worker_quiescent, stw_aware_wait, stw_requested, worker_started,
-};

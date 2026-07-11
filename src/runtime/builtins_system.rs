@@ -15,9 +15,9 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    // Mark a mutator worker as active so the GC collector declines to run while
-    // this thread may be touching the `Gc` graph (trial deletion needs
-    // stop-the-world; see `gc::mutator_workers_active`). Raised here on the
+    // Register a mutator worker with the GC: the worker count is the
+    // cooperative stop-the-world's quiescence target (trial deletion must not
+    // race this thread's `Gc` mutations; see `gc::stw`). Raised here on the
     // parent — before the thread exists — so the count is up the instant this
     // returns, then dropped by the worker's RAII guard (panic-safe).
     crate::gc::enter_mutator_worker();

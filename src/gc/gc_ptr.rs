@@ -3,8 +3,8 @@
 //! (ADR-0001 / ADR-0002, `docs/gc-level1-detailed-design.md` §5.1 / §9.1 /
 //! §11 step 4).
 //!
-//! This lands the *type machinery* a Bacon-Rajan synchronous cycle collector
-//! needs, "compiled in, default off" per the design doc §9.1:
+//! The *type machinery* the Bacon-Rajan synchronous cycle collector
+//! (`gc::collect`) runs on:
 //!
 //! - [`Gc<T>`] — an `Arc`-backed managed pointer. `Arc` supplies allocation,
 //!   `Send + Sync`, and the unsizing coercion to the type-erased [`ErasedGc`];
@@ -16,27 +16,17 @@
 //! - the process-global candidate buffer — where a drop that leaves the node
 //!   with surviving handles records it as a possible cycle root (§4.2 / §5.2).
 //!
-//! State of the migration (§11 step 5):
-//! - The whole first wave is migrated to `Gc<_>`: `Hash` → `Gc<HashData>`
-//!   (5b), `Array` → `Gc<ArrayData>` (5c), `ContainerRef` →
-//!   `Gc<Mutex<Value>>` (5d). So `Gc`'s `Clone`/`Drop`/`make_mut`/... run in
-//!   production. Candidate buffering still only happens under `MUTSU_GC=on`
-//!   (default off), so ordinary runs pay just an atomic refcount op per
-//!   container clone/drop and push nothing.
-//! - `Set`/`Bag`/`Mix` are also `Gc<_>` now (#4117). `Sub`/`Instance`/`LazyList`
-//!   remain `Arc` (later waves); the [`ContainerMakeMut`] bridge lets shared
-//!   container macros work across the still-mixed state meanwhile.
-//! - The synchronous trial-deletion collector (`gc::collect`, §11 step 8)
-//!   reclaims cycles from the candidate buffer, run at VM safepoints
-//!   (`gc::safepoint`) under a `MUTSU_GC` trigger, or manually. With `MUTSU_GC`
-//!   unset the buffer stays empty and safepoints are disarmed, so a collect is a
-//!   no-op and normal execution is unaffected.
-
-// The collector-facing surface (Color scan states, drain_candidates,
-// buffer_as_candidate, trace_children, ...) is not exercised until the
-// synchronous collector lands (§11 step 8), so keep a module-wide dead-code
-// allow rather than sprinkling per-item ones; drop it when step 8 wires them up.
-#![allow(dead_code)]
+//! State of the migration (§11 step 5 — COMPLETE, layer 3a shipped):
+//! - Every container-kind variant is `Gc<_>`: `Hash`/`Array`/`ContainerRef`
+//!   (first wave), `Set`/`Bag`/`Mix` (#4117), `Sub`/`Instance` attributes
+//!   (#4123), `Promise`/`Channel` (#4127), `LazyList` (#4125). Scalar variants
+//!   stay GC-free per the ADR-0001 type filter. The [`ContainerMakeMut`] bridge
+//!   remains for shared macros generic over `Arc` (immutable wrappers) and `Gc`.
+//! - The synchronous trial-deletion collector (`gc::collect`) runs at VM
+//!   safepoints (`gc::safepoint`) under the ADR-0003 adaptive threshold.
+//!   **`MUTSU_GC` defaults to on** (ADR-0003 §5, 2026-07-05); `MUTSU_GC=off`
+//!   disarms safepoints and leaves the candidate buffer empty, so a run pays
+//!   just an atomic refcount op per container clone/drop.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -48,8 +38,7 @@ use crate::vm::vm_stats::{record_gc_candidate_dedup_hit, record_gc_candidate_pus
 /// Only `Black`/`Purple` are set outside a collection: a live node is `Black`,
 /// and a node flagged as a possible cycle root when a `Gc` handle to it is
 /// dropped is `Purple`. `Gray`/`White` are the transient trial-deletion states
-/// the future collector (§11 step 8) will use while scanning a candidate
-/// subgraph; they are defined now so the header layout is stable.
+/// the collector (`gc::collect`) uses while scanning a candidate subgraph.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub(crate) enum Color {
@@ -92,9 +81,9 @@ pub(crate) trait Trace: Send + Sync {
     /// be unreachable garbage, and ONLY inside a `CollectGuard` window (so the
     /// resulting `Gc::drop`s are inert — see `Gc`'s `Drop`). The `&mut self` is
     /// obtained by the collector through the backing `Arc` (see
-    /// [`gc_drop_edges`]). The default clears nothing (scalar leaves and
-    /// not-yet-migrated nodes have no `Gc` edges); container nodes override it to
-    /// clear their `Value`-holding collections.
+    /// [`gc_drop_edges`]). The default clears nothing (scalar leaves have no
+    /// `Gc` edges); container nodes override it to clear their `Value`-holding
+    /// collections.
     fn drop_gc_edges(&mut self) {}
 
     /// Run this node's *value-level* finalizer (Raku `DESTROY` queueing), once
@@ -181,6 +170,7 @@ impl<T: Trace + 'static> WeakGc<T> {
     /// cycle never keeps itself alive.
     ///
     /// [`upgrade`]: WeakGc::upgrade
+    #[cfg(test)]
     pub(crate) fn new() -> WeakGc<T> {
         WeakGc {
             inner: std::sync::Weak::new(),
@@ -268,6 +258,7 @@ impl<T: Trace + 'static> Gc<T> {
     /// observers but no strong handle keeps only its *allocation* alive (its
     /// value is dropped when the strong count hits 0), so an outstanding weak
     /// reference never resurrects reclaimed data — `upgrade` returns `None`.
+    #[cfg(test)]
     pub(crate) fn weak_count(this: &Gc<T>) -> usize {
         Arc::weak_count(&this.inner)
     }
@@ -286,7 +277,16 @@ impl<T: Trace + 'static> Gc<T> {
     /// make an `Arc::get_mut` check return `None` spuriously and, via
     /// [`Gc::make_mut`], sever container identity (Raku aliasing). Returns `None`
     /// when genuinely shared.
+    ///
+    /// Production container mutation goes through [`gc_contents_mut`] /
+    /// [`Gc::make_mut`]; this `Arc::get_mut` mirror is exercised by unit tests
+    /// only (it documents the uniqueness contract `make_mut` shares).
+    #[cfg(test)]
     pub(crate) fn get_mut(&mut self) -> Option<&mut T> {
+        // Mutators never take `&mut` inside a collect's reclaim window: the
+        // collector runs at a safepoint (no interpreter frame is mid-mutation)
+        // and only its own `drop_gc_edges` runs under `CollectGuard`.
+        debug_assert!(!collecting(), "Gc::get_mut during a collect reclaim window");
         if self.inner.header.strong.load(Ordering::Relaxed) == 1 {
             // SAFETY: sole live handle, so no other live-handle borrow into the
             // value exists. A buffered node's retained `Arc` never dereferences
@@ -317,13 +317,18 @@ impl<T: Trace + 'static> Gc<T> {
         unsafe { std::ptr::addr_of!((*box_ptr).value) }
     }
 
-    /// This node's current [`Color`].
+    /// This node's current [`Color`]. Production code reads colors through the
+    /// type-erased [`GcBox<dyn Trace>::gc_color`]; this typed mirror is for tests.
+    #[cfg(test)]
     pub(crate) fn color(&self) -> Color {
         Color::from_u8(self.inner.header.color.load(Ordering::Relaxed))
     }
 
     /// Hand each direct `Gc` child of the pointee to `visit` (delegates to the
     /// value's [`Trace`] impl). Named to avoid clashing with `Trace::trace`.
+    /// The collector traverses via the type-erased
+    /// [`GcBox<dyn Trace>::gc_visit_children`]; this typed mirror is for tests.
+    #[cfg(test)]
     pub(crate) fn trace_children(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         self.inner.value.trace(visit);
     }
@@ -358,8 +363,7 @@ impl<T: Trace + 'static> Gc<T> {
     // Stacked-Borrows clean.)
 
     /// Offer this node to the candidate buffer as a possible cycle root,
-    /// bypassing the `MUTSU_GC` gate. Used by tests and (later) by an explicit
-    /// `gc_debug_collect_now`-style hook.
+    /// bypassing the `MUTSU_GC` gate, so tests can seed a collect directly.
     #[cfg(test)]
     pub(crate) fn buffer_as_candidate(&self) {
         buffer_candidate(self.inner.clone());
@@ -382,14 +386,34 @@ impl<T: Trace + Clone + 'static> Gc<T> {
     /// distribution even though the retarget goes through the backing `Arc`
     /// directly rather than `Gc::clone`/`Gc::drop`.
     pub(crate) fn make_mut(&mut self) -> &mut T {
+        // See `Gc::get_mut`: no `&mut` inside a collect's reclaim window.
+        debug_assert!(
+            !collecting(),
+            "Gc::make_mut during a collect reclaim window"
+        );
         // Uniqueness by GC-visible strong count, NOT the `Arc` count: the
         // candidate buffer (MUTSU_GC on) holds an extra `Arc` clone of a
         // possibly-cyclic node, so an `Arc::get_mut` check would COW spuriously
         // and sever container identity (Raku aliasing broke on e.g. slice-
         // assignment lvalues). `header.strong` excludes the buffer's ref.
+        //
+        // Ordering: `Relaxed` everywhere on `header.strong` is sound because no
+        // decision ever *reads another thread's count concurrently*. The `== 1`
+        // uniqueness test only acts when this thread holds the sole live handle
+        // (`&mut self`), so no other thread can be cloning/dropping THIS node
+        // through a strong handle; and the collector — the only cross-thread
+        // reader of `header.strong` — runs under the cooperative STW whose
+        // SeqCst handshake (`gc::stw`) orders every mutator's prior relaxed
+        // writes before the scan. The one theoretical gap is a cross-thread
+        // `WeakGc::upgrade` racing the `== 1` fast path (a check-then-act window
+        // `Arc::get_mut` closes with its weak-lock protocol); mutsu's only
+        // `WeakGc` user is `WeakSub`, whose upgrades happen on the thread that
+        // owns the sub's env, so the race is not reachable today. If `WeakGc`
+        // grows a cross-thread consumer, port the weak-lock (see ADR-0001 §3-8).
         if self.inner.header.strong.load(Ordering::Relaxed) != 1 {
             // Shared: this handle is moving off the old node onto a fresh copy.
-            self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
+            let prev = self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
+            debug_assert!(prev > 1, "Gc::make_mut strong-count underflow");
             let cloned = self.inner.value.clone();
             self.inner = Arc::new(GcBox {
                 header: GcHeader::fresh(),
@@ -448,6 +472,10 @@ impl<T: Trace + 'static> Drop for Gc<T> {
             return;
         }
         let prev = self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
+        // Underflow here (a drop with no live handle on the books) is the
+        // corruption signature MUTSU_GC_VERIFY reports as a survivor-invariant
+        // violation; catch it at the source in debug builds.
+        debug_assert!(prev >= 1, "Gc::drop strong-count underflow");
         // `prev > 1`: after this drop the node still has live handles, so it may
         // be reachable only through a cycle that outlives every stack root —
         // record it as a candidate. `prev == 1`: this was the last handle; the
@@ -626,14 +654,11 @@ fn buffer_candidate(node: ErasedGc) {
 ///
 /// The level-1a collector's trial deletion (`mark_gray` decrements each node's
 /// strong count, `scan_black` restores it) is **not** safe against concurrent
-/// mutation: a worker thread that clones/drops a `Gc` or CAS-swaps a pointer
-/// mid-collect races the collector's refcount bookkeeping, which manifests as
-/// strong-count underflow and freed-but-live nodes (design doc §13.3 — the
-/// cross-thread STW protocol is the deferred open question). Until a real
-/// stop-the-world lands, the collector simply declines to run while any worker
-/// thread is active (see `collect::collect_cycles_at`): candidates keep
-/// accumulating and are reclaimed at the next safepoint after the threads join.
-/// Reclaim is deferred, never unsound.
+/// mutation, so a collect first brings every other mutator to quiescence via
+/// the cooperative stop-the-world (`gc::stw`, design doc §6.1). This count is
+/// the STW's quiescence target: `stw` waits until this many threads (minus the
+/// collecting one, if it is itself a worker) are parked at a safepoint or
+/// inside a registered blocking wait.
 static MUTATOR_WORKER_THREADS: AtomicUsize = AtomicUsize::new(0);
 
 /// Register that a user worker thread is about to start (or is running). Called
@@ -652,12 +677,6 @@ pub(crate) fn enter_mutator_worker() {
 pub(crate) fn exit_mutator_worker() {
     MUTATOR_WORKER_THREADS.fetch_sub(1, Ordering::AcqRel);
     super::stw::notify_worker_exit();
-}
-
-/// Whether any user worker thread may currently be mutating the `Gc` graph.
-/// The collector gates on this to preserve stop-the-world.
-pub(crate) fn mutator_workers_active() -> bool {
-    MUTATOR_WORKER_THREADS.load(Ordering::Acquire) > 0
 }
 
 /// Current number of registered user worker threads. With exactly one
@@ -730,7 +749,11 @@ pub(crate) struct CollectGuard;
 
 impl CollectGuard {
     pub(crate) fn new() -> CollectGuard {
-        COLLECTING.store(true, Ordering::Relaxed);
+        let was = COLLECTING.swap(true, Ordering::Relaxed);
+        // Nested reclaim windows would let an inner guard's drop re-enable
+        // `Gc::drop` bookkeeping while the outer reclaim is still clearing
+        // edges — the counts are mid-scan scratch at that point.
+        debug_assert!(!was, "nested CollectGuard (re-entrant reclaim window)");
         CollectGuard
     }
 }
@@ -762,16 +785,15 @@ impl GcBox<dyn Trace> {
         self.header.strong.load(Ordering::Relaxed)
     }
     pub(crate) fn gc_strong_dec(&self) {
-        self.header.strong.fetch_sub(1, Ordering::Relaxed);
+        let prev = self.header.strong.fetch_sub(1, Ordering::Relaxed);
+        // Trial deletion removes each internal edge once, so the scratch count
+        // can reach 0 but never go below it. Underflow means the tracer
+        // reported a phantom edge (e.g. the shared-Arc-wrapper over-trace
+        // fixed in #4135) — the earliest observable point of that bug class.
+        debug_assert!(prev >= 1, "trial-deletion strong-count underflow");
     }
     pub(crate) fn gc_strong_inc(&self) {
         self.header.strong.fetch_add(1, Ordering::Relaxed);
-    }
-    pub(crate) fn gc_buffered(&self) -> bool {
-        self.header.buffered.load(Ordering::Relaxed)
-    }
-    pub(crate) fn gc_set_buffered(&self, b: bool) {
-        self.header.buffered.store(b, Ordering::Relaxed);
     }
     /// Visit each direct `Gc` child (delegates to the node's [`Trace`] impl).
     pub(crate) fn gc_visit_children(&self, visit: &mut dyn FnMut(&ErasedGc)) {

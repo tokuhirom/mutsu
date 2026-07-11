@@ -1,15 +1,16 @@
 //! GC safepoint wiring (ADR-0001 §1.1, `docs/gc-level1-detailed-design.md`
 //! §1.2 / §9.2 / §9.2a / §11 step 8 second half).
 //!
-//! The collector ([`super::collect::collect_cycles`]) may only run at a
+//! The collector ([`super::collect::collect_cycles_at`]) may only run at a
 //! *re-entry boundary* — a point holding no long borrow / lock / `gc_contents_mut`
 //! (design doc §1.2). This module holds the trigger policy and the one hot-path
 //! entry point ([`gc_safepoint`]) the VM calls at those boundaries.
 //!
 //! ## Triggers (design doc §9.2)
-//! - `MUTSU_GC=off` (default / unset) disables everything: [`armed`] is `false`,
-//!   so the VM's safepoint check is a single relaxed load that early-returns —
-//!   normal execution pays essentially nothing and never collects.
+//! - `MUTSU_GC=off` disables everything: [`armed`] is `false`, so the VM's
+//!   safepoint check is a single relaxed load that early-returns — execution
+//!   pays essentially nothing and never collects. Unset means **on**
+//!   (ADR-0003 §5) with the production size-threshold trigger below.
 //! - `MUTSU_GC=on` + `MUTSU_GC_EVERY_SAFEPOINT=1` — collect at *every* safepoint
 //!   (deterministic stress; §9.2).
 //! - `MUTSU_GC=on` + `MUTSU_GC_EVERY_CANDIDATE=N` — arm a pending collect once

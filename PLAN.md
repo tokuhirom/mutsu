@@ -202,15 +202,10 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       方向候補（GC owner 判断）: ① tree 形状/never-cyclic な instance 種を候補
       バッファに入れない健全な基準 ② 候補集合の再 push 抑制/閾値調整
       ③ `MUTSU_GC=0` で GC 分の天井を測る。
-- [ ] **層3a 監査性 sweep（ANALYSIS rev8 §2.1・低コスト・1 PR で済む）**:
-      ① `gc/mod.rs`/`gc_ptr.rs`/`collect.rs` の stale な「default off / no production caller yet」
-      ヘッダを default-on 後の実態に是正 ② `gc_ptr.rs`/`collect.rs` のモジュール全体
-      `#![allow(dead_code)]` 撤去（「step 8 で外す」と書かれたまま・step 8 は完了済みで真の dead
-      surface を隠しうる） ③ `get_mut`/`make_mut` の uniqueness（`header.strong == 1`）と candidate
-      バッファのカウント外 `Arc` clone が共存できる不変条件（buffered clone は collect safepoint
-      でのみ deref・`Gc::drop` は `collecting()` 中 early-return）を散文でなく debug assert に
-      ④ `Gc::make_mut` の `header.strong` 手動付け替え（全 `Relaxed`）の並行 clone/drop 競合時
-      ordering を検討。
+- ✅ **層3a 監査性 sweep 完了（2026-07-11）**: stale ヘッダ是正・モジュール全体
+      `#![allow(dead_code)]` 撤去（dead API 5 件削除・test 専用 API `#[cfg(test)]` 化）・
+      不変条件 debug assert 化・`make_mut` `Relaxed` ordering 検討（結論=健全、
+      詳細 news/2026-07.md）。
 
 ---
 
