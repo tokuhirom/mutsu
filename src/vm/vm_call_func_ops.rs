@@ -1739,16 +1739,26 @@ impl Interpreter {
     /// an ordinary module sub may contain interpreter-coupled constructs that
     /// `def_is_otf_compilable` does not catch, whose semantics are NOT preserved
     /// when the def is compiled standalone on-the-fly:
-    ///   - a nested routine decl whose non-local control flow must target the
-    ///     nested routine, not escape it (Test::Util's `is-deeply-junction`'s
-    ///     nested `junction-guts` + `when`),
     ///   - a `state` variable shared across `start` threads (a routine's state
-    ///     lives in a shared cell that the tree-walk path owns — t/concurrent-state-var),
-    ///   - `EVAL`/`EVALFILE` with a `CALLER::` context, `subtest`, `CATCH`/
-    ///     `CONTROL` handlers, phasers, `start` (all couple to the interpreter's
-    ///     caller / test / dispatch context — Test::Util's `throws-like-any`),
+    ///     lives in a shared cell that a per-thread OTF recompile would sever —
+    ///     t/concurrent-state-var; admitted via the cross-thread shared captured
+    ///     body, `imported_state_body_for_def`),
+    ///   - `EVAL`/`EVALFILE` with a `CALLER::` context the standalone compile
+    ///     cannot reconstruct,
+    ///   - a `start` block: a recursive sub whose start closure captures a param
+    ///     gets its capture clobbered by the recursive call's param re-bind
+    ///     under OTF (t/start-block-return-value.t test 3 — see
+    ///     `module_otf_expr_needs_interpreter`),
     ///   - a sigilless *scalar* (`\x`) param whose alias writeback to the caller
     ///     must survive across an `EVAL` boundary (t/sigilless-params).
+    ///
+    /// Formerly-excluded body constructs verified OTF-safe and now admitted
+    /// (§3 fallback removal, 2026-07-11): nested sub/proto/token decls
+    /// (non-local `when` control flow stays inside the nested routine —
+    /// Test::Util's `is-deeply-junction`), `subtest`, `CATCH`/`CONTROL`
+    /// handlers, phasers (ENTER/LEAVE), and `once`. All run through the same
+    /// VM ops the precompiled path uses; pinned by
+    /// t/module-sub-otf-interpreter-constructs.t.
     ///
     /// `is rw`/`is raw`/`is copy`/`is readonly`/`is required` params are NOW
     /// allowed (§2 multi-dispatch VM-ization): the compiled binding already
@@ -1882,17 +1892,18 @@ impl Interpreter {
     fn module_otf_stmt_needs_interpreter(stmt: &crate::ast::Stmt) -> bool {
         use crate::ast::Stmt;
         match stmt {
-            // Nested decls, subtests, catch/control handlers, and phasers couple
-            // to the interpreter's dispatch / caller / test context.
-            Stmt::ClassDecl { .. }
-            | Stmt::RoleDecl { .. }
-            | Stmt::SubDecl { .. }
-            | Stmt::ProtoDecl { .. }
-            | Stmt::TokenDecl { .. }
-            | Stmt::Subtest { .. }
-            | Stmt::Catch(_)
-            | Stmt::Control(_)
-            | Stmt::Phaser { .. } => true,
+            // Nested class/role decls still couple to the interpreter's package
+            // registration context (same exclusion as
+            // `function_body_needs_interpreter`). Nested sub/proto/token decls,
+            // `subtest`, `CATCH`/`CONTROL` handlers and phasers are OTF-safe
+            // (verified 2026-07-11 against raku, incl. Test::Util's
+            // `is-deeply-junction` nested `when` control flow and
+            // `throws-like-any`'s CATCH+subtest): the compiled body registers
+            // nested routines and runs handlers/phasers through the same VM ops
+            // the precompiled path uses. OTF even fixes a tree-walk bug where a
+            // body-level CATCH swallowed the normal path's return value. Pinned
+            // by t/module-sub-otf-interpreter-constructs.t.
+            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => true,
             Stmt::If {
                 then_branch,
                 else_branch,
@@ -1919,7 +1930,6 @@ impl Interpreter {
     fn module_otf_expr_needs_interpreter(expr: &crate::ast::Expr) -> bool {
         use crate::ast::Expr;
         match expr {
-            Expr::PhaserExpr { .. } | Expr::Once { .. } => true,
             Expr::DoStmt(stmt) => Self::module_otf_stmt_needs_interpreter(stmt),
             Expr::Block(body) => Self::module_otf_body_needs_interpreter(body),
             Expr::MethodCall { target, args, .. } => {
@@ -1928,9 +1938,22 @@ impl Interpreter {
             }
             Expr::Call { name, args } => {
                 let n = name.resolve();
-                // start spawns a thread; EVAL/EVALFILE run on a sub-Interpreter
-                // with a CALLER:: context that the standalone OTF compile cannot
-                // reconstruct.
+                // EVAL/EVALFILE run on a sub-Interpreter with a CALLER:: context
+                // that the standalone OTF compile cannot reconstruct. `start`
+                // stays excluded: a *recursive* sub whose start closure captures
+                // a param breaks under OTF — the recursive call re-binds the
+                // same param name in the thread env the closure keeps reading,
+                // so after `await` the captured `$n` is clobbered by the deepest
+                // call's binding (t/start-block-return-value.t test 3,
+                // fib(5)=3; the tree-walk path save/restores the env around the
+                // call). Non-recursive start captures do work OTF, but the gate
+                // is an AST predicate that cannot see recursion, so all `start`
+                // bodies stay on the interpreter. `once` IS OTF-safe within a
+                // thread — its site key is stable across calls because the
+                // fingerprint-keyed `otf_compile_cache` reuses one compiled
+                // body. (Cross-thread `once` dedup is a pre-existing gap in the
+                // thread-cloned `once_values` store, identical under tree-walk
+                // — recorded in PLAN §3.)
                 n == "start"
                     || n == "EVAL"
                     || n == "EVALFILE"
