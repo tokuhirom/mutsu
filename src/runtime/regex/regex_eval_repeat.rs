@@ -16,7 +16,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env,
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Default::default()
+            ..Self::new_regex_scratch()
         };
         self.copy_decl_registry_into(&mut interp);
         let val = match interp.eval_block_value(&stmts) {

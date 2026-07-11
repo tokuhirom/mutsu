@@ -68,7 +68,7 @@ impl Interpreter {
             let mut interp = Interpreter {
                 env: self.env.clone(),
                 current_package: Arc::new(RwLock::new(def.package.resolve())),
-                ..Default::default()
+                ..Self::new_regex_scratch()
             };
             self.copy_decl_registry_into(&mut interp);
             let saved_env = interp.env.clone();

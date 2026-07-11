@@ -350,7 +350,7 @@ impl Interpreter {
                     let mut interp = Interpreter {
                         env: self.env.clone(),
                         current_package: Arc::new(RwLock::new(self.current_package())),
-                        ..Default::default()
+                        ..Self::new_regex_scratch()
                     };
                     self.copy_decl_registry_into(&mut interp);
                     let _ = interp.eval_block_value(&stmts);
@@ -417,7 +417,7 @@ impl Interpreter {
                         var_dynamic_flags: self.var_dynamic_flags.clone(),
                         var_type_constraints: self.var_type_constraints.clone(),
                         state_vars: self.state_vars.clone(),
-                        ..Default::default()
+                        ..Self::new_regex_scratch()
                     };
                     self.copy_decl_registry_into(&mut interp);
                     if let Some(mut inner_caps) =

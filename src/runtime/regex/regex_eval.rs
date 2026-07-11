@@ -15,18 +15,25 @@ impl Interpreter {
         if self.current_grammar_actions.is_some() {
             self.copy_full_registry_into(target);
         } else {
-            let (functions, proto_functions, token_defs) = {
+            let (functions, proto_functions, token_defs, enum_types) = {
                 let src = self.registry();
                 (
                     src.functions.clone(),
                     src.proto_functions.clone(),
                     src.token_defs.clone(),
+                    src.enum_types.clone(),
                 )
             };
             let mut dst = target.registry_mut();
             dst.functions = functions;
             dst.proto_functions = proto_functions;
             dst.token_defs = token_defs;
+            // Inherit the parent's enum types (built-in Order/Signal/... plus any
+            // user-declared enums). The scratch interpreter is built via
+            // `new_regex_scratch`, which skips seeding the built-in enums into its
+            // own registry, so copy them from the parent here — this also makes a
+            // regex closure see user-defined enums it previously could not.
+            dst.enum_types = enum_types;
         }
         // Propagate the in-progress `Grammar.parse(:actions(...))` object so the
         // assertion's sub-interpreter can still run the action method mid-parse.
@@ -91,7 +98,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env,
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Default::default()
+            ..Self::new_regex_scratch()
         };
         self.copy_decl_registry_into(&mut interp);
         let val = match interp.eval_block_value(&stmts) {
@@ -216,7 +223,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env,
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Default::default()
+            ..Self::new_regex_scratch()
         };
         self.copy_decl_registry_into(&mut interp);
         // Propagate the `Test` module gating so a test-function call inside a
@@ -273,7 +280,7 @@ impl Interpreter {
         let mut scratch = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Default::default()
+            ..Self::new_regex_scratch()
         };
         self.copy_full_registry_into(&mut scratch);
         for (k, child) in named.iter() {
@@ -378,7 +385,7 @@ impl Interpreter {
         let mut scratch = Interpreter {
             env: self.env.clone(),
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Default::default()
+            ..Self::new_regex_scratch()
         };
         self.copy_full_registry_into(&mut scratch);
         // Seed the scratch's `$*` vars from the overlay (latest delimiters etc.).

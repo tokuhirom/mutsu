@@ -475,7 +475,7 @@ impl Interpreter {
         let mut interp = Interpreter {
             env: self.make_regex_eval_env(caps),
             current_package: Arc::new(RwLock::new(self.current_package())),
-            ..Default::default()
+            ..Self::new_regex_scratch()
         };
         self.copy_decl_registry_into(&mut interp);
         match interp.eval_block_value(&stmts) {
