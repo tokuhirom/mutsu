@@ -111,26 +111,36 @@ socket 系 whitelist 済み・cross-thread lexical writeback 解消（#4336/#434
 出していなかったもの。cheap win を拾う際の入口として一覧化する（per-file 詳細は
 `TODO_roast/S*.md`）。数字は執筆時点のスナップショット。
 
-| ファイル | 現状 | ブロッカー（一言） |
-|---|---|---|
-| `S02-names/pseudo-6d.t` | 91/159 で中断 | `::("CALLER")::<$*bar>` CALLER 疑似パッケージ deref 未対応 |
-| `S02-names/pseudo-6e.t` | 79/202 で中断 | 同上（6.e 版） |
-| `S02-names-vars/names.t` | 141/156・notok 3 | test 144 付近「Null PMC access when printing a var」edge |
-| `S02-types/array-shapes.t` | 34/43 で中断 | 未初期化 shaped array の `.map` 等、shaped-array の深い機能 |
-| `S05-capture/hash.t` | parse で 0/? | 「The use of hashes in regexes is reserved」= 正規表現内 `%h` 未対応 |
-| `S05-metasyntax/longest-alternative.t` | 56/62・notok 5 | LTM（longest-token-match）の tie-break edge |
-| `S06-advanced/return-prioritization.t` | 9/11・notok 2 | `return` の優先順位（phaser 絡み）edge |
-| `S10-packages/basic.t` | 50/83・notok 9 | package 宣言（`our`/ネスト）の edge |
-| `S12-attributes/class.t` | 19/28 で中断 | test 19 以降で attribute 機能ギャップにより abort |
-| `S12-attributes/trusts.t` | 9/15・notok 6 | `trusts` によるクラス間 private アクセス未対応 |
-| `S12-traits/basic.t` | parse で 0/? | 「Can only use : as invocant marker ... after the first parameter」= カスタム trait シグネチャ未対応 |
-| `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | `-I` + `@*INC` イントロスペクション（is-run サブプロセス）。`@*INC` 未populate |
-| `S32-basics/xxPOS.t` | 11/64 で中断 | test 11 以降で深い機能により abort |
-| `S32-hash/perl.t` | 43/55・notok 12 | `.perl`/`.raku` の Hash round-trip 整形 edge |
-| `S32-temporal/time.t` | 8/10・notok 2 | `time`/`gmtime` の整形 edge |
+**全 roast × raku の一覧は [`raku-baseline.tsv`](raku-baseline.tsv)（生成: `scripts/roast-raku-baseline.sh`、
+解説: [`raku-baseline.md`](raku-baseline.md)）に記録済み。** 下表はそのうち §6 対象を抜粋したもの。
 
-これらは「次の 1 本」候補にはなり得るが、いずれも単発で共通利得が小さい。優先は
-引き続き [PLAN.md](../PLAN.md) の構造工事を正とする。
+**raku 列の読み方**: ローカル参照実装は **Rakudo v2022.12（Raku 6.d）**。
+`SORRY` はローカル raku がコンパイル不能＝多くは 6.e 専用構文か廃止構文で、
+「テストが不正」を意味しない（6.e 対応の新しい raku が必要）。
+raku が **満点**なのに mutsu が落ちるものが **達成可能な実バグ**（下表★）。
+raku 自身も中断/満点未満のものは 6.d 制限か 6.e 待ちで、ローカルでは oracle にできない。
+
+| ファイル | mutsu | raku(v2022.12/6.d) | ブロッカー（一言） |
+|---|---|---|---|
+| ★`S12-attributes/class.t` | 19/28 で中断 | **28/28 満点** | test 19 以降で attribute 機能ギャップにより abort。**+9 達成可能** |
+| ★`S32-hash/perl.t` | 43/55・notok 12 | **55/55 満点** | 型付き Hash（`Hash[Int,Int]`）の `.raku` round-trip と Scalar/decont 区別。**+12 達成可能** |
+| `S02-names/pseudo-6d.t` | 116/159 で中断 | SORRY（6.e 要） | `::("CALLER")::<$*bar>` CALLER 疑似パッケージ deref 未対応 |
+| `S02-names/pseudo-6e.t` | 79/202 で中断 | SORRY（6.e 要） | 同上（6.e 版） |
+| `S02-names-vars/names.t` | 144/156・notok 3 | SORRY（6.d 不可） | test 142「Null PMC access when printing a var typed as ::foo」edge |
+| `S02-types/array-shapes.t` | 35/43 で中断 | 38/43（6.d も中断） | shaped array `.pairs` の `.value` が writable container を返さない（line 139） |
+| `S05-capture/hash.t` | 通過不能 | SORRY（廃止・通過不能） | 正規表現内ハッシュキャプチャ `%<name>=(...)` は現行 Raku 仕様で削除・予約扱いのコンパイルエラー。raku 自身も `The use of hash variables in regexes is reserved` で拒否（2004 Perl6::Rules 由来の廃止機能）。mutsu も同じく拒否し挙動一致。**実装不要** |
+| `S05-metasyntax/longest-alternative.t` | 57/62・notok 5 | SORRY（6.d 不可） | LTM（longest-token-match）の tie-break edge |
+| `S06-advanced/return-prioritization.t` | 9/11・notok 2 | 4/11（6.d も中断・mutsu 先行） | `return` in LEAVE phaser（別 lexical scope）edge |
+| `S10-packages/basic.t` | 59/83・notok 9 | 6/83（6.d 制限・mutsu 先行） | package 宣言 semicolon form のエラー検出 edge |
+| `S12-attributes/trusts.t` | 9/15・notok 6 | SORRY（6.d 不可） | `trusts` によるクラス間 private アクセス未対応 |
+| `S12-traits/basic.t` | parse で 0/? | SORRY（廃止 `trait_auxiliary`） | カスタム trait シグネチャ。raku も廃止構文で拒否 |
+| `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | 0/8（`$*OS` 未対応・6.d） | `-I` + `@*INC` + `$*OS` イントロスペクション（is-run サブプロセス） |
+| `S32-basics/xxPOS.t` | 11/64 で中断 | 53/64（6.d も中断） | test 12 以降で深い機能により abort |
+| `S32-temporal/time.t` | 8/10・notok 2 | SORRY（通過不能） | テスト側に `flunk("FIXME ...")` の意図的失敗が 2 本 + raku も `gmtime`/`localtime`/`times` 未定義。**通過不能** |
+
+これらのうち **★の 2 本（class.t / perl.t）だけが「raku 満点 = 達成可能な実バグ」** で、
+「次の 1 本」に適する。残りは 6.e 待ち・6.d 制限・通過不能で、単発かつローカル検証も
+できないため優先度は低い。全体優先は引き続き [PLAN.md](../PLAN.md) の構造工事を正とする。
 
 ## 5. 今のおすすめ着手順
 
