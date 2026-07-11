@@ -1617,6 +1617,14 @@ impl Interpreter {
                                 )?;
                                 range_initialized_marks.push(Self::encode_bound_index(&key));
                             }
+                        } else if matches!(idx.view(), ValueView::Num(f) if !f.is_finite()) {
+                            // `@a[Inf] = ...` / `@a[NaN] = ...`: a non-finite
+                            // positional index cannot be converted to an Int.
+                            // raku throws X::Numeric::CannotConvert here.
+                            return Err(RuntimeError::new(format!(
+                                "X::Numeric::CannotConvert: Cannot convert {} to Int",
+                                idx.to_string_value()
+                            )));
                         } else if let Some(i) = Self::index_to_usize(&idx) {
                             container
                                     .with_array_mut(|items, _| -> Result<(), RuntimeError> {

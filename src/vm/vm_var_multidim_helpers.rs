@@ -25,20 +25,24 @@ impl Interpreter {
     }
 
     pub(super) fn index_to_usize(idx: &Value) -> Option<usize> {
+        // A non-finite index (Inf/NaN) has no valid `usize` representation.
+        // Rust's `f as usize` saturates Inf to `usize::MAX` rather than failing,
+        // which would later index far out of bounds and panic; reject it here so
+        // every caller sees `None` (see `@a[Inf] = ...` in S02-types/array.t).
         match idx.view() {
             ValueView::Int(i) if i >= 0 => Some(i as usize),
-            ValueView::Num(f) if f >= 0.0 => Some(f as usize),
+            ValueView::Num(f) if f >= 0.0 && f.is_finite() => Some(f as usize),
             ValueView::Rat(n, d) if d != 0 => {
                 let f = n as f64 / d as f64;
-                (f >= 0.0).then_some(f as usize)
+                (f >= 0.0 && f.is_finite()).then_some(f as usize)
             }
             ValueView::FatRat(n, d) if d != 0 => {
                 let f = n as f64 / d as f64;
-                (f >= 0.0).then_some(f as usize)
+                (f >= 0.0 && f.is_finite()).then_some(f as usize)
             }
             ValueView::BigRat(_, d) if !d.is_zero() => {
                 let f = runtime::to_float_value(idx)?;
-                (f >= 0.0).then_some(f as usize)
+                (f >= 0.0 && f.is_finite()).then_some(f as usize)
             }
             _ => idx.to_string_value().parse::<usize>().ok(),
         }
