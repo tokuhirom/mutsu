@@ -1,5 +1,6 @@
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::cell::RefCell;
 use std::fmt;
 use std::sync::{OnceLock, RwLock};
 
@@ -55,10 +56,40 @@ fn global_table() -> &'static RwLock<SymbolTable> {
     })
 }
 
+thread_local! {
+    /// Per-thread `str -> Symbol` memo in front of `GLOBAL_TABLE`. Valid for the
+    /// whole process because interned ids are append-only and never remapped.
+    /// Removes the global-`RwLock` read contention on the intern hot path (see
+    /// `Symbol::intern`).
+    static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> = RefCell::new(FxHashMap::default());
+}
+
 impl Symbol {
     /// Intern a string and return its `Symbol`.  If the string has already been
     /// interned, the existing symbol is returned (idempotent).
     pub fn intern(s: &str) -> Symbol {
+        // Thread-local memo first: interned symbols are global and append-only
+        // (an id, once assigned to a string, is never reused or remapped), so a
+        // cached `str -> Symbol` mapping is valid for the life of the process
+        // and can never go stale. Serving repeat interns from here keeps the hot
+        // path (re-interning the same variable/package names every loop
+        // iteration) entirely off the globally-shared `RwLock`, which otherwise
+        // read-contends across worker threads and serializes CPU-bound `start`
+        // blocks (profiled: `Symbol::intern` was 90% of an 8-thread run, 43% of
+        // it in `RwLock::read_contended`).
+        if let Some(sym) = INTERN_CACHE.with(|c| c.borrow().get(s).copied()) {
+            return sym;
+        }
+        let sym = Self::intern_global(s);
+        INTERN_CACHE.with(|c| {
+            c.borrow_mut().insert(s.to_owned(), sym);
+        });
+        sym
+    }
+
+    /// Intern via the globally-shared table (the source of truth for id
+    /// assignment). Only reached on a thread-local cache miss.
+    fn intern_global(s: &str) -> Symbol {
         // Fast path: read lock only.
         {
             let table = global_table().read().unwrap();
