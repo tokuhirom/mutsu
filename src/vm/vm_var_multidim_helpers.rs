@@ -76,6 +76,19 @@ impl Interpreter {
         if indices.is_empty() {
             return Ok(target.clone());
         }
+        // An intermediate level may be a `ContainerRef` element cell (Track B:
+        // the celled atomic store boxes top-level elements, and `:=` bindings
+        // can nest cells anywhere). Read through it ONLY when the cell holds a
+        // container, so the remaining indices land on the inner array; a
+        // *terminal* cell is still returned as-is (the empty-indices base case
+        // above), and a scalar cell keeps the pre-cell behavior (`Nil` below) —
+        // see `multi_dim_index_read` for the aliasing this preserves.
+        if target.is_container_ref() {
+            let inner = target.deref_container();
+            if matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                return Self::index_array_multidim(&inner, indices, strict_oob);
+            }
+        }
         let head = &indices[0];
         if matches!(head.view(), ValueView::Whatever)
             || matches!(head.view(), ValueView::Num(f) if f.is_infinite() && f > 0.0)
@@ -112,6 +125,19 @@ impl Interpreter {
         indices: &[Value],
         val: Value,
     ) -> Result<(), RuntimeError> {
+        // Write *through* a `ContainerRef` level (Track B element cell or a
+        // `:=`-bound element): mutate the cell's inner value under its lock so
+        // every snapshot holder observes the write, instead of failing the
+        // `with_array_mut` below. Covers both a celled top-level slot and
+        // celled intermediate levels (the recursion below re-enters here).
+        if let ValueView::ContainerRef(c) = target.view() {
+            let cell = c.clone();
+            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            let mut inner = guard.clone();
+            Self::assign_array_multidim(&mut inner, indices, val)?;
+            *guard = inner;
+            return Ok(());
+        }
         let shape = crate::runtime::utils::shaped_array_shape(target);
         let depth = Self::array_depth(target);
         if indices.len() < depth && depth > 1 {
