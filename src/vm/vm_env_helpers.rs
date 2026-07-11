@@ -215,6 +215,16 @@ impl Interpreter {
             if pkg != cur {
                 return None;
             }
+            // A class-body `my` static lives in `package_lexicals` for BARE-name
+            // reuse, but a QUALIFIED `$C::x` is a distinct package variable, not
+            // the static — do not resolve it here (t/package-lookup.t).
+            if self
+                .class_body_static_names
+                .get(pkg)
+                .is_some_and(|s| s.contains(bare))
+            {
+                return None;
+            }
             match sigil {
                 // `@`/`%`/`&` lexicals are stored WITH their sigil; a scalar (`$`
                 // or sigil-less) is stored sigil-less.

@@ -166,6 +166,47 @@ impl Interpreter {
     }
 
     /// Check if a class has scoped subs declared in its body.
+    /// True if `class_name` has recorded class-body `my` lexicals (statics)
+    /// stored in `package_lexicals` by `register_class_decl`. A method reading
+    /// such a static (`class C { my $x = ...; method m { $x } }`) resolves it
+    /// via `package_scope_lexical`, which is gated on `current_package` being the
+    /// class — so method dispatch must set `current_package` to the class when
+    /// this returns true (mirrors the `has_class_scoped_subs` gate).
+    pub(crate) fn class_has_package_lexicals(&self, class_name: &str) -> bool {
+        self.class_body_static_names
+            .get(class_name)
+            .is_some_and(|m| !m.is_empty())
+    }
+
+    /// Inject `class_name`'s recorded class-body `my` statics into the current
+    /// (method) env so every read path — the GetGlobal opcode AND the many direct
+    /// `get_env_with_main_alias` reads used by metamethod/method-call fast paths —
+    /// resolves them, regardless of the call-site env. Values are pulled fresh
+    /// from `package_lexicals` on each method entry, so a prior call's assignment
+    /// (persisted there by `writeback_package_scope_var`, since dispatch sets
+    /// `current_package` to the class) is reflected. Only names not already bound
+    /// in the method env (params/attrs/`self` take precedence) are injected. This
+    /// is the load-bearing half of the fix for a class registered inside a
+    /// transient frame (`require` in a sub), whose body env — and thus its statics
+    /// — is gone by the time a method runs. Returns without work when the class has
+    /// no statics (the overwhelmingly common case).
+    pub(crate) fn inject_class_body_statics(&mut self, class_name: &str) {
+        let Some(statics) = self.package_lexicals.get(class_name) else {
+            return;
+        };
+        if statics.is_empty() {
+            return;
+        }
+        let to_inject: Vec<(String, Value)> = statics
+            .iter()
+            .filter(|(k, _)| !self.env.contains_key(k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        for (k, v) in to_inject {
+            self.env.insert(k, v);
+        }
+    }
+
     pub(crate) fn has_class_scoped_subs(&self, class_name: &str) -> bool {
         // Single guard for both reads (no user-code re-entry here, so let-binding
         // is safe and avoids a same-thread recursive read lock).

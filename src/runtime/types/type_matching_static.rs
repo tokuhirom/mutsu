@@ -156,6 +156,7 @@ impl Interpreter {
                     | "Complex"
                     | "Array"
                     | "List"
+                    | "Slip"
                     | "Hash"
                     | "Map"
                     | "Range"
@@ -216,6 +217,7 @@ impl Interpreter {
                 value_type,
                 "Array"
                     | "List"
+                    | "Slip"
                     | "Seq"
                     | "HyperSeq"
                     | "RaceSeq"
@@ -230,11 +232,11 @@ impl Interpreter {
             // `array[int]`, whose base name is `array`) does Positional.
             return true;
         }
-        // Array is-a List in Raku type hierarchy
+        // Array is-a List in Raku type hierarchy (and Slip is-a List)
         if constraint == "List"
             && matches!(
                 value_type,
-                "Array" | "List" | "Seq" | "HyperSeq" | "RaceSeq" | "array"
+                "Array" | "List" | "Slip" | "Seq" | "HyperSeq" | "RaceSeq" | "array"
             )
         {
             return true;

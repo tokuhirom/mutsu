@@ -280,6 +280,10 @@ impl Interpreter {
         let saved_package = self.current_package().to_string();
         if self.has_class_scoped_subs(receiver_class_name) {
             self.set_current_package(receiver_class_name.to_string());
+        } else if self.class_has_package_lexicals(owner_class) {
+            // The class body declared `my` statics; set current_package to the
+            // owner class so a method read resolves them via package_scope_lexical.
+            self.set_current_package(owner_class.to_string());
         }
 
         // Set self and __ANON_STATE__ (used by `$.foo` desugaring inside methods)
@@ -498,6 +502,10 @@ impl Interpreter {
         };
 
         // Initialize locals from env
+        // Make class-body `my` statics visible to every read path in the body
+        // (params/self inserted above take precedence). No-op unless the owner
+        // class declared statics.
+        self.inject_class_body_statics(owner_class);
         self.locals = vec![Value::NIL; cc.locals.len()];
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
@@ -1049,6 +1057,10 @@ impl Interpreter {
         let saved_package = self.current_package().to_string();
         if self.has_class_scoped_subs(receiver_class_name) {
             self.set_current_package(receiver_class_name.to_string());
+        } else if self.class_has_package_lexicals(owner_class) {
+            // The class body declared `my` statics; set current_package to the
+            // owner class so a method read resolves them via package_scope_lexical.
+            self.set_current_package(owner_class.to_string());
         }
 
         // Compute role context without touching env
@@ -1189,6 +1201,11 @@ impl Interpreter {
         if let Some(slurpy) = &implicit_named_slurpy {
             self.env_mut().insert("%_".to_string(), slurpy.clone());
         }
+
+        // Make class-body `my` statics visible to every read path in the body
+        // (params/self already inserted above take precedence). No-op unless the
+        // owner class declared statics.
+        self.inject_class_body_statics(owner_class);
 
         // Raku: routine parameters are read-only by default (`method m($x) { $x = 5 }`
         // dies). The slow path does this in `bind_function_args_values`; the fast

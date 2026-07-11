@@ -1225,6 +1225,15 @@ pub struct Interpreter {
     /// subs (where `current_package == Foo`), so it does not leak the lexical to
     /// bare references after the block (which run under `GLOBAL`).
     pub(crate) package_lexicals: HashMap<String, HashMap<String, Value>>,
+    /// Names in `package_lexicals` that are class-body `my` statics
+    /// (`class C { my $x = ...; method m { $x } }`), keyed by class. These are
+    /// stored in `package_lexicals` so a method's BARE `$x` read/write and the
+    /// `writeback_package_scope_var` mutation path reuse the existing machinery,
+    /// but — unlike a `package Foo { my $x }` block lexical — they must NOT be
+    /// reachable through a QUALIFIED `$C::x`, which is a distinct package variable
+    /// (see t/package-lookup.t). `package_scope_lexical`'s qualified branch skips
+    /// any (class, name) recorded here.
+    pub(crate) class_body_static_names: HashMap<String, std::collections::HashSet<String>>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
