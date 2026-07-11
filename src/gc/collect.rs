@@ -353,6 +353,31 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
         drop(dead);
     }
 
+    // Nothing left to scan: return WITHOUT entering the scan/reclaim tail.
+    // Falling through used to run `reclaim(vec![], vec![])`, whose
+    // `CollectGuard` raised the process-global `collecting()` flag with NO
+    // stop-the-world held (the STW attempt below is skipped for empty
+    // suspects) — a window in which live worker threads' `Gc::drop`s were
+    // silently skipped (missed decrements / candidate buffering) and the
+    // reclaim-window debug asserts (`Gc::make_mut` during collect) fired
+    // under gc-stress (t/lock.t test 10).
+    if suspects.is_empty() {
+        if dead_count > 0 {
+            let pause_ns = start.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+            record_gc_collection(0, dead_count as u64, 0, pause_ns);
+            if log_mode() != LogMode::Off {
+                eprintln!(
+                    "[mutsu gc] dead-sweep reason={reason} dead={dead_count} (no cycle suspects)"
+                );
+            }
+        }
+        return CollectStats {
+            roots_scanned: 0,
+            reclaimed_nodes: dead_count,
+            reclaimed_cycles: 0,
+        };
+    }
+
     // Trial deletion is not safe against concurrent mutation: it decrements and
     // restores strong counts, so a worker thread cloning/dropping a `Gc` (or
     // CAS-swapping a pointer) mid-collect corrupts the bookkeeping and can free
@@ -364,7 +389,7 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     // behavior: re-queue the suspects and defer the scan. Deferred, never
     // unsound.
     let _stw: Option<crate::gc::stw::StwGuard> = if crate::gc::stw::other_mutators_active() {
-        let stw = if suspects.is_empty() || crate::gc::stw::stw_cooldown_active() {
+        let stw = if crate::gc::stw::stw_cooldown_active() {
             None
         } else {
             crate::gc::stw::try_stop_the_world(std::time::Duration::from_millis(50))

@@ -397,14 +397,17 @@ impl<T: Trace + Clone + 'static> Gc<T> {
         // and sever container identity (Raku aliasing broke on e.g. slice-
         // assignment lvalues). `header.strong` excludes the buffer's ref.
         //
-        // Ordering: `Relaxed` everywhere on `header.strong` is sound because no
-        // decision ever *reads another thread's count concurrently*. The `== 1`
-        // uniqueness test only acts when this thread holds the sole live handle
-        // (`&mut self`), so no other thread can be cloning/dropping THIS node
-        // through a strong handle; and the collector — the only cross-thread
-        // reader of `header.strong` — runs under the cooperative STW whose
-        // SeqCst handshake (`gc::stw`) orders every mutator's prior relaxed
-        // writes before the scan. The one theoretical gap is a cross-thread
+        // Ordering: `Relaxed` everywhere on `header.strong` is sound because
+        // the count can only DECREASE concurrently. When the `== 1` uniqueness
+        // test reads 1, this thread holds the sole live handle (`&mut self`),
+        // so no other thread can clone (cloning needs a handle) — the in-place
+        // write is private. When it reads != 1, other threads may still be
+        // dropping THEIR handles to this node concurrently (e.g. a shared-store
+        // republish); that only makes the COW below occasionally unnecessary,
+        // never unsound. The collector — the only cross-thread reader of
+        // `header.strong` — runs under the cooperative STW whose SeqCst
+        // handshake (`gc::stw`) orders every mutator's prior relaxed writes
+        // before the scan. The one theoretical gap is a cross-thread
         // `WeakGc::upgrade` racing the `== 1` fast path (a check-then-act window
         // `Arc::get_mut` closes with its weak-lock protocol); mutsu's only
         // `WeakGc` user is `WeakSub`, whose upgrades happen on the thread that
@@ -412,8 +415,13 @@ impl<T: Trace + Clone + 'static> Gc<T> {
         // grows a cross-thread consumer, port the weak-lock (see ADR-0001 §3-8).
         if self.inner.header.strong.load(Ordering::Relaxed) != 1 {
             // Shared: this handle is moving off the old node onto a fresh copy.
+            // `prev == 1` is legal (not underflow): a concurrent drop of the
+            // other handle can land between the `!= 1` load above and this
+            // fetch_sub, making us the last holder after all — the COW is then
+            // merely unnecessary. Only `prev == 0` (a drop with no handle on
+            // the books) is corruption.
             let prev = self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
-            debug_assert!(prev > 1, "Gc::make_mut strong-count underflow");
+            debug_assert!(prev >= 1, "Gc::make_mut strong-count underflow");
             let cloned = self.inner.value.clone();
             self.inner = Arc::new(GcBox {
                 header: GcHeader::fresh(),
