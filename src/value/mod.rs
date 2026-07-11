@@ -519,6 +519,40 @@ pub(crate) fn take_pending_instance_destroys() -> Vec<PendingInstanceDestroy> {
     PENDING_INSTANCE_DESTROYS.with(|pending| std::mem::take(&mut *pending.borrow_mut()))
 }
 
+/// Drop every `Gc`-bearing value held in this thread's thread-local state.
+///
+/// Worker threads accumulate `Gc` `Value`s in thread-local registries
+/// (`PENDING_INSTANCE_DESTROYS`, `FAILURE_PENDING_REGISTRY`). Rust runs a
+/// thread's TLS destructors *after* the thread closure returns — i.e. after the
+/// worker's `WorkerGuard` has already called `exit_mutator_worker` and
+/// unregistered the thread from the GC's stop-the-world accounting. A collector
+/// on another thread could then achieve STW (believing this thread gone) and run
+/// trial deletion while libc's TLS teardown concurrently drops these `Gc`s —
+/// corrupting the scan's refcount bookkeeping (freeing a live node). Draining
+/// them HERE, while the worker is still registered, closes that window: the drop
+/// happens under the normal counted-mutator discipline (a collector defers for
+/// this thread), and the later TLS destructor frees only empty collections. The
+/// leftover DESTROY items are dropped without running their Raku handlers, which
+/// matches the prior behavior (the TLS destructor never ran handlers either).
+pub(crate) fn drop_thread_local_gc_state() {
+    // Take each collection OUT of its RefCell before dropping it: an element's
+    // `Drop` re-enters these same thread-locals (an instance's `finalize_destroy`
+    // pushes to PENDING_INSTANCE_DESTROYS), so dropping in place while holding the
+    // `borrow_mut` would double-borrow the RefCell and panic — and a panic in a
+    // Drop during thread teardown aborts the process. Suppress the re-entrant
+    // DESTROY queuing too, so the drain terminates instead of re-filling the queue.
+    set_in_destroy_handler(true);
+    let pending = PENDING_INSTANCE_DESTROYS
+        .try_with(|pending| std::mem::take(&mut *pending.borrow_mut()))
+        .unwrap_or_default();
+    drop(pending);
+    let failures = FAILURE_PENDING_REGISTRY
+        .try_with(|reg| std::mem::take(&mut *reg.borrow_mut()))
+        .unwrap_or_default();
+    drop(failures);
+    set_in_destroy_handler(false);
+}
+
 // Global registry for Failure handled state. Maps Failure instance IDs to
 // their handled flag. This allows the handled state to be shared across
 // all clones of a Failure value (which share the same `id`).
