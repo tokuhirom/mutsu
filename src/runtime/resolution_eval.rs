@@ -126,15 +126,26 @@ impl Interpreter {
         let saved_proto_functions = self.registry().proto_functions.clone();
         let saved_operator_assoc = self.operator_assoc.clone();
         let saved_user_declared_infix_ops = self.user_declared_infix_ops.clone();
-        // A `my TYPE $var;` inside this block is lexically scoped to it (like
-        // the sub/operator registries saved above): its type constraint must
-        // not leak into the caller's later, unrelated same-named variable once
-        // the block returns. Without this, `hoist_typed_var_decls` pre-registers
-        // the constraint at block entry (so an early-in-block EVAL sees it, per
-        // roast S04-declarations/my-6e.t "also a type error") but — since
-        // `var_type_constraints` is a flat name-keyed table, not a real scope
-        // stack — that constraint would otherwise survive this call's return
-        // and wrongly apply to any later code using the same variable name.
+        // Sub/proto/operator declarations in block scope are lexical, so the
+        // registry is snapshotted here and restored on block exit. The restore
+        // reassigns the three registry maps through `registry_mut()`, which bumps
+        // the per-interpreter snapshot generation (invalidating the #4408
+        // regex/grammar snapshot cache). But the overwhelmingly common block —
+        // a grammar `token` body that is just a regex literal, run ~55x/parse —
+        // writes nothing to the registry, so that restore (and its generation
+        // bump) is pure overhead. Every registry write goes through
+        // `registry_mut()`, which bumps `registry_write_gen`; snapshot the
+        // generation here and skip the restore entirely when it is unchanged
+        // after the block (nothing was declared — including via a `require`/`use`
+        // or any other call, since those bump the generation too). This is sound
+        // regardless of what the block does: only an actual registry write can
+        // change the generation.
+        let registry_gen_before = self
+            .registry_write_gen
+            .load(std::sync::atomic::Ordering::Relaxed);
+        // `&`-code vars and their `__mutsu_callable_id::` markers are lexical to
+        // this block too; snapshot them so a block-local `sub`/`my &foo` binding
+        // does not leak its env entries into the caller.
         let saved_code_env: std::collections::HashMap<Symbol, Value> = self
             .env
             .iter()
@@ -169,18 +180,28 @@ impl Interpreter {
             _ => None,
         };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
-        // Sub/proto declarations in block scope are lexical; restore registries on
-        // block exit. One write guard for all three fields (one lock acquisition
-        // and one snapshot-generation bump instead of three) — the moves cannot
-        // re-enter user code, so holding the guard across them is safe.
+        // Restore the routine registry only if the block actually wrote to it
+        // (tracked by the monotonic `registry_write_gen`, bumped by every
+        // `registry_mut()`). The common declaration-free block leaves the
+        // generation unchanged, so it skips the whole restore — no lock
+        // acquisition and, crucially, no generation bump that would invalidate
+        // the #4408 snapshot cache. When it did change, one write guard restores
+        // all three maps (one lock acquisition instead of three) — the moves
+        // cannot re-enter user code, so holding the guard across them is safe.
+        if self
+            .registry_write_gen
+            .load(std::sync::atomic::Ordering::Relaxed)
+            != registry_gen_before
         {
-            let mut reg = self.registry_mut();
-            reg.functions = saved_functions;
-            reg.proto_subs = saved_proto_subs;
-            reg.proto_functions = saved_proto_functions;
+            {
+                let mut reg = self.registry_mut();
+                reg.functions = saved_functions;
+                reg.proto_subs = saved_proto_subs;
+                reg.proto_functions = saved_proto_functions;
+            }
+            self.operator_assoc = saved_operator_assoc;
+            self.user_declared_infix_ops = saved_user_declared_infix_ops;
         }
-        self.operator_assoc = saved_operator_assoc;
-        self.user_declared_infix_ops = saved_user_declared_infix_ops;
         self.env
             .retain(|k, _| !(k.starts_with("&") || k.starts_with("__mutsu_callable_id::")));
         for (k, v) in saved_code_env {
