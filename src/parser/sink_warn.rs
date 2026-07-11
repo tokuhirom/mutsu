@@ -27,6 +27,22 @@ pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
     scan_gathers_stmts(stmts);
 }
 
+/// Like [`add_sink_warnings`], but for a unit evaluated for its value (EVAL /
+/// EVALFILE): the final statement is the unit's return value, not sink
+/// context, so it is exempt from the analysis. Raku warns on `EVAL '42; $x'`
+/// only for the `42`. Trailing `SetLine` markers are skipped when locating
+/// the final real statement.
+pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
+    let last_real = stmts.iter().rposition(|s| !matches!(s, Stmt::SetLine(_)));
+    for (i, stmt) in stmts.iter().enumerate() {
+        if Some(i) == last_real {
+            continue;
+        }
+        walk_stmt(stmt, false);
+    }
+    scan_gathers_stmts(stmts);
+}
+
 /// Walk the entire program looking for `gather` blocks. For each one, emit sink
 /// warnings for its body. Only `Gather` nodes trigger a warning; every other
 /// node is traversed purely to reach nested gathers, so an unhandled variant can

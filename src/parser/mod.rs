@@ -61,6 +61,23 @@ thread_local! {
     static PARSE_WARNINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// 1-based line numbers of detected VCS conflict markers (`<<<<<<<` blocks).
     static VCS_CONFLICT_MARKERS: RefCell<Vec<i64>> = const { RefCell::new(Vec::new()) };
+    /// When set, the next `parse_program` call treats the unit's final
+    /// statement as a value (return) position, not sink context — the EVAL /
+    /// EVALFILE semantics, where the last expression is the EVAL's result.
+    /// Consumed (reset to false) by that call, so nested parses (e.g. a `use`
+    /// inside the EVAL'd code) fall back to mainline sink semantics.
+    static EVAL_VALUE_TAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Arm the value-tail sink semantics for the next `parse_program` call (see
+/// `EVAL_VALUE_TAIL`).
+fn set_eval_value_tail() {
+    EVAL_VALUE_TAIL.with(|f| f.set(true));
+}
+
+/// Consume the value-tail flag (one-shot).
+fn take_eval_value_tail() -> bool {
+    EVAL_VALUE_TAIL.with(|f| f.replace(false))
 }
 
 /// Add a warning message during parsing. Collected and emitted after parse completes.
@@ -283,6 +300,9 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
     VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());
+    // Consume the EVAL value-tail flag up front so any nested parse this
+    // program triggers (module loads, ...) uses plain mainline semantics.
+    let eval_value_tail = take_eval_value_tail();
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
@@ -331,7 +351,11 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                 // same scope is a compile-time X::Redeclaration::Outer in rakudo.
                 Err(build_outer_redeclaration_error(&symbol, line))
             } else {
-                sink_warn::add_sink_warnings(&stmts);
+                if eval_value_tail {
+                    sink_warn::add_sink_warnings_value_tail(&stmts);
+                } else {
+                    sink_warn::add_sink_warnings(&stmts);
+                }
                 Ok((stmts, finish_content))
             }
         }
@@ -438,6 +462,10 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
     stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     stmt::set_eval_user_sub_preseed(user_sub_names.to_vec());
+    // Every caller of this entry point evaluates the parsed unit for its value
+    // (EVAL / EVAL :check / throws-like code strings), so the final statement
+    // is a return position, not sink context.
+    set_eval_value_tail();
     let result = parse_program(input);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());

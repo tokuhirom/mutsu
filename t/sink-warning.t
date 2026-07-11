@@ -2,7 +2,7 @@ use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test;
 use Test::Util;
 
-plan 30;
+plan 33;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -84,6 +84,15 @@ is_run '6.02e23', { :0status, :err(/"Useless use" .* 'number' .* '6.02e23'/) },
     'sink warning keeps scientific notation';
 is_run '∞', { :0status, :err(/"Useless use" .* '∞'/) },
     'sink warning keeps Unicode infinity glyph';
+
+# EVAL: the final statement is the EVAL's return value, not sink context,
+# so only non-final statements warn.
+is_run 'my $x = 3; say EVAL q[$x + 5]', { :0status, :out("8\n"), :err('') },
+    'EVAL final expression is a value, not sink';
+is_run 'say EVAL "43"', { :0status, :out("43\n"), :err('') },
+    'single-statement EVAL does not warn';
+is_run 'say EVAL q[42; 5 + 5]', { :0status, :out("10\n"), :err(/"Useless use" .* 42/) },
+    'EVAL non-final statement still warns';
 
 # Double statement modifier ejects with X::Syntax::Confused carrying pre/post.
 throws-like 'say 1 if 2 if 3 { say 3 }', X::Syntax::Confused,
