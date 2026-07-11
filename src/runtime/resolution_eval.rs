@@ -169,10 +169,16 @@ impl Interpreter {
             _ => None,
         };
         self.block_scope_depth = self.block_scope_depth.saturating_sub(1);
-        // Sub/proto declarations in block scope are lexical; restore registries on block exit.
-        self.registry_mut().functions = saved_functions;
-        self.registry_mut().proto_subs = saved_proto_subs;
-        self.registry_mut().proto_functions = saved_proto_functions;
+        // Sub/proto declarations in block scope are lexical; restore registries on
+        // block exit. One write guard for all three fields (one lock acquisition
+        // and one snapshot-generation bump instead of three) — the moves cannot
+        // re-enter user code, so holding the guard across them is safe.
+        {
+            let mut reg = self.registry_mut();
+            reg.functions = saved_functions;
+            reg.proto_subs = saved_proto_subs;
+            reg.proto_functions = saved_proto_functions;
+        }
         self.operator_assoc = saved_operator_assoc;
         self.user_declared_infix_ops = saved_user_declared_infix_ops;
         self.env

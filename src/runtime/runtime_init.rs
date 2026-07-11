@@ -1,6 +1,40 @@
 use super::*;
 
+thread_local! {
+    /// Set while constructing a lightweight regex/grammar scratch interpreter
+    /// (see [`Interpreter::new_regex_scratch`]). When set, [`Interpreter::new`]
+    /// skips the heavy process-environment setup (%*ENV population, IO handles,
+    /// the process-global enum/dynamic base, $*REPO, and the default site repo)
+    /// because the scratch interpreter's `env` and `registry` are immediately
+    /// overwritten by the caller (`copy_decl_registry_into` + the provided env),
+    /// making that work pure waste. A grammar-with-actions parse builds ~100 such
+    /// scratch interpreters per parsed string, so avoiding the per-scratch init
+    /// is a large win on the zef dist-identity parse path.
+    static BUILDING_SCRATCH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 impl Interpreter {
+    /// Whether the current `new()` call is building a lightweight scratch
+    /// interpreter (see `BUILDING_SCRATCH`).
+    #[inline]
+    pub(crate) fn is_building_scratch() -> bool {
+        BUILDING_SCRATCH.with(|f| f.get())
+    }
+
+    /// Construct a lightweight interpreter for regex/grammar sub-evaluation. The
+    /// caller immediately overwrites its `env` (typically `self.env.clone()`) and
+    /// replaces its `registry` via [`Self::copy_decl_registry_into`], so this
+    /// skips the heavy per-process environment setup that `new()` does for a
+    /// top-level interpreter (see `BUILDING_SCRATCH`). Use it in place of
+    /// `..Default::default()` at regex/grammar scratch-interpreter construction
+    /// sites.
+    pub(crate) fn new_regex_scratch() -> Self {
+        BUILDING_SCRATCH.with(|f| f.set(true));
+        let interp = Self::new();
+        BUILDING_SCRATCH.with(|f| f.set(false));
+        interp
+    }
+
     /// Take any pending regex security error from the thread-local store.
     pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
         // Delegate to the regex_parse module's thread-local error store
@@ -14,8 +48,10 @@ impl Interpreter {
         env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
         env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
         // Populate %*ENV with all OS environment variables so that
-        // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly.
-        {
+        // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly. A scratch
+        // interpreter inherits the caller's env (which already carries %*ENV), so
+        // skip the OS-env sweep there.
+        if !Self::is_building_scratch() {
             let mut env_hash = HashMap::new();
             #[cfg(not(target_family = "wasm"))]
             for (key, value) in std::env::vars() {
@@ -2196,36 +2232,42 @@ impl Interpreter {
             rw_map_topic_capture: None,
         };
         interpreter.init_io_environment();
-        // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
-        // process-wide immutables: collect them into the shared base tier
-        // instead of every per-frame env overlay (docs/vm-dual-store.md 4b).
-        let mut enum_base: HashMap<Symbol, Value> = HashMap::new();
-        interpreter.init_order_enum(&mut enum_base);
-        interpreter.init_endian_enum(&mut enum_base);
-        interpreter.init_protocol_family_enum(&mut enum_base);
-        interpreter.init_signal_enum(&mut enum_base);
-        interpreter.init_seek_type_enum(&mut enum_base);
-        // Hoist the immutable process-constant magic/dynamic vars out of every
-        // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
-        // 4c "natural extension"). These are set once at interpreter start and
-        // never reassigned/removed by normal programs; reads fall back to the
-        // base tier, and a rare write is promoted into the overlay by
-        // `Env::get_mut`, so semantics are preserved while the per-call deep
-        // copy forks a smaller overlay. Mutable dynamics ($*OUT, $*CWD, %*ENV,
-        // @*ARGS, $*SCHEDULER, $*REPO, handles, ...) intentionally stay in the
-        // overlay.
-        for key in IMMUTABLE_BASE_DYNAMICS {
-            if let Some(v) = interpreter.env.remove(key) {
-                enum_base.insert(Symbol::intern(key), v);
-            }
-        }
-        crate::env::set_global_base(enum_base);
         interpreter.env.insert("Any".to_string(), Value::NIL);
-        // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
-        // (attrs mirror explicit `.new()` construction, see
-        // methods_object_dispatch_new.rs's "CompUnit::Repository::FileSystem" arm,
-        // so `.short-id`/`.prefix` behave the same on the default instance).
-        {
+        // A scratch interpreter (regex/grammar sub-interpreter) inherits the
+        // caller's env and has its registry replaced by `copy_decl_registry_into`,
+        // so the process-global base tier (already installed by the top-level
+        // interpreter), the default $*REPO, and the site repo are redundant. A
+        // grammar-with-actions parse builds ~100 scratch interpreters per parsed
+        // string, so skipping this per-scratch setup is the win.
+        if !Self::is_building_scratch() {
+            // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
+            // process-wide immutables: collect them into the shared base tier
+            // instead of every per-frame env overlay (docs/vm-dual-store.md 4b).
+            let mut enum_base: HashMap<Symbol, Value> = HashMap::new();
+            interpreter.init_order_enum(&mut enum_base);
+            interpreter.init_endian_enum(&mut enum_base);
+            interpreter.init_protocol_family_enum(&mut enum_base);
+            interpreter.init_signal_enum(&mut enum_base);
+            interpreter.init_seek_type_enum(&mut enum_base);
+            // Hoist the immutable process-constant magic/dynamic vars out of every
+            // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
+            // 4c "natural extension"). These are set once at interpreter start and
+            // never reassigned/removed by normal programs; reads fall back to the
+            // base tier, and a rare write is promoted into the overlay by
+            // `Env::get_mut`, so semantics are preserved while the per-call deep
+            // copy forks a smaller overlay. Mutable dynamics ($*OUT, $*CWD, %*ENV,
+            // @*ARGS, $*SCHEDULER, $*REPO, handles, ...) intentionally stay in the
+            // overlay.
+            for key in IMMUTABLE_BASE_DYNAMICS {
+                if let Some(v) = interpreter.env.remove(key) {
+                    enum_base.insert(Symbol::intern(key), v);
+                }
+            }
+            crate::env::set_global_base(enum_base);
+            // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
+            // (attrs mirror explicit `.new()` construction, see
+            // methods_object_dispatch_new.rs's "CompUnit::Repository::FileSystem" arm,
+            // so `.short-id`/`.prefix` behave the same on the default instance).
             let mut attrs = HashMap::new();
             attrs.insert("prefix".to_string(), interpreter.make_io_path_instance("."));
             attrs.insert("short-id".to_string(), Value::str_from("file"));
@@ -2233,15 +2275,17 @@ impl Interpreter {
             let repo =
                 Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs);
             interpreter.env.insert("*REPO".to_string(), repo);
+            // Every interpreter instance (top-level CLI, REPL, EVAL, and the
+            // nested in-process Interpreter that Test::Util's `is_run` spawns
+            // for its fast path) needs the default "site" repository wired into
+            // module resolution -- not just the top-level CLI -- so a plain
+            // `use ModuleName` finds anything installed via
+            // `CompUnit::RepositoryRegistry.repository-for-name("site").install(...)`
+            // regardless of how the interpreter was embedded. A scratch
+            // interpreter inherits $*REPO (and thus the site repo) from the
+            // caller's cloned env, so it needs neither.
+            interpreter.add_default_site_repo();
         }
-        // Every interpreter instance (top-level CLI, REPL, EVAL, and the
-        // nested in-process Interpreter that Test::Util's `is_run` spawns
-        // for its fast path) needs the default "site" repository wired into
-        // module resolution -- not just the top-level CLI -- so a plain
-        // `use ModuleName` finds anything installed via
-        // `CompUnit::RepositoryRegistry.repository-for-name("site").install(...)`
-        // regardless of how the interpreter was embedded.
-        interpreter.add_default_site_repo();
         interpreter
     }
 }
