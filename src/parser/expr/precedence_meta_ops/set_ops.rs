@@ -42,10 +42,22 @@ fn parse_set_op(input: &str) -> Option<(TokenKind, usize)> {
         Some((TokenKind::SetSubset, 4))
     } else if input.starts_with('⊆') {
         Some((TokenKind::SetSubset, '⊆'.len_utf8()))
+    // 6.c "precedes" (baggy subset) operators `(<+)` / `≼`: deprecated aliases
+    // of `(<=)` / `⊆`, removed in 6.d. mutsu's `SetSubset` already compares
+    // Bag/Mix multiplicities, so they map to the same TokenKind.
+    } else if input.starts_with("(<+)") {
+        Some((TokenKind::SetSubset, 4))
+    } else if input.starts_with('≼') {
+        Some((TokenKind::SetSubset, '≼'.len_utf8()))
     } else if input.starts_with("(>=)") {
         Some((TokenKind::SetSuperset, 4))
     } else if input.starts_with('⊇') {
         Some((TokenKind::SetSuperset, '⊇'.len_utf8()))
+    // 6.c "succeeds" (baggy superset) operators `(>+)` / `≽`.
+    } else if input.starts_with("(>+)") {
+        Some((TokenKind::SetSuperset, 4))
+    } else if input.starts_with('≽') {
+        Some((TokenKind::SetSuperset, '≽'.len_utf8()))
     } else if input.starts_with("!(<)") {
         Some((TokenKind::Ident("⊄".to_string()), 4))
     } else if input.starts_with("(<)") {
