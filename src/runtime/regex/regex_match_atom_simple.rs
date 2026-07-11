@@ -600,11 +600,22 @@ impl Interpreter {
                             if builtin_match {
                                 return true;
                             }
-                            // Fallback: try resolving as a grammar token in the current package
+                            // Fallback: try resolving as a grammar token in the current package.
+                            // This runs once per character checked against the class, so use the
+                            // cheap STATIC resolver (pattern extracted straight from the token def)
+                            // rather than the heavy `with_args` path, which builds a fresh scratch
+                            // `Interpreter` per call — catastrophic here (profiled ~20% of a grammar
+                            // parse: `token name { <-restricted>+ }` resolved `restricted` per char).
+                            // A non-literal token body is not statically extractable, so fall back to
+                            // evaluating it (empty args) only when the static resolver finds nothing.
                             if !pkg.is_empty() {
                                 let char_str = effective_c.to_string();
-                                let candidates =
-                                    self.resolve_token_patterns_with_args_in_pkg(n, pkg, &[]);
+                                let mut candidates =
+                                    self.resolve_token_patterns_static_in_pkg(n, pkg);
+                                if candidates.is_empty() {
+                                    candidates =
+                                        self.resolve_token_patterns_with_args_in_pkg(n, pkg, &[]);
+                                }
                                 for (sub_pat, sub_pkg, _sym_key) in &candidates {
                                     if self
                                         .regex_match_len_at_start_in_pkg(
