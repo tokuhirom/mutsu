@@ -421,6 +421,20 @@ impl Interpreter {
         if dims.is_empty() {
             return Ok(target.clone());
         }
+        // An intermediate level may be a `ContainerRef` element cell (Track B:
+        // the celled atomic store boxes top-level elements; `:=` bindings can
+        // nest cells anywhere). Read through it ONLY when the cell holds a
+        // container — the remaining dimensions then land on the inner
+        // array/hash. A cell holding a scalar must instead fall through to the
+        // single-element-list wrap below, which returns the CELL itself for
+        // index 0 — the raw `\target` / `is rw` aliasing of a promoted leaf
+        // (`@a[0;0]` over `@a = [cell(9)]`) rides on that identity.
+        if target.is_container_ref() {
+            let inner = target.deref_container();
+            if matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                return self.multi_dim_index_read(&inner, dims);
+            }
+        }
         // A non-positional value behaves as a single-element list when
         // subscripted in a further dimension: in `(10,20,30)[1,2;0]` each
         // selected scalar is indexed by the trailing `0`, and `20[0]` is `20`
@@ -982,8 +996,17 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
             *vi += 1;
-            *target = v;
+            // Write through a `ContainerRef` leaf (Track B element cell /
+            // `:=`-bound element) so every snapshot holder observes the write.
+            Value::assign_element_slot(target, v);
             return Ok(());
+        }
+        // A celled intermediate level: mutate the cell's inner value under its
+        // lock (shared by every snapshot) instead of failing `with_array_mut`.
+        if target.is_container_ref() {
+            return self.assign_through_cell(target, |slf, inner| {
+                slf.multi_dim_assign_slice(inner, dims, values, vi)
+            });
         }
         let keys = self.resolve_assign_dim(target, &dims[0])?;
         let rest = &dims[1..];
@@ -1023,8 +1046,15 @@ impl Interpreter {
         value: Value,
     ) -> Result<(), RuntimeError> {
         if dims.is_empty() {
-            *target = value;
+            // Write through a `ContainerRef` leaf — see `multi_dim_assign_slice`.
+            Value::assign_element_slot(target, value);
             return Ok(());
+        }
+        // A celled intermediate level — see `multi_dim_assign_slice`.
+        if target.is_container_ref() {
+            return self.assign_through_cell(target, |slf, inner| {
+                slf.multi_dim_assign_scalar(inner, dims, value)
+            });
         }
         let key = self
             .resolve_assign_dim(target, &dims[0])?
@@ -1060,6 +1090,31 @@ impl Interpreter {
             return Err(RuntimeError::new("Invalid index for multi-dim assignment"));
         }
         Ok(())
+    }
+
+    /// Run `f` against a snapshot of a `ContainerRef` target's inner value and
+    /// store the result back through the cell — the write-through arm the
+    /// multidim assign recursions use for celled intermediate levels.
+    ///
+    /// The lock is NOT held across `f`: a dimension may be a block/WhateverCode
+    /// whose user code can read the same cell (any read derefs it under its
+    /// mutex), and the cell mutex is not re-entrant. Plain `=` carries no
+    /// cross-thread atomicity contract anyway (`cas` is the atomic op, and it
+    /// does hold the cell lock for its whole compare+set); what the cell
+    /// buys plain assignment is *visibility* — every snapshot holder shares it.
+    fn assign_through_cell(
+        &mut self,
+        target: &Value,
+        f: impl FnOnce(&mut Self, &mut Value) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        let ValueView::ContainerRef(c) = target.view() else {
+            unreachable!("assign_through_cell caller checked is_container_ref");
+        };
+        let cell = c.clone();
+        let mut inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let r = f(self, &mut inner);
+        *cell.lock().unwrap_or_else(|e| e.into_inner()) = inner;
+        r
     }
 
     /// Ensure the target is a hash, converting from Nil/Any if necessary.

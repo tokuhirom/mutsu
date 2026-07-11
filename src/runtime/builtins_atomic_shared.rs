@@ -453,43 +453,36 @@ impl Interpreter {
 
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
 
-        // Initialize shared_vars with the array if not yet set
-        {
-            let shared = self.shared_vars.read().unwrap();
-            if !shared.contains_key(&atomic_key) {
-                drop(shared);
-                let arr = self
-                    .env
-                    .get(&arr_name)
-                    .cloned()
-                    .unwrap_or(Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                        crate::value::ArrayKind::Array,
-                    ));
-                let mut shared = self.shared_vars.write().unwrap();
-                if !shared.contains_key(&atomic_key) {
-                    shared.insert(atomic_key.clone(), arr);
-                }
-            }
-        }
-
+        // Track B element cells (T4, gc-post-3a-roadmap §2): same template as
+        // the 1-dim `builtin_cas_array_elem` — box top-level elements at first
+        // atomic touch, then run the whole nested compare+set under the
+        // top-level slot's cell lock. The inner structure is COW'd *inside*
+        // the cell, so no whole-array republish and no per-op O(container)
+        // copy of the top level; concurrent CAS on the same top-level slot
+        // serialize on the cell mutex, and every snapshot holder shares the
+        // cell. This also makes 1-dim and multidim CAS on the same array
+        // coherent (the old republish path read plain elements and returned 0
+        // once a 1-dim CAS had celled the store).
+        self.init_celled_atomic_store(&atomic_key, &arr_name);
+        let cell =
+            self.celled_array_elem(&atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
+        let inner_dims = if dims.len() > 1 { &dims[1..] } else { &[] };
         let mut did_swap = false;
         let current;
         {
-            let mut shared = self.shared_vars.write().unwrap();
-            let arr = shared
-                .get(&atomic_key)
-                .cloned()
-                .unwrap_or(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
-                    crate::value::ArrayKind::Array,
-                ));
-            // Navigate to the element using the dimension indices
-            current = Self::multidim_get(&arr, &dims);
-            if Self::cas_retry_matches(&current, expected) {
-                let updated = Self::multidim_set(&arr, &dims, new_val);
-                shared.insert(atomic_key.clone(), updated);
-                did_swap = true;
+            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            if inner_dims.is_empty() {
+                current = guard.clone();
+                if Self::cas_retry_matches(&current, expected) {
+                    *guard = new_val;
+                    did_swap = true;
+                }
+            } else {
+                current = Self::multidim_get(&guard, inner_dims);
+                if Self::cas_retry_matches(&current, expected) {
+                    *guard = Self::multidim_set(&guard, inner_dims, new_val);
+                    did_swap = true;
+                }
             }
         }
 
@@ -499,9 +492,10 @@ impl Interpreter {
         Ok(current)
     }
 
-    /// Get an element from a multi-dimensional array by navigating nested arrays.
+    /// Get an element from a multi-dimensional array by navigating nested
+    /// arrays. Reads through `ContainerRef` element cells transparently.
     fn multidim_get(arr: &Value, dims: &[i64]) -> Value {
-        let mut current = arr.clone();
+        let mut current = arr.deref_container();
         for &dim in dims {
             if let ValueView::Array(elements, ..) = current.view() {
                 let idx = if dim < 0 {
@@ -510,7 +504,7 @@ impl Interpreter {
                     dim as usize
                 };
                 let next = elements.get(idx).cloned().unwrap_or(Value::int(0));
-                current = next;
+                current = next.into_deref();
             } else {
                 return Value::int(0);
             }
@@ -519,10 +513,20 @@ impl Interpreter {
     }
 
     /// Set an element in a multi-dimensional array by navigating nested arrays.
-    /// Returns the updated top-level array.
+    /// Returns the updated top-level array. Writes *through* a `ContainerRef`
+    /// element cell where one exists (every snapshot holder shares the cell),
+    /// COW-rebuilding only the plain nesting levels.
     fn multidim_set(arr: &Value, dims: &[i64], value: Value) -> Value {
         if dims.is_empty() {
             return value;
+        }
+        if let ValueView::ContainerRef(c) = arr.view() {
+            let cell = c.clone();
+            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+            let updated = Self::multidim_set(&guard, dims, value);
+            *guard = updated;
+            drop(guard);
+            return arr.clone();
         }
         if let ValueView::Array(elements, kind) = arr.view() {
             let idx = if dims[0] < 0 {
@@ -535,7 +539,7 @@ impl Interpreter {
                 new_elements.push(Value::int(0));
             }
             if dims.len() == 1 {
-                new_elements[idx] = value;
+                Value::assign_element_slot(&mut new_elements[idx], value);
             } else {
                 new_elements[idx] = Self::multidim_set(&new_elements[idx], &dims[1..], value);
             }
