@@ -356,6 +356,31 @@ env dual-store) breakage, and every §1.4 survey #1–#3 regression, to zero.
 Validated with `make test` under the flip (16351 tests, PASS). The clone-removal
 perf payoff is the remaining unchecked box above.
 
+## Clone-removal probe (2026-07-12, reverted — scopes the next session)
+
+A one-line experiment removed the `self.locals = saved_locals` restore (:376),
+keeping only the env-driven re-sync (:377-381), to test the hypothesis that the
+whole-array restore is redundant under shadow slots. **Result: NOT redundant.**
+`make test` regressed on `t/block-lexical-scope.t` #3 ("chained our/my in block
+does not leak"): `{ our $sa2 = my $sb2 = 42 } ($sa2, $sb2)` must throw
+`X::Undeclared`, but without the restore the block-declared `$sb2`/`$sa2` slots
+keep their in-block value (42) and a post-block reference finds the stale slot
+instead of raising undeclared. So the restore has a **second role beyond
+shadow-slot reset**: it clears block-declared slots so their values cannot leak
+past the block (the env restore at :325-375 removes the *names* from env, but the
+*slot values* survive and are still reachable by-slot/by-name).
+
+**Concrete plan for the clone-removal session:** replace the whole-array
+`clone` + `self.locals = saved_locals` with a **targeted reset of just this
+block's declared slots** (Nil them on exit) — that removes the O(n) clone while
+preserving the leak-prevention semantics. It needs a compile-time list of the
+slots each block declares (bake a `block_declared_slots` onto the `BlockScope`
+opcode/bounds, analogous to the S1–S17 slot bakes), because at runtime
+`block_declared` is only a name set and a name can occupy several shadow slots.
+Then separately give `$OUTER::` a non-snapshot path so `outer_scope_locals`
+(:184) can drop its `saved_locals.clone()` too, and update `gc_roots.rs:116`.
+Validate OFF (`MUTSU_NO_SHADOW_SLOTS`) AND ON with `make test` + `make roast`.
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
