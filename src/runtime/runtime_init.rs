@@ -2009,6 +2009,8 @@ impl Interpreter {
                 };
                 Arc::new(RwLock::new(registry))
             },
+            registry_write_gen: std::sync::atomic::AtomicU64::new(0),
+            regex_registry_snapshot: Mutex::new(None),
             proto_dispatch_stack: Vec::new(),
             proto_method_skip: None,
             pending_dispatch_error: None,

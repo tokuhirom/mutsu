@@ -188,6 +188,10 @@ impl Interpreter {
             // independent snapshot (matches prior per-field clone semantics: the
             // child sees parent declarations but its own new ones don't leak back).
             registry: Arc::new(RwLock::new(self.registry.read().unwrap().clone())),
+            // Fresh per-thread: the snapshot cache must not be shared across
+            // threads (each thread's `Interpreter` owns its own registry).
+            registry_write_gen: std::sync::atomic::AtomicU64::new(0),
+            regex_registry_snapshot: Mutex::new(None),
             proto_dispatch_stack: Vec::new(),
             proto_method_skip: None,
             pending_dispatch_error: None,

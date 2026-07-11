@@ -1093,6 +1093,20 @@ pub struct Interpreter {
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).
     registry: Arc<RwLock<Registry>>,
+    /// Monotonic counter bumped on every `registry_mut()` acquisition, i.e. every
+    /// time the declaration registry may have been mutated. Used to invalidate
+    /// [`Self::regex_registry_snapshot`] so a cached snapshot is only reused while
+    /// the registry is unchanged. `AtomicU64` (not `Cell`) so `Interpreter` stays
+    /// `Send`/`Sync` — `registry_mut()` takes `&self`.
+    registry_write_gen: std::sync::atomic::AtomicU64,
+    /// Cached deep-clone snapshot of the registry (paired with the
+    /// `registry_write_gen` it was taken at) shared into the short-lived
+    /// sub-interpreters built for regex/grammar evaluation. In a hot loop that
+    /// matches many regexes/grammar tokens without declaring anything new (e.g.
+    /// zef parsing thousands of dist identities via a `grammar ... :actions`),
+    /// this collapses a full-registry deep clone *per token match* into a single
+    /// clone reused by `Arc::clone`. See `copy_full_registry_into`.
+    regex_registry_snapshot: Mutex<Option<(u64, Arc<RwLock<Registry>>)>>,
     /// Active `{*}` proto dispatch frames: (proto_name, args, method_ctx).
     /// `method_ctx` is `Some` when the active proto is a `proto method` body, so
     /// `{*}` redispatches to a multi *method* candidate on the invocant rather
