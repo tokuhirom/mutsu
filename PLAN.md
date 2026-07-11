@@ -215,9 +215,22 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 - [ ] default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクがあるため意図的に除外を維持中）。
 - [ ] モジュール sub OTF に残る interpreter 結合構文: `EVAL` / `EVALFILE` / `start` /
-      `CATCH` / `CONTROL` / phaser / ネスト宣言 / subtest / sigilless scalar（`\x`）/ 戻り型 coercion /
-      `is encoded(...)`（NativeCall marshalling）
+      sigilless scalar（`\x`）/ 戻り型 coercion / `is encoded(...)`（NativeCall marshalling）/
+      ネスト class/role 宣言
       （ゲート実体 = `def_is_otf_compilable_module_single`、`vm/vm_call_func_ops.rs`）。
+      **★2026-07-11 body 構文ゲート緩和**: `CATCH` / `CONTROL` / phaser /
+      ネスト sub/proto/token 宣言 / `subtest` / `once` は実験で raku 一致を確認し OTF 許可に変更
+      （担保 = `t/module-sub-otf-interpreter-constructs.t`）。tree-walk 既存バグ（body 直下
+      `CATCH` があると非 die パスの戻り値が Nil になる）も OTF 化で修正。
+      **★`start` は OTF 化不可を実験で確認（2026-07-11）**: 再帰 sub の start クロージャが param を
+      捕捉する場合、再帰呼び出しの param re-bind が thread env 上の捕捉値を clobber し
+      `await` 復帰後に最深呼び出しの値が見える（`t/start-block-return-value.t` test 3、
+      fib(5)=3 に退行。tree-walk は呼び出し前後の env save/restore で保護）。非再帰の start 捕捉は
+      OTF でも正しいが、AST ゲートでは再帰を判定できないため `start` 全体を除外維持。
+      **既知の別軸バグ（今回悪化なし・tree-walk でも同挙動）**: `once` の cross-thread 重複発火
+      — `once_values` ストアが thread クローン時に値コピーされるため、`await (^N).map:{start f()}`
+      で各 thread が once を再発火する（raku は全 thread で 1 回）。修正には `once_values` の
+      共有セル化（state セルと同型）が必要。
       **★compiled_fns 拡充 slice 1（#4312）で `state` は解決**: `use`d モジュールの compiled sub body を
       fingerprint キーで `imported_compiled_fns` に捕捉→スレッドクローンへ Arc 共有→`state` 持ちモジュール
       sub を共有ボディ経由で dispatch（`state_scope_id` を None リセット）。`await (^N).map:{start f()}` の
@@ -335,6 +348,11 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       言語保証外。mutsu は不壊で優位 — 仕様外のまま維持）と、非 state の escaped aggregate
       probe（gc-post-3a-roadmap §2 T6）。
 - [ ] Semaphore / nonblocking await / lock 競合（S17・hard・別軸）。
+- [ ] **再帰 start/await sub を 2 連続実行すると 2 つ目がハング（2026-07-11 発見・main ef5cd62e で再現）**:
+      `sub f($n){ start { $n<=0 ?? "b" !! await(f($n-1)) ~ "|$n" } }; await(f(3));` を実行した後に
+      2 分岐再帰（`await(fib($n-2)) + await(fib($n-1))`）の start sub を await すると決定的にハング
+      （fib 単独・単発再帰 2 連続は OK）。先行 start チェーンが thread-pool worker を解放しない疑い。
+      raku は両方 4/8 を返す。
 - [ ] 生ポインタ aliased write の撤廃: 旧 `arc_contents_mut` は dead 化済みで、本番経路は
       `gc::gc_contents_mut` / `Gc::{get,make}_mut` に移動（unsoundness は解消でなく移動 —
       ANALYSIS rev8 §2.1）。完全解消 = §2 Track B 残スライス T4-T6 に統合済み（重複着手しない）。
