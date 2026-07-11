@@ -150,6 +150,22 @@ pub(super) fn dispatch(
             attrs,
         ))));
     }
+    // A numeric coercion method invoked on a *type object* of the same type
+    // (`Int.Int`, `Num.Num`, `Complex.Complex`) is the identity coercion: raku
+    // defines e.g. `method Int() { self }`, so for an undefined invocant (a
+    // type object) the result is that same type object rather than a "No such
+    // method" error. Zef's URI parser relies on `($auth<port> // Int).Int`
+    // yielding the `Int` type object when the port is absent.
+    //
+    // Only `Int`/`Num`/`Complex` are handled here: raku returns the type object
+    // cleanly for these, but `Rat.Rat`/`FatRat.FatRat` throw "must be an object
+    // instance" (no `method Rat() { self }`), so those are left to fall through.
+    if let ValueView::Package(name) = target.view()
+        && matches!(method, "Int" | "Num" | "Complex")
+        && name.resolve() == method
+    {
+        return Some(Some(Ok(target.clone())));
+    }
     match method {
         "self" => {
             // For unhandled Failures, .self throws the exception
