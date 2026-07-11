@@ -240,9 +240,15 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       fingerprint キーで `imported_compiled_fns` に捕捉→スレッドクローンへ Arc 共有→`state` 持ちモジュール
       sub を共有ボディ経由で dispatch（`state_scope_id` を None リセット）。`await (^N).map:{start f()}` の
       並行 state が 0→N に修正（担保 = `t/module-state-sub-shared-cell.t`）。**★拡充の限界**: 残除外の
-      EVAL(CALLER context)/戻り型 coercion は「共有問題」でなく「compiled 経路の再現問題」なので捕捉共有
-      ボディでも直らない（捕捉も `compile_block_raw` = OTF 相当）。ゲート完全退役には EVAL/coercion の
+      EVAL(CALLER context) は「共有問題」でなく「compiled 経路の再現問題」なので捕捉共有
+      ボディでも直らない（捕捉も `compile_block_raw` = OTF 相当）。ゲート完全退役には EVAL の
       compiled 経路 correctness という別軸作業が必要。詳細 = memory `project-compiled-fns-expansion`。
+      **★EVAL の先行条件バグ 2 件（2026-07-12 実験で具体化・tree-walk 自体が raku と不一致）**:
+      ① EVAL 最終式（返り値位置）に過剰な "Useless use ... in sink context" warning を出す
+      （raku は出さない）。② EVAL 内 `CALLER::<$v>` のフレーム解決が EVAL 呼び出し元スコープで
+      止まらず外側 main まで透過し、非 dynamic 変数で "Cannot access ... not declared as dynamic"
+      エラーになる（raku は EVAL を呼んだ sub の body を見て、無ければ Nil）。
+      OTF 化以前にこの EVAL 意味論の修正が先行条件。
       標準 param trait（`is copy`/`is rw`/`is raw`/`is readonly`/`is required`）はゲートから外れた
       （旧 `pd.traits.is_empty()` の一律除外を解除。compiled binding は元々これらを処理していた＝
       builtin-shadow ゲート `def_is_otf_compilable` は trait 未チェック。加えて tree-walk fallback が
@@ -253,9 +259,10 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       caller lexical に届かず落ちる（`is rw` を救った #4091 の compile-time caller slot に相当する
       機構が sigilless raw alias には無い）。担保 = `t/sigilless-params.t` の「sigilless aliases are
       writable through EVAL calls」が OTF 化で FAIL する（2026-07-06 実験で再現確認）。
-- [ ] `@_` slurpy recursive sub（別カテゴリ）。`@a[1..*]` 再帰の immutable-List bug は §4 扱い。
 - 完了済み（計測で確認）: bare multi OTF / `state` 候補・caching-proto body（#4047）/ `code_signature`
-  param（#3883）/ capture param。signature alternates の `state` 共有のみ interpreter 境界として
+  param（#3883）/ capture param / `@_` slurpy recursive sub（2026-07-12 実験確認: ローカル・モジュール
+  sub とも再帰含め fallback 0・raku 一致＝stale 項目だった。`@a[1..*]` 再帰の immutable-List bug は
+  §4 扱い）。signature alternates の `state` 共有のみ interpreter 境界として
   意図的に残す（news/2026-07.md）。
 
 ---
