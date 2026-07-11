@@ -664,7 +664,7 @@ impl Interpreter {
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.itemize())
             }
-            ValueView::Hash(h) => Value::hash_with_data(Value::hash_arc_itemized(h.clone())),
+            ValueView::Hash(_) => val.with_hash_itemized(true),
             ValueView::Seq(items) => Value::scalar(Value::seq_arc(items.clone())),
             _ => val,
         }
@@ -693,6 +693,13 @@ impl Interpreter {
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.itemize())
             }
+            // A Hash stored in a `$` scalar container is itemized per-holder:
+            // `my $h = %x; $h.raku` is `${...}` while `%x.raku` stays `{...}`.
+            // The per-holder itemization is a Value-level flag on the Hash
+            // variant (mirroring `ArrayKind::ItemArray`): it shares the SAME
+            // `HashData` Gc, so `=`-shared mutation still tracks, and the view
+            // stays a plain hash so every consumer is transparent.
+            ValueView::Hash(_) => val.with_hash_itemized(true),
             _ => val,
         }
     }

@@ -14,7 +14,7 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         Value::Seq(_) => "Seq".to_string(),
         Value::HyperSeq(_) => "HyperSeq".to_string(),
         Value::RaceSeq(_) => "RaceSeq".to_string(),
-        Value::Hash(_) => "Hash".to_string(),
+        Value::Hash(..) => "Hash".to_string(),
         Value::Set(_, is_mutable) => {
             if *is_mutable {
                 "SetHash".to_string()

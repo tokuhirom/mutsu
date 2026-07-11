@@ -47,7 +47,7 @@ impl Value {
             Value::RangeExclBoth(_, _) => true,
             Value::GenericRange { .. } => true,
             Value::Array(items, ..) => !items.is_empty(),
-            Value::Hash(items) => !items.is_empty(),
+            Value::Hash(items, _) => !items.is_empty(),
             Value::Rat(n, _) => *n != 0,
             Value::FatRat(n, _) => !n.is_zero(),
             Value::BigRat(n, _) => !n.is_zero(),

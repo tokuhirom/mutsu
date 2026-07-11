@@ -2580,7 +2580,7 @@ impl Interpreter {
             && let Some(info) = self.container_type_metadata(&target)
             && let ValueView::Hash(map) = target.view()
         {
-            return self.dispatch_constrained_hash_raku(map, &info);
+            return self.dispatch_constrained_hash_raku(map, &info, target.hash_is_itemized());
         }
         // .raku/.perl on native typed shaped array (e.g. array[int])
         if matches!(method, "raku" | "perl")

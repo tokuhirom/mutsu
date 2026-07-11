@@ -280,7 +280,18 @@ fn raku_hash_value(v: &Value) -> String {
         _ => v.clone(),
     };
     match effective.view() {
-        ValueView::Array(..) | ValueView::Hash(_) => format!("${base}"),
+        ValueView::Array(..) | ValueView::Hash(_) => {
+            // A bracket/paren literal (`{...}`, `[...]`, or the typed-hash
+            // `(my Int %{Int} = ...)` form) takes the bare sigil: `${...}`,
+            // `$[...]`, `$(...)`. Anything else — a `Map.new(...)` / shaped
+            // `Array.new(...)` repr — must be paren-wrapped so the itemization
+            // stays valid Raku: `$(Map.new(...))`, not `$Map.new(...)`.
+            if base.starts_with(['{', '[', '(']) {
+                format!("${base}")
+            } else {
+                format!("$({base})")
+            }
+        }
         ValueView::Seq(_) => format!("$({base})"),
         _ => base,
     }
@@ -589,6 +600,19 @@ pub fn raku_value(v: &Value) -> String {
             format!("{} => {}", key_repr, raku_value(value))
         }
         ValueView::Hash(map) => {
+            // A `$`-scalar-itemized hash renders its inner (de-itemized) repr
+            // wrapped by the itemization sigil, uniformly across every hash
+            // form (`{...}` / typed `(my Int %{Int} = ...)` / `Map.new(...)`):
+            // a bracket/paren literal takes the bare `$` (`${...}`, `$[...]`,
+            // `$(...)`), anything else is paren-wrapped (`$(Map.new(...))`).
+            if v.hash_is_itemized() {
+                let base = raku_value(&v.clone().with_hash_itemized(false));
+                return if base.starts_with(['{', '[', '(']) {
+                    format!("${base}")
+                } else {
+                    format!("$({base})")
+                };
+            }
             // An immutable Map renders as `Map.new((:k(v), ...))`.
             if map.declared_type.as_deref() == Some("Map") {
                 let mut sorted_keys: Vec<&String> = map.keys().collect();
@@ -682,12 +706,7 @@ pub fn raku_value(v: &Value) -> String {
                     s.remove(pos);
                 }
             });
-            // An itemized hash (`${...}`) carries its itemization on the
-            // `itemized` flag (mirroring `ArrayKind::ItemArray`). `.raku` shows
-            // the `$` sigil: `${a=>1}.raku` → `${:a(1)}`. (`.gist` does not —
-            // see `gist_value`.)
-            let sigil = if map.itemized { "$" } else { "" };
-            let hash_repr = format!("{}{{{}}}", sigil, parts.join(", "));
+            let hash_repr = format!("{{{}}}", parts.join(", "));
             if is_top && had_cycle {
                 format!("((my {}) = {})", var_name, hash_repr)
             } else {

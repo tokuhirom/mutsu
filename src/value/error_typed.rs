@@ -519,7 +519,7 @@ fn json_value(v: &Value) -> String {
             let elems: Vec<String> = items.iter().map(json_value).collect();
             format!("[{}]", elems.join(","))
         }
-        Value::Hash(map) => {
+        Value::Hash(map, _) => {
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort();
             let pairs: Vec<String> = keys

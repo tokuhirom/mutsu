@@ -153,7 +153,7 @@ impl Value {
                 excl_end: *excl_end,
             },
             Value::Array(items, kind) => ValueView::Array(items, *kind),
-            Value::Hash(h) => ValueView::Hash(h),
+            Value::Hash(h, _) => ValueView::Hash(h),
             Value::Rat(n, d) => ValueView::Rat(*n, *d),
             Value::FatRat(n, d) => ValueView::FatRat(*n, *d),
             Value::BigRat(n, d) => ValueView::BigRat(n, d),
@@ -466,10 +466,17 @@ impl Value {
         Value::Slip(items)
     }
 
-    /// Construct a `Hash` from an existing backing store.
+    /// Construct a `Hash` from an existing backing store (non-itemized).
     #[inline]
     pub(crate) fn hash_with_data(h: Gc<HashData>) -> Self {
-        Value::Hash(h)
+        Value::Hash(h, false)
+    }
+
+    /// Construct a `Hash` from an existing backing store, carrying the given
+    /// per-holder itemization flag (mirrors `hash_with_data` + `.item`).
+    #[inline]
+    pub(crate) fn hash_with_data_itemized(h: Gc<HashData>, itemized: bool) -> Self {
+        Value::Hash(h, itemized)
     }
 
     /// Construct a `Set` from an existing backing store and mutability flag.
@@ -737,8 +744,8 @@ impl Value {
             Value::Array(gc, kind) if gc.strong_count() > 1 => {
                 Value::array_with_kind(crate::gc::Gc::new((**gc).clone()), *kind)
             }
-            Value::Hash(gc) if gc.strong_count() > 1 => {
-                Value::hash_with_data(crate::gc::Gc::new((**gc).clone()))
+            Value::Hash(gc, itemized) if gc.strong_count() > 1 => {
+                Value::Hash(crate::gc::Gc::new((**gc).clone()), *itemized)
             }
             _ => self,
         }
@@ -749,7 +756,7 @@ impl Value {
     #[inline]
     pub(crate) fn with_hash_mut<R>(&mut self, f: impl FnOnce(&mut Gc<HashData>) -> R) -> Option<R> {
         match self {
-            Value::Hash(h) => Some(f(h)),
+            Value::Hash(h, _) => Some(f(h)),
             _ => None,
         }
     }

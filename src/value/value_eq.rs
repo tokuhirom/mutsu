@@ -52,7 +52,7 @@ impl PartialEq for Value {
             (Value::Seq(a), Value::Slip(b)) | (Value::Slip(b), Value::Seq(a)) => {
                 a.as_ref() == b.as_ref()
             }
-            (Value::Hash(a), Value::Hash(b)) => a == b,
+            (Value::Hash(a, _), Value::Hash(b, _)) => a == b,
             (Value::Rat(a1, b1), Value::Rat(a2, b2)) => {
                 if *b1 == 0 && *b2 == 0 && *a1 == 0 && *a2 == 0 {
                     return false; // NaN != NaN

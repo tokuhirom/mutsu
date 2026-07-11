@@ -52,9 +52,10 @@ pub(crate) fn deitemize_flat_operand(v: &Value) -> Value {
         // level, so flat_val must not flatten hashes in nested positions). The
         // returned `List` lets flat_val descend into the pairs.
         ValueView::Hash(h) => {
-            let pairs = crate::runtime::utils::value_to_list(&Value::hash_with_data(
-                crate::value::Value::hash_arc_deitemized(h.clone()),
-            ));
+            // `hash_with_data` builds a NON-itemized holder, so the pairs spill
+            // (a `$`-itemized operand hit the `ValueView::Scalar` arm above, or
+            // — for the flag form — flattens here as its top-level operand).
+            let pairs = crate::runtime::utils::value_to_list(&Value::hash_with_data(h.clone()));
             Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(pairs)),
                 crate::value::ArrayKind::List,

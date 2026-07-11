@@ -49,7 +49,6 @@ impl HashData {
             declared_type: None,
             original_keys: None,
             default: None,
-            itemized: false,
         }
     }
 

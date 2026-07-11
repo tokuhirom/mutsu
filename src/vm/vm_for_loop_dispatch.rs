@@ -184,7 +184,7 @@ impl Interpreter {
             // `for %h` / `for %h -> $p`: bind each pair's value to a live
             // `HashEntryRef` so an in-loop `%h{$p.key} = X` is observable through
             // a later `$p.value` read (raku's live hash-iteration pairs).
-            Self::hash_live_pairs(gc)
+            Self::hash_live_pairs(gc, iterable.hash_is_itemized())
         } else {
             runtime::value_to_list(&iterable)
         };
