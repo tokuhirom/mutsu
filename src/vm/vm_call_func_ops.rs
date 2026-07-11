@@ -1786,16 +1786,14 @@ impl Interpreter {
     /// shared `state` cell), but which the cross-thread shared captured body
     /// handles correctly.
     fn def_module_single_sig_body_ok_ignoring_state(def: &crate::ast::FunctionDef) -> bool {
-        def.return_type.as_ref().is_none_or(|rt| !rt.contains('('))
-            && def.param_defs.iter().all(|pd| {
-                let is_capture = pd.slurpy && pd.sigilless;
-                let traits_otf_safe = pd
-                    .traits
-                    .iter()
-                    .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
-                (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
-            })
-            && !Self::module_otf_body_needs_interpreter(&def.body)
+        def.param_defs.iter().all(|pd| {
+            let is_capture = pd.slurpy && pd.sigilless;
+            let traits_otf_safe = pd
+                .traits
+                .iter()
+                .all(|t| matches!(t.as_str(), "copy" | "rw" | "raw" | "readonly" | "required"));
+            (is_capture || (!pd.sigilless && pd.sub_signature.is_none())) && traits_otf_safe
+        }) && !Self::module_otf_body_needs_interpreter(&def.body)
     }
 
     /// Return the shared captured body for a resolved module sub def IF routing it
@@ -1853,21 +1851,19 @@ impl Interpreter {
         // caller slot (#4091), so the compiled binding refreshes the caller variable
         // identically to the interpreter — including across an EVAL call boundary.
         //
-        // A *coercion* return (`--> Foo:D()`, the parens) drives extra
-        // return-time COERCE dispatch that the standalone OTF compile does
-        // not reproduce identically when several such subs coexist
-        // (roast/S12-coercion/coercion-return.t), so it stays on the
-        // interpreter. A plain / definite / subset return (`--> Str:D`,
-        // `--> IO::Path:D`) is fine: the compiled binding re-checks it the
-        // same way the interpreter does. This lets Test::Util's
+        // Return types — plain, definite, subset AND coercion (`--> Foo:D()`)
+        // — are all OTF-safe. The coercion exclusion was lifted 2026-07-12:
+        // the compiled return path now drives the same COERCE dispatch the
+        // interpreter does (custom COERCE multis, Nil/Failure passed as-is,
+        // X::TypeCheck::Return / X::Coerce::Impossible on failure), verified
+        // against raku with several coercion subs coexisting
+        // (roast/S12-coercion/coercion-return.t + t/module-sub-otf-coercion-
+        // return.t). Plain/definite returns already let Test::Util's
         // `make-temp-file`/`make-rand-path` (`--> IO::Path:D`, calling a
         // module-private sibling) OTF-compile (PR closure-env #3899/#3902
         // made module-level lexical + private-sibling reads work under OTF;
         // the chmod-IntStr allomorph fix unblocked S32-io/chdir.t).
         // Signature/body gates (shared with the cross-thread shared-body path):
-        //   - a *coercion* return (`--> Foo:D()`, the parens) drives extra
-        //     return-time COERCE dispatch the standalone OTF compile does not
-        //     reproduce identically (roast/S12-coercion/coercion-return.t);
         //   - a capture parameter (`|c`) binds read-only and is fine, but a
         //     sigilless *scalar* (`\x`) / non-capture sub-signature stays excluded
         //     (caller-alias writeback across an EVAL boundary — see the doc above);
