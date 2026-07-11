@@ -3,10 +3,11 @@ use Test;
 use InterpConstructOtf;
 
 # Pins that module subs containing formerly interpreter-gated constructs
-# (nested routine decls, CATCH/CONTROL, phasers, subtest, start, once) behave
-# raku-identically when OTF-compiled (def_is_otf_compilable_module_single).
+# (nested routine decls, CATCH/CONTROL, phasers, subtest, start, once, and
+# nested class/role/grammar decls) behave raku-identically when OTF-compiled
+# (def_is_otf_compilable_module_single).
 
-plan 17;
+plan 28;
 
 is oc-nested(42), "int:42|str:s", "nested sub decl with when+return";
 is oc-nested-when(7), "Iafter;", "nested sub when does not escape the nested routine";
@@ -30,5 +31,17 @@ my @r = await (^4).map: { start oc-catch-in-thread($_) };
 is @r.sort.join("|"), "caught:t0|caught:t2|ok:1|ok:3", "CATCH inside start-threaded calls";
 await (^8).map: { start oc-leave-count() };
 is oc-leave-read(), 8, "LEAVE fires once per call across threads";
+
+is oc-class(3, 4), 7, "nested my class with attrs and method";
+is oc-class-shape-a(), "a-shape", "same-named nested class (a)";
+is oc-class-shape-b(), "b-shape", "same-named nested class (b)";
+is oc-class-shape-a(), "a-shape", "no cross-sub class pollution after b";
+is oc-class-capture(), 3, "nested class method mutates captured lexical";
+is oc-class-capture(), 3, "captured lexical is fresh per call";
+is oc-class-inherit(), "derived+base", "nested class inheritance with callsame";
+is oc-class-recur(4), 10, "recursive sub with nested class decl";
+is oc-role(), 10, "parameterized nested role mixed into nested class";
+is oc-grammar("123"), "match:123", "nested grammar parses";
+is oc-grammar("ab"), "nomatch", "nested grammar rejects";
 
 oc-subtest("subtest inside a module sub", 3, 3);

@@ -117,6 +117,64 @@ our sub oc-leave-count() is export {
 }
 our sub oc-leave-read() is export { $leave-count }
 
+# nested `my class` with attributes, a method, and per-call construction
+our sub oc-class($x, $y) is export {
+    my class Point {
+        has $.x;
+        has $.y;
+        method sum() { $!x + $!y }
+    }
+    Point.new(:$x, :$y).sum;
+}
+
+# two subs declaring the SAME nested class name — must not pollute each other
+our sub oc-class-shape-a() is export {
+    my class Shape { method kind() { "a-shape" } }
+    Shape.new.kind;
+}
+our sub oc-class-shape-b() is export {
+    my class Shape { method kind() { "b-shape" } }
+    Shape.new.kind;
+}
+
+# nested class method mutating a captured lexical (fresh per call)
+our sub oc-class-capture() is export {
+    my $count = 0;
+    my class Bumper { method bump() { $count++ } }
+    my $b = Bumper.new;
+    $b.bump; $b.bump; $b.bump;
+    $count;
+}
+
+# inheritance between two nested classes + callsame
+our sub oc-class-inherit() is export {
+    my class Base { method greet() { "base" } }
+    my class Derived is Base { method greet() { "derived+" ~ callsame } }
+    Derived.new.greet;
+}
+
+# recursive sub declaring a class
+our sub oc-class-recur($n) is export {
+    my class Node { has $.v }
+    return Node.new(v => 0).v if $n <= 0;
+    oc-class-recur($n - 1) + Node.new(v => $n).v;
+}
+
+# parameterized role mixed into a nested class
+our sub oc-role() is export {
+    my role Sized[$max] { method max() { $max } }
+    my class Box does Sized[10] { }
+    Box.new.max;
+}
+
+# grammar declared inside a sub
+our sub oc-grammar($s) is export {
+    my grammar NumG {
+        token TOP { \d+ }
+    }
+    NumG.parse($s) ?? "match:$s" !! "nomatch";
+}
+
 # subtest inside a module sub
 use Test;
 our sub oc-subtest($desc, $a, $b) is export {
