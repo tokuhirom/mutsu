@@ -75,24 +75,24 @@ mutsu already passes these; they were simply never added to the whitelist. Verif
 via `MUTSU_FUDGE=1 prove -e target/debug/mutsu <file>` (and the real
 `scripts/run-roast-test.sh` harness) before adding.
 
-- `roast/6.c/MISC/misc-6.c.t` (1/1)
-- `roast/integration/advent2010-day04.t` (11/11)
-- `roast/integration/advent2013-day19.t` (4/4)
-- `roast/integration/lazy-bentley-generator.t` (1/1)
+- ~~`roast/6.c/MISC/misc-6.c.t` (1/1)~~ — whitelisted (#4423).
+- ~~`roast/integration/advent2010-day04.t` (11/11)~~ — whitelisted (#4423).
+- ~~`roast/integration/advent2013-day19.t` (4/4)~~ — whitelisted (#4423).
+- ~~`roast/integration/lazy-bentley-generator.t` (1/1)~~ — whitelisted (#4423).
 
 ### B. non-integration gaps — raku PASS, mutsu FAIL/ERROR (10)
 
 Genuine mutsu gaps outside the `integration/` bucket. `mutsu` column is
-`ok/plan` from an unfudged mutsu run.
+`ok/plan` from an unfudged mutsu run. **DONE rows** landed 2026-07-11.
 
 | file | mutsu | note |
 |---|---|---|
-| `S32-hash/perl.t` | 43/55 | 型付き Hash `.raku` round-trip / Scalar-decont 区別（§6 ★, +12 achievable） |
-| `S12-attributes/class.t` | 19/28 abort | attribute 機能ギャップで test 19 以降 abort（§6 ★, +9 achievable） |
+| ~~`S32-hash/perl.t`~~ | 43→47/55 | per-holder hash itemization done (#4421); remaining 8 need parameterized-role type-capture binding |
+| `S12-attributes/class.t` | 19/28 abort | §6 ★. Multi-feature: class-body `BEGIN EVAL` attr decl (test20), `EVAL` attr→NotFound (21), `is_run` err msgs (22-23), `where`-clause attr access `X::Syntax::NoSelf` (24-28) |
 | `6.c/S14-roles/mixin-6c.t` | 16/57 | role mixin (6.c) の深い機能 |
-| `6.c/S05-grammar/methods.t` | 4/8 | grammar method 呼び出し edge |
-| `6.c/S14-roles/attributes.t` | 2/3 | role attribute edge |
-| `6.c/S06-other/main-refactored.t` | ERROR 0/501 | `MAIN` サブ multi-dispatch の大型テスト、起動時 error |
+| `6.c/S05-grammar/methods.t` | 4/8 | grammar-engine: die propagation from a `<.method>` subrule (T1/2), embedded `{...}` block not capturing the grammar's defining outer lexical (T3), duplicate-token error message (T6) |
+| ~~`6.c/S14-roles/attributes.t`~~ | 2→3/3 | class attribute accessor prioritized over role method — done (#4425), whitelisted |
+| `6.c/S06-other/main-refactored.t` | ERROR 0/501 | full new-MAIN interface (`ARGS-TO-CAPTURE`/`GENERATE-USAGE`/`MAIN_HELPER`/`USAGE`); aborts before test 1 |
 | `6.c/MISC/bug-coverage.t` | ERROR | 起動時 error |
 | `6.c/S03-operators/set_precedes.t` | ERROR | `(<)`/`(>)` set precedes 演算子 |
 | `APPENDICES/A01-limits/overflow.t` | TIMEOUT 0/18 | 数値 overflow 限界（timeout, notok 9） |
