@@ -1,3 +1,4 @@
+roast/6.c/MISC/misc-6.c.t
 roast/6.c/S02-names/SETTING-6c.t
 roast/6.c/S02-types/subset-6c.t
 roast/6.c/S05-grammar/parse_and_parsefile-6c.t
@@ -1314,6 +1315,7 @@ roast/integration/advent2009-day17.t
 roast/integration/advent2009-day19.t
 roast/integration/advent2009-day21.t
 roast/integration/advent2009-day22.t
+roast/integration/advent2010-day04.t
 roast/integration/advent2010-day06.t
 roast/integration/advent2010-day07.t
 roast/integration/advent2010-day08.t
@@ -1346,6 +1348,7 @@ roast/integration/advent2013-day07.t
 roast/integration/advent2013-day09.t
 roast/integration/advent2013-day12.t
 roast/integration/advent2013-day15.t
+roast/integration/advent2013-day19.t
 roast/integration/advent2013-day20.t
 roast/integration/advent2013-day22.t
 roast/integration/advent2013-day23.t
@@ -1355,6 +1358,7 @@ roast/integration/code-blocks-as-sub-args.t
 roast/integration/diamond.t
 roast/integration/eval-and-threads.t
 roast/integration/failure-and-callsame.t
+roast/integration/lazy-bentley-generator.t
 roast/integration/lexical-array-in-inner-block.t
 roast/integration/lexicals-and-attributes.t
 roast/integration/method-calls-and-instantiation.t
