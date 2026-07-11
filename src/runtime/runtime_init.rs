@@ -2065,6 +2065,7 @@ impl Interpreter {
             var_type_constraints: HashMap::new(),
             atomic_var_seen: false,
             env_type_constraint_seen: false,
+            sigilless_alias_seen: false,
             var_defaults: HashMap::new(),
             var_hash_key_constraints: HashMap::new(),
             instance_type_metadata: Arc::new(RwLock::new(HashMap::new())),

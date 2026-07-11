@@ -709,6 +709,11 @@ impl Interpreter {
         name: &str,
         val: &Value,
     ) {
+        // Fast path: no sigilless-parameter alias has ever been registered, so the
+        // chain is empty — skip the `format!` + env lookup entirely.
+        if !self.sigilless_alias_seen() {
+            return;
+        }
         let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         let mut alias_name = self.env().get(&alias_key).and_then(|v| {
             if let ValueView::Str(n) = v.view() {

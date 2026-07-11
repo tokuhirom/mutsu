@@ -1309,6 +1309,16 @@ pub struct Interpreter {
     /// `format!`+env lookup can be skipped entirely. Never cleared, so a program
     /// that stops using env-scoped constraints still resolves correctly.
     env_type_constraint_seen: bool,
+    /// Monotonic flag: set once any sigilless-parameter alias
+    /// (`__mutsu_sigilless_alias::name` env key, created when binding a `\target`
+    /// raw/sigilless parameter or a `:=`-style alias) has been registered. The hot
+    /// write-back path calls `propagate_sigilless_alias_chain` on every inc-dec /
+    /// compound-assign, which builds `format!("__mutsu_sigilless_alias::{name}")`
+    /// plus an env lookup to walk the alias chain. Sigilless aliases are rare; when
+    /// this flag is clear no alias key exists, the chain is empty, and the whole
+    /// walk (and its `format!`) is skipped. Set at every alias-insert site (see
+    /// `sigilless_alias_key`). Never cleared, so removing an alias still resolves.
+    sigilless_alias_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
     // Array/Hash element defaults are embedded in `ArrayData.default` /

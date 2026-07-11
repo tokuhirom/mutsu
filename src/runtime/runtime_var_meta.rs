@@ -178,6 +178,21 @@ impl Interpreter {
         self.atomic_var_seen = true;
     }
 
+    /// Whether any sigilless-parameter alias (`__mutsu_sigilless_alias::name` env
+    /// key) has ever been registered (monotonic). When false, the write-back path
+    /// can skip the entire `propagate_sigilless_alias_chain` walk (which otherwise
+    /// costs a `format!` + env lookup on every inc-dec / compound-assign).
+    #[inline(always)]
+    pub(crate) fn sigilless_alias_seen(&self) -> bool {
+        self.sigilless_alias_seen
+    }
+
+    /// Mark that a sigilless-parameter alias env key has been registered. Called at
+    /// every `__mutsu_sigilless_alias::*` insert site (see `sigilless_alias_key`).
+    pub(crate) fn mark_sigilless_alias_seen(&mut self) {
+        self.sigilless_alias_seen = true;
+    }
+
     /// Set the default value for a variable declared with `is default(...)`.
     pub(crate) fn set_var_default(&mut self, name: &str, value: Value) {
         self.var_defaults.insert(name.to_string(), value);

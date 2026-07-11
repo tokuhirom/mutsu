@@ -905,6 +905,7 @@ impl Interpreter {
                 let alias_key = format!("__mutsu_sigilless_alias::{}", captured_name);
                 if let Some(v) = self.env().get(&alias_key).cloned() {
                     restored_env.insert(alias_key, v);
+                    self.mark_sigilless_alias_seen();
                 }
             }
             self.merge_sigilless_alias_writes(&mut restored_env, self.env());

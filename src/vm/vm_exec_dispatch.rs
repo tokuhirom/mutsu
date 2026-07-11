@@ -1056,6 +1056,7 @@ impl Interpreter {
                     }
                     self.env_mut()
                         .insert(alias_key.clone(), Value::str(resolved_source.clone()));
+                    self.mark_sigilless_alias_seen();
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
                     // readonly as well (persisted in env for cross-scope survival).
