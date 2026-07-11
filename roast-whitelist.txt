@@ -1,5 +1,6 @@
 roast/6.c/S02-names/SETTING-6c.t
 roast/6.c/S02-types/subset-6c.t
+roast/6.c/S03-operators/set_precedes.t
 roast/6.c/S05-grammar/parse_and_parsefile-6c.t
 roast/6.c/S12-class/mro-6c.t
 roast/6.c/S14-roles/submethods.t
