@@ -302,6 +302,7 @@ impl Interpreter {
             self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source));
             self.env_mut().insert(readonly_key, Value::FALSE);
+            self.mark_sigilless_alias_seen();
         }
         // If the current value is a Proxy (in locals or env), invoke STORE instead of overwriting
         {

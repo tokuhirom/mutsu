@@ -1137,6 +1137,7 @@ impl Interpreter {
                             // caller's variable.
                             let alias_key = format!("__mutsu_sigilless_alias::{}", pd.name);
                             self.env.insert(alias_key, Value::str(source_name));
+                            self.sigilless_alias_seen = true;
                         } else if matches!(args[positional_idx].view(), ValueView::ContainerRef(_))
                         {
                             // A bare `ContainerRef` cell (e.g. the leaf container
@@ -1280,6 +1281,7 @@ impl Interpreter {
                             value = inner;
                             self.env.insert(alias_key, Value::str(resolved_source));
                             self.env.insert(readonly_key, Value::FALSE);
+                            self.sigilless_alias_seen = true;
                         } else if let Some(source_name) = arg_sources
                             .as_ref()
                             .and_then(|names| names.get(positional_idx))
@@ -1301,6 +1303,7 @@ impl Interpreter {
                                 value = source_val;
                                 self.env.insert(alias_key, Value::str(resolved_source));
                                 self.env.insert(readonly_key, Value::FALSE);
+                                self.sigilless_alias_seen = true;
                             } else {
                                 self.env.remove(&alias_key);
                                 self.env.insert(readonly_key, Value::TRUE);

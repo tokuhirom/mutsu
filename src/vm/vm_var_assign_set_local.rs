@@ -1248,6 +1248,7 @@ impl Interpreter {
             self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source.clone()));
             self.env_mut().insert(readonly_key, Value::FALSE);
+            self.mark_sigilless_alias_seen();
             // Create a shared ContainerRef for cross-scope binding (source in
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
             // ContainerRef ensures bidirectional container sharing: writing to
@@ -1296,6 +1297,7 @@ impl Interpreter {
             if scalar_source.is_some() {
                 self.env_mut()
                     .insert(alias_key.clone(), Value::str(effective_source.clone()));
+                self.mark_sigilless_alias_seen();
             }
             // Whole-container `:=` bind (`my @b := @a`, `my %h2 := %h`,
             // `my $ref := @a`): share a single `ContainerRef` cell between the

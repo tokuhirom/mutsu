@@ -252,6 +252,9 @@ impl Interpreter {
             // Inherit monotonically: the parent's env-scoped constraints are copied
             // into the child's env, so the child must keep consulting env-first.
             env_type_constraint_seen: self.env_type_constraint_seen,
+            // Inherit monotonically: the parent's sigilless-alias env keys are
+            // copied into the child env, so the child must keep walking the chain.
+            sigilless_alias_seen: self.sigilless_alias_seen,
             var_defaults: self.var_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             // Per-thread snapshot (not a shared-handle clone): deep-copy the map
