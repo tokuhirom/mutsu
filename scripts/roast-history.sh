@@ -74,6 +74,13 @@ per_file_timeout() {
       # VM perf gap tracked separately.
       echo 30
       ;;
+    roast/S32-io/lock.t)
+      # File-lock contention test built around real `sleep 1` blocks in several
+      # `start` threads: inherently slow -- raku itself takes ~26s. Not a mutsu
+      # perf gap (mutsu runs it in ~21s). Bump the budget so it is categorized
+      # as pass rather than a spurious 10s timeout.
+      echo 60
+      ;;
     *)
       echo "$TIMEOUT"
       ;;
