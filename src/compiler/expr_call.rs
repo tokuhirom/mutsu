@@ -1006,6 +1006,54 @@ impl Compiler {
                     arity: 3,
                     arg_sources_idx: None,
                 });
+            } else if let Expr::Index {
+                target,
+                index,
+                is_positional: _,
+            } = &args[0]
+                && let Some(arr_name) = match target.as_ref() {
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
+                    _ => None,
+                }
+            {
+                // cas(@arr[idx], &code) -> __mutsu_cas_array_elem_code("@arr", idx, code)
+                let call_name_idx = self
+                    .code
+                    .add_constant(Value::str_from("__mutsu_cas_array_elem_code"));
+                let name_idx = self.code.add_constant(Value::str(arr_name));
+                self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(index);
+                self.compile_expr(&args[1]);
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: call_name_idx,
+                    arity: 3,
+                    arg_sources_idx: None,
+                });
+            } else if let Expr::MultiDimIndex { target, dimensions } = &args[0]
+                && let Some(arr_name) = match target.as_ref() {
+                    Expr::ArrayVar(n) => Some(format!("@{}", n)),
+                    Expr::Var(n) if n.starts_with('@') => Some(n.clone()),
+                    _ => None,
+                }
+            {
+                // cas(@arr[d1;d2], &code) ->
+                //   __mutsu_cas_array_multidim_code("@arr", [d1,d2,...], code)
+                let call_name_idx = self
+                    .code
+                    .add_constant(Value::str_from("__mutsu_cas_array_multidim_code"));
+                let name_idx = self.code.add_constant(Value::str(arr_name));
+                self.code.emit(OpCode::LoadConst(name_idx));
+                for dim in dimensions {
+                    self.compile_expr(dim);
+                }
+                self.code.emit(OpCode::MakeArray(dimensions.len() as u32));
+                self.compile_expr(&args[1]);
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: call_name_idx,
+                    arity: 3,
+                    arg_sources_idx: None,
+                });
             } else {
                 let arity = args.len() as u32;
                 let arg_sources_idx = self.add_arg_sources_constant(args);

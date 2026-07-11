@@ -451,6 +451,10 @@ impl Interpreter {
         let expected = &args[2];
         let new_val = args[3].clone();
 
+        // Typed container: reject a wrong-typed swap value before the compare
+        // (raku checks it even when the compare fails — roadmap T5).
+        self.check_atomic_elem_type(&arr_name, &new_val)?;
+
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
 
         // Track B element cells (T4, gc-post-3a-roadmap §2): same template as
@@ -494,7 +498,7 @@ impl Interpreter {
 
     /// Get an element from a multi-dimensional array by navigating nested
     /// arrays. Reads through `ContainerRef` element cells transparently.
-    fn multidim_get(arr: &Value, dims: &[i64]) -> Value {
+    pub(super) fn multidim_get(arr: &Value, dims: &[i64]) -> Value {
         let mut current = arr.deref_container();
         for &dim in dims {
             if let ValueView::Array(elements, ..) = current.view() {
@@ -516,7 +520,7 @@ impl Interpreter {
     /// Returns the updated top-level array. Writes *through* a `ContainerRef`
     /// element cell where one exists (every snapshot holder shares the cell),
     /// COW-rebuilding only the plain nesting levels.
-    fn multidim_set(arr: &Value, dims: &[i64], value: Value) -> Value {
+    pub(super) fn multidim_set(arr: &Value, dims: &[i64], value: Value) -> Value {
         if dims.is_empty() {
             return value;
         }
@@ -654,31 +658,9 @@ impl Interpreter {
             }
         }
 
-        // General CAS retry loop over the element cell. The user closure runs
-        // OUTSIDE the cell lock (it re-enters the VM — the Track B re-entrancy
-        // rule shared with GC safepoints, ADR-0001 §3-6): read, compute, then
-        // compare-and-store under the lock, retrying on interference.
-        loop {
-            let current = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let new_val = {
-                let call_args = if let ValueView::Sub(sub) = code.view() {
-                    if sub.params.is_empty() {
-                        self.env.insert("_".to_string(), current.clone());
-                        self.env.insert("$_".to_string(), current.clone());
-                        Vec::new()
-                    } else {
-                        vec![current.clone()]
-                    }
-                } else {
-                    vec![current.clone()]
-                };
-                self.call_sub_value(code.clone(), call_args, true)?
-            };
-            let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
-            if Self::cas_retry_matches(&current, &guard) {
-                *guard = new_val;
-                return Ok(Value::NIL);
-            }
-        }
+        // General CAS retry loop over the element cell, with typed-constraint
+        // enforcement (shared with the array code form — see
+        // `builtins_atomic_cas_code.rs`).
+        self.cas_cell_code_loop(&hash_name, &cell, &code)
     }
 }
