@@ -215,13 +215,16 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 
 - [ ] default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクがあるため意図的に除外を維持中）。
 - [ ] モジュール sub OTF に残る interpreter 結合構文: `EVAL` / `EVALFILE` / `start` /
-      sigilless scalar（`\x`）/ 戻り型 coercion / `is encoded(...)`（NativeCall marshalling）
+      sigilless scalar（`\x`）/ `is encoded(...)`（NativeCall marshalling）
       （ゲート実体 = `def_is_otf_compilable_module_single`、`vm/vm_call_func_ops.rs`）。
-      **★2026-07-11/12 body 構文ゲート緩和**: `CATCH` / `CONTROL` / phaser /
+      **★2026-07-11/12 ゲート緩和**: `CATCH` / `CONTROL` / phaser /
       ネスト sub/proto/token 宣言 / `subtest` / `once`（2026-07-11）に加え、
-      **ネスト class/role/grammar 宣言**（2026-07-12 — 同名 `my` class の cross-sub 非汚染は
-      parse 時 `decl_id` で担保・捕捉 lexical/継承/parameterized role/grammar parse 全て raku 一致）
-      も実験で確認し OTF 許可に変更
+      **ネスト class/role/grammar 宣言**（2026-07-12 #4429 — 同名 `my` class の cross-sub 非汚染は
+      parse 時 `decl_id` で担保・捕捉 lexical/継承/parameterized role/grammar parse 全て raku 一致）と
+      **戻り型 coercion（`--> Foo:D()`）**（2026-07-12 — 旧不一致 coercion-return.t は compiled 経路の
+      改善で解消済みを実験確認。カスタム COERCE multi・Nil/Failure as-is・X::TypeCheck::Return /
+      X::Coerce::Impossible 失敗系・複数 coercion sub 共存全て raku 一致。
+      担保 = `t/module-sub-otf-coercion-return.t`）も OTF 許可に変更
       （担保 = `t/module-sub-otf-interpreter-constructs.t`）。tree-walk 既存バグ（body 直下
       `CATCH` があると非 die パスの戻り値が Nil になる）も OTF 化で修正。
       **★`start` は OTF 化不可を実験で確認（2026-07-11）**: 再帰 sub の start クロージャが param を
