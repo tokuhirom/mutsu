@@ -274,6 +274,10 @@ impl Interpreter {
         self.our_vars.iter()
     }
 
+    pub(crate) fn our_vars_is_empty(&self) -> bool {
+        self.our_vars.is_empty()
+    }
+
     pub(crate) fn set_our_var(&mut self, key: String, value: Value) {
         self.our_vars.insert(key, value);
     }
