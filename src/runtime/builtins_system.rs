@@ -32,6 +32,14 @@ where
             struct WorkerGuard;
             impl Drop for WorkerGuard {
                 fn drop(&mut self) {
+                    // Drop this thread's `Gc`-bearing thread-local state (pending
+                    // DESTROY queue, failure registry) BEFORE unregistering. Rust
+                    // runs TLS destructors after the closure returns — i.e. after
+                    // `exit_mutator_worker` below — so without this an unregistered
+                    // thread's TLS teardown would mutate the `Gc` graph while a
+                    // collector, believing this thread gone, runs trial deletion.
+                    // See `value::drop_thread_local_gc_state`.
+                    crate::value::drop_thread_local_gc_state();
                     crate::gc::mark_thread_registered(false);
                     crate::gc::exit_mutator_worker();
                 }

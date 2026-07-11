@@ -122,7 +122,15 @@ pub(crate) fn test_reset() {
 }
 
 fn quiescent_enter() {
-    QUIESCENT.fetch_add(1, Ordering::AcqRel);
+    // SeqCst (not AcqRel): this store participates in the Dekker-style handshake
+    // with `try_stop_the_world` (which stores STOP then loads QUIESCENT). AcqRel
+    // does not order a store-then-load pair against another thread's store-then-
+    // load on the *other* location (StoreLoad reordering is permitted), so with
+    // AcqRel the collector could read a stale "quiescent" count for a worker that
+    // has already read a stale "no stop" and resumed mutating — corrupting trial
+    // deletion mid-scan. Making both sides' store+load SeqCst forces a single
+    // total order in which at least one side observes the other's write.
+    QUIESCENT.fetch_add(1, Ordering::SeqCst);
     // Wake a collector waiting for the count to reach its target.
     rendezvous().1.notify_all();
 }
@@ -149,8 +157,13 @@ pub(crate) fn notify_worker_exit() {
 /// collector B achieves a fresh stop with the stale count.
 fn quiescent_exit_checked() {
     loop {
-        QUIESCENT.fetch_sub(1, Ordering::AcqRel);
-        if !stw_requested() {
+        // Both the count decrement and the stop check are SeqCst: this is the
+        // mutator side of the Dekker handshake with `try_stop_the_world`. Ordering
+        // them SeqCst guarantees that if the collector achieved a stop by counting
+        // this thread quiescent, this thread observes the stop here and re-parks
+        // (below) instead of returning to mutate the `Gc` graph under the scan.
+        QUIESCENT.fetch_sub(1, Ordering::SeqCst);
+        if !STOP_REQUESTED.load(Ordering::SeqCst) {
             return;
         }
         quiescent_enter();
@@ -319,7 +332,11 @@ impl Drop for StwGuard {
 /// Only one stop can be in flight; a concurrent second caller fails fast (its
 /// suspects are re-queued and picked up later).
 pub(crate) fn try_stop_the_world(timeout: Duration) -> Option<StwGuard> {
-    if STOP_REQUESTED.swap(true, Ordering::AcqRel) {
+    // SeqCst: the collector side of the Dekker handshake. This store must be
+    // totally ordered against every mutator's `quiescent_exit_checked`
+    // (QUIESCENT store then STOP load) so a worker leaving quiescence cannot slip
+    // past the stop into `Gc` mutation while this collector counts it quiescent.
+    if STOP_REQUESTED.swap(true, Ordering::SeqCst) {
         return None;
     }
     let deadline = Instant::now() + timeout;
@@ -332,7 +349,9 @@ pub(crate) fn try_stop_the_world(timeout: Duration) -> Option<StwGuard> {
         // number of threads that must park. The collector's own thread, if
         // registered, is running this very function — exclude it.
         let needed = super::gc_ptr::mutator_worker_count().saturating_sub(self_counted);
-        if QUIESCENT.load(Ordering::Acquire) >= needed {
+        // SeqCst load (see the `swap` above): pairs with the mutators' SeqCst
+        // QUIESCENT stores to complete the handshake's total order.
+        if QUIESCENT.load(Ordering::SeqCst) >= needed {
             drop(guard);
             return Some(StwGuard { _private: () });
         }
