@@ -1299,6 +1299,16 @@ pub struct Interpreter {
     /// which removes that cost from the hot variable-read path. Never cleared, so
     /// a program that stops using an atomic still resolves correctly.
     atomic_var_seen: bool,
+    /// Monotonic flag: set once any *env-scoped* variable type constraint has been
+    /// written (via `set_var_type_constraint`'s `env.insert` branch or
+    /// `bind_param_type_constraint`). The hot `var_type_constraint` read does a
+    /// `format!("__mutsu_type::{}")` + `env.get` on every variable write-back to
+    /// support env-first, block-scoped constraints (typed params shadowing
+    /// lexicals). When this flag is clear no env constraint exists, so the
+    /// name-keyed global `var_type_constraints` map is authoritative and the
+    /// `format!`+env lookup can be skipped entirely. Never cleared, so a program
+    /// that stops using env-scoped constraints still resolves correctly.
+    env_type_constraint_seen: bool,
     /// Variable default values set by `is default(...)` trait.
     var_defaults: HashMap<String, Value>,
     // Array/Hash element defaults are embedded in `ArrayData.default` /

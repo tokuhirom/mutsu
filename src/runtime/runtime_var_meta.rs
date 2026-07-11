@@ -66,6 +66,7 @@ impl Interpreter {
                 .insert(key.clone(), info.value_type.clone());
             self.env
                 .insert(meta_key, Value::str(info.value_type.clone()));
+            self.env_type_constraint_seen = true;
             let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", key);
             if let Some(key_type) = info.key_type.clone() {
                 self.var_hash_key_constraints
@@ -118,6 +119,7 @@ impl Interpreter {
                     self.atomic_var_seen = true;
                 }
                 self.env.insert(meta_key, Value::str(info.value_type));
+                self.env_type_constraint_seen = true;
             }
             None => {
                 // An untyped scalar parameter shadows any same-named lexical: it
@@ -138,6 +140,13 @@ impl Interpreter {
 
     pub(crate) fn var_type_constraint(&self, name: &str) -> Option<String> {
         let key = name;
+        // Fast path: if no env-scoped constraint has ever been registered, the
+        // name-keyed global map is authoritative — skip the `format!` + env lookup.
+        // env-first ordering only matters once a param has shadowed a lexical, which
+        // requires an env constraint (flag=true). See `env_type_constraint_seen`.
+        if !self.env_type_constraint_seen {
+            return self.var_type_constraints.get(key).cloned();
+        }
         let meta_key = format!("__mutsu_type::{}", key);
         if let Some(ValueView::Str(tc)) = self.env.get(&meta_key).map(Value::view) {
             return Some(tc.to_string());

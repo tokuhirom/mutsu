@@ -249,6 +249,9 @@ impl Interpreter {
             // the child (which shares the atomic storage via shared_vars) must keep
             // running the atomic-variable read check.
             atomic_var_seen: self.atomic_var_seen,
+            // Inherit monotonically: the parent's env-scoped constraints are copied
+            // into the child's env, so the child must keep consulting env-first.
+            env_type_constraint_seen: self.env_type_constraint_seen,
             var_defaults: self.var_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),
             // Per-thread snapshot (not a shared-handle clone): deep-copy the map
