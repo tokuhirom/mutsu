@@ -148,11 +148,26 @@ impl Interpreter {
     }
 
     fn call_exists_pos(&mut self, instance: &Value, idx: Value) -> Result<bool, RuntimeError> {
-        match self.try_compiled_method_or_interpret(instance.clone(), "EXISTS-POS", vec![idx]) {
-            Ok(value) => Ok(value.truthy()),
-            Err(err) if Self::is_method_not_found(&err) => Ok(false),
-            Err(err) => Err(err),
+        // Choose the associative vs positional existence method by the index type,
+        // mirroring the AT-KEY/AT-POS read dispatch (vm_var_index_ops): a string
+        // index is an associative subscript (`$o<k>` / `$o{'k'}`) -> EXISTS-KEY;
+        // any other (typically Int) index is positional (`$o[i]`) -> EXISTS-POS,
+        // falling back to EXISTS-KEY for an object that only does Associative
+        // (e.g. zef's config object, which `handles <... EXISTS-KEY ...>` to a Hash
+        // attribute and defines no EXISTS-POS).
+        let method_order: &[&str] = match idx.view() {
+            ValueView::Str(_) => &["EXISTS-KEY"],
+            _ => &["EXISTS-POS", "EXISTS-KEY"],
+        };
+        for method in method_order {
+            match self.try_compiled_method_or_interpret(instance.clone(), method, vec![idx.clone()])
+            {
+                Ok(value) => return Ok(value.truthy()),
+                Err(err) if Self::is_method_not_found(&err) => continue,
+                Err(err) => return Err(err),
+            }
         }
+        Ok(false)
     }
 
     pub(super) fn instance_exists_pos_result(
