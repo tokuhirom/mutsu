@@ -238,6 +238,11 @@ impl Interpreter {
     /// as [`Self::registry`].
     #[inline]
     pub(crate) fn registry_mut(&self) -> crate::runtime::registry::RegistryWriteGuard<'_> {
+        // Any write access may mutate the registry, so invalidate the cached
+        // regex/grammar snapshot (see `regex_registry_snapshot`). Cheap relaxed
+        // bump; the snapshot cache compares this generation before reusing.
+        self.registry_write_gen
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         crate::runtime::registry::RegistryWriteGuard::new(&self.registry, "registry")
     }
 

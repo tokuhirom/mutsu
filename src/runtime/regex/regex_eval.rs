@@ -42,8 +42,34 @@ impl Interpreter {
     /// the action class's methods live in `Registry::classes`, which the leaner
     /// `copy_decl_registry_into` omits.
     pub(crate) fn copy_full_registry_into(&self, target: &mut Interpreter) {
-        let snapshot = self.registry().clone();
-        *target.registry_mut() = snapshot;
+        // The sub-interpreter only READS the registry during regex/grammar
+        // evaluation (dispatching methods, resolving tokens/actions); it never
+        // declares new classes into it. So rather than deep-cloning the entire
+        // registry (all classes/roles/methods) on every call — catastrophic in a
+        // hot loop matching thousands of grammar tokens, each triggering a full
+        // clone — reuse a single cached snapshot behind an `Arc<RwLock>`, rebuilt
+        // only when the registry actually changed (tracked by `registry_write_gen`).
+        //
+        // Isolation is preserved: the snapshot is a SEPARATE `Arc<RwLock>` from
+        // `self.registry`, so any (rare) write a sub-interpreter makes lands on the
+        // shared snapshot, never leaking back into the parent's registry. Each
+        // thread has its own `Interpreter` (and thus its own cache), so the shared
+        // snapshot lock is never contended across threads.
+        let cur_gen = self
+            .registry_write_gen
+            .load(std::sync::atomic::Ordering::Relaxed);
+        {
+            let cache = self.regex_registry_snapshot.lock().unwrap();
+            if let Some((cached_gen, snapshot)) = &*cache
+                && *cached_gen == cur_gen
+            {
+                target.registry = Arc::clone(snapshot);
+                return;
+            }
+        }
+        let snapshot = Arc::new(RwLock::new(self.registry().clone()));
+        *self.regex_registry_snapshot.lock().unwrap() = Some((cur_gen, Arc::clone(&snapshot)));
+        target.registry = snapshot;
     }
 
     /// Evaluate a closure interpolation `<{ code }>` inside a regex.
