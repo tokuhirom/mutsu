@@ -325,10 +325,36 @@ three of these were missed until now — re-run the FULL survey periodically.
       variants (`IndexAssignExprNested`/`DeepNested`/`Generic`), computed-attr twigil
       cells, hyper `»=»` multi-key writeback, and the remaining `update_local_if_exists`
       callers — migrated onto `resolve_local_slot`/`write_local_slot_or_name`.
-- [~] §1.4 flip + `pop_local_scope` restore — **landed gated** behind
-      `MUTSU_SHADOW_SLOTS` (default off = byte-identical). See the
-      "shadow-slot activation, gated" section below. Default flip pends §1.3.
-- [ ] §1.3 slot-indexed locals + drop BlockScope clone.
+- [x] §1.4 flip + `pop_local_scope` restore — **DEFAULT ON since 2026-07-12.**
+      The gate (`shadow_slots_active`) now defaults true; `MUTSU_NO_SHADOW_SLOTS`
+      is a temporary opt-out escape hatch. Green light = the fresh full toggle-ON
+      survey below.
+- [ ] §1.3 slot-indexed locals + drop the `exec_block_scope_op` whole-`locals`
+      clone (`self.locals.clone()` @ vm_misc_scope.rs:178, plus the
+      `outer_scope_locals.push(saved_locals.clone())` @ :184 and the
+      `self.locals = saved_locals` restore @ :376). **This is the load-bearing
+      remaining refactor** — the clone feeds THREE entangled consumers: (a) the
+      block-exit locals restore (now largely redundant under shadow slots since
+      inner shadows own isolated slots, but the env re-sync at :377-381 and
+      `our_locals`/alias reconciliation still ride on it), (b) `$OUTER::` runtime
+      access (`outer_scope_locals`, read in `vm_var_get_ops.rs:381`), and (c) GC
+      root tracing (`gc_roots.rs:116`). Removing it safely means reworking the
+      block-exit reconciliation to not need a whole-array snapshot AND giving
+      `$OUTER::` a non-snapshot path (S14 baked the compile-time slots; the
+      runtime snapshot path remains). Deserves its own dedicated session with
+      full `make roast` validation, per the doc's per-slice rule.
+
+## Fresh full toggle-ON survey (2026-07-12, debug, 1379 whitelisted files)
+
+`MUTSU_SHADOW_SLOTS=1` (pre-flip) run of every whitelisted file, each ON failure
+re-run OFF: **on_fail=113, genuine toggle-ON regressions = 0.** Every file that
+fails ON also fails OFF (the on_fail count is inflated by `# TODO` not-ok lines,
+which are deterministic and identical ON/OFF). So flipping the default breaks
+nothing that currently passes — the §1.5 leaf-slot bakes (S1–S17) plus the
+2026-07-10 container-identity/cell campaign drove the §1.3 class-1 (name-keyed
+env dual-store) breakage, and every §1.4 survey #1–#3 regression, to zero.
+Validated with `make test` under the flip (16351 tests, PASS). The clone-removal
+perf payoff is the remaining unchecked box above.
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 

@@ -356,11 +356,14 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 - [ ] 生ポインタ aliased write の撤廃: 旧 `arc_contents_mut` は dead 化済みで、本番経路は
       `gc::gc_contents_mut` / `Gc::{get,make}_mut` に移動（unsoundness は解消でなく移動 —
       ANALYSIS rev8 §2.1）。完全解消 = §2 Track B 残スライス T4-T6 に統合済み（重複着手しない）。
-- [ ] **レキシカルスコープ slot キャンペーン完遂（ANALYSIS §1.4・
+- [~] **レキシカルスコープ slot キャンペーン完遂（ANALYSIS §1.4・
       [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md)）**: writeback IR への
-      slot 焼き込みは部分着手済み（`SmartMatchExpr.lhs_slot`・RMW slot 引数・rw-arg `Pair(name, slot)`）。
-      残り = by-name フォールバック（`find_local_slot`）の撤廃 → `MUTSU_SHADOW_SLOTS` 既定 ON
-      （シャドウ衝突の実修正） → `BlockScope` の locals 全 clone/restore 撤去。
+      slot 焼き込み（S1–S17）完了。**shadow-slot 既定 ON 化 完了（2026-07-12）** — フル toggle-ON
+      サーベイ（1379 files）で genuine 回帰 0 を確認し `shadow_slots_active()` を default true に
+      flip（escape hatch `MUTSU_NO_SHADOW_SLOTS`・make test 16351 PASS）。残り = **`BlockScope` の
+      locals 全 clone/restore 撤去**（`exec_block_scope_op` の `self.locals.clone()`＝キャンペーンの
+      perf 本丸。`$OUTER::` 実行時 snapshot・GC roots・env 再同期と絡む load-bearing refactor で
+      専用セッション向き）。
 - [ ] エラー/制御のチャネル分離: bool 群の `enum Control` 統合と `RuntimeError` 縮小
       （cold Box 化・`result_large_err` 23→0）は完了。残る「制御を `Result::Err` で運ぶ」構造自体の
       分離は実害が消えたため優先度低（ANALYSIS rev8 §2.2）。
