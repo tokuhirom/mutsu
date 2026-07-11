@@ -311,6 +311,11 @@ impl Interpreter {
         let expected = &args[2];
         let new_val = args[3].clone();
 
+        // Typed container: reject a wrong-typed swap value like a plain element
+        // assignment would. Raku checks the swap value even when the compare
+        // fails, so this runs before the compare (roadmap T5).
+        self.check_atomic_elem_type(&arr_name, &new_val)?;
+
         // Use an internal key to avoid interference with set_shared_var
         // which would overwrite our atomic array with stale local values.
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
