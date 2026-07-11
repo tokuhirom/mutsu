@@ -60,7 +60,7 @@ impl LazyList {
     pub(crate) fn in_array_context(&self) -> bool {
         matches!(
             self.env.get(Self::ARRAY_CONTEXT_MARKER),
-            Some(Value::Bool(true))
+            Some(Value(ValueRepr::Bool(true)))
         )
     }
 
@@ -121,7 +121,7 @@ impl LazyList {
     pub(crate) fn is_from_gather(&self) -> bool {
         matches!(
             self.env.get("__mutsu_lazylist_from_gather"),
-            Some(Value::Bool(true))
+            Some(Value(ValueRepr::Bool(true)))
         )
     }
 
@@ -195,7 +195,7 @@ impl LazyList {
     fn is_lazy_marked(&self) -> bool {
         matches!(
             self.env.get("__mutsu_preserve_lazy_on_array_assign"),
-            Some(Value::Bool(true))
+            Some(Value(ValueRepr::Bool(true)))
         )
     }
 
@@ -215,7 +215,7 @@ impl LazyList {
     pub(crate) fn in_list_context(&self) -> bool {
         matches!(
             self.env.get(Self::LIST_CONTEXT_MARKER),
-            Some(Value::Bool(true))
+            Some(Value(ValueRepr::Bool(true)))
         )
     }
 
@@ -239,7 +239,7 @@ impl LazyList {
     pub(crate) fn is_cached_no_sink(&self) -> bool {
         matches!(
             self.env.get(Self::CACHED_NO_SINK_MARKER),
-            Some(Value::Bool(true))
+            Some(Value(ValueRepr::Bool(true)))
         )
     }
 
@@ -460,7 +460,7 @@ impl LazyList {
 
         // Generate source values
         let new_values: Vec<Value> = match &source {
-            Value::Range(a, b) => {
+            Value(ValueRepr::Range(a, b)) => {
                 let start = *a + already as i64;
                 let end = if *b == i64::MAX {
                     *a + needed as i64
@@ -469,7 +469,7 @@ impl LazyList {
                 };
                 (start..=end).take(remaining).map(Value::Int).collect()
             }
-            Value::RangeExcl(a, b) => {
+            Value(ValueRepr::RangeExcl(a, b)) => {
                 let start = *a + already as i64;
                 let end = if *b == i64::MAX {
                     *a + needed as i64

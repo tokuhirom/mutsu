@@ -1,4 +1,5 @@
 use super::Value;
+use super::ValueRepr;
 use crate::symbol::Symbol;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -289,7 +290,7 @@ impl RuntimeError {
     /// Check if this error represents an X::CompUnit::UnsatisfiedDependency error.
     pub(crate) fn is_unsatisfied_dependency(&self) -> bool {
         if let Some(ref ex) = self.exception
-            && let Value::Instance { class_name, .. } = ex.as_ref()
+            && let Value(ValueRepr::Instance { class_name, .. }) = ex.as_ref()
         {
             return class_name.resolve() == "X::CompUnit::UnsatisfiedDependency";
         }
@@ -299,7 +300,7 @@ impl RuntimeError {
     /// Check if this error represents a method-not-found error.
     pub(crate) fn is_method_not_found(&self) -> bool {
         if let Some(ref ex) = self.exception
-            && let Value::Instance { class_name, .. } = ex.as_ref()
+            && let Value(ValueRepr::Instance { class_name, .. }) = ex.as_ref()
         {
             return class_name.resolve() == "X::Method::NotFound";
         }
@@ -313,7 +314,7 @@ impl RuntimeError {
     /// whether to fall back to a default candidate (e.g. `Mu.new`).
     pub(crate) fn is_multi_no_match(&self) -> bool {
         if let Some(ref ex) = self.exception
-            && let Value::Instance { class_name, .. } = ex.as_ref()
+            && let Value(ValueRepr::Instance { class_name, .. }) = ex.as_ref()
         {
             return class_name.resolve() == "X::Multi::NoMatch";
         }
@@ -324,7 +325,7 @@ impl RuntimeError {
     /// Create a RuntimeError from an exception Value.
     /// Extracts the message from the exception's attributes and wraps it.
     pub(crate) fn from_exception_value(ex: Value) -> Self {
-        let msg = if let Value::Instance { attributes, .. } = &ex {
+        let msg = if let Value(ValueRepr::Instance { attributes, .. }) = &ex {
             attributes
                 .as_map()
                 .get("message")

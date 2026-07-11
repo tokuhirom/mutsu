@@ -5,17 +5,17 @@ impl Value {
     /// This Proxy won't be auto-FETCHed by method dispatch.
     pub(crate) fn proxy_var_object(proxy: Value, _target_var: String) -> Self {
         match proxy {
-            Value::Proxy {
+            Value(ValueRepr::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 ..
-            } => Value::Proxy {
+            }) => Value(ValueRepr::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 decontainerized: true,
-            },
+            }),
             other => other,
         }
     }
@@ -37,12 +37,12 @@ impl Value {
         Value::Mixin(Arc::new(inner), Arc::new(overrides))
     }
     pub fn generic_range(start: Value, end: Value, excl_start: bool, excl_end: bool) -> Self {
-        Value::GenericRange {
+        Value(ValueRepr::GenericRange {
             start: Arc::new(start),
             end: Arc::new(end),
             excl_start,
             excl_end,
-        }
+        })
     }
     pub fn array(items: Vec<Value>) -> Self {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::List)
@@ -50,10 +50,10 @@ impl Value {
     /// Create a Capture value. Boxes the positional/named payloads (the variant
     /// stores them behind `Box` to keep `Value` small).
     pub fn capture(positional: Vec<Value>, named: HashMap<String, Value>) -> Self {
-        Value::Capture {
+        Value(ValueRepr::Capture {
             positional: Box::new(positional),
             named: Box::new(named),
-        }
+        })
     }
     /// Create a BigRat value. The numerator/denominator are boxed (the variant
     /// stores them behind `Box` to keep `Value` small).
@@ -64,16 +64,16 @@ impl Value {
     /// is one. Centralizes access now that both are boxed payloads.
     pub fn custom_how(&self) -> Option<&Value> {
         match self {
-            Value::CustomType(d) => Some(&d.how),
-            Value::CustomTypeInstance(d) => Some(&d.how),
+            Value(ValueRepr::CustomType(d)) => Some(&d.how),
+            Value(ValueRepr::CustomTypeInstance(d)) => Some(&d.how),
             _ => None,
         }
     }
     /// The REPR name of a `CustomType` or `CustomTypeInstance`, if this is one.
     pub fn custom_repr(&self) -> Option<&str> {
         match self {
-            Value::CustomType(d) => Some(&d.repr),
-            Value::CustomTypeInstance(d) => Some(&d.repr),
+            Value(ValueRepr::CustomType(d)) => Some(&d.repr),
+            Value(ValueRepr::CustomTypeInstance(d)) => Some(&d.repr),
             _ => None,
         }
     }
@@ -149,7 +149,7 @@ impl Value {
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
     /// preserved) via `Into<HashData>`.
     pub fn hash(map: impl Into<HashData>) -> Self {
-        Value::Hash(Gc::new(map.into()), false)
+        Value(ValueRepr::Hash(Gc::new(map.into()), false))
     }
 
     /// True when this value is a `$`-scalar-itemized hash (`$(%h)` / `.item` /
@@ -158,7 +158,7 @@ impl Value {
     /// data can differ in itemization (`%x.raku` → `{...}`, `my $h = %x;
     /// $h.raku` → `${...}`).
     pub fn hash_is_itemized(&self) -> bool {
-        matches!(self, Value::Hash(_, true))
+        matches!(self, Value(ValueRepr::Hash(_, true)))
     }
 
     /// Return this value with its hash itemization flag set to `itemized`,
@@ -166,7 +166,7 @@ impl Value {
     /// A non-hash value is returned unchanged.
     pub fn with_hash_itemized(self, itemized: bool) -> Self {
         match self {
-            Value::Hash(gc, _) => Value::Hash(gc, itemized),
+            Value(ValueRepr::Hash(gc, _)) => Value(ValueRepr::Hash(gc, itemized)),
             other => other,
         }
     }
@@ -184,11 +184,11 @@ impl Value {
     /// leaks a wrapper to value operations), other values get wrapped in Scalar.
     pub fn item(self) -> Self {
         match self {
-            Value::Array(items, kind) => Value::Array(items, kind.itemize()),
+            Value(ValueRepr::Array(items, kind)) => Value::Array(items, kind.itemize()),
             // Itemization is a Value-level flag now, so `.item` keeps the SAME
             // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
             // `=`-shared mutation are preserved).
-            Value::Hash(h, _) => Value::Hash(h, true),
+            Value(ValueRepr::Hash(h, _)) => Value(ValueRepr::Hash(h, true)),
             other => other,
         }
     }
@@ -199,7 +199,7 @@ impl Value {
     /// the decont family); prefer it over hand-rolled `arc.lock().unwrap()` reads.
     pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
         match self {
-            Value::ContainerRef(arc) => f(&arc.lock().unwrap()),
+            Value(ValueRepr::ContainerRef(arc)) => f(&arc.lock().unwrap()),
             other => f(other),
         }
     }
@@ -222,7 +222,7 @@ impl Value {
     /// `arc.lock().unwrap().clone()` reads it replaces.
     pub fn into_deref(self) -> Value {
         match self {
-            Value::ContainerRef(arc) => arc.lock().unwrap().clone(),
+            Value(ValueRepr::ContainerRef(arc)) => arc.lock().unwrap().clone(),
             other => other,
         }
     }
@@ -237,7 +237,7 @@ impl Value {
     /// overwrite the token and silently drop the hash alias.
     pub(crate) fn store_through_cell(arc: &crate::gc::Gc<Mutex<Value>>, val: &Value) {
         let mut inner = arc.lock().unwrap();
-        if matches!(&*inner, Value::HashEntryRef { .. })
+        if matches!(&*inner, Value(ValueRepr::HashEntryRef { .. }))
             && let Some((hash_arc, key)) = inner.hash_entry_terminal()
         {
             // SAFETY: aliased in-place mutation of a shared container; see
@@ -251,7 +251,7 @@ impl Value {
     /// Assign a value into a `ContainerRef`.
     /// Returns `true` if the value was a ContainerRef and the assignment happened.
     pub fn assign_into_container(&self, new_val: Value) -> bool {
-        if let Value::ContainerRef(arc) = self {
+        if let Value(ValueRepr::ContainerRef(arc)) = self {
             let mut inner = arc.lock().unwrap();
             *inner = new_val;
             true
@@ -271,7 +271,7 @@ impl Value {
     /// value; otherwise replace the slot in place. This is the single element
     /// write chokepoint that keeps a bound element's alias live across writes.
     pub fn assign_element_slot(slot: &mut Value, val: Value) {
-        if let Value::ContainerRef(cell) = slot {
+        if let Value(ValueRepr::ContainerRef(cell)) = slot {
             *cell.lock().unwrap() = val;
         } else {
             *slot = val;
@@ -299,7 +299,7 @@ impl Value {
     }
 
     pub fn is_container_ref(&self) -> bool {
-        matches!(self, Value::ContainerRef(_))
+        matches!(self, Value(ValueRepr::ContainerRef(_)))
     }
 
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
@@ -313,16 +313,16 @@ impl Value {
     /// Look up a key in a Hash value by string key.
     pub fn hash_get_str(&self, key: &str) -> Option<Value> {
         match self {
-            Value::Hash(arc, _) => arc.get(key).cloned(),
-            Value::Mixin(inner, _) => inner.hash_get_str(key),
-            Value::Scalar(inner) => inner.hash_get_str(key),
+            Value(ValueRepr::Hash(arc, _)) => arc.get(key).cloned(),
+            Value(ValueRepr::Mixin(inner, _)) => inner.hash_get_str(key),
+            Value(ValueRepr::Scalar(inner)) => inner.hash_get_str(key),
             _ => None,
         }
     }
 
     /// Returns `None` if `self` is not a `Value::Hash`.
     pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
-        if let Value::Hash(arc, _) = self {
+        if let Value(ValueRepr::Hash(arc, _)) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -333,11 +333,11 @@ impl Value {
             // The entry exists (created just above if missing): an EAGER token,
             // whose reads see through to the plain entry value (`is raw`
             // reduce lvalue descent).
-            Some(Value::HashEntryRef {
+            Some(Value(ValueRepr::HashEntryRef {
                 hash: arc.clone(),
                 path: vec![key.to_string()],
                 eager: true,
-            })
+            }))
         } else {
             None
         }
@@ -355,13 +355,17 @@ impl Value {
     /// - a missing key is autovivified to an empty Hash (the old descent
     ///   behavior) and returned by value (shared Arc).
     pub fn hash_autovivify_cell(&self, key: &str) -> Option<Value> {
-        if let Value::Hash(arc, _) = self {
+        if let Value(ValueRepr::Hash(arc, _)) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
             match data.map.get_mut(key) {
-                Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
-                Some(elem @ (Value::Array(..) | Value::Hash(..))) => Some(elem.clone()),
+                Some(Value(ValueRepr::ContainerRef(cell))) => {
+                    Some(Value::ContainerRef(cell.clone()))
+                }
+                Some(elem @ (Value(ValueRepr::Array(..)) | Value(ValueRepr::Hash(..)))) => {
+                    Some(elem.clone())
+                }
                 Some(elem) => {
                     let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
                     *elem = Value::ContainerRef(cell.clone());
@@ -396,13 +400,17 @@ impl Value {
     /// Reads decontainerize at the single chokepoint (`resolve_hash_entry`);
     /// writes go through `hash_insert_through` (Stage 0).
     pub fn hash_slot_ref(&self, key: &str, terminal: bool) -> Option<Value> {
-        if let Value::Hash(arc, _) = self {
+        if let Value(ValueRepr::Hash(arc, _)) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
             match data.map.get_mut(key) {
-                Some(Value::ContainerRef(cell)) => Some(Value::ContainerRef(cell.clone())),
-                Some(elem @ (Value::Array(..) | Value::Hash(..))) if !terminal => {
+                Some(Value(ValueRepr::ContainerRef(cell))) => {
+                    Some(Value::ContainerRef(cell.clone()))
+                }
+                Some(elem @ (Value(ValueRepr::Array(..)) | Value(ValueRepr::Hash(..))))
+                    if !terminal =>
+                {
                     // Intermediate container: return the element value
                     // itself — it shares the inner Arc, so the eventual
                     // leaf promotion by the next index op lands in the
@@ -415,11 +423,11 @@ impl Value {
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }
-                None => Some(Value::HashEntryRef {
+                None => Some(Value(ValueRepr::HashEntryRef {
                     hash: arc.clone(),
                     path: vec![key.to_string()],
                     eager: false,
-                }),
+                })),
             }
         } else {
             None
@@ -431,7 +439,7 @@ impl Value {
     /// Returns the value stored at the key after the operation.
     /// Uses the same interior-mutation approach as `hash_autovivify`.
     pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
-        if let Value::Hash(arc, _) = self {
+        if let Value(ValueRepr::Hash(arc, _)) = self {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -460,7 +468,7 @@ impl Value {
     /// through to the plain entry value — its entry was created with the
     /// token, so path existence IS the connection.
     pub fn hash_entry_read(&self) -> Value {
-        let Value::HashEntryRef { hash, path, eager } = self else {
+        let Value(ValueRepr::HashEntryRef { hash, path, eager }) = self else {
             return self.clone();
         };
         let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
@@ -468,14 +476,14 @@ impl Value {
         for k in &path[..path.len() - 1] {
             let ptr = crate::gc::Gc::as_ptr(&cur);
             match unsafe { (*ptr).get(k.as_str()) } {
-                Some(Value::Hash(inner, _)) => cur = inner.clone(),
+                Some(Value(ValueRepr::Hash(inner, _))) => cur = inner.clone(),
                 _ => return any(),
             }
         }
         let last = path.last().unwrap();
         let ptr = crate::gc::Gc::as_ptr(&cur);
         match unsafe { (*ptr).get(last.as_str()) } {
-            Some(Value::ContainerRef(cell)) => {
+            Some(Value(ValueRepr::ContainerRef(cell))) => {
                 cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
             }
             Some(v) if *eager => v.clone(),
@@ -488,7 +496,7 @@ impl Value {
     /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
     /// (interior mutation, so all holders of the shared Arc observe them).
     pub(crate) fn hash_entry_terminal(&self) -> Option<(Gc<HashData>, String)> {
-        let Value::HashEntryRef { hash, path, .. } = self else {
+        let Value(ValueRepr::HashEntryRef { hash, path, .. }) = self else {
             return None;
         };
         let mut cur = hash.clone();
@@ -498,11 +506,11 @@ impl Value {
             let next = {
                 let data = unsafe { gc_contents_mut(&cur) };
                 match data.map.get(k) {
-                    Some(Value::Hash(inner, _)) => inner.clone(),
+                    Some(Value(ValueRepr::Hash(inner, _))) => inner.clone(),
                     _ => {
                         let new_hash = Value::hash(HashMap::new());
                         let arc = match &new_hash {
-                            Value::Hash(a, _) => a.clone(),
+                            Value(ValueRepr::Hash(a, _)) => a.clone(),
                             _ => unreachable!(),
                         };
                         Value::hash_insert_through(&mut data.map, k.clone(), new_hash);

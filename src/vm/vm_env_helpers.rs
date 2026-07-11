@@ -611,7 +611,7 @@ impl Interpreter {
                 // the container — `$a does Role` turns a Hash `$a` into a `Mixin`,
                 // discarding the old container wholesale — so write through only
                 // when the env value's variant differs from the slot's.
-                if std::mem::discriminant(&self.locals[i]) != std::mem::discriminant(&cur) {
+                if !self.locals[i].same_variant(&cur) {
                     self.locals[i] = cur;
                 }
                 continue;
@@ -623,9 +623,7 @@ impl Interpreter {
             // would otherwise be missed. Compare the enum discriminant first, then
             // the value.
             let changed = match pre_env.get(i) {
-                Some(Some(prev)) => {
-                    std::mem::discriminant(prev) != std::mem::discriminant(&cur) || *prev != cur
-                }
+                Some(Some(prev)) => !prev.same_variant(&cur) || *prev != cur,
                 _ => true,
             };
             if changed {

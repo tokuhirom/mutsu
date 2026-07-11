@@ -951,9 +951,39 @@ pub enum EnumValue {
     Generic(Box<Value>),
 }
 
+/// The public `Value` type: a newtype **seal** over the representation enum
+/// (ADR-0005 §2.2/§2.3, 3b-1 step A). The field and [`ValueRepr`] itself are
+/// private to `crate::value`, so variant construction/matching outside
+/// `src/value/` is a compile error — the 3b-0 API wall
+/// (`docs/nanbox-3b0-api-wall.md`) is now enforced by the compiler, not just
+/// the `check-value-wall.sh` ratchet. Byte-identical to the old
+/// `pub enum Value`: `ValueRepr` is the same 48-byte enum, and the newtype
+/// adds no size, niche, or ABI change (`value_size_guard` still pins <= 48).
+///
+/// 3b-1 step B (the NaN-boxing representation flip, gated on ADR-0005
+/// acceptance) will replace `ValueRepr` behind this seal; call sites outside
+/// `src/value/` will not change.
+#[derive(Clone)]
+pub struct Value(ValueRepr);
+
+impl std::fmt::Debug for Value {
+    /// Forward to the repr so debug output is byte-identical to the pre-seal
+    /// derived output (trace logs and test expectations never see the wrapper).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// The `Value` representation (3b-1 step A). Private to `crate::value` — this
+/// is the compile-time seal: only the wall API (`view()` / `as_*` /
+/// constructors) crosses the module boundary. Tuple/unit variant construction
+/// inside `src/value/` goes through the variant-named constructor shims on
+/// `Value` below (which 3b-1 step B will turn into the NaN-box tag-packing
+/// constructors); struct-like variants and all patterns use
+/// `Value(ValueRepr::...)` / `.0` directly.
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
-pub enum Value {
+pub(in crate::value) enum ValueRepr {
     Int(i64),
     BigInt(Arc<NumBigInt>),
     Num(f64),
@@ -1050,8 +1080,12 @@ pub enum Value {
     /// A Capture: positional args + named args.
     /// Both fields are boxed to keep `Value` small (the inline `Vec` + `HashMap`
     /// otherwise made this the largest variant, inflating every `Value`).
+    /// The double indirection is deliberate (`box_collection` fires now that
+    /// the repr is private — the lint skips public API).
     Capture {
+        #[allow(clippy::box_collection)]
         positional: Box<Vec<Value>>,
+        #[allow(clippy::box_collection)]
         named: Box<HashMap<String, Value>>,
     },
     /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
@@ -1126,6 +1160,193 @@ pub enum Value {
         path: Vec<String>,
         eager: bool,
     },
+}
+
+impl Value {
+    /// Whether two values hold the same representation variant. Wall-safe
+    /// replacement for `std::mem::discriminant` on the pre-seal `enum Value`
+    /// (`Value` is a struct now, where `discriminant` is unspecified).
+    #[inline]
+    pub fn same_variant(&self, other: &Value) -> bool {
+        std::mem::discriminant(&self.0) == std::mem::discriminant(&other.0)
+    }
+}
+
+/// Variant-named constructor shims for the tuple/unit variants of
+/// [`ValueRepr`], so the `Value::Int(..)` / `Value::Nil` *expression* sites
+/// inside `src/value/` compile unchanged across the newtype seal (patterns
+/// cannot resolve to functions/consts, so every pattern site was rewritten to
+/// `Value(ValueRepr::..)`). Private to `crate::value` like the repr itself —
+/// outside the module these do not exist, which is the seal. In 3b-1 step B
+/// these bodies become the NaN-box tag-packing constructors, so construction
+/// is already funneled through the single place the flip will edit.
+/// Struct-like variants (`Instance { .. }`, `Capture { .. }`, ...) cannot be
+/// shimmed as functions; their sites construct `Value(ValueRepr::.. { .. })`.
+#[allow(non_snake_case, non_upper_case_globals, dead_code)]
+impl Value {
+    pub(in crate::value) const Nil: Value = Value(ValueRepr::Nil);
+    pub(in crate::value) const Whatever: Value = Value(ValueRepr::Whatever);
+    pub(in crate::value) const HyperWhatever: Value = Value(ValueRepr::HyperWhatever);
+
+    #[inline]
+    pub(in crate::value) fn Int(v: i64) -> Value {
+        Value(ValueRepr::Int(v))
+    }
+    #[inline]
+    pub(in crate::value) fn BigInt(v: Arc<NumBigInt>) -> Value {
+        Value(ValueRepr::BigInt(v))
+    }
+    #[inline]
+    pub(in crate::value) fn Num(v: f64) -> Value {
+        Value(ValueRepr::Num(v))
+    }
+    #[inline]
+    pub(in crate::value) fn Str(v: Arc<String>) -> Value {
+        Value(ValueRepr::Str(v))
+    }
+    #[inline]
+    pub(in crate::value) fn Bool(v: bool) -> Value {
+        Value(ValueRepr::Bool(v))
+    }
+    #[inline]
+    pub(in crate::value) fn Range(a: i64, b: i64) -> Value {
+        Value(ValueRepr::Range(a, b))
+    }
+    #[inline]
+    pub(in crate::value) fn RangeExcl(a: i64, b: i64) -> Value {
+        Value(ValueRepr::RangeExcl(a, b))
+    }
+    #[inline]
+    pub(in crate::value) fn RangeExclStart(a: i64, b: i64) -> Value {
+        Value(ValueRepr::RangeExclStart(a, b))
+    }
+    #[inline]
+    pub(in crate::value) fn RangeExclBoth(a: i64, b: i64) -> Value {
+        Value(ValueRepr::RangeExclBoth(a, b))
+    }
+    #[inline]
+    pub(in crate::value) fn Array(data: crate::gc::Gc<ArrayData>, kind: ArrayKind) -> Value {
+        Value(ValueRepr::Array(data, kind))
+    }
+    #[inline]
+    pub(in crate::value) fn Hash(data: Gc<HashData>, itemized: bool) -> Value {
+        Value(ValueRepr::Hash(data, itemized))
+    }
+    #[inline]
+    pub(in crate::value) fn Rat(n: i64, d: i64) -> Value {
+        Value(ValueRepr::Rat(n, d))
+    }
+    #[inline]
+    pub(in crate::value) fn FatRat(n: i64, d: i64) -> Value {
+        Value(ValueRepr::FatRat(n, d))
+    }
+    #[inline]
+    pub(in crate::value) fn BigRat(n: Box<NumBigInt>, d: Box<NumBigInt>) -> Value {
+        Value(ValueRepr::BigRat(n, d))
+    }
+    #[inline]
+    pub(in crate::value) fn Complex(re: f64, im: f64) -> Value {
+        Value(ValueRepr::Complex(re, im))
+    }
+    #[inline]
+    pub(in crate::value) fn Set(data: crate::gc::Gc<SetData>, mutable: bool) -> Value {
+        Value(ValueRepr::Set(data, mutable))
+    }
+    #[inline]
+    pub(in crate::value) fn Bag(data: crate::gc::Gc<BagData>, mutable: bool) -> Value {
+        Value(ValueRepr::Bag(data, mutable))
+    }
+    #[inline]
+    pub(in crate::value) fn Mix(data: crate::gc::Gc<MixData>, mutable: bool) -> Value {
+        Value(ValueRepr::Mix(data, mutable))
+    }
+    #[inline]
+    pub(in crate::value) fn Package(sym: Symbol) -> Value {
+        Value(ValueRepr::Package(sym))
+    }
+    #[inline]
+    pub(in crate::value) fn Pair(key: String, val: Box<Value>) -> Value {
+        Value(ValueRepr::Pair(key, val))
+    }
+    #[inline]
+    pub(in crate::value) fn ValuePair(key: Box<Value>, val: Box<Value>) -> Value {
+        Value(ValueRepr::ValuePair(key, val))
+    }
+    #[inline]
+    pub(in crate::value) fn Regex(pat: Arc<String>) -> Value {
+        Value(ValueRepr::Regex(pat))
+    }
+    #[inline]
+    pub(in crate::value) fn RegexWithAdverbs(adv: Box<RegexAdverbs>) -> Value {
+        Value(ValueRepr::RegexWithAdverbs(adv))
+    }
+    #[inline]
+    pub(in crate::value) fn Sub(data: crate::gc::Gc<SubData>) -> Value {
+        Value(ValueRepr::Sub(data))
+    }
+    #[inline]
+    pub(in crate::value) fn WeakSub(data: crate::gc::WeakGc<SubData>) -> Value {
+        Value(ValueRepr::WeakSub(data))
+    }
+    #[inline]
+    pub(in crate::value) fn Seq(items: Arc<Vec<Value>>) -> Value {
+        Value(ValueRepr::Seq(items))
+    }
+    #[inline]
+    pub(in crate::value) fn HyperSeq(items: Arc<Vec<Value>>) -> Value {
+        Value(ValueRepr::HyperSeq(items))
+    }
+    #[inline]
+    pub(in crate::value) fn RaceSeq(items: Arc<Vec<Value>>) -> Value {
+        Value(ValueRepr::RaceSeq(items))
+    }
+    #[inline]
+    pub(in crate::value) fn Slip(items: Arc<Vec<Value>>) -> Value {
+        Value(ValueRepr::Slip(items))
+    }
+    #[inline]
+    pub(in crate::value) fn LazyList(data: crate::gc::Gc<LazyList>) -> Value {
+        Value(ValueRepr::LazyList(data))
+    }
+    #[inline]
+    pub(in crate::value) fn Promise(p: SharedPromise) -> Value {
+        Value(ValueRepr::Promise(p))
+    }
+    #[inline]
+    pub(in crate::value) fn Channel(c: SharedChannel) -> Value {
+        Value(ValueRepr::Channel(c))
+    }
+    #[inline]
+    pub(in crate::value) fn Mixin(
+        inner: Arc<Value>,
+        overrides: Arc<HashMap<String, Value>>,
+    ) -> Value {
+        Value(ValueRepr::Mixin(inner, overrides))
+    }
+    #[inline]
+    pub(in crate::value) fn Uni(data: Box<UniData>) -> Value {
+        Value(ValueRepr::Uni(data))
+    }
+    #[inline]
+    pub(in crate::value) fn CustomType(data: Box<CustomTypeData>) -> Value {
+        Value(ValueRepr::CustomType(data))
+    }
+    #[inline]
+    pub(in crate::value) fn CustomTypeInstance(data: Box<CustomTypeInstanceData>) -> Value {
+        Value(ValueRepr::CustomTypeInstance(data))
+    }
+    #[inline]
+    pub(in crate::value) fn Scalar(inner: Box<Value>) -> Value {
+        Value(ValueRepr::Scalar(inner))
+    }
+    #[inline]
+    pub(in crate::value) fn ContainerRef(cell: Gc<Mutex<Value>>) -> Value {
+        Value(ValueRepr::ContainerRef(cell))
+    }
+    #[inline]
+    pub(in crate::value) fn LazyThunk(data: Arc<LazyThunkData>) -> Value {
+        Value(ValueRepr::LazyThunk(data))
+    }
 }
 
 /// Boxed payload of [`Value::CustomTypeInstance`] (an instance of a type created
@@ -1512,14 +1733,14 @@ mod hash_chokepoint_tests {
         let mut map = HashMap::new();
         map.insert("a".to_string(), Value::Int(1));
         Value::hash_insert_through(&mut map, "a".to_string(), Value::Int(2));
-        assert!(matches!(map.get("a"), Some(Value::Int(2))));
+        assert!(matches!(map.get("a"), Some(Value(ValueRepr::Int(2)))));
     }
 
     #[test]
     fn insert_through_creates_missing_entry() {
         let mut map = HashMap::new();
         Value::hash_insert_through(&mut map, "b".to_string(), Value::Int(7));
-        assert!(matches!(map.get("b"), Some(Value::Int(7))));
+        assert!(matches!(map.get("b"), Some(Value(ValueRepr::Int(7)))));
     }
 
     #[test]
@@ -1532,8 +1753,11 @@ mod hash_chokepoint_tests {
         map.insert("k".to_string(), Value::ContainerRef(cell.clone()));
         Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));
         // The entry is still the same cell (binding preserved)...
-        assert!(matches!(map.get("k"), Some(Value::ContainerRef(_))));
+        assert!(matches!(
+            map.get("k"),
+            Some(Value(ValueRepr::ContainerRef(_)))
+        ));
         // ...and the alias observes the new value through the cell.
-        assert!(matches!(*cell.lock().unwrap(), Value::Int(99)));
+        assert!(matches!(*cell.lock().unwrap(), Value(ValueRepr::Int(99))));
     }
 }
