@@ -516,6 +516,21 @@ impl Interpreter {
                     result
                 }
             } {
+                // Entities defined in a class are prioritized over role
+                // entities: when resolution lands on a method that comes ONLY
+                // from a composed role (`role_origin` set) but the class has a
+                // public attribute accessor of the same name, the accessor wins.
+                // (If a class-local method of that name existed, resolution would
+                // have picked it and `role_origin` would be None.) Defer to the
+                // slow path, whose `run_instance_method` accessor block resolves
+                // it — 6.c S14-roles/attributes.t "Class prioritization".
+                if method_def.role_origin.is_some()
+                    && !method_def.is_private
+                    && matches!(target.view(), ValueView::Instance { .. })
+                    && self.has_public_accessor(cn, method)
+                {
+                    return self.call_method_with_values(target, method, args);
+                }
                 if let Some(result) = self.check_method_wrap_chain(
                     cn,
                     &owner_class,

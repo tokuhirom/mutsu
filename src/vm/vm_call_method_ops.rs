@@ -123,7 +123,12 @@ impl Interpreter {
             return None;
         }
         let cn = class_name.resolve();
-        if self.has_user_method(&cn, method) {
+        // A class-locally-defined method of this name overrides the accessor, so
+        // bail to full dispatch. A method that comes ONLY from a composed role
+        // does NOT: class entities (here, the public attribute accessor) are
+        // prioritized over role entities, so the fast accessor read proceeds
+        // (6.c S14-roles/attributes.t "Class prioritization").
+        if self.has_class_local_method(&cn, method) {
             return None;
         }
         // Only a *public* accessor reads through the fast path. Gating on this

@@ -1065,8 +1065,16 @@ impl Interpreter {
                 };
                 return self.call_method_with_values(bridged, "log", vec![base]);
             }
-            // User-defined methods take priority over auto-generated accessors
-            if self.has_user_method(&class_name.resolve(), method) {
+            // User-defined methods take priority over auto-generated accessors,
+            // EXCEPT a method that comes ONLY from a composed role does not
+            // shadow the class's own attribute accessor of the same name
+            // (class entities are prioritized over role entities). In that case
+            // fall through to the accessor block below; a role method with no
+            // competing accessor still runs here.
+            let cn_resolved = class_name.resolve();
+            let role_only_shadowing_accessor = !self.has_class_local_method(&cn_resolved, method)
+                && self.has_public_accessor(&cn_resolved, method);
+            if !role_only_shadowing_accessor && self.has_user_method(&cn_resolved, method) {
                 let (result, updated) = self.run_instance_method(
                     &class_name.resolve(),
                     attributes.to_map(),
