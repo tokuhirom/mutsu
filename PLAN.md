@@ -186,10 +186,10 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
   #4251）完了。map/array の「構造」は COW スナップショット、要素「値」のみセル — この分割が
   Track B の一般化テンプレート。T4 multidim cas セル化は完了（2026-07-11 —
   1-dim cas と同一テンプレートに統一、read/assign の multidim 経路もセル透過化。
-  詳細 news/2026-07.md）。T5 typed-constraint 透過も完了（2026-07-11 — cas 専用 builtin の
-  セル直書き経路に型チェック配線＋array code形 cas 新規実装。詳細 news/2026-07.md）。
-  残スライス（T6 非 state escaped aggregate probe）と着手条件・ゲートは
-  [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §2 に精緻化済み。
+  詳細 news/2026-07.md）。T5 typed-constraint 透過（#4417）・T6 escaped aggregate probe も
+  完了（2026-07-11 — T6 = free-variable 解析の element incdec/`:delete` 認識漏れ修正。詳細
+  news/2026-07.md）。**Track B 残スライスは完了** — 詳細と各ゲートは
+  [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §2。
 - **post-3a ロードマップ**: 層3a hardening（H1 継続計測〜H5 background collect の着手トリガ）・
   層3b NaN-boxing のスライス計画（3b-0 API 壁 → 3b-1 表現スイッチ → 3b-2 交通量刈り）・
   層3c 凍結条件は [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。

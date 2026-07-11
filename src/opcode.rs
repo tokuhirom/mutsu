@@ -2072,6 +2072,17 @@ impl CompiledCode {
             | OpCode::IndexAssignExprNested { name_idx, .. }
             | OpCode::IndexAssignDeepNested { name_idx, .. }
             | OpCode::IndexElemAutoviv { name_idx, .. } => Some(*name_idx),
+            // Element increment/decrement (`@a[$i]++`, `%h{$k}--`) and element
+            // delete (`@a[$i]:delete`, `%h{$k}:delete`) mutate the container in
+            // place exactly like element-assign — without these a closure whose
+            // ONLY use of an outer aggregate is `%h{$k}++` / `:delete` never
+            // captured it, so the mutation vanished once the closure escaped its
+            // declaring frame (Track B T6 probe).
+            OpCode::PostIncrementIndex(name_idx)
+            | OpCode::PostDecrementIndex(name_idx)
+            | OpCode::PreIncrementIndex(name_idx)
+            | OpCode::PreDecrementIndex(name_idx) => Some(*name_idx),
+            OpCode::DeleteIndexNamed(name_idx, _) => Some(*name_idx),
             OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
             OpCode::ArrayPush {
                 target_name_idx, ..
