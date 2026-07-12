@@ -230,6 +230,7 @@ impl Interpreter {
             }
             if name.starts_with("infix:<") {
                 self.user_declared_infix_ops.insert(name.clone());
+                crate::vm::vm_jit::note_user_infix_decl();
             }
             let source_single = format!("{module}::{name}");
             let source_prefix = format!("{module}::{name}/");

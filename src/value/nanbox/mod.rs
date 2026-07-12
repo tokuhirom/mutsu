@@ -453,6 +453,62 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
     }
 }
 
+// ---- JIT Tier B raw-word exports ------------------------------------------------
+
+/// Word-level constants and probes for the Cranelift Tier B inline emitter
+/// (`vm/vm_jit_tier_b.rs`), which manipulates NaN-box words directly in
+/// native code (ADR-0004 §2.3 Tier B). This is the ONLY bit-layout knowledge
+/// exported outside `crate::value`; every item is derived from the layout
+/// constants above, so a layout change flows into the JIT automatically.
+#[cfg(feature = "jit")]
+pub(crate) mod jit_words {
+    use super::*;
+
+    /// `word >> PAGE_SHIFT` is the 16-bit page.
+    pub(crate) const PAGE_SHIFT: u32 = TAG_SHIFT;
+    /// Page of inline small Ints (48-bit two's complement payload).
+    pub(crate) const INT_PAGE: u64 = super::INT_PAGE;
+    /// Subtracted from an encoded Num word to recover `f64::to_bits`.
+    pub(crate) const DOUBLE_OFFSET: u64 = super::DOUBLE_OFFSET;
+    /// Encoded doubles span pages `NUM_PAGE_MIN..=NUM_PAGE_MAX`.
+    pub(crate) const NUM_PAGE_MIN: u64 = 0x0002;
+    pub(crate) const NUM_PAGE_MAX: u64 = 0xFFF2;
+    pub(crate) const PAYLOAD48_MASK: u64 = super::PAYLOAD48_MASK;
+
+    /// Full-word constants for the payload-free singletons.
+    pub(crate) const TRUE_BITS: u64 = pack_inline(Kind::Bool, 1).get();
+    pub(crate) const FALSE_BITS: u64 = pack_inline(Kind::Bool, 0).get();
+    /// The encoded word of the canonical quiet NaN (every packed NaN
+    /// collapses to this — the Tier B float-arith fast path selects it
+    /// whenever a native float op produces any NaN).
+    pub(crate) const NUM_CANONICAL_NAN_WORD: u64 = CANONICAL_NAN.wrapping_add(DOUBLE_OFFSET);
+
+    /// Kind probe: `word & KIND_MASK == <kind pattern>` ⟺ the word is that
+    /// exact kind (page bits + subkind bits, payload ignored).
+    pub(crate) const KIND_MASK: u64 = (0xFFFF << TAG_SHIFT) | SUB_MASK;
+    /// `Kind::Pair` probe pattern (for the `ContainerizePair` fast skip).
+    pub(crate) const PAIR_PATTERN: u64 = word_for_kind(Kind::Pair, 0).get();
+
+    /// True when duplicating/discarding this word needs no refcount or GC
+    /// bookkeeping: small Int, Num, or a payload-free inline kind. The Tier B
+    /// `LoadConst` emitter inlines the push of such a constant as a raw
+    /// immediate store.
+    pub(crate) fn is_refcount_free(bits: u64) -> bool {
+        match classify(bits) {
+            Classified::Int(_) | Classified::Num(_) => true,
+            Classified::Kind(k) => matches!(
+                k,
+                Kind::Nil
+                    | Kind::Whatever
+                    | Kind::HyperWhatever
+                    | Kind::Bool
+                    | Kind::Package
+                    | Kind::CompUnitDepSpec
+            ),
+        }
+    }
+}
+
 // ---- NanBox --------------------------------------------------------------------
 
 /// The packed 8-byte value word. Owns one reference of any pointer payload.

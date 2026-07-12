@@ -9,6 +9,8 @@
 
 use super::vm_jit::JitEntryFn;
 use super::vm_jit_helpers as helpers;
+use super::vm_jit_support::{noarg_shim, step_supported};
+use super::vm_jit_tier_b::{IntArith, NumCmp, TierB};
 use super::*;
 
 use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, Type, types};
@@ -33,134 +35,6 @@ struct Engine {
 unsafe impl Send for Engine {}
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
-
-/// Payload-free fallible opcodes with a dedicated `(interp) -> status` shim
-/// (the hot arith / compare / string family, plus `Return`). Returns the shim
-/// address for emission, `None` when the opcode is not in this family.
-fn noarg_shim(op: &OpCode) -> Option<usize> {
-    let f: unsafe extern "C" fn(*mut Interpreter) -> u32 = match op {
-        OpCode::Add => helpers::add,
-        OpCode::Sub => helpers::sub,
-        OpCode::Mul => helpers::mul,
-        OpCode::Div => helpers::div,
-        OpCode::Mod => helpers::modulo,
-        OpCode::Pow => helpers::pow,
-        OpCode::Negate => helpers::negate,
-        OpCode::NumLt => helpers::num_lt,
-        OpCode::NumLe => helpers::num_le,
-        OpCode::NumGt => helpers::num_gt,
-        OpCode::NumGe => helpers::num_ge,
-        OpCode::NumEq => helpers::num_eq,
-        OpCode::NumNe => helpers::num_ne,
-        OpCode::Concat => helpers::concat,
-        OpCode::StrEq => helpers::str_eq,
-        OpCode::StrNe => helpers::str_ne,
-        OpCode::Return => helpers::ret,
-        _ => return None,
-    };
-    Some(f as *const () as usize)
-}
-
-/// Straight-line opcodes without a dedicated shim, executed through the
-/// generic `helpers::step` (one interpreter dispatch per opcode). Every entry
-/// is verified against its `exec_one` arm to unconditionally leave
-/// `ip == start + 1` on Ok — no jumps, no compound-loop bodies, no arms that
-/// consult or rewrite `ip` beyond the increment. Anything not provably
-/// straight-line stays OFF this list and bails the chunk out.
-fn step_supported(op: &OpCode) -> bool {
-    matches!(
-        op,
-        // Constants / stack shape
-        OpCode::LoadNil
-            | OpCode::LoadTrue
-            | OpCode::LoadFalse
-            | OpCode::Dup
-            | OpCode::Pop
-            // Variable reads
-            | OpCode::GetGlobal(_)
-            | OpCode::GetOurVar(_)
-            | OpCode::GetArrayVar(_)
-            | OpCode::GetHashVar(_)
-            | OpCode::GetBareWord(_)
-            | OpCode::GetCaptureVar(_)
-            | OpCode::GetCodeVar(_)
-            | OpCode::GetSelfOrNoSelf(_)
-            | OpCode::GetUpvalue { .. }
-            // Variable writes / declarations
-            | OpCode::SetGlobal(_)
-            | OpCode::SetGlobalRaw(_)
-            | OpCode::SetVarDynamic { .. }
-            | OpCode::SetVarType { .. }
-            | OpCode::AssignExpr(_)
-            | OpCode::TopicDotAssign(_)
-            | OpCode::AtomicCompoundVar { .. }
-            | OpCode::IndexAssignExprNamed { .. }
-            | OpCode::WrapVarRef(_)
-            | OpCode::LetSave { .. }
-            | OpCode::CheckReadOnly(_)
-            | OpCode::MarkVarReadonly(_)
-            | OpCode::CheckDynamicVarDeclared(_)
-            // Increment / decrement
-            | OpCode::PostIncrement(..)
-            | OpCode::PostDecrement(..)
-            | OpCode::PreIncrement(..)
-            | OpCode::PreDecrement(..)
-            | OpCode::PreIncrementIndex(_)
-            | OpCode::PreDecrementIndex(_)
-            // Arith predicates
-            | OpCode::DivisibleBy
-            | OpCode::NotDivisibleBy
-            // Closure construction
-            | OpCode::MakeLambda(..)
-            | OpCode::MakeAnonSub(..)
-            | OpCode::MakeAnonSubParams(..)
-            | OpCode::MakeGather(..)
-            // Calls through a code variable (re-entrant, like CallMethod)
-            | OpCode::CallOnCodeVar { .. }
-            | OpCode::ExecCallPairs { .. }
-            // In-place container mutation
-            | OpCode::ArrayPush { .. }
-            | OpCode::TagContainerRef(..)
-            | OpCode::TagContainerRefReversed(..)
-            | OpCode::MarkAccessorRefContext
-            // List / hash construction, indexing and coercion
-            | OpCode::MakeArray(_)
-            | OpCode::MakeRealArray(_)
-            | OpCode::MakeRealArrayNoFlatten(_)
-            | OpCode::MakeHash(_)
-            | OpCode::MakePair
-            | OpCode::CoerceToList
-            | OpCode::Itemize
-            | OpCode::DeitemizeZen
-            | OpCode::Decont
-            | OpCode::Index { .. }
-            | OpCode::IndexAutovivifyLazy
-            // String / bool / numeric helpers
-            | OpCode::StringConcat(_)
-            | OpCode::StrCoerce
-            | OpCode::BoolCoerce
-            | OpCode::Not
-            | OpCode::Gcd
-            | OpCode::Lcm
-            | OpCode::IntDiv
-            | OpCode::IntMod
-            | OpCode::NumCoerce
-            // Sink context (forces lazies / throws unhandled Failures)
-            | OpCode::SinkPop(_)
-            // Topic / context markers
-            | OpCode::MarkBindContext
-            | OpCode::MarkVarDeclContext
-            | OpCode::MarkExplicitInitializerContext
-            | OpCode::MarkShapedDeclContext
-            | OpCode::SetTopic
-            | OpCode::SaveTopic
-            | OpCode::RestoreTopic
-            | OpCode::PushEnterResult
-            | OpCode::LoadEnterResult
-            // Always-throwing terminator (records its own resume point)
-            | OpCode::Die
-    )
-}
 
 /// Compile `code` to a native Tier A body. `None` = bailout (unsupported
 /// opcode, or an internal Cranelift failure): the caller marks the chunk so
@@ -274,6 +148,22 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
     let codep = b.block_params(entry)[1];
     let fnsp = b.block_params(entry)[2];
 
+    // Tier B inline emitter (ADR-0004 J4): available when the stack layout
+    // probe succeeded on this target. `None` degrades every opcode below to
+    // its Tier A helper-call form.
+    let tier_b = if ptr == types::I64 {
+        super::vm_jit_layout::layout().map(|lay| TierB {
+            interp,
+            ptr_ty: ptr,
+            lay,
+            s1: sigs.s1,
+            v1: sigs.v1,
+            v_code_u32: sigs.v_code_u32,
+        })
+    } else {
+        None
+    };
+
     let block_at: std::collections::HashMap<usize, Block> =
         targets.iter().map(|t| (*t, b.create_block())).collect();
 
@@ -315,30 +205,92 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
         }
         match op {
             OpCode::LoadConst(idx) => {
-                let idxv = b.ins().iconst(types::I32, *idx as i64);
-                call_helper(
-                    &mut b,
-                    sigs.v_code_u32,
-                    helpers::load_const as *const () as usize,
-                    &[interp, codep, idxv],
-                );
+                let word = code.constants[*idx as usize].nanbox_bits();
+                if let Some(tb) = &tier_b
+                    && crate::value::jit_words::is_refcount_free(word)
+                {
+                    tb.emit_load_const(
+                        &mut b,
+                        word,
+                        codep,
+                        *idx,
+                        helpers::load_const as *const () as usize,
+                    );
+                } else {
+                    let idxv = b.ins().iconst(types::I32, *idx as i64);
+                    call_helper(
+                        &mut b,
+                        sigs.v_code_u32,
+                        helpers::load_const as *const () as usize,
+                        &[interp, codep, idxv],
+                    );
+                }
             }
             OpCode::SetSourceLine(line) => {
-                let linev = b.ins().iconst(types::I64, *line);
-                call_helper(
-                    &mut b,
-                    sigs.v_i64,
-                    helpers::set_source_line as *const () as usize,
-                    &[interp, linev],
-                );
+                if let Some(tb) = &tier_b {
+                    tb.emit_set_source_line(&mut b, *line);
+                } else {
+                    let linev = b.ins().iconst(types::I64, *line);
+                    call_helper(
+                        &mut b,
+                        sigs.v_i64,
+                        helpers::set_source_line as *const () as usize,
+                        &[interp, linev],
+                    );
+                }
             }
             OpCode::ContainerizePair => {
-                call_helper(
-                    &mut b,
-                    sigs.v1,
-                    helpers::containerize_pair as *const () as usize,
-                    &[interp],
-                );
+                if let Some(tb) = &tier_b {
+                    tb.emit_containerize_pair(
+                        &mut b,
+                        helpers::containerize_pair as *const () as usize,
+                    );
+                } else {
+                    call_helper(
+                        &mut b,
+                        sigs.v1,
+                        helpers::containerize_pair as *const () as usize,
+                        &[interp],
+                    );
+                }
+            }
+            // Tier B inline arithmetic / comparison (Int and Num fast paths
+            // in native code; everything else through the Tier A shim).
+            OpCode::Add if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_int_num_arith(&mut b, IntArith::Add, helpers::add as *const () as usize);
+            }
+            OpCode::Sub if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_int_num_arith(&mut b, IntArith::Sub, helpers::sub as *const () as usize);
+            }
+            OpCode::Mul if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_int_num_arith(&mut b, IntArith::Mul, helpers::mul as *const () as usize);
+            }
+            OpCode::NumLt if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_compare(&mut b, NumCmp::Lt, helpers::num_lt as *const () as usize);
+            }
+            OpCode::NumLe if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_compare(&mut b, NumCmp::Le, helpers::num_le as *const () as usize);
+            }
+            OpCode::NumGt if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_compare(&mut b, NumCmp::Gt, helpers::num_gt as *const () as usize);
+            }
+            OpCode::NumGe if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_compare(&mut b, NumCmp::Ge, helpers::num_ge as *const () as usize);
+            }
+            OpCode::NumEq if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_compare(&mut b, NumCmp::Eq, helpers::num_eq as *const () as usize);
+            }
+            OpCode::NumNe if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_compare(&mut b, NumCmp::Ne, helpers::num_ne as *const () as usize);
             }
             OpCode::GetLocal(idx) => {
                 let idxv = b.ins().iconst(types::I32, *idx as i64);
@@ -394,6 +346,29 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
                 }
                 b.ins().jump(block_at[&t], &[]);
                 open = false;
+            }
+            OpCode::JumpIfFalse(t) if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                let t = *t as usize;
+                tb.emit_jump_if_false(
+                    &mut b,
+                    block_at[&t],
+                    t <= i,
+                    helpers::safepoint as *const () as usize,
+                    helpers::mark_failure_top as *const () as usize,
+                    helpers::jump_if_false_cond as *const () as usize,
+                );
+            }
+            OpCode::JumpIfTrue(t) if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                let t = *t as usize;
+                tb.emit_jump_if_true(
+                    &mut b,
+                    block_at[&t],
+                    t <= i,
+                    helpers::safepoint as *const () as usize,
+                    helpers::jump_if_true_cond as *const () as usize,
+                );
             }
             OpCode::JumpIfFalse(t) | OpCode::JumpIfTrue(t) | OpCode::JumpIfNotNil(t) => {
                 // Conditional branch: the cond helper returns 1 when the jump
