@@ -235,13 +235,20 @@ resolution cache・mro_readonly キャッシュ・FxHashMap・単一候補 memoi
 per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 
 - [ ] `Value` clone/drop ＋ `attributes.to_map()` の毎回クローン ＋
-      `call_compiled_method` の属性キー `format!` ＋ instance 構築 HashMap ＋ `merge_method_env` —
+      `call_compiled_method` の属性キー `format!` ＋ instance 構築 HashMap —
       Lever 2（NaN-boxing・GC 後）待ち、ないし属性 materialization の作り直し（深い）。
-      **注（2026-07-12）**: 旧記述「bench-class の ~50% が Value clone/drop」の実体は
-      for ループ topic writeback の O(n²)（`loop_var_unchanged` が Instance 要素を判定できず
-      毎イテレーション全配列 clone）で、修正済み — bench-class 2.8x 高速化・raku 比 0.58x。
-      再プロファイル後の残ホットスポット（native ctor plan の毎構築再計算・
-      `dispatch_compiled_method` 入口 `to_map()`・`is default` 属性ループ）が次スライス。
+      **2026-07-12 スライス実績**: ① for ループ topic writeback O(n²) 修正（#4447 —
+      旧記述「bench-class の ~50% が Value clone/drop」の実体）② native ctor plan の
+      per-class キャッシュ＋`is default` ループのゲート（#4451）③ `merge_method_env` の
+      `method_local_keys` HashSet を allocation-free 述語化 — 合計で bench-class
+      1.06s→0.23s（raku 比 2.3x→**1.15x** ✅）・method-call 2.7x→**1.31x** ✅。
+      残: `dispatch_compiled_method` 入口の `to_map()` 除去（中規模リファクタ）と
+      attrs の `HashMap<String,Value>`/SipHash 起因の malloc 群（＝作り直し本体）。
+- [ ] **fib/bench-fib の絶対回帰調査（2026-07-12 発見）**: 同一ベンチファイルで
+      fib 0.37s→0.85s・bench-fib 1.09s→2.51s（2026-05-24 比 ~2.3x 遅化・raku 比 4.8x/10.5x）。
+      GC 既定 on（2026-07-05）＋Track B churn が第一容疑だが未 bisect。層3b が回帰した
+      ベースラインの上に fib 利得を計上する前に、bisect＋`MUTSU_VM_STATS` diff で要因特定する。
+      詳細 = [PERFORMANCE.md](PERFORMANCE.md) の 2026-07-12 表と注記。
 - [ ] **Lever 2: NaN-boxing = ADR-0001 層3b（JIT の地ならし・GC 後）**: `Value` 48→8 bytes。
       int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。
       進捗・次の着手単位（3b-1 step B・ADR-0005 Accepted 待ち）は **§2 に集約**。
@@ -264,7 +271,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       絶対 index を運ぶ encoding の是正 / per-opcode ヒストグラム駆動での特化 op 統合
       （`ContainerEq`×4・`IndexAssign*`×6 — 美学でなくデータで駆動）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
-- 目標: method-call <1.5x、bench-class <1.5x（✅ 0.58x・2026-07-12）、bench-fib（型制約付き）<2x。
+- 目標: method-call <1.5x（✅ 1.31x・2026-07-12）、bench-class <1.5x（✅ 1.15x・2026-07-12 —
+  同日中の「0.58x」記載は迷子プロセス負荷下の raku 計測による誤り・訂正済み）、
+  bench-fib（型制約付き）<2x（❌ 10.5x — 上記回帰調査が前提）。
 
 ---
 
@@ -309,9 +318,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 | バイナリ配布 | なし | mise / GitHub Releases で単一コマンド導入 |
 | Whitelist | **1373**（全 .t 1463 中） | 1300+ ✅ 達成済み・現状維持以上 |
 | GC | **default on ✅**（2026-07-05・ADR-0003） | 達成（残 perf は層 3b へ） |
-| fib(25) vs raku | **1.0x** | <10x ✅ |
-| method-call vs raku | **2.7x** | <1.5x |
-| bench-class vs raku | **0.58x**（2026-07-12） | <1.5x ✅ |
-| bench-fib（型制約付き）vs raku | **3.2x** | <2x |
+| fib(25) vs raku | **4.8x**（2026-07-12・絶対 2.3x 回帰 — §5 要調査） | <10x ✅（回帰監視中） |
+| method-call vs raku | **1.31x**（2026-07-12） | <1.5x ✅ |
+| bench-class vs raku | **1.15x**（2026-07-12・同日の 0.58x 記載は計測誤りで訂正） | <1.5x ✅ |
+| bench-fib（型制約付き）vs raku | **10.5x**（2026-07-12・絶対 2.3x 回帰 — §5 要調査） | <2x |
 | 起動時間 vs raku | **0.04x** | 0.04x ✅ 維持 |
 | tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |
