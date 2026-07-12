@@ -301,6 +301,17 @@ impl Interpreter {
         }
         let cc = method_def.compiled_code.clone().unwrap();
         let inv_for_cell = invocant.clone();
+        // Non-instance invocant (no live cell): keep the entry snapshot as the
+        // unadjusted fallback map, mirroring the pre-Option return contract.
+        let fallback_attrs = if inv_for_cell
+            .as_ref()
+            .and_then(Self::self_instance_attrs)
+            .is_none()
+        {
+            Some(attributes.clone())
+        } else {
+            None
+        };
         let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
         let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
         let call_result = self.call_compiled_method(
@@ -330,7 +341,7 @@ impl Interpreter {
         }
         self.pending_rw_writeback_sources = merged;
         match call_result {
-            Ok((v, updated, adjusted)) => {
+            Ok((v, reconciled)) => {
                 if method_def.is_submethod
                     && let Some(mut err) = self.failure_to_runtime_error_if_unhandled(&v)
                 {
@@ -339,16 +350,16 @@ impl Interpreter {
                 }
                 // Read the committed attribute map from the live cell of `self`,
                 // unwrapping a `Mixin` invocant to its inner instance (so a
-                // runtime-`does` mixin method's attribute mutations are captured, not
-                // the stale pre-call `updated` map). `adjusted` keeps the `:=`-recovered
-                // snapshot.
-                let final_attrs = if adjusted {
+                // runtime-`does` mixin method's attribute mutations are captured,
+                // not a stale entry snapshot). A `Some` reconcile keeps the
+                // `:=`-recovered snapshot.
+                let final_attrs = if let Some(updated) = reconciled {
                     updated
                 } else if let Some(cell) = inv_for_cell.as_ref().and_then(Self::self_instance_attrs)
                 {
                     cell.to_map()
                 } else {
-                    updated
+                    fallback_attrs.unwrap_or_default()
                 };
                 Ok((v, final_attrs))
             }

@@ -358,26 +358,24 @@ impl Interpreter {
                             self.pop_method_dispatch();
                         }
                         self.pop_method_samewith_context();
-                        let (result, new_attrs, attrs_adjusted) = method_result?;
+                        let (result, reconciled) = method_result?;
                         if let Some(id) = target_id {
                             // Commit only a `:=`-adjusted snapshot: an unadjusted
                             // one equals the cell and the whole-map write would
                             // race with concurrent cell-CAS (lost updates).
-                            if attrs_adjusted && let Some(cell) = &attrs_cell {
-                                cell.commit_attrs(new_attrs.clone());
+                            if let (Some(m), Some(cell)) = (&reconciled, &attrs_cell) {
+                                cell.commit_attrs(m.clone());
                             }
                             if !self.in_lvalue_assignment
                                 && let ValueView::Proxy { fetcher, .. } = result.view()
                             {
-                                // Without a `:=` adjustment the triple's map is
-                                // the stale entry snapshot (the lazy reconcile
-                                // skips the cell clone) — re-snapshot the live
-                                // cell for the proxy fetcher.
-                                let proxy_attrs = if !attrs_adjusted && let Some(cell) = &attrs_cell
-                                {
-                                    cell.to_map()
-                                } else {
-                                    new_attrs
+                                // Without a `:=` adjustment the returned map is
+                                // absent — re-snapshot the live cell for the
+                                // proxy fetcher.
+                                let proxy_attrs = match (&reconciled, &attrs_cell) {
+                                    (Some(m), _) => m.clone(),
+                                    (None, Some(cell)) => cell.to_map(),
+                                    (None, None) => std::collections::HashMap::new(),
                                 };
                                 return loan_env!(
                                     self,

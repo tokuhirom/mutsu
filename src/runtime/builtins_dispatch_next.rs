@@ -339,13 +339,13 @@ impl Interpreter {
                             Some(invocant.clone()),
                             &empty_fns,
                         )
-                        .map(|(result, updated, adjusted)| {
-                            // Commit only an `adjusted` (`:=`-recovered) snapshot, exactly
+                        .map(|(result, reconciled)| {
+                            // Commit only an adjusted (`:=`-recovered) snapshot, exactly
                             // like `dispatch_compiled_method`: an unadjusted run already
                             // mutated the shared attribute cell in place, so writing the
                             // baseline snapshot back would clobber it (e.g. a parent
                             // `callsame` candidate's `self.x ~= ...`).
-                            let new_inv = if adjusted {
+                            let new_inv = if let Some(updated) = reconciled {
                                 Value::write_back_sharing(
                                     &attributes,
                                     class_name,
@@ -392,7 +392,7 @@ impl Interpreter {
                             Some(invocant.clone()),
                             &empty_fns,
                         )
-                        .map(|(result, _, _)| (result, None))
+                        .map(|(result, _)| (result, None))
                     } else {
                         self.forward_resolved_delegation(
                             &receiver_class,

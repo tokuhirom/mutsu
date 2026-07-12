@@ -290,6 +290,22 @@ impl Interpreter {
     }
 
     pub(crate) fn type_matches_value(&mut self, constraint: &str, value: &Value) -> bool {
+        // Hot-path fast accept (ADR-0004 J3): a concrete value whose exact tag /
+        // class matches the bare constraint name. Sound unless a user `subset`
+        // shadows the name (then the full checker below must run its predicate),
+        // so it is gated on the subset registry. This skips the long string-
+        // compare gauntlet for the ubiquitous `Int $n` / `Point $p` params.
+        let tag_match = match value.view() {
+            ValueView::Int(_) => constraint == "Int",
+            ValueView::Num(_) => constraint == "Num",
+            ValueView::Str(_) => constraint == "Str",
+            ValueView::Bool(_) => constraint == "Bool",
+            ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
+            _ => false,
+        };
+        if tag_match && !self.registry().subsets.contains_key(constraint) {
+            return true;
+        }
         if let ValueView::Scalar(inner) = value.view() {
             return self.type_matches_value(constraint, inner);
         }
