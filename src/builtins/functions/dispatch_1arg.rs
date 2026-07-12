@@ -166,7 +166,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     let hex = format!("{:X}", &**n);
                     return Some(Err(RuntimeError::new(format!(
                         "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                        n, hex
+                        *n, hex
                     ))));
                 }
                 ValueView::Num(f) => (f as i64, format!("{}", f as i64)),

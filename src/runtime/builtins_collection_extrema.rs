@@ -294,7 +294,7 @@ impl Interpreter {
         if positional.len() == 1
             && let ValueView::Hash(map) = positional[0].view()
         {
-            return self.extrema_from_hash(map, by, false);
+            return self.extrema_from_hash(&map, by, false);
         }
         if positional.len() == 1
             && let ValueView::Instance { class_name, .. } = positional[0].view()
@@ -337,7 +337,7 @@ impl Interpreter {
         if positional.len() == 1
             && let ValueView::Hash(map) = positional[0].view()
         {
-            return self.extrema_from_hash(map, by, true);
+            return self.extrema_from_hash(&map, by, true);
         }
         if positional.len() == 1
             && let ValueView::Instance { class_name, .. } = positional[0].view()

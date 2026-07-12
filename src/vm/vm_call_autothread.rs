@@ -256,10 +256,10 @@ impl Interpreter {
         val: &Value,
     ) -> Option<(crate::value::JunctionKind, Arc<Vec<Value>>)> {
         match val.view() {
-            ValueView::Junction { kind, values } => Some((kind.clone(), values.clone())),
+            ValueView::Junction { kind, values } => Some((kind, values.clone())),
             ValueView::Scalar(inner) => {
                 if let ValueView::Junction { kind, values } = inner.view() {
-                    Some((kind.clone(), values.clone()))
+                    Some((kind, values.clone()))
                 } else {
                     None
                 }

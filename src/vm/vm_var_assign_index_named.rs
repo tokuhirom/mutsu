@@ -51,7 +51,7 @@ impl Interpreter {
     fn build_slice_key_tree(&mut self, key: &Value) -> Result<SliceKeyTree, RuntimeError> {
         match key.view() {
             ValueView::LazyList(ll) => {
-                let items = self.force_lazy_list_vm(ll)?;
+                let items = self.force_lazy_list_vm(&ll)?;
                 let children = items
                     .iter()
                     .map(|item| self.build_slice_key_tree(item))
@@ -286,8 +286,8 @@ impl Interpreter {
         let old_container_arc_ptr: Option<usize> =
             if let Some(container) = self.env().get(&var_name) {
                 match container.view() {
-                    ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
-                    ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
+                    ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(&arc) as usize),
+                    ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(&arc) as usize),
                     _ => None,
                 }
             } else {
@@ -1171,7 +1171,7 @@ impl Interpreter {
                     // string that does NOT coerce to the numeric type (`%bh<foo>`)
                     // is rejected.
                     let allomorph_ok = matches!(idx.view(), ValueView::Str(s)
-                        if crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_some())
+                        if crate::runtime::str_numeric::parse_raku_str_to_numeric(&s).is_some())
                         && matches!(
                             key_type,
                             "Int" | "UInt" | "Num" | "Rat" | "Real" | "Numeric" | "Cool"
@@ -1525,7 +1525,7 @@ impl Interpreter {
                         .with_hash_mut(|hash| {
                             let is_self_hash_ref = matches!(
                                 val.view(),
-                                ValueView::Hash(source_hash) if crate::gc::Gc::ptr_eq(hash, source_hash)
+                                ValueView::Hash(source_hash) if crate::gc::Gc::ptr_eq(hash, &source_hash)
                             );
                             // Container identity (§3): a key write on a SHARED
                             // hash mutates through the backing node so every
@@ -1630,7 +1630,7 @@ impl Interpreter {
                                     .with_array_mut(|items, _| -> Result<(), RuntimeError> {
                                     let is_self_array_ref = matches!(
                                         val.view(),
-                                        ValueView::Array(source_items, ..) if crate::gc::Gc::ptr_eq(items, source_items)
+                                        ValueView::Array(source_items, ..) if crate::gc::Gc::ptr_eq(items, &source_items)
                                     );
                                     // Container identity (§3): an element write
                                     // on a SHARED array mutates through the
@@ -1936,8 +1936,8 @@ impl Interpreter {
                 .or_else(|| self.env().get(&original_var_name).cloned());
             if let Some(ref container) = current {
                 let new_arc_ptr = match container.view() {
-                    ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(arc) as usize),
-                    ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(arc) as usize),
+                    ValueView::Array(arc, _) => Some(crate::gc::Gc::as_ptr(&arc) as usize),
+                    ValueView::Hash(arc) => Some(crate::gc::Gc::as_ptr(&arc) as usize),
                     _ => None,
                 };
                 if let Some(new_ptr) = new_arc_ptr {
@@ -2868,7 +2868,7 @@ impl Interpreter {
                 };
                 // SAFETY: aliased in-place mutation of a shared hash so the change
                 // is visible to all holders of the same Arc; see `arc_contents_mut`.
-                let hd = unsafe { crate::value::gc_contents_mut(arc) };
+                let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                 Value::hash_insert_through(&mut hd.map, key.clone(), stored);
                 // For a fresh-cell bind, write the cell back to the source var
                 // so both sides alias the same container.
@@ -2886,7 +2886,7 @@ impl Interpreter {
                     // SAFETY: aliased in-place mutation of a shared array so the
                     // change is visible to all holders of the same Arc; see
                     // `arc_contents_mut`.
-                    let v = &mut unsafe { crate::value::gc_contents_mut(arc) }.items;
+                    let v = &mut unsafe { crate::value::gc_contents_mut(&arc) }.items;
                     Self::autoviv_resize(
                         v,
                         i + 1,

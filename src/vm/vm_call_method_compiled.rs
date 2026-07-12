@@ -106,33 +106,30 @@ impl Interpreter {
             .enumerate()
             .map(|(idx, name)| (name.as_str(), idx))
             .collect();
-        let (block_cc, block_fns, captured_env, captured_bindings, writeback_bindings) =
-            match code_val.view() {
-                ValueView::Sub(data) => {
-                    let (
-                        block_cc,
-                        block_fns,
-                        captured_bindings,
-                        writeback_bindings,
-                        captured_names,
-                    ) = self.get_or_compile_protect_block_with_slots(data);
-                    self.sync_shared_vars_for_names(
-                        captured_names.iter().map(|name| name.as_str()),
-                    );
-                    (
-                        block_cc,
-                        block_fns,
-                        Some(&data.env),
-                        captured_bindings,
-                        writeback_bindings,
-                    )
-                }
-                _ => {
-                    // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
-                    // in the Interpreter. Currently these are rare and delegate to interpreter.
-                    return self.call_protect_block(code_val);
-                }
-            };
+        let (block_cc, block_fns, sub_data, captured_bindings, writeback_bindings) = match code_val
+            .view()
+        {
+            ValueView::Sub(data) => {
+                let (block_cc, block_fns, captured_bindings, writeback_bindings, captured_names) =
+                    self.get_or_compile_protect_block_with_slots(&data);
+                self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
+                // Keep an owned handle: a view guard's borrow cannot
+                // outlive the match, so clone the Gc (refcount bump only).
+                (
+                    block_cc,
+                    block_fns,
+                    Some(data.clone()),
+                    captured_bindings,
+                    writeback_bindings,
+                )
+            }
+            _ => {
+                // TODO: Handle non-Sub protect blocks (e.g. WeakSub, Routine)
+                // in the Interpreter. Currently these are rare and delegate to interpreter.
+                return self.call_protect_block(code_val);
+            }
+        };
+        let captured_env = sub_data.as_ref().map(|data| &data.env);
 
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);

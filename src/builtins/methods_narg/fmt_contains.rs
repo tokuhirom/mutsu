@@ -43,7 +43,7 @@ pub(crate) fn contains_value_recursive(hay: &str, needle: &Value) -> Value {
                 .iter()
                 .map(|v| contains_value_recursive(hay, v))
                 .collect::<Vec<_>>();
-            Value::junction(kind.clone(), mapped)
+            Value::junction(kind, mapped)
         }
         _ => Value::truth(hay.contains(&needle.to_string_value())),
     }
@@ -56,7 +56,7 @@ fn contains_value_recursive_ci(hay_lc: &str, needle: &Value) -> Value {
                 .iter()
                 .map(|v| contains_value_recursive_ci(hay_lc, v))
                 .collect::<Vec<_>>();
-            Value::junction(kind.clone(), mapped)
+            Value::junction(kind, mapped)
         }
         _ => Value::truth(hay_lc.contains(&needle.to_string_value().to_lowercase())),
     }

@@ -104,7 +104,7 @@ impl Interpreter {
     pub(crate) fn stringify_test_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
         match value.view() {
             ValueView::LazyList(list) => Ok(self
-                .force_lazy_list(list)?
+                .force_lazy_list(&list)?
                 .iter()
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()

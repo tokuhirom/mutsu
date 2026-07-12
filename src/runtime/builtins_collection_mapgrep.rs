@@ -412,7 +412,7 @@ impl Interpreter {
             ValueView::Hash(target_arc) => {
                 for (name, env_val) in self.env().iter() {
                     if let ValueView::Hash(env_arc) = env_val.view()
-                        && crate::gc::Gc::ptr_eq(target_arc, env_arc)
+                        && crate::gc::Gc::ptr_eq(&target_arc, &env_arc)
                     {
                         return Some(name.resolve());
                     }
@@ -422,7 +422,7 @@ impl Interpreter {
             ValueView::Bag(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
                     if let ValueView::Bag(env_arc, _) = env_val.view()
-                        && crate::gc::Gc::ptr_eq(target_arc, env_arc)
+                        && crate::gc::Gc::ptr_eq(&target_arc, &env_arc)
                     {
                         return Some(name.resolve());
                     }
@@ -432,7 +432,7 @@ impl Interpreter {
             ValueView::Mix(target_arc, _) => {
                 for (name, env_val) in self.env().iter() {
                     if let ValueView::Mix(env_arc, _) = env_val.view()
-                        && crate::gc::Gc::ptr_eq(target_arc, env_arc)
+                        && crate::gc::Gc::ptr_eq(&target_arc, &env_arc)
                     {
                         return Some(name.resolve());
                     }

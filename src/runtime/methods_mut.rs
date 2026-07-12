@@ -199,7 +199,7 @@ impl Interpreter {
                     _ => r,
                 }
             }
-            ValueView::Str(s) => Value::str(Self::string_succ(s)),
+            ValueView::Str(s) => Value::str(Self::string_succ(&s)),
             _ => Value::int(1),
         }
     }
@@ -220,7 +220,7 @@ impl Interpreter {
                     _ => r,
                 }
             }
-            ValueView::Str(s) => match Self::string_pred(s) {
+            ValueView::Str(s) => match Self::string_pred(&s) {
                 Ok(prev) => Value::str(prev),
                 Err(_) => Value::str_arc(s.clone()),
             },
@@ -251,12 +251,12 @@ impl Interpreter {
         let mut cells: Vec<crate::gc::Gc<std::sync::Mutex<Value>>> = Vec::new();
         for (name, value) in self.env.iter() {
             match value.view() {
-                ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(existing, needle) => {
+                ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(&existing, needle) => {
                     keys.push(*name);
                 }
                 ValueView::ContainerRef(cell) => {
                     if let ValueView::Array(existing, ..) = cell.lock().unwrap().view()
-                        && crate::gc::Gc::ptr_eq(existing, needle)
+                        && crate::gc::Gc::ptr_eq(&existing, needle)
                     {
                         cells.push(cell.clone());
                     }
@@ -289,12 +289,12 @@ impl Interpreter {
         let mut cells: Vec<crate::gc::Gc<std::sync::Mutex<Value>>> = Vec::new();
         for (name, value) in self.env.iter() {
             match value.view() {
-                ValueView::Hash(existing) if crate::gc::Gc::ptr_eq(existing, needle) => {
+                ValueView::Hash(existing) if crate::gc::Gc::ptr_eq(&existing, needle) => {
                     keys.push(*name);
                 }
                 ValueView::ContainerRef(cell) => {
                     if let ValueView::Hash(existing) = cell.lock().unwrap().view()
-                        && crate::gc::Gc::ptr_eq(existing, needle)
+                        && crate::gc::Gc::ptr_eq(&existing, needle)
                     {
                         cells.push(cell.clone());
                     }
@@ -327,7 +327,7 @@ impl Interpreter {
             if let ValueView::Instance { attributes, .. } = value.view() {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let ValueView::Array(arc, ..) = attr_val.view()
-                        && crate::gc::Gc::ptr_eq(arc, needle)
+                        && crate::gc::Gc::ptr_eq(&arc, needle)
                     {
                         updates.push((*var_name, attr_key.clone()));
                     }
@@ -356,7 +356,7 @@ impl Interpreter {
             if let ValueView::Instance { attributes, .. } = value.view() {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let ValueView::Hash(arc) = attr_val.view()
-                        && crate::gc::Gc::ptr_eq(arc, needle)
+                        && crate::gc::Gc::ptr_eq(&arc, needle)
                     {
                         updates.push((*var_name, attr_key.clone()));
                     }

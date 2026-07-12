@@ -33,7 +33,7 @@ impl Interpreter {
                 // or a lazy map/grep pipe must stay lazy (forcing a sequence_spec
                 // would truncate it to its finite cache). A `lazy`-marked list is
                 // likewise left lazy; so is one that fails a strict force.
-                match self.force_lazy_list_vm(ll) {
+                match self.force_lazy_list_vm(&ll) {
                     Ok(items) => Value::seq(items),
                     Err(_) => val,
                 }

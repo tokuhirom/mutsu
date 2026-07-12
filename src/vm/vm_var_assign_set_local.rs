@@ -558,7 +558,7 @@ impl Interpreter {
         // Capture the old hash Arc before assignment for circular reference fixup.
         let old_hash_arc = if name.starts_with('%') {
             if let ValueView::Hash(arc) = self.locals[idx].view() {
-                Some(crate::gc::Gc::as_ptr(arc) as usize)
+                Some(crate::gc::Gc::as_ptr(&arc) as usize)
             } else {
                 None
             }
@@ -568,7 +568,7 @@ impl Interpreter {
         // Capture the old array Arc before assignment for circular reference fixup.
         let old_array_arc = if name.starts_with('@') {
             if let ValueView::Array(arc, _) = self.locals[idx].view() {
-                Some(crate::gc::Gc::as_ptr(arc) as usize)
+                Some(crate::gc::Gc::as_ptr(&arc) as usize)
             } else {
                 None
             }
@@ -758,7 +758,7 @@ impl Interpreter {
                         crate::value::ArrayKind::List,
                     ),
                     ValueView::LazyList(list) => {
-                        let items = self.force_lazy_list_vm(list)?;
+                        let items = self.force_lazy_list_vm(&list)?;
                         Value::array_with_kind(
                             crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             crate::value::ArrayKind::List,
@@ -960,7 +960,7 @@ impl Interpreter {
                     {
                         Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                     }
-                    ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(list)?),
+                    ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
                     ValueView::LazyIoLines { .. } => {
                         let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
                         Value::real_array(runtime::value_to_list(&forced))
@@ -985,7 +985,7 @@ impl Interpreter {
                             Some(ValueView::Bool(true)) => {
                                 Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                             }
-                            _ => Value::real_array(self.force_lazy_list_vm(list)?),
+                            _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                         }
                     }
                     ValueView::LazyIoLines { .. } => {
@@ -1654,13 +1654,13 @@ impl Interpreter {
         // (e.g. a self-referential `@a = @a`), which needs no copy.
         if let Some(old_gc) = &inplace_old_array
             && let ValueView::Array(new_gc, kind) = self.locals[idx].view()
-            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+            && !crate::gc::Gc::ptr_eq(old_gc, &new_gc)
         {
             let (new_gc, kind) = (new_gc.clone(), kind);
             self.locals[idx] = Self::array_inplace_reassign(old_gc, &new_gc, kind);
         } else if let Some(old_gc) = &inplace_old_hash
             && let ValueView::Hash(new_gc) = self.locals[idx].view()
-            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+            && !crate::gc::Gc::ptr_eq(old_gc, &new_gc)
         {
             let new_gc = new_gc.clone();
             self.locals[idx] = Self::hash_inplace_reassign(old_gc, &new_gc);

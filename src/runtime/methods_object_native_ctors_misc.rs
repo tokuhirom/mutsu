@@ -173,7 +173,7 @@ impl Interpreter {
             {
                 let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
                 if let ValueView::Seq(items) = seq.view() {
-                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    let seq_id = std::sync::Arc::as_ptr(&items) as usize;
                     // Store off the scoped env so the association
                     // survives sub/block returns (see field docs).
                     self.predictive_seq_iters.insert(seq_id, iterator.clone());
@@ -199,7 +199,7 @@ impl Interpreter {
             // happens only when the Seq is actually consumed/iterated.
             let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
             if let ValueView::Seq(items) = seq.view() {
-                crate::value::seq_register_deferred_iter(items, iterator.clone());
+                crate::value::seq_register_deferred_iter(&items, iterator.clone());
             }
             return seq;
         }
@@ -209,7 +209,7 @@ impl Interpreter {
         // consumed Seqs ("Seq.new()") so the EVAL roundtrip works.
         let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
         if let ValueView::Seq(items) = seq.view() {
-            let _ = crate::value::seq_consume(items);
+            let _ = crate::value::seq_consume(&items);
         }
         seq
     }

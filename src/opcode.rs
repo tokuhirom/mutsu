@@ -2159,7 +2159,7 @@ impl CompiledCode {
             } => {
                 if let Some(ValueView::Str(method)) =
                     self.constants.get(*name_idx as usize).map(Value::view)
-                    && Self::is_mutating_container_method(method)
+                    && Self::is_mutating_container_method(&method)
                 {
                     Some(*target_name_idx)
                 } else {
@@ -2238,7 +2238,7 @@ impl CompiledCode {
                     self.constants.get(idx as usize).map(Value::view)
                 && !own.contains(name.as_str())
             {
-                free.insert(Symbol::intern(name));
+                free.insert(Symbol::intern(&name));
             }
             // Free-var container in-place mutation (push/append/element-assign):
             // NOT a name-write, so tracked separately for cell boxing.
@@ -2248,7 +2248,7 @@ impl CompiledCode {
                 && (name.starts_with('@') || name.starts_with('%'))
                 && !own.contains(name.as_str())
             {
-                free_container_writes.insert(Symbol::intern(name));
+                free_container_writes.insert(Symbol::intern(&name));
                 // A container mutated ONLY via element-assign (`%h{$k} = v`,
                 // `@a[$i] = v`) must ALSO be captured as a free variable, exactly
                 // like one mutated via a method (`%h.push`, already a name-read op).
@@ -2257,7 +2257,7 @@ impl CompiledCode {
                 // neither shared with the caller nor persisted for writeback). An
                 // array happened to survive via shared in-place mutation, but a hash
                 // element-assign copy-on-writes and needs the capture + writeback.
-                free.insert(Symbol::intern(name));
+                free.insert(Symbol::intern(&name));
             }
             // Name-based writes: either a free-var write or an own-local mutation.
             if let Some(idx) = Self::op_name_write_const_idx(op)
@@ -2265,8 +2265,8 @@ impl CompiledCode {
                     self.constants.get(idx as usize).map(Value::view)
             {
                 if own.contains(name.as_str()) {
-                    self_mutated.insert(Symbol::intern(name));
-                } else if !Self::is_attribute_accessor_name(name) {
+                    self_mutated.insert(Symbol::intern(&name));
+                } else if !Self::is_attribute_accessor_name(&name) {
                     // Attribute accessors (`$.count++` → name `.count`, `$!x`, the
                     // `@.`/`@!`/`%.`/`%!` forms) resolve via `self`, NOT the
                     // enclosing lexical env, so they must not count as free-var
@@ -2276,7 +2276,7 @@ impl CompiledCode {
                     // they still need the writeback gate (reduce-time dynamic-var
                     // scoping in grammar actions, t/grammar-reduce-time-dynvar.t),
                     // so they are NOT excluded here.
-                    free_writes.insert(Symbol::intern(name));
+                    free_writes.insert(Symbol::intern(&name));
                 }
             }
             // `$OUTER::x` reads the enclosing lexical scope's binding of `x`.
@@ -2326,12 +2326,12 @@ impl CompiledCode {
         // as free vars (unless this body declares them).
         for c in &self.constants {
             let pattern = match c.view() {
-                ValueView::Regex(s) => Some(s.as_str()),
-                ValueView::RegexWithAdverbs(a) => Some(a.pattern.as_str()),
+                ValueView::Regex(s) => Some(s.clone()),
+                ValueView::RegexWithAdverbs(a) => Some(a.pattern.clone()),
                 _ => None,
             };
             if let Some(pattern) = pattern {
-                for name in Self::regex_interpolated_var_names(pattern) {
+                for name in Self::regex_interpolated_var_names(&pattern) {
                     if !own.contains(name.as_str()) {
                         free.insert(Symbol::intern(&name));
                     }
@@ -2564,7 +2564,7 @@ impl CompiledCode {
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
             {
-                let sym = Symbol::intern(name);
+                let sym = Symbol::intern(&name);
                 if eligible.contains(&sym) {
                     let uv = *index_of.entry(sym).or_insert_with(|| {
                         let n = syms.len() as u32;

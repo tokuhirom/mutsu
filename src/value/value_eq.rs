@@ -15,13 +15,13 @@ impl PartialEq for Value {
             };
         match (self.view(), other.view()) {
             (ValueView::Int(a), ValueView::Int(b)) => a == b,
-            (ValueView::BigInt(a), ValueView::BigInt(b)) => a == b,
+            (ValueView::BigInt(a), ValueView::BigInt(b)) => *a == *b,
             (ValueView::BigInt(a), ValueView::Int(b))
             | (ValueView::Int(b), ValueView::BigInt(a)) => **a == NumBigInt::from(b),
             (ValueView::Num(a), ValueView::Num(b)) => (a.is_nan() && b.is_nan()) || a == b,
             (ValueView::Int(a), ValueView::Num(b)) => (a as f64) == b,
             (ValueView::Num(a), ValueView::Int(b)) => a == (b as f64),
-            (ValueView::Str(a), ValueView::Str(b)) => a == b,
+            (ValueView::Str(a), ValueView::Str(b)) => *a == *b,
             (ValueView::Bool(a), ValueView::Bool(b)) => a == b,
             (ValueView::Range(a1, b1), ValueView::Range(a2, b2)) => a1 == a2 && b1 == b2,
             (ValueView::RangeExcl(a1, b1), ValueView::RangeExcl(a2, b2)) => a1 == a2 && b1 == b2,
@@ -45,9 +45,9 @@ impl PartialEq for Value {
                     excl_end: ee2,
                 },
             ) => es1 == es2 && ee1 == ee2 && s1 == s2 && e1 == e2,
-            (ValueView::Array(a, ..), ValueView::Array(b, ..)) => a == b,
-            (ValueView::Seq(a), ValueView::Seq(b)) => a == b,
-            (ValueView::Slip(a), ValueView::Slip(b)) => a == b,
+            (ValueView::Array(a, ..), ValueView::Array(b, ..)) => *a == *b,
+            (ValueView::Seq(a), ValueView::Seq(b)) => *a == *b,
+            (ValueView::Slip(a), ValueView::Slip(b)) => *a == *b,
             (ValueView::Array(a, ..), ValueView::Seq(b))
             | (ValueView::Seq(b), ValueView::Array(a, ..))
             | (ValueView::Array(a, ..), ValueView::Slip(b))
@@ -55,7 +55,7 @@ impl PartialEq for Value {
             (ValueView::Seq(a), ValueView::Slip(b)) | (ValueView::Slip(b), ValueView::Seq(a)) => {
                 a.as_ref() == b.as_ref()
             }
-            (ValueView::Hash(a), ValueView::Hash(b)) => a == b,
+            (ValueView::Hash(a), ValueView::Hash(b)) => *a == *b,
             (ValueView::Rat(a1, b1), ValueView::Rat(a2, b2)) => {
                 if b1 == 0 && b2 == 0 && a1 == 0 && a2 == 0 {
                     return false; // NaN != NaN
@@ -112,9 +112,9 @@ impl PartialEq for Value {
                     && r == (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
             }
             (ValueView::FatRat(a1, b1), ValueView::FatRat(a2, b2)) => a1 == a2 && b1 == b2,
-            (ValueView::Set(a, _), ValueView::Set(b, _)) => a == b,
-            (ValueView::Bag(a, _), ValueView::Bag(b, _)) => a == b,
-            (ValueView::Mix(a, _), ValueView::Mix(b, _)) => a == b,
+            (ValueView::Set(a, _), ValueView::Set(b, _)) => *a == *b,
+            (ValueView::Bag(a, _), ValueView::Bag(b, _)) => *a == *b,
+            (ValueView::Mix(a, _), ValueView::Mix(b, _)) => *a == *b,
             (
                 ValueView::CompUnitDepSpec { short_name: a },
                 ValueView::CompUnitDepSpec { short_name: b },
@@ -140,7 +140,7 @@ impl PartialEq for Value {
                     ..
                 },
             ) => at == bt && ak == bk,
-            (ValueView::Regex(a), ValueView::Regex(b)) => a == b,
+            (ValueView::Regex(a), ValueView::Regex(b)) => *a == *b,
             (ValueView::RegexWithAdverbs(a), ValueView::RegexWithAdverbs(b)) => {
                 a.pattern == b.pattern
                     && a.global == b.global
@@ -212,7 +212,7 @@ impl PartialEq for Value {
                     attributes: ba,
                     ..
                 },
-            ) => a == b && aa == ba,
+            ) => a == b && *aa == *ba,
             (
                 ValueView::Instance {
                     class_name,
@@ -220,7 +220,7 @@ impl PartialEq for Value {
                     ..
                 },
                 ValueView::Array(items, ..),
-            ) if class_name == "Match" => match_equals_pair_array(attributes, items),
+            ) if class_name == "Match" => match_equals_pair_array(&attributes, &items),
             (
                 ValueView::Array(items, ..),
                 ValueView::Instance {
@@ -228,7 +228,7 @@ impl PartialEq for Value {
                     attributes,
                     ..
                 },
-            ) if class_name == "Match" => match_equals_pair_array(attributes, items),
+            ) if class_name == "Match" => match_equals_pair_array(&attributes, &items),
             (
                 ValueView::Junction {
                     kind: ak,
@@ -238,9 +238,9 @@ impl PartialEq for Value {
                     kind: bk,
                     values: bv,
                 },
-            ) => ak == bk && av == bv,
+            ) => ak == bk && *av == *bv,
             (ValueView::Sub(a), ValueView::Sub(b)) => a.id == b.id,
-            (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
             (
                 ValueView::Version {
                     parts: ap,
@@ -261,8 +261,8 @@ impl PartialEq for Value {
                 let b_norm = Self::version_strip_trailing_zeros(bp);
                 a_norm == b_norm
             }
-            (ValueView::Promise(a), ValueView::Promise(b)) => a == b,
-            (ValueView::Channel(a), ValueView::Channel(b)) => a == b,
+            (ValueView::Promise(a), ValueView::Promise(b)) => *a == *b,
+            (ValueView::Channel(a), ValueView::Channel(b)) => *a == *b,
             (ValueView::Nil, ValueView::Nil) => true,
             (
                 ValueView::Capture {
@@ -288,7 +288,7 @@ impl PartialEq for Value {
             // (Hit by the END-phaser overlay's `v != orig_v` on a lexical bound to
             // a `lazy { … }` thunk: captured and live env hold the same Arc.)
             (ValueView::LazyThunk(a), ValueView::LazyThunk(b)) => {
-                if Arc::ptr_eq(a, b) {
+                if Arc::ptr_eq(&a, &b) {
                     return true;
                 }
                 let a_cache = a.cache.lock().unwrap();
@@ -318,7 +318,7 @@ impl PartialEq for Value {
             // ContainerRef: deref and compare inner values.
             // Check Arc pointer identity first to avoid deadlock on same-Arc comparison.
             (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => {
-                if crate::gc::Gc::ptr_eq(a, b) {
+                if crate::gc::Gc::ptr_eq(&a, &b) {
                     return true;
                 }
                 let a_val = a.lock().unwrap().clone();

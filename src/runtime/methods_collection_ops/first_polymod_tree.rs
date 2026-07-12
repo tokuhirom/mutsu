@@ -289,7 +289,7 @@ impl Interpreter {
         for item in items {
             match item.view() {
                 ValueView::Array(inner, ..) if depth > 0 => {
-                    result.push(Value::array(self.tree_depth(inner, depth - 1)?));
+                    result.push(Value::array(self.tree_depth(&inner, depth - 1)?));
                 }
                 _ => result.push(item.clone()),
             }
@@ -307,7 +307,7 @@ impl Interpreter {
         for item in items {
             match item.view() {
                 ValueView::Array(inner, ..) if closures.len() > depth + 1 => {
-                    let sub_result = self.tree_with_closures(inner, closures, depth + 1)?;
+                    let sub_result = self.tree_with_closures(&inner, closures, depth + 1)?;
                     processed.push(sub_result);
                 }
                 ValueView::Array(inner, ..) => {

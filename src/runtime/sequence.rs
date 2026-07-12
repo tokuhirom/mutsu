@@ -543,7 +543,7 @@ impl Interpreter {
                 if all_str && seeds.len() >= 2 {
                     let all_same = seeds.windows(2).all(|w| {
                         if let (ValueView::Str(a), ValueView::Str(b)) = (w[0].view(), w[1].view()) {
-                            a == b
+                            *a == *b
                         } else {
                             false
                         }
@@ -556,15 +556,15 @@ impl Interpreter {
                         if let (ValueView::Str(a), ValueView::Str(b)) =
                             (last_two[0].view(), last_two[1].view())
                         {
-                            let mut step = if b < a { -1.0 } else { 1.0 };
+                            let mut step = if *b < *a { -1.0 } else { 1.0 };
                             // With two string seeds and an explicit string endpoint,
                             // prefer a direction that can actually reach the endpoint.
                             if seeds.len() == 2
                                 && let Some(ValueView::Str(ep)) = endpoint.as_ref().map(Value::view)
                             {
-                                let toward_endpoint = if b < ep {
+                                let toward_endpoint = if *b < *ep {
                                     1.0
-                                } else if b > ep {
+                                } else if *b > *ep {
                                     -1.0
                                 } else {
                                     0.0
@@ -598,7 +598,7 @@ impl Interpreter {
                 } else if let (ValueView::Str(s), ValueView::Str(e)) = (seeds[0].view(), ep.view())
                 {
                     // String direction: compare codepoints
-                    if e >= s {
+                    if *e >= *s {
                         SeqMode::Arithmetic(1.0)
                     } else {
                         SeqMode::Arithmetic(-1.0)
@@ -928,12 +928,16 @@ impl Interpreter {
             && (seeds.iter().any(|v| matches!(v.view(), ValueView::Str(s) if s.starts_with('0')))
                 || ep.starts_with('0'))
         {
-            let max_digit = seeds
+            let seed_strs: Vec<std::sync::Arc<String>> = seeds
                 .iter()
                 .filter_map(|v| match v.view() {
-                    ValueView::Str(s) => Some(s.as_str()),
+                    ValueView::Str(s) => Some(s.clone()),
                     _ => None,
                 })
+                .collect();
+            let max_digit = seed_strs
+                .iter()
+                .map(|s| s.as_str())
                 .chain(std::iter::once(ep.as_str()))
                 .flat_map(|s| s.bytes())
                 .map(|b| b - b'0')
@@ -1080,7 +1084,7 @@ impl Interpreter {
                                         idxs.push(pos);
                                     }
                                     if idxs.is_empty() {
-                                        Value::str(Self::string_pred(s)?)
+                                        Value::str(Self::string_pred(&s)?)
                                     } else {
                                         let mut borrow = true;
                                         for idx in idxs.iter_mut().rev() {
@@ -1104,9 +1108,9 @@ impl Interpreter {
                                         )
                                     }
                                 } else if let Some(radix) = digit_string_radix {
-                                    Value::str(Self::digit_string_pred_radix(s, radix)?)
+                                    Value::str(Self::digit_string_pred_radix(&s, radix)?)
                                 } else {
-                                    Value::str(Self::string_pred(s)?)
+                                    Value::str(Self::string_pred(&s)?)
                                 }
                             } else {
                                 break;
@@ -1126,7 +1130,7 @@ impl Interpreter {
                                         idxs.push(pos);
                                     }
                                     if idxs.is_empty() {
-                                        Value::str(Self::string_succ(s))
+                                        Value::str(Self::string_succ(&s))
                                     } else {
                                         let mut carry = true;
                                         for idx in idxs.iter_mut().rev() {
@@ -1150,9 +1154,9 @@ impl Interpreter {
                                         )
                                     }
                                 } else if let Some(radix) = digit_string_radix {
-                                    Value::str(Self::digit_string_succ_radix(s, radix))
+                                    Value::str(Self::digit_string_succ_radix(&s, radix))
                                 } else {
-                                    Value::str(Self::string_succ(s))
+                                    Value::str(Self::string_succ(&s))
                                 }
                             } else {
                                 break;
@@ -1305,11 +1309,11 @@ impl Interpreter {
                                 (item.view(), ep.view())
                                 && let SeqMode::Arithmetic(step) = &mode
                             {
-                                if *step > 0.0 && ns > es {
+                                if *step > 0.0 && *ns > *es {
                                     should_break = true;
                                     continue;
                                 }
-                                if *step < 0.0 && ns < es {
+                                if *step < 0.0 && *ns < *es {
                                     should_break = true;
                                     continue;
                                 }

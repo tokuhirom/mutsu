@@ -126,7 +126,7 @@ impl Interpreter {
         })?;
         // Mark Seq as consumed (single-use semantics).
         if let ValueView::Seq(arc) = target.view() {
-            crate::value::seq_consume(arc)?;
+            crate::value::seq_consume(&arc)?;
         }
         // `$b>>++` / `$b>>--` on a Bag/Mix/Set applies the postfix op to each
         // *weight* (treating the QuantHash like a Hash of weights): it returns
@@ -558,11 +558,11 @@ impl Interpreter {
                 // `arc_contents_mut`. No borrow into this ArrayData is live
                 // across the write.
                 unsafe {
-                    crate::value::gc_contents_mut(existing).items = items.clone();
+                    crate::value::gc_contents_mut(&existing).items = items.clone();
                 }
                 loan_env!(
                     self,
-                    overwrite_array_items_by_identity_for_vm(existing, items.clone(), kind,)
+                    overwrite_array_items_by_identity_for_vm(&existing, items.clone(), kind,)
                 );
             }
         }
@@ -586,7 +586,7 @@ impl Interpreter {
                 // arm); avoids corrupting a COW copy `my %g = %h`.
                 self.write_back_hyper_target_var(code, var, new_hash);
             } else {
-                self.overwrite_hash_bindings_by_identity(existing, new_hash);
+                self.overwrite_hash_bindings_by_identity(&existing, new_hash);
             }
         }
         // Preserve the container type of the target for QuantHash types.
@@ -923,11 +923,11 @@ impl Interpreter {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`.
             unsafe {
-                crate::value::gc_contents_mut(existing).items = items.clone();
+                crate::value::gc_contents_mut(&existing).items = items.clone();
             }
             loan_env!(
                 self,
-                overwrite_array_items_by_identity_for_vm(existing, items.clone(), kind,)
+                overwrite_array_items_by_identity_for_vm(&existing, items.clone(), kind,)
             );
         }
         // Preserve the container type of the target for QuantHash types

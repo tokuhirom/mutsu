@@ -515,7 +515,7 @@ fn json_value(v: &Value) -> String {
                 "null".to_string()
             }
         }
-        ValueView::Str(s) => json_string(s),
+        ValueView::Str(s) => json_string(&s),
         ValueView::Array(items, _) => {
             let elems: Vec<String> = items.iter().map(json_value).collect();
             format!("[{}]", elems.join(","))

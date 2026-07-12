@@ -443,7 +443,7 @@ impl Interpreter {
                 };
                 // Force lazy thunks transparently on access
                 let val = if let ValueView::LazyThunk(thunk_data) = val.view() {
-                    self.force_lazy_thunk(thunk_data)?
+                    self.force_lazy_thunk(&thunk_data)?
                 } else {
                     val
                 };
@@ -561,12 +561,12 @@ impl Interpreter {
                     // read repeatedly. If the Seq's iterator was already taken
                     // (e.g. by `.skip`/`.iterator`) and not cached, throw.
                     ValueView::Seq(items) => {
-                        if crate::value::seq_is_consumed(items)
-                            && !crate::value::seq_is_cached(items)
+                        if crate::value::seq_is_consumed(&items)
+                            && !crate::value::seq_is_cached(&items)
                         {
                             return Err(crate::value::seq_consumed_error());
                         }
-                        crate::value::seq_mark_cached(items);
+                        crate::value::seq_mark_cached(&items);
                         val
                     }
                     _ => val,
@@ -708,9 +708,9 @@ impl Interpreter {
                 if is_rebind {
                     self.rebind_context = false;
                 }
-                let name_str = match code.constants[*name_idx as usize].view() {
-                    ValueView::Str(s) => s.as_str(),
-                    _ => unreachable!("SetGlobal name must be a string constant"),
+                let name_str = match code.constants[*name_idx as usize].as_str() {
+                    Some(s) => s,
+                    None => unreachable!("SetGlobal name must be a string constant"),
                 };
                 // Fast path for the anonymous state scalar (`$` and `$.` desugaring).
                 // `__ANON_STATE__` is a synthetic internal name that can never be a
@@ -1204,11 +1204,11 @@ impl Interpreter {
                     if let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        self.check_container_cell_constraint(arc, &val)?;
+                        self.check_container_cell_constraint(&arc, &val)?;
                         // Preserve the inner container's identity (§3): a boxed
                         // captured `@a`/`%h` whole-reassigned here must keep its
                         // backing `Gc` so by-value holders observe the update.
-                        Self::cell_store_preserving_container_identity(arc, &val);
+                        Self::cell_store_preserving_container_identity(&arc, &val);
                         *ip += 1;
                         return Ok(());
                     }
@@ -1220,8 +1220,8 @@ impl Interpreter {
                     if let Some(cell_val) = self.escaping_our_write_cell(code, &name)
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        self.check_container_cell_constraint(arc, &val)?;
-                        Self::cell_store_preserving_container_identity(arc, &val);
+                        self.check_container_cell_constraint(&arc, &val)?;
+                        Self::cell_store_preserving_container_identity(&arc, &val);
                         *ip += 1;
                         return Ok(());
                     }
@@ -1232,8 +1232,8 @@ impl Interpreter {
                         && let Some(cell_val) = self.env().get(alias_target.as_str()).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
-                        self.check_container_cell_constraint(arc, &val)?;
-                        Self::cell_store_preserving_container_identity(arc, &val);
+                        self.check_container_cell_constraint(&arc, &val)?;
+                        Self::cell_store_preserving_container_identity(&arc, &val);
                         *ip += 1;
                         return Ok(());
                     }
@@ -1319,13 +1319,13 @@ impl Interpreter {
                 {
                     match (self.env().get(&name).map(Value::view), val.view()) {
                         (Some(ValueView::Array(old_gc, _)), ValueView::Array(new_gc, kind))
-                            if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                            if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
                         {
                             let (old_gc, new_gc, kind) = (old_gc.clone(), new_gc.clone(), kind);
                             val = Self::array_inplace_reassign(&old_gc, &new_gc, kind);
                         }
                         (Some(ValueView::Hash(old_gc)), ValueView::Hash(new_gc))
-                            if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                            if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
                         {
                             let (old_gc, new_gc) = (old_gc.clone(), new_gc.clone());
                             val = Self::hash_inplace_reassign(&old_gc, &new_gc);
@@ -1630,10 +1630,7 @@ impl Interpreter {
                 // a Scalar container, so its value must flatten on `@`-assignment.
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let is_bound_decont = if self.bound_decont_active {
-                    let var_name = match code.constants[*name_idx as usize].view() {
-                        ValueView::Str(s) => s.as_str(),
-                        _ => "",
-                    };
+                    let var_name = code.constants[*name_idx as usize].as_str().unwrap_or("");
                     let key = format!("__mutsu_bound_decont::{}", var_name);
                     matches!(
                         self.env().get(&key).map(Value::view),
@@ -2414,7 +2411,7 @@ impl Interpreter {
                     && let ValueView::LazyList(list) = popped.view()
                 {
                     // Sink context must realize lazy gathers for side effects.
-                    self.force_lazy_list_vm(list)?;
+                    self.force_lazy_list_vm(&list)?;
                 }
                 *ip += 1;
             }
@@ -2553,7 +2550,7 @@ impl Interpreter {
                         // unread). A bare lazy Seq still drains below.
                         ValueView::LazyList(list) if list.is_cached_no_sink() => {}
                         ValueView::LazyList(list) => {
-                            self.force_lazy_list_vm(list)?;
+                            self.force_lazy_list_vm(&list)?;
                         }
                         ValueView::LazyIoLines { handle, words, .. } => {
                             // Sinking a lazy IO lines iterator must drain the
@@ -3095,16 +3092,16 @@ impl Interpreter {
                         ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear of a shared container;
                             // see `arc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(arc).items.clear() };
+                            unsafe { crate::value::gc_contents_mut(&arc).items.clear() };
                         }
                         ValueView::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(arc).map.clear() };
+                            unsafe { crate::value::gc_contents_mut(&arc).map.clear() };
                         }
                         // Slice 2a: a `=`-array-shared source (`my $r = @ary`) holds
                         // the aggregate inside a shared `ContainerRef` cell; clear it
                         // through the cell so every alias (`$r`) observes the empty.
-                        ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
+                        ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(&cell),
                         _ => {}
                     }
                 }
@@ -3113,13 +3110,13 @@ impl Interpreter {
                     match self.locals[slot].view() {
                         ValueView::Array(arc, _) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(arc).items.clear() };
+                            unsafe { crate::value::gc_contents_mut(&arc).items.clear() };
                         }
                         ValueView::Hash(arc) => {
                             // SAFETY: aliased in-place clear; see `arc_contents_mut`.
-                            unsafe { crate::value::gc_contents_mut(arc).map.clear() };
+                            unsafe { crate::value::gc_contents_mut(&arc).map.clear() };
                         }
-                        ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(cell),
+                        ValueView::ContainerRef(cell) => Self::clear_aggregate_cell(&cell),
                         _ => {
                             self.locals[slot] = Value::NIL;
                             self.flush_local_to_env(code, slot);
@@ -3833,9 +3830,9 @@ impl Interpreter {
                 let name = Self::const_str(code, *name_idx);
                 if let ValueView::Str(s) = value.view() {
                     if name == "variables" {
-                        loan_env!(self, set_variables_pragma(s));
+                        loan_env!(self, set_variables_pragma(&s));
                     } else if name == "attributes" {
-                        loan_env!(self, set_attributes_pragma(s));
+                        loan_env!(self, set_attributes_pragma(&s));
                     }
                 }
                 *ip += 1;
@@ -3954,7 +3951,7 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let result = match val.view() {
                     ValueView::LazyList(ll) => {
-                        let items = self.force_lazy_list_vm(ll)?;
+                        let items = self.force_lazy_list_vm(&ll)?;
                         // Sync interpreter env changes back to Interpreter locals.
                         // This ensures side effects from gather bodies propagate
                         // to outer-scope variables (e.g., `$was-lazy = 0`).
@@ -3969,7 +3966,7 @@ impl Interpreter {
                     }
                     ValueView::Seq(items) => {
                         // Consuming the Seq via eager marks it as consumed.
-                        crate::value::seq_sink(items);
+                        crate::value::seq_sink(&items);
                         Value::array(items.to_vec())
                     }
                     _ if val.is_range() => Value::array(crate::runtime::utils::value_to_list(&val)),

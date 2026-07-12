@@ -152,7 +152,7 @@ pub(super) fn dispatch(
                 "Cannot call .pick on a Mix (immutable)",
             ))),
             ValueView::Bag(items, _) => {
-                Some(Ok(sample_weighted_bag_key(items).unwrap_or(Value::NIL)))
+                Some(Ok(sample_weighted_bag_key(&items).unwrap_or(Value::NIL)))
             }
             ValueView::Set(items, _) => {
                 if items.is_empty() {
@@ -205,12 +205,12 @@ pub(super) fn dispatch(
         "roll" => {
             if let ValueView::Mix(items, _) = target.view() {
                 return Some(Some(Ok(
-                    sample_weighted_mix_key(items).unwrap_or(Value::NIL)
+                    sample_weighted_mix_key(&items).unwrap_or(Value::NIL)
                 )));
             }
             if let ValueView::Bag(items, _) = target.view() {
                 return Some(Some(Ok(
-                    sample_weighted_bag_key(items).unwrap_or(Value::NIL)
+                    sample_weighted_bag_key(&items).unwrap_or(Value::NIL)
                 )));
             }
             if let ValueView::Set(items, _) = target.view() {

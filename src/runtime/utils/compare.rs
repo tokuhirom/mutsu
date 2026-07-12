@@ -199,14 +199,14 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
             rat_f.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal) as i32
         }
         (ValueView::Num(n), ValueView::Str(s)) => {
-            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(n, s) {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(n, &s) {
                 ord
             } else {
                 a.to_string_value().cmp(&b.to_string_value()) as i32
             }
         }
         (ValueView::Str(s), ValueView::Num(n)) => {
-            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(n, s) {
+            if let Some(ord) = compare_infinite_num_against_nonnumeric_str(n, &s) {
                 -ord
             } else {
                 a.to_string_value().cmp(&b.to_string_value()) as i32

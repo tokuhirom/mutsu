@@ -86,7 +86,7 @@ fn tree_recursive(items: &[Value]) -> Vec<Value> {
     items
         .iter()
         .map(|v| match v.view() {
-            ValueView::Array(inner, ..) => Value::array(tree_recursive(inner)),
+            ValueView::Array(inner, ..) => Value::array(tree_recursive(&inner)),
             _ => v.clone(),
         })
         .collect()
@@ -186,7 +186,7 @@ pub(super) fn dispatch(
             ValueView::BigRat(n, d) => Some(Ok(Value::bigrat(n + d, d.clone()))),
             ValueView::Bool(_) => Some(Ok(Value::TRUE)),
             ValueView::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_succ(
-                s,
+                &s,
             )))),
             _ => Some(Ok(target.clone())),
         }),
@@ -200,7 +200,7 @@ pub(super) fn dispatch(
             ValueView::BigRat(n, d) => Some(Ok(Value::bigrat(n - d, d.clone()))),
             ValueView::Bool(_) => Some(Ok(Value::FALSE)),
             ValueView::Str(s) => Some(Ok(Value::str(crate::builtins::str_increment::string_pred(
-                s,
+                &s,
             )))),
             _ => Some(Ok(target.clone())),
         }),
@@ -375,7 +375,7 @@ pub(super) fn dispatch(
                 }
             }
             ValueView::FatRat(n, d) => Some(Ok(make_rat(n, d))),
-            ValueView::Str(s) => Some(Ok(str_to_rat(s))),
+            ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
             ValueView::Complex(r, im) => {
                 if im.abs() <= 1e-15 {
                     Some(Ok(crate::builtins::num_to_rat_with_epsilon(r, 1e-6)))
@@ -481,7 +481,7 @@ pub(super) fn dispatch(
                 }
             }
             ValueView::Str(s) => {
-                let rat = str_to_rat(s);
+                let rat = str_to_rat(&s);
                 match rat.view() {
                     ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
                     ValueView::BigRat(n, d) => {
@@ -568,7 +568,7 @@ pub(super) fn dispatch(
             }
         }),
         "tree" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(Value::array(tree_recursive(items)))),
+            ValueView::Array(items, ..) => Some(Ok(Value::array(tree_recursive(&items)))),
             _ => Some(Ok(target.clone())),
         }),
         "encode" => {
@@ -602,13 +602,14 @@ pub(super) fn dispatch(
             ValueView::Seq(items) => {
                 // If there's a deferred iterator and the Seq is not cached, fall through
                 // to the runtime which will pull from the iterator.
-                if crate::value::seq_has_deferred_iter(items) && !crate::value::seq_is_cached(items)
+                if crate::value::seq_has_deferred_iter(&items)
+                    && !crate::value::seq_is_cached(&items)
                 {
                     return Some(None); // fall through to runtime
                 }
                 // Sinking a Seq marks it as consumed (unless already cached).
                 // Re-sinking a consumed Seq is ok (lives-ok).
-                crate::value::seq_sink(items);
+                crate::value::seq_sink(&items);
                 Some(Ok(Value::NIL))
             }
             ValueView::LazyList(ll) => {
@@ -616,7 +617,7 @@ pub(super) fn dispatch(
                 // Needed for `$s-lazy.sink; $s-lazy.is-lazy` to throw X::Seq::Consumed.
                 let is_gather = ll.env.get("__mutsu_lazylist_from_gather").is_some();
                 if is_gather {
-                    crate::value::lazylist_consume(ll);
+                    crate::value::lazylist_consume(&ll);
                     Some(Ok(Value::NIL))
                 } else {
                     None // fall through to runtime for non-gather lazy lists

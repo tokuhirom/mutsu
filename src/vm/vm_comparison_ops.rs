@@ -166,14 +166,9 @@ pub(super) fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
 
 /// Get list elements from a value (Array, Seq, List, Slip, etc.)
 pub(super) fn get_list_elements(v: &Value) -> Option<&[Value]> {
-    match v.view() {
-        ValueView::Array(elems, _) => Some(elems.as_slice()),
-        ValueView::Seq(elems) | ValueView::HyperSeq(elems) | ValueView::RaceSeq(elems) => {
-            Some(elems.as_slice())
-        }
-        ValueView::Slip(elems) => Some(elems.as_slice()),
-        _ => None,
-    }
+    // Delegates to the value-wall accessor: the slice borrows from `v`
+    // directly, which a `view()` guard cannot provide.
+    v.as_list_items_with_hyper()
 }
 
 /// Check if a value is any range variant.
@@ -236,18 +231,18 @@ impl Interpreter {
     ) -> Result<std::cmp::Ordering, RuntimeError> {
         match (left.view(), right.view()) {
             (ValueView::Str(a), ValueView::Str(b)) => {
-                let a = Self::parse_numeric_string_for_spaceship(a)?;
-                let b = Self::parse_numeric_string_for_spaceship(b)?;
+                let a = Self::parse_numeric_string_for_spaceship(&a)?;
+                let b = Self::parse_numeric_string_for_spaceship(&b)?;
                 Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
             }
             (ValueView::Str(a), _) => {
-                let a = Self::parse_numeric_string_for_spaceship(a)?;
+                let a = Self::parse_numeric_string_for_spaceship(&a)?;
                 let b = runtime::to_float_value(right).unwrap_or(0.0);
                 Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
             }
             (_, ValueView::Str(b)) => {
                 let a = runtime::to_float_value(left).unwrap_or(0.0);
-                let b = Self::parse_numeric_string_for_spaceship(b)?;
+                let b = Self::parse_numeric_string_for_spaceship(&b)?;
                 Ok(a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal))
             }
             _ => Ok(Self::spaceship_ordering(left, right)),
@@ -276,7 +271,7 @@ impl Interpreter {
                         return Ok(Value::truth(**a == num_bigint::BigInt::from(b)));
                     }
                     (ValueView::BigInt(a), ValueView::BigInt(b)) => {
-                        return Ok(Value::truth(a == b));
+                        return Ok(Value::truth(*a == *b));
                     }
                     _ => {}
                 }

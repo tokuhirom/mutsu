@@ -249,7 +249,7 @@ impl Interpreter {
         let env = self.env();
         match env.get(var_name).map(Value::view) {
             Some(ValueView::Hash(hash_arc)) => {
-                let strong_count = crate::gc::Gc::strong_count_of(hash_arc);
+                let strong_count = crate::gc::Gc::strong_count_of(&hash_arc);
                 // Reject if the hash Arc has more than 2 refs (e.g. HashEntryRef binding)
                 // strong_count == 1: only env holds it (no local slot)
                 // strong_count == 2: env + locals hold it (common case in for loops)
@@ -458,7 +458,7 @@ impl Interpreter {
         let saved_default_outer = if self.var_default(&save_var_name).is_some() {
             self.env()
                 .get(&save_var_name)
-                .and_then(|v| self.container_default(v).cloned())
+                .and_then(|v| self.container_default(v))
         } else {
             None
         };

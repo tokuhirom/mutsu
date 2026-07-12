@@ -149,7 +149,7 @@ impl Interpreter {
                     Err(_) => {
                         return Err(RuntimeError::new(format!(
                             "Cannot use '{}' as a tail count",
-                            s
+                            *s
                         )));
                     }
                 }

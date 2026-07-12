@@ -344,7 +344,7 @@ impl Interpreter {
                 {
                     let mut attrs = attributes.to_map();
                     attrs.insert("actions".to_string(), actions.clone());
-                    Value::write_back_sharing(attributes, class_name, attrs, id)
+                    Value::write_back_sharing(&attributes, class_name, attrs, id)
                 } else {
                     result
                 }
@@ -575,9 +575,9 @@ impl Interpreter {
             // Use «» delimiters when the sym value contains '<' or '>'
             // to match method names stored with French-quote delimiters
             if sym_val.contains('<') || sym_val.contains('>') {
-                Some(format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}"))
+                Some(format!("{rule_name}:sym\u{ab}{}\u{bb}", *sym_val))
             } else {
-                Some(format!("{rule_name}:sym<{sym_val}>"))
+                Some(format!("{rule_name}:sym<{}>", *sym_val))
             }
         } else {
             None

@@ -75,7 +75,7 @@ pub(crate) fn resolve_buf_index(arg: &Value, len: usize) -> i64 {
                 0
             }
         }
-        ValueView::Sub(data) => eval_whatever_code(data, len as i64),
+        ValueView::Sub(data) => eval_whatever_code(&data, len as i64),
         ValueView::Whatever => len as i64,
         _ => 0,
     }
@@ -102,7 +102,7 @@ pub(crate) fn resolve_buf_len(arg: &Value, total_len: usize, start: usize) -> i6
         ValueView::Sub(data) => {
             // WhateverCode receives total_len and returns an end index (inclusive).
             // Length = max(0, end_index - start + 1)
-            let end_idx = eval_whatever_code(data, total_len as i64);
+            let end_idx = eval_whatever_code(&data, total_len as i64);
             let len = end_idx - start as i64 + 1;
             if len < 0 { 0 } else { len }
         }

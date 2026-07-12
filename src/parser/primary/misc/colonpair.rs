@@ -654,11 +654,11 @@ fn render_signature_item(expr: &Expr) -> String {
                 && let ValueView::Str(name) = lit.view()
             {
                 match right.as_ref() {
-                    Expr::Var(v) if v.as_str() == name.as_str() => format!(":${}", name),
+                    Expr::Var(v) if v.as_str() == name.as_str() => format!(":${}", *name),
                     Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => {
-                        format!(":${}", name)
+                        format!(":${}", *name)
                     }
-                    other => format!(":${} = {}", name, render_signature_item(other)),
+                    other => format!(":${} = {}", *name, render_signature_item(other)),
                 }
             } else {
                 "...".to_string()

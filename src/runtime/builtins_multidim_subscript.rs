@@ -241,7 +241,7 @@ impl Interpreter {
             }
             ValueView::LazyList(ll) => {
                 truncate_oob = true;
-                self.force_lazy_list_vm(ll)?
+                self.force_lazy_list_vm(&ll)?
             }
             _ => {
                 force_list = false;
@@ -309,7 +309,7 @@ impl Interpreter {
             // `for $@s, Str -> @a { @a[11]:!v }` where the loop variable has no
             // type constraint but the bound array still carries `.of=Str`. Fall
             // back to the declared variable's default/type, then Any.
-            let container_default = self.container_default(&target).cloned().or_else(|| {
+            let container_default = self.container_default(&target).or_else(|| {
                 var_name
                     .as_ref()
                     .and_then(|name| self.var_default(name).cloned())
@@ -424,7 +424,6 @@ impl Interpreter {
                 // declared variable's type constraint, then Any.
                 let missing_default = self
                     .container_default(&target)
-                    .cloned()
                     .or_else(|| {
                         self.container_type_metadata(&target)
                             .map(|info| Value::package(Symbol::intern(&info.value_type)))

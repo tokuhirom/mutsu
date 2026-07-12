@@ -228,7 +228,7 @@ impl Interpreter {
         limit: Option<usize>,
     ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
         match splitter.view() {
-            ValueView::Regex(pattern) => self.split_by_regex(text, pattern, limit),
+            ValueView::Regex(pattern) => self.split_by_regex(text, &pattern, limit),
             ValueView::RegexWithAdverbs(a) => self.split_by_regex(text, &a.pattern, limit),
             ValueView::Array(items, _) => {
                 // Check if any item is a regex
@@ -239,7 +239,7 @@ impl Interpreter {
                     )
                 });
                 if has_regex {
-                    self.split_by_regex_list(text, items, limit)
+                    self.split_by_regex_list(text, &items, limit)
                 } else {
                     let strings: Vec<String> = items.iter().map(|v| v.to_string_value()).collect();
                     Ok(split_by_strings_static(text, &strings, limit))
@@ -367,12 +367,14 @@ impl Interpreter {
             for (idx, splitter) in splitters.iter().enumerate() {
                 match splitter.view() {
                     ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
-                        let pattern: &str = match splitter.view() {
-                            ValueView::Regex(p) => p,
-                            ValueView::RegexWithAdverbs(a) => &a.pattern,
+                        let found = match splitter.view() {
+                            ValueView::Regex(p) => self.regex_find_first_from(&p, text, pos),
+                            ValueView::RegexWithAdverbs(a) => {
+                                self.regex_find_first_from(&a.pattern, text, pos)
+                            }
                             _ => unreachable!(),
                         };
-                        if let Some((from, to)) = self.regex_find_first_from(pattern, text, pos) {
+                        if let Some((from, to)) = found {
                             let matched: String = chars[from..to].iter().collect();
                             let is_better = match &best {
                                 None => true,

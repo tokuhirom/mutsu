@@ -269,7 +269,7 @@ pub(super) fn dispatch(
                         ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
                         ValueView::Junction { kind, values } => {
                             let results: Vec<bool> = values.iter().map(value_defined).collect();
-                            collapse_junction(kind, &results)
+                            collapse_junction(&kind, &results)
                         }
                         _ => true,
                     }
@@ -284,7 +284,7 @@ pub(super) fn dispatch(
                     }
                 }
                 let results: Vec<bool> = values.iter().map(value_defined).collect();
-                let collapsed = collapse_junction(kind, &results);
+                let collapsed = collapse_junction(&kind, &results);
                 Some(Some(Ok(Value::truth(collapsed))))
             } else {
                 Some(Some(Ok(Value::truth(match target.view() {
@@ -326,9 +326,9 @@ pub(super) fn dispatch(
                     format!("{}|U{}", c.name.resolve(), c.id)
                 }
                 ValueView::Int(n) => format!("Int|{}", n),
-                ValueView::BigInt(n) => format!("Int|{}", n),
+                ValueView::BigInt(n) => format!("Int|{}", *n),
                 ValueView::Num(n) => format!("Num|{}", n),
-                ValueView::Str(s) => format!("Str|{}", s),
+                ValueView::Str(s) => format!("Str|{}", *s),
                 ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
                 ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
@@ -374,7 +374,7 @@ pub(super) fn dispatch(
                     )
                 }
                 ValueView::Regex(pattern) => {
-                    format!("Regex|{:p}", Arc::as_ptr(pattern))
+                    format!("Regex|{:p}", Arc::as_ptr(&pattern))
                 }
                 ValueView::RegexWithAdverbs(a) => {
                     format!("Regex|{:p}", Arc::as_ptr(&a.pattern))
@@ -399,16 +399,16 @@ pub(super) fn dispatch(
                     format!("Junction|{:016X}", hasher.finish())
                 }
                 ValueView::Seq(items) => {
-                    format!("Seq|{:p}", Arc::as_ptr(items))
+                    format!("Seq|{:p}", Arc::as_ptr(&items))
                 }
                 ValueView::Slip(items) => {
-                    format!("Slip|{:p}", Arc::as_ptr(items))
+                    format!("Slip|{:p}", Arc::as_ptr(&items))
                 }
                 ValueView::Array(items, ..) => {
-                    format!("Array|{:p}", crate::gc::Gc::as_ptr(items))
+                    format!("Array|{:p}", crate::gc::Gc::as_ptr(&items))
                 }
                 ValueView::Hash(map) => {
-                    format!("Hash|{:p}", crate::gc::Gc::as_ptr(map))
+                    format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map))
                 }
                 ValueView::Promise(p) => {
                     format!("Promise|{:p}", p.arc_ptr())
@@ -586,7 +586,7 @@ pub(super) fn dispatch(
                         // An empty or whitespace-only string coerces to 0, like
                         // `"".Numeric` (a defined-but-empty string, no warning).
                         Value::int(0)
-                    } else if let Some(v) = parse_raku_int_from_str(s) {
+                    } else if let Some(v) = parse_raku_int_from_str(&s) {
                         v
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
@@ -600,7 +600,7 @@ pub(super) fn dispatch(
                         v
                     } else {
                         // Return a Failure (lazy exception) instead of throwing.
-                        return Some(Some(Ok(str_numeric_failure(s))));
+                        return Some(Some(Ok(str_numeric_failure(&s))));
                     }
                 }
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
@@ -634,7 +634,7 @@ pub(super) fn dispatch(
                 ValueView::Bool(b) => Some(Value::int(if b { 1 } else { 0 })),
                 ValueView::Str(s) if s.trim().is_empty() => Some(Value::int(0)),
                 ValueView::Str(s) => {
-                    if let Some(v) = parse_raku_int_from_str(s) {
+                    if let Some(v) = parse_raku_int_from_str(&s) {
                         Some(v)
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
@@ -649,7 +649,7 @@ pub(super) fn dispatch(
                         // Invalid string: same X::Str::Numeric Failure (with the `⏏`
                         // position marker) as `.Int`, rather than a hand-rolled
                         // message that hard-codes the wrong reason and drops the marker.
-                        return Some(Some(Ok(str_numeric_failure(s))));
+                        return Some(Some(Ok(str_numeric_failure(&s))));
                     }
                 }
                 _ => None,
@@ -751,7 +751,7 @@ pub(super) fn dispatch(
                         } else {
                             // An invalid string yields a lazy X::Str::Numeric Failure,
                             // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
-                            return Some(Some(Ok(str_numeric_failure(s))));
+                            return Some(Some(Ok(str_numeric_failure(&s))));
                         }
                     }
                 }
@@ -821,7 +821,7 @@ pub(super) fn dispatch(
                     } else {
                         // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
                         // as `.Int`/`.Numeric`.
-                        return Some(Some(Ok(str_numeric_failure(s))));
+                        return Some(Some(Ok(str_numeric_failure(&s))));
                     }
                 }
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
@@ -877,12 +877,12 @@ pub(super) fn dispatch(
                 }
                 ValueView::Rat(n, d) if d != 0 => Value::num(n as f64 / d as f64),
                 ValueView::Str(s) => {
-                    if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
+                    if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
                         v
                     } else {
                         // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
                         // as `.Int`.
-                        return Some(Some(Ok(str_numeric_failure(s))));
+                        return Some(Some(Ok(str_numeric_failure(&s))));
                     }
                 }
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),

@@ -320,9 +320,9 @@ impl Interpreter {
                     promoted[i] = cell.clone();
                     shared_cells.push(cell);
                 }
-                let updated_source = crate::value::Value::array_data_like(items, promoted);
+                let updated_source = crate::value::Value::array_data_like(&items, promoted);
                 self.overwrite_array_bindings_by_identity(
-                    items,
+                    &items,
                     Value::array_with_kind(updated_source, arr_kind),
                 );
                 // Build the result array from the shared cells (default `:v`

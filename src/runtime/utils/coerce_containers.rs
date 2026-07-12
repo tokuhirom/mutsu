@@ -472,7 +472,7 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
             class_name,
             attributes,
             ..
-        } if class_name.resolve() == "WalkList" => match walk_list_candidates(attributes) {
+        } if class_name.resolve() == "WalkList" => match walk_list_candidates(&attributes) {
             Some(cands) => Value::real_array(cands),
             None => Value::real_array(vec![value.clone()]),
         },

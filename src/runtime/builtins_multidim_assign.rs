@@ -55,7 +55,7 @@ impl Interpreter {
         // When assigning Nil to a container element with `is default(...)`,
         // restore the default value instead of Nil.
         let effective_value = if value.is_nil() {
-            if let Some(def) = self.container_default(&current).cloned() {
+            if let Some(def) = self.container_default(&current) {
                 def
             } else {
                 // Check class_attribute_default for instance attributes
@@ -233,7 +233,7 @@ impl Interpreter {
         };
         // The default returned for an absent key: the container's own
         // `is default(...)`, else the attribute's declared default, else Nil.
-        let absent_default = self.container_default(&current).cloned().or_else(|| {
+        let absent_default = self.container_default(&current).or_else(|| {
             if let ValueView::Instance { class_name, .. } = target.view() {
                 self.class_attribute_default(&class_name.resolve(), &method)
             } else {

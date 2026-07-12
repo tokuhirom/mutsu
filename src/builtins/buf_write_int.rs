@@ -127,8 +127,8 @@ pub(crate) fn apply_write_int(
 
 /// The shared attribute cell of a Buf *instance* receiver, captured so a write can be
 /// committed straight back into it (propagating to every binding sharing the same buf).
-struct BufWriteCell<'a> {
-    attributes: &'a crate::gc::Gc<InstanceAttrs>,
+struct BufWriteCell {
+    attributes: crate::gc::Gc<InstanceAttrs>,
     class_sym: Symbol,
     id: u64,
 }
@@ -198,7 +198,7 @@ pub(crate) fn try_native_buf_write(
                 }
             }
             inst = Some(BufWriteCell {
-                attributes,
+                attributes: attributes.clone(),
                 class_sym: class_name,
                 id,
             });
@@ -241,7 +241,7 @@ pub(crate) fn try_native_buf_write(
                 Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
             );
             Some(Ok(Value::write_back_sharing(
-                cell.attributes,
+                &cell.attributes,
                 cell.class_sym,
                 updated_map,
                 cell.id,

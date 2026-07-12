@@ -129,7 +129,7 @@ impl Interpreter {
         // e.g. `state @a; @a = 9,8` right after init read back as empty).
         let needs_env_insert = match (val.view(), self.env().get(&name).map(Value::view)) {
             (ValueView::ContainerRef(cell), Some(ValueView::ContainerRef(existing))) => {
-                !crate::gc::Gc::ptr_eq(cell, existing)
+                !crate::gc::Gc::ptr_eq(&cell, &existing)
             }
             (ValueView::ContainerRef(_), _) => true,
             _ => self.env().get(&name) != Some(&val),

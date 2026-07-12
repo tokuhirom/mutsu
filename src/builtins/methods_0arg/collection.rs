@@ -420,7 +420,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // `items` directly avoids `value_to_list`, which (correctly, for
                 // flattening) collapses an itemized array to one element and would
                 // make `.keys` yield only `(0,)`.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_keys(items)))),
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_keys(&items)))),
                 ValueView::Set(s, _) => {
                     Some(Ok(Value::seq(s.iter().map(|k| s.typed_key(k)).collect())))
                 }
@@ -517,7 +517,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Nil => Some(Ok(Value::seq(Vec::new()))),
                 // Index/value pairs of the array's own elements, itemization-agnostic
                 // (an itemized `$[...]` must not collapse to one element).
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_kv(items)))),
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_kv(&items)))),
                 ValueView::Set(s, _) => {
                     let mut kv = Vec::new();
                     for k in s.iter() {
@@ -616,7 +616,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(vec![target.clone()])))
                 }
                 // Index => value pairs of the array's own elements, itemization-agnostic.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_pairs(items)))),
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_pairs(&items)))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => Some(Ok(Value::seq(positional_pairs(
                     &crate::runtime::utils::value_to_list(target),
@@ -725,7 +725,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(pairs)))
                 }
                 // Value => index pairs of the array's own elements, itemization-agnostic.
-                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_antipairs(items)))),
+                ValueView::Array(items, _) => Some(Ok(Value::seq(positional_antipairs(&items)))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => {
                     let values = crate::runtime::utils::value_to_list(target);
@@ -902,7 +902,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                             let reason =
                                 "base-10 number must begin with valid digits or '.'".to_string();
                             let msg =
-                                format!("Cannot convert string '{}' to number: {}", s, reason);
+                                format!("Cannot convert string '{}' to number: {}", *s, reason);
                             let mut attrs = std::collections::HashMap::new();
                             attrs.insert("source".to_string(), Value::str(s.to_string()));
                             attrs.insert("reason".to_string(), Value::str(reason));
@@ -1158,7 +1158,7 @@ pub(crate) fn add_with_junction_threading(
             .cloned()
             .map(|v| add_with_junction_threading(v, right.clone()))
             .collect();
-        return Ok(Value::junction(kind.clone(), results?));
+        return Ok(Value::junction(kind, results?));
     }
     if let ValueView::Junction { kind, values } = right.view() {
         let results: Result<Vec<Value>, RuntimeError> = values
@@ -1166,7 +1166,7 @@ pub(crate) fn add_with_junction_threading(
             .cloned()
             .map(|v| add_with_junction_threading(left.clone(), v))
             .collect();
-        return Ok(Value::junction(kind.clone(), results?));
+        return Ok(Value::junction(kind, results?));
     }
     crate::builtins::arith_add(left, right)
 }

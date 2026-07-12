@@ -1403,7 +1403,7 @@ impl Interpreter {
                 } else if let ValueView::Str(s) = v.view() {
                     let ev = EnumValue::Str(s.to_string());
                     // Set up string increment for next auto-value
-                    next_str_value = Some(string_increment(s));
+                    next_str_value = Some(string_increment(&s));
                     ev
                 } else {
                     next_str_value = None;

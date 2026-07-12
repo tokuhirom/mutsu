@@ -347,7 +347,10 @@ impl Interpreter {
                             // `callsame` candidate's `self.x ~= ...`).
                             let new_inv = if adjusted {
                                 Value::write_back_sharing(
-                                    attributes, class_name, updated, target_id,
+                                    &attributes,
+                                    class_name,
+                                    updated,
+                                    target_id,
                                 )
                             } else {
                                 invocant.clone()
@@ -367,7 +370,10 @@ impl Interpreter {
                             (
                                 result,
                                 Some(Value::write_back_sharing(
-                                    attributes, class_name, updated, target_id,
+                                    &attributes,
+                                    class_name,
+                                    updated,
+                                    target_id,
                                 )),
                             )
                         })

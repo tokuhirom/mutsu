@@ -567,7 +567,7 @@ impl Interpreter {
     fn push_value_as_regex_pattern(value: &Value, out: &mut String) {
         match value.view() {
             ValueView::Nil => out.push_str("<!>"),
-            ValueView::Regex(pat) => out.push_str(pat),
+            ValueView::Regex(pat) => out.push_str(&pat),
             ValueView::RegexWithAdverbs(a) => out.push_str(&a.pattern),
             ValueView::Junction { values, .. } => {
                 // Expand junction values as alternation [v1|v2|...]
@@ -577,7 +577,7 @@ impl Interpreter {
                         out.push('|');
                     }
                     match v.view() {
-                        ValueView::Regex(pat) => out.push_str(pat),
+                        ValueView::Regex(pat) => out.push_str(&pat),
                         ValueView::RegexWithAdverbs(a) => out.push_str(&a.pattern),
                         _ => out.push_str(&Self::escape_regex_scalar_literal(&v.to_string_value())),
                     }

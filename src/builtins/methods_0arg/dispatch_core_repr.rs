@@ -444,7 +444,7 @@ pub(super) fn dispatch(
         ValueView::Str(s) => {
             if method == "raku" || method == "perl" {
                 // .raku wraps strings in quotes and escapes special chars
-                Some(Ok(Value::str(super::raku_repr::escape_raku_str(s))))
+                Some(Ok(Value::str(super::raku_repr::escape_raku_str(&s))))
             } else {
                 Some(Ok(Value::str_arc(s.clone())))
             }

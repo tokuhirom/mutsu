@@ -47,9 +47,9 @@ impl Interpreter {
         // Slipping such a Seq must first pull all elements from the iterator
         // (including user-defined `Iterator` classes), else `|$seq` yields nothing.
         if let ValueView::Seq(items_arc) = val.view()
-            && crate::value::seq_has_deferred_iter(items_arc)
+            && crate::value::seq_has_deferred_iter(&items_arc)
         {
-            let pulled = self.materialize_deferred_seq(items_arc);
+            let pulled = self.materialize_deferred_seq(&items_arc);
             self.stack.push(Value::slip(pulled));
             return Ok(());
         }
@@ -68,7 +68,7 @@ impl Interpreter {
             if ll.is_genuinely_lazy() {
                 self.stack.push(Value::slip(vec![val.clone()]));
             } else {
-                let pulled = self.force_lazy_list_vm(ll)?;
+                let pulled = self.force_lazy_list_vm(&ll)?;
                 self.stack.push(Value::slip(pulled));
             }
             return Ok(());
@@ -203,11 +203,8 @@ impl Interpreter {
         if let (ValueView::Junction { kind: lk, .. }, ValueView::Junction { kind: rk, .. }) =
             (left.view(), right.view())
         {
-            let need_swap = Self::thread_right_first(lk, rk);
-            let rk = rk.clone();
-            let lk = lk.clone();
+            let need_swap = Self::thread_right_first(&lk, &rk);
             if let ValueView::Junction { kind, values } = left.view() {
-                let kind = kind.clone();
                 let values = values.clone();
                 let results: Vec<Value> = values
                     .iter()
@@ -222,7 +219,6 @@ impl Interpreter {
             }
         }
         if let ValueView::Junction { kind, values } = left.view() {
-            let kind = kind.clone();
             let values = values.clone();
             let results: Vec<Value> = values
                 .iter()
@@ -232,7 +228,6 @@ impl Interpreter {
             return Value::junction(kind, results);
         }
         if let ValueView::Junction { kind, values } = right.view() {
-            let kind = kind.clone();
             let values = values.clone();
             let results: Vec<Value> = values
                 .iter()
@@ -254,13 +249,13 @@ impl Interpreter {
                 .iter()
                 .map(|v| {
                     if let ValueView::Junction { values: inner, .. } = v.view() {
-                        Value::junction(new_inner.clone(), inner.to_vec())
+                        Value::junction(*new_inner, inner.to_vec())
                     } else {
                         v.clone()
                     }
                 })
                 .collect();
-            Value::junction(new_outer.clone(), swapped)
+            Value::junction(*new_outer, swapped)
         } else {
             value
         }

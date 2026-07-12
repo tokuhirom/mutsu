@@ -155,7 +155,6 @@ impl Interpreter {
             self.find_junction_autothread_arg_with_pointy(data, &args, cc.is_pointy_block)
             && let ValueView::Junction { kind, values } = args[junction_idx].view()
         {
-            let kind = kind.clone();
             let values = values.clone();
             let mut results = Vec::with_capacity(values.len());
             for eigenvalue in values.iter() {

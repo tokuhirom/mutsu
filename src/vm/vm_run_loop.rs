@@ -712,7 +712,7 @@ impl Interpreter {
     pub(crate) fn is_identity_scalar_restore(current: &Value, val: &Value) -> bool {
         if let (ValueView::Array(cur, ck), ValueView::Array(new, nk)) = (current.view(), val.view())
         {
-            crate::gc::Gc::ptr_eq(cur, new) && ck == nk
+            crate::gc::Gc::ptr_eq(&cur, &new) && ck == nk
         } else {
             false
         }

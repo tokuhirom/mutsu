@@ -40,7 +40,7 @@ impl Interpreter {
             ValueView::Str(s) => s.trim().parse::<i64>().map_err(|_| {
                 RuntimeError::new(format!(
                     "Scheduler.cue: :times must be numeric, got '{}'",
-                    s
+                    *s
                 ))
             })?,
             _ => {

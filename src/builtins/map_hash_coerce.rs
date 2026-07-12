@@ -184,7 +184,7 @@ pub(crate) fn to_map(target: Value) -> Result<Value, RuntimeError> {
     let mut result = 'hash: {
         if let ValueView::Hash(map) = target.view() {
             // Already a Map (embedded declared-type): identity, no re-tag.
-            if Interpreter::hashdata_type_info(map)
+            if Interpreter::hashdata_type_info(&map)
                 .and_then(|info| info.declared_type)
                 .is_some_and(|dt| dt == "Map")
             {

@@ -227,8 +227,12 @@ impl Interpreter {
                     // Build an invocant with the latest attributes so that
                     // `$.attr` accessor reads inside the method body see
                     // values updated by preceding calls in the MRO chain.
-                    let invocant =
-                        Value::write_back_sharing(attributes, class_name, attrs.clone(), target_id);
+                    let invocant = Value::write_back_sharing(
+                        &attributes,
+                        class_name,
+                        attrs.clone(),
+                        target_id,
+                    );
                     let (result, updated) = self.run_resolved_method_compiled_or_treewalk(
                         &class_name.resolve(),
                         &resolved_owner,

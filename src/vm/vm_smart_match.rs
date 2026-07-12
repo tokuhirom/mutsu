@@ -153,7 +153,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         (ValueView::Rat(n, d), ValueView::Int(b)) => Some(n == b * d),
 
         // String equality
-        (ValueView::Str(a), ValueView::Str(b)) => Some(a == b),
+        (ValueView::Str(a), ValueView::Str(b)) => Some(*a == *b),
 
         // Str ~~ Numeric: numify LHS and compare
         (ValueView::Str(a), ValueView::Int(b)) => Some(a.trim().parse::<f64>() == Ok(b as f64)),
@@ -203,8 +203,8 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 ..
             },
         ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
-            let (path_a, cwd_a) = io_path_attrs(attrs_a);
-            let (path_b, cwd_b) = io_path_attrs(attrs_b);
+            let (path_a, cwd_a) = io_path_attrs(&attrs_a);
+            let (path_b, cwd_b) = io_path_attrs(&attrs_b);
             Some(
                 io_path_cleanup_absolute(&path_a, &cwd_a)
                     == io_path_cleanup_absolute(&path_b, &cwd_b),
@@ -540,7 +540,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             },
         ) if cn_b == "IO::Path" && !needs_interpreter_lhs(left) => {
             let lhs_str = left.to_string_value();
-            let (path_b, cwd_b) = io_path_attrs(attrs_b);
+            let (path_b, cwd_b) = io_path_attrs(&attrs_b);
             let cwd = std::env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| ".".to_string());

@@ -17,7 +17,7 @@ impl Interpreter {
                 // Seq.Numeric: if backed by a PredictiveIterator, call count-only.
                 // Otherwise return the element count.
                 if let ValueView::Seq(items) = target.view() {
-                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    let seq_id = std::sync::Arc::as_ptr(&items) as usize;
                     if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
                         return Some(self.call_method_with_values(iter, "count-only", vec![]));
                     }
@@ -253,7 +253,7 @@ impl Interpreter {
             "Numeric" if args.is_empty() => {
                 if let ValueView::Seq(items) = target.view() {
                     // Check for PredictiveIterator-backed Seq (stored by Seq.new)
-                    let seq_id = std::sync::Arc::as_ptr(items) as usize;
+                    let seq_id = std::sync::Arc::as_ptr(&items) as usize;
                     if let Some(iter) = self.predictive_seq_iter_for(seq_id) {
                         // Call count-only on the PredictiveIterator
                         return Some(self.call_method_with_values(iter, "count-only", vec![]));
@@ -570,11 +570,12 @@ impl Interpreter {
         // A Seq is consumed by .skip: subsequent iteration of the original Seq
         // must throw X::Seq::Consumed (unless it was cached).
         if let ValueView::Seq(seq_items) = target.view() {
-            if crate::value::seq_is_consumed(seq_items) && !crate::value::seq_is_cached(seq_items) {
+            if crate::value::seq_is_consumed(&seq_items) && !crate::value::seq_is_cached(&seq_items)
+            {
                 return Err(crate::value::seq_consumed_error());
             }
-            if !crate::value::seq_is_cached(seq_items) {
-                crate::value::seq_consume(seq_items).ok();
+            if !crate::value::seq_is_cached(&seq_items) {
+                crate::value::seq_consume(&seq_items).ok();
             }
         }
         let items = crate::runtime::utils::value_to_list(&target);
@@ -644,7 +645,7 @@ impl Interpreter {
     /// Dispatch the "eager" method.
     fn dispatch_eager_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
         if let ValueView::LazyList(list) = target.view() {
-            return Ok(Value::array(self.force_lazy_list_bridge(list)?));
+            return Ok(Value::array(self.force_lazy_list_bridge(&list)?));
         }
         if matches!(target.view(), ValueView::Array(..)) {
             let (items, kind) = target.into_array().unwrap();
@@ -659,7 +660,7 @@ impl Interpreter {
                 let mut out = Vec::with_capacity(items.len());
                 for it in items.iter() {
                     if let ValueView::LazyList(ll) = it.view() {
-                        out.extend(self.force_lazy_list_bridge(ll)?);
+                        out.extend(self.force_lazy_list_bridge(&ll)?);
                     } else {
                         out.push(it.clone());
                     }

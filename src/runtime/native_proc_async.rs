@@ -776,7 +776,7 @@ impl Interpreter {
                 );
                 let mode_key = format!("{}_mode", method);
                 if let Some(prev) = attrs.get(&mode_key).and_then(|v| match v.view() {
-                    ValueView::Str(s) => Some(s.as_str()),
+                    ValueView::Str(s) => Some(s.to_string()),
                     _ => None,
                 }) {
                     let requested = if requested_bin { "bin" } else { "text" };

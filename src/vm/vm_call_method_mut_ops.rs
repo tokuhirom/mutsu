@@ -458,7 +458,7 @@ impl Interpreter {
             && (ll.sequence_spec.is_some() || ll.closure_seq.is_some() || ll.scan_spec.is_some())
             && matches!(method.as_str(), "shift" | "unshift" | "prepend" | "splice")
         {
-            let items = self.force_lazy_list_vm(ll)?;
+            let items = self.force_lazy_list_vm(&ll)?;
             let reified = Value::real_array(items);
             self.env_mut().insert(target_name.clone(), reified.clone());
             reified
@@ -501,7 +501,7 @@ impl Interpreter {
         if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && method == "first"
-            && let Some(result) = self.try_lazy_gather_first(ll, &args)
+            && let Some(result) = self.try_lazy_gather_first(&ll, &args)
         {
             self.stack.push(result?);
             return Ok(());
@@ -560,14 +560,14 @@ impl Interpreter {
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
             let items = match Self::gather_head_bound(&method, &args) {
-                Some(n) => self.force_lazy_list_vm_n(ll, n)?,
+                Some(n) => self.force_lazy_list_vm_n(&ll, n)?,
                 // A strict force of an infinite list (lazy pipeline / infinite
                 // sequence / closure spec) cannot terminate: raise
                 // X::Cannot::Lazy with this method's name.
                 None if ll.lazy_pipe.is_some() || ll.is_infinite_spec() => {
                     return Err(RuntimeError::cannot_lazy(&method));
                 }
-                None => self.force_lazy_list_vm(ll)?,
+                None => self.force_lazy_list_vm(&ll)?,
             };
             // A lazy map/grep pipeline runs its callback via `vm_call_on_value`
             // in this Interpreter, so its side effects on enclosing variables are
@@ -662,7 +662,6 @@ impl Interpreter {
                     | "note"
             )
         {
-            let kind = kind.clone();
             let mut results = Vec::new();
             // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
             // accumulate EVERY eigenstate's by-name caller write. Each eigenstate's
@@ -968,7 +967,7 @@ impl Interpreter {
                 id,
             } = target.view()
             {
-                let attrs = crate::value::InstanceAttrs::clone(attributes);
+                let attrs = crate::value::InstanceAttrs::clone(&attributes);
                 attrs.insert("ast".to_string(), value.clone());
                 let updated = Value::instance_parts(
                     class_name,
@@ -1201,7 +1200,7 @@ impl Interpreter {
                 };
                 if let ValueView::Hash(map) = inner_target.view() {
                     let key = args[0].to_string_value();
-                    let result = self.resolve_hash_entry(map, &key);
+                    let result = self.resolve_hash_entry(&map, &key);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -1303,7 +1302,7 @@ impl Interpreter {
                     ValueView::Hash(map) => {
                         let old_meta = self.container_type_metadata(inner_target).clone();
                         let old_value = if map.contains_key(&key) {
-                            self.resolve_hash_entry(map, &key)
+                            self.resolve_hash_entry(&map, &key)
                         } else {
                             let type_name = old_meta
                                 .as_ref()
@@ -1495,7 +1494,7 @@ impl Interpreter {
                             .iter()
                             .find_map(|(name, bound)| match bound.view() {
                                 ValueView::Array(existing, ..)
-                                    if crate::gc::Gc::ptr_eq(existing, items) =>
+                                    if crate::gc::Gc::ptr_eq(&existing, &items) =>
                                 {
                                     Some(*name)
                                 }
@@ -1739,7 +1738,7 @@ impl Interpreter {
                             self.write_back_array_storage_instance(
                                 &target_name,
                                 &inst_class,
-                                attributes,
+                                &attributes,
                                 inst_id,
                                 storage,
                             );
@@ -1808,7 +1807,7 @@ impl Interpreter {
                         self.write_back_array_storage_instance(
                             &target_name,
                             &inst_class,
-                            attributes,
+                            &attributes,
                             inst_id,
                             storage,
                         );
@@ -1829,8 +1828,8 @@ impl Interpreter {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.
                     let effective_target = if let ValueView::Hash(items) = target.view() {
-                        if Self::hash_has_sentinels(items) {
-                            Some(self.resolve_hash_for_iteration(items))
+                        if Self::hash_has_sentinels(&items) {
+                            Some(self.resolve_hash_for_iteration(&items))
                         } else {
                             None
                         }
@@ -2456,7 +2455,7 @@ impl Interpreter {
                     .collect(),
             ),
         );
-        let updated = Value::write_back_sharing(attributes, class_name, updated_attrs, id);
+        let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
         self.env_mut()
             .insert(target_name.to_string(), updated.clone());
         Some(Ok(updated))

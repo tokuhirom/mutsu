@@ -190,7 +190,7 @@ impl Interpreter {
         {
             let msg = format!(
                 "Enum '{}' is insufficiently type-like to be instantiated.  Did you mean 'class'?",
-                name
+                *name
             );
             let mut attrs = HashMap::new();
             attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -605,7 +605,7 @@ impl Interpreter {
                         let mut attrs = attributes.to_map();
                         attrs.insert("formatter".to_string(), formatter_value.clone());
                         let dt_with_formatter =
-                            Value::write_back_sharing(attributes, class_name, attrs, id);
+                            Value::write_back_sharing(&attributes, class_name, attrs, id);
                         let saved_env = self.env().clone();
                         let saved_readonly = self.save_readonly_vars();
                         let rendered = self
@@ -623,7 +623,10 @@ impl Interpreter {
                             updated
                                 .insert("__formatter_rendered".to_string(), Value::str(rendered));
                             return Ok(Value::write_back_sharing(
-                                attributes, class_name, updated, id,
+                                &attributes,
+                                class_name,
+                                updated,
+                                id,
                             ));
                         }
                     }

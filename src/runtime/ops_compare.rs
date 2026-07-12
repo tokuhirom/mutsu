@@ -49,7 +49,7 @@ impl Interpreter {
                 attributes,
                 ..
             } if class_name.resolve() == "WalkList" => {
-                crate::runtime::utils::walk_list_candidates(attributes)
+                crate::runtime::utils::walk_list_candidates(&attributes)
                     .unwrap_or_else(|| vec![val.clone()])
             }
             // Nil is a single scalar item in list context (e.g. `for Nil { }`

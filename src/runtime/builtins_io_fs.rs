@@ -231,7 +231,7 @@ impl Interpreter {
             ValueView::Mixin(..) | ValueView::BigInt(_) => {
                 crate::runtime::to_int(&mode_value) as u32
             }
-            ValueView::Str(s) => u32::from_str_radix(s, 8).unwrap_or(0),
+            ValueView::Str(s) => u32::from_str_radix(&s, 8).unwrap_or(0),
             _ => {
                 return Err(RuntimeError::new(format!(
                     "Invalid mode: {}",

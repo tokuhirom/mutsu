@@ -204,7 +204,7 @@ impl Interpreter {
                         "__mutsu_iterationbuffer_items".to_string(),
                         Value::real_array(new_items),
                     );
-                    Value::write_back_sharing(attributes, class_name, updated_attrs, target_id)
+                    Value::write_back_sharing(&attributes, class_name, updated_attrs, target_id)
                 };
                 match method {
                     "elems" if args.is_empty() => return Ok(Value::int(items.len() as i64)),

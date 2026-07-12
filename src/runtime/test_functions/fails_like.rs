@@ -82,7 +82,7 @@ impl Interpreter {
                     }
                     nested.env.insert_sym(*k, v.clone());
                 }
-                nested.eval_eval_string(code)
+                nested.eval_eval_string(&code)
             }
             _ => Ok(Value::NIL),
         };
@@ -264,7 +264,7 @@ impl Interpreter {
                 let matched = match expected_val.view() {
                     ValueView::Whatever => true,
                     ValueView::Regex(pattern) => self
-                        .regex_match_with_captures(pattern, &actual_str)
+                        .regex_match_with_captures(&pattern, &actual_str)
                         .is_some(),
                     ValueView::Sub(_) | ValueView::Routine { .. } => {
                         let call_arg = actual_val.clone().unwrap_or(Value::NIL);
@@ -276,7 +276,7 @@ impl Interpreter {
                     _ => actual_str == expected_val.to_string_value(),
                 };
                 let expected_display = match expected_val.view() {
-                    ValueView::Regex(pattern) => format!("/{}/", pattern),
+                    ValueView::Regex(pattern) => format!("/{}/", *pattern),
                     ValueView::Sub(_) | ValueView::Routine { .. } => expected_val.to_string_value(),
                     _ => expected_val.to_string_value(),
                 };

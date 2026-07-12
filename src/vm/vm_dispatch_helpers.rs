@@ -457,7 +457,6 @@ impl Interpreter {
 
         // Junction: thread over values
         if let ValueView::Junction { kind, values } = target.view() {
-            let kind = kind.clone();
             let values = values.clone();
             let mut results = Vec::with_capacity(values.len());
             for callable in values.iter() {
@@ -539,7 +538,6 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         if let ValueView::Junction { kind, values } = left.view() {
-            let kind = kind.clone();
             let values = values.clone();
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()
@@ -549,7 +547,6 @@ impl Interpreter {
             return Ok(Value::junction(kind, results?));
         }
         if let ValueView::Junction { kind, values } = right.view() {
-            let kind = kind.clone();
             let values = values.clone();
             let results: Result<Vec<Value>, RuntimeError> = values
                 .iter()

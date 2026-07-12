@@ -368,7 +368,7 @@ impl Interpreter {
     pub(crate) fn call_protect_block(&mut self, code: &Value) -> Result<Value, RuntimeError> {
         if let ValueView::Sub(data) = code.view() {
             let (compiled, compiled_fns, _captured_bindings, _writeback_bindings, captured_names) =
-                self.get_or_compile_protect_block_with_slots(data);
+                self.get_or_compile_protect_block_with_slots(&data);
             self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
             self.run_compiled_block(&compiled, compiled_fns.as_ref())
         } else {
@@ -451,7 +451,7 @@ impl Interpreter {
                 else {
                     continue;
                 };
-                if data.env.contains_key(name.as_str()) && !captured_names.contains(name) {
+                if data.env.contains_key(name.as_str()) && !captured_names.contains(&name) {
                     captured_names.push(name.to_string());
                 }
             }

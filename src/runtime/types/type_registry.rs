@@ -166,7 +166,7 @@ impl Interpreter {
                 if s.is_empty() {
                     return Value::version(Vec::new(), false, false);
                 }
-                let (parts, plus, minus) = Value::parse_version_string(s);
+                let (parts, plus, minus) = Value::parse_version_string(&s);
                 Value::version(parts, plus, minus)
             }
             // Version.new(*) - Whatever argument (bare * evaluates to Num(Inf))

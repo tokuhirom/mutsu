@@ -51,7 +51,7 @@ impl Interpreter {
                 )?;
                 elems.push(self.stack.pop().unwrap_or(Value::NIL));
             }
-            self.stack.push(Value::junction(kind.clone(), elems));
+            self.stack.push(Value::junction(kind, elems));
             return Ok(());
         }
         self.stack.push(container);

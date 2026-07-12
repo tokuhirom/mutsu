@@ -21,7 +21,7 @@ impl Value {
         if let ValueView::Array(arc, _) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the push.
-            let data = unsafe { crate::value::gc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             data.items.push(val);
             true
         } else {
@@ -42,7 +42,7 @@ impl Value {
         };
         // SAFETY: aliased in-place mutation of a shared container; see
         // `arc_contents_mut`. No borrow into the items is live across the write.
-        let data = unsafe { crate::value::gc_contents_mut(arc) };
+        let data = unsafe { crate::value::gc_contents_mut(&arc) };
         let hole = data
             .default
             .as_ref()
@@ -96,7 +96,7 @@ impl Value {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the
             // growth/promotion below.
-            let data = unsafe { crate::value::gc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             // Autovivifying past the end fills the gap with the element's type
             // object (`Any`, or the declared element type / `is default` value),
             // matching Raku — `my @a; my $r := @a[5]; $r = 1` yields
@@ -138,7 +138,7 @@ impl Value {
     pub fn hash_key_encode(val: &Value) -> String {
         match val.view() {
             ValueView::Regex(pattern) => {
-                format!("\0rx:{}", pattern)
+                format!("\0rx:{}", *pattern)
             }
             _ => val.to_string_value(),
         }

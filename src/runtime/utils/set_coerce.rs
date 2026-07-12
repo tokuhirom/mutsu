@@ -61,7 +61,7 @@ pub(crate) fn coerce_to_set(val: &Value) -> HashSet<String> {
     match val.view() {
         ValueView::Set(s, _) => s.elements.clone(),
         ValueView::Bag(b, _) => {
-            let resolved = resolve_bag_tab_keys(b);
+            let resolved = resolve_bag_tab_keys(&b);
             resolved.keys().cloned().collect()
         }
         ValueView::Mix(m, _) => m.keys().cloned().collect(),
@@ -179,7 +179,7 @@ pub(crate) fn to_mix_map(v: &Value) -> HashMap<String, f64> {
     match v.view() {
         ValueView::Mix(m, _) => m.weights.clone(),
         ValueView::Bag(b, _) => {
-            let resolved = resolve_bag_tab_keys(b);
+            let resolved = resolve_bag_tab_keys(&b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
         ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),
@@ -248,7 +248,7 @@ pub(crate) fn resolve_bag_tab_keys(bag: &HashMap<String, BigInt>) -> HashMap<Str
 /// Convert a value to a Bag-level HashMap (key → i64 count)
 pub(crate) fn to_bag_map(v: &Value) -> HashMap<String, i64> {
     match v.view() {
-        ValueView::Bag(b, _) => resolve_bag_tab_keys(b),
+        ValueView::Bag(b, _) => resolve_bag_tab_keys(&b),
         ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1i64)).collect(),
         ValueView::Hash(h) => {
             let mut result = HashMap::new();

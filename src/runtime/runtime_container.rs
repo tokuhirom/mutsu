@@ -383,7 +383,7 @@ impl Interpreter {
             // nests its leaves inside per-dimension sub-arrays, so descend to the
             // leaves; a plain array checks its direct elements (a `has Array @.x`
             // legitimately holds array elements, so do not descend into those).
-            fn collect_leaves<'a>(v: &'a Value, descend: bool, out: &mut Vec<&'a Value>) {
+            fn collect_leaves(v: &Value, descend: bool, out: &mut Vec<Value>) {
                 match v.view() {
                     ValueView::Array(items, kind)
                         if descend || matches!(kind, ArrayKind::Shaped) =>
@@ -392,21 +392,21 @@ impl Interpreter {
                             collect_leaves(it, true, out);
                         }
                     }
-                    _ => out.push(v),
+                    _ => out.push(v.clone()),
                 }
             }
-            let mut elems: Vec<&Value> = Vec::new();
+            let mut elems: Vec<Value> = Vec::new();
             match value.view() {
                 ValueView::Array(items, ArrayKind::Shaped) => {
                     for it in items.iter() {
                         collect_leaves(it, true, &mut elems);
                     }
                 }
-                ValueView::Array(items, _) => elems.extend(items.iter()),
-                ValueView::Hash(map) => elems.extend(map.values()),
+                ValueView::Array(items, _) => elems.extend(items.iter().cloned()),
+                ValueView::Hash(map) => elems.extend(map.values().cloned()),
                 _ => {}
             }
-            for it in elems {
+            for it in &elems {
                 if !it.is_nil() && !self.type_matches_value(elem_type, it) {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
                         &display, elem_type, it,

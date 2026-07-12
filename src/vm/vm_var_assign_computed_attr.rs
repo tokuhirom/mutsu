@@ -17,14 +17,14 @@ impl Interpreter {
                 let k = Value::hash_key_encode(key);
                 // SAFETY: aliased in-place mutation of a shared hash; see
                 // `arc_contents_mut`. No live borrow into the map.
-                let hd = unsafe { crate::value::gc_contents_mut(arc) };
+                let hd = unsafe { crate::value::gc_contents_mut(&arc) };
                 Value::hash_insert_through(&mut hd.map, k, val);
             }
             ValueView::Array(arc, _) => {
                 if let Some(i) = Self::index_to_usize(key) {
                     // SAFETY: aliased in-place mutation of a shared array; see
                     // `arc_contents_mut`.
-                    let v = &mut unsafe { crate::value::gc_contents_mut(arc) }.items;
+                    let v = &mut unsafe { crate::value::gc_contents_mut(&arc) }.items;
                     Self::autoviv_resize(v, i + 1, Value::NIL)?;
                     Value::assign_element_slot(&mut v[i], val);
                 }
@@ -142,9 +142,11 @@ impl Interpreter {
     /// an `Arc<RwLock>` — so a write through this reference persists back to the
     /// caller's Mixin (it shares the same inner instance). Returns `None` for a
     /// type object / non-instance.
-    pub(crate) fn self_instance_attrs(val: &Value) -> Option<&crate::value::InstanceAttrs> {
+    pub(crate) fn self_instance_attrs(
+        val: &Value,
+    ) -> Option<crate::gc::Gc<crate::value::InstanceAttrs>> {
         match val.view() {
-            ValueView::Instance { attributes, .. } => Some(attributes),
+            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             ValueView::Mixin(inner, _) => Self::self_instance_attrs(inner),
             _ => None,
         }
@@ -157,7 +159,7 @@ impl Interpreter {
         let twigil = self.canonical_attr_twigil(name)?;
         let self_val = self.get_env_with_main_alias("self")?;
         let attributes = Self::self_instance_attrs(&self_val)?;
-        let key = self.resolve_attr_cell_key(&twigil, attributes)?;
+        let key = self.resolve_attr_cell_key(&twigil, &attributes)?;
         attributes.as_map().get(&key).cloned()
     }
 
@@ -226,7 +228,7 @@ impl Interpreter {
         let Some(attributes) = Self::self_instance_attrs(&self_val) else {
             return;
         };
-        if let Some(key) = self.resolve_attr_cell_key(name, attributes) {
+        if let Some(key) = self.resolve_attr_cell_key(name, &attributes) {
             attributes.insert(key, val);
         }
     }
@@ -329,8 +331,8 @@ impl Interpreter {
     /// Array/Hash Arc (a clone that has not been copy-on-write forked).
     pub(crate) fn same_container_arc(a: &Value, b: &Value) -> bool {
         match (a.view(), b.view()) {
-            (ValueView::Array(x, _), ValueView::Array(y, _)) => crate::gc::Gc::ptr_eq(x, y),
-            (ValueView::Hash(x), ValueView::Hash(y)) => crate::gc::Gc::ptr_eq(x, y),
+            (ValueView::Array(x, _), ValueView::Array(y, _)) => crate::gc::Gc::ptr_eq(&x, &y),
+            (ValueView::Hash(x), ValueView::Hash(y)) => crate::gc::Gc::ptr_eq(&x, &y),
             _ => false,
         }
     }

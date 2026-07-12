@@ -158,16 +158,15 @@ impl Interpreter {
         &self,
         value: &Value,
     ) -> Option<RuntimeError> {
-        let items: &[Value] = match value.view() {
+        match value.view() {
             ValueView::Seq(items)
             | ValueView::Slip(items)
             | ValueView::HyperSeq(items)
-            | ValueView::RaceSeq(items) => items,
-            _ => return None,
-        };
-        items
-            .iter()
-            .find_map(|it| self.failure_to_runtime_error_if_unhandled(it))
+            | ValueView::RaceSeq(items) => items
+                .iter()
+                .find_map(|it| self.failure_to_runtime_error_if_unhandled(it)),
+            _ => None,
+        }
     }
 
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
@@ -213,7 +212,7 @@ impl Interpreter {
     fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
         match value.view() {
             ValueView::LazyList(list) => {
-                let items = self.force_lazy_list(list)?;
+                let items = self.force_lazy_list(&list)?;
                 for item in &items {
                     self.sink_for_definite_return(item)?;
                 }
@@ -311,7 +310,7 @@ impl Interpreter {
     fn display_gist(value: &Value) -> String {
         match value.view() {
             ValueView::Package(name) => name.resolve().to_string(),
-            ValueView::Str(s) => format!("\"{}\"", s),
+            ValueView::Str(s) => format!("\"{}\"", *s),
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
             ValueView::Num(n) => format!("{}", n),

@@ -24,7 +24,7 @@ impl Interpreter {
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
         } else if let ValueView::LazyList(ll) = target.view() {
-            self.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_bridge(&ll)?
         } else if matches!(
             target.view(),
             ValueView::Range(..)
@@ -117,7 +117,7 @@ impl Interpreter {
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
         } else if let ValueView::LazyList(ll) = target.view() {
-            self.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_bridge(&ll)?
         } else if matches!(
             target.view(),
             ValueView::Range(..)
@@ -223,7 +223,7 @@ impl Interpreter {
         let items: Vec<Value> = if let Some(list_items) = target.as_list_items() {
             list_items.to_vec()
         } else if let ValueView::LazyList(ll) = target.view() {
-            self.force_lazy_list_bridge(ll)?
+            self.force_lazy_list_bridge(&ll)?
         } else if matches!(
             target.view(),
             ValueView::Range(..)
@@ -310,7 +310,7 @@ impl Interpreter {
                     }
                 }
             }
-            let seq_id = std::sync::Arc::as_ptr(items) as usize;
+            let seq_id = std::sync::Arc::as_ptr(&items) as usize;
             self.squish_iterator_meta.insert(
                 seq_id,
                 super::super::SquishIteratorMeta {

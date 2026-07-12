@@ -268,16 +268,16 @@ impl Interpreter {
 
         match pattern.view() {
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
-                let pat: &str = match pattern.view() {
-                    ValueView::Regex(p) => p,
-                    ValueView::RegexWithAdverbs(a) => &a.pattern,
+                let pat: String = match pattern.view() {
+                    ValueView::Regex(p) => p.to_string(),
+                    ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
                     _ => unreachable!(),
                 };
                 let is_p5 = matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.perl5);
                 let pat = if is_p5 {
-                    self.interpolate_regex_pattern(pat)
+                    self.interpolate_regex_pattern(&pat)
                 } else {
-                    pat.to_string()
+                    pat
                 };
                 let pat_global =
                     matches!(pattern.view(), ValueView::RegexWithAdverbs(a) if a.global) || global;

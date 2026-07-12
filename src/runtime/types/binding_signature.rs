@@ -526,7 +526,7 @@ impl Interpreter {
                         match val.view() {
                             ValueView::Pair(..) => {} // skip named args
                             ValueView::Slip(arr) => {
-                                flatten_into_slurpy(arr, &mut items);
+                                flatten_into_slurpy(&arr, &mut items);
                             }
                             _ => {
                                 items.push(val.clone());
@@ -826,7 +826,7 @@ impl Interpreter {
                                 if kind.is_itemized() {
                                     items.push(Value::array_with_kind(arr.clone(), kind));
                                 } else {
-                                    flatten_into_slurpy(arr, &mut items);
+                                    flatten_into_slurpy(&arr, &mut items);
                                 }
                             }
                             ValueView::Range(..)

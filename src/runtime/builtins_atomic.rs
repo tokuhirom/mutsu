@@ -173,10 +173,10 @@ impl Interpreter {
     pub(super) fn cas_retry_matches(expected_seen: &Value, latest_seen: &Value) -> bool {
         match (expected_seen.view(), latest_seen.view()) {
             (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
-            (ValueView::Array(a, ..), ValueView::Array(b, ..)) => crate::gc::Gc::ptr_eq(a, b),
-            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
-            (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
-            (ValueView::Slip(a), ValueView::Slip(b)) => std::sync::Arc::ptr_eq(a, b),
+            (ValueView::Array(a, ..), ValueView::Array(b, ..)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(&a, &b),
+            (ValueView::Slip(a), ValueView::Slip(b)) => std::sync::Arc::ptr_eq(&a, &b),
             _ => expected_seen == latest_seen,
         }
     }

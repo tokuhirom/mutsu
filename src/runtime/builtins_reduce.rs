@@ -159,10 +159,10 @@ impl Interpreter {
                     let elem = items.into_iter().next().unwrap();
                     // Validate non-numeric strings
                     if let ValueView::Str(s) = elem.view()
-                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_none()
+                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(&s).is_none()
                     {
                         return Err(RuntimeError::str_numeric(
-                            s,
+                            &s,
                             "base-10 number must begin with valid digits or '.'",
                         ));
                     }

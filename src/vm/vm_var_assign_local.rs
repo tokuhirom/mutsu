@@ -237,7 +237,7 @@ impl Interpreter {
                     .map(Value::view)
                 {
                     Some(ValueView::Bool(true)) => Value::lazy_list(list.clone()),
-                    _ => Value::real_array(self.force_lazy_list_vm(list)?),
+                    _ => Value::real_array(self.force_lazy_list_vm(&list)?),
                 }
             } else {
                 runtime::coerce_to_array(raw_val)
@@ -601,7 +601,7 @@ impl Interpreter {
             match adverb {
                 HyperSliceAdverb::Kv => {
                     if let ValueView::Hash(inner) = value.view() {
-                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                        Self::hyperslice_recurse(&inner, &cur_path, adverb, result);
                     } else {
                         result.push(Value::str(key.clone()));
                         result.push(value.clone());
@@ -609,14 +609,14 @@ impl Interpreter {
                 }
                 HyperSliceAdverb::K => {
                     if let ValueView::Hash(inner) = value.view() {
-                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                        Self::hyperslice_recurse(&inner, &cur_path, adverb, result);
                     } else {
                         result.push(Value::str(key.clone()));
                     }
                 }
                 HyperSliceAdverb::V => {
                     if let ValueView::Hash(inner) = value.view() {
-                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                        Self::hyperslice_recurse(&inner, &cur_path, adverb, result);
                     } else {
                         result.push(value.clone());
                     }
@@ -627,12 +627,12 @@ impl Interpreter {
                     result.push(Value::str(key.clone()));
                     result.push(value.clone());
                     if let ValueView::Hash(inner) = value.view() {
-                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                        Self::hyperslice_recurse(&inner, &cur_path, adverb, result);
                     }
                 }
                 HyperSliceAdverb::DeepK => {
                     if let ValueView::Hash(inner) = value.view() {
-                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                        Self::hyperslice_recurse(&inner, &cur_path, adverb, result);
                     } else {
                         let key_array: Vec<Value> =
                             cur_path.iter().map(|s| Value::str(s.clone())).collect();
@@ -641,7 +641,7 @@ impl Interpreter {
                 }
                 HyperSliceAdverb::DeepKv => {
                     if let ValueView::Hash(inner) = value.view() {
-                        Self::hyperslice_recurse(inner, &cur_path, adverb, result);
+                        Self::hyperslice_recurse(&inner, &cur_path, adverb, result);
                     } else {
                         let key_array: Vec<Value> =
                             cur_path.iter().map(|s| Value::str(s.clone())).collect();

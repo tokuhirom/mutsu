@@ -277,7 +277,7 @@ impl Interpreter {
                 let mut infos = Vec::new();
                 for candidate in candidates {
                     if let ValueView::Sub(data) = candidate.view() {
-                        let sig = self.sub_signature_value(data);
+                        let sig = self.sub_signature_value(&data);
                         if let Some(info) = extract_sig_info(&sig) {
                             infos.push(info);
                         }
@@ -556,7 +556,7 @@ impl Interpreter {
                 && let Some(ValueView::Str(meth)) =
                     data.env.get("__mutsu_lookup_method").map(Value::view)
             {
-                let candidates = self.classhow_lookup_all_candidates(cls, meth, data.package);
+                let candidates = self.classhow_lookup_all_candidates(&cls, &meth, data.package);
                 return Some(Ok(Value::array(candidates)));
             }
             return Some(Ok(Value::array(vec![target.clone()])));
@@ -611,7 +611,7 @@ impl Interpreter {
                         .iter()
                         .filter_map(|c| {
                             if let ValueView::Sub(cd) = c.view() {
-                                Some(self.sub_signature_value(cd))
+                                Some(self.sub_signature_value(&cd))
                             } else {
                                 None
                             }
@@ -633,7 +633,7 @@ impl Interpreter {
                     .iter()
                     .filter_map(|c| {
                         if let ValueView::Sub(cd) = c.view() {
-                            Some(self.sub_signature_value(cd))
+                            Some(self.sub_signature_value(&cd))
                         } else {
                             None
                         }

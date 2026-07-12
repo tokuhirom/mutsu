@@ -296,10 +296,10 @@ impl Interpreter {
     }
 
     /// Get the element default for a container (Array/Hash).
-    pub(crate) fn container_default<'v>(&'v self, value: &'v Value) -> Option<&'v Value> {
+    pub(crate) fn container_default(&self, value: &Value) -> Option<Value> {
         match value.view() {
-            ValueView::Array(items, ..) => items.default.as_deref(),
-            ValueView::Hash(map) => map.default.as_deref(),
+            ValueView::Array(items, ..) => items.default.as_deref().cloned(),
+            ValueView::Hash(map) => map.default.as_deref().cloned(),
             _ => None,
         }
     }

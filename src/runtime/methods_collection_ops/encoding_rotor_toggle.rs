@@ -291,7 +291,7 @@ impl Interpreter {
 
         // Get the items to rotor over (force LazyList if needed)
         let lazy_forced = if let ValueView::LazyList(ll) = target.view() {
-            Some(self.force_lazy_list_bridge(ll)?)
+            Some(self.force_lazy_list_bridge(&ll)?)
         } else {
             None
         };

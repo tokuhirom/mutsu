@@ -282,8 +282,8 @@ impl Interpreter {
                 }
                 ValueView::Str(name) => {
                     mixins.contains_key(name.as_str())
-                        || mixins.contains_key(&format!("__mutsu_role__{}", name))
-                        || self.type_matches_value(name, target)
+                        || mixins.contains_key(&format!("__mutsu_role__{}", *name))
+                        || self.type_matches_value(&name, target)
                 }
                 ValueView::Instance { class_name, .. } => {
                     self.type_matches_value(&class_name.resolve(), target)

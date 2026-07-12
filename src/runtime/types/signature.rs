@@ -115,10 +115,10 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
     for val in values {
         match val.view() {
             ValueView::Array(arr, kind) if !kind.is_itemized() => {
-                flatten_into_slurpy(arr, out);
+                flatten_into_slurpy(&arr, out);
             }
             ValueView::Seq(items) | ValueView::Slip(items) => {
-                flatten_into_slurpy(items, out);
+                flatten_into_slurpy(&items, out);
             }
             ValueView::Range(a, b) => {
                 let end = b.min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
@@ -290,7 +290,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         // A list of Pairs (e.g. `(a => 1, b => 2)`) destructured by named
         // params `(:$a, :$b)` binds each pair's key to its value.
         ValueView::Array(data, _) => pairs_in_list_to_named(&data.items),
-        ValueView::Seq(items) | ValueView::Slip(items) => pairs_in_list_to_named(items),
+        ValueView::Seq(items) | ValueView::Slip(items) => pairs_in_list_to_named(&items),
         ValueView::Instance { attributes, .. } => attributes.to_map(),
         _ => std::collections::HashMap::new(),
     }

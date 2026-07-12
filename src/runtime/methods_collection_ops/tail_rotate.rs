@@ -51,7 +51,7 @@ impl Interpreter {
         if let ValueView::Seq(items) = target.view()
             && items.is_empty()
         {
-            let seq_id = std::sync::Arc::as_ptr(items) as usize;
+            let seq_id = std::sync::Arc::as_ptr(&items) as usize;
             let key = format!("__mutsu_predictive_seq_iter::{seq_id}");
             if let Some(iterator) = self.predictive_seq_iter_for(seq_id) {
                 let iter_slot = "$mutsu_predictive_tail_iterator";

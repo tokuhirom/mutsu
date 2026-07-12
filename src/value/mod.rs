@@ -287,6 +287,7 @@ mod display;
 mod error;
 mod error_construct;
 mod error_typed;
+mod guards;
 /// NaN-boxed 8-byte representation core (3b-1 step B). Not yet wired into
 /// `Value` — the flip lands after the internal wall migration; until then the
 /// unit tests keep the packing machinery honest.
@@ -313,6 +314,7 @@ mod view;
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
+pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(crate) use types::what_type_name;
 pub use view::ValueView;
 
@@ -611,7 +613,7 @@ pub(crate) fn get_pending_failures() -> Vec<Value> {
     FAILURE_PENDING_REGISTRY.with(|reg| reg.borrow().values().cloned().collect())
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum JunctionKind {
     Any,
     All,
