@@ -158,11 +158,15 @@ sweep まで含めて完了 — 経緯と詳細は [news/2026-07.md](news/2026-0
 エントリあり）。残:
 
 - [ ] **層3b NaN-boxing（= §5 Lever 2・JIT の地ならし）**: 3b-0 API 壁 ✅（#4315/#4316）・
-      3b-1 step A `Value` newtype seal ✅（2026-07-11）。**次 = 3b-1 step B（着手可能 —
-      [ADR-0005](docs/adr/0005-nanbox-representation-encoding.md) は 2026-07-12 Accepted）**:
-      `ValueRepr` を pointer-favored NaN-box（8B）へ差し替え（`view()`/constructor/accessor の
-      中身のみ変更。小整数幅は int-arith bench で決定）。ゲート = make test＋roast＋gc-stress
-      green・[docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3.2 マイクロベンチ。
+      3b-1 step A `Value` newtype seal ✅（2026-07-11）・step B コア表現
+      （`src/value/nanbox/`: 8B word・全 variant ロスレス pack/unpack・Clone/Drop・kind 表）✅。
+      設計とスライス計画 = [docs/nanbox-3b1-step-b-design.md](docs/nanbox-3b1-step-b-design.md)
+      （[ADR-0005](docs/adr/0005-nanbox-representation-encoding.md) Accepted 2026-07-12）。残:
+      **B-wall-in**（`src/value/` 内部 866 サイトの `ValueRepr::` パターンを view()/into_repr()/
+      with_*_mut へ機械移行・byte-identical 複数 PR）→ **B-guards**（`ValueView` ポインタ
+      フィールドを guard 型 `ArcRef`/`GcRef` へ）→ **B-flip**（`Value(ValueRepr)` →
+      `Value(NanBox)`・`value_size_guard` 48→8）。ゲート = make test＋roast＋gc-stress green・
+      GC カウンタ不変・[docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3.2 マイクロベンチ。
 - [ ] 層3a hardening（H1 継続計測〜H5 background collect の着手トリガ）=
       [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。grammar パースの候補 push
       自体（~510k/200-parse）の抑制は未着手（実害＝メモリ保持は `Weak` 化で解消済み）。
