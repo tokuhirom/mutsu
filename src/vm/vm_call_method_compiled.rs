@@ -47,7 +47,7 @@ impl Interpreter {
         let [Stmt::Call { name, args }] = data.body.as_slice() else {
             return Ok(None);
         };
-        let method = name.resolve();
+        let method = name.as_str();
         if method != "push" {
             return Ok(None);
         }

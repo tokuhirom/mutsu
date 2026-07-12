@@ -15,7 +15,7 @@ pub struct Symbol(u32);
 
 impl Serialize for Symbol {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.resolve().serialize(serializer)
+        self.as_str().serialize(serializer)
     }
 }
 
@@ -28,21 +28,23 @@ impl<'de> Deserialize<'de> for Symbol {
 
 impl PartialEq<&str> for Symbol {
     fn eq(&self, other: &&str) -> bool {
-        let table = global_table().read().unwrap();
-        table.id_to_str[self.0 as usize] == *other
+        self.as_str() == *other
     }
 }
 
 impl PartialEq<str> for Symbol {
     fn eq(&self, other: &str) -> bool {
-        let table = global_table().read().unwrap();
-        table.id_to_str[self.0 as usize] == other
+        self.as_str() == other
     }
 }
 
+/// Interned strings are leaked (`Box::leak`) so a `Symbol` can hand out a
+/// `&'static str` without holding the table lock. The table is append-only
+/// and lives for the whole process, so the leak is exactly the table's own
+/// lifetime — no unbounded growth beyond what `Vec<String>` storage had.
 struct SymbolTable {
-    str_to_id: FxHashMap<String, Symbol>,
-    id_to_str: Vec<String>,
+    str_to_id: FxHashMap<&'static str, Symbol>,
+    id_to_str: Vec<&'static str>,
 }
 
 static GLOBAL_TABLE: OnceLock<RwLock<SymbolTable>> = OnceLock::new();
@@ -62,6 +64,14 @@ thread_local! {
     /// Removes the global-`RwLock` read contention on the intern hot path (see
     /// `Symbol::intern`).
     static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> = RefCell::new(FxHashMap::default());
+
+    /// Per-thread `id -> &'static str` memo in front of `GLOBAL_TABLE`, the
+    /// mirror of `INTERN_CACHE` for the resolve direction. Interned strings are
+    /// leaked and ids never remapped, so a cached entry is valid forever.
+    /// Keeps `as_str` (the single hottest symbol operation — every dispatch
+    /// class-name borrow, `==` compare, `starts_with`, `Display`) off the
+    /// globally-shared `RwLock`.
+    static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
 }
 
 impl Symbol {
@@ -105,15 +115,36 @@ impl Symbol {
         }
         let id = table.id_to_str.len() as u32;
         let sym = Symbol(id);
-        table.id_to_str.push(s.to_owned());
-        table.str_to_id.insert(s.to_owned(), sym);
+        let leaked: &'static str = Box::leak(s.to_owned().into_boxed_str());
+        table.id_to_str.push(leaked);
+        table.str_to_id.insert(leaked, sym);
         sym
     }
 
+    /// Borrow the symbol's string without allocating. The returned `&'static
+    /// str` is valid for the whole process (interned strings are never freed),
+    /// and no lock is held after this returns — safe to keep across arbitrary
+    /// downstream calls, unlike `with_str`'s old lock-scoped borrow.
+    pub fn as_str(&self) -> &'static str {
+        let idx = self.0 as usize;
+        RESOLVE_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            if let Some(Some(s)) = cache.get(idx) {
+                return *s;
+            }
+            let s = global_table().read().unwrap().id_to_str[idx];
+            if cache.len() <= idx {
+                cache.resize(idx + 1, None);
+            }
+            cache[idx] = Some(s);
+            s
+        })
+    }
+
     /// Resolve the symbol back to its string representation.
+    /// Prefer `as_str()` on hot paths — this allocates a fresh `String`.
     pub fn resolve(&self) -> String {
-        let table = global_table().read().unwrap();
-        table.id_to_str[self.0 as usize].clone()
+        self.as_str().to_owned()
     }
 
     /// Return the internal numeric ID of this symbol (unique per interned string).
@@ -122,66 +153,58 @@ impl Symbol {
     }
 
     /// Execute a closure with a borrowed reference to the underlying string.
-    /// Holds the read lock only for the duration of the closure.
+    /// The lock is released before the closure runs (see `as_str`).
     pub fn with_str<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&str) -> R,
     {
-        let table = global_table().read().unwrap();
-        f(&table.id_to_str[self.0 as usize])
+        f(self.as_str())
     }
 
     pub fn starts_with(&self, prefix: &str) -> bool {
-        self.with_str(|s| s.starts_with(prefix))
+        self.as_str().starts_with(prefix)
     }
 
     pub fn ends_with(&self, suffix: &str) -> bool {
-        self.with_str(|s| s.ends_with(suffix))
+        self.as_str().ends_with(suffix)
     }
 
     pub fn contains_str(&self, needle: &str) -> bool {
-        self.with_str(|s| s.contains(needle))
+        self.as_str().contains(needle)
     }
 
     pub fn strip_prefix_str(&self, prefix: &str) -> Option<String> {
-        self.with_str(|s| s.strip_prefix(prefix).map(|r| r.to_owned()))
+        self.as_str().strip_prefix(prefix).map(|r| r.to_owned())
     }
 
     pub fn strip_prefix_char(&self, prefix: char) -> Option<String> {
-        self.with_str(|s| s.strip_prefix(prefix).map(|r| r.to_owned()))
+        self.as_str().strip_prefix(prefix).map(|r| r.to_owned())
     }
 
     pub fn rsplit_once_str(&self, delimiter: &str) -> Option<(String, String)> {
-        self.with_str(|s| {
-            s.rsplit_once(delimiter)
-                .map(|(a, b)| (a.to_owned(), b.to_owned()))
-        })
+        self.as_str()
+            .rsplit_once(delimiter)
+            .map(|(a, b)| (a.to_owned(), b.to_owned()))
     }
 
     pub fn len(&self) -> usize {
-        self.with_str(|s| s.len())
+        self.as_str().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.with_str(|s| s.is_empty())
+        self.as_str().is_empty()
     }
 }
 
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let table = global_table().read().unwrap();
-        write!(
-            f,
-            "Symbol({}: {:?})",
-            self.0, &table.id_to_str[self.0 as usize]
-        )
+        write!(f, "Symbol({}: {:?})", self.0, self.as_str())
     }
 }
 
 impl fmt::Display for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let table = global_table().read().unwrap();
-        f.write_str(&table.id_to_str[self.0 as usize])
+        f.write_str(self.as_str())
     }
 }
 
@@ -208,6 +231,16 @@ mod tests {
     fn resolve_roundtrip() {
         let sym = Symbol::intern("roundtrip_test");
         assert_eq!(sym.resolve(), "roundtrip_test");
+    }
+
+    #[test]
+    fn as_str_borrows_without_alloc() {
+        let sym = Symbol::intern("as_str_test");
+        let a: &'static str = sym.as_str();
+        let b: &'static str = sym.as_str();
+        assert_eq!(a, "as_str_test");
+        // Same interned symbol hands out the same leaked storage.
+        assert!(std::ptr::eq(a, b));
     }
 
     #[test]
