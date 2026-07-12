@@ -344,11 +344,19 @@ impl Interpreter {
         if method == "nextwith" {
             // Tail-style dispatch: call target with caller frame and return from current frame.
             let saved_env = self.env.clone();
+            let saved_line = self.cur_source_line;
             if let Some(parent_env) = self.caller_env_stack.last().cloned() {
                 self.env = parent_env;
+                // Frame elimination must also apply to the line tracking: the
+                // target's $?CALLER::LINE is the *eliminated* frame's callsite
+                // (recorded in the frame entry at push), not the nextwith line.
+                if let Some(entry) = self.callframe_stack.last() {
+                    self.cur_source_line = entry.line;
+                }
             }
             let call_result = self.call_sub_value(target.clone(), args, false);
             self.env = saved_env;
+            self.cur_source_line = saved_line;
             let value = match call_result {
                 Ok(v) => v,
                 Err(e) if e.return_value.is_some() => e.return_value.unwrap(),
