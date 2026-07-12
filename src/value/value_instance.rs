@@ -69,7 +69,7 @@ impl Clone for InstanceAttrs {
         // independent copy must own distinct containers (rakudo `.clone`
         // clones each `has` container too).
         for v in map.values_mut() {
-            if let Value(ValueRepr::ContainerRef(cell)) = v {
+            if let ValueView::ContainerRef(cell) = v.view() {
                 let inner = cell.lock().unwrap().clone();
                 *v = inner;
             }
@@ -183,8 +183,10 @@ impl InstanceAttrs {
     pub(crate) fn promote_attr_to_container(&self, key: &str) -> Value {
         let mut guard = write_attrs(&self.attributes);
         match guard.get_mut(key) {
-            Some(Value(ValueRepr::ContainerRef(cell))) => Value::ContainerRef(cell.clone()),
             Some(slot) => {
+                if let ValueView::ContainerRef(cell) = slot.view() {
+                    return Value::ContainerRef(cell.clone());
+                }
                 let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(slot, Value::Nil)));
                 *slot = Value::ContainerRef(cell.clone());
                 Value::ContainerRef(cell)

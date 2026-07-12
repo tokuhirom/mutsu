@@ -1177,6 +1177,46 @@ impl Value {
     }
 }
 
+/// The 3b-1 step-B **internal wall** seam (see
+/// `docs/nanbox-3b1-step-b-design.md` §4). `src/value/` code that today names
+/// `ValueRepr::` in a *place* expression — a pattern on `.0`, a `&mut` into the
+/// enum — migrates onto these three entry points (or `view()` for borrowed
+/// reads), because after the representation flip there is no enum place to
+/// borrow: the storage is a packed 8-byte word. While the enum IS the storage
+/// these are identities, so each migration slice is byte-identical.
+///
+/// `ValueRepr` itself survives the flip as the transient *working* enum:
+/// naming it in owned expressions (constructing one to pass to `from_repr`,
+/// matching one returned by `into_repr`) stays valid forever.
+impl Value {
+    /// Decompose into the working representation enum (owned decode seam).
+    /// Post-flip: the NaN-box tag decode; pointer payloads move (no refcount
+    /// traffic), shared multi-field boxes clone field-wise.
+    #[inline]
+    pub(in crate::value) fn into_repr(self) -> ValueRepr {
+        self.0
+    }
+
+    /// Rebuild from the working representation enum (construction seam for
+    /// struct-like variants; tuple/unit variants keep their named shims
+    /// below). Post-flip: the NaN-box tag-packing encode.
+    #[inline]
+    pub(in crate::value) fn from_repr(repr: ValueRepr) -> Value {
+        Value(repr)
+    }
+
+    /// Edit the representation in place (mutation seam). Post-flip: decode to
+    /// the working enum, run `f`, re-pack — so `f` must not assume its edits
+    /// alias other holders (none of the migrated sites do; aliased container
+    /// mutation goes through the pointee, not the repr). Unused until the
+    /// `&mut`-shaped sites migrate (the exemplar batch had none).
+    #[inline]
+    #[allow(dead_code)]
+    pub(in crate::value) fn with_repr_mut<R>(&mut self, f: impl FnOnce(&mut ValueRepr) -> R) -> R {
+        f(&mut self.0)
+    }
+}
+
 /// Variant-named constructor shims for the tuple/unit variants of
 /// [`ValueRepr`], so the `Value::Int(..)` / `Value::Nil` *expression* sites
 /// inside `src/value/` compile unchanged across the newtype seal (patterns
