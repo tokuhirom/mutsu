@@ -1806,6 +1806,7 @@ impl Interpreter {
             pending_rw_writeback_slots: std::collections::HashMap::new(),
             test_pending_callsite_line: None,
             cur_source_line: 1,
+            locals_pool: Vec::new(),
             control_handler_depth: 0,
             test_assertion_line_stack: Vec::new(),
             block_stack: Vec::new(),

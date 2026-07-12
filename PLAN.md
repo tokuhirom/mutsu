@@ -275,9 +275,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       （`ContainerEq`×4・`IndexAssign*`×6 — 美学でなくデータで駆動）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
 - 目標: method-call <1.5x（✅ 1.14x・2026-07-12）、bench-class <1.5x（✅ 0.93x・2026-07-12）、
-  fib <10x（✅ **0.94x** — ?LINE-field＋empty-overlay-tier 修正で絶対 2.3x 回帰ごと解消・
-  経緯は PERFORMANCE.md「RESOLVED」節）、bench-fib（型制約付き）<2x（❌ 2.6x —
-  残りは per-call 型制約チェック圏 = Lever 5）。
+  fib <10x（✅ **0.91x** — ?LINE-field＋empty-overlay-tier 修正で絶対 2.3x 回帰ごと解消・
+  経緯は PERFORMANCE.md「RESOLVED」節）、bench-fib（型制約付き）<2x
+  （✅ **1.92x** — `<=`/`>`/`>=` の Int/Num fast path で達成・2026-07-12）。
 
 ---
 
@@ -322,9 +322,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 | バイナリ配布 | なし | mise / GitHub Releases で単一コマンド導入 |
 | Whitelist | **1373**（全 .t 1463 中） | 1300+ ✅ 達成済み・現状維持以上 |
 | GC | **default on ✅**（2026-07-05・ADR-0003） | 達成（残 perf は層 3b へ） |
-| fib(25) vs raku | **0.94x**（2026-07-12・?LINE/overlay 修正で回帰解消） | <10x ✅ |
+| fib(25) vs raku | **0.91x**（2026-07-12・?LINE/overlay 修正で回帰解消） | <10x ✅ |
 | method-call vs raku | **1.14x**（2026-07-12） | <1.5x ✅ |
 | bench-class vs raku | **0.93x**（2026-07-12） | <1.5x ✅ |
-| bench-fib（型制約付き）vs raku | **2.6x**（2026-07-12・残 = per-call 型制約チェック） | <2x |
+| bench-fib（型制約付き）vs raku | **1.92x**（2026-07-12・`<=`/`>`/`>=` Int fast path） | <2x ✅ |
 | 起動時間 vs raku | **0.04x** | 0.04x ✅ 維持 |
 | tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |

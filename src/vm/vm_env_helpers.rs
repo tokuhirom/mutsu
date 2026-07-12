@@ -13,6 +13,28 @@ impl Interpreter {
         }
     }
 
+    /// Grab a locals vector from the recycle pool (or allocate the first time),
+    /// sized to `num_locals` with `Nil` slots. Pair with [`Self::recycle_locals`].
+    #[inline]
+    pub(super) fn take_locals_from_pool(&mut self, num_locals: usize) -> Vec<Value> {
+        let mut v = self.locals_pool.pop().unwrap_or_default();
+        v.clear();
+        v.resize(num_locals, Value::NIL);
+        v
+    }
+
+    /// Return a used locals vector to the recycle pool (bounded; excess is
+    /// simply dropped). Clearing here also drops the callee's slot values at a
+    /// well-defined point instead of inside the pool.
+    #[inline]
+    pub(super) fn recycle_locals(&mut self, mut used: Vec<Value>) {
+        const LOCALS_POOL_MAX: usize = 64;
+        if self.locals_pool.len() < LOCALS_POOL_MAX {
+            used.clear();
+            self.locals_pool.push(used);
+        }
+    }
+
     /// Save the current env, locals, stack depth, and readonly vars into a new
     /// call frame.
     pub(super) fn push_call_frame(&mut self) {

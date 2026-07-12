@@ -20,9 +20,9 @@ cargo build --release
 
 | Benchmark | mutsu | raku | ratio | notes |
 |-----------|-------|------|-------|-------|
-| fib(25) | 0.155s | 0.164s | **0.94x** | recursive function calls (was 4.8x before the ?LINE/overlay fix) |
-| bench-fib | 0.548s | 0.207s | 2.6x | fib with type constraint (`Int $n --> Int`) (was 10.5x) |
-| int-arith | 0.12s | 0.15s | **0.85x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
+| fib(25) | 0.150s | 0.164s | **0.91x** | recursive function calls (was 4.8x before the ?LINE/overlay fix) |
+| bench-fib | 0.398s | 0.207s | 1.92x | fib with type constraint (`Int $n --> Int`) (was 10.5x; `<=`/`>`/`>=` Int fast paths landed the <2x target) |
+| int-arith | 0.089s | 0.15s | **0.60x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
 | string-concat | 0.03s | 0.17s | **0.18x** | `$s ~= 'x'` × 10000 |
 | hash-access | 0.03s | 0.18s | **0.16x** | 10K hash inserts + value iteration |
 | method-call | 0.182s | 0.160s | 1.14x | Point.distance-to × 10000 (was 2.7x on 2026-05) |
@@ -40,8 +40,8 @@ Note: raku times include ~120ms startup overhead. mutsu startup is ~4ms.
 - **Faster than raku (11/12)**: startup, string-concat, bench-string, int-arith,
   array-ops, hash-access, bench-hash, bench-array, bench-class, fib, method-call*
   (*1.14x, within noise of parity)
-- **Above parity (1/12)**: bench-fib (2.6x — per-call type-constraint checking,
-  see "bench-fib specific" below)
+- **Above parity (1/12)**: bench-fib (1.92x — `<2x` target met; the residual is
+  per-call param/return type checking plus dispatch overhead)
 
 ### ✔ fib / bench-fib absolute regression — RESOLVED (2026-07-12)
 

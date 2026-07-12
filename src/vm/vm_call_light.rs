@@ -62,8 +62,7 @@ impl Interpreter {
         let caller_env = std::mem::replace(self.env_mut(), crate::env::Env::scoped_child(parent));
 
         let num_locals = cf.code.locals.len();
-        self.locals.clear();
-        self.locals.resize(num_locals, Value::NIL);
+        self.locals = self.take_locals_from_pool(num_locals);
 
         // Read-through to the caller (parent tier) for the initial value of a
         // local that shadows a same-named caller variable, matching the prior
@@ -90,7 +89,8 @@ impl Interpreter {
                 {
                     self.restore_readonly_vars(saved_readonly);
                     self.set_env(caller_env);
-                    self.locals = saved_locals;
+                    let used = std::mem::replace(&mut self.locals, saved_locals);
+                    self.recycle_locals(used);
                     self.loop_local_vars = saved_loop_local_vars;
                     self.loop_local_saved_env = saved_loop_local_saved_env;
                     self.block_declared_vars = saved_block_declared_vars;
@@ -194,7 +194,8 @@ impl Interpreter {
         self.stack.truncate(saved_stack_depth);
 
         self.cur_source_line = saved_line;
-        self.locals = saved_locals;
+        let used = std::mem::replace(&mut self.locals, saved_locals);
+        self.recycle_locals(used);
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.block_declared_vars = saved_block_declared_vars;
