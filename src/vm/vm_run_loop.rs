@@ -523,7 +523,65 @@ impl Interpreter {
         end: usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
-        let mut ip = start;
+        // Hot-loop entry (ADR-0004 J4b): compound-loop bodies/conds call
+        // run_range once per iteration, so a hot sub-range gets JIT-compiled
+        // and runs natively. On a native-body error, the two signals the
+        // interpreter loop resumes in place — goto to an in-range label and a
+        // resumable warn — re-enter the interpreter loop below mid-range (all
+        // state lives on the Interpreter, so continuing at the recorded ip is
+        // exactly what the interpreter would have done); everything else
+        // (control signals, exceptions) propagates to the caller unchanged.
+        #[cfg(feature = "jit")]
+        if let Some(r) = crate::vm::vm_jit::try_enter_range(self, code, start, end, compiled_fns) {
+            match r {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    if e.is_goto()
+                        && let Some(label) = e.label.as_deref()
+                        && let Some(target_ip) = self.find_label_target(code, label)
+                        && (start..end).contains(&target_ip)
+                    {
+                        return self.run_range_from(code, target_ip, start, end, compiled_fns);
+                    }
+                    if e.is_warn() && self.control_handler_depth == 0 {
+                        if !self.warning_suppressed() {
+                            self.write_warn_to_stderr(&e.message);
+                        }
+                        if let Some(v) = e.return_value.clone() {
+                            self.stack.push(v);
+                        }
+                        // Every JIT shim that can surface a warn (CallFunc /
+                        // CallMethod / step) records a resume point; without
+                        // one there is no way to know where to continue, so
+                        // propagate loudly instead of guessing.
+                        if let Some(resume_point) = self.resume_ip.take() {
+                            return self.run_range_from(
+                                code,
+                                resume_point,
+                                start,
+                                end,
+                                compiled_fns,
+                            );
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        self.run_range_from(code, start, start, end, compiled_fns)
+    }
+
+    /// The interpreter loop of [`run_range`], entered at `from` (== `start`
+    /// except when resuming mid-range after a JIT'd body's goto/warn).
+    fn run_range_from(
+        &mut self,
+        code: &CompiledCode,
+        from: usize,
+        start: usize,
+        end: usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
+        let mut ip = from;
         while ip < end {
             // GC safepoint on the inner dispatch backedge too: compound-loop
             // ops (for/while bodies) iterate entirely inside ONE `exec_one` of

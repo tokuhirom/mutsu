@@ -133,6 +133,79 @@ pub(crate) fn try_enter(
     }
 }
 
+/// Range flavor of [`try_enter`] (ADR-0004 J4b hot-loop entry): run the
+/// opcode sub-range `[start, end)` — a compound loop's body or condition —
+/// natively once it is hot. `None` means the range must run on the
+/// interpreter (JIT off / cold / bailout); `Some(result)` has the exact
+/// shape of `run_range`'s interpreter-loop outcome for a body that never
+/// resumes in place (the caller re-enters the interpreter for the two
+/// resumable signals, goto and warn).
+#[cfg(feature = "jit")]
+pub(crate) fn try_enter_range(
+    interp: &mut Interpreter,
+    code: &CompiledCode,
+    start: usize,
+    end: usize,
+    compiled_fns: &HashMap<String, CompiledFunction>,
+) -> Option<Result<(), RuntimeError>> {
+    use std::sync::atomic::Ordering;
+    if !jit_enabled() || start >= end || end > code.ops.len() {
+        return None;
+    }
+    let st = {
+        let mut ranges = code.jit.ranges.lock().unwrap();
+        let key = (start as u32, end as u32);
+        match ranges.iter().find(|(k, _)| *k == key) {
+            Some((_, s)) => s.clone(),
+            None => {
+                let s = std::sync::Arc::new(crate::opcode::JitRangeState::default());
+                ranges.push((key, s.clone()));
+                s
+            }
+        }
+    };
+    let entry = st.entry.load(Ordering::Acquire);
+    let f: JitEntryFn = if entry == 0 {
+        let calls = st.calls.fetch_add(1, Ordering::Relaxed) + 1;
+        if calls < jit_threshold() {
+            return None;
+        }
+        match super::vm_jit_compile::compile_range(code, start, end) {
+            Some(f) => {
+                st.entry.store(f as usize as u64, Ordering::Release);
+                crate::vm::vm_stats::record_jit_compile();
+                f
+            }
+            None => {
+                st.entry.store(JIT_ENTRY_BAILOUT, Ordering::Release);
+                return None;
+            }
+        }
+    } else if entry == JIT_ENTRY_BAILOUT {
+        return None;
+    } else {
+        // Same soundness argument as `try_enter`: 0 -> fn-pointer only.
+        unsafe { std::mem::transmute::<usize, JitEntryFn>(entry as usize) }
+    };
+    crate::vm::vm_stats::record_jit_entry();
+    // The interpreter loop polls the GC safepoint once per opcode; a native
+    // body polls only its own backedges. The enclosing compound loop's
+    // per-iteration poll therefore lands here, before each native body run.
+    crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
+    interp.current_code = code as *const CompiledCode as usize;
+    let status = unsafe { f(interp, code, compiled_fns) };
+    match status {
+        JIT_STATUS_ERR => {
+            let e = interp
+                .jit_error
+                .take()
+                .expect("JIT returned error status without a parked error");
+            Some(Err(e))
+        }
+        _ => Some(Ok(())),
+    }
+}
+
 /// JIT-less builds: never enters native code.
 #[cfg(not(feature = "jit"))]
 #[inline(always)]

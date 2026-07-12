@@ -1761,6 +1761,24 @@ pub(crate) struct CompiledCode {
 pub(crate) struct JitCodeState {
     pub(crate) calls: std::sync::atomic::AtomicU32,
     pub(crate) entry: std::sync::atomic::AtomicU64,
+    /// Per-sub-range JIT state for compound-loop bodies (ADR-0004 J4b
+    /// hot-loop entry): `(start, end) -> state`, resolved and populated by
+    /// `vm_jit::try_enter_range` on each `run_range` call once the JIT is on.
+    /// A linear-scan Vec: chunks hold only a handful of distinct hot ranges.
+    pub(crate) ranges: std::sync::Mutex<JitRangeTable>,
+}
+
+/// The per-chunk range table: `(start, end)` keys to shared range states.
+pub(crate) type JitRangeTable = Vec<((u32, u32), std::sync::Arc<JitRangeState>)>;
+
+/// Hotness counter and compiled-entry cache for one `[start, end)` opcode
+/// sub-range (a compound loop's body/cond), same encoding as the chunk-level
+/// `JitCodeState` (`entry`: 0 = cold, `JIT_ENTRY_BAILOUT` = rejected, other =
+/// native function pointer).
+#[derive(Debug, Default)]
+pub(crate) struct JitRangeState {
+    pub(crate) calls: std::sync::atomic::AtomicU32,
+    pub(crate) entry: std::sync::atomic::AtomicU64,
 }
 
 impl Clone for JitCodeState {
