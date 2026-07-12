@@ -628,6 +628,7 @@ roast/S11-repository/cur-candidates.t
 roast/S11-repository/cur-current-distribution.t
 roast/S11-repository/curli-install.t
 roast/S12-attributes/augment-and-initialization.t
+roast/S12-attributes/class.t
 roast/S12-attributes/clone.t
 roast/S12-attributes/defaults.t
 roast/S12-attributes/delegation.t
