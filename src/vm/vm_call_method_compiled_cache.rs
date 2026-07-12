@@ -266,10 +266,7 @@ impl Interpreter {
             self.pop_method_samewith_context();
             result
         } else {
-            let attributes = attrs_cell
-                .as_ref()
-                .map(|c| c.to_map())
-                .unwrap_or_default();
+            let attributes = attrs_cell.as_ref().map(|c| c.to_map()).unwrap_or_default();
             let invocant_for_dispatch = if attrs_empty {
                 Value::package(crate::symbol::Symbol::intern(cn))
             } else {

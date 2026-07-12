@@ -377,8 +377,7 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
                     helpers::call_method_mut as *const () as usize
                 };
                 let opidx = b.ins().iconst(types::I32, i as i64);
-                let status =
-                    call_helper(&mut b, sigs.s_code_u32, f, &[interp, codep, opidx])?;
+                let status = call_helper(&mut b, sigs.s_code_u32, f, &[interp, codep, opidx])?;
                 check_status(&mut b, status);
             }
             OpCode::Jump(t) => {

@@ -854,11 +854,7 @@ impl Interpreter {
     /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
     /// live cell on demand instead — so the common exit pays no `to_map()`
     /// (full attr-map clone) at all.
-    fn reconcile_attrs(
-        &self,
-        base: &Value,
-        code: &CompiledCode,
-    ) -> Option<HashMap<String, Value>> {
+    fn reconcile_attrs(&self, base: &Value, code: &CompiledCode) -> Option<HashMap<String, Value>> {
         let ValueView::Instance {
             attributes: cell, ..
         } = base.view()
