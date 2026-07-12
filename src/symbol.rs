@@ -152,6 +152,14 @@ impl Symbol {
         self.0
     }
 
+    /// Rebuild a `Symbol` from an ID previously obtained via [`Symbol::id`].
+    /// For the NaN-boxed `Value` payload round-trip (layer 3b-1) only: the ID
+    /// must come from a real interned symbol, or later resolution will index
+    /// out of bounds.
+    pub(crate) fn from_id(id: u32) -> Symbol {
+        Symbol(id)
+    }
+
     /// Execute a closure with a borrowed reference to the underlying string.
     /// The lock is released before the closure runs (see `as_str`).
     pub fn with_str<F, R>(&self, f: F) -> R

@@ -214,6 +214,26 @@ impl<T: Trace + 'static> WeakGc<T> {
         }
     }
 
+    /// Consume the weak handle and return the raw `GcBox` address (the
+    /// `Weak::into_raw` analogue), for the NaN-boxed `Value` payload
+    /// (layer 3b-1). The address owns this handle's weak-count contribution
+    /// until [`WeakGc::from_raw`] reconstitutes it.
+    pub(crate) fn into_raw(this: WeakGc<T>) -> *const GcBox<T> {
+        std::sync::Weak::into_raw(this.inner)
+    }
+
+    /// Reconstitute a weak handle from [`WeakGc::into_raw`] output.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must come from `WeakGc::into_raw` and carry exactly one
+    /// outstanding weak ownership.
+    pub(crate) unsafe fn from_raw(ptr: *const GcBox<T>) -> WeakGc<T> {
+        WeakGc {
+            inner: unsafe { std::sync::Weak::from_raw(ptr) },
+        }
+    }
+
     /// Reconstitute a strong [`Gc`] handle if the node is still alive. Bumps the
     /// GC-visible strong count and marks the node live (`Black`) — upgrading a
     /// weak reference *is* taking a new temporary strong reference.
@@ -381,6 +401,40 @@ impl<T: Trace + 'static> Gc<T> {
     #[cfg(test)]
     pub(crate) fn buffer_as_candidate(&self) {
         buffer_candidate(self.inner.clone());
+    }
+
+    // ---- raw-pointer round-trip (NaN-boxing, layer 3b-1) --------------------
+    //
+    // The packed 8-byte `Value` representation stores a `Gc<T>` as the raw
+    // address of its backing `GcBox<T>` allocation inside the box payload
+    // (`src/value/nanbox`). These are the `Arc::into_raw`/`from_raw` analogues
+    // that carry the handle's ownership (its GC-visible strong-count
+    // contribution) across the integer round-trip. All Bacon-Rajan bookkeeping
+    // stays in `Gc::clone`/`Gc::drop`, which the nanbox reconstructs and calls.
+
+    /// Consume the handle and return the raw `GcBox` address, WITHOUT touching
+    /// any refcount: the returned pointer owns this handle's strong-count
+    /// contribution until [`Gc::from_raw`] reconstitutes it.
+    pub(crate) fn into_raw(this: Gc<T>) -> *const GcBox<T> {
+        // `Gc` has a `Drop` impl, so the field cannot be moved out directly;
+        // suppress the drop and read the inner `Arc` out raw.
+        let this = std::mem::ManuallyDrop::new(this);
+        // SAFETY: `this` is never dropped, so the inner `Arc`'s ownership
+        // transfers uniquely to the returned pointer.
+        let inner = unsafe { std::ptr::read(&this.inner) };
+        Arc::into_raw(inner)
+    }
+
+    /// Reconstitute a handle from [`Gc::into_raw`] output.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must come from `Gc::into_raw` and carry exactly one outstanding
+    /// ownership (each `into_raw` result may be passed here at most once).
+    pub(crate) unsafe fn from_raw(ptr: *const GcBox<T>) -> Gc<T> {
+        Gc {
+            inner: unsafe { Arc::from_raw(ptr) },
+        }
     }
 }
 

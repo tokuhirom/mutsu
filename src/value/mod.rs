@@ -287,6 +287,11 @@ mod display;
 mod error;
 mod error_construct;
 mod error_typed;
+/// NaN-boxed 8-byte representation core (3b-1 step B). Not yet wired into
+/// `Value` — the flip lands after the internal wall migration; until then the
+/// unit tests keep the packing machinery honest.
+#[allow(dead_code)]
+mod nanbox;
 mod serde_support;
 pub(crate) mod signature;
 pub(crate) mod types;

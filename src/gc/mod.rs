@@ -30,8 +30,8 @@ pub(crate) use collect::collect_cycles;
 #[cfg(test)]
 pub(crate) use gc_ptr::drain_candidates;
 pub(crate) use gc_ptr::{
-    ContainerMakeMut, ErasedGc, Gc, Trace, WeakGc, enter_mutator_worker, exit_mutator_worker,
-    gc_contents_mut,
+    ContainerMakeMut, ErasedGc, Gc, GcBox, Trace, WeakGc, enter_mutator_worker,
+    exit_mutator_worker, gc_contents_mut,
 };
 pub(crate) use root_visitor::{RootVisitor, visit_map_values, visit_opt, visit_slice};
 pub(crate) use safepoint::{
