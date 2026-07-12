@@ -105,7 +105,7 @@ impl Interpreter {
         let env = self.env();
         match env.get(var_name).map(Value::view) {
             Some(ValueView::Hash(hash_arc)) => {
-                let strong_count = crate::gc::Gc::strong_count_of(hash_arc);
+                let strong_count = crate::gc::Gc::strong_count_of(&hash_arc);
                 if strong_count > 2 {
                     return None;
                 }
@@ -303,7 +303,7 @@ impl Interpreter {
         let saved_default = self
             .env()
             .get(&var_name)
-            .and_then(|v| self.container_default(v).cloned())
+            .and_then(|v| self.container_default(v))
             .or_else(|| self.var_default(&var_name).cloned());
         // Resolve WhateverCode indices (e.g. *-1) for array targets
         let idx = if let Some(container) = self.env().get(&var_name).cloned() {

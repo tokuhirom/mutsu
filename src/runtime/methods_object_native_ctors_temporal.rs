@@ -51,7 +51,7 @@ impl Interpreter {
         if let Some(v) = positional.first() {
             match v.view() {
                 ValueView::Str(s) if positional.len() == 1 => {
-                    let (y, m, d) = temporal::parse_date_string(s)?;
+                    let (y, m, d) = temporal::parse_date_string(&s)?;
                     year = y;
                     month = m;
                     day = d;
@@ -206,7 +206,7 @@ impl Interpreter {
         } else if let Some(v) = positional.first() {
             match v.view() {
                 ValueView::Str(s) => {
-                    if timezone_set && string_has_numeric_tz_offset(s) {
+                    if timezone_set && string_has_numeric_tz_offset(&s) {
                         let message =
                             "DateTime.new(Str): :timezone argument not allowed with a timestamp offset"
                                 .to_string();
@@ -220,7 +220,7 @@ impl Interpreter {
                         err.exception = Some(Box::new(ex));
                         return Err(err);
                     }
-                    let (y, mo, d, h, mi, sec, tz) = temporal::parse_datetime_string(s)?;
+                    let (y, mo, d, h, mi, sec, tz) = temporal::parse_datetime_string(&s)?;
                     year = y;
                     month = mo;
                     day = d;
@@ -362,7 +362,7 @@ impl Interpreter {
                     Err(_) => {
                         let mut err = RuntimeError::new(format!(
                             "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}'",
-                            s
+                            *s
                         ));
                         let mut eattrs = HashMap::new();
                         eattrs.insert("source".to_string(), Value::str(s.to_string()));

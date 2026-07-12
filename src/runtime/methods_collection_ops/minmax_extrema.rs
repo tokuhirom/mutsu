@@ -64,7 +64,7 @@ impl Interpreter {
             Value::seq(out)
         };
         Ok(match target.view() {
-            ValueView::Array(items, ..) => to_pairs(items),
+            ValueView::Array(items, ..) => to_pairs(&items),
             ValueView::Set(set, ..) => {
                 if set.elements.is_empty() {
                     Value::seq(Vec::new())

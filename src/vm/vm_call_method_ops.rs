@@ -177,7 +177,7 @@ impl Interpreter {
                 && let Some(tc) = type_constraint.as_ref()
                 && !matches!(tc.as_str(), "Mu" | "Any")
             {
-                crate::value::register_container_constraint(cell, tc);
+                crate::value::register_container_constraint(&cell, tc);
             }
             if let Some(msg) = self.class_attribute_deprecated(&cn, method) {
                 loan_env!(self, check_deprecation_for_method(method, &cn, &msg));
@@ -562,7 +562,6 @@ impl Interpreter {
                     | "note"
             )
         {
-            let kind = kind.clone();
             let mut results = Vec::new();
             // Accumulate EVERY eigenstate's by-name caller write (see the matching
             // CallMethodMut junction path for the full rationale).
@@ -801,7 +800,7 @@ impl Interpreter {
         if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && method == "first"
-            && let Some(result) = self.try_lazy_gather_first(ll, &args)
+            && let Some(result) = self.try_lazy_gather_first(&ll, &args)
         {
             self.stack.push(result?);
             return Ok(());
@@ -870,7 +869,7 @@ impl Interpreter {
             // `.head(n)` only needs the first `n` elements: pull them lazily so
             // an infinite gather does not hang.
             let items = match Self::gather_head_bound(method, &args) {
-                Some(n) => self.force_lazy_list_vm_n(ll, n)?,
+                Some(n) => self.force_lazy_list_vm_n(&ll, n)?,
                 // A strict force of an infinite list (lazy pipeline / infinite
                 // sequence / closure spec) cannot terminate: raise
                 // X::Cannot::Lazy with this method's name. A finite pipe (gather/
@@ -880,7 +879,7 @@ impl Interpreter {
                 {
                     return Err(RuntimeError::cannot_lazy(method));
                 }
-                None => self.force_lazy_list_vm(ll)?,
+                None => self.force_lazy_list_vm(&ll)?,
             };
             // Restoring the pre-force env undoes captured-variable corruption
             // from gather coroutine forcing. A lazy map/grep pipeline runs its
@@ -1423,9 +1422,9 @@ impl Interpreter {
                     // Resolve hash sentinel entries (bound variable refs, self-refs)
                     // before passing to native methods that iterate hash values.
                     if let ValueView::Hash(items) = target.view()
-                        && Self::hash_has_sentinels(items)
+                        && Self::hash_has_sentinels(&items)
                     {
-                        let resolved = self.resolve_hash_for_iteration(items);
+                        let resolved = self.resolve_hash_for_iteration(&items);
                         if let Some(native_result) =
                             self.try_native_method(&resolved, method_sym, &args)
                         {
@@ -1450,7 +1449,7 @@ impl Interpreter {
                         && args.is_empty()
                         && matches!(target.view(), ValueView::Array(..))
                     {
-                        if let Some(def) = self.container_default(&target).cloned() {
+                        if let Some(def) = self.container_default(&target) {
                             let ValueView::Array(items, ..) = target.view() else {
                                 unreachable!()
                             };

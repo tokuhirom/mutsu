@@ -356,7 +356,7 @@ impl Interpreter {
             // Check if any values in the hash reference the old Arc.
             let has_old_ref = new_arc.values().any(|v| {
                 if let ValueView::Hash(inner_arc) = v.view() {
-                    crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
+                    crate::gc::Gc::as_ptr(&inner_arc) as usize == *old_ptr
                 } else {
                     false
                 }
@@ -370,7 +370,7 @@ impl Interpreter {
             let mut circular_keys = Vec::new();
             for (k, v) in new_arc.iter() {
                 if let ValueView::Hash(inner_arc) = v.view()
-                    && crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
+                    && crate::gc::Gc::as_ptr(&inner_arc) as usize == *old_ptr
                 {
                     circular_keys.push(k.clone());
                     // Placeholder - will be replaced below
@@ -406,9 +406,9 @@ impl Interpreter {
         seen_hashes: &mut Vec<usize>,
     ) -> bool {
         match v.view() {
-            ValueView::Array(inner_arc, _) => crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr,
+            ValueView::Array(inner_arc, _) => crate::gc::Gc::as_ptr(&inner_arc) as usize == old_ptr,
             ValueView::Hash(map) => {
-                let hash_ptr = crate::gc::Gc::as_ptr(map) as usize;
+                let hash_ptr = crate::gc::Gc::as_ptr(&map) as usize;
                 if seen_hashes.contains(&hash_ptr) {
                     return false;
                 }
@@ -437,7 +437,7 @@ impl Interpreter {
     ) {
         if matches!(
             v.view(),
-            ValueView::Array(inner_arc, _) if crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
+            ValueView::Array(inner_arc, _) if crate::gc::Gc::as_ptr(&inner_arc) as usize == old_ptr
         ) {
             *v = Value::array_with_kind(new_array.clone(), kind);
             return;
@@ -459,7 +459,7 @@ impl Interpreter {
                 let mut self_ref_keys = Vec::new();
                 for (k, hv) in map.iter() {
                     if let ValueView::Hash(inner_arc) = hv.view()
-                        && crate::gc::Gc::as_ptr(inner_arc) as usize == hash_ptr
+                        && crate::gc::Gc::as_ptr(&inner_arc) as usize == hash_ptr
                     {
                         self_ref_keys.push(k.clone());
                         new_map.insert(k.clone(), Value::NIL);
@@ -510,7 +510,7 @@ impl Interpreter {
             let mut hash_fixup_indices = Vec::new();
             for (i, v) in new_arc.iter().enumerate() {
                 if let ValueView::Array(inner_arc, _) = v.view()
-                    && crate::gc::Gc::as_ptr(inner_arc) as usize == *old_ptr
+                    && crate::gc::Gc::as_ptr(&inner_arc) as usize == *old_ptr
                 {
                     circular_indices.push(i);
                     new_items.push(Value::NIL); // placeholder
@@ -602,14 +602,14 @@ impl Interpreter {
         let mut inner = arc.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
-                if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
             {
-                Some(Self::hash_inplace_reassign(old_gc, new_gc))
+                Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
             }
             (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
-                if !crate::gc::Gc::ptr_eq(old_gc, new_gc) =>
+                if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
             {
-                Some(Self::array_inplace_reassign(old_gc, new_gc, kind))
+                Some(Self::array_inplace_reassign(&old_gc, &new_gc, kind))
             }
             _ => None,
         };
@@ -636,7 +636,7 @@ impl Interpreter {
         let mut new_data = (**new_gc).clone();
         for v in new_data.map.values_mut() {
             if let ValueView::Hash(inner) = v.view()
-                && crate::gc::Gc::as_ptr(inner) as usize == new_ptr
+                && crate::gc::Gc::as_ptr(&inner) as usize == new_ptr
             {
                 *v = Value::hash_with_data(old_gc.clone());
             }

@@ -38,7 +38,7 @@ impl Interpreter {
                 Value::seq(values)
             }
             ValueView::LazyList(ll) => {
-                let items = self.force_lazy_list_bridge(ll)?;
+                let items = self.force_lazy_list_bridge(&ll)?;
                 Value::seq(items)
             }
             ValueView::Range(..)

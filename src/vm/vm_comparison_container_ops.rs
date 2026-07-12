@@ -90,8 +90,8 @@ impl Interpreter {
             // copies the reference but creates a new container, so =:= is False.
             match (left.view(), right.view()) {
                 (ValueView::Package(a), ValueView::Package(b)) => a == b,
-                (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(a, b),
-                (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
+                (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+                (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
                 _ => false,
             }
         };
@@ -134,7 +134,7 @@ impl Interpreter {
         if let (Some(ValueView::ContainerRef(l)), Some(ValueView::ContainerRef(r))) = (
             left_elem.as_ref().map(Value::view),
             right_elem.as_ref().map(Value::view),
-        ) && crate::gc::Gc::ptr_eq(l, r)
+        ) && crate::gc::Gc::ptr_eq(&l, &r)
         {
             self.stack.push(Value::TRUE);
             return;
@@ -165,7 +165,7 @@ impl Interpreter {
         // *values* and therefore must read through a cell.)
         match (a.view(), b.view()) {
             (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => {
-                return crate::gc::Gc::ptr_eq(x, y);
+                return crate::gc::Gc::ptr_eq(&x, &y);
             }
             (ValueView::ContainerRef(cell), _) | (_, ValueView::ContainerRef(cell)) => {
                 // A `:=`-bound hash element is promoted to a `ContainerRef` cell
@@ -184,7 +184,7 @@ impl Interpreter {
                     if let Some(ValueView::ContainerRef(elem_cell)) =
                         unsafe { (*ptr).get(key.as_str()) }.map(Value::view)
                     {
-                        return crate::gc::Gc::ptr_eq(cell, elem_cell);
+                        return crate::gc::Gc::ptr_eq(&cell, &elem_cell);
                     }
                 }
                 return false;

@@ -15,9 +15,9 @@ impl Interpreter {
     }
 
     pub(super) fn const_str(code: &CompiledCode, idx: u32) -> &str {
-        match code.constants[idx as usize].view() {
-            ValueView::Str(s) => s.as_str(),
-            _ => unreachable!("expected string constant"),
+        match code.constants[idx as usize].as_str() {
+            Some(s) => s,
+            None => unreachable!("expected string constant"),
         }
     }
 
@@ -161,10 +161,10 @@ impl Interpreter {
             ValueView::Num(f) => Value::num(f + 1.0),
             ValueView::Complex(r, i) => Value::complex(r + 1.0, i),
             ValueView::Str(s) => {
-                if let Some(next) = Self::superscript_succ(s) {
+                if let Some(next) = Self::superscript_succ(&s) {
                     Value::str(next)
                 } else {
-                    Value::str(Self::string_succ(s))
+                    Value::str(Self::string_succ(&s))
                 }
             }
             // Mixin (allomorphic types like IntStr): increment the inner value
@@ -235,9 +235,9 @@ impl Interpreter {
             ValueView::Num(f) => Value::num(f - 1.0),
             ValueView::Complex(r, i) => Value::complex(r - 1.0, i),
             ValueView::Str(s) => {
-                if let Some(prev) = Self::superscript_pred(s) {
+                if let Some(prev) = Self::superscript_pred(&s) {
                     Value::str(prev)
-                } else if let Some(pred) = Self::string_pred_checked(s) {
+                } else if let Some(pred) = Self::string_pred_checked(&s) {
                     Value::str(pred)
                 } else {
                     // Decrement underflow: return a Failure value

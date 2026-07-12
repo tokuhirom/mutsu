@@ -90,9 +90,9 @@ impl Interpreter {
     pub(super) fn loop_var_unchanged(current: &Value, source_elem: &Value) -> bool {
         use std::sync::Arc;
         match (current.view(), source_elem.view()) {
-            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
-            (ValueView::Str(a), ValueView::Str(b)) => Arc::ptr_eq(a, b) || a == b,
+            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Str(a), ValueView::Str(b)) => Arc::ptr_eq(&a, &b) || *a == *b,
             (ValueView::Int(a), ValueView::Int(b)) => a == b,
             (ValueView::Num(a), ValueView::Num(b)) => a == b,
             (ValueView::Bool(a), ValueView::Bool(b)) => a == b,
@@ -115,7 +115,7 @@ impl Interpreter {
                     attributes: b,
                     id: ib,
                 },
-            ) => ca == cb && ia == ib && crate::gc::Gc::ptr_eq(a, b),
+            ) => ca == cb && ia == ib && crate::gc::Gc::ptr_eq(&a, &b),
             // Immutable-by-value variants: equal means the writeback is a no-op.
             (ValueView::Package(a), ValueView::Package(b)) => a == b,
             (ValueView::Rat(a, b), ValueView::Rat(c, d)) => a == c && b == d,

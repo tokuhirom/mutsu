@@ -97,7 +97,7 @@ impl Interpreter {
         let existing = self.env().get(name).cloned();
         match (existing.as_ref().map(Value::view), coerced.view()) {
             (Some(ValueView::Set(old, mutable)), ValueView::Set(new, _))
-                if !crate::gc::Gc::ptr_eq(old, new) =>
+                if !crate::gc::Gc::ptr_eq(&old, &new) =>
             {
                 let mut data = (**new).clone();
                 data.value_type = old.value_type.clone();
@@ -106,12 +106,12 @@ impl Interpreter {
                 // SAFETY: audited aliased in-place container write; see
                 // `value::aliased_mut` (no other borrow live, single write).
                 unsafe {
-                    *crate::value::gc_contents_mut(old) = data;
+                    *crate::value::gc_contents_mut(&old) = data;
                 }
                 Value::set_parts(old.clone(), mutable)
             }
             (Some(ValueView::Bag(old, mutable)), ValueView::Bag(new, _))
-                if !crate::gc::Gc::ptr_eq(old, new) =>
+                if !crate::gc::Gc::ptr_eq(&old, &new) =>
             {
                 let mut data = (**new).clone();
                 data.value_type = old.value_type.clone();
@@ -119,12 +119,12 @@ impl Interpreter {
                 data.declared_type = old.declared_type.clone();
                 // SAFETY: as above.
                 unsafe {
-                    *crate::value::gc_contents_mut(old) = data;
+                    *crate::value::gc_contents_mut(&old) = data;
                 }
                 Value::bag_parts(old.clone(), mutable)
             }
             (Some(ValueView::Mix(old, mutable)), ValueView::Mix(new, _))
-                if !crate::gc::Gc::ptr_eq(old, new) =>
+                if !crate::gc::Gc::ptr_eq(&old, &new) =>
             {
                 let mut data = (**new).clone();
                 data.value_type = old.value_type.clone();
@@ -132,7 +132,7 @@ impl Interpreter {
                 data.declared_type = old.declared_type.clone();
                 // SAFETY: as above.
                 unsafe {
-                    *crate::value::gc_contents_mut(old) = data;
+                    *crate::value::gc_contents_mut(&old) = data;
                 }
                 Value::mix_parts(old.clone(), mutable)
             }
@@ -242,9 +242,9 @@ impl Interpreter {
         // assignment creates new containers, so the copy snapshots values
         // instead of sharing cells.
         if let ValueView::Hash(items) = hash_val.view()
-            && (Self::hash_has_sentinels(items) || items.values().any(Value::is_container_ref))
+            && (Self::hash_has_sentinels(&items) || items.values().any(Value::is_container_ref))
         {
-            return Ok(self.resolve_hash_for_iteration(items));
+            return Ok(self.resolve_hash_for_iteration(&items));
         }
         Ok(hash_val)
     }
@@ -379,7 +379,7 @@ impl Interpreter {
                     Ok(n)
                 } else {
                     Err(RuntimeError::str_numeric(
-                        s,
+                        &s,
                         "base-10 number must begin with valid digits or '.'",
                     ))
                 }
@@ -414,7 +414,7 @@ impl Interpreter {
                     Ok(BigInt::from(n as i64))
                 } else {
                     Err(RuntimeError::str_numeric(
-                        s,
+                        &s,
                         "base-10 number must begin with valid digits or '.'",
                     ))
                 }
@@ -473,7 +473,7 @@ impl Interpreter {
                     (start..end).map(Value::int).collect()
                 }
             }
-            ValueView::LazyList(list) => self.force_lazy_list_vm(list)?,
+            ValueView::LazyList(list) => self.force_lazy_list_vm(&list)?,
             _ => vec![val.clone()],
         })
     }

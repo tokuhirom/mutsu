@@ -110,7 +110,7 @@ impl Value {
             ValueView::Seq(items)
             | ValueView::HyperSeq(items)
             | ValueView::RaceSeq(items)
-            | ValueView::Slip(items) => trace_shared_slice(items, visit),
+            | ValueView::Slip(items) => trace_shared_slice(&items, visit),
             ValueView::Mixin(inner, overrides) => {
                 if uniquely_owned(inner) {
                     inner.gc_trace(visit);
@@ -121,7 +121,7 @@ impl Value {
                     }
                 }
             }
-            ValueView::Junction { values, .. } => trace_shared_slice(values, visit),
+            ValueView::Junction { values, .. } => trace_shared_slice(&values, visit),
             ValueView::GenericRange { start, end, .. } => {
                 start.gc_trace(visit);
                 end.gc_trace(visit);
@@ -157,7 +157,7 @@ impl Value {
             // A lazy thunk holds its (possibly closure-capturing) block and any
             // cached forced result — both can close a cycle.
             ValueView::LazyThunk(data) => {
-                if uniquely_owned(data) {
+                if uniquely_owned(&data) {
                     data.thunk.gc_trace(visit);
                     if let Ok(cache) = data.cache.lock()
                         && let Some(v) = cache.as_ref()

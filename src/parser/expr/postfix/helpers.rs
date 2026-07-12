@@ -18,7 +18,7 @@ pub(crate) fn extract_negative_literal(expr: &Expr) -> Option<String> {
             return Some(format!("-{}", n));
         }
         if let ValueView::BigInt(n) = lit.view() {
-            return Some(format!("-{}", n));
+            return Some(format!("-{}", *n));
         }
     }
     None

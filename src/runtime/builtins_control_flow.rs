@@ -554,7 +554,7 @@ impl Interpreter {
             }
             let result = Value::hash_with_data(Value::hash_arc(result_map));
             if mutating {
-                self.overwrite_hash_bindings_by_identity(map, result.clone());
+                self.overwrite_hash_bindings_by_identity(&map, result.clone());
             }
             return Ok(result);
         }
@@ -570,7 +570,7 @@ impl Interpreter {
                 kind,
             );
             if mutating {
-                self.overwrite_array_bindings_by_identity(items, result.clone());
+                self.overwrite_array_bindings_by_identity(&items, result.clone());
             }
             return Ok(result);
         }

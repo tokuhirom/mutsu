@@ -453,7 +453,7 @@ pub(crate) fn parameter_to_raku(attrs: &HashMap<String, Value>) -> String {
         )
     {
         if let Some(ValueView::Str(default_raku)) = attrs.get("default_raku").map(Value::view) {
-            parts.push(format!("= {}", default_raku));
+            parts.push(format!("= {}", *default_raku));
         } else if name == "$_" || name == "$$_" {
             // Implicit topic parameter in a bare block defaults to OUTER::<$_>
             parts.push("= OUTER::<$_>".to_string());

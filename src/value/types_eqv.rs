@@ -159,8 +159,8 @@ impl Value {
             // Bag/Mix: like Set, eqv distinguishes the immutable variant from
             // its mutable QuantHash (Bag vs BagHash, Mix vs MixHash). The data
             // comparison is delegated to PartialEq, which ignores the flag.
-            (ValueView::Bag(a, a_mut), ValueView::Bag(b, b_mut)) => a_mut == b_mut && a == b,
-            (ValueView::Mix(a, a_mut), ValueView::Mix(b, b_mut)) => a_mut == b_mut && a == b,
+            (ValueView::Bag(a, a_mut), ValueView::Bag(b, b_mut)) => a_mut == b_mut && *a == *b,
+            (ValueView::Mix(a, a_mut), ValueView::Mix(b, b_mut)) => a_mut == b_mut && *a == *b,
             (ValueView::Int(_), ValueView::Int(_))
             | (ValueView::Str(_), ValueView::Str(_))
             | (ValueView::Bool(_), ValueView::Bool(_))
@@ -170,7 +170,7 @@ impl Value {
             | (ValueView::RegexWithAdverbs { .. }, ValueView::RegexWithAdverbs { .. })
             | (ValueView::Routine { .. }, ValueView::Routine { .. }) => self == other,
             (ValueView::Sub(a), ValueView::Sub(b)) => {
-                if crate::gc::Gc::ptr_eq(a, b) {
+                if crate::gc::Gc::ptr_eq(&a, &b) {
                     return true;
                 }
                 let a_name = a.name.resolve();

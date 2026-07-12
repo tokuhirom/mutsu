@@ -114,7 +114,7 @@ impl Interpreter {
             for callable in values.iter() {
                 results.push(self.call_sub_value(callable.clone(), args.clone(), merge_all)?);
             }
-            return Ok(Value::junction(kind.clone(), results));
+            return Ok(Value::junction(kind, results));
         }
         if let ValueView::Sub(data) = func.view() {
             // Check for wrap chain — if wrappers exist, dispatch through them
@@ -215,7 +215,7 @@ impl Interpreter {
             if let Some(ValueView::Str(routine_name)) =
                 data.env.get("__mutsu_routine_name").map(Value::view)
             {
-                return self.call_function(routine_name, call_args);
+                return self.call_function(&routine_name, call_args);
             }
             // Multi-dispatch dispatcher: captured multi candidates from resolve_code_var
             if let Some((candidates_arc, _)) = data
@@ -228,11 +228,11 @@ impl Interpreter {
                 // First try to dispatch via the function table (if still in scope)
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-                    && (self.resolve_function(name).is_some()
-                        || self.has_proto(name)
-                        || self.has_multi_candidates(name))
+                    && (self.resolve_function(&name).is_some()
+                        || self.has_proto(&name)
+                        || self.has_multi_candidates(&name))
                 {
-                    return self.call_function(name, call_args);
+                    return self.call_function(&name, call_args);
                 }
                 // Candidates are out of scope -- dispatch through captured Subs
                 for candidate in &candidates {

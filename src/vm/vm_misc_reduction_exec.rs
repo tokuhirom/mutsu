@@ -52,7 +52,7 @@ impl Interpreter {
             return self.exec_lazy_scan_reduction(&base_op, negate, &list_value);
         }
         let mut list = if let ValueView::LazyList(ll) = list_value.view() {
-            self.force_lazy_list_vm(ll)?
+            self.force_lazy_list_vm(&ll)?
         } else {
             runtime::value_to_list(&list_value)
         };
@@ -77,7 +77,7 @@ impl Interpreter {
                 }
                 ValueView::Seq(items) => items.iter().cloned().collect(),
                 ValueView::LazyList(ll) => {
-                    if let Ok(items) = self.force_lazy_list_vm(ll) {
+                    if let Ok(items) = self.force_lazy_list_vm(&ll) {
                         items
                     } else {
                         vec![only.clone()]
@@ -416,10 +416,10 @@ impl Interpreter {
                 {
                     // Validate: non-numeric strings must throw X::Str::Numeric
                     if let ValueView::Str(s) = list[0].view()
-                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(s).is_none()
+                        && crate::runtime::str_numeric::parse_raku_str_to_numeric(&s).is_none()
                     {
                         return Err(RuntimeError::str_numeric(
-                            s,
+                            &s,
                             "base-10 number must begin with valid digits or '.'",
                         ));
                     }

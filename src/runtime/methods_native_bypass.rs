@@ -235,24 +235,25 @@ impl Interpreter {
         // An immutable Map renders as `Map.new((:k(v), ...))`, not the
         // `(my % = ...)` typed-hash form.
         if info.declared_type.as_deref() == Some("Map") {
-            let parts: Vec<String> =
-                sorted_keys
-                    .iter()
-                    .map(|k| {
-                        let v = &map[*k];
-                        let repr = if v.is_nil() {
-                            "Any".to_string()
-                        } else {
-                            self.call_method_with_values(v.clone(), "raku", vec![])
-                                .map(|r| r.to_string_value())
-                                .unwrap_or_else(|_| format!("{:?}", v))
-                        };
-                        let typed = map.typed_key(k);
-                        match typed.view() {
+            let parts: Vec<String> = sorted_keys
+                .iter()
+                .map(|k| {
+                    let v = &map[*k];
+                    let repr = if v.is_nil() {
+                        "Any".to_string()
+                    } else {
+                        self.call_method_with_values(v.clone(), "raku", vec![])
+                            .map(|r| r.to_string_value())
+                            .unwrap_or_else(|_| format!("{:?}", v))
+                    };
+                    let typed = map.typed_key(k);
+                    match typed.view() {
                         ValueView::Str(s)
-                            if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(s) =>
+                            if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(
+                                &s,
+                            ) =>
                         {
-                            format!(":{}({})", s, repr)
+                            format!(":{}({})", *s, repr)
                         }
                         _ => format!(
                             "{} => {}",
@@ -260,8 +261,8 @@ impl Interpreter {
                             repr
                         ),
                     }
-                    })
-                    .collect();
+                })
+                .collect();
             return Ok(Value::str(itemize_wrap(format!(
                 "Map.new(({}))",
                 parts.join(",")
@@ -289,9 +290,9 @@ impl Interpreter {
                 let typed = map.typed_key(k);
                 match typed.view() {
                     ValueView::Str(s)
-                        if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(s) =>
+                        if crate::builtins::methods_0arg::raku_repr::is_adverbial_pair_key(&s) =>
                     {
-                        format!(":{}({})", s, value_repr())
+                        format!(":{}({})", *s, value_repr())
                     }
                     _ => format!(
                         "{} => {}",

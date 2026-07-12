@@ -148,7 +148,7 @@ pub(crate) fn set_intersect_values(left: &Value, right: &Value) -> Value {
 /// Coerce a value to a Bag (HashMap<String, i64>)
 fn coerce_to_bag(val: &Value) -> HashMap<String, i64> {
     match val.view() {
-        ValueView::Bag(b, _) => resolve_bag_tab_keys(b),
+        ValueView::Bag(b, _) => resolve_bag_tab_keys(&b),
         ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1)).collect(),
         ValueView::Mix(m, _) => m.iter().map(|(k, v)| (k.clone(), *v as i64)).collect(),
         _ => {
@@ -168,7 +168,7 @@ fn coerce_to_mix(val: &Value) -> HashMap<String, f64> {
     match val.view() {
         ValueView::Mix(m, _) => m.weights.clone(),
         ValueView::Bag(b, _) => {
-            let resolved = resolve_bag_tab_keys(b);
+            let resolved = resolve_bag_tab_keys(&b);
             resolved.into_iter().map(|(k, v)| (k, v as f64)).collect()
         }
         ValueView::Set(s, _) => s.iter().map(|k| (k.clone(), 1.0)).collect(),

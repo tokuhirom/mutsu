@@ -325,7 +325,7 @@ fn parse_use_attributes_pragma(input: &str) -> PResult<'_, Stmt> {
         && let Expr::Literal(lit) = arg_expr
         && let ValueView::Str(s) = lit.view()
     {
-        super::super::simple::set_attributes_pragma(s);
+        super::super::simple::set_attributes_pragma(&s);
     }
     Ok(result)
 }

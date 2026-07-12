@@ -315,7 +315,7 @@ impl Interpreter {
                             junc_values.push(Value::NIL);
                         }
                     }
-                    let junction = Value::junction(junc_kind.clone(), junc_values);
+                    let junction = Value::junction(junc_kind, junc_values);
                     self.env.insert("/".to_string(), junction);
                     // Return value depends on junction kind
                     return match junc_kind {
@@ -642,13 +642,12 @@ impl Interpreter {
                             if !a.global && !a.exhaustive && !a.overlap && !a.perl5
                     ) =>
             {
-                let pat: &str = match right.view() {
-                    ValueView::Regex(p) => p,
-                    ValueView::RegexWithAdverbs(a) => &a.pattern,
+                let pat: String = match right.view() {
+                    ValueView::Regex(p) => p.to_string(),
+                    ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
                     _ => unreachable!(),
                 };
                 let text = left.to_string_value();
-                let pat = pat.to_string();
                 // Set $_ to the match target so $( $_ ) works inside regex
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), Value::str(text.clone()));
@@ -979,13 +978,13 @@ impl Interpreter {
             }),
             // Regex ~~ Hash: check if any key matches the regex
             (ValueView::Regex(_) | ValueView::RegexWithAdverbs(_), ValueView::Hash(map)) => {
-                let pat: &str = match left.view() {
-                    ValueView::Regex(p) => p,
-                    ValueView::RegexWithAdverbs(a) => &a.pattern,
+                let pat: String = match left.view() {
+                    ValueView::Regex(p) => p.to_string(),
+                    ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
                     _ => unreachable!(),
                 };
                 for key in map.keys() {
-                    if self.regex_find_first(pat, key).is_some() {
+                    if self.regex_find_first(&pat, key).is_some() {
                         return true;
                     }
                 }
@@ -1364,7 +1363,7 @@ impl Interpreter {
             (ValueView::Rat(an, ad), ValueView::Rat(bn, bd)) => an * bd == bn * ad,
             (ValueView::Int(a), ValueView::Rat(n, d)) => a * d == n,
             (ValueView::Rat(n, d), ValueView::Int(b)) => n == b * d,
-            (ValueView::Str(a), ValueView::Str(b)) => a == b,
+            (ValueView::Str(a), ValueView::Str(b)) => *a == *b,
             // Str ~~ Numeric: numify LHS and compare
             (ValueView::Str(a), ValueView::Int(b)) => a.trim().parse::<f64>() == Ok(b as f64),
             (ValueView::Str(a), ValueView::Num(b)) => {
@@ -1401,8 +1400,8 @@ impl Interpreter {
                     ..
                 },
             ) if cn_a == "IO::Path" && cn_b == "IO::Path" => {
-                let (path_a, cwd_a) = Self::io_path_attrs_for_accepts(attrs_a);
-                let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(attrs_b);
+                let (path_a, cwd_a) = Self::io_path_attrs_for_accepts(&attrs_a);
+                let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(&attrs_b);
                 Self::io_path_cleanup_absolute(&path_a, &cwd_a)
                     == Self::io_path_cleanup_absolute(&path_b, &cwd_b)
             }
@@ -1428,7 +1427,7 @@ impl Interpreter {
                 ) =>
             {
                 let lhs_str = left.to_string_value();
-                let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(attrs_b);
+                let (path_b, cwd_b) = Self::io_path_attrs_for_accepts(&attrs_b);
                 let cwd = std::env::current_dir()
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|_| ".".to_string());
@@ -1622,10 +1621,10 @@ impl Interpreter {
     /// Check if two values are the same object (pointer equality).
     fn same_object(a: &Value, b: &Value) -> bool {
         match (a.view(), b.view()) {
-            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-            (ValueView::Seq(a), ValueView::Seq(b)) => Arc::ptr_eq(a, b),
-            (ValueView::Slip(a), ValueView::Slip(b)) => Arc::ptr_eq(a, b),
-            (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
+            (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+            (ValueView::Seq(a), ValueView::Seq(b)) => Arc::ptr_eq(&a, &b),
+            (ValueView::Slip(a), ValueView::Slip(b)) => Arc::ptr_eq(&a, &b),
+            (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
             _ => false,
         }
     }

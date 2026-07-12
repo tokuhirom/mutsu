@@ -192,7 +192,7 @@ pub(super) fn add_xor_sink_warnings(expr: &Expr) {
         {
             add_parse_warning(format!(
                 "Useless use of constant string \"{}\" in sink context (line 1)",
-                s
+                *s
             ));
         }
     }

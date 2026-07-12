@@ -179,13 +179,13 @@ impl Interpreter {
         let rendered = match result {
             Ok(v) => {
                 if let ValueView::Regex(pat) = v.view() {
-                    let pat = instantiate_sym(pat);
+                    let pat = instantiate_sym(&pat);
                     self.instantiate_named_regex_arg_calls(
                         &self.interpolate_bound_regex_scalars(&pat),
                     )
                     .map(Some)
                 } else if let ValueView::Str(s) = v.view() {
-                    let s = instantiate_sym(s);
+                    let s = instantiate_sym(&s);
                     self.instantiate_named_regex_arg_calls(
                         &self.interpolate_bound_regex_scalars(&s),
                     )
@@ -199,13 +199,13 @@ impl Interpreter {
             Err(e) if e.return_value.is_some() => {
                 let rv = e.return_value.unwrap();
                 if let ValueView::Regex(pat) = rv.view() {
-                    let pat = instantiate_sym(pat);
+                    let pat = instantiate_sym(&pat);
                     self.instantiate_named_regex_arg_calls(
                         &self.interpolate_bound_regex_scalars(&pat),
                     )
                     .map(Some)
                 } else if let ValueView::Str(s) = rv.view() {
-                    let s = instantiate_sym(s);
+                    let s = instantiate_sym(&s);
                     self.instantiate_named_regex_arg_calls(
                         &self.interpolate_bound_regex_scalars(&s),
                     )

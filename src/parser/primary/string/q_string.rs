@@ -98,7 +98,7 @@ pub(crate) fn apply_post_processing<'a>(
         && let Expr::Literal(ref lit) = expr
         && let ValueView::Str(s) = lit.view()
     {
-        let items = parse_quotewords_items(s, flags)?;
+        let items = parse_quotewords_items(&s, flags)?;
         return Ok((after, make_word_result_expr(items)));
     }
 

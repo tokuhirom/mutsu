@@ -66,7 +66,7 @@ impl Compiler {
                     if let Expr::Literal(lit) = item
                         && let ValueView::Str(s) = lit.view()
                     {
-                        names.insert(Self::normalize_dynamic_scope_name(s));
+                        names.insert(Self::normalize_dynamic_scope_name(&s));
                     }
                 }
                 self.dynamic_scope_all = false;
@@ -75,7 +75,7 @@ impl Compiler {
             Some(Expr::Literal(lit)) if matches!(lit.view(), ValueView::Str(_)) => {
                 let mut names = std::collections::HashSet::new();
                 if let ValueView::Str(s) = lit.view() {
-                    names.insert(Self::normalize_dynamic_scope_name(s));
+                    names.insert(Self::normalize_dynamic_scope_name(&s));
                 }
                 self.dynamic_scope_all = false;
                 self.dynamic_scope_names = Some(names);

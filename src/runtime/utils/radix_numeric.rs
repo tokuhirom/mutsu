@@ -146,7 +146,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
         ValueView::Enum { value, .. } => Value::int(value.as_i64()),
         ValueView::Str(s) => {
-            if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
+            if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
                 v
             } else {
                 Value::int(0)

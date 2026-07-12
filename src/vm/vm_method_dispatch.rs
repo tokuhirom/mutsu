@@ -435,11 +435,11 @@ impl Interpreter {
                     );
                     // Reverse alias: alias_name → !attr so writing to $x updates $!x
                     self.env_mut().insert(
-                        format!("__mutsu_sigilless_alias::{}", source_name),
+                        format!("__mutsu_sigilless_alias::{}", *source_name),
                         Value::str(format!("!{}", actual_attr)),
                     );
                     self.env_mut().insert(
-                        format!("__mutsu_sigilless_readonly::{}", source_name),
+                        format!("__mutsu_sigilless_readonly::{}", *source_name),
                         Value::FALSE,
                     );
                     // Also set up the alias name with the current attribute value
@@ -791,13 +791,13 @@ impl Interpreter {
                 ) if base_id == ret_id => {
                     if attrs_adjusted {
                         Value::write_back_sharing(
-                            base_attrs,
+                            &base_attrs,
                             class_name,
                             attributes.clone(),
                             base_id,
                         )
                     } else {
-                        Value::instance_sharing_cell(base_attrs, class_name, base_id)
+                        Value::instance_sharing_cell(&base_attrs, class_name, base_id)
                     }
                 }
                 _ => v,
@@ -1471,13 +1471,13 @@ impl Interpreter {
                 ) if base_id == ret_id => {
                     if attrs_adjusted {
                         Value::write_back_sharing(
-                            base_attrs,
+                            &base_attrs,
                             class_name,
                             attributes.clone(),
                             base_id,
                         )
                     } else {
-                        Value::instance_sharing_cell(base_attrs, class_name, base_id)
+                        Value::instance_sharing_cell(&base_attrs, class_name, base_id)
                     }
                 }
                 _ => v,
@@ -1516,9 +1516,9 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         (ValueView::Rat(an, ad), ValueView::Rat(bn, bd)) => an == bn && ad == bd,
         (ValueView::Package(a), ValueView::Package(b)) => a == b,
         (ValueView::Nil, ValueView::Nil) => true,
-        (ValueView::Str(a), ValueView::Str(b)) => Arc::ptr_eq(a, b),
-        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::Str(a), ValueView::Str(b)) => Arc::ptr_eq(&a, &b),
+        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         // A `ContainerRef` cell is the shared-identity primitive of the
         // single-store design: `my @a := @b` installs the *same* cell into both
         // the env entry and the local slot for both names. Without this arm the
@@ -1527,7 +1527,7 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
         // (and `merge_method_env` over-signalled env_dirty for a method that
         // returned the same cell). Same Arc => genuinely unchanged; distinct Arcs
         // stay "changed" (conservative).
-        (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
         _ => false,
     }

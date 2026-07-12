@@ -93,7 +93,7 @@ impl Interpreter {
                 if list.in_array_context() && list.is_genuinely_lazy() {
                     rest.push(v.clone());
                 } else {
-                    rest.push(Value::array(self.force_lazy_list(list)?));
+                    rest.push(Value::array(self.force_lazy_list(&list)?));
                 }
             } else {
                 rest.push(v.clone());

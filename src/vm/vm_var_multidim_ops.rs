@@ -461,7 +461,7 @@ impl Interpreter {
         // Hash targets index by key (string), recursing into the nested value
         // for the remaining dimensions: `%h{"a";"b";"c"}`.
         if let ValueView::Hash(map, ..) = target.view() {
-            return self.multi_dim_hash_read(map, dim, rest);
+            return self.multi_dim_hash_read(&map, dim, rest);
         }
 
         match dim.view() {

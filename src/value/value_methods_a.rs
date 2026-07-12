@@ -328,7 +328,7 @@ impl Value {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { crate::value::gc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             if !data.map.contains_key(key) {
                 let new_hash = Value::hash(HashMap::new());
                 data.map.insert(key.to_string(), new_hash);
@@ -361,7 +361,7 @@ impl Value {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { crate::value::gc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             match data.map.get_mut(key) {
                 Some(elem) => {
                     if let ValueView::ContainerRef(cell) = elem.view() {
@@ -406,7 +406,7 @@ impl Value {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { crate::value::gc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             match data.map.get_mut(key) {
                 Some(elem) => {
                     if let ValueView::ContainerRef(cell) = elem.view() {
@@ -445,7 +445,7 @@ impl Value {
         if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
-            let data = unsafe { crate::value::gc_contents_mut(arc) };
+            let data = unsafe { crate::value::gc_contents_mut(&arc) };
             Value::hash_insert_through(&mut data.map, key.to_string(), val.clone());
             Some(val)
         } else {

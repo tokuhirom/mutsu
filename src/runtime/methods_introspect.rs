@@ -379,7 +379,7 @@ impl Interpreter {
                                     })
                             });
                         if let Some(owner) = owner {
-                            k.push(format!("{}::{}", owner, attr_name));
+                            k.push(format!("{}::{}", owner, *attr_name));
                         }
                         k.push(attr_name.to_string());
                     }
@@ -410,11 +410,11 @@ impl Interpreter {
                     {
                         // Try scoped key with param name
                         if !param_name.is_empty() {
-                            k.push(format!("{}::{}", owner, param_name));
+                            k.push(format!("{}::{}", *owner, param_name));
                         }
                         // For anonymous params, try with just the sigil
                         if param_name.is_empty() || !param_name.starts_with(&sigil) {
-                            k.push(format!("{}::{}", owner, sigil));
+                            k.push(format!("{}::{}", *owner, sigil));
                         }
                     }
                     // Fallback: try plain param name
@@ -587,7 +587,7 @@ impl Interpreter {
                 if let Some(ValueView::Str(ret)) =
                     data.env.get("__mutsu_return_type").map(Value::view)
                 {
-                    format!("{}+{{Callable[{}]}}", base, ret)
+                    format!("{}+{{Callable[{}]}}", base, *ret)
                 } else {
                     base.to_string()
                 }

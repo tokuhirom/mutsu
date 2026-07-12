@@ -89,7 +89,7 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     if !shape_matches_structure(value, &inferred_shape) {
         return None;
     }
-    mark_shaped_array_items(items, Some(&inferred_shape));
+    mark_shaped_array_items(&items, Some(&inferred_shape));
     Some(inferred_shape)
 }
 
@@ -97,7 +97,7 @@ pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
     let ValueView::Array(items, ..) = value.view() else {
         return;
     };
-    mark_shaped_array_items(items, shape);
+    mark_shaped_array_items(&items, shape);
 }
 
 pub(crate) fn mark_shaped_array_items(
@@ -215,17 +215,17 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         {
             true
         }
-        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(a, b),
-        (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(a, b),
+        (ValueView::Array(a, _), ValueView::Array(b, _)) => crate::gc::Gc::ptr_eq(&a, &b),
+        (ValueView::Seq(a), ValueView::Seq(b)) => std::sync::Arc::ptr_eq(&a, &b),
         (ValueView::Slip(a), ValueView::Slip(b)) => {
             // Empty is a singleton semantic value in Raku even when represented
             // by distinct empty Slip allocations.
-            (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(a, b)
+            (a.is_empty() && b.is_empty()) || std::sync::Arc::ptr_eq(&a, &b)
         }
-        (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(a, b),
-        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(a, b),
+        (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        (ValueView::Hash(a), ValueView::Hash(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         (ValueView::Sub(a), ValueView::Sub(b)) => {
-            if crate::gc::Gc::ptr_eq(a, b) {
+            if crate::gc::Gc::ptr_eq(&a, &b) {
                 return true;
             }
             // Named subs with the same package and name are identical
@@ -234,7 +234,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b.name.resolve();
             !a_name.is_empty() && a_name == b_name && a.package == b.package
         }
-        (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(a, b),
+        (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
         (ValueView::Mixin(a_inner, a_mix), ValueView::Mixin(b_inner, b_mix)) => {
             a_inner.eqv(b_inner) && a_mix == b_mix
         }
@@ -272,7 +272,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
         (
             ValueView::Junction { values: a_vals, .. },
             ValueView::Junction { values: b_vals, .. },
-        ) => std::sync::Arc::ptr_eq(a_vals, b_vals),
+        ) => std::sync::Arc::ptr_eq(&a_vals, &b_vals),
         // Capture identity is NOT structural: a Capture's `.WHICH` keeps the
         // *container* identity of each captured element, so `\($a) === \($b)`
         // is False even when `$a` and `$b` hold equal values, while
@@ -310,7 +310,7 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
 /// fall back to the normal value identity rules.
 fn capture_elem_identical(a: &Value, b: &Value) -> bool {
     match (a.view(), b.view()) {
-        (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => crate::gc::Gc::ptr_eq(x, y),
+        (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => crate::gc::Gc::ptr_eq(&x, &y),
         (ValueView::ContainerRef(_), _) | (_, ValueView::ContainerRef(_)) => false,
         _ => values_identical(a, b),
     }

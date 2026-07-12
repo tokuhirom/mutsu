@@ -74,7 +74,7 @@ impl Interpreter {
                     if !name.contains("__ANON") {
                         inplace_old_hash = Some(arc.clone());
                     }
-                    Some(crate::gc::Gc::as_ptr(arc) as usize)
+                    Some(crate::gc::Gc::as_ptr(&arc) as usize)
                 }
                 Some(ValueView::ContainerRef(cell)) => {
                     inplace_container_cell = Some(cell.clone());
@@ -103,7 +103,7 @@ impl Interpreter {
                     if !name.contains("__ANON") {
                         inplace_old_array = Some(arc.clone());
                     }
-                    Some(crate::gc::Gc::as_ptr(arc) as usize)
+                    Some(crate::gc::Gc::as_ptr(&arc) as usize)
                 }
                 Some(ValueView::ContainerRef(cell)) => {
                     inplace_container_cell = Some(cell.clone());
@@ -120,8 +120,8 @@ impl Interpreter {
             // to a new hash variable. Assignment creates new containers, so bound
             // refs must be resolved to their current values.
             if let ValueView::Hash(items) = hash_val.view() {
-                if Self::hash_has_sentinels(items) {
-                    self.resolve_hash_for_iteration(items)
+                if Self::hash_has_sentinels(&items) {
+                    self.resolve_hash_for_iteration(&items)
                 } else {
                     hash_val
                 }
@@ -424,7 +424,7 @@ impl Interpreter {
             {
                 let has_old_ref = stack_arc.values().any(|v| {
                     if let ValueView::Hash(inner_arc) = v.view() {
-                        crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
+                        crate::gc::Gc::as_ptr(&inner_arc) as usize == old_ptr
                     } else {
                         false
                     }
@@ -443,7 +443,7 @@ impl Interpreter {
             {
                 let has_old_ref = stack_arc.iter().any(|v| {
                     if let ValueView::Array(inner_arc, _) = v.view() {
-                        crate::gc::Gc::as_ptr(inner_arc) as usize == old_ptr
+                        crate::gc::Gc::as_ptr(&inner_arc) as usize == old_ptr
                     } else {
                         false
                     }
@@ -460,13 +460,13 @@ impl Interpreter {
         // capture in a list, the caller's local slot) observes the update.
         if let Some(old_gc) = &inplace_old_hash
             && let ValueView::Hash(new_gc) = val.view()
-            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+            && !crate::gc::Gc::ptr_eq(old_gc, &new_gc)
         {
             let new_gc = new_gc.clone();
             val = Self::hash_inplace_reassign(old_gc, &new_gc);
         } else if let Some(old_gc) = &inplace_old_array
             && let ValueView::Array(new_gc, kind) = val.view()
-            && !crate::gc::Gc::ptr_eq(old_gc, new_gc)
+            && !crate::gc::Gc::ptr_eq(old_gc, &new_gc)
         {
             let (new_gc, kind) = (new_gc.clone(), kind);
             val = Self::array_inplace_reassign(old_gc, &new_gc, kind);

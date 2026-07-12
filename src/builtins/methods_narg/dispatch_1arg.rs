@@ -1468,7 +1468,7 @@ pub(crate) fn native_method_1arg(
                     let generated = 131_072usize;
                     let mut out = Vec::with_capacity(generated);
                     for _ in 0..generated {
-                        if let Some(v) = sample_weighted_mix_key(items) {
+                        if let Some(v) = sample_weighted_mix_key(&items) {
                             out.push(v);
                         }
                     }
@@ -1482,7 +1482,7 @@ pub(crate) fn native_method_1arg(
                 }
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {
-                    if let Some(v) = sample_weighted_mix_key(items) {
+                    if let Some(v) = sample_weighted_mix_key(&items) {
                         result.push(v);
                     }
                 }
@@ -1493,7 +1493,7 @@ pub(crate) fn native_method_1arg(
                     let generated = 131_072usize;
                     let mut out = Vec::with_capacity(generated);
                     for _ in 0..generated {
-                        if let Some(v) = sample_weighted_bag_key(items) {
+                        if let Some(v) = sample_weighted_bag_key(&items) {
                             out.push(v);
                         }
                     }
@@ -1507,7 +1507,7 @@ pub(crate) fn native_method_1arg(
                 }
                 let mut result = Vec::with_capacity(count);
                 for _ in 0..count {
-                    if let Some(v) = sample_weighted_bag_key(items) {
+                    if let Some(v) = sample_weighted_bag_key(&items) {
                         result.push(v);
                     }
                 }

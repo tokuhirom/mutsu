@@ -96,7 +96,7 @@ impl Interpreter {
                 let parsed = s.trim().parse::<f64>().map_err(|_| {
                     Self::repeat_error(
                         "X::Str::Numeric",
-                        format!("Cannot convert string '{}' to a number", s),
+                        format!("Cannot convert string '{}' to a number", *s),
                     )
                 })?;
                 Self::parse_repeat_count(&Value::num(parsed))

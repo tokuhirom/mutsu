@@ -346,7 +346,7 @@ impl Interpreter {
                     ),
                 );
                 return Ok(Value::write_back_sharing(
-                    attributes,
+                    &attributes,
                     class_name,
                     updated_attrs,
                     id,
@@ -413,7 +413,7 @@ impl Interpreter {
                 "bytes".to_string(),
                 Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
             );
-            let updated = Value::write_back_sharing(attributes, class_name, updated_attrs, id);
+            let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
@@ -512,7 +512,7 @@ impl Interpreter {
                 "bytes".to_string(),
                 Value::array(bytes.into_iter().map(|b| Value::int(b as i64)).collect()),
             );
-            let updated = Value::write_back_sharing(attributes, class_name, updated_attrs, id);
+            let updated = Value::write_back_sharing(&attributes, class_name, updated_attrs, id);
             self.env.insert(target_var.to_string(), updated.clone());
             return Ok(updated);
         }
@@ -895,11 +895,11 @@ impl Interpreter {
                         && !matches!(constraint.as_str(), "" | "Any" | "Mu")
                     {
                         for arg in args.iter().skip(2) {
-                            let candidates: Vec<&Value> = match arg.view() {
-                                ValueView::Array(items, _) => items.iter().collect(),
-                                _ => vec![arg],
+                            let candidates: Vec<Value> = match arg.view() {
+                                ValueView::Array(items, _) => items.iter().cloned().collect(),
+                                _ => vec![arg.clone()],
                             };
-                            for v in candidates {
+                            for v in &candidates {
                                 if !matches!(v.view(), ValueView::Nil)
                                     && !self.type_matches_value(&constraint, v)
                                 {
@@ -1159,7 +1159,7 @@ impl Interpreter {
                                     } else {
                                         k.to_string_value()
                                     };
-                                    h.and_then(|h| h.map.get(&wk).cloned())
+                                    h.as_ref().and_then(|h| h.map.get(&wk).cloned())
                                 })
                                 .collect()
                         };
@@ -1367,7 +1367,7 @@ impl Interpreter {
                     // Interior mutation: if the target Array has shared references
                     // (Arc refcount > 1), mutate in-place so all references see the
                     // change. This matches Raku's container semantics.
-                    if matches!(target.view(), ValueView::Array(arc_items, _) if crate::gc::Gc::strong_count(arc_items) > 1)
+                    if matches!(target.view(), ValueView::Array(arc_items, _) if crate::gc::Gc::strong_count(&arc_items) > 1)
                     {
                         let vals = if method == "append" {
                             flatten_append_args(normalized_args)
@@ -2059,7 +2059,7 @@ impl Interpreter {
                                     crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                                     arr_kind,
                                 );
-                                self.overwrite_array_bindings_by_identity(existing, updated_array);
+                                self.overwrite_array_bindings_by_identity(&existing, updated_array);
                             }
                             Value::str_from("IterationEnd")
                         }
@@ -2124,7 +2124,7 @@ impl Interpreter {
                                     crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                                     arr_kind,
                                 );
-                                self.overwrite_array_bindings_by_identity(existing, updated_array);
+                                self.overwrite_array_bindings_by_identity(&existing, updated_array);
                             }
                             if collected.len() >= want {
                                 Value::NIL
@@ -2210,7 +2210,7 @@ impl Interpreter {
                             crate::gc::Gc::new(crate::value::ArrayData::new(next)),
                             arr_kind,
                         );
-                        self.overwrite_array_bindings_by_identity(existing, updated_array);
+                        self.overwrite_array_bindings_by_identity(&existing, updated_array);
                     }
                 };
 

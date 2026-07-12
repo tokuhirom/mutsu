@@ -185,9 +185,9 @@ impl Interpreter {
         // without pulling. When a method is called on such a Seq, materialize the
         // items first by pulling from the iterator.
         if let ValueView::Seq(items) = target.view()
-            && crate::value::seq_has_deferred_iter(items)
+            && crate::value::seq_has_deferred_iter(&items)
         {
-            if method == "sink" && args.is_empty() && !crate::value::seq_is_cached(items) {
+            if method == "sink" && args.is_empty() && !crate::value::seq_is_cached(&items) {
                 // .sink on uncached deferred Seq: pull from iterator, mark consumed.
                 let items_arc = items.clone();
                 let iterator = crate::value::seq_take_deferred_iter(&items_arc).unwrap();
@@ -224,7 +224,7 @@ impl Interpreter {
                     if crate::value::seq_is_cached(&items_arc)
                         && let ValueView::Seq(new_items) = new_seq.view()
                     {
-                        crate::value::seq_mark_cached(new_items);
+                        crate::value::seq_mark_cached(&new_items);
                     }
                     return self.call_method_with_values(new_seq, method, args);
                 }
@@ -237,8 +237,8 @@ impl Interpreter {
                 "iterator", "list", "List", "eager", "Array", "flat", "Slip", "join", "is-lazy",
             ];
             if consumed_methods.contains(&method)
-                && crate::value::seq_is_consumed(items)
-                && !crate::value::seq_is_cached(items)
+                && crate::value::seq_is_consumed(&items)
+                && !crate::value::seq_is_cached(&items)
             {
                 return Err(crate::value::seq_consumed_error());
             }
@@ -478,16 +478,14 @@ impl Interpreter {
             for value in values.iter() {
                 results.push(self.call_method_with_values(value.clone(), method, args.clone())?);
             }
-            return Ok(Value::junction(kind.clone(), results));
+            return Ok(Value::junction(kind, results));
         }
         if Self::should_autothread_method(method)
             && let Some((idx, kind, values)) =
                 args.iter()
                     .enumerate()
                     .find_map(|(idx, arg)| match arg.view() {
-                        ValueView::Junction { kind, values } => {
-                            Some((idx, kind.clone(), values.clone()))
-                        }
+                        ValueView::Junction { kind, values } => Some((idx, kind, values.clone())),
                         _ => None,
                     })
         {
@@ -955,12 +953,12 @@ impl Interpreter {
                 unreachable!()
             };
             // Check if we can mutate in-place (shared reference)
-            if crate::gc::Gc::strong_count_of(arc) > 1 {
+            if crate::gc::Gc::strong_count_of(&arc) > 1 {
                 // SAFETY: aliased in-place mutation of a shared hash (guarded by
                 // strong_count > 1, the exact case that needs the shared write);
                 // see `arc_contents_mut`. No borrow into the map is live across
                 // each insert.
-                let data = unsafe { crate::value::gc_contents_mut(arc) };
+                let data = unsafe { crate::value::gc_contents_mut(&arc) };
                 for arg in args {
                     match arg.view() {
                         ValueView::Pair(k, v) => {
@@ -1985,7 +1983,7 @@ impl Interpreter {
             && method == "make"
         {
             let value = args.first().cloned().unwrap_or(Value::NIL);
-            let attrs = crate::value::InstanceAttrs::clone(attributes);
+            let attrs = crate::value::InstanceAttrs::clone(&attributes);
             attrs.insert("ast".to_string(), value.clone());
             let updated = Value::instance_parts(
                 class_name,
@@ -2200,7 +2198,7 @@ impl Interpreter {
             let shape = crate::runtime::utils::shaped_array_shape(&target);
             let is_native = self.env.iter().any(|(name, bound)| {
                 if let ValueView::Array(existing, ..) = bound.view()
-                    && crate::gc::Gc::ptr_eq(existing, items)
+                    && crate::gc::Gc::ptr_eq(&existing, &items)
                     && let Some(constraint) = self.var_type_constraint(&name.resolve())
                 {
                     crate::runtime::native_types::is_native_array_element_type(&constraint)
@@ -2273,7 +2271,7 @@ impl Interpreter {
                         if let Some(ref shape) = shape {
                             crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
                         }
-                        self.overwrite_array_bindings_by_identity(items, updated);
+                        self.overwrite_array_bindings_by_identity(&items, updated);
                         return Ok(value);
                     }
                     "BIND-POS" if args.len() >= 3 => {
@@ -2286,7 +2284,7 @@ impl Interpreter {
                         if let Some(ref shape) = shape {
                             crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
                         }
-                        self.overwrite_array_bindings_by_identity(items, updated);
+                        self.overwrite_array_bindings_by_identity(&items, updated);
                         return Ok(value);
                     }
                     "DELETE-POS" => {
@@ -2302,7 +2300,7 @@ impl Interpreter {
                         if let Some(ref shape) = shape {
                             crate::runtime::utils::mark_shaped_array(&updated, Some(shape));
                         }
-                        self.overwrite_array_bindings_by_identity(items, updated);
+                        self.overwrite_array_bindings_by_identity(&items, updated);
                         return Ok(deleted);
                     }
                     _ => {}
@@ -2331,7 +2329,7 @@ impl Interpreter {
                         && let Some((var_name, constraint)) =
                             self.env.iter().find_map(|(name, bound)| {
                                 if let ValueView::Array(existing, ..) = bound.view()
-                                    && crate::gc::Gc::ptr_eq(existing, items)
+                                    && crate::gc::Gc::ptr_eq(&existing, &items)
                                     && let Some(constraint) =
                                         self.var_type_constraint(&name.resolve())
                                 {
@@ -2375,7 +2373,7 @@ impl Interpreter {
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
-                    self.overwrite_array_bindings_by_identity(items, replacement);
+                    self.overwrite_array_bindings_by_identity(&items, replacement);
                     return Ok(value.clone());
                 }
                 ("BIND-POS", [idx, value]) => {
@@ -2402,7 +2400,7 @@ impl Interpreter {
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
-                    self.overwrite_array_bindings_by_identity(items, replacement);
+                    self.overwrite_array_bindings_by_identity(&items, replacement);
                     return Ok(value.clone());
                 }
                 ("DELETE-POS", [idx]) => {
@@ -2436,7 +2434,7 @@ impl Interpreter {
                     if let Some(ref shape) = shape {
                         crate::runtime::utils::mark_shaped_array(&replacement, Some(shape));
                     }
-                    self.overwrite_array_bindings_by_identity(items, replacement);
+                    self.overwrite_array_bindings_by_identity(&items, replacement);
                     return Ok(deleted);
                 }
                 ("clone", _) => {
@@ -2580,7 +2578,7 @@ impl Interpreter {
             && let Some(info) = self.container_type_metadata(&target)
             && let ValueView::Hash(map) = target.view()
         {
-            return self.dispatch_constrained_hash_raku(map, &info, target.hash_is_itemized());
+            return self.dispatch_constrained_hash_raku(&map, &info, target.hash_is_itemized());
         }
         // .raku/.perl on native typed shaped array (e.g. array[int])
         if matches!(method, "raku" | "perl")
@@ -3147,7 +3145,7 @@ impl Interpreter {
                 && crate::runtime::Interpreter::lazy_pipe_preserving_coercion(method))
         {
             let saved_env = self.env.clone();
-            let items = self.force_lazy_list_bridge(ll)?;
+            let items = self.force_lazy_list_bridge(&ll)?;
             if !matches!(method, "elems" | "hyper" | "race") {
                 self.env = saved_env;
             }
@@ -3188,7 +3186,7 @@ impl Interpreter {
         if method == "join"
             && let ValueView::LazyList(list) = target.view()
         {
-            let items = self.force_lazy_list_bridge(list)?;
+            let items = self.force_lazy_list_bridge(&list)?;
             return self.call_method_with_values(Value::real_array(items), method, args);
         }
 
@@ -3222,7 +3220,7 @@ impl Interpreter {
             ) && let Some(ValueView::Str(type_name)) =
                 attributes.as_map().get("name").map(|v| v.view())
             {
-                how_args.insert(0, Value::package(Symbol::intern(type_name)));
+                how_args.insert(0, Value::package(Symbol::intern(&type_name)));
             }
             return self.dispatch_classhow_method(method, how_args);
         }
@@ -3346,12 +3344,12 @@ impl Interpreter {
 
         // SharedPromise dispatch
         if let ValueView::Promise(shared) = target.view() {
-            return self.dispatch_promise_method(shared, method, args, &target);
+            return self.dispatch_promise_method(&shared, method, args, &target);
         }
 
         // SharedChannel dispatch
         if let ValueView::Channel(ch) = target.view() {
-            return self.dispatch_channel_method(ch, method, args);
+            return self.dispatch_channel_method(&ch, method, args);
         }
 
         // Promise::Vow forwards keep/break

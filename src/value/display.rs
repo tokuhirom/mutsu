@@ -23,7 +23,7 @@ pub(crate) fn user_facing_type_name(name: &str) -> &str {
 /// Format a value for display inside a Capture gist.
 fn capture_value_gist(v: &Value) -> String {
     match v.view() {
-        ValueView::Str(s) => format!("\"{}\"", s),
+        ValueView::Str(s) => format!("\"{}\"", *s),
         ValueView::Mixin(inner, mixins) => {
             if let Some(str_val) = mixins.get("Str") {
                 let str_s = str_val.to_string_value();
@@ -470,7 +470,7 @@ impl Value {
                 thread_local! {
                     static SEEN_ARR_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
                 }
-                let ptr = crate::gc::Gc::as_ptr(items) as usize;
+                let ptr = crate::gc::Gc::as_ptr(&items) as usize;
                 let is_cycle = SEEN_ARR_PTRS.with(|seen| {
                     let s = seen.borrow();
                     s.contains(&ptr)
@@ -519,7 +519,7 @@ impl Value {
                 thread_local! {
                     static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
                 }
-                let ptr = crate::gc::Gc::as_ptr(items) as usize;
+                let ptr = crate::gc::Gc::as_ptr(&items) as usize;
                 let is_cycle = SEEN_HASH_PTRS.with(|seen| {
                     let s = seen.borrow();
                     s.contains(&ptr)
@@ -925,7 +925,7 @@ impl Value {
                     .join(", ");
                 format!("{}({})", kind_str, elems)
             }
-            ValueView::Regex(pattern) => format!("/{}/", pattern),
+            ValueView::Regex(pattern) => format!("/{}/", *pattern),
             ValueView::RegexWithAdverbs(a) => {
                 let pattern = &a.pattern;
                 let global = &a.global;
@@ -998,7 +998,7 @@ impl Value {
                 let mut parts = Vec::new();
                 for v in positional.iter() {
                     match v.view() {
-                        ValueView::Str(s) => parts.push(format!("\"{}\"", s)),
+                        ValueView::Str(s) => parts.push(format!("\"{}\"", *s)),
                         _ => parts.push(v.to_string_value()),
                     }
                 }

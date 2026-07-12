@@ -279,16 +279,16 @@ impl Interpreter {
         }
         // Check consumed state for Seq: throw X::Seq::Consumed if not cached
         if let ValueView::Seq(items) = target.view() {
-            if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+            if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items) {
                 return Err(crate::value::seq_consumed_error());
             }
             // Mark as consumed only if not cached (cached Seqs allow multiple iterations)
-            if !crate::value::seq_is_cached(items) {
-                crate::value::seq_consume(items).ok();
+            if !crate::value::seq_is_cached(&items) {
+                crate::value::seq_consume(&items).ok();
             }
         }
         if let ValueView::Seq(items) = target.view() {
-            let seq_id = std::sync::Arc::as_ptr(items) as usize;
+            let seq_id = std::sync::Arc::as_ptr(&items) as usize;
             if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
                 for key in meta.revert_remove {
                     self.env.remove(&key);
@@ -388,7 +388,7 @@ impl Interpreter {
         }
         // .elems on a Seq caches it (makes it available for multiple calls)
         if let ValueView::Seq(items) = target.view() {
-            crate::value::seq_mark_cached(items);
+            crate::value::seq_mark_cached(&items);
         }
         Some(self.call_function("elems", vec![target]))
     }
@@ -472,7 +472,7 @@ impl Interpreter {
         if let Some(ValueView::Sub(sub_data)) = args.first().map(Value::view)
             && Self::body_contains_return(&sub_data.body)
         {
-            return Ok(self.create_lazy_map_list(items, sub_data));
+            return Ok(self.create_lazy_map_list(items, &sub_data));
         }
         let result = self.eval_map_over_items(args.first().cloned(), items)?;
         // .map() returns a Seq per Raku spec

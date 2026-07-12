@@ -34,7 +34,7 @@ impl Interpreter {
             && let ValueView::LazyList(list) = value.view()
             && !list.is_genuinely_lazy()
         {
-            let items = self.force_lazy_list_vm(list)?;
+            let items = self.force_lazy_list_vm(&list)?;
             value = Value::real_array(items);
             *self.stack.last_mut().unwrap() = value.clone();
         }

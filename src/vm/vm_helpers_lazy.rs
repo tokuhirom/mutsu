@@ -198,7 +198,7 @@ impl Interpreter {
             && ll.lazy_pipe.is_some()
             && ll.pipe_bottoms_out_finite()
         {
-            let items = self.force_lazy_list_vm(ll)?;
+            let items = self.force_lazy_list_vm(&ll)?;
             return Ok(Value::seq(items));
         }
         Ok(val)

@@ -64,7 +64,7 @@ impl Interpreter {
                             | "eqv"
                     ) =>
             {
-                let result = Self::cmp_ok_junction_thread(&left, &right, op);
+                let result = Self::cmp_ok_junction_thread(&left, &right, &op);
                 result.truthy()
             }
             ValueView::Str(op) => match op.as_str() {
@@ -87,12 +87,12 @@ impl Interpreter {
                 "eqv" => {
                     // Check if either side is a consumed Seq (throws X::Seq::Consumed)
                     if let ValueView::Seq(items) = left.view()
-                        && crate::value::seq_is_consumed(items)
+                        && crate::value::seq_is_consumed(&items)
                     {
                         return Err(crate::value::seq_consumed_error());
                     }
                     if let ValueView::Seq(items) = right.view()
-                        && crate::value::seq_is_consumed(items)
+                        && crate::value::seq_is_consumed(&items)
                     {
                         return Err(crate::value::seq_consumed_error());
                     }
@@ -123,7 +123,7 @@ impl Interpreter {
                 _ => {
                     return Err(RuntimeError::new(format!(
                         "cmp-ok: unsupported string operator '{}'",
-                        op
+                        *op
                     )));
                 }
             },
@@ -153,14 +153,14 @@ impl Interpreter {
                 .iter()
                 .map(|v| Self::cmp_ok_junction_thread(v, right, op))
                 .collect();
-            return Value::junction(kind.clone(), results);
+            return Value::junction(kind, results);
         }
         if let ValueView::Junction { kind, values } = right.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::cmp_ok_junction_thread(left, v, op))
                 .collect();
-            return Value::junction(kind.clone(), results);
+            return Value::junction(kind, results);
         }
         let ok = match op {
             "==" => super::super::to_float_value(left) == super::super::to_float_value(right),
@@ -191,7 +191,7 @@ impl Interpreter {
             None => String::new(),
         };
         let ok = match Self::positional_value(args, 1).map(Value::view) {
-            Some(ValueView::Regex(pat)) => self.regex_is_match(pat, &text),
+            Some(ValueView::Regex(pat)) => self.regex_is_match(&pat, &text),
             _ => false,
         };
         self.test_ok(ok, &desc, todo)?;
@@ -206,7 +206,7 @@ impl Interpreter {
             None => String::new(),
         };
         let ok = match Self::positional_value(args, 1).map(Value::view) {
-            Some(ValueView::Regex(pat)) => !self.regex_is_match(pat, &text),
+            Some(ValueView::Regex(pat)) => !self.regex_is_match(&pat, &text),
             _ => true,
         };
         self.test_ok(ok, &desc, todo)?;
@@ -310,7 +310,7 @@ impl Interpreter {
                 crate::value::Value::array_arc(items.clone().to_vec()),
                 ArrayKind::List,
             ),
-            ValueView::LazyList(list) => match self.force_lazy_list(list) {
+            ValueView::LazyList(list) => match self.force_lazy_list(&list) {
                 Ok(items) => Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     ArrayKind::List,
@@ -368,7 +368,7 @@ impl Interpreter {
             .collect();
         guts.sort_by_key(Self::junction_sort_key);
         Some(Value::array(vec![
-            Value::str(Self::junction_kind_name(kind).to_string()),
+            Value::str(Self::junction_kind_name(&kind).to_string()),
             Value::array(guts),
         ]))
     }
@@ -382,14 +382,14 @@ impl Interpreter {
                 .iter()
                 .map(|v| Self::eq_with_junctions(v, right))
                 .collect();
-            return Value::junction(kind.clone(), results);
+            return Value::junction(kind, results);
         }
         if let ValueView::Junction { kind, values } = right.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::eq_with_junctions(left, v))
                 .collect();
-            return Value::junction(kind.clone(), results);
+            return Value::junction(kind, results);
         }
         Value::truth(left.to_string_value() == right.to_string_value())
     }
@@ -402,14 +402,14 @@ impl Interpreter {
                 .iter()
                 .map(|v| Self::eqv_with_junctions(v, right))
                 .collect();
-            return Value::junction(kind.clone(), results);
+            return Value::junction(kind, results);
         }
         if let ValueView::Junction { kind, values } = right.view() {
             let results: Vec<Value> = values
                 .iter()
                 .map(|v| Self::eqv_with_junctions(left, v))
                 .collect();
-            return Value::junction(kind.clone(), results);
+            return Value::junction(kind, results);
         }
         Value::truth(left.eqv(right))
     }

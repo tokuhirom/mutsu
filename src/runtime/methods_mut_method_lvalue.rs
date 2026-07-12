@@ -304,7 +304,7 @@ impl Interpreter {
             if let Some(var_name) = target_var {
                 self.env.insert(
                     var_name.to_string(),
-                    Value::instance_sharing_cell(attributes, class_name, tid),
+                    Value::instance_sharing_cell(&attributes, class_name, tid),
                 );
             }
             return Ok(value);
@@ -323,7 +323,7 @@ impl Interpreter {
             let mut updated = (**source_hash).clone();
             updated.insert(key.to_string(), value.clone());
             let replacement = Value::hash(updated);
-            self.overwrite_hash_bindings_by_identity(source_hash, replacement);
+            self.overwrite_hash_bindings_by_identity(&source_hash, replacement);
             return Ok(value);
         }
         if method == "value" {
@@ -360,7 +360,7 @@ impl Interpreter {
                     // Enforce a typed container's `of`-type constraint, so
                     // `Pair.new("foo", my Int $).value = "bar"` raises
                     // X::TypeCheck::Assignment (S02-types/pair.t).
-                    if let Some(constraint) = crate::value::lookup_container_constraint(cell)
+                    if let Some(constraint) = crate::value::lookup_container_constraint(&cell)
                         && !matches!(constraint.as_str(), "Any" | "Mu")
                         && !value.is_nil()
                         && !self.type_matches_value(&constraint, &value)
@@ -622,7 +622,7 @@ impl Interpreter {
             if let Some(var_name) = target_var {
                 self.env.insert(
                     var_name.to_string(),
-                    Value::instance_sharing_cell(attributes, cn, target_id),
+                    Value::instance_sharing_cell(&attributes, cn, target_id),
                 );
             }
             return Ok(value);
@@ -678,7 +678,7 @@ impl Interpreter {
                     if let Some(var_name) = target_var {
                         self.env.insert(
                             var_name.to_string(),
-                            Value::write_back_sharing(attributes, cn, updated, target_id),
+                            Value::write_back_sharing(&attributes, cn, updated, target_id),
                         );
                     }
                     return Ok(assigned_value);
@@ -691,7 +691,13 @@ impl Interpreter {
                     && let Some(idx_val) = method_args.get(pos).cloned()
                 {
                     return self.assign_rw_indexed_attr(
-                        attributes, class_name, target_id, target_var, &attr, idx_val, is_pos,
+                        &attributes,
+                        class_name,
+                        target_id,
+                        target_var,
+                        &attr,
+                        idx_val,
+                        is_pos,
                         value,
                     );
                 }
@@ -743,7 +749,7 @@ impl Interpreter {
                     if let Some(var_name) = target_var {
                         self.env.insert(
                             var_name.to_string(),
-                            Value::write_back_sharing(attributes, cn, updated, target_id),
+                            Value::write_back_sharing(&attributes, cn, updated, target_id),
                         );
                     }
                     return Ok(assigned_value);

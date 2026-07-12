@@ -200,7 +200,7 @@ impl Interpreter {
                 ValueView::Seq(values) | ValueView::Slip(values) => {
                     items.extend(values.iter().cloned())
                 }
-                ValueView::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),
+                ValueView::LazyList(ll) => items.extend(self.force_lazy_list_bridge(&ll)?),
                 // Hash/Set/Bag/Mix classify their pairs (elem => True for Set,
                 // elem => count/weight for Bag/Mix), same as for-iteration.
                 ValueView::Hash(_)
@@ -261,7 +261,7 @@ impl Interpreter {
                 _ => Value::NIL,
             };
             let mapped = if let ValueView::LazyList(ll) = mapped.view() {
-                Value::array(self.force_lazy_list_bridge(ll)?)
+                Value::array(self.force_lazy_list_bridge(&ll)?)
             } else {
                 mapped
             };

@@ -146,7 +146,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                         ))
                     };
                     if let (Some((ap, an, asuf)), Some((bp, bn, bsuf))) =
-                        (split_numeric_core(a), split_numeric_core(b))
+                        (split_numeric_core(&a), split_numeric_core(&b))
                         && ap == bp
                         && asuf == bsuf
                         && let (Ok(mut n), Ok(e)) = (an.parse::<i128>(), bn.parse::<i128>())
@@ -178,7 +178,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                     // Multi-char string ranges: use string succession
                     let mut result = Vec::new();
                     let mut current = if excl_start {
-                        crate::runtime::Interpreter::string_succ(a)
+                        crate::runtime::Interpreter::string_succ(&a)
                     } else {
                         a.to_string()
                     };
@@ -197,7 +197,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             {
                 let mut result = Vec::new();
                 let mut current = if excl_start {
-                    crate::runtime::Interpreter::string_succ(a)
+                    crate::runtime::Interpreter::string_succ(&a)
                 } else {
                     a.to_string()
                 };
@@ -223,7 +223,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                 let end_f64 = end.as_ref().to_f64();
                 let mut result = Vec::new();
                 let mut current = if excl_start {
-                    crate::runtime::Interpreter::string_succ(a)
+                    crate::runtime::Interpreter::string_succ(&a)
                 } else {
                     a.to_string()
                 };
@@ -410,7 +410,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             // A WalkList flattens to its candidate closures in list context, so
             // `my @cands = $x.WALK(...)` yields the per-level candidates.
             if class_name.resolve() == "WalkList"
-                && let Some(items) = walk_list_candidates(attributes)
+                && let Some(items) = walk_list_candidates(&attributes)
             {
                 return items;
             }

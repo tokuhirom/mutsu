@@ -91,7 +91,6 @@ impl Interpreter {
         if let ValueView::Junction { kind, values } = index.view()
             && matches!(resolved.view(), ValueView::Hash(arc) if !arc.has_typed_keys())
         {
-            let kind = kind.clone();
             let junction_values = values.clone();
             let mut results = Vec::with_capacity(junction_values.len());
             for val in junction_values.iter() {
@@ -158,11 +157,7 @@ impl Interpreter {
     /// positions. Returns `None` for a single-index value (handled by the
     /// existing `index_to_usize` path instead) or an unconvertible index.
     fn slice_bind_indices(index: &Value) -> Option<Vec<usize>> {
-        let items: &[Value] = match index.view() {
-            ValueView::Array(items, _) => items,
-            ValueView::Seq(items) | ValueView::Slip(items) => items,
-            _ => return None,
-        };
+        let items: &[Value] = index.as_list_items()?;
         items.iter().map(Self::index_to_usize).collect()
     }
 
@@ -310,7 +305,7 @@ impl Interpreter {
                 self.exec_index_op_with_positional(is_positional)?;
                 results.push(self.stack.pop().unwrap_or(Value::NIL));
             }
-            self.stack.push(Value::junction(kind.clone(), results));
+            self.stack.push(Value::junction(kind, results));
             return Ok(());
         }
         // A Junction *key* autothreads over the subscript — EXCEPT on an object
@@ -337,7 +332,7 @@ impl Interpreter {
                 self.exec_index_op_with_positional(is_positional)?;
                 results.push(self.stack.pop().unwrap_or(Value::NIL));
             }
-            self.stack.push(Value::junction(kind.clone(), results));
+            self.stack.push(Value::junction(kind, results));
             return Ok(());
         }
         // If target is a HashEntryRef, resolve it to the actual value and re-index.
@@ -451,8 +446,8 @@ impl Interpreter {
                     _ => None,
                 };
                 match needed {
-                    Some(n) => self.force_scan_lazy_list(ll, n)?,
-                    None => self.force_lazy_list_vm(ll)?,
+                    Some(n) => self.force_scan_lazy_list(&ll, n)?,
+                    None => self.force_lazy_list_vm(&ll)?,
                 }
             } else if ll.coroutine.is_some()
                 || ll.lazy_pipe.is_some()
@@ -465,13 +460,13 @@ impl Interpreter {
                 // needed via bounded incremental pull.
                 match index.view() {
                     ValueView::Int(i) if i >= 0 => {
-                        self.force_lazy_list_vm_n(ll, (i as usize).saturating_add(1))?
+                        self.force_lazy_list_vm_n(&ll, (i as usize).saturating_add(1))?
                     }
                     ValueView::Range(_, end) if end >= 0 => {
-                        self.force_lazy_list_vm_n(ll, (end as usize).saturating_add(1))?
+                        self.force_lazy_list_vm_n(&ll, (end as usize).saturating_add(1))?
                     }
                     ValueView::RangeExcl(_, end) if end > 0 => {
-                        self.force_lazy_list_vm_n(ll, end as usize)?
+                        self.force_lazy_list_vm_n(&ll, end as usize)?
                     }
                     // A list of non-negative integer indices (`$s[2, 3]`): force
                     // only up to the largest index + 1, keeping the tail lazy so
@@ -492,12 +487,12 @@ impl Interpreter {
                             .map(|i| i as usize)
                             .max()
                             .unwrap_or(0);
-                        self.force_lazy_list_vm_n(ll, max.saturating_add(1))?
+                        self.force_lazy_list_vm_n(&ll, max.saturating_add(1))?
                     }
-                    _ => self.force_lazy_list_vm(ll)?,
+                    _ => self.force_lazy_list_vm(&ll)?,
                 }
             } else {
-                self.force_lazy_list_vm(ll)?
+                self.force_lazy_list_vm(&ll)?
             };
             target = Value::array(forced);
         }
@@ -505,10 +500,10 @@ impl Interpreter {
         if let ValueView::Seq(items) = target.view() {
             // Subscript on a consumed Seq throws X::Seq::Consumed.
             // Subscript on any Seq marks it as cached (can be used again).
-            if crate::value::seq_is_consumed(items) {
+            if crate::value::seq_is_consumed(&items) {
                 return Err(crate::value::seq_consumed_error());
             }
-            crate::value::seq_mark_cached(items);
+            crate::value::seq_mark_cached(&items);
             target = Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
@@ -523,7 +518,7 @@ impl Interpreter {
         // uniform handling in the match below.
         let is_lazy_index = matches!(index.view(), ValueView::LazyList(..));
         let index = if let ValueView::LazyList(ll) = index.view() {
-            let items = self.force_lazy_list_vm(ll)?;
+            let items = self.force_lazy_list_vm(&ll)?;
             Value::array(items)
         } else if let ValueView::Seq(items) = index.view() {
             Value::array_with_kind(
@@ -588,10 +583,10 @@ impl Interpreter {
                         keys.iter()
                             .map(|k| {
                                 let which = crate::runtime::utils::value_which_key(k);
-                                let v = self.resolve_hash_entry(items, &which);
+                                let v = self.resolve_hash_entry(&items, &which);
                                 let v = if v.is_nil() {
                                     let encoded = Value::hash_key_encode(k);
-                                    self.resolve_hash_entry(items, &encoded)
+                                    self.resolve_hash_entry(&items, &encoded)
                                 } else {
                                     v
                                 };
@@ -611,11 +606,11 @@ impl Interpreter {
                     )));
                 }
                 let which = crate::runtime::utils::value_which_key(&index);
-                let v = self.resolve_hash_entry(items, &which);
+                let v = self.resolve_hash_entry(&items, &which);
                 // Fall back to hash_key_encode format (for hashes built from lists)
                 let v = if v.is_nil() {
                     let encoded = Value::hash_key_encode(&index);
-                    self.resolve_hash_entry(items, &encoded)
+                    self.resolve_hash_entry(&items, &encoded)
                 } else {
                     v
                 };
@@ -674,7 +669,7 @@ impl Interpreter {
                 } else {
                     let default = self
                         .typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
-                    self.resolve_array_entry(items, is_arr, i as usize, default)
+                    self.resolve_array_entry(&items, is_arr, i as usize, default)
                 }
             }
             (ValueView::Array(..), ValueView::Array(indices, ..)) => {
@@ -730,7 +725,7 @@ impl Interpreter {
                             out.push(self.stack.pop().unwrap_or(Value::NIL));
                         // Range index in a multi-index context produces a sublist
                         } else if let Some(range_items) =
-                            Self::resolve_range_index_slice(effective_idx, items, kind, len, self)
+                            Self::resolve_range_index_slice(effective_idx, &items, kind, len, self)
                         {
                             out.push(Value::array(range_items));
                         } else if let Some(i) = Self::index_to_usize(effective_idx) {
@@ -739,7 +734,7 @@ impl Interpreter {
                                 break;
                             }
                             let def = self.typed_container_default(&target);
-                            out.push(self.resolve_array_entry(items, kind, i, def));
+                            out.push(self.resolve_array_entry(&items, kind, i, def));
                         } else if !is_lazy_index {
                             out.push(self.typed_container_default(&target));
                         }
@@ -767,7 +762,7 @@ impl Interpreter {
                 let default = self.typed_container_default(&source);
                 let mut slice = Vec::new();
                 for i in start..=end {
-                    slice.push(self.resolve_array_entry(items, kind, i, default.clone()));
+                    slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
                 }
                 self.slice_result_value(&source, slice)
             }
@@ -785,7 +780,7 @@ impl Interpreter {
                     let default = self.typed_container_default(&source);
                     let mut slice = Vec::with_capacity(end_excl - start);
                     for i in start..end_excl {
-                        slice.push(self.resolve_array_entry(items, kind, i, default.clone()));
+                        slice.push(self.resolve_array_entry(&items, kind, i, default.clone()));
                     }
                     self.slice_result_value(&source, slice)
                 }
@@ -796,20 +791,20 @@ impl Interpreter {
                 if n < 0.0 {
                     default
                 } else {
-                    self.resolve_array_entry(items, is_arr, n as usize, default)
+                    self.resolve_array_entry(&items, is_arr, n as usize, default)
                 }
             }
             (ValueView::Array(items, is_arr), ValueView::Rat(n, d)) if d != 0 => {
                 let default =
                     self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
                 let i = (n as f64 / d as f64) as usize;
-                self.resolve_array_entry(items, is_arr, i, default)
+                self.resolve_array_entry(&items, is_arr, i, default)
             }
             (ValueView::Array(items, is_arr), ValueView::FatRat(n, d)) if d != 0 => {
                 let default =
                     self.typed_container_default(&Value::array_with_kind(items.clone(), is_arr));
                 let i = (n as f64 / d as f64) as usize;
-                self.resolve_array_entry(items, is_arr, i, default)
+                self.resolve_array_entry(&items, is_arr, i, default)
             }
             (ValueView::Array(items, is_arr), ValueView::BigRat(_, d)) if !d.is_zero() => {
                 let default =
@@ -818,7 +813,7 @@ impl Interpreter {
                 if idx < 0.0 {
                     default
                 } else {
-                    self.resolve_array_entry(items, is_arr, idx as usize, default)
+                    self.resolve_array_entry(&items, is_arr, idx as usize, default)
                 }
             }
             (ValueView::Seq(items), ValueView::Int(i)) => {
@@ -904,18 +899,18 @@ impl Interpreter {
                 Value::array(
                     keys.iter()
                         .map(|k| {
-                            let v = self.resolve_hash_entry(items, &k.to_string_value());
+                            let v = self.resolve_hash_entry(&items, &k.to_string_value());
                             if v.is_nil() { default.clone() } else { v }
                         })
                         .collect(),
                 )
             }
             (ValueView::Hash(items), ValueView::Str(key)) => {
-                let v = self.resolve_hash_entry(items, key);
+                let v = self.resolve_hash_entry(&items, &key);
                 if v.is_nil() {
                     if self.hash_autovivify {
                         Value::hash_with_data(items.clone())
-                            .hash_autovivify(key)
+                            .hash_autovivify(&key)
                             .unwrap_or(Value::NIL)
                     } else {
                         self.typed_container_default(&Value::hash_with_data(items.clone()))
@@ -926,7 +921,7 @@ impl Interpreter {
             }
             (ValueView::Hash(items), ValueView::Int(key)) => {
                 let key_str = key.to_string();
-                let v = self.resolve_hash_entry(items, &key_str);
+                let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
                     if self.hash_autovivify {
                         Value::hash_with_data(items.clone())
@@ -965,7 +960,7 @@ impl Interpreter {
             }
             (ValueView::Hash(items), _) => {
                 let key_str = index.to_string_value();
-                let v = self.resolve_hash_entry(items, &key_str);
+                let v = self.resolve_hash_entry(&items, &key_str);
                 if v.is_nil() {
                     if self.hash_autovivify {
                         Value::hash_with_data(items.clone())
@@ -1866,7 +1861,7 @@ impl Interpreter {
                             items.clone(),
                             is_arr,
                         ));
-                        self.resolve_array_entry(items, is_arr, i as usize, default)
+                        self.resolve_array_entry(&items, is_arr, i as usize, default)
                     }
                 } else {
                     Self::make_assoc_indexing_failure("Array")

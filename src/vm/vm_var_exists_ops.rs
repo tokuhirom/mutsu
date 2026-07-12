@@ -114,35 +114,37 @@ impl Interpreter {
                         // Multi-dimensional hash path (%h{a;b;c}:exists): if we can
                         // traverse through nested hashes, treat this as a single exists.
                         if items.len() > 1 {
-                            let mut cur: &Value = &target;
+                            // `cur` is owned: a `&Value` obtained through a view
+                            // guard could not outlive the guard's borrow.
+                            let mut cur: Value = target.clone();
                             let mut traversed_nested = false;
                             let mut path_exists: Option<bool> = None;
                             for (i, key) in items.iter().enumerate() {
-                                if let ValueView::Hash(cur_map) = cur.view() {
+                                let next = if let ValueView::Hash(cur_map) = cur.view() {
                                     let key_s = key.to_string_value();
-                                    if let Some(next) = cur_map.get(&key_s) {
-                                        if i + 1 == items.len() {
-                                            path_exists =
-                                                Some(!matches!(next.view(), ValueView::Nil));
-                                        } else if matches!(next.view(), ValueView::Hash(_)) {
-                                            traversed_nested = true;
-                                            cur = next;
-                                        } else if traversed_nested {
-                                            path_exists = Some(false);
-                                            break;
-                                        } else {
-                                            break;
-                                        }
-                                    } else {
-                                        if traversed_nested {
-                                            path_exists = Some(false);
-                                        }
-                                        break;
-                                    }
+                                    cur_map.get(&key_s).cloned()
                                 } else if traversed_nested {
                                     path_exists = Some(false);
                                     break;
                                 } else {
+                                    break;
+                                };
+                                if let Some(next) = next {
+                                    if i + 1 == items.len() {
+                                        path_exists = Some(!matches!(next.view(), ValueView::Nil));
+                                    } else if matches!(next.view(), ValueView::Hash(_)) {
+                                        traversed_nested = true;
+                                        cur = next;
+                                    } else if traversed_nested {
+                                        path_exists = Some(false);
+                                        break;
+                                    } else {
+                                        break;
+                                    }
+                                } else {
+                                    if traversed_nested {
+                                        path_exists = Some(false);
+                                    }
                                     break;
                                 }
                             }
@@ -590,17 +592,21 @@ impl Interpreter {
             return Ok(());
         }
 
+        // Owned clone of the array backing (a view guard's borrow cannot
+        // outlive the match), so the slice stays valid below.
+        let arr_data: Option<(crate::gc::Gc<crate::value::ArrayData>, bool)> = match target.view() {
+            ValueView::Array(items, kind) => {
+                Some((items.clone(), kind == crate::value::ArrayKind::Shaped))
+            }
+            _ => None,
+        };
         let (items, is_shaped, arr_initialized): (
             &[Value],
             bool,
             Option<&std::collections::HashSet<usize>>,
-        ) = match target.view() {
-            ValueView::Array(items, kind) => (
-                items.as_slice(),
-                kind == crate::value::ArrayKind::Shaped,
-                items.initialized.as_ref(),
-            ),
-            _ => (&[] as &[Value], false, None),
+        ) = match &arr_data {
+            Some((data, shaped)) => (data.as_slice(), *shaped, data.initialized.as_ref()),
+            None => (&[] as &[Value], false, None),
         };
         // An in-range slot exists unless it is a `Nil` (deleted) or an
         // autovivification gap (`Package("Any")` not in the embedded

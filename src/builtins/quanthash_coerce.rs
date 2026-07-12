@@ -216,7 +216,7 @@ fn pair_weight(v: &Value) -> Result<BigInt, RuntimeError> {
                 Ok(i) => Ok(i),
                 Err(_) => Err(RuntimeError::new(format!(
                     "X::Str::Numeric: Cannot convert string '{}' to a number",
-                    s
+                    *s
                 ))),
             }
         }
@@ -491,7 +491,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                 if n.is_infinite() || n.is_nan() {
                     let mut err = RuntimeError::new(format!(
                         "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}' (Str)",
-                        s
+                        *s
                     ));
                     err.exception = Some(Box::new(Value::make_instance(
                         crate::symbol::Symbol::intern("X::Str::Numeric"),
@@ -513,7 +513,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
             } else {
                 let mut err = RuntimeError::new(format!(
                     "Cannot convert string to number: base-10 number must begin with valid digits or '.' in '{}' (Str)",
-                    s
+                    *s
                 ));
                 err.exception = Some(Box::new(Value::make_instance(
                     crate::symbol::Symbol::intern("X::Str::Numeric"),

@@ -384,7 +384,7 @@ impl Interpreter {
                 ValueView::Str(s) => s.parse::<usize>().map_err(|_| {
                     RuntimeError::new(format!(
                         "X::Str::Numeric: Cannot convert string '{}' to a number",
-                        s
+                        *s
                     ))
                 })?,
                 _ => arg.to_f64() as usize,

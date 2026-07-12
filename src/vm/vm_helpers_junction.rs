@@ -23,14 +23,14 @@ impl Interpreter {
                 values: right_values,
             },
         ) = (left.view(), right.view())
-            && Self::thread_right_first(left_kind, right_kind)
+            && Self::thread_right_first(&left_kind, &right_kind)
         {
             let results: Result<Vec<Value>, RuntimeError> = right_values
                 .iter()
                 .cloned()
                 .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
                 .collect();
-            return Ok(Value::junction(right_kind.clone(), results?));
+            return Ok(Value::junction(right_kind, results?));
         }
         if let ValueView::Junction { kind, values } = left.view() {
             let results: Result<Vec<Value>, RuntimeError> = values
@@ -38,7 +38,7 @@ impl Interpreter {
                 .cloned()
                 .map(|v| self.eval_binary_with_junctions(v, right.clone(), f))
                 .collect();
-            return Ok(Value::junction(kind.clone(), results?));
+            return Ok(Value::junction(kind, results?));
         }
         if let ValueView::Junction { kind, values } = right.view() {
             let results: Result<Vec<Value>, RuntimeError> = values
@@ -46,7 +46,7 @@ impl Interpreter {
                 .cloned()
                 .map(|v| self.eval_binary_with_junctions(left.clone(), v, f))
                 .collect();
-            return Ok(Value::junction(kind.clone(), results?));
+            return Ok(Value::junction(kind, results?));
         }
         // Force LazyList values before arithmetic/comparison operations
         let left = self.force_lazy_if_needed(left)?;
@@ -112,7 +112,7 @@ impl Interpreter {
                 values: right_values,
             },
         ) = (left.view(), right.view())
-            && Self::thread_right_first(left_kind, right_kind)
+            && Self::thread_right_first(&left_kind, &right_kind)
         {
             let results: Result<Vec<Value>, RuntimeError> = right_values
                 .iter()
@@ -127,7 +127,7 @@ impl Interpreter {
                 })
                 .collect();
             // Smartmatch collapses junctions to Bool
-            let junction = Value::junction(right_kind.clone(), results?);
+            let junction = Value::junction(right_kind, results?);
             return Ok(Value::truth(junction.truthy()));
         }
         if let ValueView::Junction { kind, values } = left.view() {
@@ -147,7 +147,7 @@ impl Interpreter {
                     )
                 })
                 .collect();
-            let junction = Value::junction(kind.clone(), results?);
+            let junction = Value::junction(kind, results?);
             if keep_junction {
                 return Ok(junction);
             }
@@ -175,7 +175,7 @@ impl Interpreter {
                 }
             }
             // Smartmatch collapses junctions to Bool
-            let junction = Value::junction(kind.clone(), results);
+            let junction = Value::junction(kind, results);
             return Ok(Value::truth(junction.truthy()));
         }
         self.smart_match_op(left, right, rhs_is_match_regex)

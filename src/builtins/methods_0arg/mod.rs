@@ -332,8 +332,8 @@ pub(crate) fn native_method_0arg(
         if method == "cache" {
             // .cache marks as cached; handled fully here (the actual cache impl is
             // in the per-method handler below, this just marks state).
-            crate::value::seq_mark_cached(items);
-        } else if method == "is-lazy" && crate::value::seq_is_consumed(items) {
+            crate::value::seq_mark_cached(&items);
+        } else if method == "is-lazy" && crate::value::seq_is_consumed(&items) {
             // Read-only check: throws on consumed Seq but does NOT consume.
             return Some(Err(crate::value::seq_consumed_error()));
         }
@@ -477,7 +477,7 @@ pub(crate) fn native_method_0arg(
         {
             let inner_which = match inner.as_ref().view() {
                 ValueView::Int(n) => format!("Int|{}", n),
-                ValueView::BigInt(n) => format!("Int|{}", n),
+                ValueView::BigInt(n) => format!("Int|{}", *n),
                 ValueView::Num(n) => format!("Num|{}", n),
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
                 ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
@@ -549,7 +549,7 @@ pub(crate) fn native_method_0arg(
                 } else if let Ok(f) = s.parse::<f64>() {
                     Value::num(f)
                 } else {
-                    parse_raku_int_from_str(s)?
+                    parse_raku_int_from_str(&s)?
                 };
                 return native_method_0arg(&coerced, method_sym);
             }
@@ -822,7 +822,7 @@ pub(crate) fn is_value_lazy(value: &Value) -> bool {
     matches!(value.view(), ValueView::LazyList(_))
         || matches!(value.view(), ValueView::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
-        || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(items))
+        || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(&items))
 }
 
 /// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.
@@ -967,14 +967,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
 
     // Date/DateTime 0-arg methods
     match target.view() {
-        ValueView::Instance { attributes, .. } if has_datetime_attrs(attributes) => {
+        ValueView::Instance { attributes, .. } if has_datetime_attrs(&attributes) => {
             if let Some(result) =
                 temporal_dispatch::datetime_method_0arg(&(attributes).as_map(), method)
             {
                 return Some(result);
             }
         }
-        ValueView::Instance { attributes, .. } if has_date_attrs(attributes) => {
+        ValueView::Instance { attributes, .. } if has_date_attrs(&attributes) => {
             if let Some(result) =
                 temporal_dispatch::date_method_0arg(&(attributes).as_map(), method)
             {
@@ -1383,7 +1383,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     let mut out = String::new();
                     for frame in &frames {
                         if let ValueView::Instance { attributes: fa, .. } = frame.view() {
-                            let is_routine = backtrace_frame_is_routine(fa);
+                            let is_routine = backtrace_frame_is_routine(&fa);
                             // is-hidden / is-setting are always false here (mutsu
                             // does not track hidden or CORE-setting frames).
                             // concise: only non-hidden, non-setting routines.
@@ -1391,7 +1391,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                             // non-setting (i.e. everything here).
                             let keep = if want_summary { true } else { is_routine };
                             if keep {
-                                out.push_str(&backtrace_frame_str(fa));
+                                out.push_str(&backtrace_frame_str(&fa));
                             }
                         }
                     }
@@ -1430,7 +1430,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .unwrap_or(Value::int(0))));
                 }
                 "Str" | "gist" => {
-                    return Some(Ok(Value::str(backtrace_frame_str(attributes))));
+                    return Some(Ok(Value::str(backtrace_frame_str(&attributes))));
                 }
                 "code" => {
                     // The Code object for this frame. mutsu does not retain the
@@ -1455,7 +1455,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .unwrap_or(Value::str(String::new()))));
                 }
                 "is-routine" => {
-                    return Some(Ok(Value::truth(backtrace_frame_is_routine(attributes))));
+                    return Some(Ok(Value::truth(backtrace_frame_is_routine(&attributes))));
                 }
                 "is-hidden" | "is-setting" => {
                     // mutsu does not track hidden or CORE-setting frames.

@@ -240,10 +240,10 @@ impl Interpreter {
                     // Collect all non-lazy prefix items and peek into lazy list
                     // to detect the arithmetic step, then generate indices.
                     let mut seed_values: Vec<i64> = Vec::new();
-                    let mut lazy_ref: Option<&crate::value::LazyList> = None;
+                    let mut lazy_ref: Option<crate::gc::Gc<crate::value::LazyList>> = None;
                     for item in items.iter() {
                         if let ValueView::LazyList(ll) = item.view() {
-                            lazy_ref = Some(ll.as_ref());
+                            lazy_ref = Some(ll.clone());
                             // Peek at the first cached element to get the next seed
                             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
                                 for cv in cached.iter() {
@@ -287,7 +287,7 @@ impl Interpreter {
                         Self::validate_nth_value(seed_values[0])?;
                         indices.push(seed_values[0] as usize);
                         if let Some(ll) = lazy_ref {
-                            let forced = self.force_lazy_list(ll)?;
+                            let forced = self.force_lazy_list(&ll)?;
                             let filtered: Vec<Value> = forced
                                 .into_iter()
                                 .filter(|v| !matches!(v.view(), ValueView::LazyList(_)))
@@ -296,7 +296,7 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    Self::collect_nth_list_indices(items, total_matches, &mut indices)?;
+                    Self::collect_nth_list_indices(&items, total_matches, &mut indices)?;
                 }
             }
             ValueView::Seq(items) | ValueView::Slip(items) => {
@@ -310,10 +310,10 @@ impl Interpreter {
                     // Collect all non-lazy prefix items and peek into lazy list
                     // to detect the arithmetic step, then generate indices.
                     let mut seed_values: Vec<i64> = Vec::new();
-                    let mut lazy_ref: Option<&crate::value::LazyList> = None;
+                    let mut lazy_ref: Option<crate::gc::Gc<crate::value::LazyList>> = None;
                     for item in items.iter() {
                         if let ValueView::LazyList(ll) = item.view() {
-                            lazy_ref = Some(ll.as_ref());
+                            lazy_ref = Some(ll.clone());
                             // Peek at the first cached element to get the next seed
                             if let Some(cached) = ll.cache.lock().unwrap().as_ref() {
                                 for cv in cached.iter() {
@@ -357,7 +357,7 @@ impl Interpreter {
                         Self::validate_nth_value(seed_values[0])?;
                         indices.push(seed_values[0] as usize);
                         if let Some(ll) = lazy_ref {
-                            let forced = self.force_lazy_list(ll)?;
+                            let forced = self.force_lazy_list(&ll)?;
                             let filtered: Vec<Value> = forced
                                 .into_iter()
                                 .filter(|v| !matches!(v.view(), ValueView::LazyList(_)))
@@ -366,7 +366,7 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    Self::collect_nth_list_indices(items, total_matches, &mut indices)?;
+                    Self::collect_nth_list_indices(&items, total_matches, &mut indices)?;
                 }
             }
             ValueView::Range(start, end) => {
@@ -416,7 +416,7 @@ impl Interpreter {
                 }
             }
             ValueView::LazyList(ll) => {
-                let forced = self.force_lazy_list_bridge(ll)?;
+                let forced = self.force_lazy_list_bridge(&ll)?;
                 Self::collect_nth_list_indices(&forced, total_matches, &mut indices)?;
             }
             // Bare `*` selects the last match.

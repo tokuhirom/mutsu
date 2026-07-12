@@ -61,7 +61,7 @@ impl Interpreter {
                     .iter()
                     .map(|v| Self::contains_value(hay, v, ignore_case))
                     .collect::<Vec<_>>();
-                Value::junction(kind.clone(), mapped)
+                Value::junction(kind, mapped)
             }
             _ => {
                 let needle = needle.to_string_value();

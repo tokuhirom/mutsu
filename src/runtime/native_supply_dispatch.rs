@@ -259,7 +259,7 @@ impl Interpreter {
 
                 let mut parts: Vec<Value> = match needle.view() {
                     ValueView::Regex(pat) => {
-                        let matches = self.regex_find_all(pat, &source);
+                        let matches = self.regex_find_all(&pat, &source);
                         if matches.is_empty() {
                             vec![Value::str(source)]
                         } else {

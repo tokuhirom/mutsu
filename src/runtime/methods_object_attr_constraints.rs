@@ -339,7 +339,10 @@ impl Interpreter {
             let mut updated = attributes.to_map();
             updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
             Ok(Value::write_back_sharing(
-                attributes, class_name, updated, id,
+                &attributes,
+                class_name,
+                updated,
+                id,
             ))
         } else {
             Ok(date)

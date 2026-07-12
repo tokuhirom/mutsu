@@ -41,8 +41,8 @@ pub(crate) fn check_str_numeric(value: &Value) -> Result<(), RuntimeError> {
         },
         _ => return Ok(()),
     };
-    if let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(s) {
-        return Err(str_numeric_error(s, pos, &reason));
+    if let Some((pos, reason)) = crate::runtime::str_numeric::str_numeric_failure(&s) {
+        return Err(str_numeric_error(&s, pos, &reason));
     }
     Ok(())
 }

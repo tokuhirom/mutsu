@@ -103,12 +103,12 @@ pub(super) fn dispatch_temporal_method(
             class_name,
             attributes,
             ..
-        } if has_date_attrs(attributes) && !has_datetime_attrs(attributes) => {
+        } if has_date_attrs(&attributes) && !has_datetime_attrs(&attributes) => {
             let (year, month, day) = temporal::date_attrs(&(attributes).as_map());
             match method {
                 "later" | "earlier" => Some(
                     date_later_earlier(year, month, day, args, method)
-                        .map(|v| rebless_date_result(v, class_name, attributes)),
+                        .map(|v| rebless_date_result(v, class_name, &attributes)),
                 ),
                 // `.yyyy-mm-dd($sep)` / `.mm-dd-yyyy($sep)` / `.dd-mm-yyyy($sep)`
                 // with an optional separator string (default `-`).
@@ -125,12 +125,12 @@ pub(super) fn dispatch_temporal_method(
                     let existing_formatter = attributes.as_map().get("formatter").cloned();
                     Some(
                         date_clone(year, month, day, existing_formatter, args)
-                            .map(|v| rebless_date_result(v, class_name, attributes)),
+                            .map(|v| rebless_date_result(v, class_name, &attributes)),
                     )
                 }
                 "truncated-to" => Some(
                     date_truncated_to(year, month, day, args)
-                        .map(|v| rebless_date_result(v, class_name, attributes)),
+                        .map(|v| rebless_date_result(v, class_name, &attributes)),
                 ),
                 "in-timezone" => {
                     // Date.in-timezone returns a DateTime
@@ -161,7 +161,7 @@ pub(super) fn dispatch_temporal_method(
             class_name,
             attributes,
             ..
-        } if has_datetime_attrs(attributes) => {
+        } if has_datetime_attrs(&attributes) => {
             let (year, month, day, hour, minute, second, timezone) =
                 temporal::datetime_attrs(&(attributes).as_map());
             match method {
@@ -169,15 +169,15 @@ pub(super) fn dispatch_temporal_method(
                     datetime_later_earlier(
                         year, month, day, hour, minute, second, timezone, args, method,
                     )
-                    .map(|v| rebless_datetime_result(v, class_name, attributes)),
+                    .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                 ),
                 "clone" => Some(
                     datetime_clone(year, month, day, hour, minute, second, timezone, args)
-                        .map(|v| rebless_datetime_result(v, class_name, attributes)),
+                        .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                 ),
                 "truncated-to" => Some(
                     datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
-                        .map(|v| rebless_datetime_result(v, class_name, attributes)),
+                        .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                 ),
                 "in-timezone" => {
                     if let Some(arg) = args.first() {
@@ -186,14 +186,14 @@ pub(super) fn dispatch_temporal_method(
                             datetime_in_timezone(
                                 year, month, day, hour, minute, second, timezone, new_tz,
                             )
-                            .map(|v| rebless_datetime_result(v, class_name, attributes)),
+                            .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                         )
                     } else {
                         Some(
                             Ok(temporal::make_datetime(
                                 year, month, day, hour, minute, second, timezone,
                             ))
-                            .map(|v| rebless_datetime_result(v, class_name, attributes)),
+                            .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                         )
                     }
                 }

@@ -282,7 +282,7 @@ pub(crate) fn sort_items_generic(
         Some(c) if arity >= 2 => {
             if let ValueView::Sub(data) = c.view() {
                 // `{ $^a <=> $^b }` and friends: compare inline, no call at all.
-                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
+                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data) {
                     merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
                         let (l, r) = if reverse { (b, a) } else { (a, b) };
                         if is_string_cmp {
@@ -294,7 +294,8 @@ pub(crate) fn sort_items_generic(
                     return;
                 }
                 // `{ $^a.method <=> $^b.method }`: Schwartzian over the keys.
-                if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(data) {
+                if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(&data)
+                {
                     let keys: Vec<Value> = items
                         .iter()
                         .map(|item| caller.call_method(item.clone(), &method_name))
@@ -324,7 +325,7 @@ pub(crate) fn sort_items_generic(
             // arity <= 1: mapper. `{ .method }` is a Schwartzian over a 0-arg
             // method; any other 1-arity callable is a Schwartzian over the block.
             if let ValueView::Sub(data) = c.view()
-                && let Some(method_name) = detect_simple_mapper_block(data)
+                && let Some(method_name) = detect_simple_mapper_block(&data)
             {
                 let keys: Vec<Value> = items
                     .iter()
@@ -356,7 +357,7 @@ pub(crate) fn sort_indices_generic(
     match callable {
         Some(c) if arity >= 2 => {
             if let ValueView::Sub(data) = c.view() {
-                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(data) {
+                if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data) {
                     merge_sort_indices(&mut perm, items, &mut |a, b| {
                         let (l, r) = if reverse { (b, a) } else { (a, b) };
                         if is_string_cmp {
@@ -367,7 +368,8 @@ pub(crate) fn sort_indices_generic(
                     });
                     return perm.into_iter().map(|i| Value::int(i as i64)).collect();
                 }
-                if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(data) {
+                if let Some((method_name, reverse, is_string_cmp)) = detect_method_cmp_block(&data)
+                {
                     let keys: Vec<Value> = items
                         .iter()
                         .map(|item| caller.call_method(item.clone(), &method_name))
@@ -391,7 +393,7 @@ pub(crate) fn sort_indices_generic(
         }
         Some(c) => {
             let keys: Vec<Value> = if let ValueView::Sub(data) = c.view()
-                && let Some(method_name) = detect_simple_mapper_block(data)
+                && let Some(method_name) = detect_simple_mapper_block(&data)
             {
                 items
                     .iter()

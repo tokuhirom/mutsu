@@ -127,7 +127,7 @@ pub(in crate::runtime) fn coerce_value(target: &str, value: Value) -> Value {
             ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
                 Value::complex(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0), 0.0)
             }
-            ValueView::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(s) {
+            ValueView::Str(s) => match crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
                 Some(parsed) => match parsed.view() {
                     ValueView::Complex(re, im) => Value::complex(re, im),
                     ValueView::Int(n) => Value::complex(n as f64, 0.0),

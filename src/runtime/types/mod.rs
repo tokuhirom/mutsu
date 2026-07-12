@@ -299,7 +299,7 @@ impl Interpreter {
                 updated_attrs.insert(attr_name.to_string(), value.clone());
                 self.env.insert(
                     "self".to_string(),
-                    Value::write_back_sharing(attributes, class_name, updated_attrs, id),
+                    Value::write_back_sharing(&attributes, class_name, updated_attrs, id),
                 );
             }
         }

@@ -158,7 +158,7 @@ impl Interpreter {
         {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
-            self.exec_for_loop_lazy_gather(code, spec, ll, body_start, loop_end, compiled_fns)?;
+            self.exec_for_loop_lazy_gather(code, spec, &ll, body_start, loop_end, compiled_fns)?;
             *ip = loop_end;
             return Ok(());
         }
@@ -170,12 +170,12 @@ impl Interpreter {
         // second `for @$s` would spuriously throw (surfaced by Zef::Pluggable
         // iterating `@$backend` across two calls).
         if let ValueView::Seq(arc) = iterable.view()
-            && !crate::value::seq_is_cached(arc)
+            && !crate::value::seq_is_cached(&arc)
         {
-            crate::value::seq_consume(arc)?;
+            crate::value::seq_consume(&arc)?;
         }
         let raw_items = if let ValueView::LazyList(ll) = iterable.view() {
-            self.force_lazy_list_vm(ll)?
+            self.force_lazy_list_vm(&ll)?
         } else if let ValueView::Channel(ch) = iterable.view() {
             // Drain the channel synchronously, blocking on receive until the
             // channel is closed. Propagate any failure as an exception so the
@@ -206,7 +206,7 @@ impl Interpreter {
             // `for %h` / `for %h -> $p`: bind each pair's value to a live
             // `HashEntryRef` so an in-loop `%h{$p.key} = X` is observable through
             // a later `$p.value` read (raku's live hash-iteration pairs).
-            Self::hash_live_pairs(gc, iterable.hash_is_itemized())
+            Self::hash_live_pairs(&gc, iterable.hash_is_itemized())
         } else {
             runtime::value_to_list(&iterable)
         };

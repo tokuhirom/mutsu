@@ -208,7 +208,7 @@ impl Interpreter {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
             let local_val = self.locals[slot].clone();
             if let ValueView::ContainerRef(arc) = local_val.view() {
-                if self.atomic_container_incdec(arc, name, true, true) {
+                if self.atomic_container_incdec(&arc, name, true, true) {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
@@ -240,7 +240,7 @@ impl Interpreter {
         // Use an atomic read-modify-write under the cell lock so concurrent
         // `start { $shared++ }` blocks don't lose updates (Track C).
         if let ValueView::ContainerRef(arc) = raw_val.view() {
-            if self.atomic_container_incdec(arc, name, true, true) {
+            if self.atomic_container_incdec(&arc, name, true, true) {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();
@@ -302,7 +302,7 @@ impl Interpreter {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
             let local_val = self.locals[slot].clone();
             if let ValueView::ContainerRef(arc) = local_val.view() {
-                if self.atomic_container_incdec(arc, name, false, true) {
+                if self.atomic_container_incdec(&arc, name, false, true) {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
@@ -333,7 +333,7 @@ impl Interpreter {
         // ContainerRef: deref for decrement, write back through the shared container.
         // Atomic RMW under the cell lock for concurrent `start` blocks (Track C).
         if let ValueView::ContainerRef(arc) = raw_val.view() {
-            if self.atomic_container_incdec(arc, name, false, true) {
+            if self.atomic_container_incdec(&arc, name, false, true) {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();

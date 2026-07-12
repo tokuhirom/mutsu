@@ -7,7 +7,6 @@ impl Interpreter {
         let val = loan_env!(self, auto_fetch_proxy(&val))?;
         // Junction auto-threading for prefix:<+>
         if let ValueView::Junction { kind, values } = val.view() {
-            let kind = kind.clone();
             let mut results = Vec::new();
             for v in values.iter() {
                 self.stack.push(v.clone());
@@ -81,7 +80,7 @@ impl Interpreter {
                 self.stack.push(count.clone());
                 return Ok(());
             }
-            let items = self.force_lazy_list_vm(ll)?;
+            let items = self.force_lazy_list_vm(&ll)?;
             Value::seq(items)
         } else {
             val
@@ -98,7 +97,7 @@ impl Interpreter {
                 // A bad numeric string yields a lazy `X::Str::Numeric` Failure
                 // carrying `source`/`pos`/`reason`/`source-indicator` attributes.
                 self.stack
-                    .push(crate::builtins::methods_0arg::str_numeric_failure(s));
+                    .push(crate::builtins::methods_0arg::str_numeric_failure(&s));
             }
             return Ok(());
         }
@@ -246,7 +245,7 @@ impl Interpreter {
             // ContainerRef: increment through the shared arc (e.g. `$!attr := outer_var`).
             let local_val = self.locals[slot].clone();
             if let ValueView::ContainerRef(arc) = local_val.view() {
-                if self.atomic_container_incdec(arc, name, true, false) {
+                if self.atomic_container_incdec(&arc, name, true, false) {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
@@ -300,7 +299,7 @@ impl Interpreter {
         // closures over this lexical observe the change and the smart string/Int
         // increment semantics are preserved (the slot holds the same Arc).
         if let ValueView::ContainerRef(arc) = val.view() {
-            if self.atomic_container_incdec(arc, name, true, false) {
+            if self.atomic_container_incdec(&arc, name, true, false) {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();
@@ -363,7 +362,7 @@ impl Interpreter {
             // ContainerRef: decrement through the shared arc (e.g. `$!attr := outer_var`).
             let local_val = self.locals[slot].clone();
             if let ValueView::ContainerRef(arc) = local_val.view() {
-                if self.atomic_container_incdec(arc, name, false, false) {
+                if self.atomic_container_incdec(&arc, name, false, false) {
                     return Ok(());
                 }
                 let inner = arc.lock().unwrap().clone();
@@ -417,7 +416,7 @@ impl Interpreter {
         // closures over this lexical observe the change and the smart string/Int
         // decrement semantics are preserved (the slot holds the same Arc).
         if let ValueView::ContainerRef(arc) = val.view() {
-            if self.atomic_container_incdec(arc, name, false, false) {
+            if self.atomic_container_incdec(&arc, name, false, false) {
                 return Ok(());
             }
             let inner = arc.lock().unwrap().clone();

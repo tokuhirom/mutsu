@@ -323,7 +323,7 @@ impl Interpreter {
                     nested.set_pid(pid.saturating_add(1));
                 }
                 nested.set_program_path("<warns-like>");
-                let _ = nested.run(program);
+                let _ = nested.run(&program);
                 nested.warn_output.clone()
             }
             ValueView::Sub(data) => {

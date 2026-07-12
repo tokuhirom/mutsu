@@ -111,7 +111,7 @@ fn value_to_string_list(v: &Value) -> Vec<String> {
             result
         }
         ValueView::Str(s) => {
-            let expanded = expand_trans_spec(s);
+            let expanded = expand_trans_spec(&s);
             expanded.into_iter().map(|c| c.to_string()).collect()
         }
         // Handle Range types by iterating their elements

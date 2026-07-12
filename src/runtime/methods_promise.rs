@@ -157,7 +157,7 @@ impl Interpreter {
                     } = result.view()
                         && class_name == "Proc"
                     {
-                        self.replay_proc_taps(attributes);
+                        self.replay_proc_taps(&attributes);
                     }
                     Ok(result)
                 }

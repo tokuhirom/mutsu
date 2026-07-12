@@ -107,7 +107,7 @@ pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
         for (_key, val) in named.iter() {
-            for item in expand_capture_items(val) {
+            for item in &expand_capture_items(val) {
                 named_positions.push((match_value_from(item), match_value_to(item)));
             }
         }
@@ -116,7 +116,7 @@ pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
     // Collect positional captures, expanding quantified arrays
     if let Some(ValueView::Array(items, ..)) = attributes.get("list").map(Value::view) {
         for (i, val) in items.iter().enumerate() {
-            for item in expand_capture_items(val) {
+            for item in &expand_capture_items(val) {
                 let from = match_value_from(item);
                 let to = match_value_to(item);
                 let shadowed = named_positions
@@ -136,7 +136,7 @@ pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
     // Collect named captures, expanding quantified arrays
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
         for (key, val) in named.iter() {
-            for item in expand_capture_items(val) {
+            for item in &expand_capture_items(val) {
                 let from = match_value_from(item);
                 let to = match_value_to(item);
                 pairs.push((from, to, Value::pair(key.clone(), item.clone())));
@@ -154,16 +154,16 @@ pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
 
 /// Expand a capture value: if it's an Array of Matches (from quantified captures),
 /// return each element; otherwise return the single value.
-fn expand_capture_items(val: &Value) -> Vec<&Value> {
+fn expand_capture_items(val: &Value) -> Vec<Value> {
     match val.view() {
         ValueView::Array(items, _)
             if items
                 .iter()
                 .all(|v| matches!(v.view(), ValueView::Instance { .. })) =>
         {
-            items.iter().collect()
+            items.iter().cloned().collect()
         }
-        _ => vec![val],
+        _ => vec![val.clone()],
     }
 }
 
@@ -173,7 +173,7 @@ pub(super) fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
         for (_key, val) in named.iter() {
-            for item in expand_capture_items(val) {
+            for item in &expand_capture_items(val) {
                 named_positions.push((match_value_from(item), match_value_to(item)));
             }
         }
@@ -184,7 +184,7 @@ pub(super) fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
 
     if let Some(ValueView::Array(items, ..)) = attributes.get("list").map(Value::view) {
         for (i, val) in items.iter().enumerate() {
-            for item in expand_capture_items(val) {
+            for item in &expand_capture_items(val) {
                 let from = match_value_from(item);
                 let to = match_value_to(item);
                 let shadowed = named_positions
@@ -203,7 +203,7 @@ pub(super) fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
 
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {
         for (key, val) in named.iter() {
-            for item in expand_capture_items(val) {
+            for item in &expand_capture_items(val) {
                 let from = match_value_from(item);
                 let to = match_value_to(item);
                 captures.push((from, to, Value::pair(key.clone(), item.clone())));

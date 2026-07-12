@@ -305,7 +305,7 @@ impl Interpreter {
                     } = result.view()
                         && class_name == "Proc"
                     {
-                        self.replay_proc_taps(attributes);
+                        self.replay_proc_taps(&attributes);
                     }
                     let result = Self::unwrap_async_status_result(result)?;
                     results.push(result);

@@ -366,7 +366,7 @@ fn describe_useless(expr: &Expr) -> Option<String> {
 fn describe_literal(v: &Value) -> Option<String> {
     match v.view() {
         ValueView::Int(n) => Some(format!("constant integer {}", n)),
-        ValueView::BigInt(n) => Some(format!("constant integer {}", n)),
+        ValueView::BigInt(n) => Some(format!("constant integer {}", *n)),
         ValueView::Num(_) => Some(format!(
             "constant floating-point number {}",
             v.to_string_value()
@@ -374,7 +374,7 @@ fn describe_literal(v: &Value) -> Option<String> {
         ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
             Some(format!("constant rational {}", v.to_string_value()))
         }
-        ValueView::Str(s) => Some(format!("constant string \"{}\"", s)),
+        ValueView::Str(s) => Some(format!("constant string \"{}\"", *s)),
         ValueView::Complex(..) => Some(format!("constant value {}", v.to_string_value())),
         ValueView::Package(_) => Some(format!("constant value {}", v.to_string_value())),
         ValueView::Mixin(inner, _) => {

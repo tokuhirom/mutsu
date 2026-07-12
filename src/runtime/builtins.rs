@@ -303,7 +303,7 @@ impl Interpreter {
             for callable in values.iter() {
                 results.push(self.eval_call_on_value(callable.clone(), args.clone())?);
             }
-            return Ok(Value::junction(kind.clone(), results));
+            return Ok(Value::junction(kind, results));
         }
         // Mixin wrapping a Sub/Routine: check for CALL-ME from mixed-in roles
         let mixin_parts = match target_val.view() {
@@ -443,9 +443,10 @@ impl Interpreter {
                     ValueView::Num(n) => {
                         Err(RuntimeError::assignment_ro_typename("Num", &format!("{n}")))
                     }
-                    ValueView::Str(s) => {
-                        Err(RuntimeError::assignment_ro_typename("Str", &format!("{s}")))
-                    }
+                    ValueView::Str(s) => Err(RuntimeError::assignment_ro_typename(
+                        "Str",
+                        &format!("{}", *s),
+                    )),
                     ValueView::Rat(n, d) => Err(RuntimeError::assignment_ro_typename(
                         "Rat",
                         &format!("{n}/{d}"),
@@ -791,7 +792,6 @@ impl Interpreter {
                 let method_args = args[1..].to_vec();
                 // Junction auto-threading on first argument
                 if let ValueView::Junction { kind, values } = target.view() {
-                    let kind = kind.clone();
                     let mut results = Vec::new();
                     for v in values.iter() {
                         results.push(self.call_method_with_values(

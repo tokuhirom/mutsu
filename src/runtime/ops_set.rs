@@ -206,7 +206,7 @@ impl Interpreter {
         }
         match value.view() {
             ValueView::Bag(b, _) => {
-                let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
+                let resolved = crate::runtime::utils::resolve_bag_tab_keys(&b);
                 Ok(resolved.into_iter().map(|(k, v)| (k, (v, false))).collect())
             }
             ValueView::Mix(m, _) => Ok(m
@@ -292,7 +292,7 @@ impl Interpreter {
         match value.view() {
             ValueView::Mix(m, _) => Ok(m.weights.clone()),
             ValueView::Bag(b, _) => {
-                let resolved = crate::runtime::utils::resolve_bag_tab_keys(b);
+                let resolved = crate::runtime::utils::resolve_bag_tab_keys(&b);
                 Ok(resolved.into_iter().map(|(k, v)| (k, v as f64)).collect())
             }
             ValueView::Set(s, _) => Ok(s.iter().map(|k| (k.clone(), 1.0)).collect()),

@@ -73,7 +73,12 @@ impl Interpreter {
             let code = args[1].clone();
             // Skip leading SetLine statements (inserted by pointy block parsing)
             // to find the effective body for the optimization check.
-            let effective_body: Vec<&Stmt> = if let ValueView::Sub(sub) = code.view() {
+            let sub_data = if let ValueView::Sub(sub) = code.view() {
+                Some(sub.clone())
+            } else {
+                None
+            };
+            let effective_body: Vec<&Stmt> = if let Some(sub) = &sub_data {
                 sub.body
                     .iter()
                     .filter(|s| !matches!(s, Stmt::SetLine(_)))

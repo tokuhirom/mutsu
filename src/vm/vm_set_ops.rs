@@ -142,7 +142,7 @@ impl Interpreter {
             ValueView::Set(s, _) => s.contains(&key),
             ValueView::Bag(b, _) => b.get(&key).is_some_and(num_traits::Signed::is_positive),
             ValueView::Mix(m, _) => m.get(&key).is_some_and(|weight| *weight != 0.0),
-            ValueView::Hash(h) => self.hash_contains(h, needle, container),
+            ValueView::Hash(h) => self.hash_contains(&h, needle, container),
             _ if container.as_list_items().is_some() => container
                 .as_list_items()
                 .unwrap()

@@ -315,10 +315,25 @@ impl Value {
 
     /// Check if this value is a numeric type (Int, Num, Rat, FatRat, BigInt).
     /// Returns the inner items if this value is an Array, Seq, or Slip.
+    /// Matches the repr directly (inside the value wall) so the returned slice
+    /// borrows from `self`, not from a temporary view guard.
     pub(crate) fn as_list_items(&self) -> Option<&[Value]> {
-        match self.view() {
-            ValueView::Array(items, _) => Some(&items.items[..]),
-            ValueView::Seq(items) | ValueView::Slip(items) => Some(&items[..]),
+        match &self.0 {
+            ValueRepr::Array(items, _) => Some(&items.items[..]),
+            ValueRepr::Seq(items) | ValueRepr::Slip(items) => Some(&items[..]),
+            _ => None,
+        }
+    }
+
+    /// Like [`Self::as_list_items`], but also accepts the parallel Seq
+    /// variants (`HyperSeq` / `RaceSeq`). Used by list-comparison helpers.
+    pub(crate) fn as_list_items_with_hyper(&self) -> Option<&[Value]> {
+        match &self.0 {
+            ValueRepr::Array(items, _) => Some(&items.items[..]),
+            ValueRepr::Seq(items)
+            | ValueRepr::HyperSeq(items)
+            | ValueRepr::RaceSeq(items)
+            | ValueRepr::Slip(items) => Some(&items[..]),
             _ => None,
         }
     }

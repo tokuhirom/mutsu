@@ -27,7 +27,7 @@ impl Interpreter {
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),
-            ValueView::Str(name) if self.has_role(name) => Some(loan_env!(
+            ValueView::Str(name) if self.has_role(&name) => Some(loan_env!(
                 self,
                 eval_does_values(left.clone(), right.clone())
             )),

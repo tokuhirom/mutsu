@@ -51,7 +51,7 @@ impl Interpreter {
                 let coerced = self.coerce_typed_array_elements(
                     name,
                     &info.value_type,
-                    items,
+                    &items,
                     kind,
                     &|_| None,
                     false,
@@ -203,7 +203,7 @@ impl Interpreter {
             let coerced_items = self.coerce_typed_array_elements(
                 var_name,
                 &constraint,
-                items,
+                &items,
                 kind,
                 &coercion_target,
                 explicit_initializer,
@@ -381,7 +381,7 @@ impl Interpreter {
                 let sub_coerced = self.coerce_typed_array_elements(
                     var_name,
                     constraint,
-                    sub_items,
+                    &sub_items,
                     sub_kind,
                     coercion_target,
                     explicit_initializer,

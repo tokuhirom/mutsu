@@ -75,7 +75,7 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
         }
         ValueView::Str(s) => {
             out.push('"');
-            escape_str(s, out);
+            escape_str(&s, out);
             out.push('"');
         }
         ValueView::Scalar(inner) => jsonify(inner, opts, level, out),
@@ -84,7 +84,7 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
         ValueView::Seq(items)
         | ValueView::Slip(items)
         | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items) => jsonify_seq(items, opts, level, out),
+        | ValueView::RaceSeq(items) => jsonify_seq(&items, opts, level, out),
         ValueView::Hash(h) => {
             let entries: Vec<(&String, &Value)> = h.map.iter().collect();
             jsonify_object(entries, opts, level, out);

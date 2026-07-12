@@ -18,9 +18,9 @@ impl Interpreter {
 
     pub(in crate::runtime) fn normalize_type_capture_value(&self, value: Value) -> Value {
         if let ValueView::Str(name) = value.view()
-            && self.is_resolvable_type(name)
+            && self.is_resolvable_type(&name)
         {
-            return self.type_arg_value_from_name(name);
+            return self.type_arg_value_from_name(&name);
         }
         value
     }
@@ -1042,7 +1042,7 @@ impl Interpreter {
                     let comparable_actual_args = if actual_base == constraint_base {
                         actual_args.to_vec()
                     } else if let Some(parent_args) =
-                        self.role_parent_args_for(actual_base, actual_args, &constraint_base)
+                        self.role_parent_args_for(actual_base, &actual_args, &constraint_base)
                     {
                         parent_args
                     } else if self.role_is_subtype(actual_base, &constraint_base) {

@@ -87,7 +87,7 @@ impl Interpreter {
                     let op_assoc = nested.collect_operator_assoc_map();
                     let imported_names = nested.collect_eval_imported_function_names();
                     match crate::parser::parse_program_with_operators_and_user_subs(
-                        code,
+                        &code,
                         &op_names,
                         &op_assoc,
                         &imported_names,
@@ -143,7 +143,7 @@ impl Interpreter {
                     // Keep the lexical `&name` subs seeded during the real parse
                     // inside `run`, so listop calls like `b2 Num` parse as calls.
                     let run_result =
-                        crate::parser::with_user_sub_preseed(user_subs, || nested.run(code))
+                        crate::parser::with_user_sub_preseed(user_subs, || nested.run(&code))
                             .map(|_| Value::NIL);
                     // Write back mutations the code made to the caller's lexicals
                     // (e.g. `$str`), whether or not it threw — Raku runs the code
@@ -174,7 +174,7 @@ impl Interpreter {
                                 // as the eval result so the type matcher sees it.
                                 if let ValueView::LazyList(ll) = last_val.view()
                                     && ll.coroutine.is_some()
-                                    && let Err(e) = nested.force_lazy_list_vm(ll)
+                                    && let Err(e) = nested.force_lazy_list_vm(&ll)
                                 {
                                     Err(e)
                                 } else {
@@ -355,7 +355,7 @@ impl Interpreter {
                 });
             let matched = self.matcher_accepts(expected_val, &actual_str, actual_val.as_ref());
             let expected_display = match expected_val.view() {
-                ValueView::Regex(pattern) => format!("/{}/", pattern),
+                ValueView::Regex(pattern) => format!("/{}/", *pattern),
                 ValueView::Sub(_) | ValueView::Routine { .. } => expected_val.to_string_value(),
                 _ => expected_val.to_string_value(),
             };
@@ -395,7 +395,7 @@ impl Interpreter {
         match matcher.view() {
             ValueView::Whatever => true,
             ValueView::Regex(pattern) => self
-                .regex_match_with_captures(pattern, actual_str)
+                .regex_match_with_captures(&pattern, actual_str)
                 .is_some(),
             // `rx:i/.../` and friends carry adverbs, so route through the full
             // smart-match engine (which honours `:i`, `:m`, ...) rather than the
@@ -498,7 +498,7 @@ impl Interpreter {
                     let op_assoc = nested.collect_operator_assoc_map();
                     let imported_names = nested.collect_eval_imported_function_names();
                     match crate::parser::parse_program_with_operators(
-                        code,
+                        &code,
                         &op_names,
                         &op_assoc,
                         &imported_names,
@@ -538,7 +538,7 @@ impl Interpreter {
                 if let Err(e) = pre_check_result {
                     Err(e)
                 } else {
-                    let run_result = nested.run(code).map(|_| Value::NIL);
+                    let run_result = nested.run(&code).map(|_| Value::NIL);
                     match run_result {
                         Ok(_) => {
                             if let Some(last_val) = nested.last_value.take() {
@@ -553,7 +553,7 @@ impl Interpreter {
                                 // as the eval result so the type matcher sees it.
                                 if let ValueView::LazyList(ll) = last_val.view()
                                     && ll.coroutine.is_some()
-                                    && let Err(e) = nested.force_lazy_list_vm(ll)
+                                    && let Err(e) = nested.force_lazy_list_vm(&ll)
                                 {
                                     Err(e)
                                 } else {

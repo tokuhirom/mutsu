@@ -188,9 +188,15 @@ impl Interpreter {
             .var_type_constraint_fast(target_name)
             .map(|s| s.to_string())
         {
-            let items_to_check: Vec<&Value> = match val.view() {
-                ValueView::Slip(items) => items.iter().collect(),
-                _ => vec![&val],
+            // Owned clone of the Slip backing (a view guard's borrow cannot
+            // outlive the match), so the item refs stay valid for the loop.
+            let slip_items: Option<std::sync::Arc<Vec<Value>>> = match val.view() {
+                ValueView::Slip(items) => Some(items.clone()),
+                _ => None,
+            };
+            let items_to_check: Vec<&Value> = match &slip_items {
+                Some(items) => items.iter().collect(),
+                None => vec![&val],
             };
             for item in items_to_check {
                 if !self.type_matches_value(&type_name, item) {

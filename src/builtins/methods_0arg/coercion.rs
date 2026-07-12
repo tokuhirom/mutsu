@@ -206,11 +206,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Capture" => Some(value_to_capture(target)),
         "Slip" => match target.view() {
             ValueView::Seq(items) => {
-                if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items) {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
                 // Mark as cached so the Seq remains reusable
-                crate::value::seq_mark_cached(items);
+                crate::value::seq_mark_cached(&items);
                 Some(Ok(Value::slip_arc(items.clone())))
             }
             ValueView::Array(items, ..) => {
@@ -296,11 +296,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
             ValueView::Seq(items) => {
-                if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items) {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
                 // Mark as cached so the Seq remains reusable
-                crate::value::seq_mark_cached(items);
+                crate::value::seq_mark_cached(&items);
                 Some(Ok(Value::array(items.to_vec())))
             }
             // A shaped array falls through to the slow path, which flattens all
@@ -507,7 +507,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 ValueView::Seq(items) if method == "list" || method == "Array" => {
                     // Consumed Seq check: throw X::Seq::Consumed if not cached
-                    if crate::value::seq_is_consumed(items) && !crate::value::seq_is_cached(items) {
+                    if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items)
+                    {
                         return Some(Err(crate::value::seq_consumed_error()));
                     }
                     // Mark as cached so the Seq remains reusable (e.g. when the Seq is
@@ -515,7 +516,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // TODO: implement proper @-sigil parameter caching separately, and
                     // change this back to seq_consume for strict Raku semantics where
                     // .List on an uncached Seq consumes it.
-                    crate::value::seq_mark_cached(items);
+                    crate::value::seq_mark_cached(&items);
                     if method == "Array" {
                         Some(Ok(Value::real_array(items.to_vec())))
                     } else {
@@ -639,7 +640,7 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
             if n.sign() == num_bigint::Sign::Minus {
                 return Ok(Value::FALSE);
             }
-            Ok(Value::truth(is_prime_bigint(n)))
+            Ok(Value::truth(is_prime_bigint(&n)))
         }
         ValueView::Num(f) => {
             if f < 0.0 || f.fract() != 0.0 {

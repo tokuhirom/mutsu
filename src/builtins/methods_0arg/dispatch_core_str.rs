@@ -115,7 +115,7 @@ pub(super) fn dispatch(
             // A consumed gather-based LazyList throws X::Seq::Consumed on .is-lazy
             if let ValueView::LazyList(ll) = target.view() {
                 let is_gather = ll.env.get("__mutsu_lazylist_from_gather").is_some();
-                if is_gather && crate::value::lazylist_is_consumed(ll) {
+                if is_gather && crate::value::lazylist_is_consumed(&ll) {
                     return Some(Some(Err(crate::value::seq_consumed_error())));
                 }
             }
@@ -288,8 +288,8 @@ pub(super) fn dispatch(
                 return Some(None); // fall through to runtime to force
             }
             if let ValueView::Seq(items) = target.view()
-                && crate::value::seq_is_consumed(items)
-                && !crate::value::seq_is_cached(items)
+                && crate::value::seq_is_consumed(&items)
+                && !crate::value::seq_is_cached(&items)
             {
                 return Some(Some(Err(crate::value::seq_consumed_error())));
             }

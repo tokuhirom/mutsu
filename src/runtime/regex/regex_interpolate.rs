@@ -356,7 +356,7 @@ impl Interpreter {
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                     {
                         match value.view() {
-                            ValueView::Regex(pat) => out.push_str(pat),
+                            ValueView::Regex(pat) => out.push_str(&pat),
                             _ => {
                                 out.push_str(&Self::regex_escape_literal(&value.to_string_value()))
                             }

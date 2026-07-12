@@ -120,7 +120,7 @@ impl Interpreter {
             ValueView::Seq(items) | ValueView::Slip(items) => Ok(items.get(idx).cloned()),
             ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
             ValueView::LazyList(ll) => {
-                let items = self.force_lazy_list_vm_n(ll, idx + 1)?;
+                let items = self.force_lazy_list_vm_n(&ll, idx + 1)?;
                 Ok(items.get(idx).cloned())
             }
             // Other sources (non-integer GenericRange, etc.) are not gated into
@@ -267,7 +267,7 @@ impl Interpreter {
 
     pub(super) fn force_lazy_if_needed(&mut self, val: Value) -> Result<Value, RuntimeError> {
         if let ValueView::LazyList(ll) = val.view() {
-            let items = self.force_lazy_list_vm(ll)?;
+            let items = self.force_lazy_list_vm(&ll)?;
             Ok(Value::seq(items))
         } else {
             Ok(val)

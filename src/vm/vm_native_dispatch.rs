@@ -278,7 +278,7 @@ impl Interpreter {
             && ll.scan_spec.is_some()
             && matches!(method_name.as_str(), "Slip" | "List" | "Seq" | "Array")
         {
-            match self.force_lazy_list_vm(ll) {
+            match self.force_lazy_list_vm(&ll) {
                 Ok(items) => {
                     let val = match method_name.as_str() {
                         "Slip" => Value::slip(items),
@@ -297,7 +297,7 @@ impl Interpreter {
             return result.map(|res| {
                 res.map(|value| match value.view() {
                     ValueView::Str(decoded) => {
-                        Value::str(self.translate_newlines_for_decode(decoded))
+                        Value::str(self.translate_newlines_for_decode(&decoded))
                     }
                     _ => value,
                 })
@@ -426,7 +426,7 @@ impl Interpreter {
                 let mut forced_args = Vec::with_capacity(args.len());
                 for arg in args {
                     if let ValueView::LazyList(ll) = arg.view() {
-                        match self.force_lazy_list_vm(ll) {
+                        match self.force_lazy_list_vm(&ll) {
                             Ok(items) => {
                                 forced_args.push(Value::seq(items));
                             }

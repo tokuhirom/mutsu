@@ -455,7 +455,7 @@ impl Compiler {
             let mode_str = if positive {
                 mode.to_string()
             } else {
-                format!("not-{mode}")
+                format!("not-{}", *mode)
             };
             let var_name = Self::postfix_index_name(idx_target).unwrap_or_default();
             let call_args = vec![

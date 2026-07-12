@@ -107,7 +107,7 @@ impl Interpreter {
         }
         match (a.view(), b.view()) {
             (ValueView::Int(x), ValueView::Int(y)) => x == y,
-            (ValueView::Str(x), ValueView::Str(y)) => x == y,
+            (ValueView::Str(x), ValueView::Str(y)) => *x == *y,
             (ValueView::Bool(x), ValueView::Bool(y)) => x == y,
             _ => {
                 if let (Some(fa), Some(fb)) = (Self::seq_value_to_f64(a), Self::seq_value_to_f64(b))

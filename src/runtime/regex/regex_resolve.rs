@@ -136,8 +136,8 @@ impl Interpreter {
             return None;
         };
         match v.view() {
-            ValueView::Regex(p) => Some(Self::instantiate_token_pattern(def, p)),
-            ValueView::Str(s) => Some(Self::instantiate_token_pattern(def, s)),
+            ValueView::Regex(p) => Some(Self::instantiate_token_pattern(def, &p)),
+            ValueView::Str(s) => Some(Self::instantiate_token_pattern(def, &s)),
             _ => None,
         }
     }

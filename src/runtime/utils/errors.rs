@@ -11,9 +11,9 @@ pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> V
 /// matching Raku's format: e.g. `("hello")`, `(42)`.
 pub(crate) fn value_short_repr(val: &Value) -> String {
     match val.view() {
-        ValueView::Str(s) => format!("(\"{}\")", s),
+        ValueView::Str(s) => format!("(\"{}\")", *s),
         ValueView::Int(n) => format!("({})", n),
-        ValueView::BigInt(n) => format!("({})", n),
+        ValueView::BigInt(n) => format!("({})", *n),
         ValueView::Num(n) => format!("({})", n),
         ValueView::Bool(b) => format!("({})", if b { "True" } else { "False" }),
         ValueView::Rat(n, d) => format!("({}/{})", n, d),
@@ -178,9 +178,9 @@ pub(crate) fn type_check_element_typed_error(
 pub(crate) fn value_which_key(value: &Value) -> String {
     match value.view() {
         ValueView::Int(n) => format!("Int|{}", n),
-        ValueView::BigInt(n) => format!("Int|{}", n),
+        ValueView::BigInt(n) => format!("Int|{}", *n),
         ValueView::Num(n) => format!("Num|{}", n),
-        ValueView::Str(s) => format!("Str|{}", s),
+        ValueView::Str(s) => format!("Str|{}", *s),
         ValueView::Bool(b) => format!("Bool|{}", if b { 1 } else { 0 }),
         ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
         ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
@@ -192,8 +192,8 @@ pub(crate) fn value_which_key(value: &Value) -> String {
         ValueView::Instance { id, .. } => {
             format!("{}|{}", value_type_name(value), id)
         }
-        ValueView::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(items)),
-        ValueView::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(map)),
+        ValueView::Array(items, ..) => format!("Array|{:p}", crate::gc::Gc::as_ptr(&items)),
+        ValueView::Hash(map) => format!("Hash|{:p}", crate::gc::Gc::as_ptr(&map)),
         ValueView::Pair(k, v) => format!("Pair|{}|{}", k, value_which_key(v)),
         ValueView::ValuePair(k, v) => format!("Pair|{}|{}", value_which_key(k), value_which_key(v)),
         ValueView::Enum { enum_type, key, .. } => {

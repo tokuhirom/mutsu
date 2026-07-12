@@ -1912,7 +1912,7 @@ pub(crate) fn container_type_metadata_with(
         ValueView::Mix(items, _) => embedded_type_info!(items),
         ValueView::Set(items, _) => embedded_type_info!(items),
         ValueView::Bag(items, _) => embedded_type_info!(items),
-        ValueView::Hash(items) => Interpreter::hashdata_type_info(items),
+        ValueView::Hash(items) => Interpreter::hashdata_type_info(&items),
         ValueView::Instance { id, .. } => instance_meta.read().unwrap().get(&id).cloned(),
         ValueView::Mixin(inner, _) => container_type_metadata_with(inner, instance_meta),
         _ => None,

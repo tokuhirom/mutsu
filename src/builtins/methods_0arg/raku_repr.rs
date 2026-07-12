@@ -421,7 +421,7 @@ pub fn raku_value(v: &Value) -> String {
             if kind == crate::value::ArrayKind::Lazy {
                 return "[...]".to_string();
             }
-            let ptr = crate::gc::Gc::as_ptr(items) as usize;
+            let ptr = crate::gc::Gc::as_ptr(&items) as usize;
             let var_name = format!("@Array_{}", ptr);
             // Check for cycle
             let cycle_var = SEEN_PTRS.with(|seen| {
@@ -439,7 +439,7 @@ pub fn raku_value(v: &Value) -> String {
             if is_top {
                 ARRAY_CYCLE_FOUND.with(|f| f.set(false));
             }
-            let result = raku_value_array(items, kind, v);
+            let result = raku_value_array(&items, kind, v);
             let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
             SEEN_PTRS.with(|seen| {
                 let mut s = seen.borrow_mut();
@@ -456,7 +456,7 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::Seq(items) => {
             // A consumed Seq is represented as Seq.new() so that EVALing it
             // produces a pre-consumed Seq (matching Raku's behavior).
-            if crate::value::seq_is_consumed(items) {
+            if crate::value::seq_is_consumed(&items) {
                 return "Seq.new()".to_string();
             }
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
@@ -470,7 +470,7 @@ pub fn raku_value(v: &Value) -> String {
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");
             format!("slip({})", inner)
         }
-        ValueView::Str(s) => escape_raku_str(s),
+        ValueView::Str(s) => escape_raku_str(&s),
         ValueView::Int(i) => i.to_string(),
         ValueView::Rat(n, d) => {
             if d == 0 {
@@ -576,12 +576,12 @@ pub fn raku_value(v: &Value) -> String {
         }
         ValueView::ValuePair(key, value) => {
             if let ValueView::Str(key_str) = key.view() {
-                let ident_like = is_adverbial_pair_key(key_str);
+                let ident_like = is_adverbial_pair_key(&key_str);
                 if ident_like {
                     return match value.view() {
-                        ValueView::Bool(true) => format!(":{}", key_str),
-                        ValueView::Bool(false) => format!(":!{}", key_str),
-                        _ => format!(":{}({})", key_str, raku_value(value)),
+                        ValueView::Bool(true) => format!(":{}", *key_str),
+                        ValueView::Bool(false) => format!(":!{}", *key_str),
+                        _ => format!(":{}({})", *key_str, raku_value(value)),
                     };
                 }
             }
@@ -628,8 +628,8 @@ pub fn raku_value(v: &Value) -> String {
                         };
                         let typed = map.typed_key(k);
                         match typed.view() {
-                            ValueView::Str(s) if is_adverbial_pair_key(s) => {
-                                format!(":{}({})", s, repr)
+                            ValueView::Str(s) if is_adverbial_pair_key(&s) => {
+                                format!(":{}({})", *s, repr)
                             }
                             _ => format!("{} => {}", raku_value(&typed), repr),
                         }
@@ -644,7 +644,7 @@ pub fn raku_value(v: &Value) -> String {
                 static SEEN_HASH_PTRS: std::cell::RefCell<Vec<(usize, String)>> = const { std::cell::RefCell::new(Vec::new()) };
                 static HASH_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
             }
-            let ptr = crate::gc::Gc::as_ptr(map) as usize;
+            let ptr = crate::gc::Gc::as_ptr(&map) as usize;
             let var_name = format!("%hash_{}", ptr);
             let cycle_var = SEEN_HASH_PTRS.with(|seen| {
                 seen.borrow()
@@ -985,7 +985,7 @@ pub(super) fn native_int_coerce_method(
             } else {
                 return Err(RuntimeError::new(format!(
                     "Cannot coerce '{}' to {}",
-                    s, type_name
+                    *s, type_name
                 )));
             }
         }

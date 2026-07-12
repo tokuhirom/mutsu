@@ -343,7 +343,7 @@ impl Interpreter {
             {
                 let mut new_attrs = attributes.to_map();
                 new_attrs.insert("version".to_string(), new_version.clone());
-                let new_val = Value::write_back_sharing(attributes, class_name, new_attrs, id);
+                let new_val = Value::write_back_sharing(&attributes, class_name, new_attrs, id);
                 self.env.insert(key.to_string(), new_val);
             }
         }

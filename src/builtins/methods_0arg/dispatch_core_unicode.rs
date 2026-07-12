@@ -231,7 +231,7 @@ pub(super) fn dispatch(
                     let hex = format!("{:X}", &**n);
                     return Some(Some(Err(RuntimeError::new(format!(
                         "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                        n, hex
+                        *n, hex
                     )))));
                 }
                 ValueView::Num(f) => (f as i64, format!("{}", f as i64)),
