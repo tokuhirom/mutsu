@@ -158,6 +158,16 @@ impl Interpreter {
             return Ok(into_target.unwrap_or_else(|| Value::hash(HashMap::new())));
         };
 
+        // A list element that is a named-marker `Pair` is data here, not a
+        // call-site named argument — decay it to a positional `ValuePair` so
+        // the classifier block receives it as its topic.
+        fn callable_item(item: &Value) -> Value {
+            match item.view() {
+                ValueView::Pair(k, v) => Value::value_pair(Value::str_from(k), v.clone()),
+                _ => item.clone(),
+            }
+        }
+
         // Check for lazy lists — classify/categorize cannot operate on lazy lists
         for arg in &positional {
             let is_lazy = matches!(arg.view(), ValueView::LazyList(_));
@@ -191,6 +201,12 @@ impl Interpreter {
                     items.extend(values.iter().cloned())
                 }
                 ValueView::LazyList(ll) => items.extend(self.force_lazy_list_bridge(ll)?),
+                // Hash/Set/Bag/Mix classify their pairs (elem => True for Set,
+                // elem => count/weight for Bag/Mix), same as for-iteration.
+                ValueView::Hash(_)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..) => items.extend(crate::runtime::utils::value_to_list(arg)),
                 _ if arg.is_range() => items.extend(crate::runtime::utils::value_to_list(arg)),
                 _ => items.push(arg.clone()),
             }
@@ -228,7 +244,7 @@ impl Interpreter {
         for item in &items {
             let mapped = match mapper.view() {
                 ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
-                    self.call_sub_value(mapper.clone(), vec![item.clone()], true)?
+                    self.call_sub_value(mapper.clone(), vec![callable_item(item)], true)?
                 }
                 ValueView::Hash(map) => map
                     .get(&item.to_string_value())
@@ -251,7 +267,7 @@ impl Interpreter {
             };
 
             let mapped_item = if let Some(as_fn) = &as_mapper {
-                self.call_sub_value(as_fn.clone(), vec![item.clone()], true)?
+                self.call_sub_value(as_fn.clone(), vec![callable_item(item)], true)?
             } else {
                 item.clone()
             };

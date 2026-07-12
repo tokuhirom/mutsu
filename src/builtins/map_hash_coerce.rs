@@ -45,15 +45,36 @@ fn make_odd_number_error(items: &[Value]) -> RuntimeError {
     }
 }
 
+/// Unwrap an itemized Pair (`Scalar`) or a Pair held in a `:=` element cell
+/// (`ContainerRef`) for hash-initializer purposes. Non-Pair contents (e.g. an
+/// itemized hash, which must die "Odd number" like raku) pass through as-is.
+pub(crate) fn unwrap_contained_pair(v: &Value) -> Value {
+    let held = match v.view() {
+        ValueView::Scalar(inner) => inner.clone(),
+        ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        _ => return v.clone(),
+    };
+    if matches!(held.view(), ValueView::Pair(..) | ValueView::ValuePair(..)) {
+        held
+    } else {
+        v.clone()
+    }
+}
+
 /// Convert a slice of items to a Hash, optionally checking for odd element count.
 fn items_to_hash(items: &[Value], check_odd: bool) -> Result<Value, RuntimeError> {
+    // An itemized Pair (`$(:a(1))` = `Scalar`) or a Pair held in a `:=` element
+    // cell (`ContainerRef`, e.g. a classify bucket element) still counts as a
+    // hash initializer pair; an itemized *hash* stays opaque (raku dies "Odd
+    // number"), so only Pair contents are unwrapped.
+    let items: Vec<Value> = items.iter().map(unwrap_contained_pair).collect();
     if check_odd {
         let non_pair_count = items
             .iter()
             .filter(|v| !matches!(v.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .count();
         if non_pair_count % 2 != 0 {
-            return Err(make_odd_number_error(items));
+            return Err(make_odd_number_error(&items));
         }
     }
     let mut map = HashMap::new();
