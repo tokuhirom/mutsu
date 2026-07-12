@@ -299,12 +299,13 @@ method-call ホットパスキャンペーン第 1 弾（#3853/#3857/#3859/#3867
 resolution cache・mro_readonly キャッシュ・FxHashMap・単一候補 memoize）と、単一ストア化による
 per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 
-- [ ] **symbol intern round-trip の残り（大型リファクタ）**: dispatch hot path の `cn = class_sym.resolve()`
-      String 確保（perf の malloc ~17% の一角）が downstream の `&str` API（`call_compiled_method`/
-      `push_method_dispatch_frame`/`check_method_wrap_chain`＋ registry の String キー lookup）のため残る。
-      `with_str` の長期保持はグローバル symbol-table read-lock デッドロックで不可＝registry/dispatch API を
-      Symbol キー化する必要。`Symbol::intern(method)` も毎回 ~3.5%（method 名は CompiledCode 定数の
-      `Value::Str`・事前 intern は precomp 直列化に波及）。
+- [ ] **symbol 残コスト（小）**: round-trip 本体は解消済み（2026-07-12 — intern 文字列を leak して
+      `Symbol::as_str() -> &'static str`（ロックなし・alloc なし）を導入、dispatch hot path の
+      String 確保＋再 intern を除去。method-call -6% cycles。旧記述の「registry/dispatch API の
+      Symbol キー化（大型リファクタ）」は前提のデッドロック制約ごと消滅＝不要。news/2026-07.md 参照）。
+      残る小レバー: `Symbol::intern(method)`（flat ~0.8% — CompiledCode 定数の事前 intern は
+      serde skip＋lazy 側テーブルなら precomp 直列化に波及しない）／ registry String キーの
+      SipHash（cache-miss 時のみ）。
 - [ ] `Value` clone/drop（bench-class の ~50%）＋ `attributes.to_map()` の毎回クローン ＋
       `call_compiled_method` の属性キー `format!` ＋ instance 構築 HashMap ＋ `merge_method_env` —
       Lever 2（NaN-boxing・GC 後）待ち、ないし属性 materialization の作り直し（深い）。
