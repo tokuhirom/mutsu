@@ -291,6 +291,8 @@ mod guards;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;
+#[cfg(feature = "jit")]
+pub(crate) use nanbox::jit_words;
 mod serde_support;
 pub(crate) mod signature;
 pub(crate) mod types;
@@ -979,6 +981,16 @@ impl std::fmt::Debug for Value {
     /// the packed word).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+/// Raw NaN-box word access for the JIT Tier B inline emitter (see
+/// [`jit_words`]). Read-only: exposing the bits does not breach the newtype
+/// seal's ownership rules (the word still owns its payload reference).
+#[cfg(feature = "jit")]
+impl Value {
+    pub(crate) fn nanbox_bits(&self) -> u64 {
+        self.0.bits()
     }
 }
 

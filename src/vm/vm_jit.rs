@@ -25,6 +25,24 @@ pub(crate) const JIT_STATUS_HALT: u32 = 2;
 /// any other value is the native entry pointer.
 pub(crate) const JIT_ENTRY_BAILOUT: u64 = 1;
 
+/// Process-wide, monotonic count of user-declared infix operator
+/// registrations (`sub infix:<+> ...` and module-exported infix ops). The
+/// Tier B inline `Add` fast path (vm_jit_tier_b.rs) loads this word and
+/// requires it to be zero: a per-interpreter `user_declared_infix_ops` set
+/// can only be non-empty after some registration bumped this counter, so
+/// zero proves no override exists anywhere and nonzero conservatively routes
+/// every inline fast path through the helper (which re-checks precisely).
+/// Never decremented — save/restore sites that shrink a set leave the
+/// counter high, which only costs speed, never correctness.
+pub(crate) static USER_INFIX_DECLS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Record one user infix-operator registration (see `USER_INFIX_DECLS`).
+#[inline]
+pub(crate) fn note_user_infix_decl() {
+    USER_INFIX_DECLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Native entry signature: `(interp, code, compiled_fns) -> status`.
 #[cfg(feature = "jit")]
 pub(crate) type JitEntryFn = unsafe extern "C" fn(

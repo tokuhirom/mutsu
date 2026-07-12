@@ -49,6 +49,14 @@ pub(super) unsafe extern "C" fn safepoint(_interp: *mut Interpreter) {
     crate::gc::gc_safepoint(crate::gc::SafepointKind::Backedge);
 }
 
+/// Mark a `Failure` at the current top of stack as handled. The Tier B
+/// `JumpIfFalse` fast path calls this on the branch-taken path only,
+/// mirroring the interpreter arm's post-pop `mark_failure_handled_on_stack`.
+pub(super) unsafe extern "C" fn mark_failure_top(interp: *mut Interpreter) {
+    let interp = unsafe { &mut *interp };
+    Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
+}
+
 /// Park `e` in the interpreter's JIT error slot and report error status.
 #[inline]
 fn park_err(interp: &mut Interpreter, e: RuntimeError) -> u32 {

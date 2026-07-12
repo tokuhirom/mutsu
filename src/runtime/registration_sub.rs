@@ -494,6 +494,7 @@ impl Interpreter {
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         if name.starts_with("infix:<") {
             self.user_declared_infix_ops.insert(name.to_string());
+            crate::vm::vm_jit::note_user_infix_decl();
         }
         let is_method_value_decl = custom_traits
             .iter()
@@ -1119,6 +1120,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if name.starts_with("infix:<") {
             self.user_declared_infix_ops.insert(name.to_string());
+            crate::vm::vm_jit::note_user_infix_decl();
         }
         Self::validate_callable_param_return_redeclaration(param_defs)?;
         if let Some(spec) = return_type

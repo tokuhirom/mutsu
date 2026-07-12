@@ -178,6 +178,14 @@ pub(crate) mod vm_jit;
 mod vm_jit_compile;
 #[cfg(feature = "jit")]
 mod vm_jit_helpers;
+#[cfg(feature = "jit")]
+mod vm_jit_layout;
+#[cfg(feature = "jit")]
+mod vm_jit_support;
+#[cfg(feature = "jit")]
+mod vm_jit_tier_b;
+#[cfg(feature = "jit")]
+mod vm_jit_tier_b_flow;
 mod vm_loop_cstyle_repeat;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;
