@@ -107,11 +107,19 @@ HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny（end-to-end HTTP 配信）/ Tu
 `--version` が動作）/ ✅ CompUnit::Repository の install→use 橋（`repository-for-name` well-known 名・
 デフォルト site repo 自動登録・担保 `t/compunit-repository-for-name.t`）。残:
 
-- [ ] **実 zef バイナリの end-to-end 実行を阻む 2 バグ**:
-      (a) `Zef::Client` の `%`-sigil 属性に Associative をダックタイピングする非 Hash オブジェクト
-      （`has %.hash handles <AT-KEY EXISTS-KEY ...>`）を bind すると `coerce_attr_value_by_sigil`
-      （`methods_signature.rs`）の catch-all を素通りして raw Instance のまま格納される。
-      (b) 実 `Zef::CLI.rakumod` のコンパイルを止めるパーサエラー（未特定）。
+- [ ] **実 zef バイナリの end-to-end 実行を阻むブロッカー（2026-07-12 再調査で全面更新）**:
+      旧 2 バグは解消済み — (a) `%`-sigil 属性への Associative ダックタイピング bind は
+      Hash へ正しく coerce される（#4452 で解消・repro = `tmp/assoc-attr-repro.raku` 相当）、
+      (b) upstream zef 1.1.3（`ugexe/zef` HEAD）は全モジュールがパース・ロードし
+      `bin/zef --version`/`--help`/MAIN dispatch まで動作（パーサエラーは再現せず）。
+      現フロンティア:
+      1. **grammar パース性能**（最大のブロッカー）: `Zef::Identity` の `REQUIRE.parse` が
+         1 回 ~43ms（release・raku 比 ~70x）。`populate-distributions`（fez index 7648 dist ×
+         `.name` ごとに parse）が release でも ~10 分超 → `zef info/list/search` が実用不能。
+         zef 非依存 repro = `tmp/require-grammar-bench.raku`（20 parses: raku 0.012s / mutsu-debug 6.1s）。
+      2. ネスト `.raku` 表示: コレクション内の Instance が `Sp()`（type object 風）に描画される
+         （`(C.new,).raku` → raku は `(C.new(...),)`）。実体は正常（semantic には無害・表示のみ）。
+      3. `zef list --installed` は exit 0・出力なしまで動作（mutsu 側 site repo が空なら妥当）。
 - [ ] 既知の小差異: CLI 数値文字列の `Int $n` への coerce が raku より積極的（`MAIN(Int $n,…)` に `7` が
       マッチ・raku は slurpy fallback）。実用上は mutsu 側のほうが直感的。
 - [ ] **network fetch**: fez エコシステム（`https://360.zef.pm/`）への取得。堅牢な async TLS が前提。

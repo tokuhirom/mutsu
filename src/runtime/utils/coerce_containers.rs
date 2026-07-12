@@ -205,6 +205,13 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
         .unwrap_or_else(|| "Nil".to_string());
     let mut map = HashMap::new();
     let mut original_keys: HashMap<String, Value> = HashMap::new();
+    // An itemized Pair (`$(:a(1))`) or a Pair held in a `:=` element cell (e.g.
+    // a classify bucket element) still counts as a hash initializer pair; an
+    // itemized *hash* stays opaque and dies "Odd number" like raku.
+    let items: Vec<Value> = items
+        .iter()
+        .map(crate::builtins::map_hash_coerce::unwrap_contained_pair)
+        .collect();
     let mut iter = items.into_iter();
     while let Some(item) = iter.next() {
         match item.view() {

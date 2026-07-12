@@ -24,12 +24,17 @@ impl Interpreter {
             } else {
                 format!("{}\\{}", p, child_name)
             }
-        } else if p == "." {
+        } else if p == "." || p.is_empty() {
             child_name.to_string()
-        } else if p.ends_with('/') {
+        } else if p.ends_with('/') || child_name.starts_with('/') {
+            // Lexical concatenation, matching IO::Spec::Unix.join: a child with
+            // a leading `/` is appended, NOT treated as an absolute
+            // replacement ("$h/.config".IO.child('/zef/config.json') is
+            // "$h/.config/zef/config.json" in raku; Rust's Path::join would
+            // discard the base).
             format!("{}{}", p, child_name)
         } else {
-            Self::stringify_path(&Path::new(p).join(child_name))
+            format!("{}/{}", p, child_name)
         };
         Ok(joined)
     }
