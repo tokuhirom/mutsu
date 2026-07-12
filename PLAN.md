@@ -111,25 +111,21 @@ HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny（end-to-end HTTP 配信）/ Tu
       旧 2 バグは解消済み（(a) %-sigil Associative bind = #4452 / (b) パーサエラー = 再現せず）。
       同日 landed: #4457（classify pair-iteration / hash-init contained-Pair / IO::Path.child 連結）・
       #4460（grammar token 静的 fold — `REQUIRE.parse` が raku 比 ~70x → **1.1x**）・
-      #4462（`Version.parts/.plus/.whatever` — 候補 version 照合の真因）。
-      **`Zef::Repository.candidates` の `.hyper(:batch(1)).map` を素の `.map` に変えると
-      `zef info Zef` が実 fez index (7648 dists) で Identity 出力まで完全動作**（release ~3 分）。
+      #4462（`Version.parts/.plus/.whatever` — 候補 version 照合の真因）・
+      **#4466（★旧最大ブロッカー根治: worker thread 上の shared 配列で append/prepend/pop/shift/
+      splice が `__mutsu_atomic_arr::` store を迂回し黙って喪失 — 「%-hash 属性 push 喪失」の
+      真因は populate の `append @short-names-to-index` 全滅だった。news/2026-07.md 参照）**。
+      → **`zef info Zef` が未改変 upstream・hyper 有効・GC 既定 on・実 fez index (7648 dists) で
+      Identity/Provides/Depends 出力まで完全動作**（release 2 runs 安定・pin t/hyper-array-mutators.t）。
       現フロンティア:
-      1. **★hyper worker 上のインスタンス属性書き込み喪失（最大のブロッカー・実バグ）**:
-         `.hyper(:batch(1)).map(-> $repo { $repo.search(...) })` の callback 内で走る
-         populate の `push %!short-name-lookup{$_}, $dist` が**一様に ~80% 喪失**する
-         （7646 dists → 1570 keys・期待 9256。`@!attr` 配列 push は無傷 = %-hash 属性特有）。
-         さらに GC on だと 2 個目の Ecosystems で `$!name` が読めなくなる別症状も併発
-         （MUTSU_GC=off で消える = GC×thread の状態破壊）。単純化 repro は未成立
-         （`tmp/hyper-attr-repro*.raku` / `tmp/gather-attr-repro.raku` は通る）—
-         実物 repro = `tmp/zef-dbg`（計装済み copy・Repository.rakumod の hyper 有無で切替）。
-         cross-thread lexical campaign の instance-attr 版とみられる。
-      2. populate 性能: fold 後 release で fez+rea 全 populate ~3-5 分（raku は数秒）。
+      1. populate 性能: fold 後 release で fez+rea 全 populate ~3-5 分（raku は数秒）。
          残= plain Named subrule 呼び出しの per-call コスト + Distribution/Identity 構築。
-      3. ネスト `.raku` 表示: コレクション内の Instance が `Sp()`（type object 風）に描画される
+      2. ネスト `.raku` 表示: コレクション内の Instance が `Sp()`（type object 風）に描画される
          （`(C.new,).raku` → raku は `(C.new(...),)`）。実体は正常（semantic には無害・表示のみ）。
-      4. `zef list --installed` は exit 0・出力なしまで動作（mutsu 側 site repo が空なら妥当）。
-      5. index 名数の微差: fez 7648 metas で raku 9259 keys / mutsu 9256（3 件・name-fail 2-3 dists）。
+      3. `zef list --installed` は exit 0・出力なしまで動作（mutsu 側 site repo が空なら妥当）。
+      4. index 名数の微差: fez 7648 metas で raku 9259 keys / mutsu 9256（3 件・name-fail 2-3 dists）。
+      5. （監視）旧観測「GC on だと 2 個目の Ecosystems で `$!name` 空読み」は #4466 後の release
+         2 runs で再現せず。再発したら GC×thread の状態破壊として独立調査。
 - [ ] 既知の小差異: CLI 数値文字列の `Int $n` への coerce が raku より積極的（`MAIN(Int $n,…)` に `7` が
       マッチ・raku は slurpy fallback）。実用上は mutsu 側のほうが直感的。
 - [ ] **network fetch**: fez エコシステム（`https://360.zef.pm/`）への取得。堅牢な async TLS が前提。
