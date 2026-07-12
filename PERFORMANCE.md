@@ -88,7 +88,7 @@ bytecode.
 |------|-------|-------|
 | ~~per-call body fingerprint~~ | ~~6–15%~~ | **fixed in #3853** — `push_method_dispatch_frame` `format!("{:?}", body)`-hashed the whole method-body AST on every call; now short-circuited for the single-candidate case + allocation-free fingerprint. |
 | `Symbol::intern` + `memcmp` | ~14% | class/method names are `resolve()`d to `String` then re-`intern()`ed per call (a `Symbol → String → Symbol` round-trip); each intern takes a global `RwLock` read + `FxHashMap` lookup. **Next target.** |
-| `Value::clone` / `drop_in_place::<Value>` / `Vec::clone` | ~50% on bench-class | the 48-byte `Value` enum copied/dropped throughout dispatch + instance attribute handling. Addressed long-term by NaN-boxing (Lever 2 / ADR-0001 layer 3b, *after* GC). |
+| ~~`Value::clone` / `drop_in_place::<Value>` / `Vec::clone`~~ | ~~~50% on bench-class~~ | **fixed 2026-07-12** — a 2026-07-12 perf profile showed the bench-class share was NOT dispatch/attribute churn but the for-loop topic writeback: `loop_var_unchanged` had no `Instance` arm, so a read-only `for @instances { .method }` rebuilt (cloned) the whole backing array every iteration (O(n²)). Adding Instance/Package/Enum/Rat/Nil arms cut bench-class 1.06s → 0.38s (2.8x, now 0.58x vs raku). Residual `Value` clone/drop in dispatch is still addressed long-term by NaN-boxing (Lever 2 / ADR-0001 layer 3b). |
 
 **Why env clone is no longer the issue**: the single-store work made `locals`
 authoritative and `env` a cheap derived view; method calls no longer snapshot

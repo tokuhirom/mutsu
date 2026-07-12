@@ -231,9 +231,14 @@ method-call ホットパスキャンペーン第 1 弾（#3853/#3857/#3859/#3867
 resolution cache・mro_readonly キャッシュ・FxHashMap・単一候補 memoize）と、単一ストア化による
 per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 
-- [ ] `Value` clone/drop（bench-class の ~50%）＋ `attributes.to_map()` の毎回クローン ＋
+- [ ] `Value` clone/drop ＋ `attributes.to_map()` の毎回クローン ＋
       `call_compiled_method` の属性キー `format!` ＋ instance 構築 HashMap ＋ `merge_method_env` —
       Lever 2（NaN-boxing・GC 後）待ち、ないし属性 materialization の作り直し（深い）。
+      **注（2026-07-12）**: 旧記述「bench-class の ~50% が Value clone/drop」の実体は
+      for ループ topic writeback の O(n²)（`loop_var_unchanged` が Instance 要素を判定できず
+      毎イテレーション全配列 clone）で、修正済み — bench-class 2.8x 高速化・raku 比 0.58x。
+      再プロファイル後の残ホットスポット（native ctor plan の毎構築再計算・
+      `dispatch_compiled_method` 入口 `to_map()`・`is default` 属性ループ）が次スライス。
 - [ ] **Lever 2: NaN-boxing = ADR-0001 層3b（JIT の地ならし・GC 後）**: `Value` 48→8 bytes。
       int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。
       進捗・次の着手単位（3b-1 step B・ADR-0005 Accepted 待ち）は **§2 に集約**。
@@ -256,7 +261,7 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       絶対 index を運ぶ encoding の是正 / per-opcode ヒストグラム駆動での特化 op 統合
       （`ContainerEq`×4・`IndexAssign*`×6 — 美学でなくデータで駆動）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
-- 目標: method-call <1.5x、bench-class <1.5x、bench-fib（型制約付き）<2x。
+- 目標: method-call <1.5x、bench-class <1.5x（✅ 0.58x・2026-07-12）、bench-fib（型制約付き）<2x。
 
 ---
 
@@ -303,7 +308,7 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 | GC | **default on ✅**（2026-07-05・ADR-0003） | 達成（残 perf は層 3b へ） |
 | fib(25) vs raku | **1.0x** | <10x ✅ |
 | method-call vs raku | **2.7x** | <1.5x |
-| bench-class vs raku | **2.3x** | <1.5x |
+| bench-class vs raku | **0.58x**（2026-07-12） | <1.5x ✅ |
 | bench-fib（型制約付き）vs raku | **3.2x** | <2x |
 | 起動時間 vs raku | **0.04x** | 0.04x ✅ 維持 |
 | tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |
