@@ -130,6 +130,33 @@ impl Interpreter {
         Value::str(key.to_string())
     }
 
+    /// For an object hash (`my Int %{Int}`) whose key type is a non-`Str` type,
+    /// reconstruct the typed key objects from the stringified store keys and
+    /// record them in `original_keys`, so `.keys`/`.pairs`/`.raku` report the
+    /// real key (`Int(1)`, not `"1"`). No-op for plain / `Str`-keyed hashes and
+    /// for hashes that already carry `original_keys`. Used on the SetVarType
+    /// path, where the list→hash coercion ran before the key type was known.
+    pub(crate) fn populate_object_hash_typed_keys(&self, value: Value) -> Value {
+        let ValueView::Hash(map) = value.view() else {
+            return value;
+        };
+        let Some(key_type) = map.key_type.clone() else {
+            return value;
+        };
+        let (base, _) = crate::runtime::types::strip_type_smiley(&key_type);
+        if base == "Str" || base == "Any" || base == "Mu" || map.has_typed_keys() {
+            return value;
+        }
+        let mut original_keys = std::collections::HashMap::with_capacity(map.len());
+        for key in map.keys() {
+            original_keys.insert(key.clone(), Self::try_reconstruct_typed_key(key, base));
+        }
+        if original_keys.is_empty() {
+            return value;
+        }
+        crate::runtime::utils::set_hash_original_keys(value, original_keys)
+    }
+
     pub(super) fn coerce_typed_container_assignment(
         &mut self,
         var_name: &str,
@@ -197,6 +224,19 @@ impl Interpreter {
             let value_constraint = loan_env!(self, var_type_constraint(var_name));
             let key_constraint = loan_env!(self, var_hash_key_constraint(var_name));
             let mut coerced_map = std::collections::HashMap::with_capacity(map.len());
+            // For an object hash (`my Int %h{Int}`) whose key type is not the
+            // default `Str`, record the reconstructed typed key alongside the
+            // stringified store key so `.keys`/`.pairs`/`.raku` report the real
+            // key object (`Int(1)`, not `"1"`).
+            let track_typed_keys = key_constraint
+                .as_deref()
+                .map(|kc| coercion_target(kc).unwrap_or_else(|| kc.to_string()))
+                .is_some_and(|kt| {
+                    let (base, _) = crate::runtime::types::strip_type_smiley(&kt);
+                    base != "Str" && base != "Any" && base != "Mu"
+                });
+            let mut obj_original_keys: std::collections::HashMap<String, Value> =
+                std::collections::HashMap::new();
             for (key, val) in map.iter() {
                 let coerced_key = if let Some(constraint) = &key_constraint {
                     // Hash keys are always stored as strings internally, but for
@@ -214,6 +254,9 @@ impl Interpreter {
                             constraint,
                             &Value::str(key.clone()),
                         ));
+                    }
+                    if track_typed_keys {
+                        obj_original_keys.insert(key.clone(), key_as_typed_value);
                     }
                     key.clone()
                 } else {
@@ -254,8 +297,12 @@ impl Interpreter {
                 coerced_map.insert(coerced_key, coerced_val);
             }
             let mut result = Value::hash(coerced_map);
-            // Re-embed original keys on the new (coerced) hash.
-            if let Some(orig) = saved_original_keys {
+            // Re-embed original keys on the new (coerced) hash. Prefer the freshly
+            // reconstructed typed keys (object hash with a non-Str key type);
+            // otherwise fall back to any keys carried over from the source hash.
+            if track_typed_keys && !obj_original_keys.is_empty() {
+                result = runtime::utils::set_hash_original_keys(result, obj_original_keys);
+            } else if let Some(orig) = saved_original_keys {
                 result = runtime::utils::set_hash_original_keys(result, orig);
             }
             return Ok(result);

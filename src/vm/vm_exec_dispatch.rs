@@ -1515,6 +1515,10 @@ impl Interpreter {
                     // Hashes embed metadata in `HashData`; write the tagged value
                     // back (no-op Arc for array/instance side-table containers).
                     let tagged = self.tag_container_metadata(value, info);
+                    // Object hash (`my Int %{Int}`) declared in expression
+                    // position: the list->hash coercion stringified the keys
+                    // before the key type was tagged, so recover the typed keys now.
+                    let tagged = self.populate_object_hash_typed_keys(tagged);
                     self.set_env_with_main_alias(&name, tagged.clone());
                     self.update_local_if_exists(code, &name, &tagged);
                 }

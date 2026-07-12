@@ -63,6 +63,33 @@ impl Interpreter {
             };
             return format!("{}{}", resolved_base, suffix);
         }
+        // Handle a type capture that appears inside a parameterization's type
+        // arguments (`Associative[T]`, `Positional[T]`, `Hash[T,U]`): resolve
+        // each captured argument to its bound type so the check becomes e.g.
+        // `Associative[Int]`. Without this a genuinely-typed argument
+        // (`Hash[Int]`) is checked against the literal, unbound `T` and fails.
+        if let Some(open) = constraint.find('[')
+            && constraint.ends_with(']')
+        {
+            let base = &constraint[..open];
+            let inner = &constraint[open + 1..constraint.len() - 1];
+            let resolved_args: Vec<String> = inner
+                .split(',')
+                .map(|arg| {
+                    let arg = arg.trim();
+                    let resolved = self.resolved_type_capture_name(arg);
+                    if resolved != arg {
+                        resolved
+                    } else {
+                        arg.to_string()
+                    }
+                })
+                .collect();
+            let resolved_inner = resolved_args.join(",");
+            if resolved_inner != inner {
+                return format!("{}[{}]", base, resolved_inner);
+            }
+        }
         constraint.to_string()
     }
 
