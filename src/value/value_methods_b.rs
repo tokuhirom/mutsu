@@ -385,16 +385,12 @@ impl Value {
 
     /// Access SubData fields if this is a Sub (or upgraded WeakSub).
     ///
-    /// Deliberately still a place-based match (B-wall-in exemption): it hands
-    /// out a `&SubData` borrowed from `self`, which a `view()` guard cannot do
-    /// (the guard is a by-value temporary scoped to the match). At flip time
-    /// this body is reimplemented inside the seam as a pointee deref.
+    /// Hands out a `&SubData` borrowed from `self`, which a `view()` guard
+    /// cannot do (the guard is a by-value temporary scoped to the match);
+    /// implemented inside the seam as a payload-pointee deref.
     #[allow(dead_code)]
     pub(crate) fn as_sub(&self) -> Option<&SubData> {
-        match self {
-            Value(ValueRepr::Sub(data)) => Some(data),
-            _ => None,
-        }
+        self.0.as_sub_data()
     }
 
     /// Upgrade a WeakSub to a Sub, or return Nil if expired.

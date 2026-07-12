@@ -37,12 +37,27 @@ impl<'a, P> RefGuard<'a, P> {
     /// borrowed from the `Value`. Post-flip, `view()` instead reconstructs
     /// the pointer from the packed payload address.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn borrowed(source: &'a P) -> Self {
         // SAFETY: the copy is wrapped in ManuallyDrop and never dropped, so
         // the source keeps its unique ownership of the reference; the
         // PhantomData borrow keeps `source` alive and unmutated for 'a.
         Self {
             inner: ManuallyDrop::new(unsafe { std::ptr::read(source) }),
+            _borrow: PhantomData,
+        }
+    }
+
+    /// Packed-storage constructor: wrap a smart pointer reconstructed from a
+    /// NaN-box payload address. The caller (the `nanbox` decoder) guarantees
+    /// the word it decoded from stays alive and unmutated for `'a`, so the
+    /// wrapped pointer's referent cannot be released while the guard lives;
+    /// `ManuallyDrop` keeps this reconstruction from double-releasing the
+    /// word's owned reference.
+    #[inline]
+    pub(in crate::value) fn from_reconstructed(source: P) -> Self {
+        Self {
+            inner: ManuallyDrop::new(source),
             _borrow: PhantomData,
         }
     }

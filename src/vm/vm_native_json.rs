@@ -77,7 +77,7 @@ fn native_to_json(args: &[Value]) -> Result<Value, RuntimeError> {
             _ => {}
         }
     }
-    let subject = subject.unwrap_or(&Value::NIL);
+    let subject = subject.unwrap_or(&crate::value::NIL_VALUE);
     Ok(Value::str(json::to_json(subject, &opts)))
 }
 

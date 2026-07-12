@@ -117,7 +117,10 @@ impl Interpreter {
             }
             positionals.push(arg);
         }
-        let value = positionals.first().copied().unwrap_or(&Value::NIL);
+        let value = positionals
+            .first()
+            .copied()
+            .unwrap_or(&crate::value::NIL_VALUE);
         let type_name = match positionals.get(1).copied() {
             Some(v) => match v.view() {
                 ValueView::Package(name) => name.resolve(),

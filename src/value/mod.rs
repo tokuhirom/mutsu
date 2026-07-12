@@ -288,10 +288,8 @@ mod error;
 mod error_construct;
 mod error_typed;
 mod guards;
-/// NaN-boxed 8-byte representation core (3b-1 step B). Not yet wired into
-/// `Value` — the flip lands after the internal wall migration; until then the
-/// unit tests keep the packing machinery honest.
-#[allow(dead_code)]
+/// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
+/// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;
 mod serde_support;
 pub(crate) mod signature;
@@ -315,6 +313,13 @@ pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
+pub(in crate::value) use nanbox::NanBox;
+
+/// A `'static` Nil for call sites that keep a `&Value` beyond one expression:
+/// `&Value::NIL` stopped const-promoting once `Value` gained `Drop` (the
+/// NaN-box word releases its payload). Nil owns no payload, so a static is
+/// free.
+pub(crate) static NIL_VALUE: Value = Value(NanBox::NIL);
 pub(crate) use types::what_type_name;
 pub use view::ValueView;
 
@@ -958,24 +963,20 @@ pub enum EnumValue {
     Generic(Box<Value>),
 }
 
-/// The public `Value` type: a newtype **seal** over the representation enum
-/// (ADR-0005 §2.2/§2.3, 3b-1 step A). The field and [`ValueRepr`] itself are
-/// private to `crate::value`, so variant construction/matching outside
-/// `src/value/` is a compile error — the 3b-0 API wall
-/// (`docs/nanbox-3b0-api-wall.md`) is now enforced by the compiler, not just
-/// the `check-value-wall.sh` ratchet. Byte-identical to the old
-/// `pub enum Value`: `ValueRepr` is the same 48-byte enum, and the newtype
-/// adds no size, niche, or ABI change (`value_size_guard` still pins <= 48).
-///
-/// 3b-1 step B (the NaN-boxing representation flip, gated on ADR-0005
-/// acceptance) will replace `ValueRepr` behind this seal; call sites outside
-/// `src/value/` will not change.
+/// The public `Value` type: one NaN-boxed 8-byte word behind the newtype
+/// **seal** (ADR-0005, 3b-1 step B — the representation flip). The field and
+/// the [`NanBox`] encoding are private to `crate::value`; [`ValueRepr`]
+/// survives as the transient *working* enum crossed through
+/// [`Value::into_repr`] / [`Value::from_repr`], and borrowed reads decode
+/// through [`Value::view`]. Call sites outside `src/value/` see only the
+/// 3b-0 wall API, which is unchanged by the flip.
 #[derive(Clone)]
-pub struct Value(ValueRepr);
+pub struct Value(nanbox::NanBox);
 
 impl std::fmt::Debug for Value {
-    /// Forward to the repr so debug output is byte-identical to the pre-seal
-    /// derived output (trace logs and test expectations never see the wrapper).
+    /// Forward to the repr decode so debug output is byte-identical to the
+    /// pre-flip derived output (trace logs and test expectations never see
+    /// the packed word).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
@@ -987,7 +988,7 @@ impl std::fmt::Debug for Value {
 /// inside `src/value/` goes through the variant-named constructor shims on
 /// `Value` below (which 3b-1 step B will turn into the NaN-box tag-packing
 /// constructors); struct-like variants and all patterns use
-/// `Value(ValueRepr::...)` / `.0` directly.
+/// `Value::from_repr(ValueRepr::...)` / `.0` directly.
 #[allow(private_interfaces)]
 #[derive(Debug, Clone)]
 pub(in crate::value) enum ValueRepr {
@@ -1171,11 +1172,13 @@ pub(in crate::value) enum ValueRepr {
 
 impl Value {
     /// Whether two values hold the same representation variant. Wall-safe
-    /// replacement for `std::mem::discriminant` on the pre-seal `enum Value`
-    /// (`Value` is a struct now, where `discriminant` is unspecified).
+    /// replacement for `std::mem::discriminant` on the pre-seal `enum Value`:
+    /// compares the NaN-box words' variant tags (companion-field kinds — the
+    /// six Array kinds, itemized Hash, mutable Set/Bag/Mix, the four Junction
+    /// kinds, boxed Int — collapse onto their `ValueRepr` discriminant).
     #[inline]
     pub fn same_variant(&self, other: &Value) -> bool {
-        std::mem::discriminant(&self.0) == std::mem::discriminant(&other.0)
+        self.0.variant_tag() == other.0.variant_tag()
     }
 }
 
@@ -1191,31 +1194,33 @@ impl Value {
 /// naming it in owned expressions (constructing one to pass to `from_repr`,
 /// matching one returned by `into_repr`) stays valid forever.
 impl Value {
-    /// Decompose into the working representation enum (owned decode seam).
-    /// Post-flip: the NaN-box tag decode; pointer payloads move (no refcount
-    /// traffic), shared multi-field boxes clone field-wise.
+    /// Decompose into the working representation enum (owned decode seam):
+    /// the NaN-box tag decode. Pointer payloads move (no refcount traffic);
+    /// shared multi-field boxes clone field-wise.
     #[inline]
     pub(in crate::value) fn into_repr(self) -> ValueRepr {
-        self.0
+        self.0.into_repr()
     }
 
     /// Rebuild from the working representation enum (construction seam for
     /// struct-like variants; tuple/unit variants keep their named shims
-    /// below). Post-flip: the NaN-box tag-packing encode.
+    /// below): the NaN-box tag-packing encode.
     #[inline]
     pub(in crate::value) fn from_repr(repr: ValueRepr) -> Value {
-        Value(repr)
+        Value(nanbox::NanBox::from_repr(repr))
     }
 
-    /// Edit the representation in place (mutation seam). Post-flip: decode to
-    /// the working enum, run `f`, re-pack — so `f` must not assume its edits
-    /// alias other holders (none of the migrated sites do; aliased container
-    /// mutation goes through the pointee, not the repr). Unused until the
-    /// `&mut`-shaped sites migrate (the exemplar batch had none).
+    /// Edit the representation in place (mutation seam): decode to the
+    /// working enum, run `f`, re-pack — so `f` must not assume its edits
+    /// alias other holders (no site does; aliased container mutation goes
+    /// through the pointee, not the repr). If `f` unwinds, `self` is left
+    /// `Nil` — acceptable, the value is torn mid-edit either way.
     #[inline]
-    #[allow(dead_code)]
     pub(in crate::value) fn with_repr_mut<R>(&mut self, f: impl FnOnce(&mut ValueRepr) -> R) -> R {
-        f(&mut self.0)
+        let mut repr = std::mem::replace(&mut self.0, nanbox::NanBox::NIL).into_repr();
+        let out = f(&mut repr);
+        self.0 = nanbox::NanBox::from_repr(repr);
+        out
     }
 }
 
@@ -1223,176 +1228,176 @@ impl Value {
 /// [`ValueRepr`], so the `Value::Int(..)` / `Value::Nil` *expression* sites
 /// inside `src/value/` compile unchanged across the newtype seal (patterns
 /// cannot resolve to functions/consts, so every pattern site was rewritten to
-/// `Value(ValueRepr::..)`). Private to `crate::value` like the repr itself —
+/// `Value::from_repr(ValueRepr::..)`). Private to `crate::value` like the repr itself —
 /// outside the module these do not exist, which is the seal. In 3b-1 step B
 /// these bodies become the NaN-box tag-packing constructors, so construction
 /// is already funneled through the single place the flip will edit.
 /// Struct-like variants (`Instance { .. }`, `Capture { .. }`, ...) cannot be
-/// shimmed as functions; their sites construct `Value(ValueRepr::.. { .. })`.
+/// shimmed as functions; their sites construct `Value::from_repr(ValueRepr::.. { .. })`.
 #[allow(non_snake_case, non_upper_case_globals, dead_code)]
 impl Value {
-    pub(in crate::value) const Nil: Value = Value(ValueRepr::Nil);
-    pub(in crate::value) const Whatever: Value = Value(ValueRepr::Whatever);
-    pub(in crate::value) const HyperWhatever: Value = Value(ValueRepr::HyperWhatever);
+    pub(in crate::value) const Nil: Value = Value(nanbox::NanBox::NIL);
+    pub(in crate::value) const Whatever: Value = Value(nanbox::NanBox::WHATEVER);
+    pub(in crate::value) const HyperWhatever: Value = Value(nanbox::NanBox::HYPER_WHATEVER);
 
     #[inline]
     pub(in crate::value) fn Int(v: i64) -> Value {
-        Value(ValueRepr::Int(v))
+        Value::from_repr(ValueRepr::Int(v))
     }
     #[inline]
     pub(in crate::value) fn BigInt(v: Arc<NumBigInt>) -> Value {
-        Value(ValueRepr::BigInt(v))
+        Value::from_repr(ValueRepr::BigInt(v))
     }
     #[inline]
     pub(in crate::value) fn Num(v: f64) -> Value {
-        Value(ValueRepr::Num(v))
+        Value::from_repr(ValueRepr::Num(v))
     }
     #[inline]
     pub(in crate::value) fn Str(v: Arc<String>) -> Value {
-        Value(ValueRepr::Str(v))
+        Value::from_repr(ValueRepr::Str(v))
     }
     #[inline]
     pub(in crate::value) fn Bool(v: bool) -> Value {
-        Value(ValueRepr::Bool(v))
+        Value::from_repr(ValueRepr::Bool(v))
     }
     #[inline]
     pub(in crate::value) fn Range(a: i64, b: i64) -> Value {
-        Value(ValueRepr::Range(a, b))
+        Value::from_repr(ValueRepr::Range(a, b))
     }
     #[inline]
     pub(in crate::value) fn RangeExcl(a: i64, b: i64) -> Value {
-        Value(ValueRepr::RangeExcl(a, b))
+        Value::from_repr(ValueRepr::RangeExcl(a, b))
     }
     #[inline]
     pub(in crate::value) fn RangeExclStart(a: i64, b: i64) -> Value {
-        Value(ValueRepr::RangeExclStart(a, b))
+        Value::from_repr(ValueRepr::RangeExclStart(a, b))
     }
     #[inline]
     pub(in crate::value) fn RangeExclBoth(a: i64, b: i64) -> Value {
-        Value(ValueRepr::RangeExclBoth(a, b))
+        Value::from_repr(ValueRepr::RangeExclBoth(a, b))
     }
     #[inline]
     pub(in crate::value) fn Array(data: crate::gc::Gc<ArrayData>, kind: ArrayKind) -> Value {
-        Value(ValueRepr::Array(data, kind))
+        Value::from_repr(ValueRepr::Array(data, kind))
     }
     #[inline]
     pub(in crate::value) fn Hash(data: Gc<HashData>, itemized: bool) -> Value {
-        Value(ValueRepr::Hash(data, itemized))
+        Value::from_repr(ValueRepr::Hash(data, itemized))
     }
     #[inline]
     pub(in crate::value) fn Rat(n: i64, d: i64) -> Value {
-        Value(ValueRepr::Rat(n, d))
+        Value::from_repr(ValueRepr::Rat(n, d))
     }
     #[inline]
     pub(in crate::value) fn FatRat(n: i64, d: i64) -> Value {
-        Value(ValueRepr::FatRat(n, d))
+        Value::from_repr(ValueRepr::FatRat(n, d))
     }
     #[inline]
     pub(in crate::value) fn BigRat(n: Box<NumBigInt>, d: Box<NumBigInt>) -> Value {
-        Value(ValueRepr::BigRat(n, d))
+        Value::from_repr(ValueRepr::BigRat(n, d))
     }
     #[inline]
     pub(in crate::value) fn Complex(re: f64, im: f64) -> Value {
-        Value(ValueRepr::Complex(re, im))
+        Value::from_repr(ValueRepr::Complex(re, im))
     }
     #[inline]
     pub(in crate::value) fn Set(data: crate::gc::Gc<SetData>, mutable: bool) -> Value {
-        Value(ValueRepr::Set(data, mutable))
+        Value::from_repr(ValueRepr::Set(data, mutable))
     }
     #[inline]
     pub(in crate::value) fn Bag(data: crate::gc::Gc<BagData>, mutable: bool) -> Value {
-        Value(ValueRepr::Bag(data, mutable))
+        Value::from_repr(ValueRepr::Bag(data, mutable))
     }
     #[inline]
     pub(in crate::value) fn Mix(data: crate::gc::Gc<MixData>, mutable: bool) -> Value {
-        Value(ValueRepr::Mix(data, mutable))
+        Value::from_repr(ValueRepr::Mix(data, mutable))
     }
     #[inline]
     pub(in crate::value) fn Package(sym: Symbol) -> Value {
-        Value(ValueRepr::Package(sym))
+        Value::from_repr(ValueRepr::Package(sym))
     }
     #[inline]
     pub(in crate::value) fn Pair(key: String, val: Box<Value>) -> Value {
-        Value(ValueRepr::Pair(key, val))
+        Value::from_repr(ValueRepr::Pair(key, val))
     }
     #[inline]
     pub(in crate::value) fn ValuePair(key: Box<Value>, val: Box<Value>) -> Value {
-        Value(ValueRepr::ValuePair(key, val))
+        Value::from_repr(ValueRepr::ValuePair(key, val))
     }
     #[inline]
     pub(in crate::value) fn Regex(pat: Arc<String>) -> Value {
-        Value(ValueRepr::Regex(pat))
+        Value::from_repr(ValueRepr::Regex(pat))
     }
     #[inline]
     pub(in crate::value) fn RegexWithAdverbs(adv: Box<RegexAdverbs>) -> Value {
-        Value(ValueRepr::RegexWithAdverbs(adv))
+        Value::from_repr(ValueRepr::RegexWithAdverbs(adv))
     }
     #[inline]
     pub(in crate::value) fn Sub(data: crate::gc::Gc<SubData>) -> Value {
-        Value(ValueRepr::Sub(data))
+        Value::from_repr(ValueRepr::Sub(data))
     }
     #[inline]
     pub(in crate::value) fn WeakSub(data: crate::gc::WeakGc<SubData>) -> Value {
-        Value(ValueRepr::WeakSub(data))
+        Value::from_repr(ValueRepr::WeakSub(data))
     }
     #[inline]
     pub(in crate::value) fn Seq(items: Arc<Vec<Value>>) -> Value {
-        Value(ValueRepr::Seq(items))
+        Value::from_repr(ValueRepr::Seq(items))
     }
     #[inline]
     pub(in crate::value) fn HyperSeq(items: Arc<Vec<Value>>) -> Value {
-        Value(ValueRepr::HyperSeq(items))
+        Value::from_repr(ValueRepr::HyperSeq(items))
     }
     #[inline]
     pub(in crate::value) fn RaceSeq(items: Arc<Vec<Value>>) -> Value {
-        Value(ValueRepr::RaceSeq(items))
+        Value::from_repr(ValueRepr::RaceSeq(items))
     }
     #[inline]
     pub(in crate::value) fn Slip(items: Arc<Vec<Value>>) -> Value {
-        Value(ValueRepr::Slip(items))
+        Value::from_repr(ValueRepr::Slip(items))
     }
     #[inline]
     pub(in crate::value) fn LazyList(data: crate::gc::Gc<LazyList>) -> Value {
-        Value(ValueRepr::LazyList(data))
+        Value::from_repr(ValueRepr::LazyList(data))
     }
     #[inline]
     pub(in crate::value) fn Promise(p: SharedPromise) -> Value {
-        Value(ValueRepr::Promise(p))
+        Value::from_repr(ValueRepr::Promise(p))
     }
     #[inline]
     pub(in crate::value) fn Channel(c: SharedChannel) -> Value {
-        Value(ValueRepr::Channel(c))
+        Value::from_repr(ValueRepr::Channel(c))
     }
     #[inline]
     pub(in crate::value) fn Mixin(
         inner: Arc<Value>,
         overrides: Arc<HashMap<String, Value>>,
     ) -> Value {
-        Value(ValueRepr::Mixin(inner, overrides))
+        Value::from_repr(ValueRepr::Mixin(inner, overrides))
     }
     #[inline]
     pub(in crate::value) fn Uni(data: Box<UniData>) -> Value {
-        Value(ValueRepr::Uni(data))
+        Value::from_repr(ValueRepr::Uni(data))
     }
     #[inline]
     pub(in crate::value) fn CustomType(data: Box<CustomTypeData>) -> Value {
-        Value(ValueRepr::CustomType(data))
+        Value::from_repr(ValueRepr::CustomType(data))
     }
     #[inline]
     pub(in crate::value) fn CustomTypeInstance(data: Box<CustomTypeInstanceData>) -> Value {
-        Value(ValueRepr::CustomTypeInstance(data))
+        Value::from_repr(ValueRepr::CustomTypeInstance(data))
     }
     #[inline]
     pub(in crate::value) fn Scalar(inner: Box<Value>) -> Value {
-        Value(ValueRepr::Scalar(inner))
+        Value::from_repr(ValueRepr::Scalar(inner))
     }
     #[inline]
     pub(in crate::value) fn ContainerRef(cell: Gc<Mutex<Value>>) -> Value {
-        Value(ValueRepr::ContainerRef(cell))
+        Value::from_repr(ValueRepr::ContainerRef(cell))
     }
     #[inline]
     pub(in crate::value) fn LazyThunk(data: Arc<LazyThunkData>) -> Value {
-        Value(ValueRepr::LazyThunk(data))
+        Value::from_repr(ValueRepr::LazyThunk(data))
     }
 }
 
@@ -1760,14 +1765,12 @@ mod value_size_guard {
     use super::*;
     #[test]
     fn value_stays_small() {
-        // Oversized variants used to hold their payloads inline, making `Value`
-        // 72 bytes (every clone/move pays for the largest variant). Boxing the
-        // big payloads shrank it: Capture+BigRat (72->64), CustomTypeInstance
-        // (64->56), Uni+RegexWithAdverbs+CustomType (56->48). Remaining 40-byte
-        // variants (Proxy, Enum, ...) are boxed in follow-up steps. Guard against
-        // layout regressions.
+        // Since the 3b-1 step-B representation flip, `Value` is one NaN-boxed
+        // 8-byte word (`NanBox`); `Option<Value>` keeps the same size via the
+        // NonZeroU64 niche. Guard against layout regressions.
         let sz = std::mem::size_of::<Value>();
-        assert!(sz <= 48, "size_of::<Value>() = {sz}, expected <= 48");
+        assert!(sz <= 8, "size_of::<Value>() = {sz}, expected <= 8");
+        assert_eq!(std::mem::size_of::<Option<Value>>(), sz);
     }
 }
 
@@ -1780,14 +1783,14 @@ mod hash_chokepoint_tests {
         let mut map = HashMap::new();
         map.insert("a".to_string(), Value::Int(1));
         Value::hash_insert_through(&mut map, "a".to_string(), Value::Int(2));
-        assert!(matches!(map.get("a"), Some(Value(ValueRepr::Int(2)))));
+        assert_eq!(map.get("a").and_then(Value::as_int), Some(2));
     }
 
     #[test]
     fn insert_through_creates_missing_entry() {
         let mut map = HashMap::new();
         Value::hash_insert_through(&mut map, "b".to_string(), Value::Int(7));
-        assert!(matches!(map.get("b"), Some(Value(ValueRepr::Int(7)))));
+        assert_eq!(map.get("b").and_then(Value::as_int), Some(7));
     }
 
     #[test]
@@ -1801,10 +1804,10 @@ mod hash_chokepoint_tests {
         Value::hash_insert_through(&mut map, "k".to_string(), Value::Int(99));
         // The entry is still the same cell (binding preserved)...
         assert!(matches!(
-            map.get("k"),
-            Some(Value(ValueRepr::ContainerRef(_)))
+            map.get("k").map(Value::view),
+            Some(ValueView::ContainerRef(_))
         ));
         // ...and the alias observes the new value through the cell.
-        assert!(matches!(*cell.lock().unwrap(), Value(ValueRepr::Int(99))));
+        assert_eq!(cell.lock().unwrap().as_int(), Some(99));
     }
 }

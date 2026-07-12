@@ -70,6 +70,15 @@ impl Value {
     /// `Gc` node nested inside them is still reached (otherwise the wrapper is an
     /// invisible edge and a cycle through it is missed — an under-collect).
     pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+        // Post-flip, the multi-field payloads (Pair, Scalar, Capture, ...)
+        // live behind one shared `Arc<...Box>`: when that box is shared by
+        // N > 1 holders, tracing through every holder would over-count its
+        // inner `Gc` edges (trial-deletion underflow). Treat a shared box as
+        // an external root holder instead — same under-collect tradeoff as
+        // `uniquely_owned` below. Node kinds and inline kinds pass through.
+        if !self.0.value_bearing_arc_payload_uniquely_owned() {
+            return;
+        }
         match self.view() {
             // Migrated `Gc<T>` node variants: yield the node itself. The
             // collector traces the node's own children via its `Trace` impl, so
