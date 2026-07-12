@@ -18,13 +18,14 @@
 //! variant (`Int`/`Str`/`Bool`/`Nil`/`Range`/`Version`/`Routine`/... and
 //! `WeakSub`, a WEAK edge) cannot reach a live `Gc` node and is a no-op.
 
+use super::ValueView;
 use std::sync::{Arc, Condvar, Mutex};
 
 use crate::gc::{ErasedGc, RootVisitor, Trace, visit_map_values};
 
 use super::{
     ArrayData, BagData, ChannelState, EnumValue, HashData, InstanceAttrs, LazyList, MixData,
-    PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value, ValueRepr,
+    PromiseState, SetData, SharedChannel, SharedPromise, SubData, Value,
 };
 
 /// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
@@ -69,23 +70,23 @@ impl Value {
     /// `Gc` node nested inside them is still reached (otherwise the wrapper is an
     /// invisible edge and a cycle through it is missed — an under-collect).
     pub(crate) fn gc_trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        match self {
+        match self.view() {
             // Migrated `Gc<T>` node variants: yield the node itself. The
             // collector traces the node's own children via its `Trace` impl, so
             // we do NOT recurse into its contents here.
-            Value(ValueRepr::Hash(data, _)) => visit(&data.erased()),
-            Value(ValueRepr::Array(data, _)) => visit(&data.erased()),
-            Value(ValueRepr::Set(data, _)) => visit(&data.erased()),
-            Value(ValueRepr::Bag(data, _)) => visit(&data.erased()),
-            Value(ValueRepr::Mix(data, _)) => visit(&data.erased()),
-            Value(ValueRepr::ContainerRef(cell)) => visit(&cell.erased()),
-            Value(ValueRepr::Sub(data)) => visit(&data.erased()),
-            Value(ValueRepr::Instance { attributes, .. }) => visit(&attributes.erased()),
-            Value(ValueRepr::LazyList(ll)) => visit(&ll.erased()),
+            ValueView::Hash(data) => visit(&data.erased()),
+            ValueView::Array(data, _) => visit(&data.erased()),
+            ValueView::Set(data, _) => visit(&data.erased()),
+            ValueView::Bag(data, _) => visit(&data.erased()),
+            ValueView::Mix(data, _) => visit(&data.erased()),
+            ValueView::ContainerRef(cell) => visit(&cell.erased()),
+            ValueView::Sub(data) => visit(&data.erased()),
+            ValueView::Instance { attributes, .. } => visit(&attributes.erased()),
+            ValueView::LazyList(ll) => visit(&ll.erased()),
             // A hash-entry lvalue reference holds a strong `Gc<HashData>` node
             // (the hash it indexes into); yield it so a cycle routed through a
             // stored entry-ref is still reached.
-            Value(ValueRepr::HashEntryRef { hash, .. }) => visit(&hash.erased()),
+            ValueView::HashEntryRef { hash, .. } => visit(&hash.erased()),
 
             // Non-node wrappers that own/share `Value`s: recurse so a `Gc` node
             // nested inside is reached. `Box`-owned wrappers recurse
@@ -93,12 +94,12 @@ impl Value {
             // only when uniquely owned (see `uniquely_owned` for why a shared
             // wrapper would over-decrement). `WeakSub` is a WEAK edge — not
             // traced.
-            Value(ValueRepr::Pair(_, v)) | Value(ValueRepr::Scalar(v)) => v.gc_trace(visit),
-            Value(ValueRepr::ValuePair(k, v)) => {
+            ValueView::Pair(_, v) | ValueView::Scalar(v) => v.gc_trace(visit),
+            ValueView::ValuePair(k, v) => {
                 k.gc_trace(visit);
                 v.gc_trace(visit);
             }
-            Value(ValueRepr::Capture { positional, named }) => {
+            ValueView::Capture { positional, named } => {
                 for v in positional.iter() {
                     v.gc_trace(visit);
                 }
@@ -106,11 +107,11 @@ impl Value {
                     v.gc_trace(visit);
                 }
             }
-            Value(ValueRepr::Seq(items))
-            | Value(ValueRepr::HyperSeq(items))
-            | Value(ValueRepr::RaceSeq(items))
-            | Value(ValueRepr::Slip(items)) => trace_shared_slice(items, visit),
-            Value(ValueRepr::Mixin(inner, overrides)) => {
+            ValueView::Seq(items)
+            | ValueView::HyperSeq(items)
+            | ValueView::RaceSeq(items)
+            | ValueView::Slip(items) => trace_shared_slice(items, visit),
+            ValueView::Mixin(inner, overrides) => {
                 if uniquely_owned(inner) {
                     inner.gc_trace(visit);
                 }
@@ -120,32 +121,32 @@ impl Value {
                     }
                 }
             }
-            Value(ValueRepr::Junction { values, .. }) => trace_shared_slice(values, visit),
-            Value(ValueRepr::GenericRange { start, end, .. }) => {
+            ValueView::Junction { values, .. } => trace_shared_slice(values, visit),
+            ValueView::GenericRange { start, end, .. } => {
                 start.gc_trace(visit);
                 end.gc_trace(visit);
             }
-            Value(ValueRepr::Proxy {
+            ValueView::Proxy {
                 fetcher, storer, ..
-            }) => {
+            } => {
                 fetcher.gc_trace(visit);
                 storer.gc_trace(visit);
             }
             // Uniquely-owned `Box<Value>` wrappers: recurse (no sharing, so the
             // recursion visits each edge exactly once).
-            Value(ValueRepr::LazyIoLines { handle, .. }) => handle.gc_trace(visit),
+            ValueView::LazyIoLines { handle, .. } => handle.gc_trace(visit),
             // An enum value can carry an arbitrary `Value` payload.
-            Value(ValueRepr::Enum {
+            ValueView::Enum {
                 value: EnumValue::Generic(v),
                 ..
-            }) => v.gc_trace(visit),
-            Value(ValueRepr::ParametricRole { type_args, .. }) => {
+            } => v.gc_trace(visit),
+            ValueView::ParametricRole { type_args, .. } => {
                 for v in type_args.iter() {
                     v.gc_trace(visit);
                 }
             }
-            Value(ValueRepr::CustomType(data)) => data.how.gc_trace(visit),
-            Value(ValueRepr::CustomTypeInstance(data)) => {
+            ValueView::CustomType(data) => data.how.gc_trace(visit),
+            ValueView::CustomTypeInstance(data) => {
                 data.how.gc_trace(visit);
                 if uniquely_owned(&data.attributes) {
                     for v in data.attributes.values() {
@@ -155,7 +156,7 @@ impl Value {
             }
             // A lazy thunk holds its (possibly closure-capturing) block and any
             // cached forced result — both can close a cycle.
-            Value(ValueRepr::LazyThunk(data)) => {
+            ValueView::LazyThunk(data) => {
                 if uniquely_owned(data) {
                     data.thunk.gc_trace(visit);
                     if let Ok(cache) = data.cache.lock()
@@ -167,8 +168,8 @@ impl Value {
             }
             // Migrated async `Gc<T>` node variants (§11 steps 6-7): yield the
             // node; its `Trace` impl walks the held result / queue / callbacks.
-            Value(ValueRepr::Promise(p)) => visit(&p.erased()),
-            Value(ValueRepr::Channel(c)) => visit(&c.erased()),
+            ValueView::Promise(p) => visit(&p.erased()),
+            ValueView::Channel(c) => visit(&c.erased()),
             _ => {}
         }
     }
@@ -428,38 +429,38 @@ impl Trace for HashData {
 impl Value {
     #[allow(dead_code)]
     pub(crate) fn visit_gc_children(&self, visitor: &mut dyn RootVisitor) {
-        match self {
-            Value(ValueRepr::Array(data, _)) => data.visit_gc_children(visitor),
-            Value(ValueRepr::Hash(data, _)) => data.visit_gc_children(visitor),
-            Value(ValueRepr::Set(data, _)) => {
+        match self.view() {
+            ValueView::Array(data, _) => data.visit_gc_children(visitor),
+            ValueView::Hash(data) => data.visit_gc_children(visitor),
+            ValueView::Set(data, _) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
                 }
             }
-            Value(ValueRepr::Bag(data, _)) => {
+            ValueView::Bag(data, _) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
                 }
             }
-            Value(ValueRepr::Mix(data, _)) => {
+            ValueView::Mix(data, _) => {
                 if let Some(keys) = &data.original_keys {
                     visit_map_values(visitor, keys);
                 }
             }
-            Value(ValueRepr::Pair(_, v)) => visitor.visit_value(v),
-            Value(ValueRepr::ValuePair(k, v)) => {
+            ValueView::Pair(_, v) => visitor.visit_value(v),
+            ValueView::ValuePair(k, v) => {
                 visitor.visit_value(k);
                 visitor.visit_value(v);
             }
-            Value(ValueRepr::Sub(data)) => data.visit_gc_children(visitor),
-            Value(ValueRepr::Instance { attributes, .. }) => attributes.visit_gc_children(visitor),
-            Value(ValueRepr::ContainerRef(cell)) => {
+            ValueView::Sub(data) => data.visit_gc_children(visitor),
+            ValueView::Instance { attributes, .. } => attributes.visit_gc_children(visitor),
+            ValueView::ContainerRef(cell) => {
                 if let Ok(guard) = cell.lock() {
                     visitor.visit_value(&guard);
                 }
             }
-            Value(ValueRepr::Promise(p)) => p.visit_gc_children(visitor),
-            Value(ValueRepr::Channel(c)) => c.visit_gc_children(visitor),
+            ValueView::Promise(p) => p.visit_gc_children(visitor),
+            ValueView::Channel(c) => c.visit_gc_children(visitor),
             _ => {}
         }
     }
@@ -592,7 +593,7 @@ mod tests {
             map,
             ..Default::default()
         };
-        let value = Value(ValueRepr::Hash(crate::gc::Gc::new(data), false));
+        let value = Value::Hash(crate::gc::Gc::new(data), false);
 
         let mut visitor = CountingVisitor { count: 0 };
         value.visit_gc_children(&mut visitor);
@@ -633,10 +634,7 @@ mod tests {
     }
 
     fn fresh_hash_node() -> Value {
-        Value(ValueRepr::Hash(
-            crate::gc::Gc::new(HashData::default()),
-            false,
-        ))
+        Value::Hash(crate::gc::Gc::new(HashData::default()), false)
     }
 
     /// Build a minimal `SubData` capturing `env`, for the shared-env trace tests.
@@ -695,10 +693,7 @@ mod tests {
         // One env map holding the hash, shared by TWO closures (and kept
         // shared through the collect by `env` itself — 3 Arc holders).
         let mut env = crate::env::Env::new();
-        env.insert(
-            "%h".to_string(),
-            Value(ValueRepr::Hash(hash.clone(), false)),
-        );
+        env.insert("%h".to_string(), Value::Hash(hash.clone(), false));
 
         // The closures form a genuine garbage cycle through `ContainerRef`
         // cells in their (owned, always-traced) assumed args:
@@ -788,7 +783,7 @@ mod tests {
         // A HashEntryRef holds a strong `Gc<HashData>`; gc_trace must yield it
         // so a cycle routed through a stored entry-ref is reachable.
         let hash = crate::gc::Gc::new(HashData::default());
-        let value = Value(ValueRepr::HashEntryRef {
+        let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
             hash,
             path: vec!["k".to_string()],
             eager: false,
@@ -810,7 +805,7 @@ mod tests {
 
     #[test]
     fn enum_generic_payload_is_traced() {
-        let value = Value(ValueRepr::Enum {
+        let value = Value::from_repr(crate::value::ValueRepr::Enum {
             enum_type: crate::symbol::Symbol::intern("E"),
             key: crate::symbol::Symbol::intern("A"),
             value: crate::value::EnumValue::Generic(Box::new(fresh_hash_node())),

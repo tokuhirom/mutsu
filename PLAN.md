@@ -161,12 +161,15 @@ sweep まで含めて完了 — 経緯と詳細は [news/2026-07.md](news/2026-0
       3b-1 step A `Value` newtype seal ✅（2026-07-11）・step B コア表現
       （`src/value/nanbox/`: 8B word・全 variant ロスレス pack/unpack・Clone/Drop・kind 表）✅。
       設計とスライス計画 = [docs/nanbox-3b1-step-b-design.md](docs/nanbox-3b1-step-b-design.md)
-      （[ADR-0005](docs/adr/0005-nanbox-representation-encoding.md) Accepted 2026-07-12）。残:
-      **B-wall-in**（`src/value/` 内部 866 サイトの `ValueRepr::` パターンを view()/into_repr()/
-      with_*_mut へ機械移行・byte-identical 複数 PR）→ **B-guards**（`ValueView` ポインタ
-      フィールドを guard 型 `ArcRef`/`GcRef` へ）→ **B-flip**（`Value(ValueRepr)` →
-      `Value(NanBox)`・`value_size_guard` 48→8）。ゲート = make test＋roast＋gc-stress green・
-      GC カウンタ不変・[docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3.2 マイクロベンチ。
+      （[ADR-0005](docs/adr/0005-nanbox-representation-encoding.md) Accepted 2026-07-12）。
+      **B-wall-in ✅**（内部 ~740 place-based サイトを view()/into_repr()/from_repr() へ
+      機械移行済み。残 `ValueRepr::` は seam〔view.rs・mod.rs shim〕と owned-position 合法形、
+      ＋文書化済み例外 2 = `as_sub`/`hash_is_itemized`）。残:
+      **B-guards**（`ValueView` ポインタフィールドを guard 型 `ArcRef`/`GcRef` へ）→
+      **B-flip**（`Value(ValueRepr)` → `Value(NanBox)`・view()/shim/same_variant/Trace/serde の
+      seam 差し替え・mod.rs 内テストの追随・`value_size_guard` 48→8）。ゲート = make test＋
+      roast＋gc-stress green・GC カウンタ不変・
+      [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3.2 マイクロベンチ。
 - [ ] 層3a hardening（H1 継続計測〜H5 background collect の着手トリガ）=
       [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) 参照。grammar パースの候補 push
       自体（~510k/200-parse）の抑制は未着手（実害＝メモリ保持は `Weak` 化で解消済み）。

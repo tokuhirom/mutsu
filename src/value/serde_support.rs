@@ -4,7 +4,7 @@
 //! variants (Sub, WeakSub, Promise, Channel, LazyList, Proxy, CustomType, etc.)
 //! are rejected at serialization time with an error.
 
-use super::{ArrayKind, EnumValue, JunctionKind, Value, ValueRepr, VersionPart};
+use super::{ArrayKind, EnumValue, JunctionKind, Value, ValueRepr, ValueView, VersionPart};
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -116,76 +116,74 @@ enum SerJunctionKind {
 }
 
 fn value_to_ser(v: &Value) -> Result<SerValue, String> {
-    match v {
-        Value(ValueRepr::Int(n)) => Ok(SerValue::Int(*n)),
-        Value(ValueRepr::BigInt(n)) => Ok(SerValue::BigInt((**n).clone())),
-        Value(ValueRepr::Num(n)) => Ok(SerValue::Num(*n)),
-        Value(ValueRepr::Str(s)) => Ok(SerValue::Str((**s).clone())),
-        Value(ValueRepr::Bool(b)) => Ok(SerValue::Bool(*b)),
-        Value(ValueRepr::Range(a, b)) => Ok(SerValue::Range(*a, *b)),
-        Value(ValueRepr::RangeExcl(a, b)) => Ok(SerValue::RangeExcl(*a, *b)),
-        Value(ValueRepr::RangeExclStart(a, b)) => Ok(SerValue::RangeExclStart(*a, *b)),
-        Value(ValueRepr::RangeExclBoth(a, b)) => Ok(SerValue::RangeExclBoth(*a, *b)),
-        Value(ValueRepr::GenericRange {
+    match v.view() {
+        ValueView::Int(n) => Ok(SerValue::Int(n)),
+        ValueView::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
+        ValueView::Num(n) => Ok(SerValue::Num(n)),
+        ValueView::Str(s) => Ok(SerValue::Str((**s).clone())),
+        ValueView::Bool(b) => Ok(SerValue::Bool(b)),
+        ValueView::Range(a, b) => Ok(SerValue::Range(a, b)),
+        ValueView::RangeExcl(a, b) => Ok(SerValue::RangeExcl(a, b)),
+        ValueView::RangeExclStart(a, b) => Ok(SerValue::RangeExclStart(a, b)),
+        ValueView::RangeExclBoth(a, b) => Ok(SerValue::RangeExclBoth(a, b)),
+        ValueView::GenericRange {
             start,
             end,
             excl_start,
             excl_end,
-        }) => Ok(SerValue::GenericRange {
+        } => Ok(SerValue::GenericRange {
             start: Box::new(value_to_ser(start)?),
             end: Box::new(value_to_ser(end)?),
-            excl_start: *excl_start,
-            excl_end: *excl_end,
+            excl_start,
+            excl_end,
         }),
-        Value(ValueRepr::Array(items, kind)) => {
+        ValueView::Array(items, kind) => {
             let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
-            Ok(SerValue::Array(ser_items?, *kind))
+            Ok(SerValue::Array(ser_items?, kind))
         }
-        Value(ValueRepr::Hash(map, _)) => {
+        ValueView::Hash(map) => {
             let ser_map: Result<HashMap<_, _>, _> = map
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
                 .collect();
             Ok(SerValue::Hash(ser_map?))
         }
-        Value(ValueRepr::Rat(n, d)) => Ok(SerValue::Rat(*n, *d)),
-        Value(ValueRepr::FatRat(n, d)) => Ok(SerValue::FatRat(*n, *d)),
-        Value(ValueRepr::BigRat(n, d)) => Ok(SerValue::BigRat((**n).clone(), (**d).clone())),
-        Value(ValueRepr::Complex(r, i)) => Ok(SerValue::Complex(*r, *i)),
-        Value(ValueRepr::Set(s, _)) => Ok(SerValue::Set(s.elements.clone())),
-        Value(ValueRepr::Bag(b, _)) => Ok(SerValue::Bag(b.counts.clone())),
-        Value(ValueRepr::Mix(m, _)) => Ok(SerValue::Mix(m.weights.clone())),
-        Value(ValueRepr::CompUnitDepSpec { short_name }) => Ok(SerValue::CompUnitDepSpec {
-            short_name: *short_name,
-        }),
-        Value(ValueRepr::Package(s)) => Ok(SerValue::Package(*s)),
-        Value(ValueRepr::Routine {
+        ValueView::Rat(n, d) => Ok(SerValue::Rat(n, d)),
+        ValueView::FatRat(n, d) => Ok(SerValue::FatRat(n, d)),
+        ValueView::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone())),
+        ValueView::Complex(r, i) => Ok(SerValue::Complex(r, i)),
+        ValueView::Set(s, _) => Ok(SerValue::Set(s.elements.clone())),
+        ValueView::Bag(b, _) => Ok(SerValue::Bag(b.counts.clone())),
+        ValueView::Mix(m, _) => Ok(SerValue::Mix(m.weights.clone())),
+        ValueView::CompUnitDepSpec { short_name } => Ok(SerValue::CompUnitDepSpec { short_name }),
+        ValueView::Package(s) => Ok(SerValue::Package(s)),
+        ValueView::Routine {
             package,
             name,
             is_regex,
-        }) => Ok(SerValue::Routine {
-            package: *package,
-            name: *name,
-            is_regex: *is_regex,
+        } => Ok(SerValue::Routine {
+            package,
+            name,
+            is_regex,
         }),
-        Value(ValueRepr::Pair(k, v)) => Ok(SerValue::Pair(k.clone(), Box::new(value_to_ser(v)?))),
-        Value(ValueRepr::ValuePair(k, v)) => Ok(SerValue::ValuePair(
+        ValueView::Pair(k, v) => Ok(SerValue::Pair(k.clone(), Box::new(value_to_ser(v)?))),
+        ValueView::ValuePair(k, v) => Ok(SerValue::ValuePair(
             Box::new(value_to_ser(k)?),
             Box::new(value_to_ser(v)?),
         )),
-        Value(ValueRepr::Enum {
+        ValueView::Enum {
             enum_type,
             key,
             value,
             index,
-        }) => Ok(SerValue::Enum {
-            enum_type: *enum_type,
-            key: *key,
+        } => Ok(SerValue::Enum {
+            enum_type,
+            key,
             value: value.clone(),
-            index: *index,
+            index,
         }),
-        Value(ValueRepr::Regex(s)) => Ok(SerValue::Regex((**s).clone())),
-        Value(ValueRepr::RegexWithAdverbs(a)) => Ok(SerValue::RegexWithAdverbs {
+        ValueView::Regex(s) => Ok(SerValue::Regex((**s).clone())),
+        ValueView::RegexWithAdverbs(a) => Ok(SerValue::RegexWithAdverbs {
             pattern: (*a.pattern).clone(),
             global: a.global,
             exhaustive: a.exhaustive,
@@ -200,7 +198,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             samecase: a.samecase,
             samespace: a.samespace,
         }),
-        Value(ValueRepr::Junction { kind, values }) => {
+        ValueView::Junction { kind, values } => {
             let ser_kind = match kind {
                 JunctionKind::Any => SerJunctionKind::Any,
                 JunctionKind::All => SerJunctionKind::All,
@@ -213,38 +211,36 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 values: ser_values?,
             })
         }
-        Value(ValueRepr::Seq(items))
-        | Value(ValueRepr::HyperSeq(items))
-        | Value(ValueRepr::RaceSeq(items)) => {
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
             Ok(SerValue::Seq(ser_items?))
         }
-        Value(ValueRepr::Slip(items)) => {
+        ValueView::Slip(items) => {
             let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
             Ok(SerValue::Slip(ser_items?))
         }
-        Value(ValueRepr::Version { parts, plus, minus }) => Ok(SerValue::Version {
+        ValueView::Version { parts, plus, minus } => Ok(SerValue::Version {
             parts: parts.clone(),
-            plus: *plus,
-            minus: *minus,
+            plus,
+            minus,
         }),
-        Value(ValueRepr::Instance {
+        ValueView::Instance {
             class_name,
             attributes,
             id,
-        }) => {
+        } => {
             let ser_attrs: Result<HashMap<_, _>, _> = attributes
                 .as_map()
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
                 .collect();
             Ok(SerValue::Instance {
-                class_name: *class_name,
+                class_name,
                 attributes: ser_attrs?,
-                id: *id,
+                id,
             })
         }
-        Value(ValueRepr::Mixin(inner, overrides)) => {
+        ValueView::Mixin(inner, overrides) => {
             let ser_overrides: Result<HashMap<_, _>, _> = overrides
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
@@ -254,7 +250,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 ser_overrides?,
             ))
         }
-        Value(ValueRepr::Capture { positional, named }) => {
+        ValueView::Capture { positional, named } => {
             let ser_pos: Result<Vec<_>, _> = positional.iter().map(value_to_ser).collect();
             let ser_named: Result<HashMap<_, _>, _> = named
                 .iter()
@@ -265,39 +261,39 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 named: ser_named?,
             })
         }
-        Value(ValueRepr::Uni(u)) => Ok(SerValue::Uni {
+        ValueView::Uni(u) => Ok(SerValue::Uni {
             form: u.form.clone(),
             text: u.text.clone(),
         }),
-        Value(ValueRepr::ParametricRole {
+        ValueView::ParametricRole {
             base_name,
             type_args,
-        }) => {
+        } => {
             let ser_args: Result<Vec<_>, _> = type_args.iter().map(value_to_ser).collect();
             Ok(SerValue::ParametricRole {
-                base_name: *base_name,
+                base_name,
                 type_args: ser_args?,
             })
         }
-        Value(ValueRepr::Scalar(inner)) => Ok(SerValue::Scalar(Box::new(value_to_ser(inner)?))),
-        Value(ValueRepr::Nil) => Ok(SerValue::Nil),
-        Value(ValueRepr::Whatever) => Ok(SerValue::Whatever),
-        Value(ValueRepr::HyperWhatever) => Ok(SerValue::HyperWhatever),
+        ValueView::Scalar(inner) => Ok(SerValue::Scalar(Box::new(value_to_ser(inner)?))),
+        ValueView::Nil => Ok(SerValue::Nil),
+        ValueView::Whatever => Ok(SerValue::Whatever),
+        ValueView::HyperWhatever => Ok(SerValue::HyperWhatever),
         // Non-serializable variants
-        Value(ValueRepr::Sub(_))
-        | Value(ValueRepr::WeakSub(_))
-        | Value(ValueRepr::LazyList(_))
-        | Value(ValueRepr::Promise(_))
-        | Value(ValueRepr::Channel(_))
-        | Value(ValueRepr::Proxy { .. })
-        | Value(ValueRepr::CustomType { .. })
-        | Value(ValueRepr::CustomTypeInstance(_))
-        | Value(ValueRepr::LazyThunk(_))
-        | Value(ValueRepr::LazyIoLines { .. })
-        | Value(ValueRepr::HashEntryRef { .. })
-        | Value(ValueRepr::ContainerRef(_)) => Err(format!(
-            "cannot serialize Value variant: {:?}",
-            std::mem::discriminant(&v.0)
+        ValueView::Sub(_)
+        | ValueView::WeakSub(_)
+        | ValueView::LazyList(_)
+        | ValueView::Promise(_)
+        | ValueView::Channel(_)
+        | ValueView::Proxy { .. }
+        | ValueView::CustomType { .. }
+        | ValueView::CustomTypeInstance(_)
+        | ValueView::LazyThunk(_)
+        | ValueView::LazyIoLines { .. }
+        | ValueView::HashEntryRef { .. }
+        | ValueView::ContainerRef(_) => Err(format!(
+            "cannot serialize Value variant: {}",
+            super::what_type_name(v)
         )),
     }
 }
@@ -318,7 +314,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             end,
             excl_start,
             excl_end,
-        } => Value(ValueRepr::GenericRange {
+        } => Value::from_repr(ValueRepr::GenericRange {
             start: Arc::new(ser_to_value(*start)),
             end: Arc::new(ser_to_value(*end)),
             excl_start,
@@ -341,14 +337,14 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Bag(b) => Value::bag_big(b),
         SerValue::Mix(m) => Value::mix(m),
         SerValue::CompUnitDepSpec { short_name } => {
-            Value(ValueRepr::CompUnitDepSpec { short_name })
+            Value::from_repr(ValueRepr::CompUnitDepSpec { short_name })
         }
         SerValue::Package(s) => Value::Package(s),
         SerValue::Routine {
             package,
             name,
             is_regex,
-        } => Value(ValueRepr::Routine {
+        } => Value::from_repr(ValueRepr::Routine {
             package,
             name,
             is_regex,
@@ -362,7 +358,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             key,
             value,
             index,
-        } => Value(ValueRepr::Enum {
+        } => Value::from_repr(ValueRepr::Enum {
             enum_type,
             key,
             value,
@@ -405,7 +401,7 @@ fn ser_to_value(sv: SerValue) -> Value {
                 SerJunctionKind::One => JunctionKind::One,
                 SerJunctionKind::None => JunctionKind::None,
             };
-            Value(ValueRepr::Junction {
+            Value::from_repr(ValueRepr::Junction {
                 kind: jk,
                 values: Arc::new(values.into_iter().map(ser_to_value).collect()),
             })
@@ -415,13 +411,13 @@ fn ser_to_value(sv: SerValue) -> Value {
             Value::Slip(Arc::new(items.into_iter().map(ser_to_value).collect()))
         }
         SerValue::Version { parts, plus, minus } => {
-            Value(ValueRepr::Version { parts, plus, minus })
+            Value::from_repr(ValueRepr::Version { parts, plus, minus })
         }
         SerValue::Instance {
             class_name,
             attributes,
             id,
-        } => Value(ValueRepr::Instance {
+        } => Value::from_repr(ValueRepr::Instance {
             class_name,
             attributes: crate::gc::Gc::new(crate::value::InstanceAttrs::new(
                 class_name,
@@ -454,7 +450,7 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::ParametricRole {
             base_name,
             type_args,
-        } => Value(ValueRepr::ParametricRole {
+        } => Value::from_repr(ValueRepr::ParametricRole {
             base_name,
             type_args: type_args.into_iter().map(ser_to_value).collect(),
         }),

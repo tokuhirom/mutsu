@@ -22,14 +22,14 @@ pub(crate) fn user_facing_type_name(name: &str) -> &str {
 
 /// Format a value for display inside a Capture gist.
 fn capture_value_gist(v: &Value) -> String {
-    match v {
-        Value(ValueRepr::Str(s)) => format!("\"{}\"", s),
-        Value(ValueRepr::Mixin(inner, mixins)) => {
+    match v.view() {
+        ValueView::Str(s) => format!("\"{}\"", s),
+        ValueView::Mixin(inner, mixins) => {
             if let Some(str_val) = mixins.get("Str") {
                 let str_s = str_val.to_string_value();
-                let type_name = match inner.as_ref() {
-                    Value(ValueRepr::Int(_)) | Value(ValueRepr::BigInt(_)) => "IntStr",
-                    Value(ValueRepr::Num(_)) => "NumStr",
+                let type_name = match inner.view() {
+                    ValueView::Int(_) | ValueView::BigInt(_) => "IntStr",
+                    ValueView::Num(_) => "NumStr",
                     _ => "Allomorph",
                 };
                 format!(
@@ -352,27 +352,27 @@ fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
 
 impl Value {
     pub(crate) fn to_string_value(&self) -> String {
-        match self {
-            Value(ValueRepr::Int(i)) => i.to_string(),
-            Value(ValueRepr::BigInt(n)) => n.to_string(),
-            Value(ValueRepr::Num(f)) => {
+        match self.view() {
+            ValueView::Int(i) => i.to_string(),
+            ValueView::BigInt(n) => n.to_string(),
+            ValueView::Num(f) => {
                 if f.is_nan() {
                     "NaN".to_string()
                 } else if f.is_infinite() {
-                    if *f > 0.0 {
+                    if f > 0.0 {
                         "Inf".to_string()
                     } else {
                         "-Inf".to_string()
                     }
-                } else if *f == 0.0 && f.is_sign_negative() {
+                } else if f == 0.0 && f.is_sign_negative() {
                     "-0".to_string()
                 } else if f.fract() == 0.0 && f.is_finite() {
                     let abs = f.abs();
                     if abs >= 1e15 || (abs != 0.0 && abs < 1e-4) {
                         // Scientific notation for very large/small integer-valued Nums
-                        format_num_scientific(*f)
+                        format_num_scientific(f)
                     } else {
-                        format!("{}", *f as i64)
+                        format!("{}", f as i64)
                     }
                 } else {
                     // Fractional Num: Raku renders in scientific notation once the
@@ -381,76 +381,71 @@ impl Value {
                     // apply the same threshold as the integer-valued branch.
                     let abs = f.abs();
                     if !(1e-4..1e15).contains(&abs) {
-                        format_num_scientific(*f)
+                        format_num_scientific(f)
                     } else {
                         format!("{}", f)
                     }
                 }
             }
-            Value(ValueRepr::Str(s)) => (**s).clone(),
-            Value(ValueRepr::Bool(true)) => "True".to_string(),
-            Value(ValueRepr::Bool(false)) => "False".to_string(),
-            Value(ValueRepr::Range(a, b)) => {
+            ValueView::Str(s) => (**s).clone(),
+            ValueView::Bool(true) => "True".to_string(),
+            ValueView::Bool(false) => "False".to_string(),
+            ValueView::Range(a, b) => {
                 // .Str on a finite range iterates elements and joins with spaces.
                 // For infinite/very large ranges, fall back to range notation.
-                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+                if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
                     format!("{}..{}", a, b)
                 } else {
-                    (*a..=*b)
-                        .map(|i| i.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    (a..=b).map(|i| i.to_string()).collect::<Vec<_>>().join(" ")
                 }
             }
-            Value(ValueRepr::RangeExcl(a, b)) => {
-                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+            ValueView::RangeExcl(a, b) => {
+                if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
                     format!("{}..^{}", a, b)
                 } else {
-                    (*a..*b)
-                        .map(|i| i.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ")
+                    (a..b).map(|i| i.to_string()).collect::<Vec<_>>().join(" ")
                 }
             }
-            Value(ValueRepr::RangeExclStart(a, b)) => {
-                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+            ValueView::RangeExclStart(a, b) => {
+                if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
                     format!("{}^..{}", a, b)
                 } else {
-                    (*a + 1..=*b)
+                    (a + 1..=b)
                         .map(|i| i.to_string())
                         .collect::<Vec<_>>()
                         .join(" ")
                 }
             }
-            Value(ValueRepr::RangeExclBoth(a, b)) => {
-                if b.saturating_sub(*a) > 1_000_000 || *b == i64::MAX || *a == i64::MIN {
+            ValueView::RangeExclBoth(a, b) => {
+                if b.saturating_sub(a) > 1_000_000 || b == i64::MAX || a == i64::MIN {
                     format!("{}^..^{}", a, b)
                 } else {
-                    (*a + 1..*b)
+                    (a + 1..b)
                         .map(|i| i.to_string())
                         .collect::<Vec<_>>()
                         .join(" ")
                 }
             }
-            Value(ValueRepr::GenericRange {
+            ValueView::GenericRange {
                 start,
                 end,
                 excl_start,
                 excl_end,
-            }) => {
+            } => {
                 let is_infinite = matches!(
-                    end.as_ref(),
-                    Value(ValueRepr::Whatever)
-                        | Value(ValueRepr::HyperWhatever)
-                        | Value(ValueRepr::Sub(_))
-                ) || matches!(end.as_ref(), Value(ValueRepr::Num(n)) if n.is_infinite() && n.is_sign_positive());
+                    end.view(),
+                    ValueView::Whatever | ValueView::HyperWhatever | ValueView::Sub(_)
+                ) || matches!(end.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
                 if !is_infinite {
                     let items = crate::runtime::utils::value_to_list(self);
                     // `value_to_list` may return `[self.clone()]` for non-expandable ranges
                     // (e.g. NaN endpoints). Avoid recursive `.Str` by only expanding when
                     // the single returned item is not itself a GenericRange.
                     let single_generic_range = items.len() == 1
-                        && matches!(items.first(), Some(Value(ValueRepr::GenericRange { .. })));
+                        && matches!(
+                            items.first().map(Value::view),
+                            Some(ValueView::GenericRange { .. })
+                        );
                     if !single_generic_range {
                         return items
                             .iter()
@@ -459,8 +454,8 @@ impl Value {
                             .join(" ");
                     }
                 }
-                let start_sep = if *excl_start { "^.." } else { ".." };
-                let end_sep = if *excl_end { "^" } else { "" };
+                let start_sep = if excl_start { "^.." } else { ".." };
+                let end_sep = if excl_end { "^" } else { "" };
                 format!(
                     "{}{}{}{}",
                     start.to_string_value(),
@@ -469,8 +464,8 @@ impl Value {
                     end.to_string_value()
                 )
             }
-            Value(ValueRepr::Array(_, crate::value::ArrayKind::Lazy)) => "...".to_string(),
-            Value(ValueRepr::Array(items, ..)) => {
+            ValueView::Array(_, crate::value::ArrayKind::Lazy) => "...".to_string(),
+            ValueView::Array(items, ..) => {
                 // Cycle detection for recursive array structures
                 thread_local! {
                     static SEEN_ARR_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -497,7 +492,7 @@ impl Value {
                 });
                 result
             }
-            Value(ValueRepr::LazyList(ll)) => {
+            ValueView::LazyList(ll) => {
                 if ll.is_genuinely_lazy() {
                     // Str/interpolation of a genuinely-lazy list renders `...`
                     // (Rakudo) rather than materializing the sequence.
@@ -517,9 +512,9 @@ impl Value {
                         })
                 }
             }
-            Value(ValueRepr::LazyIoLines { .. }) => "(...)".to_string(),
-            Value(ValueRepr::Uni(u)) => u.text.clone(),
-            Value(ValueRepr::Hash(items, _)) => {
+            ValueView::LazyIoLines { .. } => "(...)".to_string(),
+            ValueView::Uni(u) => u.text.clone(),
+            ValueView::Hash(items) => {
                 // Cycle detection for recursive hash structures
                 thread_local! {
                     static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -554,44 +549,43 @@ impl Value {
                 });
                 pairs.join("\n")
             }
-            Value(ValueRepr::Rat(n, d)) => {
-                if *d == 0 {
-                    if *n == 0 {
+            ValueView::Rat(n, d) => {
+                if d == 0 {
+                    if n == 0 {
                         "NaN".to_string()
-                    } else if *n > 0 {
+                    } else if n > 0 {
                         "Inf".to_string()
                     } else {
                         "-Inf".to_string()
                     }
-                } else if *n % *d == 0 {
+                } else if n % d == 0 {
                     // Exact integer: Rat(10, 2) => "5"
-                    format!("{}", *n / *d)
-                } else if has_terminating_decimal(*d) {
+                    format!("{}", n / d)
+                } else if has_terminating_decimal(d) {
                     // Exact decimal representation without f64 rounding.
-                    format_terminating_ratio_exact(*n, *d, false)
+                    format_terminating_ratio_exact(n, d, false)
                 } else {
-                    format_nonterminating_ratio(*n, *d)
+                    format_nonterminating_ratio(n, d)
                 }
             }
-            Value(ValueRepr::FatRat(a, b)) => {
-                if *b == 0 {
-                    if *a == 0 {
+            ValueView::FatRat(a, b) => {
+                if b == 0 {
+                    if a == 0 {
                         "NaN".to_string()
-                    } else if *a > 0 {
+                    } else if a > 0 {
                         "Inf".to_string()
                     } else {
                         "-Inf".to_string()
                     }
-                } else if *a % *b == 0 {
-                    format!("{}", *a / *b)
-                } else if has_terminating_decimal(*b) {
-                    format_terminating_ratio_exact(*a, *b, false)
+                } else if a % b == 0 {
+                    format!("{}", a / b)
+                } else if has_terminating_decimal(b) {
+                    format_terminating_ratio_exact(a, b, false)
                 } else {
-                    format_nonterminating_ratio(*a, *b)
+                    format_nonterminating_ratio(a, b)
                 }
             }
-            Value(ValueRepr::BigRat(n, d)) => {
-                let (n, d) = (n.as_ref(), d.as_ref());
+            ValueView::BigRat(n, d) => {
                 if d.is_zero() {
                     if n.is_zero() {
                         "NaN".to_string()
@@ -615,8 +609,8 @@ impl Value {
                     strip_trailing_zeros(&s)
                 }
             }
-            Value(ValueRepr::Complex(r, i)) => format_complex(*r, *i),
-            Value(ValueRepr::Set(s, _)) => {
+            ValueView::Complex(r, i) => format_complex(r, i),
+            ValueView::Set(s, _) => {
                 let mut keys: Vec<&String> = s.iter().collect();
                 keys.sort();
                 keys.iter()
@@ -624,7 +618,7 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(" ")
             }
-            Value(ValueRepr::Bag(b, _)) => {
+            ValueView::Bag(b, _) => {
                 let mut keys: Vec<(&String, &num_bigint::BigInt)> = b.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()
@@ -638,7 +632,7 @@ impl Value {
                     .collect::<Vec<_>>()
                     .join(" ")
             }
-            Value(ValueRepr::Mix(m, _)) => {
+            ValueView::Mix(m, _) => {
                 let mut keys: Vec<(&String, &f64)> = m.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()
@@ -660,15 +654,15 @@ impl Value {
             // `(B => Any).Str eq (B => Mu).Str` (both "B\t"), so `is %h<k>:!p,
             // (k => SomeType)` compares equal for any type-object default
             // (S32-hash/adverbs object-hash missing-key defaults).
-            Value(ValueRepr::Pair(k, v)) => format!("{}\t{}", k, v.to_str_context()),
-            Value(ValueRepr::ValuePair(k, v)) => {
+            ValueView::Pair(k, v) => format!("{}\t{}", k, v.to_str_context()),
+            ValueView::ValuePair(k, v) => {
                 format!("{}\t{}", k.to_str_context(), v.to_str_context())
             }
-            Value(ValueRepr::Enum { key, .. }) => key.resolve(),
-            Value(ValueRepr::CompUnitDepSpec { short_name }) => {
+            ValueView::Enum { key, .. } => key.resolve(),
+            ValueView::CompUnitDepSpec { short_name } => {
                 format!("CompUnit::DependencySpecification({})", short_name)
             }
-            Value(ValueRepr::Package(s)) => {
+            ValueView::Package(s) => {
                 let resolved = s.resolve();
                 if is_internal_anon_type_name(&resolved) {
                     "()".to_string()
@@ -676,44 +670,44 @@ impl Value {
                     format!("({})", user_facing_type_name(&resolved))
                 }
             }
-            Value(ValueRepr::ParametricRole {
+            ValueView::ParametricRole {
                 base_name,
                 type_args,
-            }) => {
+            } => {
                 let args: Vec<String> = type_args.iter().map(|a| a.to_string_value()).collect();
                 format!("({}[{}])", base_name, args.join(","))
             }
-            Value(ValueRepr::Routine { package, name, .. }) => format!("{}::{}", package, name),
-            Value(ValueRepr::Sub(data)) => data.name.resolve(),
-            Value(ValueRepr::WeakSub(weak)) => match weak.upgrade() {
+            ValueView::Routine { package, name, .. } => format!("{}::{}", package, name),
+            ValueView::Sub(data) => data.name.resolve(),
+            ValueView::WeakSub(weak) => match weak.upgrade() {
                 Some(data) => data.name.resolve(),
                 None => String::new(),
             },
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Backtrace" => attributes
+            } if class_name == "Backtrace" => attributes
                 .as_map()
                 .get("text")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "IO::Path" || class_name.resolve().starts_with("IO::Path::") => {
+            } if class_name == "IO::Path" || class_name.resolve().starts_with("IO::Path::") => {
                 attributes
                     .as_map()
                     .get("path")
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Exception"
+            } if class_name == "Exception"
                 || class_name.resolve().starts_with("X::")
                 || class_name.resolve().starts_with("CX::") =>
             {
@@ -723,39 +717,41 @@ impl Value {
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "ObjAt" || class_name == "ValueObjAt" => attributes
+            } if class_name == "ObjAt" || class_name == "ValueObjAt" => attributes
                 .as_map()
                 .get("WHICH")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Match" => attributes
+            } if class_name == "Match" => attributes
                 .as_map()
                 .get("str")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Proc" => attributes
+            } if class_name == "Proc" => attributes
                 .as_map()
                 .get("exitcode")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-                if let Some(Value(ValueRepr::Array(bytes, ..))) = attributes.as_map().get("bytes") {
+            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
+                if let Some(ValueView::Array(bytes, ..)) =
+                    attributes.as_map().get("bytes").map(Value::view)
+                {
                     if bytes.is_empty() {
                         format!("{}()", class_name)
                     } else {
@@ -772,16 +768,16 @@ impl Value {
                         };
                         let hex: Vec<String> = bytes
                             .iter()
-                            .map(|b| match b {
-                                Value(ValueRepr::Int(i)) => {
+                            .map(|b| match b.view() {
+                                ValueView::Int(i) => {
                                     if hex_width == 16 {
-                                        format!("{:016X}", *i as u64)
+                                        format!("{:016X}", i as u64)
                                     } else if hex_width == 8 {
-                                        format!("{:08X}", *i as u32)
+                                        format!("{:08X}", i as u32)
                                     } else if hex_width == 4 {
-                                        format!("{:04X}", *i as u16)
+                                        format!("{:04X}", i as u16)
                                     } else {
-                                        format!("{:02X}", *i as u8)
+                                        format!("{:02X}", i as u8)
                                     }
                                 }
                                 _ => "0".repeat(hex_width),
@@ -793,11 +789,11 @@ impl Value {
                     format!("{}()", class_name)
                 }
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Instant" => {
+            } if class_name == "Instant" => {
                 let val = attributes
                     .as_map()
                     .get("value")
@@ -805,11 +801,11 @@ impl Value {
                     .unwrap_or(0.0);
                 format!("Instant:{}", val)
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Duration" => {
+            } if class_name == "Duration" => {
                 let val = attributes
                     .as_map()
                     .get("value")
@@ -821,52 +817,54 @@ impl Value {
                     format!("{}", val)
                 }
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Signature" => attributes
+            } if class_name == "Signature" => attributes
                 .as_map()
                 .get("gist")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Stash" => attributes
+            } if class_name == "Stash" => attributes
                 .as_map()
                 .get("name")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
+            } if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
                 attributes
                     .as_map()
                     .get("name")
                     .map(|v: &Value| v.to_string_value())
                     .unwrap_or_else(|| format!("{}()", class_name))
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Format" => attributes
+            } if class_name == "Format" => attributes
                 .as_map()
                 .get("format")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_else(|| format!("{}()", class_name)),
-            Value(ValueRepr::Instance { attributes, .. })
+            ValueView::Instance { attributes, .. }
                 if attributes.contains_key("year")
                     && attributes.contains_key("month")
                     && attributes.contains_key("day")
                     && !attributes.contains_key("hour") =>
             {
-                if let Some(Value(ValueRepr::Str(s))) =
-                    attributes.as_map().get("__formatter_rendered")
+                if let Some(ValueView::Str(s)) = attributes
+                    .as_map()
+                    .get("__formatter_rendered")
+                    .map(Value::view)
                 {
                     return s.to_string();
                 }
@@ -874,7 +872,7 @@ impl Value {
                     crate::builtins::methods_0arg::temporal::date_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_date(y, m, d)
             }
-            Value(ValueRepr::Instance { attributes, .. })
+            ValueView::Instance { attributes, .. }
                 if attributes.contains_key("year")
                     && attributes.contains_key("month")
                     && attributes.contains_key("day")
@@ -883,8 +881,10 @@ impl Value {
                     && attributes.contains_key("second")
                     && attributes.contains_key("timezone") =>
             {
-                if let Some(Value(ValueRepr::Str(s))) =
-                    attributes.as_map().get("__formatter_rendered")
+                if let Some(ValueView::Str(s)) = attributes
+                    .as_map()
+                    .get("__formatter_rendered")
+                    .map(Value::view)
                 {
                     return s.to_string();
                 }
@@ -892,26 +892,26 @@ impl Value {
                     crate::builtins::methods_0arg::temporal::datetime_attrs(&(attributes).as_map());
                 crate::builtins::methods_0arg::temporal::format_datetime(y, mo, d, h, mi, s, tz)
             }
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "Pod::Block::Declarator" => attributes
+            } if class_name == "Pod::Block::Declarator" => attributes
                 .as_map()
                 .get("contents")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
-            Value(ValueRepr::Instance {
+            ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            }) if class_name == "StrDistance" => attributes
+            } if class_name == "StrDistance" => attributes
                 .as_map()
                 .get("after")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
-            Value(ValueRepr::Instance { class_name, .. }) => format!("{}()", class_name),
-            Value(ValueRepr::Junction { kind, values }) => {
+            ValueView::Instance { class_name, .. } => format!("{}()", class_name),
+            ValueView::Junction { kind, values } => {
                 let kind_str = match kind {
                     JunctionKind::Any => "any",
                     JunctionKind::All => "all",
@@ -925,8 +925,8 @@ impl Value {
                     .join(", ");
                 format!("{}({})", kind_str, elems)
             }
-            Value(ValueRepr::Regex(pattern)) => format!("/{}/", pattern),
-            Value(ValueRepr::RegexWithAdverbs(a)) => {
+            ValueView::Regex(pattern) => format!("/{}/", pattern),
+            ValueView::RegexWithAdverbs(a) => {
                 let pattern = &a.pattern;
                 let global = &a.global;
                 let exhaustive = &a.exhaustive;
@@ -971,43 +971,43 @@ impl Value {
                 }
                 format!("m{prefix}/{pattern}/")
             }
-            Value(ValueRepr::Version { parts, plus, minus }) => {
+            ValueView::Version { parts, plus, minus } => {
                 let s = Self::version_parts_to_string(parts);
-                if *plus {
+                if plus {
                     format!("{}+", s)
-                } else if *minus {
+                } else if minus {
                     format!("{}-", s)
                 } else {
                     s
                 }
             }
-            Value(ValueRepr::Seq(items))
-            | Value(ValueRepr::HyperSeq(items))
-            | Value(ValueRepr::RaceSeq(items))
-            | Value(ValueRepr::Slip(items)) => items
+            ValueView::Seq(items)
+            | ValueView::HyperSeq(items)
+            | ValueView::RaceSeq(items)
+            | ValueView::Slip(items) => items
                 .iter()
                 .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()
                 .join(" "),
-            Value(ValueRepr::Promise(p)) => format!("Promise({})", p.status()),
-            Value(ValueRepr::Channel(_)) => "Channel".to_string(),
-            Value(ValueRepr::Nil) => String::new(),
-            Value(ValueRepr::Whatever) => "*".to_string(),
-            Value(ValueRepr::HyperWhatever) => "**".to_string(),
-            Value(ValueRepr::Capture { positional, named }) => {
+            ValueView::Promise(p) => format!("Promise({})", p.status()),
+            ValueView::Channel(_) => "Channel".to_string(),
+            ValueView::Nil => String::new(),
+            ValueView::Whatever => "*".to_string(),
+            ValueView::HyperWhatever => "**".to_string(),
+            ValueView::Capture { positional, named } => {
                 let mut parts = Vec::new();
                 for v in positional.iter() {
-                    match v {
-                        Value(ValueRepr::Str(s)) => parts.push(format!("\"{}\"", s)),
+                    match v.view() {
+                        ValueView::Str(s) => parts.push(format!("\"{}\"", s)),
                         _ => parts.push(v.to_string_value()),
                     }
                 }
                 let mut named_entries: Vec<_> = named.iter().collect();
                 named_entries.sort_by_key(|(k, _)| (*k).clone());
                 for (k, v) in named_entries {
-                    if let Value(ValueRepr::Bool(true)) = v {
+                    if let ValueView::Bool(true) = v.view() {
                         parts.push(format!(":{}(Bool::True)", k));
-                    } else if let Value(ValueRepr::Bool(false)) = v {
+                    } else if let ValueView::Bool(false) = v.view() {
                         parts.push(format!(":{}(Bool::False)", k));
                     } else {
                         parts.push(format!(":{}({})", k, capture_value_gist(v)));
@@ -1015,31 +1015,31 @@ impl Value {
                 }
                 format!("\\({})", parts.join(", "))
             }
-            Value(ValueRepr::Mixin(inner, mixins)) => {
+            ValueView::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {
                     str_val.to_string_value()
-                } else if let (Value(ValueRepr::Bool(_)), Some(Value(ValueRepr::Bool(b)))) =
-                    (inner.as_ref(), mixins.get("Bool"))
+                } else if let (ValueView::Bool(_), Some(ValueView::Bool(b))) =
+                    (inner.view(), mixins.get("Bool").map(Value::view))
                 {
                     // `True but False`: Bool stringifies from the effective
                     // boolean (`self ?? 'True' !! 'False'`), so follow `.Bool`.
-                    if *b { "True" } else { "False" }.to_string()
+                    if b { "True" } else { "False" }.to_string()
                 } else {
                     inner.to_string_value()
                 }
             }
-            Value(ValueRepr::Proxy { .. }) => "Proxy".to_string(),
-            Value(ValueRepr::CustomType(c)) => {
+            ValueView::Proxy { .. } => "Proxy".to_string(),
+            ValueView::CustomType(c) => {
                 if c.name.is_empty() {
                     "(CustomType)".to_string()
                 } else {
                     format!("({})", c.name)
                 }
             }
-            Value(ValueRepr::CustomTypeInstance(d)) => format!("{}()", d.type_name),
-            Value(ValueRepr::Scalar(inner)) => inner.to_string_value(),
-            Value(ValueRepr::ContainerRef(_)) => self.with_deref(Value::to_string_value),
-            Value(ValueRepr::LazyThunk(thunk_data)) => {
+            ValueView::CustomTypeInstance(d) => format!("{}()", d.type_name),
+            ValueView::Scalar(inner) => inner.to_string_value(),
+            ValueView::ContainerRef(_) => self.with_deref(Value::to_string_value),
+            ValueView::LazyThunk(thunk_data) => {
                 // If already forced, display the cached value
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
@@ -1049,15 +1049,15 @@ impl Value {
                     "lazy(...)".to_string()
                 }
             }
-            Value(ValueRepr::HashEntryRef { .. }) => self.hash_entry_read().to_string_value(),
+            ValueView::HashEntryRef { .. } => self.hash_entry_read().to_string_value(),
         }
     }
 
     /// Stringify a value in Raku's Str context.
     /// Type objects (Package) become empty string; everything else uses to_string_value.
     pub(crate) fn to_str_context(&self) -> String {
-        match self {
-            Value(ValueRepr::Package(_)) => String::new(),
+        match self.view() {
+            ValueView::Package(_) => String::new(),
             _ => self.to_string_value(),
         }
     }

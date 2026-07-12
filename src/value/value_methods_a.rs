@@ -4,19 +4,19 @@ impl Value {
     /// Create a decontainerized Proxy value (result of .VAR on a Proxy).
     /// This Proxy won't be auto-FETCHed by method dispatch.
     pub(crate) fn proxy_var_object(proxy: Value, _target_var: String) -> Self {
-        match proxy {
-            Value(ValueRepr::Proxy {
+        match proxy.into_repr() {
+            ValueRepr::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 ..
-            }) => Value(ValueRepr::Proxy {
+            } => Value::from_repr(ValueRepr::Proxy {
                 fetcher,
                 storer,
                 subclass,
                 decontainerized: true,
             }),
-            other => other,
+            other => Value::from_repr(other),
         }
     }
 
@@ -37,7 +37,7 @@ impl Value {
         Value::Mixin(Arc::new(inner), Arc::new(overrides))
     }
     pub fn generic_range(start: Value, end: Value, excl_start: bool, excl_end: bool) -> Self {
-        Value(ValueRepr::GenericRange {
+        Value::from_repr(ValueRepr::GenericRange {
             start: Arc::new(start),
             end: Arc::new(end),
             excl_start,
@@ -50,7 +50,7 @@ impl Value {
     /// Create a Capture value. Boxes the positional/named payloads (the variant
     /// stores them behind `Box` to keep `Value` small).
     pub fn capture(positional: Vec<Value>, named: HashMap<String, Value>) -> Self {
-        Value(ValueRepr::Capture {
+        Value::from_repr(ValueRepr::Capture {
             positional: Box::new(positional),
             named: Box::new(named),
         })
@@ -63,17 +63,17 @@ impl Value {
     /// The HOW (meta-object) of a `CustomType` or `CustomTypeInstance`, if this
     /// is one. Centralizes access now that both are boxed payloads.
     pub fn custom_how(&self) -> Option<&Value> {
-        match self {
-            Value(ValueRepr::CustomType(d)) => Some(&d.how),
-            Value(ValueRepr::CustomTypeInstance(d)) => Some(&d.how),
+        match self.view() {
+            ValueView::CustomType(d) => Some(&d.how),
+            ValueView::CustomTypeInstance(d) => Some(&d.how),
             _ => None,
         }
     }
     /// The REPR name of a `CustomType` or `CustomTypeInstance`, if this is one.
     pub fn custom_repr(&self) -> Option<&str> {
-        match self {
-            Value(ValueRepr::CustomType(d)) => Some(&d.repr),
-            Value(ValueRepr::CustomTypeInstance(d)) => Some(&d.repr),
+        match self.view() {
+            ValueView::CustomType(d) => Some(&d.repr),
+            ValueView::CustomTypeInstance(d) => Some(&d.repr),
             _ => None,
         }
     }
@@ -149,7 +149,7 @@ impl Value {
     /// or a `HashData` (a cloned/rebuilt hash whose container metadata is then
     /// preserved) via `Into<HashData>`.
     pub fn hash(map: impl Into<HashData>) -> Self {
-        Value(ValueRepr::Hash(Gc::new(map.into()), false))
+        Value::from_repr(ValueRepr::Hash(Gc::new(map.into()), false))
     }
 
     /// True when this value is a `$`-scalar-itemized hash (`$(%h)` / `.item` /
@@ -157,17 +157,20 @@ impl Value {
     /// variant, not in the shared `HashData`, so two holders of the same hash
     /// data can differ in itemization (`%x.raku` → `{...}`, `my $h = %x;
     /// $h.raku` → `${...}`).
+    /// Deliberately place-based (B-wall-in exemption): the per-holder
+    /// itemization flag is representation state that `ValueView` hides; at
+    /// flip time this reads the kind tag inside the seam.
     pub fn hash_is_itemized(&self) -> bool {
-        matches!(self, Value(ValueRepr::Hash(_, true)))
+        matches!(self.0, ValueRepr::Hash(_, true))
     }
 
     /// Return this value with its hash itemization flag set to `itemized`,
     /// preserving the SAME `HashData` `Gc` (so `=`-shared mutation still tracks).
     /// A non-hash value is returned unchanged.
     pub fn with_hash_itemized(self, itemized: bool) -> Self {
-        match self {
-            Value(ValueRepr::Hash(gc, _)) => Value(ValueRepr::Hash(gc, itemized)),
-            other => other,
+        match self.into_repr() {
+            ValueRepr::Hash(gc, _) => Value::Hash(gc, itemized),
+            other => Value::from_repr(other),
         }
     }
 
@@ -183,13 +186,13 @@ impl Value {
     /// (mirroring `ArrayKind` — the value stays a `Value::Hash` so it never
     /// leaks a wrapper to value operations), other values get wrapped in Scalar.
     pub fn item(self) -> Self {
-        match self {
-            Value(ValueRepr::Array(items, kind)) => Value::Array(items, kind.itemize()),
+        match self.into_repr() {
+            ValueRepr::Array(items, kind) => Value::Array(items, kind.itemize()),
             // Itemization is a Value-level flag now, so `.item` keeps the SAME
             // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
             // `=`-shared mutation are preserved).
-            Value(ValueRepr::Hash(h, _)) => Value(ValueRepr::Hash(h, true)),
-            other => other,
+            ValueRepr::Hash(h, _) => Value::Hash(h, true),
+            other => Value::from_repr(other),
         }
     }
 
@@ -198,9 +201,9 @@ impl Value {
     /// canonical non-cloning ContainerRef-read chokepoint (the ContainerRef axis of
     /// the decont family); prefer it over hand-rolled `arc.lock().unwrap()` reads.
     pub fn with_deref<R>(&self, f: impl FnOnce(&Value) -> R) -> R {
-        match self {
-            Value(ValueRepr::ContainerRef(arc)) => f(&arc.lock().unwrap()),
-            other => f(other),
+        match self.view() {
+            ValueView::ContainerRef(arc) => f(&arc.lock().unwrap()),
+            _ => f(self),
         }
     }
 
@@ -221,10 +224,10 @@ impl Value {
     /// `LazyThunk` nor strip an inner `Scalar` — matching the prior hand-rolled
     /// `arc.lock().unwrap().clone()` reads it replaces.
     pub fn into_deref(self) -> Value {
-        match self {
-            Value(ValueRepr::ContainerRef(arc)) => arc.lock().unwrap().clone(),
-            other => other,
+        if let ValueView::ContainerRef(arc) = self.view() {
+            return arc.lock().unwrap().clone();
         }
+        self
     }
 
     /// Store `val` through a `ContainerRef` cell. If the cell currently holds a
@@ -237,7 +240,7 @@ impl Value {
     /// overwrite the token and silently drop the hash alias.
     pub(crate) fn store_through_cell(arc: &crate::gc::Gc<Mutex<Value>>, val: &Value) {
         let mut inner = arc.lock().unwrap();
-        if matches!(&*inner, Value(ValueRepr::HashEntryRef { .. }))
+        if matches!(inner.view(), ValueView::HashEntryRef { .. })
             && let Some((hash_arc, key)) = inner.hash_entry_terminal()
         {
             // SAFETY: aliased in-place mutation of a shared container; see
@@ -251,7 +254,7 @@ impl Value {
     /// Assign a value into a `ContainerRef`.
     /// Returns `true` if the value was a ContainerRef and the assignment happened.
     pub fn assign_into_container(&self, new_val: Value) -> bool {
-        if let Value(ValueRepr::ContainerRef(arc)) = self {
+        if let ValueView::ContainerRef(arc) = self.view() {
             let mut inner = arc.lock().unwrap();
             *inner = new_val;
             true
@@ -271,7 +274,7 @@ impl Value {
     /// value; otherwise replace the slot in place. This is the single element
     /// write chokepoint that keeps a bound element's alias live across writes.
     pub fn assign_element_slot(slot: &mut Value, val: Value) {
-        if let Value(ValueRepr::ContainerRef(cell)) = slot {
+        if let ValueView::ContainerRef(cell) = slot.view() {
             *cell.lock().unwrap() = val;
         } else {
             *slot = val;
@@ -299,7 +302,7 @@ impl Value {
     }
 
     pub fn is_container_ref(&self) -> bool {
-        matches!(self, Value(ValueRepr::ContainerRef(_)))
+        matches!(self.view(), ValueView::ContainerRef(_))
     }
 
     /// Autovivify a hash entry: if the key doesn't exist, insert an empty Hash.
@@ -312,17 +315,17 @@ impl Value {
     ///
     /// Look up a key in a Hash value by string key.
     pub fn hash_get_str(&self, key: &str) -> Option<Value> {
-        match self {
-            Value(ValueRepr::Hash(arc, _)) => arc.get(key).cloned(),
-            Value(ValueRepr::Mixin(inner, _)) => inner.hash_get_str(key),
-            Value(ValueRepr::Scalar(inner)) => inner.hash_get_str(key),
+        match self.view() {
+            ValueView::Hash(arc) => arc.get(key).cloned(),
+            ValueView::Mixin(inner, _) => inner.hash_get_str(key),
+            ValueView::Scalar(inner) => inner.hash_get_str(key),
             _ => None,
         }
     }
 
     /// Returns `None` if `self` is not a `Value::Hash`.
     pub fn hash_autovivify(&self, key: &str) -> Option<Value> {
-        if let Value(ValueRepr::Hash(arc, _)) = self {
+        if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -333,7 +336,7 @@ impl Value {
             // The entry exists (created just above if missing): an EAGER token,
             // whose reads see through to the plain entry value (`is raw`
             // reduce lvalue descent).
-            Some(Value(ValueRepr::HashEntryRef {
+            Some(Value::from_repr(ValueRepr::HashEntryRef {
                 hash: arc.clone(),
                 path: vec![key.to_string()],
                 eager: true,
@@ -355,18 +358,18 @@ impl Value {
     /// - a missing key is autovivified to an empty Hash (the old descent
     ///   behavior) and returned by value (shared Arc).
     pub fn hash_autovivify_cell(&self, key: &str) -> Option<Value> {
-        if let Value(ValueRepr::Hash(arc, _)) = self {
+        if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
             match data.map.get_mut(key) {
-                Some(Value(ValueRepr::ContainerRef(cell))) => {
-                    Some(Value::ContainerRef(cell.clone()))
-                }
-                Some(elem @ (Value(ValueRepr::Array(..)) | Value(ValueRepr::Hash(..)))) => {
-                    Some(elem.clone())
-                }
                 Some(elem) => {
+                    if let ValueView::ContainerRef(cell) = elem.view() {
+                        return Some(Value::ContainerRef(cell.clone()));
+                    }
+                    if matches!(elem.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                        return Some(elem.clone());
+                    }
                     let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
@@ -400,30 +403,30 @@ impl Value {
     /// Reads decontainerize at the single chokepoint (`resolve_hash_entry`);
     /// writes go through `hash_insert_through` (Stage 0).
     pub fn hash_slot_ref(&self, key: &str, terminal: bool) -> Option<Value> {
-        if let Value(ValueRepr::Hash(arc, _)) = self {
+        if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
             match data.map.get_mut(key) {
-                Some(Value(ValueRepr::ContainerRef(cell))) => {
-                    Some(Value::ContainerRef(cell.clone()))
-                }
-                Some(elem @ (Value(ValueRepr::Array(..)) | Value(ValueRepr::Hash(..))))
-                    if !terminal =>
-                {
-                    // Intermediate container: return the element value
-                    // itself — it shares the inner Arc, so the eventual
-                    // leaf promotion by the next index op lands in the
-                    // physical map the entry points to (Stage 2: no
-                    // `HashEntryRef` back-reference needed).
-                    Some(elem.clone())
-                }
                 Some(elem) => {
+                    if let ValueView::ContainerRef(cell) = elem.view() {
+                        return Some(Value::ContainerRef(cell.clone()));
+                    }
+                    if !terminal
+                        && matches!(elem.view(), ValueView::Array(..) | ValueView::Hash(..))
+                    {
+                        // Intermediate container: return the element value
+                        // itself — it shares the inner Arc, so the eventual
+                        // leaf promotion by the next index op lands in the
+                        // physical map the entry points to (Stage 2: no
+                        // `HashEntryRef` back-reference needed).
+                        return Some(elem.clone());
+                    }
                     let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
                     *elem = Value::ContainerRef(cell.clone());
                     Some(Value::ContainerRef(cell))
                 }
-                None => Some(Value(ValueRepr::HashEntryRef {
+                None => Some(Value::from_repr(ValueRepr::HashEntryRef {
                     hash: arc.clone(),
                     path: vec![key.to_string()],
                     eager: false,
@@ -439,7 +442,7 @@ impl Value {
     /// Returns the value stored at the key after the operation.
     /// Uses the same interior-mutation approach as `hash_autovivify`.
     pub fn hash_assign_at(&self, key: &str, val: Value) -> Option<Value> {
-        if let Value(ValueRepr::Hash(arc, _)) = self {
+        if let ValueView::Hash(arc) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the map is live across the write.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -468,25 +471,26 @@ impl Value {
     /// through to the plain entry value — its entry was created with the
     /// token, so path existence IS the connection.
     pub fn hash_entry_read(&self) -> Value {
-        let Value(ValueRepr::HashEntryRef { hash, path, eager }) = self else {
+        let ValueView::HashEntryRef { hash, path, eager } = self.view() else {
             return self.clone();
         };
         let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
         let mut cur = hash.clone();
         for k in &path[..path.len() - 1] {
             let ptr = crate::gc::Gc::as_ptr(&cur);
-            match unsafe { (*ptr).get(k.as_str()) } {
-                Some(Value(ValueRepr::Hash(inner, _))) => cur = inner.clone(),
+            match unsafe { (*ptr).get(k.as_str()) }.map(Value::view) {
+                Some(ValueView::Hash(inner)) => cur = inner.clone(),
                 _ => return any(),
             }
         }
         let last = path.last().unwrap();
         let ptr = crate::gc::Gc::as_ptr(&cur);
-        match unsafe { (*ptr).get(last.as_str()) } {
-            Some(Value(ValueRepr::ContainerRef(cell))) => {
+        let entry = unsafe { (*ptr).get(last.as_str()) };
+        match entry.map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => {
                 cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
             }
-            Some(v) if *eager => v.clone(),
+            Some(_) if eager => entry.expect("entry is Some in this arm").clone(),
             _ => any(),
         }
     }
@@ -496,7 +500,7 @@ impl Value {
     /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
     /// (interior mutation, so all holders of the shared Arc observe them).
     pub(crate) fn hash_entry_terminal(&self) -> Option<(Gc<HashData>, String)> {
-        let Value(ValueRepr::HashEntryRef { hash, path, .. }) = self else {
+        let ValueView::HashEntryRef { hash, path, .. } = self.view() else {
             return None;
         };
         let mut cur = hash.clone();
@@ -505,12 +509,12 @@ impl Value {
             // `gc_contents_mut`. No borrow into the map is live across the write.
             let next = {
                 let data = unsafe { gc_contents_mut(&cur) };
-                match data.map.get(k) {
-                    Some(Value(ValueRepr::Hash(inner, _))) => inner.clone(),
+                match data.map.get(k).map(Value::view) {
+                    Some(ValueView::Hash(inner)) => inner.clone(),
                     _ => {
                         let new_hash = Value::hash(HashMap::new());
-                        let arc = match &new_hash {
-                            Value(ValueRepr::Hash(a, _)) => a.clone(),
+                        let arc = match new_hash.view() {
+                            ValueView::Hash(a) => a.clone(),
                             _ => unreachable!(),
                         };
                         Value::hash_insert_through(&mut data.map, k.clone(), new_hash);
