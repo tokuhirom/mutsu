@@ -64,6 +64,14 @@ thread_local! {
     /// Removes the global-`RwLock` read contention on the intern hot path (see
     /// `Symbol::intern`).
     static INTERN_CACHE: RefCell<FxHashMap<String, Symbol>> = RefCell::new(FxHashMap::default());
+
+    /// Per-thread `id -> &'static str` memo in front of `GLOBAL_TABLE`, the
+    /// mirror of `INTERN_CACHE` for the resolve direction. Interned strings are
+    /// leaked and ids never remapped, so a cached entry is valid forever.
+    /// Keeps `as_str` (the single hottest symbol operation — every dispatch
+    /// class-name borrow, `==` compare, `starts_with`, `Display`) off the
+    /// globally-shared `RwLock`.
+    static RESOLVE_CACHE: RefCell<Vec<Option<&'static str>>> = const { RefCell::new(Vec::new()) };
 }
 
 impl Symbol {
@@ -118,8 +126,19 @@ impl Symbol {
     /// and no lock is held after this returns — safe to keep across arbitrary
     /// downstream calls, unlike `with_str`'s old lock-scoped borrow.
     pub fn as_str(&self) -> &'static str {
-        let table = global_table().read().unwrap();
-        table.id_to_str[self.0 as usize]
+        let idx = self.0 as usize;
+        RESOLVE_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            if let Some(Some(s)) = cache.get(idx) {
+                return *s;
+            }
+            let s = global_table().read().unwrap().id_to_str[idx];
+            if cache.len() <= idx {
+                cache.resize(idx + 1, None);
+            }
+            cache[idx] = Some(s);
+            s
+        })
     }
 
     /// Resolve the symbol back to its string representation.
