@@ -1060,6 +1060,13 @@ pub struct Interpreter {
     /// evaluating typed-attribute default type objects so a suppressed nested
     /// class name resolves within its owning class (see `resolve_suppressed_type`).
     constructing_class: Option<String>,
+    /// The class whose body is currently being registered, set only while
+    /// executing `BEGIN`/`EVAL` code inside a class body (see
+    /// `register_class_decl`). Lets a `has`-attribute declaration that reaches
+    /// the VM at runtime (`class Foo { BEGIN EVAL q[has $.x] }`) attach the
+    /// attribute to the class still under construction rather than throwing
+    /// `X::Attribute::NoPackage`.
+    pub(crate) defining_class: Option<String>,
     pending_call_arg_sources: Option<Vec<Option<String>>>,
     /// Companion to `pending_call_arg_sources` (§1.4/§1.5): the compiler-baked
     /// `arg-source name -> caller local slot` for the current call, decoded from the

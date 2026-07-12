@@ -169,6 +169,7 @@ impl Interpreter {
             callframe_stack: Vec::new(),
             method_class_stack: Vec::new(),
             constructing_class: None,
+            defining_class: None,
             pending_call_arg_sources: None,
             pending_call_arg_source_slots: std::collections::HashMap::new(),
             pending_rw_writeback_slots: std::collections::HashMap::new(),

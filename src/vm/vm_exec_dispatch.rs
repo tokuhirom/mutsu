@@ -3326,6 +3326,40 @@ impl Interpreter {
             }
 
             // -- Error handling --
+            OpCode::RuntimeHasDecl(spec) => {
+                // A `has`-attribute declaration that reached the VM (mainline /
+                // EVAL'd source). If a class body is currently being registered
+                // (`class Foo { BEGIN EVAL q[has $.x] }`), attach the attribute
+                // to that class; otherwise throw the pre-built X::Attribute error.
+                if let Some(class_name) = self.defining_class.clone() {
+                    self.register_runtime_attribute(&class_name, spec)?;
+                    *ip += 1;
+                } else {
+                    let val = spec.error.clone();
+                    self.resume_ip = Some(*ip + 1);
+                    let backtrace_str = self.build_backtrace_string();
+                    let backtrace_val = self.build_backtrace_value();
+                    let current_line = self.current_source_line();
+                    let current_file = self.current_source_file();
+                    let mut err = self.runtime_error_from_exception_value(val, "Died", false);
+                    if !backtrace_str.is_empty() {
+                        err.set_backtrace(Some(backtrace_str));
+                    }
+                    if let Some(ref exc_box) = err.exception
+                        && let ValueView::Instance { attributes, .. } = exc_box.view()
+                    {
+                        attributes.insert("backtrace".to_string(), backtrace_val);
+                        if let Some(line) = current_line {
+                            attributes
+                                .insert_if_absent("line".to_string(), Value::int(line as i64));
+                        }
+                        if let Some(ref file) = current_file {
+                            attributes.insert_if_absent("file".to_string(), Value::str_from(file));
+                        }
+                    }
+                    return Err(err);
+                }
+            }
             OpCode::Die => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Store the resume point (instruction after Die) for .resume support

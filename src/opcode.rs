@@ -187,6 +187,30 @@ pub(crate) struct ForLoopSpec {
     pub(crate) single_array_source_local: Option<u32>,
 }
 
+/// Payload of `OpCode::RuntimeHasDecl`. A `has $.x` that reaches the VM (rather
+/// than being collected declaratively by `register_class_decl`) only arises from
+/// mainline / EVAL'd source — e.g. `class Foo { BEGIN EVAL q[has $.x] }`. At
+/// runtime the op checks whether a class is currently being defined
+/// (`Interpreter::defining_class`): if so it registers the attribute onto that
+/// class; otherwise it throws the pre-built `error` (`X::Attribute::NoPackage`
+/// or `X::Attribute::Package`). Boxed to keep `size_of::<OpCode>()` small.
+#[derive(Debug, Clone)]
+pub(crate) struct RuntimeHasDeclSpec {
+    pub(crate) attr_name: String,
+    pub(crate) is_public: bool,
+    pub(crate) sigil: char,
+    pub(crate) is_rw: bool,
+    pub(crate) is_readonly: bool,
+    pub(crate) is_required: Option<Option<String>>,
+    pub(crate) is_built: Option<bool>,
+    pub(crate) type_constraint: Option<String>,
+    pub(crate) type_smiley: Option<String>,
+    pub(crate) default: Option<crate::ast::Expr>,
+    /// The `X::Attribute::*` error to throw when this `has` runs outside a
+    /// class-definition context.
+    pub(crate) error: Value,
+}
+
 /// Bytecode operations for the VM.
 #[derive(Debug, Clone)]
 pub(crate) enum OpCode {
@@ -1265,6 +1289,11 @@ pub(crate) enum OpCode {
     // -- Error handling --
     Die,
     Fail,
+
+    /// A `has`-attribute declaration that reaches runtime (mainline / EVAL'd
+    /// source). Registers the attribute onto the class currently being defined,
+    /// or throws the boxed `X::Attribute::*` error when not in a class body.
+    RuntimeHasDecl(Box<RuntimeHasDeclSpec>),
 
     // -- Functions --
     Return,

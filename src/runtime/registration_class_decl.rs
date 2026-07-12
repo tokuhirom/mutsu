@@ -156,6 +156,57 @@ impl Interpreter {
         }
     }
 
+    /// Register an attribute onto a class whose body is still being defined,
+    /// driven by a `has`-declaration that reached the VM at runtime (mainline /
+    /// EVAL'd source: `class Foo { BEGIN EVAL q[has $.x] }`). This mirrors the
+    /// per-instance-attribute branch of `register_class_decl` for the common
+    /// case (name/type/smiley/built + accessor visibility); traits, `handles`,
+    /// `where`, `is default`, and role composition are not supported here
+    /// (an EVAL'd `has` carrying those is exceedingly rare).
+    pub(crate) fn register_runtime_attribute(
+        &mut self,
+        class_name: &str,
+        spec: &crate::opcode::RuntimeHasDeclSpec,
+    ) -> Result<(), RuntimeError> {
+        let attr_name = &spec.attr_name;
+        let Some(mut class_def) = self.registry().classes.get(class_name).cloned() else {
+            return Ok(());
+        };
+        // Already declared (e.g. a duplicate EVAL): no-op rather than abort.
+        if class_def.attributes.iter().any(|(n, ..)| n == attr_name) {
+            return Ok(());
+        }
+        let effective_is_rw = !spec.is_readonly && spec.is_rw;
+        class_def.attributes.push((
+            attr_name.clone(),
+            spec.is_public,
+            spec.default.clone(),
+            effective_is_rw,
+            spec.is_required.clone(),
+            spec.sigil,
+            None,
+        ));
+        if let Some(tc) = &spec.type_constraint {
+            let resolved_tc = tc.replace("::?CLASS", class_name);
+            class_def
+                .attribute_types
+                .insert(attr_name.clone(), resolved_tc);
+        }
+        if let Some(ts) = &spec.type_smiley {
+            class_def
+                .attribute_smileys
+                .insert(attr_name.clone(), ts.clone());
+        }
+        if let Some(built) = spec.is_built {
+            class_def.attribute_built.insert(attr_name.clone(), built);
+        }
+        self.registry_mut()
+            .classes
+            .insert(class_name.to_string(), class_def);
+        self.clear_private_zeroarg_method_cache();
+        Ok(())
+    }
+
     pub(crate) fn register_class_decl(
         &mut self,
         name: &str,
@@ -2013,7 +2064,31 @@ impl Interpreter {
                     self.registry_mut()
                         .classes
                         .insert(name.to_string(), class_def.clone());
+                    // Mark this class as "being defined" so a `has`-attribute
+                    // declaration executed by a *compile-time* phaser
+                    // (`class Foo { BEGIN EVAL q[has $.x] }`) attaches to it
+                    // instead of throwing X::Attribute::NoPackage. Restored (not
+                    // cleared) to support nested class-in-BEGIN definitions.
+                    // Only BEGIN/CHECK phasers qualify: a *plain* runtime `EVAL
+                    // q[has $.x]` runs after the class is composed, so its
+                    // attribute must NOT take (roast S12-attributes/class.t
+                    // test 21 asserts `.x` then throws X::Method::NotFound).
+                    let is_compile_time_phaser = matches!(
+                        stmt,
+                        Stmt::Phaser {
+                            kind: PhaserKind::Begin | PhaserKind::Check,
+                            ..
+                        }
+                    );
+                    let saved_defining = if is_compile_time_phaser {
+                        Some(self.defining_class.replace(name.to_string()))
+                    } else {
+                        None
+                    };
                     let result = self.run_block_raw(std::slice::from_ref(stmt));
+                    if let Some(saved) = saved_defining {
+                        self.defining_class = saved;
+                    }
                     if let Err(e) = result {
                         if !is_swallowable {
                             return Err(e);

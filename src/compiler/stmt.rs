@@ -2370,6 +2370,13 @@ impl Compiler {
                 is_public,
                 is_our,
                 is_my,
+                is_rw,
+                is_readonly,
+                is_required,
+                is_built,
+                type_constraint,
+                type_smiley,
+                default,
                 ..
             } => {
                 // `our $.x` / `my $.x` in the mainline is not a fatal error in
@@ -2419,9 +2426,26 @@ impl Compiler {
                     attrs.insert("message".to_string(), Value::str(message));
                     Value::make_instance(Symbol::intern("X::Attribute::NoPackage"), attrs)
                 };
-                let idx = self.code.add_constant(err);
-                self.code.emit(OpCode::LoadConst(idx));
-                self.code.emit(OpCode::Die);
+                // A `has` reaching the VM only arises from mainline / EVAL'd
+                // source (a `has` in a normal class body is collected
+                // declaratively by `register_class_decl`, never compiled). Emit a
+                // runtime op that, when a class is currently being defined
+                // (`class Foo { BEGIN EVAL q[has $.x] }`), registers the
+                // attribute onto that class; otherwise it throws the error above.
+                let spec = crate::opcode::RuntimeHasDeclSpec {
+                    attr_name: bare.to_string(),
+                    is_public: *is_public,
+                    sigil: sigil_ch,
+                    is_rw: *is_rw,
+                    is_readonly: *is_readonly,
+                    is_required: is_required.clone(),
+                    is_built: *is_built,
+                    type_constraint: type_constraint.clone(),
+                    type_smiley: type_smiley.clone(),
+                    default: default.clone(),
+                    error: err,
+                };
+                self.code.emit(OpCode::RuntimeHasDecl(Box::new(spec)));
             }
             // DoesDecl/TrustsDecl outside class context are no-ops
             Stmt::DoesDecl { .. } | Stmt::TrustsDecl { .. } => {}
