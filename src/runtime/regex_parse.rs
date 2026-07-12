@@ -30,9 +30,22 @@ thread_local! {
     /// Cached as `Arc<RegexPattern>` so a cache hit is a cheap refcount bump
     /// rather than a deep clone of the whole token tree — the hot match loop
     /// re-fetches the same compiled pattern on every step / every iteration.
-    pub(crate) static REGEX_PARSE_CACHE: RefCell<HashMap<String, std::sync::Arc<RegexPattern>>> =
+    ///
+    /// Keyed by `(current package, pattern)` because parsing resolves grammar
+    /// tokens against the current package (`parse_combined_class` both decides
+    /// token-ness and — since the static fold — inlines simple token bodies).
+    /// Each entry records the `TOKEN_DEFS_GEN` it was parsed under; a hit with
+    /// a stale generation re-parses so a token (re)definition after the first
+    /// parse is picked up.
+    pub(crate) static REGEX_PARSE_CACHE: RefCell<HashMap<String, (u64, std::sync::Arc<RegexPattern>)>> =
         RefCell::new(HashMap::new());
 }
+
+/// Generation counter for the grammar-token registry (`Registry.token_defs`).
+/// Bumped on every token (re)definition / wholesale restore; used to invalidate
+/// `REGEX_PARSE_CACHE` entries whose parse folded token content in.
+pub(crate) static TOKEN_DEFS_GEN: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// A pattern is cacheable iff parsing it does not depend on runtime variable
 /// state. Interpolation (`interpolate_regex_scalars`) only substitutes when the

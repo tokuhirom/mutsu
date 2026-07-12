@@ -180,7 +180,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn resolve_token_patterns_static_in_pkg(
+    pub(crate) fn resolve_token_patterns_static_in_pkg(
         &self,
         name: &str,
         pkg: &str,
