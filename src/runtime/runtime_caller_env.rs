@@ -35,6 +35,32 @@ impl Interpreter {
         self.callframe_stack.pop();
     }
 
+    /// Push the caller frames an `EVAL` inserts between the EVAL'd unit's
+    /// mainline and the scope that invoked EVAL. Rakudo runs the compiled unit
+    /// behind two intermediate frames (the EVAL multi candidate and its proto),
+    /// so from EVAL'd mainline code `CALLER::` / `CALLER::CALLER::` see frames
+    /// with no user lexicals (lookups yield Nil) and the invoking scope is
+    /// reached at `CALLER::CALLER::CALLER::`. Mirror that: push the invoking
+    /// frame's env (the depth-3 target), then two empty frames.
+    pub(crate) fn push_eval_caller_frames(&mut self) {
+        self.push_caller_env();
+        for _ in 0..2 {
+            self.caller_env_stack.push(Env::new());
+            self.callframe_stack.push(CallFrameEntry {
+                file: "EVAL".to_string(),
+                line: 0,
+                code: None,
+                env: Env::new(),
+            });
+        }
+    }
+
+    pub(crate) fn pop_eval_caller_frames(&mut self) {
+        for _ in 0..3 {
+            self.pop_caller_env();
+        }
+    }
+
     /// Pop caller env and apply any dynamic variable writes back to the given env.
     /// Use this instead of `pop_caller_env()` at function return sites that restore `saved_env`.
     pub(crate) fn pop_caller_env_with_writeback(&mut self, restored_env: &mut Env) {
@@ -76,10 +102,10 @@ impl Interpreter {
     /// `name` is the bare variable name without sigil (e.g. "a" for $a).
     pub(crate) fn get_caller_var(&self, name: &str, depth: usize) -> Result<Value, RuntimeError> {
         let stack_len = self.caller_env_stack.len();
-        if depth > stack_len {
-            return Err(RuntimeError::new(format!(
-                "Cannot access caller variable '${name}' — not enough caller frames"
-            )));
+        if depth == 0 || depth > stack_len {
+            // Walking past the top of the call stack is not an error in Raku:
+            // the lookup just misses and yields Nil.
+            return Ok(Value::NIL);
         }
         let env = &self.caller_env_stack[stack_len - depth];
         if let Some(val) = env.get(name) {
@@ -89,9 +115,10 @@ impl Interpreter {
             }
             Ok(val.clone())
         } else {
-            Err(RuntimeError::new(format!(
-                "Cannot access '${name}' through CALLER"
-            )))
+            // A name the target frame does not have resolves to Nil quietly
+            // (rakudo's runtime pad lookup misses; only a *present* non-dynamic
+            // symbol throws X::Caller::NotDynamic).
+            Ok(Value::NIL)
         }
     }
 

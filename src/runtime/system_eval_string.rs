@@ -275,6 +275,10 @@ impl Interpreter {
         }
         let previous_pod = self.env.get("=pod").cloned();
         let saved_in_eval = self.env.get("__mutsu_in_eval").cloned();
+        // CALLER:: from the EVAL'd unit's mainline must not resolve directly in
+        // the scope that invoked EVAL (see push_eval_caller_frames for the
+        // frame layout raku exposes).
+        self.push_eval_caller_frames();
         // Record the `&name` code-vars that already exist in the enclosing scope,
         // so a sub declared inside this EVAL may shadow them without being treated
         // as a redeclaration (see registration_sub.rs).
@@ -357,6 +361,7 @@ impl Interpreter {
                 self.env.remove("__mutsu_eval_wrapped_decls");
             }
         }
+        self.pop_eval_caller_frames();
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
         } else {
