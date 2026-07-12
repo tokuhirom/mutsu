@@ -96,7 +96,7 @@ impl Interpreter {
         // (or two `token`s/`regex`es) of the same name are an X::Redeclaration,
         // just like at the top level. (`my`/`our`-scoped methods/tokens are
         // covered by `dup_scoped_method`; this covers plain `sub`/`token`.)
-        let dup_routine_in_body = |body: &[Stmt]| -> Option<RuntimeError> {
+        let dup_routine_in_body = |type_name: &str, body: &[Stmt]| -> Option<RuntimeError> {
             let mut seen_subs: HashMap<String, bool> = HashMap::new();
             let mut seen_tokens: HashSet<String> = HashSet::new();
             for s in body {
@@ -141,10 +141,18 @@ impl Interpreter {
                             let mut attrs = std::collections::HashMap::new();
                             attrs.insert("symbol".to_string(), Value::str(n.clone()));
                             attrs.insert("what".to_string(), Value::str("regex".to_string()));
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(format!("Redeclaration of regex '{}'", n)),
-                            );
+                            // Rakudo phrases a token/regex redeclaration inside a
+                            // package as "Package 'X' already has a regex 'a' ...",
+                            // distinct from the plain "Redeclaration of ..." form.
+                            let msg = if type_name.is_empty() {
+                                format!("Redeclaration of regex '{}'", n)
+                            } else {
+                                format!(
+                                    "Package '{}' already has a regex '{}' (did you mean to declare a multi method?)",
+                                    type_name, n
+                                )
+                            };
+                            attrs.insert("message".to_string(), Value::str(msg));
                             return Some(RuntimeError::typed("X::Redeclaration", attrs));
                         }
                     }
@@ -239,7 +247,7 @@ impl Interpreter {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
-                    if let Some(err) = dup_routine_in_body(body) {
+                    if let Some(err) = dup_routine_in_body(&name.resolve(), body) {
                         return Err(err);
                     }
                     let name = name.resolve().to_string();
@@ -284,7 +292,7 @@ impl Interpreter {
                     if let Some(err) = dup_scoped_method(body) {
                         return Err(err);
                     }
-                    if let Some(err) = dup_routine_in_body(body) {
+                    if let Some(err) = dup_routine_in_body(&name.resolve(), body) {
                         return Err(err);
                     }
                     (name.resolve().to_string(), body_is_stub(body))
@@ -307,13 +315,13 @@ impl Interpreter {
                     }
                     (name.resolve().to_string(), false)
                 }
-                Stmt::Package { body, .. } => {
+                Stmt::Package { name, body, .. } => {
                     // `package`/`module` bodies: a duplicate `sub` is the same
                     // X::Redeclaration as inside a class. (The package name itself
                     // shares the type namespace, but block-scoped leakage makes a
                     // registry-based check unsafe, so only the in-body routine
                     // check runs here.)
-                    if let Some(err) = dup_routine_in_body(body) {
+                    if let Some(err) = dup_routine_in_body(&name.resolve(), body) {
                         return Err(err);
                     }
                     continue;

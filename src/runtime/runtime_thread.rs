@@ -339,6 +339,7 @@ impl Interpreter {
             current_code: 0,
             carrier_writes: None,
             method_dispatch_pure: false,
+            in_regex_code_block: false,
             resume_ip: None,
             bind_context: false,
             scalar_bind_context: false,

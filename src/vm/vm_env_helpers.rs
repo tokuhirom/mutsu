@@ -967,6 +967,45 @@ impl Interpreter {
         self.pending_caller_var_writeback = retained;
     }
 
+    /// Drain `pending_local_updates` logged by an embedded regex `{ ... }` block
+    /// (via `execute_regex_code_blocks`) into the caller's local slots after a
+    /// method call. A `Grammar.parse` runs its rule's embedded code blocks inside
+    /// this same interpreter, writing caller lexicals straight into `env` (e.g.
+    /// `regex TOP { x { $x = 42 } }` mutating an outer `$x`); like the smartmatch
+    /// path (`vm_smartmatch_ops`), write those through to the caller's local slots
+    /// so the slot stays coherent, and record the miss for a caller-var writeback
+    /// when the owning slot lives further up the stack. No-op unless a block wrote.
+    pub(super) fn drain_pending_local_updates_after_call(&mut self, code: &CompiledCode) {
+        if self.pending_local_updates.is_empty() {
+            return;
+        }
+        // Only reconcile plain user variable names; internal/magic keys the block
+        // touches (`?LINE`, `__mutsu_*`, `$/`-derived, …) are not caller lexicals.
+        let is_user_var = |n: &str| -> bool {
+            !n.is_empty()
+                && !n.starts_with('?')
+                && !n.starts_with("__")
+                && n.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b':')
+        };
+        let written: std::collections::HashSet<String> = self
+            .pending_local_updates
+            .iter()
+            .map(|(n, _)| n.clone())
+            .filter(|n| is_user_var(n))
+            .collect();
+        self.writeback_match_locals(code, &written);
+        for name in &written {
+            let is_match_name =
+                name == "/" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()));
+            if is_match_name || self.find_local_slot(code, name).is_some() {
+                continue;
+            }
+            self.record_caller_var_writeback(name);
+        }
+        self.pending_local_updates.clear();
+    }
+
     /// Slice F (multi-frame coherence): drain after a *cached fast-call* dispatch
     /// (positional-light / light / 0-arg fast / OTF), mirroring the slow path's
     /// post-`dispatch_func_call_inner` reconcile.

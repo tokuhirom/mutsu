@@ -296,7 +296,10 @@ impl Interpreter {
                 .iter()
                 .map(|(k, v)| (*k, format!("{:?}", v)))
                 .collect();
+            let saved_in_block = self.in_regex_code_block;
+            self.in_regex_code_block = true;
             let _ = self.eval_block_value(&stmts);
+            self.in_regex_code_block = saved_in_block;
             // Record changed env variables as pending local updates for the outer VM
             for (k, v) in &self.env {
                 let old_repr = snapshot.get(k).map(|s| s.as_str()).unwrap_or("");

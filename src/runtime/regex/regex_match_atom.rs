@@ -325,6 +325,17 @@ impl Interpreter {
                 values
             };
             let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
+            // A subrule that resolves to no token/regex/rule but names a plain
+            // METHOD of the grammar (`rule TOP { <.panic> }` where `method panic`
+            // is defined) is a method-call subrule: invoke it. Its exception (e.g.
+            // `die` inside the method) must propagate out of the parse rather than
+            // being swallowed as a silent non-match.
+            if candidates.is_empty()
+                && let Some(result) =
+                    self.try_regex_subrule_as_method(&spec, chars, pos, current_caps, pkg)
+            {
+                return result;
+            }
             if !candidates.is_empty() {
                 let tail: Vec<char> = chars[pos..].to_vec();
                 // The subrule candidates match `tail` (a slice from `pos`) at
@@ -509,6 +520,94 @@ impl Interpreter {
             )
             .into_iter()
             .collect()
+        }
+    }
+
+    /// Dispatch a subrule that names a plain grammar METHOD (not a token/regex/rule).
+    /// `rule TOP { <.panic> }` where `method panic { die ... }` calls the method;
+    /// its exception propagates via `PENDING_REGEX_ERROR` (checked by the grammar
+    /// parse driver) instead of being swallowed as a silent non-match. Returns:
+    /// - `None` — not a method subrule; caller falls through to the normal path.
+    /// - `Some(vec![])` — dispatched but produced no match (method died → pending
+    ///   error set, or returned an undefined/false cursor).
+    /// - `Some(vec![(end, caps)])` — the method returned a defined Match/Cursor.
+    fn try_regex_subrule_as_method(
+        &self,
+        spec: &NamedRegexLookupSpec,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: &str,
+    ) -> Option<Vec<(usize, RegexCaptures)>> {
+        // Only plain, argument-less identifier subrules dispatched against a real
+        // grammar package. `<::>` indirection, char-class specs, and builtin
+        // assertions are handled elsewhere.
+        if spec.token_lookup
+            || !spec.arg_exprs.is_empty()
+            || pkg.is_empty()
+            || spec.lookup_name.is_empty()
+            || spec.lookup_name.contains("::")
+            || !spec
+                .lookup_name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return None;
+        }
+        // The name must be a user method declared directly on this grammar (not an
+        // inherited Cursor/Grammar builtin, which the normal subrule/builtin paths
+        // already cover).
+        let is_user_method = self
+            .registry()
+            .classes
+            .get(pkg)
+            .is_some_and(|cd| cd.methods.contains_key(&spec.lookup_name));
+        if !is_user_method {
+            return None;
+        }
+        // Run the method in a scratch interpreter (mirrors `eval_regex_code_assertion`).
+        // The invocant is the grammar type object so method resolution finds the
+        // grammar's own method (a Match cursor would resolve against `Match` and
+        // miss it). Full Cursor-self semantics are a deeper feature; a method used
+        // purely for its side effect / exception (`<.panic>`) does not need it.
+        let invocant = Value::package(crate::symbol::Symbol::intern(pkg));
+        let mut interp = Interpreter {
+            env: self.env.clone(),
+            current_package: Arc::new(RwLock::new(pkg.to_string())),
+            ..Self::new_regex_scratch()
+        };
+        // Full registry: the grammar's methods live in `Registry::classes`, which
+        // the lean `copy_decl_registry_into` omits.
+        self.copy_full_registry_into(&mut interp);
+        if self.test_module_loaded() {
+            interp.loaded_modules = self.loaded_modules.clone();
+            interp.tap.ensure_state();
+        }
+        match interp.call_method_with_values(invocant, &spec.lookup_name, Vec::new()) {
+            Err(e) => {
+                // Propagate the method's exception (e.g. `die`) out of the parse.
+                crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                    *slot.borrow_mut() = Some(e);
+                });
+                Some(Vec::new())
+            }
+            Ok(v) => {
+                // A defined Match/Cursor return advances the parse by its extent.
+                if let ValueView::Instance { attributes, .. } = v.view()
+                    && let Some(to) = attributes
+                        .as_map()
+                        .get("to")
+                        .and_then(|t| t.as_int())
+                        .filter(|&t| t >= 0)
+                {
+                    let end = pos + to as usize;
+                    if end <= chars.len() {
+                        return Some(vec![(end, current_caps.clone())]);
+                    }
+                }
+                // Undefined / non-cursor return → treated as a non-match.
+                Some(Vec::new())
+            }
         }
     }
 

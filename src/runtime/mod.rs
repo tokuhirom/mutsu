@@ -1598,6 +1598,14 @@ pub struct Interpreter {
     /// Slice B.
     pub(crate) carrier_writes: Option<std::collections::HashSet<String>>,
     pub(crate) method_dispatch_pure: bool,
+    /// True while evaluating an embedded regex `{ ... }` code block from a grammar
+    /// rule (`execute_regex_code_blocks`). Such a block closes over the lexical
+    /// scope where the grammar was defined, so a bare free variable the compiler
+    /// auto-qualified to the grammar package (`$x` -> `SetGlobal("G::x")`) must
+    /// fall back to an existing outer lexical of the same bare name. Scopes that
+    /// outer-lexical-write fallback to exactly this context so ordinary `our`/
+    /// package-qualified writes elsewhere are unaffected.
+    pub(crate) in_regex_code_block: bool,
     pub(crate) resume_ip: Option<usize>,
     pub(crate) bind_context: bool,
     pub(crate) scalar_bind_context: bool,
