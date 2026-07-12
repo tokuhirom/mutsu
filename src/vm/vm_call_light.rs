@@ -142,7 +142,20 @@ impl Interpreter {
         let mut explicit_return: Option<Value> = None;
         let mut fail_bypass = false;
         while ip < cf.code.ops.len() {
-            match self.exec_one(&cf.code, &mut ip, compiled_fns) {
+            // JIT entry (ADR-0004 J1): at body start, run the whole body
+            // natively when the chunk is hot and Tier A-compilable. The
+            // native outcome has the same shape as one `exec_one` step
+            // (explicit return / fail / error travel as `Err`), so it
+            // threads through the same match arms below.
+            let step = if ip == 0
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns)
+            {
+                ip = cf.code.ops.len();
+                r
+            } else {
+                self.exec_one(&cf.code, &mut ip, compiled_fns)
+            };
+            match step {
                 Ok(()) => {}
                 Err(e) if e.return_value.is_some() => {
                     let ret_val = e.return_value.unwrap();

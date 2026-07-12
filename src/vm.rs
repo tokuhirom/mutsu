@@ -173,6 +173,11 @@ pub(crate) mod vm_hyper_func;
 mod vm_hyper_method_ops;
 pub(crate) mod vm_hyper_ops;
 mod vm_hyper_race_parallel;
+pub(crate) mod vm_jit;
+#[cfg(feature = "jit")]
+mod vm_jit_compile;
+#[cfg(feature = "jit")]
+mod vm_jit_helpers;
 mod vm_loop_cstyle_repeat;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;

@@ -101,6 +101,54 @@ static GC_PAUSE_NS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static GC_PAUSE_NS_MAX: AtomicU64 = AtomicU64::new(0);
 static GC_ROOTS_SCANNED: AtomicU64 = AtomicU64::new(0);
 
+// JIT (ADR-0004 layer 4) counters: how many chunks compiled to native code,
+// how many body executions entered native code, and how many chunks bailed
+// out (contain a not-yet-supported opcode; see `jit_bailout_by_opcode` for
+// which opcode blocked them — the empirical basis for Tier A coverage work).
+static JIT_COMPILES: AtomicU64 = AtomicU64::new(0);
+static JIT_ENTRIES: AtomicU64 = AtomicU64::new(0);
+static JIT_BAILOUTS: AtomicU64 = AtomicU64::new(0);
+
+/// Per-opcode-name histogram of JIT bailout causes (first unsupported opcode
+/// seen in each rejected chunk; only populated when stats are on).
+fn jit_bailout_by_opcode() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_NAME: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_NAME.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one chunk compiled to native code by the JIT.
+#[inline]
+pub(crate) fn record_jit_compile() {
+    if enabled() {
+        JIT_COMPILES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one body execution entering JIT-compiled native code.
+#[inline]
+pub(crate) fn record_jit_entry() {
+    if enabled() {
+        JIT_ENTRIES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record a chunk rejected by the JIT because it contains `op` (the first
+/// unsupported opcode encountered during the static scan).
+#[inline]
+pub(crate) fn record_jit_bailout(op: &crate::opcode::OpCode) {
+    if enabled() {
+        JIT_BAILOUTS.fetch_add(1, Ordering::Relaxed);
+        let dbg = format!("{op:?}");
+        let name: String = dbg
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if let Ok(mut map) = jit_bailout_by_opcode().lock() {
+            *map.entry(name).or_insert(0) += 1;
+        }
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -338,6 +386,28 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] gc: collections={gc_collections} candidate_pushes={gc_candidate_pushes} dedup_hits={gc_dedup_hits} reclaimed_nodes={gc_reclaimed_nodes} reclaimed_cycles={gc_reclaimed_cycles} pause_ns_total={gc_pause_ns_total} pause_ns_max={gc_pause_ns_max} roots_scanned={gc_roots_scanned} gc_threshold={gc_threshold}"
     );
+    let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
+    let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);
+    let jit_bailouts = JIT_BAILOUTS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts}"
+    );
+    if let Ok(map) = jit_bailout_by_opcode().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(20)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] jit bailout opcodes (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
     if let Ok(map) = opcode_histogram().lock()
         && !map.is_empty()
     {

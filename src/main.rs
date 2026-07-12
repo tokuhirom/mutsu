@@ -163,6 +163,7 @@ fn print_help(program: &str) {
     println!("  -I PATH        Add PATH to the module search path");
     println!("  -M MODULE      use MODULE before executing program (repeatable)");
     println!("  --dump-ast     Dump the AST instead of executing");
+    println!("  --dump-bytecode  Dump compiled bytecode instead of executing");
     println!("  --doc          Render Pod documentation from the source");
     println!("  --repl         Start the interactive REPL");
     println!("  --no-precomp   Disable module precompilation cache");
@@ -255,6 +256,7 @@ fn run_main() {
     let args: Vec<String> = env::args().collect();
 
     let mut dump_ast = false;
+    let mut dump_bytecode = false;
     let mut doc_mode = false;
     let mut repl_flag = false;
     let mut no_precomp = false;
@@ -298,6 +300,8 @@ fn run_main() {
             return;
         } else if arg == "--dump-ast" {
             dump_ast = true;
+        } else if arg == "--dump-bytecode" {
+            dump_bytecode = true;
         } else if arg == "--doc" {
             doc_mode = true;
         } else if arg == "--repl" {
@@ -448,6 +452,17 @@ fn run_main() {
     if dump_ast {
         match mutsu::dump_ast(&input) {
             Ok(ast) => println!("{}", ast),
+            Err(err) => {
+                print_error("Parse error", &err, Some(&input), Some(&program_name));
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    if dump_bytecode {
+        match mutsu::dump_bytecode(&input) {
+            Ok(listing) => println!("{}", listing),
             Err(err) => {
                 print_error("Parse error", &err, Some(&input), Some(&program_name));
                 std::process::exit(1);
