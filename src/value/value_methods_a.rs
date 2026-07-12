@@ -157,11 +157,10 @@ impl Value {
     /// variant, not in the shared `HashData`, so two holders of the same hash
     /// data can differ in itemization (`%x.raku` → `{...}`, `my $h = %x;
     /// $h.raku` → `${...}`).
-    /// Deliberately place-based (B-wall-in exemption): the per-holder
-    /// itemization flag is representation state that `ValueView` hides; at
-    /// flip time this reads the kind tag inside the seam.
+    /// The per-holder itemization flag is representation state that
+    /// `ValueView` hides; this reads the kind tag inside the seam.
     pub fn hash_is_itemized(&self) -> bool {
-        matches!(self.0, ValueRepr::Hash(_, true))
+        self.0.is_hash_itemized()
     }
 
     /// Return this value with its hash itemization flag set to `itemized`,

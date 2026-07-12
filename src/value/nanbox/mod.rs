@@ -38,6 +38,7 @@ use super::*;
 mod boxes;
 mod decode;
 mod encode;
+mod peek;
 #[cfg(test)]
 mod tests;
 
@@ -189,13 +190,19 @@ fn kind_from_u8(k: u8) -> Kind {
 // ---- word assembly / disassembly ---------------------------------------------
 
 #[inline]
-fn word_for_kind(kind: Kind, payload: u64) -> NonZeroU64 {
-    debug_assert_eq!(payload & !PAYLOAD48_MASK, 0, "payload exceeds 48 bits");
-    debug_assert_eq!(payload & SUB_MASK, 0, "payload collides with subkind bits");
+const fn word_for_kind(kind: Kind, payload: u64) -> NonZeroU64 {
+    debug_assert!(payload & !PAYLOAD48_MASK == 0, "payload exceeds 48 bits");
+    debug_assert!(
+        payload & SUB_MASK == 0,
+        "payload collides with subkind bits"
+    );
     let k = kind as u64;
     let bits = ((KIND_PAGE_BASE + (k >> 3)) << TAG_SHIFT) | payload | ((k & 0x7) << SUB_SHIFT);
-    // SAFETY-free: the page is >= 0xFFF3, so the word is never 0.
-    NonZeroU64::new(bits).expect("kind words are always nonzero")
+    // The page is >= 0xFFF3, so the word is never 0.
+    match NonZeroU64::new(bits) {
+        Some(w) => w,
+        None => panic!("kind words are always nonzero"),
+    }
 }
 
 #[inline]
@@ -218,7 +225,7 @@ fn pack_num(f: f64) -> NonZeroU64 {
 }
 
 #[inline]
-fn pack_inline(kind: Kind, payload: u32) -> NonZeroU64 {
+const fn pack_inline(kind: Kind, payload: u32) -> NonZeroU64 {
     word_for_kind(kind, (payload as u64) << INLINE_SHIFT)
 }
 
@@ -460,9 +467,18 @@ unsafe impl Sync for NanBox {}
 impl NanBox {
     /// Raw word bits (tests / future tag-dispatch fast paths).
     #[inline]
+    #[allow(dead_code)]
     pub(in crate::value) fn bits(&self) -> u64 {
         self.0.get()
     }
+
+    // Inline-kind constants (no payload ownership, safe to duplicate freely) —
+    // the post-flip bodies of `Value::NIL` / `Value::TRUE` / `Value::WHATEVER`.
+    pub(in crate::value) const NIL: NanBox = NanBox(pack_inline(Kind::Nil, 0));
+    pub(in crate::value) const WHATEVER: NanBox = NanBox(pack_inline(Kind::Whatever, 0));
+    pub(in crate::value) const HYPER_WHATEVER: NanBox = NanBox(pack_inline(Kind::HyperWhatever, 0));
+    pub(in crate::value) const TRUE: NanBox = NanBox(pack_inline(Kind::Bool, 1));
+    pub(in crate::value) const FALSE: NanBox = NanBox(pack_inline(Kind::Bool, 0));
 }
 
 impl Clone for NanBox {

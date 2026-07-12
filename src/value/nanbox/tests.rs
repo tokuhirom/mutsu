@@ -205,7 +205,7 @@ fn container_ref_cell_identity_survives() {
         }
         other => panic!("decoded as {other:?}"),
     }
-    assert!(matches!(&*cell.lock().unwrap(), Value(ValueRepr::Int(9))));
+    assert_eq!(cell.lock().unwrap().as_int(), Some(9));
 }
 
 fn sample_sub() -> Gc<SubData> {
@@ -559,7 +559,7 @@ fn promise_and_channel_roundtrip_sharing_state() {
     match b.into_repr() {
         ValueRepr::Channel(back) => {
             back.send(Value::int(7));
-            assert!(matches!(c.receive_result(), Ok(Value(ValueRepr::Int(7)))));
+            assert_eq!(c.receive_result().ok().and_then(|v| v.as_int()), Some(7));
         }
         other => panic!("decoded as {other:?}"),
     }
