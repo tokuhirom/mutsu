@@ -117,10 +117,10 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
   2. Commit changes to the feature branch.
   3. Push and open a PR with `gh pr create`.
   4. **Apply the tagpr version-bump label that matches the change.** tagpr aggregates the labels of all PRs merged since the last release to decide the next version (default = patch). Pass `--label` to `gh pr create` (or `gh pr edit <n> --add-label`):
-     - `tagpr:major` — backward-incompatible change (breaking API/CLI/behavior; a `feat!:`/`fix!:` or `BREAKING CHANGE` commit).
-     - `tagpr:minor` — new user-visible feature, no break (a `feat:` commit; e.g. a newly supported Raku builtin/operator).
+     - `major` — backward-incompatible change (breaking API/CLI/behavior; a `feat!:`/`fix!:` or `BREAKING CHANGE` commit).
+     - `minor` — new user-visible feature, no break (a `feat:` commit; e.g. a newly supported Raku builtin/operator).
      - **no label** — bug fix, roast/whitelist additions, perf, refactor, docs, chore, tests (`fix:`/`perf:`/`refactor:`/`docs:`/`chore:`/`test:`). These take the default patch bump; do NOT add a label.
-     - Only the two labels `tagpr:minor` / `tagpr:major` exist for this purpose; pick at most one (major wins if a PR is somehow both).
+     - The label names are exactly `minor` / `major` (tagpr's defaults; `.tagpr` sets no custom names). Do NOT use the stale `tagpr:minor` / `tagpr:major` labels that also exist in the repo — tagpr ignores them. Pick at most one (major wins if a PR is somehow both).
   5. Enable auto-merge: `gh pr merge --auto --squash <pr-number>`.
   6. **Immediately after opening the PR, verify it is mergeable — do NOT assume it is.** Run `gh pr view <pr-number> --json mergeStateStatus,state -q '.state + " / " + .mergeStateStatus'`. If `mergeStateStatus` is `DIRTY` (merge conflict) or CI never registers (no workflow runs appear within ~1 min via `gh run list --branch <branch>`), the branch has conflicted with `main` — a sibling PR almost certainly touched the same file (docs/ledger files are the usual culprit, since slices update the same survey table). **Rebase onto `main` and resolve the conflict before relying on auto-merge:** `git fetch origin main && git rebase origin/main`, resolve, `git rebase --continue`, then `git push --force-with-lease`. A `DIRTY` PR will sit unmerged forever and CI will not run — catching it at open time (not hours later) is the rule. This conflict is frequent when landing many small slices in sequence; expect it.
   7. CI (GitHub Actions) runs `make test` and `make roast`. The PR merges automatically when CI passes.
