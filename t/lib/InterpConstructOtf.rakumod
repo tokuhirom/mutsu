@@ -184,3 +184,66 @@ our sub oc-subtest($desc, $a, $b) is export {
         is $a, $b, "is equal";
     }
 }
+
+# EVAL inside a module sub (admitted to OTF 2026-07-12, after the #4435
+# EVAL CALLER-frame fix): the EVAL'd code shares the sub's live lexical
+# scope and sees raku's CALLER:: frame layout (invoking scope at depth 3).
+
+our sub oc-eval-param($x) is export {
+    EVAL '$x + 1'
+}
+
+our sub oc-eval-lexical() is export {
+    my $y = 10;
+    EVAL '$y * 2'
+}
+
+our sub oc-eval-write() is export {
+    my $y = 1;
+    EVAL '$y = 5';
+    $y
+}
+
+our sub oc-eval-decl-sub() is export {
+    EVAL 'sub oc-eval-helper($n) { $n + 100 }; oc-eval-helper(7)'
+}
+
+our sub oc-eval-caller-d3() is export {
+    my $*dz = 17;
+    EVAL 'CALLER::CALLER::CALLER::<$*dz>'
+}
+
+our sub oc-eval-caller-d1() is export {
+    my $z = 11;
+    $z++;
+    EVAL '(CALLER::<$z>).raku'
+}
+
+our sub oc-eval-topic() is export {
+    my @r;
+    for 1, 2, 3 {
+        @r.push(EVAL '$_ * 10');
+    }
+    @r.join(',')
+}
+
+# EVAL'd code calling a module-private (non-exported) sibling sub
+sub oc-eval-secret() { 'sekrit' }
+our sub oc-eval-sibling() is export {
+    EVAL 'oc-eval-secret() ~ "!"'
+}
+
+our sub oc-eval-nested($v) is export {
+    my sub wrap() { EVAL '$v ~ "-wrapped"' }
+    wrap()
+}
+
+our sub oc-eval-catch() is export {
+    EVAL 'die "boom"';
+    CATCH { default { return "caught:" ~ .message } }
+    "no-throw"
+}
+
+our sub oc-evalfile($path) is export {
+    EVALFILE $path
+}

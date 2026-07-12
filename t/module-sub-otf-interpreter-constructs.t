@@ -3,11 +3,11 @@ use Test;
 use InterpConstructOtf;
 
 # Pins that module subs containing formerly interpreter-gated constructs
-# (nested routine decls, CATCH/CONTROL, phasers, subtest, start, once, and
-# nested class/role/grammar decls) behave raku-identically when OTF-compiled
-# (def_is_otf_compilable_module_single).
+# (nested routine decls, CATCH/CONTROL, phasers, subtest, start, once,
+# nested class/role/grammar decls, and EVAL/EVALFILE) behave raku-identically
+# when OTF-compiled (def_is_otf_compilable_module_single).
 
-plan 28;
+plan 40;
 
 is oc-nested(42), "int:42|str:s", "nested sub decl with when+return";
 is oc-nested-when(7), "Iafter;", "nested sub when does not escape the nested routine";
@@ -43,5 +43,20 @@ is oc-class-recur(4), 10, "recursive sub with nested class decl";
 is oc-role(), 10, "parameterized nested role mixed into nested class";
 is oc-grammar("123"), "match:123", "nested grammar parses";
 is oc-grammar("ab"), "nomatch", "nested grammar rejects";
+
+is oc-eval-param(41), 42, "EVAL reads the sub's param";
+is oc-eval-lexical(), 20, "EVAL reads the sub's lexical";
+is oc-eval-write(), 5, "EVAL writes the sub's lexical";
+is oc-eval-decl-sub(), 107, "EVAL declares and calls a sub";
+is oc-eval-caller-d3(), 17, "EVAL CALLER:: depth 3 reaches the invoking sub";
+is oc-eval-caller-d1(), "Nil", "EVAL CALLER:: depth 1 is the EVAL frame (Nil)";
+is oc-eval-topic(), "10,20,30", "EVAL sees the loop topic";
+is oc-eval-sibling(), "sekrit!", "EVAL calls a module-private sibling sub";
+is oc-eval-nested("abc"), "abc-wrapped", "EVAL inside a nested my sub sees captures";
+is oc-eval-catch(), "caught:boom", "CATCH catches a die from EVAL'd code";
+is oc-evalfile($*PROGRAM.parent.child("lib/evalfile-fixture.raku").Str), 42,
+    "EVALFILE runs a file and returns its last value";
+# second call: the OTF-compiled body is cached; EVAL re-evaluates per call
+is oc-eval-write(), 5, "EVAL lexical write is fresh on a second call";
 
 oc-subtest("subtest inside a module sub", 3, 3);
