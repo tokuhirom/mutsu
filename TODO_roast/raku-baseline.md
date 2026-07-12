@@ -8,7 +8,9 @@ failing `flunk`) is not worth chasing on mutsu.
 
 - **Data:** [`raku-baseline.tsv`](raku-baseline.tsv) — one row per roast `.t` file.
 - **Generator:** [`../scripts/roast-raku-baseline.sh`](../scripts/roast-raku-baseline.sh) — re-run to refresh.
-- **Captured:** 2026-07-11, against `Rakudo v2022.12` (Raku **6.d**, MoarVM 2022.12).
+- **Captured:** 2026-07-12, against `Rakudo v2026.06` (default language **6.d**, MoarVM 2026.06).
+  Previous capture: 2026-07-11 against `Rakudo v2022.12` — see "v2026.06 refresh" below
+  for the diff.
 
 ## Columns
 
@@ -38,63 +40,78 @@ failing `flunk`) is not worth chasing on mutsu.
    `#?v6`, ...) are *not* applied, because applying them via `roast/fudge` writes
    rewritten files under `roast/`, which is read-only in this repo. mutsu's own
    runs *do* apply fudge (`MUTSU_FUDGE=1`). Therefore a **`raku FAIL`/`SORRY` on a
-   whitelisted file is usually a fudge/version artifact, not raku being worse than
+   whitelisted file is usually a fudge artifact, not raku being worse than
    mutsu** — the real roast harness would `skip`/`todo` those subtests. This is why
-   195 whitelisted files show `raku_status=FAIL` and 83 show `SORRY` (see below);
+   147 whitelisted files show `raku_status=FAIL` and 80 show `SORRY` (see below);
    they are noise for the comparison, not regressions.
-2. **The reference raku here is 6.d (v2022.12).** `SORRY` frequently just means the
-   test uses 6.e syntax this older raku cannot compile — not that the test is bad.
-   A newer raku would pass more of them.
+2. **The reference raku is now v2026.06** (default language 6.d), so the old
+   "6.e-only syntax on a 2022 raku" SORRY class is mostly gone. The remaining
+   `SORRY` rows are removed constructs, rakudo-NYI syntax (`::=`, regex `::`),
+   or unfudged fudge-dependent lines.
 3. **The reliable signal is `raku_status=PASS`** — an *unfudged* pass is a strict
    lower bound (fudge only ever skips/todos, never turns a pass into a fail), so
    every `PASS` row is a test raku genuinely passes raw.
 
-## Summary (all 1463 roast `.t` files, unfudged raku 6.d)
+## Summary (all 1463 roast `.t` files, unfudged raku v2026.06)
 
 | raku_status | count | of which whitelisted | not whitelisted |
 |---|---:|---:|---:|
-| PASS    | 1063 | 1010 | **53** |
-| FAIL    |  203 |  195 | 8 |
-| SORRY   |  104 |   83 | 21 |
-| ABORT   |   62 |   55 | 7 |
-| TIMEOUT |   21 |   21 | 0 |
+| PASS    | 1143 | 1097 | **46** |
+| FAIL    |  154 |  147 | 7 |
+| SORRY   |  100 |   80 | 20 |
+| ABORT   |   45 |   39 | 6 |
+| TIMEOUT |   11 |   11 | 0 |
 | NOPLAN  |   10 |    9 | 1 |
 
-The 1010 `PASS ∧ whitelisted` are the healthy core (raku and mutsu both pass).
+The 1097 `PASS ∧ whitelisted` are the healthy core (raku and mutsu both pass).
 The FAIL/SORRY/ABORT/TIMEOUT columns on whitelisted rows are dominated by the
-unfudged/6.d artifacts of caveat 1–2.
+unfudged artifacts of caveat 1.
 
-## Actionable: raku PASS but NOT whitelisted (53)
+### v2026.06 refresh (2026-07-12) — diff vs the v2022.12 capture
+
+Raku-side `PASS` grew 1063 → 1143 (+80: 54 `FAIL→PASS`, 19 `ABORT→PASS`,
+7 `TIMEOUT→PASS`, 3 `SORRY→PASS`). All but three of the newly-PASS files were
+already whitelisted (they were unfudged/old-raku artifacts, caveats 1–2).
+The three that matter — newly oracle-verified mutsu gaps — are:
+
+- `S06-advanced/return-prioritization.t` (raku 11/11, mutsu 9/11) — **new ★ in
+  [BLOCKERS.md](BLOCKERS.md)**: `return` inside LEAVE phasers.
+- `S32-str/format.t` (raku 49/49, mutsu 26/49 abort) — oracle available now, but
+  still 基盤待ち (needs the RakuAST subsystem).
+- `S02-types/generics.t` (raku 1/1, mutsu 0/1) — oracle available now, still
+  基盤待ち (6.e generics / `Array[T]` subclassing).
+
+Raku-side reversals, all on whitelisted files (noise for mutsu): 
+`S10-packages/precompilation.t` and `S17-procasync/stress.t` `PASS→TIMEOUT`
+(25s cap, first-run precomp/load cost of the new raku), `S32-array/shift.t`
+`PASS→FAIL`, `S10-packages/require-and-use--dead-file.t` `FAIL→SORRY`.
+
+## Actionable: raku PASS but NOT whitelisted (46)
 
 These are the tests raku passes raw that mutsu has **not** whitelisted. Running
 mutsu (`MUTSU_FUDGE=1`) on each splits them:
 
-### A. mutsu also PASSes — whitelist candidates (4)
+### A. mutsu also PASSes — whitelist candidates (0)
 
-mutsu already passes these; they were simply never added to the whitelist. Verify
-via `MUTSU_FUDGE=1 prove -e target/debug/mutsu <file>` (and the real
-`scripts/run-roast-test.sh` harness) before adding.
+All four candidates from the 2026-07-11 capture (`6.c/MISC/misc-6.c.t`,
+`integration/advent2010-day04.t`, `advent2013-day19.t`,
+`lazy-bentley-generator.t`) were whitelisted in #4423. None remain.
 
-- ~~`roast/6.c/MISC/misc-6.c.t` (1/1)~~ — whitelisted (#4423).
-- ~~`roast/integration/advent2010-day04.t` (11/11)~~ — whitelisted (#4423).
-- ~~`roast/integration/advent2013-day19.t` (4/4)~~ — whitelisted (#4423).
-- ~~`roast/integration/lazy-bentley-generator.t` (1/1)~~ — whitelisted (#4423).
-
-### B. non-integration gaps — raku PASS, mutsu FAIL/ERROR (10)
+### B. non-integration gaps — raku PASS, mutsu FAIL/ERROR (7)
 
 Genuine mutsu gaps outside the `integration/` bucket. `mutsu` column is
-`ok/plan` from an unfudged mutsu run. **DONE rows** landed 2026-07-11.
+`ok/plan`. Rows closed since the 2026-07-11 capture: `S32-hash/perl.t` (#4452),
+`S12-attributes/class.t`, `6.c/S14-roles/attributes.t` (#4425),
+`6.c/S05-grammar/methods.t` (#4449), `6.c/S06-other/main-refactored.t`,
+`6.c/S03-operators/set_precedes.t` — all whitelisted.
 
 | file | mutsu | note |
 |---|---|---|
-| ~~`S32-hash/perl.t`~~ | 43→47/55 | per-holder hash itemization done (#4421); remaining 8 need parameterized-role type-capture binding |
-| `S12-attributes/class.t` | 19/28 abort | §6 ★. Multi-feature: class-body `BEGIN EVAL` attr decl (test20), `EVAL` attr→NotFound (21), `is_run` err msgs (22-23), `where`-clause attr access `X::Syntax::NoSelf` (24-28) |
+| `S06-advanced/return-prioritization.t` | 9/11 | **new ★ (v2026.06 refresh)** — `return` inside LEAVE phaser: overwrite return value (T5), different lexical scope (T9). See BLOCKERS.md |
+| `S32-str/format.t` | 26/49 abort | new oracle (v2026.06) but 基盤待ち — RakuAST subsystem |
+| `S02-types/generics.t` | 0/1 | new oracle (v2026.06) but 基盤待ち — 6.e generics / `Array[T]` subclassing |
 | `6.c/S14-roles/mixin-6c.t` | 16/57 | role mixin (6.c) の深い機能 |
-| `6.c/S05-grammar/methods.t` | 4/8 | grammar-engine: die propagation from a `<.method>` subrule (T1/2), embedded `{...}` block not capturing the grammar's defining outer lexical (T3), duplicate-token error message (T6) |
-| ~~`6.c/S14-roles/attributes.t`~~ | 2→3/3 | class attribute accessor prioritized over role method — done (#4425), whitelisted |
-| `6.c/S06-other/main-refactored.t` | ERROR 0/501 | full new-MAIN interface (`ARGS-TO-CAPTURE`/`GENERATE-USAGE`/`MAIN_HELPER`/`USAGE`); aborts before test 1 |
 | `6.c/MISC/bug-coverage.t` | ERROR | 起動時 error |
-| `6.c/S03-operators/set_precedes.t` | ERROR | `(<)`/`(>)` set precedes 演算子 |
 | `APPENDICES/A01-limits/overflow.t` | TIMEOUT 0/18 | 数値 overflow 限界（timeout, notok 9） |
 | `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 3/16 | multi 不一致時のエラー整形 |
 
