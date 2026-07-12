@@ -16,6 +16,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "sink",
     "quietly",
     "exit",
+    "RUN-MAIN",
     "abs",
     "sign",
     "val",
@@ -403,6 +404,7 @@ impl Interpreter {
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
             "__mutsu_index_var_meta" => self.builtin_index_var_meta(&args),
             "exit" => self.builtin_exit(&args),
+            "RUN-MAIN" => self.builtin_run_main(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
             // Multi dispatch control flow
             "callsame" => self.builtin_callsame(),

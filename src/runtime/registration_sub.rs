@@ -921,10 +921,20 @@ impl Interpreter {
         let has_trait_mod =
             self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
         {
+            // `is hidden-from-USAGE` on a `MAIN` candidate keeps it dispatchable
+            // but drops it from the generated usage message. Record its body
+            // fingerprint (the same key `collect_main_candidates` dedupes on) so
+            // usage generation can skip it; it is a known built-in trait, not an
+            // unknown-`is` error.
+            if custom_traits.iter().any(|(t, _)| t == "hidden-from-USAGE") {
+                let fp = crate::ast::function_body_fingerprint(params, param_defs, body);
+                self.main_hidden_from_usage.insert(fp);
+            }
             for (trait_name, trait_arg) in custom_traits.iter().filter(|(t, _)| {
                 !t.starts_with("__")
                     && t != "default"
                     && !t.starts_with("DEPRECATED")
+                    && *t != "hidden-from-USAGE"
                     // NativeCall traits are consumed by `register_native_call_sub`
                     // above, not by `trait_mod:<is>`.
                     && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")

@@ -1693,7 +1693,7 @@ impl Compiler {
                     }
                     return;
                 }
-                let (pre_stmts, mut loop_body, post_stmts) =
+                let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
                 let non_setline_count = body
                     .iter()
@@ -1733,8 +1733,16 @@ impl Compiler {
                 let has_copy = (**param_def)
                     .as_ref()
                     .is_some_and(|def| def.traits.iter().any(|t| t == "copy"));
+                // Statements that bind the loop parameters (`-> \a, @b, %c`) and
+                // mark them read-only. They must run — and the params must be
+                // bound — *before* any hoisted body `sub` closes over them, so a
+                // sub declared in the body (e.g. a `GENERATE-USAGE` that
+                // references the loop's `@expected`) captures this iteration's
+                // value, not the previous one. Kept separate from `loop_body` so
+                // the hoist is emitted after them (see the compile step below).
+                let mut bind_prefix: Vec<Stmt> = Vec::new();
                 if !bind_stmts.is_empty() {
-                    let mut merged = bind_stmts;
+                    bind_prefix = bind_stmts;
                     // After binding multi-param variables, mark them readonly
                     // (unless the block uses `<->` or `is rw`).
                     // Skip @-sigil and %-sigil params: they bind to a mutable
@@ -1742,12 +1750,10 @@ impl Compiler {
                     if !has_rw && !has_copy && !params.is_empty() {
                         for p in params {
                             if !p.starts_with('@') && !p.starts_with('%') {
-                                merged.push(Stmt::MarkReadonly(p.clone()));
+                                bind_prefix.push(Stmt::MarkReadonly(p.clone()));
                             }
                         }
                     }
-                    merged.extend(loop_body);
-                    loop_body = merged;
                 }
                 let arity = if !params.is_empty() {
                     params.len() as u32
@@ -1774,15 +1780,42 @@ impl Compiler {
                 let param_local = param
                     .as_ref()
                     .and_then(|p| self.local_map.get(p.as_str()).copied());
-                let rw_param_names = if has_rw && !params.is_empty() {
+                let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
+                // Names of the loop's multi-params whose value is written back to
+                // the source each iteration. Only a *genuinely rw* param writes
+                // back: a `<->` block (all params rw), a sigilless raw binding
+                // (`\a`), or a param with the `is rw` trait. A plain sigil'd param
+                // (`@b` in `-> \a, @b`) is NOT rw just because a sibling forced the
+                // loop into rw mode — writing it back would corrupt the source
+                // (`for @e -> \a, @b {}` must leave @e untouched). Non-rw slots are
+                // kept as "" so the vector stays positionally aligned with the
+                // chunk (the writeback skips empty names). In `.kv` mode the key
+                // param is read (not written) by the writeback, so it must keep
+                // its name — leave that path on the all-names form.
+                let rw_param_names: Vec<String> = if has_rw && !params.is_empty() {
                     params
                         .iter()
-                        .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                        .enumerate()
+                        .map(|(i, p)| {
+                            let stripped = p.strip_prefix('\\').unwrap_or(p).to_string();
+                            let per_param_rw = kv_mode
+                                || *rw_block
+                                || params_def.get(i).is_some_and(|d| {
+                                    d.sigilless || d.traits.iter().any(|t| t == "rw")
+                                })
+                                // No per-param def (fallback): keep prior behavior
+                                // and treat a `\`-prefixed name as rw.
+                                || (params_def.get(i).is_none() && p.starts_with('\\'));
+                            if per_param_rw {
+                                stripped
+                            } else {
+                                String::new()
+                            }
+                        })
                         .collect()
                 } else {
                     Vec::new()
                 };
-                let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
                 let source_var_names = Self::for_iterable_var_names(iterable);
                 let source_var_locals = self.for_source_var_locals(&source_var_names);
                 // When the block parameter has a type constraint other than Mu
@@ -1830,6 +1863,7 @@ impl Compiler {
                             single_array_source_local: self.for_single_array_source_local(
                                 &Self::for_single_array_source(iterable),
                             ),
+                            body_declares_routines: Self::stmts_declare_routines(&loop_body),
                         })));
                 // Register sigilless for-params (`-> \v`, `-> \k, \v`) as
                 // sigilless locals while compiling the body so postfix/prefix
@@ -1857,6 +1891,16 @@ impl Compiler {
                     .filter(|n| self.sigilless_locals.insert((*n).clone()))
                     .cloned()
                     .collect();
+                // Bind the loop parameters first, then hoist the body's routine
+                // declarations so they capture the freshly-bound params. Hoisting
+                // makes a `sub` declared later in the body visible from its
+                // beginning (Raku scopes named subs to their whole lexical block);
+                // the paired registry snapshot/restore in the VM (gated on
+                // `body_declares_routines`) keeps them from leaking past the loop.
+                for s in &bind_prefix {
+                    self.compile_stmt(s);
+                }
+                self.hoist_sub_decls(&loop_body, true);
                 self.compile_body_with_implicit_try(&loop_body);
                 for n in &newly_registered {
                     self.sigilless_locals.remove(n);

@@ -242,7 +242,9 @@ impl Compiler {
                 single_array_source: Self::for_single_array_source(iterable),
                 single_array_source_local: self
                     .for_single_array_source_local(&Self::for_single_array_source(iterable)),
+                body_declares_routines: Self::stmts_declare_routines(&loop_body),
             })));
+        self.hoist_sub_decls(&loop_body, true);
         self.compile_collected_loop_body(&loop_body);
         self.code.patch_loop_end(loop_idx);
         // Balance the ForLoop opcode's deferred param-restore push (see the
