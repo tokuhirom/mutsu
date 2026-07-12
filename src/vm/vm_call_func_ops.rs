@@ -151,14 +151,13 @@ impl Interpreter {
         let skip_name_caches = if self.amp_param_shadowed_names.is_empty() {
             false
         } else {
-            let name_str = Self::const_str(code, name_idx);
             self.amp_param_shadowed_names
-                .contains(&Symbol::intern(name_str))
+                .contains(&code.const_sym(name_idx))
         };
         // Ultra-fast path: positional light-call cache for positional-only functions.
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
-            let name_sym = Symbol::intern(name_str);
+            let name_sym = code.const_sym(name_idx);
             if self.pos_light_call_cache_gen == self.fn_resolve_gen {
                 if let Some((cached_key, cached_fp)) = self.pos_light_call_cache.get(&name_sym)
                     && let Some(cf) = compiled_fns.get(cached_key.as_str())
@@ -213,8 +212,7 @@ impl Interpreter {
 
         // Light-call cache check for named-param functions.
         if !skip_name_caches {
-            let name_str = Self::const_str(code, name_idx);
-            let name_sym = Symbol::intern(name_str);
+            let name_sym = code.const_sym(name_idx);
             if self.light_call_cache_gen == self.fn_resolve_gen {
                 if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
                     && let Some(cf) = compiled_fns.get(cached_key.as_str())
@@ -272,7 +270,7 @@ impl Interpreter {
         // then put it back after the call.
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
-            let name_sym = Symbol::intern(name_str);
+            let name_sym = code.const_sym(name_idx);
             if self.otf_call_cache_gen == self.fn_resolve_gen {
                 // Skip this type-blind name-keyed fast cache for multi names: the
                 // right candidate depends on argument types, which this cache
@@ -401,7 +399,7 @@ impl Interpreter {
         // Only the callsite line pair (if present) needs to be popped from the stack.
         if !has_lexical_override && arity <= 1 {
             let name_str = Self::const_str(code, name_idx);
-            let name_sym = Symbol::intern(name_str);
+            let name_sym = code.const_sym(name_idx);
             let cache_key = (name_sym, 0usize, Vec::<String>::new());
             let use_cache = !self.has_multi_candidates_cached(name_str);
             if use_cache
