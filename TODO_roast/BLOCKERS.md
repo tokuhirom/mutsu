@@ -23,7 +23,7 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 ## 現在の前提
 
-- whitelist は **1382**（2026-07-12、`wc -l roast-whitelist.txt`）。
+- whitelist は **1383**（2026-07-12、`wc -l roast-whitelist.txt`）。
 - **roast 由来の大型共通ブロッカーは出尽くした。** かつての大型 campaign
   （真の lazy 配列 / dispatch・演算子 sugar の desugar / S17 並行・非同期 /
   第一級コンテナ container identity / cross-thread lexical writeback）はすべて完了済み。
@@ -46,7 +46,6 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 | 分類 | ファイル | mutsu | raku (v2022.12/6.d) | ブロッカー（一言） |
 |---|---|---|---|---|
-| ★達成可能 | `S32-hash/perl.t` | 47/55・notok 8 | 55/55 満点 | 残 8 は匿名 typed hash `$(my Any %)` の EVAL round-trip 型喪失＝パラメータ化ロール type-capture binding 待ち（匿名 typed 容器タグ付けが binding を壊す既存制限） |
 | 基盤待ち | `S32-str/format.t` | 26/49 で中断 | SORRY（6.e `Format`） | `Formatter::Syntax.parse`→Match、`Formatter.AST`→`RakuAST::Node` を要求＝**RakuAST サブシステム不在**。stub 化は禁止のため据え置き |
 | 基盤待ち | `S02-types/generics.t` | 0/1 | SORRY（6.e） | 6.e coercion type 項 + `Array[T]` サブクラス化が必要。ローカル raku 自身もコンパイル不能で参照検証すらできない |
 | oracle 不能 | `S02-names/pseudo-6d.t` | 116/159 で中断 | SORRY（6.e 要） | `::("CALLER")::<$*bar>` CALLER 疑似パッケージ deref 未対応 |
@@ -76,7 +75,9 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 ## 今のおすすめ着手順
 
 - 「次の 1 本」に適する残件は無い。**構造工事の選定は [PLAN.md](../PLAN.md) を正とする。**
-- roast 側で cheap win を探すときは上表の ★達成可能 から入る。ただし現存の ★ は
-  いずれも複数機能を要する深いもので、単発 quick win ではない。
+- **★達成可能（ローカル raku 満点なのに mutsu が落ちる実バグ）の残件は現在ゼロ。**
+  最後の 1 本 `S32-hash/perl.t` は 2026-07-12 に whitelist 済み（#4452：typed hash
+  `.raku` idempotence + `Associative[T]` 型キャプチャ束縛）。残る表項目はすべて
+  基盤待ち・oracle 不能・非目標・通過不能で、単発 quick win は無い。
 - 非目標・oracle 不能の項目は、mutsu 側の一般改善のついでに前進させるのはよいが、
   そのファイル単体の whitelist を目的にしない。
