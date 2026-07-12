@@ -1,6 +1,8 @@
 # 3b-1 step B: NaN-box representation — concrete design and campaign plan
 
-Status: **In progress** (core representation landed; flip pending).
+Status: **Done** (2026-07-12 — B-guards #4467, B-flip #4469; `Value` is the
+packed 8-byte word, gates all met: GC counters invariant vs main, every
+release bench 5-9% faster, no Num regression).
 Related: [ADR-0005](adr/0005-nanbox-representation-encoding.md) (encoding decision, Accepted
 2026-07-12), [nanbox-3b0-api-wall.md](nanbox-3b0-api-wall.md) (wall API + guard-type exit),
 [gc-post-3a-roadmap.md](gc-post-3a-roadmap.md) §3 (gates), [PLAN.md](../PLAN.md) §2.
