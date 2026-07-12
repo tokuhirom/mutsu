@@ -12,25 +12,25 @@ impl Value {
     ///   [1,2] eqv (1,2)  → False  (Array vs List)
     pub(crate) fn eqv(&self, other: &Self) -> bool {
         // Unwrap Scalar/ContainerRef containers: eqv looks through containerization
-        if let Value(ValueRepr::Scalar(inner)) = self {
+        if let ValueView::Scalar(inner) = self.view() {
             return inner.eqv(other);
         }
-        if let Value(ValueRepr::Scalar(inner)) = other {
+        if let ValueView::Scalar(inner) = other.view() {
             return self.eqv(inner);
         }
         // Deref to an OWNED clone (releasing the cell lock) before recursing:
         // when both sides alias the SAME cell (e.g. two pairs built from the same
         // `key => $var`), holding the lock across the recursive `eqv` would lock
         // the same non-reentrant Mutex twice and deadlock.
-        if matches!(self, Value(ValueRepr::ContainerRef(_))) {
+        if matches!(self.view(), ValueView::ContainerRef(_)) {
             return self.deref_container().eqv(other);
         }
-        if matches!(other, Value(ValueRepr::ContainerRef(_))) {
+        if matches!(other.view(), ValueView::ContainerRef(_)) {
             return self.eqv(&other.deref_container());
         }
         // Junction threading: if either side is a junction, thread eqv
         // through it and return the boolean result of the junction.
-        if let Value(ValueRepr::Junction { kind, values }) = other {
+        if let ValueView::Junction { kind, values } = other.view() {
             let results: Vec<bool> = values.iter().map(|v| self.eqv(v)).collect();
             return match kind {
                 crate::value::JunctionKind::Any => results.iter().any(|&b| b),
@@ -39,7 +39,7 @@ impl Value {
                 crate::value::JunctionKind::None => results.iter().all(|&b| !b),
             };
         }
-        if let Value(ValueRepr::Junction { kind, values }) = self {
+        if let ValueView::Junction { kind, values } = self.view() {
             let results: Vec<bool> = values.iter().map(|v| v.eqv(other)).collect();
             return match kind {
                 crate::value::JunctionKind::Any => results.iter().any(|&b| b),
@@ -48,41 +48,39 @@ impl Value {
                 crate::value::JunctionKind::None => results.iter().all(|&b| !b),
             };
         }
-        match (self, other) {
+        match (self.view(), other.view()) {
             // Arrays/Lists: must be same container type (Array vs List) and recursively eqv
             // eqv ignores Scalar wrapping — only Array vs List distinction matters
-            (Value(ValueRepr::Array(a, a_kind)), Value(ValueRepr::Array(b, b_kind))) => {
+            (ValueView::Array(a, a_kind), ValueView::Array(b, b_kind)) => {
                 a_kind.is_real_array() == b_kind.is_real_array()
                     && a.len() == b.len()
                     && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
             // Hashes: recursively use eqv for values
-            (Value(ValueRepr::Hash(a, _)), Value(ValueRepr::Hash(b, _))) => {
+            (ValueView::Hash(a), ValueView::Hash(b)) => {
                 a.len() == b.len() && a.iter().all(|(k, v)| b.get(k).is_some_and(|bv| v.eqv(bv)))
             }
             // Pairs: recursively use eqv for values (Pair and ValuePair are equivalent)
-            (Value(ValueRepr::Pair(ak, av)), Value(ValueRepr::Pair(bk, bv))) => {
-                ak == bk && av.eqv(bv)
-            }
-            (Value(ValueRepr::ValuePair(ak, av)), Value(ValueRepr::ValuePair(bk, bv))) => {
+            (ValueView::Pair(ak, av), ValueView::Pair(bk, bv)) => ak == bk && av.eqv(bv),
+            (ValueView::ValuePair(ak, av), ValueView::ValuePair(bk, bv)) => {
                 ak.eqv(bk) && av.eqv(bv)
             }
-            (Value(ValueRepr::Pair(ak, av)), Value(ValueRepr::ValuePair(bk, bv))) => {
-                matches!(bk.as_ref(), Value(ValueRepr::Str(s)) if s.as_str() == ak) && av.eqv(bv)
+            (ValueView::Pair(ak, av), ValueView::ValuePair(bk, bv)) => {
+                matches!(bk.view(), ValueView::Str(s) if s.as_str() == ak) && av.eqv(bv)
             }
-            (Value(ValueRepr::ValuePair(ak, av)), Value(ValueRepr::Pair(bk, bv))) => {
-                matches!(ak.as_ref(), Value(ValueRepr::Str(s)) if s.as_str() == bk) && av.eqv(bv)
+            (ValueView::ValuePair(ak, av), ValueView::Pair(bk, bv)) => {
+                matches!(ak.view(), ValueView::Str(s) if s.as_str() == bk) && av.eqv(bv)
             }
             // Captures: recursively use eqv for positional and named elements
             (
-                Value(ValueRepr::Capture {
+                ValueView::Capture {
                     positional: ap,
                     named: an,
-                }),
-                Value(ValueRepr::Capture {
+                },
+                ValueView::Capture {
                     positional: bp,
                     named: bn,
-                }),
+                },
             ) => {
                 ap.len() == bp.len()
                     && ap.iter().zip(bp.iter()).all(|(x, y)| x.eqv(y))
@@ -92,16 +90,16 @@ impl Value {
                         .all(|(k, v)| bn.get(k).is_some_and(|bv| v.eqv(bv)))
             }
             // Slips: recursively use eqv for elements
-            (Value(ValueRepr::Slip(a)), Value(ValueRepr::Slip(b))) => {
+            (ValueView::Slip(a), ValueView::Slip(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
             // Seqs: recursively use eqv for elements
-            (Value(ValueRepr::Seq(a)), Value(ValueRepr::Seq(b))) => {
+            (ValueView::Seq(a), ValueView::Seq(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.eqv(y))
             }
             // Num: use bit-exact comparison to distinguish signed zeros,
             // but treat all NaN bit patterns as identical (Raku considers all NaN equal).
-            (Value(ValueRepr::Num(a)), Value(ValueRepr::Num(b))) => {
+            (ValueView::Num(a), ValueView::Num(b)) => {
                 if a.is_nan() && b.is_nan() {
                     true
                 } else {
@@ -110,7 +108,7 @@ impl Value {
             }
             // Complex: use bit-exact comparison for both components,
             // treating all NaN bit patterns as identical.
-            (Value(ValueRepr::Complex(ar, ai)), Value(ValueRepr::Complex(br, bi))) => {
+            (ValueView::Complex(ar, ai), ValueView::Complex(br, bi)) => {
                 let re_eq = if ar.is_nan() && br.is_nan() {
                     true
                 } else {
@@ -125,15 +123,13 @@ impl Value {
             }
             // Same-type scalar comparisons delegate to PartialEq
             // BigInt: both sides BigInt — use PartialEq
-            (Value(ValueRepr::BigInt(_)), Value(ValueRepr::BigInt(_))) => self == other,
+            (ValueView::BigInt(_), ValueView::BigInt(_)) => self == other,
             // Cross-representation Int/BigInt: compare numerically
-            (Value(ValueRepr::Int(a)), Value(ValueRepr::BigInt(b))) => NumBigInt::from(*a) == **b,
-            (Value(ValueRepr::BigInt(a)), Value(ValueRepr::Int(b))) => **a == NumBigInt::from(*b),
+            (ValueView::Int(a), ValueView::BigInt(b)) => NumBigInt::from(a) == **b,
+            (ValueView::BigInt(a), ValueView::Int(b)) => **a == NumBigInt::from(b),
             // Rat/FatRat: structural equality (n == n, d == d), including NaN (0/0)
-            (Value(ValueRepr::Rat(n1, d1)), Value(ValueRepr::Rat(n2, d2)))
-            | (Value(ValueRepr::FatRat(n1, d1)), Value(ValueRepr::FatRat(n2, d2))) => {
-                n1 == n2 && d1 == d2
-            }
+            (ValueView::Rat(n1, d1), ValueView::Rat(n2, d2))
+            | (ValueView::FatRat(n1, d1), ValueView::FatRat(n2, d2)) => n1 == n2 && d1 == d2,
             // Sets: eqv must distinguish elements that share a string key but
             // differ in type — specifically an allomorph (e.g. the IntStr <42>)
             // from a plain value (Int 42), which rakudo separates by `.WHICH`.
@@ -146,12 +142,10 @@ impl Value {
             // Raku's set operators (`(|)`/`(&)` etc.) always yield an immutable
             // Set regardless of operand mutability, so comparing the flag here
             // matches values produced by those operators too.
-            (Value(ValueRepr::Set(a, a_mut)), Value(ValueRepr::Set(b, b_mut))) => {
+            (ValueView::Set(a, a_mut), ValueView::Set(b, b_mut)) => {
                 fn allomorph_kind(v: &Value) -> Option<String> {
-                    match v {
-                        Value(ValueRepr::Mixin(inner, mixins)) => {
-                            allomorph_type_name(inner, mixins)
-                        }
+                    match v.view() {
+                        ValueView::Mixin(inner, mixins) => allomorph_type_name(inner, mixins),
                         _ => None,
                     }
                 }
@@ -165,24 +159,17 @@ impl Value {
             // Bag/Mix: like Set, eqv distinguishes the immutable variant from
             // its mutable QuantHash (Bag vs BagHash, Mix vs MixHash). The data
             // comparison is delegated to PartialEq, which ignores the flag.
-            (Value(ValueRepr::Bag(a, a_mut)), Value(ValueRepr::Bag(b, b_mut))) => {
-                a_mut == b_mut && a == b
-            }
-            (Value(ValueRepr::Mix(a, a_mut)), Value(ValueRepr::Mix(b, b_mut))) => {
-                a_mut == b_mut && a == b
-            }
-            (Value(ValueRepr::Int(_)), Value(ValueRepr::Int(_)))
-            | (Value(ValueRepr::Str(_)), Value(ValueRepr::Str(_)))
-            | (Value(ValueRepr::Bool(_)), Value(ValueRepr::Bool(_)))
-            | (Value(ValueRepr::BigRat(_, _)), Value(ValueRepr::BigRat(_, _)))
-            | (Value(ValueRepr::Enum { .. }), Value(ValueRepr::Enum { .. }))
-            | (Value(ValueRepr::Regex(_)), Value(ValueRepr::Regex(_)))
-            | (
-                Value(ValueRepr::RegexWithAdverbs { .. }),
-                Value(ValueRepr::RegexWithAdverbs { .. }),
-            )
-            | (Value(ValueRepr::Routine { .. }), Value(ValueRepr::Routine { .. })) => self == other,
-            (Value(ValueRepr::Sub(a)), Value(ValueRepr::Sub(b))) => {
+            (ValueView::Bag(a, a_mut), ValueView::Bag(b, b_mut)) => a_mut == b_mut && a == b,
+            (ValueView::Mix(a, a_mut), ValueView::Mix(b, b_mut)) => a_mut == b_mut && a == b,
+            (ValueView::Int(_), ValueView::Int(_))
+            | (ValueView::Str(_), ValueView::Str(_))
+            | (ValueView::Bool(_), ValueView::Bool(_))
+            | (ValueView::BigRat(_, _), ValueView::BigRat(_, _))
+            | (ValueView::Enum { .. }, ValueView::Enum { .. })
+            | (ValueView::Regex(_), ValueView::Regex(_))
+            | (ValueView::RegexWithAdverbs { .. }, ValueView::RegexWithAdverbs { .. })
+            | (ValueView::Routine { .. }, ValueView::Routine { .. }) => self == other,
+            (ValueView::Sub(a), ValueView::Sub(b)) => {
                 if crate::gc::Gc::ptr_eq(a, b) {
                     return true;
                 }
@@ -192,19 +179,19 @@ impl Value {
             }
             // Signature instances: compare by .raku string (structural equality)
             (
-                Value(ValueRepr::Instance {
+                ValueView::Instance {
                     class_name: cn_a, ..
-                }),
-                Value(ValueRepr::Instance {
+                },
+                ValueView::Instance {
                     class_name: cn_b, ..
-                }),
+                },
             ) if cn_a == "Signature" && cn_b == "Signature" => {
-                let raku_a = if let Value(ValueRepr::Instance { attributes, .. }) = self {
+                let raku_a = if let ValueView::Instance { attributes, .. } = self.view() {
                     attributes.as_map().get("raku").map(|v| v.to_string_value())
                 } else {
                     None
                 };
-                let raku_b = if let Value(ValueRepr::Instance { attributes, .. }) = other {
+                let raku_b = if let ValueView::Instance { attributes, .. } = other.view() {
                     attributes.as_map().get("raku").map(|v| v.to_string_value())
                 } else {
                     None
@@ -212,16 +199,16 @@ impl Value {
                 raku_a == raku_b
             }
             (
-                Value(ValueRepr::Instance {
+                ValueView::Instance {
                     class_name: cn_a,
                     attributes: a_attrs,
                     ..
-                }),
-                Value(ValueRepr::Instance {
+                },
+                ValueView::Instance {
                     class_name: cn_b,
                     attributes: b_attrs,
                     ..
-                }),
+                },
             ) if cn_a == cn_b
                 && a_attrs.contains_key("year")
                 && a_attrs.contains_key("month")
@@ -252,16 +239,16 @@ impl Value {
             }
             // Date instances: compare only year/month/day (ignore formatter attrs)
             (
-                Value(ValueRepr::Instance {
+                ValueView::Instance {
                     class_name: cn_a,
                     attributes: a_attrs,
                     ..
-                }),
-                Value(ValueRepr::Instance {
+                },
+                ValueView::Instance {
                     class_name: cn_b,
                     attributes: b_attrs,
                     ..
-                }),
+                },
             ) if cn_a == cn_b
                 && a_attrs.contains_key("year")
                 && a_attrs.contains_key("month")
@@ -280,16 +267,16 @@ impl Value {
             }
             // StrDistance instances: structural equality on before/after
             (
-                Value(ValueRepr::Instance {
+                ValueView::Instance {
                     class_name: cn_a,
                     attributes: a_attrs,
                     ..
-                }),
-                Value(ValueRepr::Instance {
+                },
+                ValueView::Instance {
                     class_name: cn_b,
                     attributes: b_attrs,
                     ..
-                }),
+                },
             ) if cn_a == "StrDistance" && cn_b == "StrDistance" => {
                 let before_eq = match (
                     a_attrs.as_map().get("before"),
@@ -308,46 +295,43 @@ impl Value {
                 before_eq && after_eq
             }
             // Other Instance types: use identity comparison
-            (Value(ValueRepr::Instance { .. }), Value(ValueRepr::Instance { .. })) => self == other,
+            (ValueView::Instance { .. }, ValueView::Instance { .. }) => self == other,
             // Nil and Package("Any") are eqv: both represent the undefined type object Any.
             // This matters for containerized contexts (e.g. hash values).
-            (Value(ValueRepr::Nil), Value(ValueRepr::Package(name)))
-            | (Value(ValueRepr::Package(name)), Value(ValueRepr::Nil))
+            (ValueView::Nil, ValueView::Package(name))
+            | (ValueView::Package(name), ValueView::Nil)
                 if name == "Any" =>
             {
                 true
             }
-            (Value(ValueRepr::Range(_, _)), Value(ValueRepr::Range(_, _)))
-            | (Value(ValueRepr::RangeExcl(_, _)), Value(ValueRepr::RangeExcl(_, _)))
-            | (Value(ValueRepr::RangeExclStart(_, _)), Value(ValueRepr::RangeExclStart(_, _)))
-            | (Value(ValueRepr::RangeExclBoth(_, _)), Value(ValueRepr::RangeExclBoth(_, _)))
-            | (Value(ValueRepr::GenericRange { .. }), Value(ValueRepr::GenericRange { .. }))
-            | (Value(ValueRepr::LazyList(_)), Value(ValueRepr::LazyList(_)))
-            | (Value(ValueRepr::Version { .. }), Value(ValueRepr::Version { .. }))
-            | (Value(ValueRepr::Nil), Value(ValueRepr::Nil))
-            | (Value(ValueRepr::Package(_)), Value(ValueRepr::Package(_)))
-            | (
-                Value(ValueRepr::CompUnitDepSpec { .. }),
-                Value(ValueRepr::CompUnitDepSpec { .. }),
-            )
-            | (Value(ValueRepr::Junction { .. }), Value(ValueRepr::Junction { .. }))
-            | (Value(ValueRepr::Promise(_)), Value(ValueRepr::Promise(_)))
-            | (Value(ValueRepr::Channel(_)), Value(ValueRepr::Channel(_)))
-            | (Value(ValueRepr::Uni { .. }), Value(ValueRepr::Uni { .. })) => self == other,
+            (ValueView::Range(_, _), ValueView::Range(_, _))
+            | (ValueView::RangeExcl(_, _), ValueView::RangeExcl(_, _))
+            | (ValueView::RangeExclStart(_, _), ValueView::RangeExclStart(_, _))
+            | (ValueView::RangeExclBoth(_, _), ValueView::RangeExclBoth(_, _))
+            | (ValueView::GenericRange { .. }, ValueView::GenericRange { .. })
+            | (ValueView::LazyList(_), ValueView::LazyList(_))
+            | (ValueView::Version { .. }, ValueView::Version { .. })
+            | (ValueView::Nil, ValueView::Nil)
+            | (ValueView::Package(_), ValueView::Package(_))
+            | (ValueView::CompUnitDepSpec { .. }, ValueView::CompUnitDepSpec { .. })
+            | (ValueView::Junction { .. }, ValueView::Junction { .. })
+            | (ValueView::Promise(_), ValueView::Promise(_))
+            | (ValueView::Channel(_), ValueView::Channel(_))
+            | (ValueView::Uni { .. }, ValueView::Uni { .. }) => self == other,
             // Mixin with only the read-only topic marker is transparent
             // (used by `with literal { ... }` to flag immutable $_).
-            (Value(ValueRepr::Mixin(inner, mix)), other)
+            (ValueView::Mixin(inner, mix), _)
                 if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
             {
                 inner.eqv(other)
             }
-            (other, Value(ValueRepr::Mixin(inner, mix)))
+            (_, ValueView::Mixin(inner, mix))
                 if mix.len() == 1 && mix.contains_key("__mutsu_topic_ro__") =>
             {
-                other.eqv(inner)
+                self.eqv(inner)
             }
             // Mixin (allomorphs): compare both base values and mixin maps with eqv
-            (Value(ValueRepr::Mixin(a, a_mix)), Value(ValueRepr::Mixin(b, b_mix))) => {
+            (ValueView::Mixin(a, a_mix), ValueView::Mixin(b, b_mix)) => {
                 if !a.eqv(b) {
                     return false;
                 }
