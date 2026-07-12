@@ -107,19 +107,29 @@ HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny（end-to-end HTTP 配信）/ Tu
 `--version` が動作）/ ✅ CompUnit::Repository の install→use 橋（`repository-for-name` well-known 名・
 デフォルト site repo 自動登録・担保 `t/compunit-repository-for-name.t`）。残:
 
-- [ ] **実 zef バイナリの end-to-end 実行を阻むブロッカー（2026-07-12 再調査で全面更新）**:
-      旧 2 バグは解消済み — (a) `%`-sigil 属性への Associative ダックタイピング bind は
-      Hash へ正しく coerce される（#4452 で解消・repro = `tmp/assoc-attr-repro.raku` 相当）、
-      (b) upstream zef 1.1.3（`ugexe/zef` HEAD）は全モジュールがパース・ロードし
-      `bin/zef --version`/`--help`/MAIN dispatch まで動作（パーサエラーは再現せず）。
+- [ ] **実 zef バイナリの end-to-end 実行を阻むブロッカー（2026-07-12 セッションで大幅前進）**:
+      旧 2 バグは解消済み（(a) %-sigil Associative bind = #4452 / (b) パーサエラー = 再現せず）。
+      同日 landed: #4457（classify pair-iteration / hash-init contained-Pair / IO::Path.child 連結）・
+      #4460（grammar token 静的 fold — `REQUIRE.parse` が raku 比 ~70x → **1.1x**）・
+      #4462（`Version.parts/.plus/.whatever` — 候補 version 照合の真因）。
+      **`Zef::Repository.candidates` の `.hyper(:batch(1)).map` を素の `.map` に変えると
+      `zef info Zef` が実 fez index (7648 dists) で Identity 出力まで完全動作**（release ~3 分）。
       現フロンティア:
-      1. **grammar パース性能**（最大のブロッカー）: `Zef::Identity` の `REQUIRE.parse` が
-         1 回 ~43ms（release・raku 比 ~70x）。`populate-distributions`（fez index 7648 dist ×
-         `.name` ごとに parse）が release でも ~10 分超 → `zef info/list/search` が実用不能。
-         zef 非依存 repro = `tmp/require-grammar-bench.raku`（20 parses: raku 0.012s / mutsu-debug 6.1s）。
-      2. ネスト `.raku` 表示: コレクション内の Instance が `Sp()`（type object 風）に描画される
+      1. **★hyper worker 上のインスタンス属性書き込み喪失（最大のブロッカー・実バグ）**:
+         `.hyper(:batch(1)).map(-> $repo { $repo.search(...) })` の callback 内で走る
+         populate の `push %!short-name-lookup{$_}, $dist` が**一様に ~80% 喪失**する
+         （7646 dists → 1570 keys・期待 9256。`@!attr` 配列 push は無傷 = %-hash 属性特有）。
+         さらに GC on だと 2 個目の Ecosystems で `$!name` が読めなくなる別症状も併発
+         （MUTSU_GC=off で消える = GC×thread の状態破壊）。単純化 repro は未成立
+         （`tmp/hyper-attr-repro*.raku` / `tmp/gather-attr-repro.raku` は通る）—
+         実物 repro = `tmp/zef-dbg`（計装済み copy・Repository.rakumod の hyper 有無で切替）。
+         cross-thread lexical campaign の instance-attr 版とみられる。
+      2. populate 性能: fold 後 release で fez+rea 全 populate ~3-5 分（raku は数秒）。
+         残= plain Named subrule 呼び出しの per-call コスト + Distribution/Identity 構築。
+      3. ネスト `.raku` 表示: コレクション内の Instance が `Sp()`（type object 風）に描画される
          （`(C.new,).raku` → raku は `(C.new(...),)`）。実体は正常（semantic には無害・表示のみ）。
-      3. `zef list --installed` は exit 0・出力なしまで動作（mutsu 側 site repo が空なら妥当）。
+      4. `zef list --installed` は exit 0・出力なしまで動作（mutsu 側 site repo が空なら妥当）。
+      5. index 名数の微差: fez 7648 metas で raku 9259 keys / mutsu 9256（3 件・name-fail 2-3 dists）。
 - [ ] 既知の小差異: CLI 数値文字列の `Int $n` への coerce が raku より積極的（`MAIN(Int $n,…)` に `7` が
       マッチ・raku は slurpy fallback）。実用上は mutsu 側のほうが直感的。
 - [ ] **network fetch**: fez エコシステム（`https://360.zef.pm/`）への取得。堅牢な async TLS が前提。
