@@ -285,19 +285,28 @@ impl Interpreter {
             flat.extend(Self::value_to_list(arg));
         }
         let mut map = HashMap::new();
+        // Track the original (typed) key objects for a non-`Str`-keyed object
+        // hash (`Hash[Int,Int].new(1 => 2)`) so `.keys`/`.pairs`/`.raku` report
+        // the real key (`Int(1)`, not `"1"`). Populated below only when the key
+        // type is a non-`Str` type.
+        let mut original_keys: HashMap<String, Value> = HashMap::new();
         let mut iter = flat.into_iter();
         while let Some(item) = iter.next() {
             match item.view() {
                 ValueView::Pair(k, v) => {
                     map.insert(k.clone(), v.clone());
+                    original_keys.insert(k.clone(), Value::str(k.clone()));
                 }
                 ValueView::ValuePair(k, v) => {
-                    map.insert(k.to_string_value(), v.clone());
+                    let str_key = k.to_string_value();
+                    original_keys.insert(str_key.clone(), (*k).clone());
+                    map.insert(str_key, v.clone());
                 }
                 _ => {
-                    let key = item.to_string_value();
+                    let str_key = item.to_string_value();
                     let value = iter.next().unwrap_or(Value::NIL);
-                    map.insert(key, value);
+                    original_keys.insert(str_key.clone(), item.clone());
+                    map.insert(str_key, value);
                 }
             }
         }
@@ -341,12 +350,25 @@ impl Interpreter {
             } else {
                 (String::new(), None)
             };
+            // An object hash with a non-`Str` key type keeps the original typed
+            // keys so they round-trip through `.raku`/`.keys`.
+            let track_typed_keys = key_type.as_deref().is_some_and(|kt| {
+                let (base, _) = crate::runtime::types::strip_type_smiley(kt);
+                base != "Str" && base != "Any" && base != "Mu"
+            });
             let info = crate::runtime::ContainerTypeInfo {
                 value_type,
                 key_type,
                 declared_type: Some(class_name.resolve()),
             };
-            return Ok(self.tag_container_metadata(result, info));
+            let result = self.tag_container_metadata(result, info);
+            if track_typed_keys && !original_keys.is_empty() {
+                return Ok(crate::runtime::utils::set_hash_original_keys(
+                    result,
+                    original_keys,
+                ));
+            }
+            return Ok(result);
         }
         Ok(result)
     }

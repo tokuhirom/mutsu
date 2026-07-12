@@ -706,6 +706,25 @@ pub fn raku_value(v: &Value) -> String {
                     s.remove(pos);
                 }
             });
+            // A typed hash (`my Int %`, `my Int %{Str}`) renders in the
+            // `(my ValueType %{KeyType} = ...)` form rather than a bare `{...}`,
+            // so `.raku` round-trips its element/key type. Mirrors the slow-path
+            // `dispatch_constrained_hash_raku`; kept here so the native fast path
+            // and the itemized wrapper (`$(my Int %)`) stay type-aware without an
+            // interpreter round-trip. (`Map` is handled above and returns early.)
+            if map.value_type.is_some() || map.key_type.is_some() {
+                let value_type = map.value_type.as_deref().unwrap_or("Any");
+                let key_suffix = match map.key_type.as_deref() {
+                    Some(kt) => format!("{{{}}}", kt),
+                    None => String::new(),
+                };
+                let inner = parts.join(", ");
+                return if inner.is_empty() {
+                    format!("(my {} %{})", value_type, key_suffix)
+                } else {
+                    format!("(my {} %{} = {})", value_type, key_suffix, inner)
+                };
+            }
             let hash_repr = format!("{{{}}}", parts.join(", "));
             if is_top && had_cycle {
                 format!("((my {}) = {})", var_name, hash_repr)

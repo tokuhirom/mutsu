@@ -119,32 +119,28 @@ impl Compiler {
                     }
                     // Tag the container's element-type metadata so `.of` survives
                     // (and the missing-element default is the element type) when a
-                    // *named* typed array/hash is declared in EXPRESSION position
-                    // (`my $x = (my Str @c)`, `gen my Int %i`). The statement-
-                    // position VarDecl emits the same `SetVarType`; without it the
-                    // expr path left `@c.of`/`%i.of` = Mu and a missing typed-hash
-                    // key returned `Any` instead of the value-type default. Restrictions:
+                    // typed array/hash is declared in EXPRESSION position
+                    // (`my $x = (my Str @c)`, `gen my Int %i`, `$(my Int %)`). The
+                    // statement-position VarDecl emits the same `SetVarType`; without
+                    // it the expr path left `@c.of`/`%i.of` = Mu and a missing typed-
+                    // hash key returned `Any` instead of the value-type default.
+                    // Restrictions:
                     //   - boxed element types only (native `int`/`num`/`str` change
                     //     the storage and would panic in the auto-vivify here);
-                    //   - NOT anonymous `my Int @`/`my Int %` — leaving an anonymous
-                    //     typed container untagged in an argument keeps `Positional[T]`/
-                    //     `Associative[T]` type-capture binding working (a pre-existing
-                    //     limitation where a parameterized Array[T]/Hash[T] is rejected
-                    //     by the role).
-                    //   - object hashes (`my Int %j{Cool}`, encoded as the
-                    //     `"Int{Cool}"` constraint): the FULL constraint is NOT
-                    //     re-tagged in expression position, because re-applying the
-                    //     key-type half (`{Cool}`) marks the value `.WHICH`-keyed
-                    //     while a subsequent raw-binding mutation (`gen my Int
-                    //     %j{Cool}` → `sub gen(\h){ h{$_}=... }`) still stores plain
-                    //     string keys (the callee's `h` carries no var-level key
-                    //     constraint), so adverbs (`%j<b>:k`) would `.WHICH`-look-up
-                    //     keys that were stored plain and miss. Instead we tag only
-                    //     the VALUE-type half (`Int`), which is all the missing-key
-                    //     default needs (`%j<B>:!p` → `B => (Int)`); the hash stays
-                    //     plain-string-keyed so every Str-key adverb keeps working.
-                    //     (Fully unifying object-hash keying through raw-binding
-                    //     mutation is the larger change deferred here.)
+                    //   - a *named* object hash (`my Int %j{Cool}`, encoded as the
+                    //     `"Int{Cool}"` constraint) tags only the VALUE-type half:
+                    //     re-applying the key-type half (`{Cool}`) marks the value
+                    //     `.WHICH`-keyed, while a subsequent raw-binding mutation
+                    //     (`gen my Int %j{Cool}` → `sub gen(\h){ h{$_}=... }`) still
+                    //     stores plain string keys, so adverbs (`%j<b>:k`) would miss.
+                    //     Anonymous object hashes (`my Int %{Int}`) are never the
+                    //     target of such a raw-binding mutation, so they DO keep the
+                    //     key-type half — see the `__ANON_HASH__` branch below — which
+                    //     lets `$(my Int %{Int})` round-trip through `.raku.EVAL`.
+                    //   (Anonymous typed containers used to be left untagged to keep
+                    //    `Positional[T]`/`Associative[T]` type-capture binding working;
+                    //    that role-matching gap is now fixed in `resolved_type_capture_name`,
+                    //    so a genuinely-typed `Hash[Int]`/`Array[Int]` binds correctly.)
                     let is_native_value_type = type_constraint.as_ref().is_some_and(|tc| {
                         if name.starts_with('@') {
                             crate::runtime::native_types::is_native_array_element_type(tc)
@@ -154,15 +150,19 @@ impl Compiler {
                         }
                     });
                     if (name.starts_with('@') || name.starts_with('%'))
-                        && !name.contains("__ANON_ARRAY__")
-                        && !name.contains("__ANON_HASH__")
                         && let Some(tc) = type_constraint
                         && !is_native_value_type
                     {
-                        // For an object hash (`%h{KeyType}`), strip the `{...}` key
-                        // part and tag only the value type, so the value stays
-                        // plain-string-keyed (see the note above).
-                        let value_tc = if name.starts_with('%') {
+                        // For an *anonymous* object hash (`my Int %{Int}` as an
+                        // rvalue / `$(...)` itemization / EVAL round-trip), tag the
+                        // FULL constraint including the `{KeyType}` half, so the
+                        // container's key type survives (`(my Int %{Int})` .raku
+                        // round-trips). The anonymous form is never the target of a
+                        // raw-binding mutation (`gen my Int %{Cool}` → `\h` param →
+                        // `h{$_}=...`), so tagging the key type here cannot desync a
+                        // later plain-string-keyed write — the concern that keeps a
+                        // *named* object hash's key type stripped below.
+                        let value_tc = if name.starts_with('%') && !name.contains("__ANON_HASH__") {
                             tc.split('{').next().unwrap_or(tc)
                         } else {
                             tc
