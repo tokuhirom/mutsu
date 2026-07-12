@@ -9,34 +9,50 @@ cargo build --release
 ./benchmarks/run-all.sh
 ```
 
-## Current Status (benchmarks: 2026-05-24)
+## Current Status (benchmarks: 2026-07-12)
 
-> The benchmark table below was measured on 2026-05-24 and has not been re-run
-> since (Value layout shrank to 48 bytes and the VM was unified into a single
-> struct in the meantime). Re-measure with `./benchmarks/run-all.sh` before
-> relying on these exact numbers.
+> Measured 2026-07-12 with `perf stat -r5` (or `-r3` for the sub-0.1s ones) under
+> `taskset -c 0-3` on a quiet machine, release build (`opt + debuginfo`), rakudo
+> v2022.12. Includes the July perf slices #4447 (for-loop topic writeback O(n^2)
+> fix), #4451 (native-ctor plan cache + is-default gate), and the
+> `method_local_keys` predicate. **Caution: verify machine quietness before
+> benchmarking** — a single stray `mutsu` process inflated earlier same-day
+> measurements by 2-3x (both mutsu's and raku's), which briefly put wrong
+> ratios (bench-class "0.58x") into PR #4447/#4451 text. The table below is the
+> corrected record.
 
 | Benchmark | mutsu | raku | ratio | notes |
 |-----------|-------|------|-------|-------|
-| fib(25) | 0.37s | 0.36s | 1.0x | recursive function calls |
-| bench-fib | 1.09s | 0.34s | 3.2x | fib with type constraint (`Int $n --> Int`) |
-| int-arith | 0.16s | 0.22s | **0.7x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
-| string-concat | 0.02s | 0.21s | **0.09x** | `$s ~= 'x'` × 10000 |
-| hash-access | 0.04s | 0.23s | **0.17x** | 10K hash inserts + value iteration |
-| method-call | 0.71s | 0.27s | 2.7x | Point.distance-to × 10000 |
-| array-ops | 0.16s | 0.26s | **0.6x** | grep+map on 1000-elem array × 100 |
-| bench-array | 0.03s | 0.29s | **0.1x** | push+map+grep+sort+reverse on 10K |
-| bench-hash | 0.03s | 0.29s | **0.1x** | 10K insert+lookup+delete+keys+values |
-| bench-class | 0.79s | 0.34s | 2.3x | class instantiation + method calls + inheritance |
-| bench-startup | 0.005s | 0.14s | **0.04x** | startup overhead |
-| bench-string | 0.08s | 0.33s | **0.2x** | string operations |
+| fib(25) | 0.85s | 0.18s | 4.8x | recursive function calls — **regressed ~2.3x vs 2026-05 (0.37s), see below** |
+| bench-fib | 2.51s | 0.24s | 10.5x | fib with type constraint (`Int $n --> Int`) — **regressed ~2.3x vs 2026-05 (1.09s)** |
+| int-arith | 0.12s | 0.15s | **0.85x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
+| string-concat | 0.03s | 0.17s | **0.18x** | `$s ~= 'x'` × 10000 |
+| hash-access | 0.03s | 0.18s | **0.16x** | 10K hash inserts + value iteration |
+| method-call | 0.22s | 0.17s | 1.31x | Point.distance-to × 10000 (was 2.7x on 2026-05) |
+| array-ops | 0.10s | 0.23s | **0.44x** | grep+map on 1000-elem array × 100 |
+| bench-array | 0.05s | 0.23s | **0.22x** | push+map+grep+sort+reverse on 10K |
+| bench-hash | 0.04s | 0.25s | **0.14x** | 10K insert+lookup+delete+keys+values |
+| bench-class | 0.23s | 0.20s | 1.15x | class instantiation + method calls + inheritance (was 2.3x on 2026-05; 1.06s → 0.23s across the July slices) |
+| bench-startup | 0.004s | 0.12s | **0.03x** | startup overhead |
+| bench-string | 0.08s | 0.27s | **0.28x** | string operations |
 
-Note: raku times include ~170ms startup overhead. mutsu startup is ~4ms.
+Note: raku times include ~120ms startup overhead. mutsu startup is ~4ms.
 
 ### Summary
 
-- **Faster than raku (9/12)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, fib, bench-hash, bench-array
-- **~2-3x slower (3/12)**: bench-fib (3.2x), bench-class (2.3x), method-call (2.7x)
+- **Faster than raku (9/12)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, bench-hash, bench-array
+- **Near parity, target `<1.5x` met (2/12)**: bench-class (1.15x), method-call (1.31x)
+- **Regressed / far from target (2/12)**: fib (4.8x), bench-fib (10.5x)
+
+### ⚠ fib / bench-fib absolute regression (2026-07-12 finding)
+
+`fib` (0.37s → 0.85s) and `bench-fib` (1.09s → 2.51s) both slowed ~2.3x in
+absolute terms since the 2026-05-24 measurement, on the same benchmark files.
+The May-era table predates GC-default-on (2026-07-05, ADR-0003) and the layer-3a
+Track B churn, which are the prime suspects — but this is unbisected. Needs a
+dedicated investigation (bisect over the GC-enable range, `MUTSU_VM_STATS`
+counter diff) before NaN-boxing (layer 3b) work banks its expected fib gains on
+top of a regressed baseline.
 
 ## Architecture Overview
 
