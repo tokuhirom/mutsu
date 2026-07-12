@@ -38,7 +38,7 @@ impl Interpreter {
             // attribute, exactly as the interpreter's `dispatch_new` caller does
             // (`materialize_exception_message_in_result`). For built-in exceptions
             // and non-exceptions this is a no-op (no user `message` method).
-            let cn = class_name.resolve();
+            let cn = class_name.as_str();
             let result = self.materialize_exception_message_in_result(result);
             // Native construction of an attribute-only class is pure data assembly
             // (named args + defaults; writes nothing to the caller env, Slice 6.3).
@@ -51,8 +51,8 @@ impl Interpreter {
             // so treat that as impure too.
             let runs_message =
                 (cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::"))
-                    && self.has_user_method(&cn, "message");
-            self.method_dispatch_pure = !self.mro_has_build_or_tweak(&cn) && !runs_message;
+                    && self.has_user_method(cn, "message");
+            self.method_dispatch_pure = !self.mro_has_build_or_tweak(cn) && !runs_message;
             return result;
         }
         // Native built-in construction: `Buf`/`Blob` (byte overlay), `utf8`/
@@ -111,7 +111,7 @@ impl Interpreter {
         // `dispatch_new_and_constructors` arm also delegates to.
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name == "Failure"
         {
             self.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
@@ -124,7 +124,7 @@ impl Interpreter {
         // own class name and is left to the interpreter.)
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
-            && class_name.resolve() == "Seq"
+            && class_name == "Seq"
         {
             self.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
@@ -137,7 +137,7 @@ impl Interpreter {
         // is left to the interpreter.)
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
-            && class_name.resolve() == "IO::Socket::INET"
+            && class_name == "IO::Socket::INET"
         {
             self.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
@@ -154,7 +154,7 @@ impl Interpreter {
             return result;
         }
         if let ValueView::Instance { class_name, .. } = target.view() {
-            let class = class_name.resolve();
+            let class = class_name.as_str();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
             // resolve `IO::Handle`'s state-only methods (close/tell/eof/seek/
             // opened/t and the Tier-1 setters/getters chomp/nl-out/out-buffer/
@@ -195,16 +195,16 @@ impl Interpreter {
             // filesystem / cwd / env dependency (ledger §D). Single impl shared with
             // the interpreter's `native_io_path`. Filesystem / cwd-relative forms and
             // `child :secure` return `None` and fall through to the native fork below.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
-                    Self::try_io_path_lexical(&class, &attributes.as_map(), method, &args)
+                    Self::try_io_path_lexical(class, &attributes.as_map(), method, &args)
             {
                 return result;
             }
             // Interpreter-native `.absolute` / `.relative` (path + cwd, lexical — no
             // filesystem; the VM owns env/cwd). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_cwd_method(&attributes.as_map(), method, &args)
@@ -215,7 +215,7 @@ impl Interpreter {
             // (`e`/`f`/`d`/…/`s`/`modified`): resolve the path against the VM-owned
             // cwd, then `stat` only — no `io_handles`, no content read (ledger §D).
             // Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_fs_stat(&attributes.as_map(), method)
             {
@@ -224,7 +224,7 @@ impl Interpreter {
             // Interpreter-native whole-file content reads (`slurp`/`lines`/`words`):
             // read the file + split/decode; no `io_handles` (ledger §D). Single impl
             // shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_content_read(&attributes.as_map(), method, &args)
@@ -234,17 +234,17 @@ impl Interpreter {
             // Interpreter-native single-path filesystem mutations (`spurt`/`mkdir`/
             // `rmdir`/`unlink`/`chmod`): one-shot syscall, no `io_handles` (ledger
             // §D). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
-                    self.try_io_path_fs_mutate(&attributes.as_map(), &class, method, &args)
+                    self.try_io_path_fs_mutate(&attributes.as_map(), class, method, &args)
             {
                 return result;
             }
             // Interpreter-native `open`: allocate an `io_handles` entry and return
             // the `IO::Handle`. The VM owns `io_handles`, so this is a native
             // dispatch (ledger §D ③). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_open(&attributes.as_map(), method, &args)
             {
@@ -253,7 +253,7 @@ impl Interpreter {
             // Interpreter-native two-path FS ops (`copy`/`rename`/`move`/`symlink`/
             // `link`): resolve both paths against the VM-owned cwd, one-shot syscall,
             // no `io_handles` (ledger §D). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_two_path_op(&attributes.as_map(), method, &args)
@@ -262,7 +262,7 @@ impl Interpreter {
             }
             // Interpreter-native `comb`: read the file then comb the content (no
             // `io_handles`; ledger §D). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_comb(&attributes.as_map(), method, &args)
             {
@@ -272,7 +272,7 @@ impl Interpreter {
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
             // class (via its MRO) provides its own method of this name.
-            if self.is_native_method(&class, method) && !self.has_user_method(&class, method) {
+            if self.is_native_method(class, method) && !self.has_user_method(class, method) {
                 // TODO: compile to bytecode — Instance native-method fork (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return loan_env!(self, call_method_with_values(target, method, args));
@@ -291,13 +291,14 @@ impl Interpreter {
         // Private method fast path: resolve private candidate and run compiled code
         // when caller context clearly allows direct dispatch.
         if method.starts_with('!') {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
+            let class_sym = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(name) => Some(name),
                 _ => None,
             };
-            if let Some(cn) = class_name {
-                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
+            if let Some(class_sym) = class_sym {
+                let cn = class_sym.as_str();
+                let resolved = loan_env!(self, resolve_private_method_for_vm(cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed = self.can_fast_dispatch_private_method_vm(&owner_class);
                     if caller_allowed && let Some(ref cc) = method_def.compiled_code {
@@ -315,18 +316,18 @@ impl Interpreter {
                             _ => std::collections::HashMap::new(),
                         };
                         let invocant_for_dispatch = if attributes.is_empty() {
-                            Value::package(crate::symbol::Symbol::intern(&cn))
+                            Value::package(class_sym)
                         } else {
                             target.clone()
                         };
                         let pushed_dispatch = loan_env!(
                             self,
-                            push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
+                            push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
                         let method_result = self.call_compiled_method(
-                            &cn,
+                            cn,
                             &owner_class,
                             method,
                             &method_def,
@@ -363,7 +364,7 @@ impl Interpreter {
                                 };
                                 return loan_env!(
                                     self,
-                                    proxy_fetch(fetcher, None, &cn, &proxy_attrs, id)
+                                    proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
                                 );
                             }
                         }
@@ -379,12 +380,12 @@ impl Interpreter {
             && !crate::runtime::Interpreter::is_classhow_method(&method[1..])
         {
             let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
+                ValueView::Package(name) => Some(name.as_str()),
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.has_user_method(&cn, method)
+                && self.has_user_method(cn, method)
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
@@ -393,14 +394,17 @@ impl Interpreter {
                 return loan_env!(self, call_method_with_values(target, method, how_args));
             }
         }
-        // Only attempt compiled path for Instance or Package targets
-        let class_name = match target.view() {
-            ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-            ValueView::Package(name) => Some(name.resolve()),
+        // Only attempt compiled path for Instance or Package targets. Reuse the
+        // receiver's already-interned class Symbol and borrow its string
+        // (`as_str`) instead of the old `resolve()` String allocation plus
+        // re-intern round-trip.
+        let class_sym_opt = match target.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name),
+            ValueView::Package(name) => Some(name),
             _ => None,
         };
-        if let Some(ref cn) = class_name {
-            let class_sym = crate::symbol::Symbol::intern(cn);
+        if let Some(class_sym) = class_sym_opt {
+            let cn = class_sym.as_str();
             let method_sym = crate::symbol::Symbol::intern(method);
             let cache_key = (class_sym, method_sym);
 
@@ -437,13 +441,13 @@ impl Interpreter {
                 let shares_scalar_container =
                     self.method_shares_container_into_scalar_param(&entry.method_def, &args);
                 if !needs_default_eval && !has_attr_aliases && !shares_scalar_container {
-                    let owner_class = entry.owner_class.resolve();
+                    let owner_class = entry.owner_class.as_str();
                     let method_def = entry.method_def.clone();
                     let cc = entry.compiled_code.clone();
                     let can_skip_merge = entry.can_skip_merge;
                     return self.dispatch_compiled_method(
                         cn,
-                        &owner_class,
+                        owner_class,
                         method,
                         &method_def,
                         &cc,

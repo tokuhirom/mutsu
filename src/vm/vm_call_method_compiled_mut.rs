@@ -18,7 +18,7 @@ impl Interpreter {
             // a captured-outer caller lexical, in which case the dispatch is impure
             // and the call site must reconcile the caller slot (Slice F twin of the
             // non-mut path; `reconcile_locals_from_env_at_site`).
-            self.method_dispatch_pure = !self.mro_has_build_or_tweak(&class_name.resolve());
+            self.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name.as_str());
             return result;
         }
         // Native built-in construction (mut path twin of the above).
@@ -57,7 +57,7 @@ impl Interpreter {
         // Native Failure construction (mut path twin of the above).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
-            && class_name.resolve() == "Failure"
+            && class_name == "Failure"
         {
             self.method_dispatch_pure = true;
             return Ok(self.build_native_failure_value(&args));
@@ -65,7 +65,7 @@ impl Interpreter {
         // Native Seq construction (mut path twin of the above).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
-            && class_name.resolve() == "Seq"
+            && class_name == "Seq"
         {
             self.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
@@ -73,7 +73,7 @@ impl Interpreter {
         // Native IO::Socket::INET construction (mut path twin of the above).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
-            && class_name.resolve() == "IO::Socket::INET"
+            && class_name == "IO::Socket::INET"
         {
             self.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
@@ -88,7 +88,7 @@ impl Interpreter {
             return result;
         }
         if let ValueView::Instance { class_name, .. } = target.view() {
-            let class = class_name.resolve();
+            let class = class_name.as_str();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D),
             // mut path: `$fh.method` on a variable receiver routes here, so the
             // same state-only `IO::Handle` methods must be intercepted before the
@@ -126,16 +126,16 @@ impl Interpreter {
             // non-mut path — produces a *new* IO::Path/string/bool and never mutates
             // the receiver, so no writeback. Filesystem / cwd-relative forms and
             // `child :secure` fall through to the native fork below.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
-                    Self::try_io_path_lexical(&class, &attributes.as_map(), method, &args)
+                    Self::try_io_path_lexical(class, &attributes.as_map(), method, &args)
             {
                 return result;
             }
             // Interpreter-native `.absolute` / `.relative` (path + cwd, lexical — no
             // filesystem; the VM owns env/cwd). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_cwd_method(&attributes.as_map(), method, &args)
@@ -146,7 +146,7 @@ impl Interpreter {
             // (`e`/`f`/`d`/…/`s`/`modified`): resolve the path against the VM-owned
             // cwd, then `stat` only — no `io_handles`, no content read (ledger §D).
             // Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_fs_stat(&attributes.as_map(), method)
             {
@@ -155,7 +155,7 @@ impl Interpreter {
             // Interpreter-native whole-file content reads (`slurp`/`lines`/`words`):
             // read the file + split/decode; no `io_handles` (ledger §D). Single impl
             // shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_content_read(&attributes.as_map(), method, &args)
@@ -165,17 +165,17 @@ impl Interpreter {
             // Interpreter-native single-path filesystem mutations (`spurt`/`mkdir`/
             // `rmdir`/`unlink`/`chmod`): one-shot syscall, no `io_handles` (ledger
             // §D). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
-                    self.try_io_path_fs_mutate(&attributes.as_map(), &class, method, &args)
+                    self.try_io_path_fs_mutate(&attributes.as_map(), class, method, &args)
             {
                 return result;
             }
             // Interpreter-native `open`: allocate an `io_handles` entry and return
             // the `IO::Handle`. The VM owns `io_handles`, so this is a native
             // dispatch (ledger §D ③). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_open(&attributes.as_map(), method, &args)
             {
@@ -184,7 +184,7 @@ impl Interpreter {
             // Interpreter-native two-path FS ops (`copy`/`rename`/`move`/`symlink`/
             // `link`): resolve both paths against the VM-owned cwd, one-shot syscall,
             // no `io_handles` (ledger §D). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) =
                     self.try_io_path_two_path_op(&attributes.as_map(), method, &args)
@@ -193,7 +193,7 @@ impl Interpreter {
             }
             // Interpreter-native `comb`: read the file then comb the content (no
             // `io_handles`; ledger §D). Single impl shared with `native_io_path`.
-            if Self::is_io_path_lexical_class(&class)
+            if Self::is_io_path_lexical_class(class)
                 && let ValueView::Instance { attributes, .. } = target.view()
                 && let Some(result) = self.try_io_path_comb(&attributes.as_map(), method, &args)
             {
@@ -203,7 +203,7 @@ impl Interpreter {
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
             // class (via its MRO) provides its own method of this name.
-            if self.is_native_method(&class, method) && !self.has_user_method(&class, method) {
+            if self.is_native_method(class, method) && !self.has_user_method(class, method) {
                 // TODO: compile to bytecode — Instance native-method fork, mut (ledger §1).
                 crate::vm::vm_stats::record_method_fallback(method);
                 return self.vm_call_method_mut_with_values(target_name, target, method, args);
@@ -227,12 +227,12 @@ impl Interpreter {
             && !crate::runtime::Interpreter::is_classhow_method(&method[1..])
         {
             let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
+                ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
+                ValueView::Package(name) => Some(name.as_str()),
                 _ => None,
             };
             if let Some(cn) = class_name
-                && self.has_user_method(&cn, method)
+                && self.has_user_method(cn, method)
             {
                 let mut how_args = vec![target.clone()];
                 how_args.extend(args);
@@ -242,13 +242,14 @@ impl Interpreter {
             }
         }
         if method.starts_with('!') {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
+            let class_sym = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(name) => Some(name),
                 _ => None,
             };
-            if let Some(cn) = class_name {
-                let resolved = loan_env!(self, resolve_private_method_for_vm(&cn, method, &args));
+            if let Some(class_sym) = class_sym {
+                let cn = class_sym.as_str();
+                let resolved = loan_env!(self, resolve_private_method_for_vm(cn, method, &args));
                 if let Some((owner_class, method_def)) = resolved {
                     let caller_allowed = self.can_fast_dispatch_private_method_vm(&owner_class);
                     if caller_allowed && let Some(ref cc) = method_def.compiled_code {
@@ -266,18 +267,18 @@ impl Interpreter {
                             _ => std::collections::HashMap::new(),
                         };
                         let invocant_for_dispatch = if attributes.is_empty() {
-                            Value::package(crate::symbol::Symbol::intern(&cn))
+                            Value::package(class_sym)
                         } else {
                             target.clone()
                         };
                         let pushed_dispatch = loan_env!(
                             self,
-                            push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
+                            push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
                         let empty_fns = HashMap::new();
                         let method_result = self.call_compiled_method(
-                            &cn,
+                            cn,
                             &owner_class,
                             method,
                             &method_def,
@@ -314,7 +315,7 @@ impl Interpreter {
                                 };
                                 return loan_env!(
                                     self,
-                                    proxy_fetch(fetcher, None, &cn, &proxy_attrs, id)
+                                    proxy_fetch(fetcher, None, cn, &proxy_attrs, id)
                                 );
                             }
                         }
@@ -331,27 +332,27 @@ impl Interpreter {
             ValueView::Package(name) => Some(name),
             _ => None,
         };
-        let class_name = class_sym_opt.map(|s| s.resolve());
+        let class_name = class_sym_opt.map(|s| s.as_str());
         if let Some(cn) = class_name
             && let Some(class_sym) = class_sym_opt
             && let Some((owner_class, method_def)) = {
                 let method_sym = crate::symbol::Symbol::intern(method);
-                self.resolve_method_cached(&cn, method, class_sym, method_sym, &args, &target)
+                self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
             }
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
             if self.dispatch_ambiguous {
                 self.dispatch_ambiguous = false;
-                let sigs = self.format_method_candidate_signatures(&cn, method);
+                let sigs = self.format_method_candidate_signatures(cn, method);
                 return Err(
                     crate::runtime::methods_signature_errors::make_multi_ambiguous_error(
-                        method, &cn, &sigs,
+                        method, cn, &sigs,
                     ),
                 );
             }
             if let Some(result) =
-                self.check_method_wrap_chain(&cn, &owner_class, method, &method_def, &target, &args)
+                self.check_method_wrap_chain(cn, &owner_class, method, &method_def, &target, &args)
             {
                 return result;
             }
@@ -363,7 +364,7 @@ impl Interpreter {
                 if method_def.compiled_code.is_some() {
                     Some((owner_class, method_def))
                 } else if !method_def.body.is_empty() {
-                    self.populate_uncompiled_method(&cn, &owner_class, method, &args, &target)
+                    self.populate_uncompiled_method(cn, &owner_class, method, &args, &target)
                 } else {
                     None
                 };
@@ -388,12 +389,12 @@ impl Interpreter {
                 };
                 let pushed_dispatch = loan_env!(
                     self,
-                    push_method_dispatch_frame(&cn, method, &args, invocant_for_dispatch,)
+                    push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
                 );
                 let invocant = Some(target);
                 let empty_fns = HashMap::new();
                 let method_result = self.call_compiled_method(
-                    &cn,
+                    cn,
                     &owner_class,
                     method,
                     &method_def,
@@ -425,7 +426,7 @@ impl Interpreter {
                         } else {
                             new_attrs
                         };
-                        return loan_env!(self, proxy_fetch(fetcher, None, &cn, &proxy_attrs, id));
+                        return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
                     }
                 }
                 return Ok(result);
