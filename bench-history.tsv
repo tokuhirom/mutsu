@@ -107,3 +107,15 @@ date	commit	benchmark	mutsu_median_s	mutsu_min_s	raku_median_s	ratio_mutsu_over_
 2026-07-12T08:50:05Z	3a9743703297549898671d00f8971d38e902d6a8	int-arith	0.1410	0.1402	0.2281	0.62	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
 2026-07-12T08:50:05Z	3a9743703297549898671d00f8971d38e902d6a8	method-call	0.2708	0.2687	0.2622	1.03	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
 2026-07-12T08:50:05Z	3a9743703297549898671d00f8971d38e902d6a8	string-concat	0.0261	0.0259	0.1923	0.14	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	array-ops	0.1235	0.1224	0.2696	0.46	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	bench-array	0.0647	0.0624	0.2760	0.23	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	bench-class	0.3012	0.2949	0.2934	1.03	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	bench-fib	0.6105	0.6023	0.3106	1.97	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	bench-hash	0.0455	0.0453	0.2552	0.18	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	bench-startup	0.0079	0.0077	0.1395	0.06	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	bench-string	0.1017	0.1003	0.2762	0.37	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	fib	0.2292	0.2254	0.2538	0.90	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	hash-access	0.0413	0.0408	0.1986	0.21	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	int-arith	0.1417	0.1389	0.2013	0.70	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	method-call	0.3024	0.2958	0.2362	1.28	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
+2026-07-12T09:26:23Z	4a4f0ee73b4fb78f3bfb895fe3ca446f297882e3	string-concat	0.0249	0.0244	0.1761	0.14	7	4c-x86_64-ubuntu24	Welcome to Rakudo™ v2022.12.
