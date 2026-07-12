@@ -252,11 +252,6 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       1.06s→0.23s（raku 比 2.3x→**1.15x** ✅）・method-call 2.7x→**1.31x** ✅。
       残: `dispatch_compiled_method` 入口の `to_map()` 除去（中規模リファクタ）と
       attrs の `HashMap<String,Value>`/SipHash 起因の malloc 群（＝作り直し本体）。
-- [ ] **fib/bench-fib の絶対回帰調査（2026-07-12 発見）**: 同一ベンチファイルで
-      fib 0.37s→0.85s・bench-fib 1.09s→2.51s（2026-05-24 比 ~2.3x 遅化・raku 比 4.8x/10.5x）。
-      GC 既定 on（2026-07-05）＋Track B churn が第一容疑だが未 bisect。層3b が回帰した
-      ベースラインの上に fib 利得を計上する前に、bisect＋`MUTSU_VM_STATS` diff で要因特定する。
-      詳細 = [PERFORMANCE.md](PERFORMANCE.md) の 2026-07-12 表と注記。
 - [ ] **Lever 2: NaN-boxing = ADR-0001 層3b（JIT の地ならし・GC 後）**: `Value` 48→8 bytes。
       int-arith 2x・fib ~30% 狙い。`value_size_guard` テストでサイズ監視中。
       進捗・次の着手単位（3b-1 step B・ADR-0005 Accepted 待ち）は **§2 に集約**。
@@ -279,9 +274,10 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       絶対 index を運ぶ encoding の是正 / per-opcode ヒストグラム駆動での特化 op 統合
       （`ContainerEq`×4・`IndexAssign*`×6 — 美学でなくデータで駆動）。
 - [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
-- 目標: method-call <1.5x（✅ 1.31x・2026-07-12）、bench-class <1.5x（✅ 1.15x・2026-07-12 —
-  同日中の「0.58x」記載は迷子プロセス負荷下の raku 計測による誤り・訂正済み）、
-  bench-fib（型制約付き）<2x（❌ 10.5x — 上記回帰調査が前提）。
+- 目標: method-call <1.5x（✅ 1.14x・2026-07-12）、bench-class <1.5x（✅ 0.93x・2026-07-12）、
+  fib <10x（✅ **0.94x** — ?LINE-field＋empty-overlay-tier 修正で絶対 2.3x 回帰ごと解消・
+  経緯は PERFORMANCE.md「RESOLVED」節）、bench-fib（型制約付き）<2x（❌ 2.6x —
+  残りは per-call 型制約チェック圏 = Lever 5）。
 
 ---
 
@@ -326,9 +322,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 | バイナリ配布 | なし | mise / GitHub Releases で単一コマンド導入 |
 | Whitelist | **1373**（全 .t 1463 中） | 1300+ ✅ 達成済み・現状維持以上 |
 | GC | **default on ✅**（2026-07-05・ADR-0003） | 達成（残 perf は層 3b へ） |
-| fib(25) vs raku | **4.8x**（2026-07-12・絶対 2.3x 回帰 — §5 要調査） | <10x ✅（回帰監視中） |
-| method-call vs raku | **1.31x**（2026-07-12） | <1.5x ✅ |
-| bench-class vs raku | **1.15x**（2026-07-12・同日の 0.58x 記載は計測誤りで訂正） | <1.5x ✅ |
-| bench-fib（型制約付き）vs raku | **10.5x**（2026-07-12・絶対 2.3x 回帰 — §5 要調査） | <2x |
+| fib(25) vs raku | **0.94x**（2026-07-12・?LINE/overlay 修正で回帰解消） | <10x ✅ |
+| method-call vs raku | **1.14x**（2026-07-12） | <1.5x ✅ |
+| bench-class vs raku | **0.93x**（2026-07-12） | <1.5x ✅ |
+| bench-fib（型制約付き）vs raku | **2.6x**（2026-07-12・残 = per-call 型制約チェック） | <2x |
 | 起動時間 vs raku | **0.04x** | 0.04x ✅ 維持 |
 | tree-walk フォールバック（メソッド/関数） | **~1% / ~18.6%（大半 carrier）** | 0%（carrier 除く） |

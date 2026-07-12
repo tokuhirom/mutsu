@@ -1110,6 +1110,15 @@ pub struct Interpreter {
     /// resolution, so the write lands on the LIVE (inner shadow) caller slot.
     pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, u32>,
     test_pending_callsite_line: Option<i64>,
+    /// Current source line of the executing statement (`$?LINE` for internal
+    /// consumers: backtraces, warn/die locations, callframe records). Lives as
+    /// a plain field — NOT an env entry — so the per-statement `SetSourceLine`
+    /// opcode is a scalar store instead of an env insert (which forked the
+    /// CoW overlay map on every statement and kept callee overlays non-empty,
+    /// defeating the empty-tier reuse in `Env::scoped_child`). Call paths that
+    /// push a `CallFrameEntry` restore it on pop from the entry's `line`; the
+    /// frame-less VM fast paths save/restore it manually.
+    pub(crate) cur_source_line: i64,
     /// Number of active CONTROL handlers in the current VM stack. Tracked
     /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
     /// EVAL) can observe handlers installed by the outer VM and propagate

@@ -232,7 +232,23 @@ impl Env {
     /// chain from growing unbounded under deep recursion, the parent is flattened
     /// to a single tier once it reaches [`MAX_OVERLAY_DEPTH`]. See
     /// docs/vm-dual-store.md.
-    pub(crate) fn scoped_child(parent: Env) -> Self {
+    pub(crate) fn scoped_child(mut parent: Env) -> Self {
+        // Empty-tier reuse: a scoped parent whose overlay never received a
+        // write (and has no tombstones) is invisible to lookups, so chain the
+        // new child over the parent's own parent instead of stacking another
+        // tier. A pure recursive function (no env-synced params, no by-name
+        // writes) then runs at constant chain depth and never triggers the
+        // MAX_OVERLAY_DEPTH flatten — which was measured at >40% of fib(25)
+        // wall time (HashMap deep clone + drop per flatten).
+        while parent.inner.is_empty() && parent.tombstones.is_none() {
+            match &parent.parent {
+                Some(gp) => {
+                    let gp = Env::clone(gp);
+                    parent = gp;
+                }
+                None => break,
+            }
+        }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
             parent.flattened()
         } else {
@@ -752,6 +768,34 @@ mod tests {
         assert_eq!(flat.get_sym(s("b")), Some(&Value::int(2)));
         assert_eq!(flat.get_sym(s("c")), Some(&Value::int(3)));
         assert!(flat.get_sym(s("gone")).is_none());
+    }
+
+    #[test]
+    fn empty_tiers_are_reused_not_stacked() {
+        // A scoped parent whose overlay never received a write is invisible to
+        // lookups; scoped_child must chain over its parent instead of stacking
+        // (pure recursion then runs at constant depth — no flatten churn).
+        let mut root = Env::new();
+        root.insert("root".into(), Value::int(42));
+        let mut env = Env::scoped_child(root);
+        for _ in 0..(MAX_OVERLAY_DEPTH as usize * 4) {
+            env = Env::scoped_child(env);
+            assert_eq!(env.depth, 1, "empty tiers must not grow the chain");
+        }
+        assert_eq!(env.get_sym(s("root")), Some(&Value::int(42)));
+        // A written tier is NOT skipped: its entry stays visible in the child.
+        let written = scoped_with(env, &[("b", 2)]);
+        let child = Env::scoped_child(written);
+        assert_eq!(child.depth, 2);
+        assert_eq!(child.get_sym(s("b")), Some(&Value::int(2)));
+        // A tombstoned (remove-only) tier is NOT skipped either.
+        let mut root2 = Env::new();
+        root2.insert("a".into(), Value::int(1));
+        let mut tomb = Env::scoped_child(root2);
+        tomb.remove("a");
+        let child2 = Env::scoped_child(tomb);
+        assert_eq!(child2.depth, 2);
+        assert!(child2.get_sym(s("a")).is_none());
     }
 
     #[test]

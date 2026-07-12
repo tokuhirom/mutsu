@@ -26,10 +26,7 @@ impl Interpreter {
         self.pending_rw_writeback_sources.clear();
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
-            let cl = self.env().get("?LINE").and_then(|v| match v.view() {
-                ValueView::Int(i) => Some(i),
-                _ => None,
-            });
+            let cl = Some(self.cur_source_line);
             loan_env!(
                 self,
                 check_deprecation_for_method_with_line(method_name, owner_class, msg, cl,)

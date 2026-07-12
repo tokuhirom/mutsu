@@ -301,13 +301,7 @@ impl Interpreter {
             .unwrap_or_else(|| "-e".to_string());
         let line = self
             .test_pending_callsite_line
-            .or_else(|| {
-                self.env().get("?LINE").and_then(|v| match v.view() {
-                    ValueView::Int(n) => Some(n),
-                    _ => None,
-                })
-            })
-            .unwrap_or(1);
+            .unwrap_or(self.cur_source_line);
         message.push_str(&format!("\n  in block <unit> at {} line {}", file, line));
         // When no CONTROL handler is active (`control_handler_depth == 0`), this
         // warn's only possible fate is the default handler: print to stderr and

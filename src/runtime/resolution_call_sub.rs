@@ -285,7 +285,7 @@ impl Interpreter {
             let saved_env = self.env.clone();
             let saved_readonly = self.save_readonly_vars();
             if let Some(line) = self.test_pending_callsite_line {
-                self.env.insert("?LINE".to_string(), Value::int(line));
+                self.cur_source_line = line;
             }
             self.push_caller_env();
             let persist_closure_env =

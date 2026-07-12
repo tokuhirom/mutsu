@@ -28,6 +28,7 @@ impl Interpreter {
         // phasers, threads) still flatten via `clone_env` at the capture site.
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
+            saved_cur_line: self.cur_source_line,
             saved_readonly: Some(self.save_readonly_vars()),
             readonly_added: Vec::new(),
             readonly_removed: Vec::new(),
@@ -50,6 +51,7 @@ impl Interpreter {
         crate::vm::vm_stats::record_clone_env();
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
+            saved_cur_line: self.cur_source_line,
             saved_readonly: None,
             readonly_added: Vec::new(),
             readonly_removed: Vec::new(),
@@ -74,6 +76,7 @@ impl Interpreter {
             .call_frames
             .pop()
             .expect("pop_call_frame: no frame to pop");
+        self.cur_source_line = frame.saved_cur_line;
         self.locals = std::mem::take(&mut frame.saved_locals);
         self.upvalues = std::mem::take(&mut frame.saved_upvalues);
         self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);

@@ -9,50 +9,60 @@ cargo build --release
 ./benchmarks/run-all.sh
 ```
 
-## Current Status (benchmarks: 2026-07-12)
+## Current Status (benchmarks: 2026-07-12, post ?LINE/overlay fix)
 
-> Measured 2026-07-12 with `perf stat -r5` (or `-r3` for the sub-0.1s ones) under
-> `taskset -c 0-3` on a quiet machine, release build (`opt + debuginfo`), rakudo
-> v2022.12. Includes the July perf slices #4447 (for-loop topic writeback O(n^2)
-> fix), #4451 (native-ctor plan cache + is-default gate), and the
-> `method_local_keys` predicate. **Caution: verify machine quietness before
-> benchmarking** — a single stray `mutsu` process inflated earlier same-day
-> measurements by 2-3x (both mutsu's and raku's), which briefly put wrong
-> ratios (bench-class "0.58x") into PR #4447/#4451 text. The table below is the
-> corrected record.
+> Measured 2026-07-12 with `perf stat -r5` under `taskset -c 0-3` on a quiet
+> machine, release build (`opt + debuginfo`), rakudo v2022.12. Includes the July
+> perf slices #4447/#4451/#4454 and the `?LINE`-field + empty-overlay-tier fix
+> (see below). **Caution: verify machine quietness before benchmarking** — a
+> single stray `mutsu`/`raku`-adjacent process inflates both sides' numbers 2-3x
+> (it corrupted two same-day measurement rounds on 2026-07-12 alone).
 
 | Benchmark | mutsu | raku | ratio | notes |
 |-----------|-------|------|-------|-------|
-| fib(25) | 0.85s | 0.18s | 4.8x | recursive function calls — **regressed ~2.3x vs 2026-05 (0.37s), see below** |
-| bench-fib | 2.51s | 0.24s | 10.5x | fib with type constraint (`Int $n --> Int`) — **regressed ~2.3x vs 2026-05 (1.09s)** |
+| fib(25) | 0.155s | 0.164s | **0.94x** | recursive function calls (was 4.8x before the ?LINE/overlay fix) |
+| bench-fib | 0.548s | 0.207s | 2.6x | fib with type constraint (`Int $n --> Int`) (was 10.5x) |
 | int-arith | 0.12s | 0.15s | **0.85x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
 | string-concat | 0.03s | 0.17s | **0.18x** | `$s ~= 'x'` × 10000 |
 | hash-access | 0.03s | 0.18s | **0.16x** | 10K hash inserts + value iteration |
-| method-call | 0.22s | 0.17s | 1.31x | Point.distance-to × 10000 (was 2.7x on 2026-05) |
+| method-call | 0.182s | 0.160s | 1.14x | Point.distance-to × 10000 (was 2.7x on 2026-05) |
 | array-ops | 0.10s | 0.23s | **0.44x** | grep+map on 1000-elem array × 100 |
-| bench-array | 0.05s | 0.23s | **0.22x** | push+map+grep+sort+reverse on 10K |
-| bench-hash | 0.04s | 0.25s | **0.14x** | 10K insert+lookup+delete+keys+values |
-| bench-class | 0.23s | 0.20s | 1.15x | class instantiation + method calls + inheritance (was 2.3x on 2026-05; 1.06s → 0.23s across the July slices) |
+| bench-array | 0.043s | 0.23s | **0.19x** | push+map+grep+sort+reverse on 10K |
+| bench-hash | 0.027s | 0.25s | **0.11x** | 10K insert+lookup+delete+keys+values |
+| bench-class | 0.181s | 0.194s | **0.93x** | class instantiation + method calls + inheritance (1.06s → 0.18s across the July slices) |
 | bench-startup | 0.004s | 0.12s | **0.03x** | startup overhead |
-| bench-string | 0.08s | 0.27s | **0.28x** | string operations |
+| bench-string | 0.064s | 0.27s | **0.24x** | string operations |
 
 Note: raku times include ~120ms startup overhead. mutsu startup is ~4ms.
 
 ### Summary
 
-- **Faster than raku (9/12)**: startup, string-concat, bench-string, int-arith, array-ops, hash-access, bench-hash, bench-array
-- **Near parity, target `<1.5x` met (2/12)**: bench-class (1.15x), method-call (1.31x)
-- **Regressed / far from target (2/12)**: fib (4.8x), bench-fib (10.5x)
+- **Faster than raku (11/12)**: startup, string-concat, bench-string, int-arith,
+  array-ops, hash-access, bench-hash, bench-array, bench-class, fib, method-call*
+  (*1.14x, within noise of parity)
+- **Above parity (1/12)**: bench-fib (2.6x — per-call type-constraint checking,
+  see "bench-fib specific" below)
 
-### ⚠ fib / bench-fib absolute regression (2026-07-12 finding)
+### ✔ fib / bench-fib absolute regression — RESOLVED (2026-07-12)
 
-`fib` (0.37s → 0.85s) and `bench-fib` (1.09s → 2.51s) both slowed ~2.3x in
-absolute terms since the 2026-05-24 measurement, on the same benchmark files.
-The May-era table predates GC-default-on (2026-07-05, ADR-0003) and the layer-3a
-Track B churn, which are the prime suspects — but this is unbisected. Needs a
-dedicated investigation (bisect over the GC-enable range, `MUTSU_VM_STATS`
-counter diff) before NaN-boxing (layer 3b) work banks its expected fib gains on
-top of a regressed baseline.
+The ~2.3x absolute slowdown vs 2026-05 (fib 0.37s → 0.85s) was **not GC**:
+`MUTSU_GC=off` measured identical to GC-on (the #4420 buffered-flag fast path
+already reduced per-drop cost to one relaxed load; fib does 1 collection, 86µs
+total pause). A `perf record` profile showed >40% of fib wall time in
+`Env::flattened` HashMap deep clones (+ ~28% dropping the clones): every
+recursive call stacked a scoped-overlay tier, and each call past
+`MAX_OVERLAY_DEPTH` (16) re-flattened the whole chain. The overlays were only
+non-empty because the per-statement `SetSourceLine` opcode inserted `?LINE`
+into the env (728k inserts on fib(25), each potentially forking the CoW map).
+
+Fix (two parts): (1) `?LINE` moved from the env to an `Interpreter` field
+(`cur_source_line`), saved/restored at frame boundaries (`VmCallFrame` /
+`CallFrameEntry`); (2) `Env::scoped_child` reuses the parent chain instead of
+stacking when the parent tier's overlay is empty (no writes, no tombstones), so
+pure recursion runs at constant chain depth and never flattens. Container-`Gc`
+drop churn on fib(25) went from 17.5M to 14; fib beat the 2026-05 record by
+2.4x. Pin: `t/source-line-deep-recursion.t`,
+`env::tests::empty_tiers_are_reused_not_stacked`.
 
 ## Architecture Overview
 

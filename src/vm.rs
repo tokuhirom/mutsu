@@ -269,6 +269,9 @@ pub(crate) struct ControlHandlerCode {
 
 pub(crate) struct VmCallFrame {
     pub saved_env: Env,
+    /// The caller's `cur_source_line` at frame push, restored on pop (the
+    /// callee body's SetSourceLine updates must not leak into the caller).
+    pub saved_cur_line: i64,
     pub saved_locals: Vec<Value>,
     pub saved_upvalues: Vec<Option<Value>>,
     pub saved_stack_depth: usize,
