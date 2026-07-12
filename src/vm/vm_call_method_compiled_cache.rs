@@ -234,14 +234,13 @@ impl Interpreter {
             ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             _ => None,
         };
-        let attributes = match target.view() {
-            ValueView::Instance { attributes, .. } => attributes.to_map(),
-            _ => std::collections::HashMap::new(),
-        };
+        // No whole-map `to_map()` snapshot here: the fast path reads attributes
+        // through the live cell, and the slow path materializes its own map.
+        let attrs_empty = attrs_cell.as_ref().is_none_or(|c| c.as_map().is_empty());
         let empty_fns = HashMap::new();
         let method_result = if let Some(csm) = can_skip_merge {
             // Fast path: move target directly as base (avoid extra clone).
-            let invocant_for_dispatch = if attributes.is_empty() {
+            let invocant_for_dispatch = if attrs_empty {
                 Value::package(crate::symbol::Symbol::intern(cn))
             } else {
                 target.clone()
@@ -256,7 +255,6 @@ impl Interpreter {
                 method,
                 method_def,
                 cc,
-                attributes,
                 args,
                 target,
                 &empty_fns,
@@ -268,7 +266,8 @@ impl Interpreter {
             self.pop_method_samewith_context();
             result
         } else {
-            let invocant_for_dispatch = if attributes.is_empty() {
+            let attributes = attrs_cell.as_ref().map(|c| c.to_map()).unwrap_or_default();
+            let invocant_for_dispatch = if attrs_empty {
                 Value::package(crate::symbol::Symbol::intern(cn))
             } else {
                 target.clone()
@@ -295,24 +294,23 @@ impl Interpreter {
             self.pop_method_samewith_context();
             result
         };
-        let (result, new_attrs, attrs_adjusted) = method_result?;
+        let (result, reconciled) = method_result?;
         if let Some(id) = target_id {
             // Commit only a `:=`-adjusted snapshot: an unadjusted one equals the
             // cell and the whole-map write would race with concurrent cell-CAS
             // from another thread (lost updates).
-            if attrs_adjusted && let Some(cell) = &attrs_cell {
-                cell.commit_attrs(new_attrs.clone());
+            if let (Some(m), Some(cell)) = (&reconciled, &attrs_cell) {
+                cell.commit_attrs(m.clone());
             }
             if !self.in_lvalue_assignment
                 && let ValueView::Proxy { fetcher, .. } = result.view()
             {
-                // Without a `:=` adjustment the triple's map is the stale entry
-                // snapshot (the lazy reconcile skips the cell clone) —
+                // Without a `:=` adjustment the returned map is absent —
                 // re-snapshot the live cell for the proxy fetcher.
-                let proxy_attrs = if !attrs_adjusted && let Some(cell) = &attrs_cell {
-                    cell.to_map()
-                } else {
-                    new_attrs
+                let proxy_attrs = match (&reconciled, &attrs_cell) {
+                    (Some(m), _) => m.clone(),
+                    (None, Some(cell)) => cell.to_map(),
+                    (None, None) => HashMap::new(),
                 };
                 return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
             }

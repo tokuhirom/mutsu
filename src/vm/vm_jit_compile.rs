@@ -107,9 +107,6 @@ fn step_supported(op: &OpCode) -> bool {
             | OpCode::PreDecrement(..)
             | OpCode::PreIncrementIndex(_)
             | OpCode::PreDecrementIndex(_)
-            // Method calls (re-entrant; `step` restores current_code)
-            | OpCode::CallMethod { .. }
-            | OpCode::CallMethodMut { .. }
             // Arith predicates
             | OpCode::DivisibleBy
             | OpCode::NotDivisibleBy
@@ -182,7 +179,9 @@ pub(super) fn compile_chunk(code: &CompiledCode) -> Option<JitEntryFn> {
             | OpCode::SetLocal(_)
             | OpCode::ContainerizePair
             | OpCode::SetSourceLine(_)
-            | OpCode::CallFunc { .. } => {}
+            | OpCode::CallFunc { .. }
+            | OpCode::CallMethod { .. }
+            | OpCode::CallMethodMut { .. } => {}
             OpCode::Jump(t)
             | OpCode::JumpIfFalse(t)
             | OpCode::JumpIfTrue(t)
@@ -369,6 +368,16 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
                     helpers::call_func as *const () as usize,
                     &[interp, codep, opidx, fnsp],
                 )?;
+                check_status(&mut b, status);
+            }
+            OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. } => {
+                let f = if matches!(op, OpCode::CallMethod { .. }) {
+                    helpers::call_method as *const () as usize
+                } else {
+                    helpers::call_method_mut as *const () as usize
+                };
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let status = call_helper(&mut b, sigs.s_code_u32, f, &[interp, codep, opidx])?;
                 check_status(&mut b, status);
             }
             OpCode::Jump(t) => {

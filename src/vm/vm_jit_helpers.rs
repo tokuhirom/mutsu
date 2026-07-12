@@ -218,6 +218,113 @@ pub(super) unsafe extern "C" fn ret(interp: *mut Interpreter) -> u32 {
     park_err(interp, RuntimeError::return_signal(val))
 }
 
+/// `OpCode::CallMethod`. `op_idx` addresses the opcode in `code.ops` so the
+/// payload is read in place. Reproduces the dispatch arm exactly: resume-point
+/// recording on error, and the `is rw` writeback / pending-local drain on
+/// success. Restores `current_code` after the re-entrant dispatch.
+pub(super) unsafe extern "C" fn call_method(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    let OpCode::CallMethod {
+        name_idx,
+        arity,
+        modifier_idx,
+        quoted,
+        arg_sources_idx,
+    } = &code.ops[op_idx as usize]
+    else {
+        unreachable!("jit call_method shim on a non-CallMethod opcode")
+    };
+    let r = interp.exec_call_method_op(
+        code,
+        *name_idx,
+        *arity,
+        *modifier_idx,
+        *quoted,
+        *arg_sources_idx,
+    );
+    interp.current_code = code as *const CompiledCode as usize;
+    match r {
+        Ok(()) => {
+            interp.apply_pending_rw_writeback(code);
+            interp.drain_pending_local_updates_after_call(code);
+            if interp.is_halted() {
+                JIT_STATUS_HALT
+            } else {
+                JIT_STATUS_OK
+            }
+        }
+        Err(e) => {
+            if !e.is_resume() && interp.resume_ip.is_none() {
+                interp.resume_ip = Some(op_idx as usize + 1);
+            }
+            park_err(interp, e)
+        }
+    }
+}
+
+/// `OpCode::CallMethodMut`. Mirrors the dispatch arm: attr-cell snapshot
+/// before, receiver writeback + rw writeback + pending-local drain + attr-cell
+/// mirror after, resume-point recording on error.
+pub(super) unsafe extern "C" fn call_method_mut(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    let OpCode::CallMethodMut {
+        name_idx,
+        arity,
+        target_name_idx,
+        modifier_idx,
+        quoted,
+        arg_sources_idx,
+    } = &code.ops[op_idx as usize]
+    else {
+        unreachable!("jit call_method_mut shim on a non-CallMethodMut opcode")
+    };
+    let pre = interp.array_hash_attr_env_snapshot(code, *target_name_idx);
+    let r = interp.exec_call_method_mut_op(
+        code,
+        *name_idx,
+        *arity,
+        *target_name_idx,
+        *modifier_idx,
+        *quoted,
+        *arg_sources_idx,
+    );
+    interp.current_code = code as *const CompiledCode as usize;
+    match r {
+        Ok(()) => {
+            {
+                let target_name = Interpreter::const_str(code, *target_name_idx);
+                if !target_name.is_empty() {
+                    interp
+                        .pending_rw_writeback_sources
+                        .push(target_name.to_string());
+                }
+            }
+            interp.apply_pending_rw_writeback(code);
+            interp.drain_pending_local_updates_after_call(code);
+            interp.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
+            if interp.is_halted() {
+                JIT_STATUS_HALT
+            } else {
+                JIT_STATUS_OK
+            }
+        }
+        Err(e) => {
+            if !e.is_resume() && interp.resume_ip.is_none() {
+                interp.resume_ip = Some(op_idx as usize + 1);
+            }
+            park_err(interp, e)
+        }
+    }
+}
+
 /// `OpCode::CallFunc`. `op_idx` addresses the opcode in `code.ops` so the
 /// payload (`name_idx`/`arity`/`arg_sources_idx`) is read in place instead of
 /// being marshalled through the native frame. Restores `current_code` after

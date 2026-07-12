@@ -17,7 +17,7 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
-    ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
+    ) -> Result<(Value, Option<HashMap<String, Value>>), RuntimeError> {
         // Slice F: the rw-writeback source list is drained by the CallMethod /
         // CallMethodMut op right after this dispatch returns, so it must hold
         // only this call's sources. Clear any leftover from a sibling whose call
@@ -213,7 +213,6 @@ impl Interpreter {
                     method_name,
                     method_def,
                     cc,
-                    attributes,
                     args,
                     base,
                     compiled_fns,
@@ -649,7 +648,12 @@ impl Interpreter {
             // against the live cell + local/env writes before the env is torn
             // down. The cell-direct reads + per-op mirrors make the cell the
             // single source; the legacy attribute writeback is gone.
-            attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
+            if let Some(m) = self.reconcile_attrs(&base, cc) {
+                attributes = m;
+                attrs_adjusted = true;
+            } else {
+                attrs_adjusted = false;
+            }
 
             let method_var_bindings = self.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -673,7 +677,12 @@ impl Interpreter {
 
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
-            attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
+            if let Some(m) = self.reconcile_attrs(&base, cc) {
+                attributes = m;
+                attrs_adjusted = true;
+            } else {
+                attrs_adjusted = false;
+            }
             // Callee-frame key predicate for the merge (formerly a per-call
             // materialized HashSet<String>): the method's params and locals,
             // the frame fixtures, the attribute twigil forms and sigilless
@@ -814,7 +823,7 @@ impl Interpreter {
                 }
                 _ => v,
             };
-            (adjusted, attributes, attrs_adjusted)
+            (adjusted, attrs_adjusted.then_some(attributes))
         })
     }
 
@@ -834,27 +843,23 @@ impl Interpreter {
     /// cell-direct write path does not carry that binding, so recover it from
     /// env/locals here and let it win, keeping the alias alive past method exit.
     ///
-    /// Returns `true` when the map was adjusted beyond the raw cell snapshot
-    /// (a `:=` ContainerRef was recovered). When `false`, the cell's current
-    /// contents are authoritative and `attributes` is left as the (stale) entry
-    /// snapshot — committing a snapshot back would be a no-op at best, and a
+    /// Returns `Some(map)` when the post-method attribute map was adjusted
+    /// beyond the raw cell snapshot (a `:=` ContainerRef was recovered) — the
+    /// returned map is the cell snapshot with the recovered bindings applied.
+    /// Returns `None` otherwise: the cell's current contents are authoritative
+    /// and committing a snapshot back would be a no-op at best, and a
     /// lost-update race at worst: a concurrent cell-CAS / cell-direct write
     /// from another thread between snapshot and commit would be clobbered by
     /// the stale whole-map write. Callers skip the commit then, and the rare
     /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
     /// live cell on demand instead — so the common exit pays no `to_map()`
     /// (full attr-map clone) at all.
-    fn reconcile_attrs(
-        &self,
-        base: &Value,
-        code: &CompiledCode,
-        attributes: &mut HashMap<String, Value>,
-    ) -> bool {
+    fn reconcile_attrs(&self, base: &Value, code: &CompiledCode) -> Option<HashMap<String, Value>> {
         let ValueView::Instance {
             attributes: cell, ..
         } = base.view()
         else {
-            return false;
+            return None;
         };
         // Cheap pre-check: a `:=` attr override can only be observed as a
         // ContainerRef value in THIS frame's locals or env overlay (the bind
@@ -873,7 +878,7 @@ impl Interpreter {
                 .overlay_iter()
                 .any(|(_, v)| matches!(v.view(), ValueView::ContainerRef(_)));
         if !frame_has_container_ref {
-            return false;
+            return None;
         }
         // Scan for `:=`-bound attributes: their authoritative value is the
         // shared ContainerRef in env/locals, not the cell. Key iteration runs
@@ -910,13 +915,13 @@ impl Interpreter {
             }
         }
         if overrides.is_empty() {
-            return false;
+            return None;
         }
-        *attributes = cell.to_map();
+        let mut attributes = cell.to_map();
         for (k, v) in overrides {
             attributes.insert(k, v);
         }
-        true
+        Some(attributes)
     }
 
     /// Read the current value of `name` from the method's local slot if present,
@@ -999,7 +1004,11 @@ impl Interpreter {
 
     /// Fast path for read-only compiled methods. Bypasses all env_mut() calls
     /// to avoid the ~12μs Arc::make_mut deep clone. Populates locals directly
-    /// from source data (attributes, args, special variables).
+    /// from source data (the invocant's attribute cell, args, special
+    /// variables). Attribute reads go through `base`'s live cell (no per-call
+    /// `to_map()` snapshot — the whole-map clone dominated method-heavy
+    /// profiles); the returned map is `Some` only when the `:=` reconcile
+    /// adjusted it beyond the cell contents.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn call_compiled_method_fast(
         &mut self,
@@ -1008,12 +1017,15 @@ impl Interpreter {
         method_name: &str,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
-        mut attributes: HashMap<String, Value>,
         args: Vec<Value>,
         base: Value,
         compiled_fns: &HashMap<String, CompiledFunction>,
         can_skip_merge: bool,
-    ) -> Result<(Value, HashMap<String, Value>, bool), RuntimeError> {
+    ) -> Result<(Value, Option<HashMap<String, Value>>), RuntimeError> {
+        let attrs_cell = match base.view() {
+            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
+            _ => None,
+        };
         if let Some(ref msg) = method_def.deprecated_message {
             loan_env!(
                 self,
@@ -1042,14 +1054,21 @@ impl Interpreter {
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class(owner_class.to_string());
 
-        let saved_package = self.current_package().to_string();
-        if self.has_class_scoped_subs(receiver_class_name) {
+        // Save/restore the current package only when this dispatch actually
+        // switches it (rare) — the unconditional save cloned a String per call.
+        let saved_package: Option<String> = if self.has_class_scoped_subs(receiver_class_name) {
+            let saved = self.current_package();
             self.set_current_package(receiver_class_name.to_string());
+            Some(saved)
         } else if self.class_has_package_lexicals(owner_class) {
             // The class body declared `my` statics; set current_package to the
             // owner class so a method read resolves them via package_scope_lexical.
+            let saved = self.current_package();
             self.set_current_package(owner_class.to_string());
-        }
+            Some(saved)
+        } else {
+            None
+        };
 
         // Compute role context without touching env
         let role_context: Option<String> = if self.is_role(owner_class) {
@@ -1089,7 +1108,9 @@ impl Interpreter {
                     // Type mismatch — fall back to slow path for proper error
                     self.restore_var_bindings(saved_var_bindings);
                     self.pop_method_class();
-                    self.set_current_package(saved_package);
+                    if let Some(pkg) = saved_package {
+                        self.set_current_package(pkg);
+                    }
                     self.stack.truncate(saved_stack_depth);
                     let frame = self.pop_call_frame();
                     self.set_env(frame.saved_env);
@@ -1200,57 +1221,63 @@ impl Interpreter {
         // path binds params directly, so mark `$` scalar params read-only here.
         self.mark_fast_method_params_readonly(method_def);
 
-        // Populate locals directly
+        // Populate locals directly. Attribute reads take one read guard over
+        // the live cell for the whole loop (dropped before the body runs) —
+        // no whole-map snapshot is materialized.
         self.locals = vec![Value::NIL; cc.locals.len()];
 
-        for (i, local_name) in cc.locals.iter().enumerate() {
-            self.locals[i] = match local_name.as_str() {
-                "self" | "__ANON_STATE__" => base.clone(),
-                "?CLASS" => class_val.clone(),
-                "?ROLE" => {
-                    if let Some(ref role_name) = role_context {
-                        Value::package(crate::symbol::Symbol::intern(role_name))
-                    } else {
-                        Value::NIL
-                    }
-                }
-                "!" => Value::NIL,
-                "__mutsu_callable_id" => Value::int(method_callable_id as i64),
-                name => {
-                    // Check params first (handles $_ invocant binding too)
-                    if let Some((_, val)) = param_values.iter().find(|(n, _)| *n == name) {
-                        val.clone()
-                    } else if name == "_" {
-                        any_val.clone()
-                    }
-                    // Private attribute: !attr_name
-                    else if let Some(attr_name) = name.strip_prefix('!') {
-                        let qualified_key = format!("{}\0{}", owner_class, attr_name);
-                        attributes
-                            .get(&qualified_key)
-                            .or_else(|| attributes.get(attr_name))
-                            .cloned()
-                            .unwrap_or(Value::NIL)
-                    }
-                    // Public attribute: .attr_name
-                    else if let Some(attr_name) = name.strip_prefix('.') {
-                        attributes.get(attr_name).cloned().unwrap_or(Value::NIL)
-                    }
-                    // Array/hash attributes: @!name, @.name, %!name, %.name
-                    else if ((name.starts_with("@!") || name.starts_with("@."))
-                        || (name.starts_with("%!") || name.starts_with("%.")))
-                        && name.len() > 2
-                    {
-                        attributes.get(&name[2..]).cloned().unwrap_or(Value::NIL)
-                    }
-                    // Outer env (read-only, no deep clone)
-                    else if let Some(val) = self.env().get(name) {
-                        val.clone()
-                    } else {
-                        Value::NIL
-                    }
-                }
+        {
+            let attrs_guard = attrs_cell.as_ref().map(|c| c.as_map());
+            let attr_get = |key: &str| -> Option<Value> {
+                attrs_guard.as_ref().and_then(|g| g.get(key).cloned())
             };
+            for (i, local_name) in cc.locals.iter().enumerate() {
+                self.locals[i] = match local_name.as_str() {
+                    "self" | "__ANON_STATE__" => base.clone(),
+                    "?CLASS" => class_val.clone(),
+                    "?ROLE" => {
+                        if let Some(ref role_name) = role_context {
+                            Value::package(crate::symbol::Symbol::intern(role_name))
+                        } else {
+                            Value::NIL
+                        }
+                    }
+                    "!" => Value::NIL,
+                    "__mutsu_callable_id" => Value::int(method_callable_id as i64),
+                    name => {
+                        // Check params first (handles $_ invocant binding too)
+                        if let Some((_, val)) = param_values.iter().find(|(n, _)| *n == name) {
+                            val.clone()
+                        } else if name == "_" {
+                            any_val.clone()
+                        }
+                        // Private attribute: !attr_name
+                        else if let Some(attr_name) = name.strip_prefix('!') {
+                            let qualified_key = format!("{}\0{}", owner_class, attr_name);
+                            attr_get(&qualified_key)
+                                .or_else(|| attr_get(attr_name))
+                                .unwrap_or(Value::NIL)
+                        }
+                        // Public attribute: .attr_name
+                        else if let Some(attr_name) = name.strip_prefix('.') {
+                            attr_get(attr_name).unwrap_or(Value::NIL)
+                        }
+                        // Array/hash attributes: @!name, @.name, %!name, %.name
+                        else if ((name.starts_with("@!") || name.starts_with("@."))
+                            || (name.starts_with("%!") || name.starts_with("%.")))
+                            && name.len() > 2
+                        {
+                            attr_get(&name[2..]).unwrap_or(Value::NIL)
+                        }
+                        // Outer env (read-only, no deep clone)
+                        else if let Some(val) = self.env().get(name) {
+                            val.clone()
+                        } else {
+                            Value::NIL
+                        }
+                    }
+                };
+            }
         }
 
         // Load persisted state variable values
@@ -1263,11 +1290,14 @@ impl Interpreter {
         // Register `is default(...)` values for attribute variables. Gated on
         // the program declaring ANY attribute default (see the slow path).
         let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
-        if any_attr_defaults {
-            for attr_name in attributes.keys() {
-                if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
-                    continue;
-                }
+        if any_attr_defaults && let Some(cell) = &attrs_cell {
+            let attr_names: Vec<String> = cell
+                .as_map()
+                .keys()
+                .filter(|k| !k.contains('\0') && !k.starts_with(ATTR_ALIAS_META_PREFIX))
+                .cloned()
+                .collect();
+            for attr_name in &attr_names {
                 let default_val = self
                     .class_attribute_default(owner_class, attr_name)
                     .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
@@ -1406,7 +1436,7 @@ impl Interpreter {
         }
         // Phase 3 Stage 2: reconcile all attributes against the live cell +
         // local/env writes before the env is torn down.
-        let attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
+        let reconciled = self.reconcile_attrs(&base, cc);
 
         let method_var_bindings = self.take_var_bindings();
         let mut restored_bindings = saved_var_bindings;
@@ -1417,7 +1447,9 @@ impl Interpreter {
 
         self.pop_routine();
         self.pop_method_class();
-        self.set_current_package(saved_package);
+        if let Some(pkg) = saved_package {
+            self.set_current_package(pkg);
+        }
 
         if can_skip_merge {
             // No env writes possible — just restore saved env (pure: caller
@@ -1443,7 +1475,9 @@ impl Interpreter {
                     matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
-                        || attr_twigil_local(&attributes, s)
+                        || attrs_cell
+                            .as_ref()
+                            .is_some_and(|c| attr_twigil_local(&c.as_map(), s))
                 };
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
@@ -1493,20 +1527,15 @@ impl Interpreter {
                     },
                     ValueView::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
-                    if attrs_adjusted {
-                        Value::write_back_sharing(
-                            &base_attrs,
-                            class_name,
-                            attributes.clone(),
-                            base_id,
-                        )
+                    if let Some(ref m) = reconciled {
+                        Value::write_back_sharing(&base_attrs, class_name, m.clone(), base_id)
                     } else {
                         Value::instance_sharing_cell(&base_attrs, class_name, base_id)
                     }
                 }
                 _ => v,
             };
-            (adjusted, attributes, attrs_adjusted)
+            (adjusted, reconciled)
         })
     }
 }
