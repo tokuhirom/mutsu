@@ -1,0 +1,139 @@
+name: Bench
+
+# Measure the benchmarks/ suite on every push to main and append the results
+# to the `bench-data` branch (bench-history.tsv), so performance changes are
+# recorded per merged commit and regressions become visible as a trend.
+#
+# Non-blocking by design (PLAN §1 B1 precedent: report-only, never gates main):
+# shared runners are noisy, so a single red delta is not proof of a regression.
+# Both absolute medians and the mutsu/raku ratio are recorded — raku runs on
+# the same runner in the same job, so the ratio normalizes runner speed.
+# A >1.5x slowdown vs the previous recorded run emits a warning annotation.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Serialize runs so two quick merges don't race their pushes to bench-data.
+concurrency:
+  group: bench-history
+  cancel-in-progress: false
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-bench-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-bench-${{ runner.os }}-
+            cargo-${{ runner.os }}-
+
+      - name: Install rakudo (for the ratio baseline)
+        # Best-effort: if the package is unavailable the script records NA
+        # ratios and the absolute mutsu numbers are still appended.
+        run: sudo apt-get update && sudo apt-get install -y rakudo || true
+
+      - name: Build (release)
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+      - name: Run benchmarks
+        run: |
+          mkdir -p tmp
+          scripts/bench-ci.sh | tee tmp/bench-results.tsv
+
+      - name: Compare with previous run and render summary
+        # Read-only look at the existing history BEFORE appending: warn when a
+        # benchmark's mutsu median slowed >1.5x vs its most recent recorded
+        # run. Warning only — noise happens; the trend is the signal.
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/bench-prev
+          git fetch --depth 1 origin bench-data 2>/dev/null \
+            && git worktree add /tmp/bench-prev FETCH_HEAD 2>/dev/null \
+            || true
+          HIST=/tmp/bench-prev/bench-history.tsv
+          {
+            echo "## Benchmark results ($(git rev-parse --short HEAD))"
+            echo ""
+            echo "| benchmark | mutsu median (s) | mutsu min (s) | raku median (s) | ratio | prev mutsu (s) | change |"
+            echo "|---|---|---|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r name m_med m_min r_med ratio runs; do
+            prev="NA"; change="—"
+            if [ -f "$HIST" ]; then
+              prev=$(awk -F'\t' -v b="$name" '$3==b {v=$4} END {print (v=="" ? "NA" : v)}' "$HIST")
+            fi
+            if [ "$prev" != "NA" ] && [ "$m_med" != "NA" ]; then
+              change=$(awk -v n="$m_med" -v p="$prev" 'BEGIN{
+                if (p > 0) printf "%+.1f%%", (n/p - 1) * 100; else print "—"
+              }')
+              slow=$(awk -v n="$m_med" -v p="$prev" 'BEGIN{print (p > 0 && n > p * 1.5) ? 1 : 0}')
+              if [ "$slow" = 1 ]; then
+                echo "::warning title=bench regression?::$name mutsu median ${prev}s -> ${m_med}s ($change) vs previous recorded run"
+              fi
+            fi
+            echo "| $name | $m_med | $m_min | $r_med | $ratio | $prev | $change |" >> "$GITHUB_STEP_SUMMARY"
+          done < tmp/bench-results.tsv
+          git worktree remove --force /tmp/bench-prev 2>/dev/null || true
+
+      - name: Append to bench-data branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          RUNNER_INFO="$(nproc)c-$(uname -m)-${ImageOS:-unknown}"
+          RAKUDO_VER=$(raku --version 2>/dev/null | head -1 | tr '\t' ' ' || echo none)
+          REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Retry loop: re-clone fresh each attempt so a concurrent writer's
+          # push (from another repo clone / manual run) only costs a retry.
+          for attempt in 1 2 3 4 5; do
+            cd "$GITHUB_WORKSPACE"
+            rm -rf /tmp/bench-data
+            if ! git clone -q --depth 1 --branch bench-data "$REPO_URL" /tmp/bench-data 2>/dev/null; then
+              mkdir -p /tmp/bench-data
+              git -C /tmp/bench-data init -q -b bench-data
+              git -C /tmp/bench-data remote add origin "$REPO_URL"
+            fi
+            cd /tmp/bench-data
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            if [ ! -f bench-history.tsv ]; then
+              printf 'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo\n' > bench-history.tsv
+            fi
+            while IFS=$'\t' read -r name m_med m_min r_med ratio runs; do
+              printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$DATE" "$SHA" "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$runs" "$RUNNER_INFO" "$RAKUDO_VER" \
+                >> bench-history.tsv
+            done < "$GITHUB_WORKSPACE/tmp/bench-results.tsv"
+            git add bench-history.tsv
+            git commit -q -m "bench: ${SHA} (${DATE})"
+            if git push -q origin bench-data; then
+              echo "Appended $(wc -l < "$GITHUB_WORKSPACE/tmp/bench-results.tsv") rows for $SHA"
+              exit 0
+            fi
+            echo "push conflict, retrying ($attempt)"
+            sleep $((attempt * 5))
+          done
+          echo "::error::failed to push bench-data after 5 attempts"
+          exit 1
