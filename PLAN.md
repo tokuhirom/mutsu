@@ -243,12 +243,15 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       EVAL(CALLER context) は「共有問題」でなく「compiled 経路の再現問題」なので捕捉共有
       ボディでも直らない（捕捉も `compile_block_raw` = OTF 相当）。ゲート完全退役には EVAL の
       compiled 経路 correctness という別軸作業が必要。詳細 = memory `project-compiled-fns-expansion`。
-      **★EVAL の先行条件バグ 2 件（2026-07-12 実験で具体化・tree-walk 自体が raku と不一致）**:
-      ① EVAL 最終式（返り値位置）に過剰な "Useless use ... in sink context" warning を出す
-      （raku は出さない）。② EVAL 内 `CALLER::<$v>` のフレーム解決が EVAL 呼び出し元スコープで
-      止まらず外側 main まで透過し、非 dynamic 変数で "Cannot access ... not declared as dynamic"
-      エラーになる（raku は EVAL を呼んだ sub の body を見て、無ければ Nil）。
-      OTF 化以前にこの EVAL 意味論の修正が先行条件。
+      **★EVAL の先行条件バグ 2 件は解消済み（2026-07-12）**:
+      ① EVAL 最終式への過剰 sink warning → #4433。② EVAL 内 `CALLER::` フレーム解決 →
+      修正済み: raku 実測（try-free probe）で「EVAL は呼び出し元との間に中間フレーム 2 枚
+      （multi candidate + proto）を挟み、呼び出し元スコープは CALLER::CALLER::CALLER:: で到達。
+      CALLER:: lookup のミス（名前なし・スタック超過）は静かに Nil、存在するが非 dynamic のみ
+      X::Caller::NotDynamic throw」を確認し、`push_eval_caller_frames`（現 env + 空フレーム 2 枚）
+      + `get_caller_var` の quiet-Nil 化で一致（担保 = `t/eval-caller-frames.t`、rakudo 10/10 で
+      pin 検証済み）。旧メモの「非 EVAL non-dynamic は quiet Any」は try がフレームを 1 枚
+      挟む測定汚染で、実際は throw（mutsu 従来挙動が正）。→ 次 = EVAL の OTF 許可実験本体。
       標準 param trait（`is copy`/`is rw`/`is raw`/`is readonly`/`is required`）はゲートから外れた
       （旧 `pd.traits.is_empty()` の一律除外を解除。compiled binding は元々これらを処理していた＝
       builtin-shadow ゲート `def_is_otf_compilable` は trait 未チェック。加えて tree-walk fallback が
