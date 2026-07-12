@@ -214,7 +214,7 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
 残るのは multi-dispatch の fallback 除去のみ:
 
 - [ ] default-param OTF の builtin-shadow 単一候補（name-cache 汚染リスクがあるため意図的に除外を維持中）。
-- [ ] モジュール sub OTF に残る interpreter 結合構文: `EVAL` / `EVALFILE` / `start` /
+- [ ] モジュール sub OTF に残る interpreter 結合構文: `start` /
       sigilless scalar（`\x`）/ `is encoded(...)`（NativeCall marshalling）
       （ゲート実体 = `def_is_otf_compilable_module_single`、`vm/vm_call_func_ops.rs`）。
       **★2026-07-11/12 ゲート緩和**: `CATCH` / `CONTROL` / phaser /
@@ -251,7 +251,12 @@ White のまま取り残す」stranding を修正（VERIFY が検出・毎 run 5
       X::Caller::NotDynamic throw」を確認し、`push_eval_caller_frames`（現 env + 空フレーム 2 枚）
       + `get_caller_var` の quiet-Nil 化で一致（担保 = `t/eval-caller-frames.t`、rakudo 10/10 で
       pin 検証済み）。旧メモの「非 EVAL non-dynamic は quiet Any」は try がフレームを 1 枚
-      挟む測定汚染で、実際は throw（mutsu 従来挙動が正）。→ 次 = EVAL の OTF 許可実験本体。
+      挟む測定汚染で、実際は throw（mutsu 従来挙動が正）。
+      **★`EVAL`/`EVALFILE` は OTF 許可済み（2026-07-12・#4435 の直後スライス）**: #4435 で
+      compiled 経路の EVAL が tree-walk と同一挙動になったことを実験確認（param/lexical
+      read/write・EVAL 内 sub 宣言・CALLER:: d1/d3・topic・module-private sibling 呼び出し・
+      nested my sub 捕捉・die+CATCH・EVALFILE 全て raku 一致、fallback counter 0）。
+      担保 = `t/module-sub-otf-interpreter-constructs.t`（rakudo 40/40 検証済み）。
       標準 param trait（`is copy`/`is rw`/`is raw`/`is readonly`/`is required`）はゲートから外れた
       （旧 `pd.traits.is_empty()` の一律除外を解除。compiled binding は元々これらを処理していた＝
       builtin-shadow ゲート `def_is_otf_compilable` は trait 未チェック。加えて tree-walk fallback が

@@ -1743,8 +1743,6 @@ impl Interpreter {
     ///     lives in a shared cell that a per-thread OTF recompile would sever —
     ///     t/concurrent-state-var; admitted via the cross-thread shared captured
     ///     body, `imported_state_body_for_def`),
-    ///   - `EVAL`/`EVALFILE` with a `CALLER::` context the standalone compile
-    ///     cannot reconstruct,
     ///   - a `start` block: a recursive sub whose start closure captures a param
     ///     gets its capture clobbered by the recursive call's param re-bind
     ///     under OTF (t/start-block-return-value.t test 3 — see
@@ -1761,6 +1759,15 @@ impl Interpreter {
     /// lexicals, inheritance, parameterized roles and grammar parsing all
     /// match raku). All run through the same VM ops the precompiled path
     /// uses; pinned by t/module-sub-otf-interpreter-constructs.t.
+    ///
+    /// `EVAL`/`EVALFILE` are also admitted (2026-07-12, after the #4435 EVAL
+    /// CALLER-frame fix): `eval_eval_string` runs on `self` with the live
+    /// `self.env`, so an EVAL inside an OTF-compiled body sees the same
+    /// lexical scope and CALLER:: frame layout as under the tree-walk path —
+    /// param/lexical reads and writes, nested sub declarations, CALLER::
+    /// depth resolution, `$_`, module-private sibling calls, and CATCH around
+    /// a dying EVAL all verified raku-identical OTF vs interpreter (pinned by
+    /// t/module-sub-otf-interpreter-constructs.t).
     ///
     /// `is rw`/`is raw`/`is copy`/`is readonly`/`is required` params are NOW
     /// allowed (§2 multi-dispatch VM-ization): the compiled binding already
@@ -1938,26 +1945,23 @@ impl Interpreter {
             }
             Expr::Call { name, args } => {
                 let n = name.resolve();
-                // EVAL/EVALFILE run on a sub-Interpreter with a CALLER:: context
-                // that the standalone OTF compile cannot reconstruct. `start`
-                // stays excluded: a *recursive* sub whose start closure captures
-                // a param breaks under OTF — the recursive call re-binds the
-                // same param name in the thread env the closure keeps reading,
-                // so after `await` the captured `$n` is clobbered by the deepest
-                // call's binding (t/start-block-return-value.t test 3,
-                // fib(5)=3; the tree-walk path save/restores the env around the
-                // call). Non-recursive start captures do work OTF, but the gate
-                // is an AST predicate that cannot see recursion, so all `start`
+                // `start` stays excluded: a *recursive* sub whose start closure
+                // captures a param breaks under OTF — the recursive call
+                // re-binds the same param name in the thread env the closure
+                // keeps reading, so after `await` the captured `$n` is
+                // clobbered by the deepest call's binding
+                // (t/start-block-return-value.t test 3, fib(5)=3; the
+                // tree-walk path save/restores the env around the call).
+                // Non-recursive start captures do work OTF, but the gate is an
+                // AST predicate that cannot see recursion, so all `start`
                 // bodies stay on the interpreter. `once` IS OTF-safe within a
                 // thread — its site key is stable across calls because the
                 // fingerprint-keyed `otf_compile_cache` reuses one compiled
                 // body. (Cross-thread `once` dedup is a pre-existing gap in the
                 // thread-cloned `once_values` store, identical under tree-walk
-                // — recorded in PLAN §3.)
-                n == "start"
-                    || n == "EVAL"
-                    || n == "EVALFILE"
-                    || args.iter().any(Self::module_otf_expr_needs_interpreter)
+                // — recorded in PLAN §3.) `EVAL`/`EVALFILE` are OTF-safe since
+                // the #4435 CALLER-frame fix — see the module-single gate doc.
+                n == "start" || args.iter().any(Self::module_otf_expr_needs_interpreter)
             }
             _ => false,
         }
