@@ -40,10 +40,19 @@ static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 /// opcode, or an internal Cranelift failure): the caller marks the chunk so
 /// it is never scanned again.
 pub(super) fn compile_chunk(code: &CompiledCode) -> Option<JitEntryFn> {
+    compile_range(code, 0, code.ops.len())
+}
+
+/// Compile the opcode sub-range `[start, end)` of `code` to a native body
+/// (ADR-0004 J4b hot-loop entry: a compound loop's body/cond executed by
+/// `run_range`). Same acceptance rules as a whole chunk, plus: every jump
+/// must stay inside the range (a target of exactly `end` is the normal
+/// fall-through exit). `None` = bailout, cached per range by the caller.
+pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Option<JitEntryFn> {
     // Static support scan + jump-target collection. Any opcode outside the
-    // Tier A set rejects the whole chunk (no partial compilation).
+    // Tier A set rejects the whole range (no partial compilation).
     let mut targets: std::collections::HashSet<usize> = std::collections::HashSet::new();
-    for op in code.ops.iter() {
+    for op in &code.ops[start..end] {
         if noarg_shim(op).is_some() || step_supported(op) {
             continue;
         }
@@ -60,7 +69,14 @@ pub(super) fn compile_chunk(code: &CompiledCode) -> Option<JitEntryFn> {
             | OpCode::JumpIfFalse(t)
             | OpCode::JumpIfTrue(t)
             | OpCode::JumpIfNotNil(t) => {
-                targets.insert(*t as usize);
+                let t = *t as usize;
+                if t < start || t > end {
+                    // A jump escaping the range (can only come from a
+                    // mis-shaped range request, not a loop body).
+                    crate::vm::vm_stats::record_jit_bailout(op);
+                    return None;
+                }
+                targets.insert(t);
             }
             other => {
                 crate::vm::vm_stats::record_jit_bailout(other);
@@ -68,7 +84,7 @@ pub(super) fn compile_chunk(code: &CompiledCode) -> Option<JitEntryFn> {
             }
         }
     }
-    build(code, &targets)
+    build(code, start, end, &targets)
 }
 
 /// Helper-call signatures used by the emitted code, imported once per
@@ -110,7 +126,12 @@ fn make_sigs(module: &JITModule, b: &mut FunctionBuilder, ptr: Type) -> Sigs {
     }
 }
 
-fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Option<JitEntryFn> {
+fn build(
+    code: &CompiledCode,
+    start: usize,
+    end: usize,
+    targets: &std::collections::HashSet<usize>,
+) -> Option<JitEntryFn> {
     let mut guard = ENGINE.lock().unwrap();
     let engine = match guard.as_mut() {
         Some(e) => e,
@@ -190,7 +211,11 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
 
     // `open` = the current block still needs a terminator.
     let mut open = true;
-    for (i, op) in code.ops.iter().enumerate() {
+    for (i, op) in code.ops[start..end]
+        .iter()
+        .enumerate()
+        .map(|(k, op)| (start + k, op))
+    {
         if let Some(&blk) = block_at.get(&i) {
             if open {
                 b.ins().jump(blk, &[]);
@@ -428,8 +453,9 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
         let zero = b.ins().iconst(types::I32, 0);
         b.ins().return_(&[zero]);
     }
-    // A jump target one past the last opcode is a normal fall-through exit.
-    if let Some(&blk) = block_at.get(&code.ops.len()) {
+    // A jump target one past the range's last opcode is a normal
+    // fall-through exit (`end == code.ops.len()` for a whole chunk).
+    if let Some(&blk) = block_at.get(&end) {
         b.switch_to_block(blk);
         let zero = b.ins().iconst(types::I32, 0);
         b.ins().return_(&[zero]);
