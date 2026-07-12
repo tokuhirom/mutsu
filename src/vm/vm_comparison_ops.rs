@@ -399,6 +399,20 @@ impl Interpreter {
     pub(super) fn exec_num_le_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast paths mirroring exec_num_lt_op: without them every `<=` in a
+        // hot loop pays the generic compare (BigRat conversion + alloc).
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
+        {
+            self.stack.push(Value::truth(a <= b));
+            return Ok(());
+        }
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
+        {
+            self.stack.push(Value::truth(a <= b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
@@ -412,6 +426,19 @@ impl Interpreter {
     pub(super) fn exec_num_gt_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast paths mirroring exec_num_lt_op (see exec_num_le_op).
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
+        {
+            self.stack.push(Value::truth(a > b));
+            return Ok(());
+        }
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
+        {
+            self.stack.push(Value::truth(a > b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;
@@ -425,6 +452,19 @@ impl Interpreter {
     pub(super) fn exec_num_ge_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast paths mirroring exec_num_lt_op (see exec_num_le_op).
+        if let ValueView::Int(a) = left.view()
+            && let ValueView::Int(b) = right.view()
+        {
+            self.stack.push(Value::truth(a >= b));
+            return Ok(());
+        }
+        if let ValueView::Num(a) = left.view()
+            && let ValueView::Num(b) = right.view()
+        {
+            self.stack.push(Value::truth(a >= b));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             check_type_object_in_numeric_context(&l)?;
             check_type_object_in_numeric_context(&r)?;

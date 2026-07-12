@@ -88,10 +88,9 @@ impl Interpreter {
             None
         };
 
-        // Reuse locals vec to avoid per-call allocation
+        // Reuse a pooled locals vec to avoid per-call allocation
         let num_locals = cf.code.locals.len();
-        self.locals.clear();
-        self.locals.resize(num_locals, Value::NIL);
+        self.locals = self.take_locals_from_pool(num_locals);
         for (i, local_name) in cf.code.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
                 self.locals[i] = val.clone();
@@ -189,7 +188,8 @@ impl Interpreter {
         // are visible in env for the merge step below.
 
         // Restore state
-        self.locals = saved_locals;
+        let used = std::mem::replace(&mut self.locals, saved_locals);
+        self.recycle_locals(used);
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.block_declared_vars = saved_block_declared_vars;

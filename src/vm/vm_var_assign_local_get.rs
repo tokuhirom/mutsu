@@ -64,8 +64,10 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
         // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
-        let name = code.locals.get(idx).cloned().unwrap_or_default();
-        if let Some(bound_to) = self.resolve_binding(&name) {
+        // Borrow the name from the compiled code (it is independent of `self`),
+        // avoiding a String clone on every GetLocal.
+        let name: &str = code.locals.get(idx).map(|s| s.as_str()).unwrap_or("");
+        if let Some(bound_to) = self.resolve_binding(name) {
             let bound_to = bound_to.to_string();
             if let Some(val) = self.env().get(&bound_to).cloned() {
                 self.stack.push(val);
@@ -75,8 +77,8 @@ impl Interpreter {
         // Attribute locals (!attr) modified by CAS: env holds the authoritative
         // value since sync_locals_from_env skips !-prefixed names for performance.
         if name.starts_with('!')
-            && self.is_shared_var_dirty(&name)
-            && let Some(val) = self.env().get(&name).cloned()
+            && self.is_shared_var_dirty(name)
+            && let Some(val) = self.env().get(name).cloned()
         {
             self.locals[idx] = val.clone();
             self.stack.push(val);
@@ -86,7 +88,7 @@ impl Interpreter {
         // `var_type_constraint` lookups) when no atomic storage has ever been
         // registered — the common case on this hot local-read path.
         if self.atomic_var_seen() {
-            let atomic_name = name.strip_prefix('$').unwrap_or(&name);
+            let atomic_name = name.strip_prefix('$').unwrap_or(name);
             let atomic_name_key = format!("__mutsu_atomic_name::{atomic_name}");
             // Only use the scalar atomic fast path for scalar ($) variables.
             // Array (@) variables with `atomicint` constraint are element-wise
@@ -129,7 +131,7 @@ impl Interpreter {
         // still holds an old local snapshot. Prefer the shared copy so reads
         // observe the latest value without forcing array COW on every push.
         if (name.starts_with('@') || name.starts_with('%'))
-            && let Some(shared_val) = self.get_shared_var(&name)
+            && let Some(shared_val) = self.get_shared_var(name)
         {
             self.stack.push(shared_val);
             return Ok(());
@@ -147,7 +149,7 @@ impl Interpreter {
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
             )
-            && let Some(arc) = self.env().get(&name).and_then(|v| match v.view() {
+            && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
                 ValueView::ContainerRef(arc) => Some(arc.clone()),
                 _ => None,
             })
@@ -160,7 +162,7 @@ impl Interpreter {
         // bindings keep their ContainerRef handling. The cell lookup returns None
         // for non-attribute names and when `self` is not an instance.
         if !self.locals[idx].is_container_ref()
-            && let Some(cell_val) = self.read_self_attr_cell(&name)
+            && let Some(cell_val) = self.read_self_attr_cell(name)
         {
             self.locals[idx] = cell_val.clone();
             self.stack.push(cell_val);
@@ -191,28 +193,28 @@ impl Interpreter {
         }
         // Fast path: non-Nil values are always valid — skip env lookup
         if val.is_nil() {
-            if let Some(shared_val) = self.get_shared_var(&name) {
+            if let Some(shared_val) = self.get_shared_var(name) {
                 self.stack.push(shared_val);
                 return Ok(());
             }
             let is_internal = name.starts_with("__");
-            let is_special = matches!(name.as_str(), "_" | "/" | "!" | "¢");
+            let is_special = matches!(name, "_" | "/" | "!" | "¢");
             // Private attribute locals (!attr) are populated directly from
             // instance attributes in fast-path method calls; they may not be
             // in the env (when skip_env_setup is active) but are still valid.
             let is_private_attr =
                 name.starts_with('!') && name.len() > 1 && !name.starts_with("__");
-            if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(&name) {
+            if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(name) {
                 return Err(RuntimeError::new(format!(
                     "X::Undeclared::Symbols: Variable '{name}' is not declared"
                 )));
             }
             // `is default(...)`: return the default value instead of Nil.
-            if let Some(def) = self.var_default(&name) {
+            if let Some(def) = self.var_default(name) {
                 self.stack.push(def.clone());
                 return Ok(());
             }
-            if let Some(constraint) = self.var_type_constraint_fast(&name).cloned() {
+            if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
                 let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 // Nil type constraint: the type object for Nil is the Nil value
                 // itself, not a "Nil" Package type object.

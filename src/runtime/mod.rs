@@ -1119,6 +1119,12 @@ pub struct Interpreter {
     /// push a `CallFrameEntry` restore it on pop from the entry's `line`; the
     /// frame-less VM fast paths save/restore it manually.
     pub(crate) cur_source_line: i64,
+    /// Recycled `locals` backing vectors. The frame-less VM fast paths take the
+    /// caller's `locals` aside and need a fresh Vec per call; popping one here
+    /// instead of allocating removes a malloc/free pair per call (recursion
+    /// otherwise allocates one per frame down the whole chain). Entries are
+    /// cleared before being returned to the pool; bounded by `LOCALS_POOL_MAX`.
+    pub(crate) locals_pool: Vec<Vec<Value>>,
     /// Number of active CONTROL handlers in the current VM stack. Tracked
     /// on the interpreter (rather than per-VM) so that nested VMs (e.g.
     /// EVAL) can observe handlers installed by the outer VM and propagate
