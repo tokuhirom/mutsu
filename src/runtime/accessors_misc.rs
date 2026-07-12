@@ -188,6 +188,10 @@ impl Interpreter {
         for pt in new_proto_tokens {
             registry.proto_tokens.insert(pt);
         }
+        // token_defs was rewritten wholesale: invalidate regex parses that may
+        // have folded token content in.
+        crate::runtime::regex_parse::TOKEN_DEFS_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Re-apply only newly added our-scoped functions so they survive block scope exit.
         // In EVAL context, our-scoped functions should NOT leak into the outer lexical
         // scope — they remain accessible only via OUR:: pseudo-package resolution.

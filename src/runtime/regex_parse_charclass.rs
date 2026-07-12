@@ -1,6 +1,15 @@
 use super::regex_parse::*;
 use super::*;
 
+/// Result of statically folding a grammar token referenced in an enumerated
+/// char class (see `token_class_fold`).
+enum TokenClassFold {
+    /// Every candidate matches exactly one char: fold to plain class items.
+    Chars(Vec<ClassItem>),
+    /// Candidates are closed but multi-char: inline as alternation branches.
+    Inline(Vec<RegexPattern>),
+}
+
 impl Interpreter {
     pub(super) fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
         // Parse Raku-style character class: a..z, \n, \t, \c[NAME], \x[HEX], etc.
@@ -531,6 +540,162 @@ impl Interpreter {
         }
     }
 
+    /// Parse-time fold of a user grammar token referenced inside an enumerated
+    /// char class (`<-restricted +name-sep>`). Without it every such reference
+    /// is re-resolved and re-matched *per input character* through a scratch
+    /// interpreter (catastrophic: a `token name { <-restricted>+ }` costs
+    /// several ms per char). When the token's candidates are all statically
+    /// closed patterns, the content is folded into the class at parse time:
+    /// single-char candidates become plain `ClassItem`s, multi-char closed
+    /// candidates become inline alternation branches. Sound because the parse
+    /// cache is keyed by package and invalidated by `TOKEN_DEFS_GEN`.
+    fn token_class_fold(&self, name: &str) -> Option<TokenClassFold> {
+        let pkg = self.current_package();
+        if pkg.is_empty() {
+            return None;
+        }
+        let candidates = self.resolve_token_patterns_static_in_pkg(name, &pkg);
+        if candidates.is_empty() {
+            return None;
+        }
+        // A failed sub-parse may set PENDING_REGEX_ERROR; a fold attempt must
+        // never surface an error the symbolic fallback path wouldn't.
+        let saved_err = PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take());
+        let result = (|| {
+            let mut parsed: Vec<RegexPattern> = Vec::new();
+            for (pat, _pkg, _sym) in &candidates {
+                match self.parse_regex_uncached(pat, RegexParseMode::Match) {
+                    Some(p) if Self::regex_pattern_is_closed(&p) => parsed.push(p),
+                    _ => return None,
+                }
+            }
+            let mut items = Vec::new();
+            if parsed
+                .iter()
+                .all(|p| Self::pattern_single_char_items(p, &mut items))
+            {
+                return Some(TokenClassFold::Chars(items));
+            }
+            Some(TokenClassFold::Inline(parsed))
+        })();
+        PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = saved_err);
+        result
+    }
+
+    /// Whether a parsed pattern is fully static ("closed"): matching it needs
+    /// no runtime resolution (no subrules, code, backrefs) and produces no
+    /// captures — so it can be inlined verbatim where the token was referenced.
+    fn regex_pattern_is_closed(p: &RegexPattern) -> bool {
+        p.tokens.iter().all(Self::regex_token_is_closed)
+    }
+
+    fn regex_token_is_closed(t: &RegexToken) -> bool {
+        t.named_capture.is_none()
+            && t.secondary_named_capture.is_none()
+            && t.hash_capture.is_none()
+            && !matches!(t.quant, RegexQuant::RepeatCode(_))
+            && t.separator
+                .as_ref()
+                .is_none_or(|s| Self::regex_pattern_is_closed(&s.pattern))
+            && Self::regex_atom_is_closed(&t.atom)
+    }
+
+    fn regex_atom_is_closed(a: &RegexAtom) -> bool {
+        match a {
+            RegexAtom::Literal(_)
+            | RegexAtom::Any
+            | RegexAtom::Newline
+            | RegexAtom::NotNewline
+            | RegexAtom::ZeroWidth
+            | RegexAtom::WsRule
+            | RegexAtom::StartOfLine
+            | RegexAtom::EndOfLine
+            | RegexAtom::LeftWordBoundary
+            | RegexAtom::RightWordBoundary
+            | RegexAtom::UnicodeProp { .. }
+            | RegexAtom::UnicodePropAssert { .. }
+            | RegexAtom::SameAssertion { .. }
+            | RegexAtom::AtPosition(_)
+            | RegexAtom::CharClass(_) => true,
+            // A CompositeClass item may itself reference a user grammar token
+            // (match-time resolution) — only builtin names are closed.
+            RegexAtom::CompositeClass { positive, negative } => positive
+                .iter()
+                .chain(negative.iter())
+                .all(|item| match item {
+                    ClassItem::NamedBuiltin(n) => Self::is_builtin_char_class_name(n),
+                    _ => true,
+                }),
+            RegexAtom::Group(inner) => Self::regex_pattern_is_closed(inner),
+            RegexAtom::Alternation(branches)
+            | RegexAtom::SequentialAlternation(branches)
+            | RegexAtom::Conjunction(branches) => {
+                branches.iter().all(Self::regex_pattern_is_closed)
+            }
+            RegexAtom::Lookaround { pattern, .. } => Self::regex_pattern_is_closed(pattern),
+            // Everything else (subrules, captures, code, backrefs, markers…)
+            // needs runtime context or changes capture shape: not closed.
+            _ => false,
+        }
+    }
+
+    pub(super) fn is_builtin_char_class_name(name: &str) -> bool {
+        matches!(
+            name,
+            "alpha"
+                | "upper"
+                | "lower"
+                | "digit"
+                | "xdigit"
+                | "space"
+                | "alnum"
+                | "blank"
+                | "cntrl"
+                | "punct"
+                | "graph"
+                | "print"
+                | "ws"
+        )
+    }
+
+    /// If `p` matches exactly one character per match (a literal or a
+    /// non-negated char class, possibly behind grouping/alternation), append
+    /// its `ClassItem`s to `out` and return true.
+    fn pattern_single_char_items(p: &RegexPattern, out: &mut Vec<ClassItem>) -> bool {
+        if p.anchor_start || p.anchor_end || p.ignore_case || p.ignore_mark {
+            return false;
+        }
+        if p.tokens.len() != 1 {
+            return false;
+        }
+        let t = &p.tokens[0];
+        if !matches!(t.quant, RegexQuant::One)
+            || t.named_capture.is_some()
+            || t.secondary_named_capture.is_some()
+            || t.hash_capture.is_some()
+            || t.separator.is_some()
+        {
+            return false;
+        }
+        match &t.atom {
+            RegexAtom::Literal(c) => {
+                out.push(ClassItem::Char(*c));
+                true
+            }
+            RegexAtom::CharClass(class) if !class.negated => {
+                out.extend(class.items.iter().cloned());
+                true
+            }
+            RegexAtom::Group(inner) => Self::pattern_single_char_items(inner, out),
+            RegexAtom::Alternation(branches) | RegexAtom::SequentialAlternation(branches) => {
+                branches
+                    .iter()
+                    .all(|b| Self::pattern_single_char_items(b, out))
+            }
+            _ => false,
+        }
+    }
+
     /// Parse combined character class like `+ xdigit - lower` or `+ :HexDigit - :Upper`.
     /// Also handles bracket classes: `+ [a..z] - [aeiou]`.
     pub(super) fn parse_combined_class(
@@ -544,6 +709,9 @@ impl Interpreter {
         // matched as whole subrules (they may consume >1 char) rather than as
         // single-char class items. Desugared into an alternation at the end.
         let mut subrule_branches: Vec<String> = Vec::new();
+        // Statically-folded token bodies inlined as alternation branches
+        // (closed multi-char tokens, e.g. `token name-sep { '::' }`).
+        let mut inline_branches: Vec<RegexPattern> = Vec::new();
         // Whether a *negated* item resolves to a user grammar token (`<-restricted>`).
         // A plain negated `CharClass` cannot resolve such a token at match time, so
         // route the class through `CompositeClass` (which does) instead.
@@ -602,22 +770,7 @@ impl Interpreter {
                     }
                 } else {
                     // Check if this is a known built-in character class name
-                    let is_known_builtin = matches!(
-                        class_name,
-                        "alpha"
-                            | "upper"
-                            | "lower"
-                            | "digit"
-                            | "xdigit"
-                            | "space"
-                            | "alnum"
-                            | "blank"
-                            | "cntrl"
-                            | "punct"
-                            | "graph"
-                            | "print"
-                            | "ws"
-                    );
+                    let is_known_builtin = Self::is_builtin_char_class_name(class_name);
                     // Check if the name resolves as a grammar token in the current package
                     let is_grammar_token = !is_known_builtin
                         && !self.current_package().is_empty()
@@ -640,32 +793,56 @@ impl Interpreter {
                     }
                     // A *positive* user-defined grammar token may match a
                     // MULTI-character sequence (e.g. `token name-sep { '::' }`),
-                    // which a single-char char class cannot express. Collect it as
-                    // an alternation branch (desugared below) so the subrule is
-                    // matched as a whole unit. Builtins stay as efficient
-                    // single-char class items; a *negated* user token keeps the
-                    // single-char CompositeClass negation (all the enumerated-class
-                    // negative form supports).
-                    if adding && is_grammar_token {
-                        subrule_branches.push(class_name.to_string());
+                    // which a single-char char class cannot express. Try the
+                    // parse-time static fold first (plain class items / inline
+                    // branches — no per-char match-time resolution); when the
+                    // token is not statically closed, fall back to the symbolic
+                    // forms: positive tokens become subrule alternation branches,
+                    // a negated token keeps the single-char CompositeClass
+                    // negation (all the enumerated-class negative form supports).
+                    let fold = if is_grammar_token && mode == RegexParseMode::Match {
+                        self.token_class_fold(class_name)
                     } else {
-                        let item = ClassItem::NamedBuiltin(class_name.to_string());
-                        if adding {
-                            positive_items.push(item);
-                        } else {
-                            if is_grammar_token {
-                                negative_has_grammar_token = true;
+                        None
+                    };
+                    match fold {
+                        Some(TokenClassFold::Chars(items)) => {
+                            if adding {
+                                positive_items.extend(items);
+                            } else {
+                                negative_items.extend(items);
                             }
-                            negative_items.push(item);
+                        }
+                        Some(TokenClassFold::Inline(patterns)) if adding => {
+                            inline_branches.extend(patterns);
+                        }
+                        _ => {
+                            if adding && is_grammar_token {
+                                subrule_branches.push(class_name.to_string());
+                            } else {
+                                let item = ClassItem::NamedBuiltin(class_name.to_string());
+                                if adding {
+                                    positive_items.push(item);
+                                } else {
+                                    if is_grammar_token {
+                                        negative_has_grammar_token = true;
+                                    }
+                                    negative_items.push(item);
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        if positive_items.is_empty() && negative_items.is_empty() && subrule_branches.is_empty() {
+        if positive_items.is_empty()
+            && negative_items.is_empty()
+            && subrule_branches.is_empty()
+            && inline_branches.is_empty()
+        {
             return None;
         }
-        if subrule_branches.is_empty() {
+        if subrule_branches.is_empty() && inline_branches.is_empty() {
             // No user-subrule parts — the original char-class atoms.
             if positive_items.is_empty() {
                 // A negated user grammar token (`<-restricted>`) must resolve at
@@ -726,6 +903,9 @@ impl Interpreter {
             // capture) — a character class never captures.
             .map(|name| make_pattern(RegexAtom::Named(format!(".{name}"))))
             .collect();
+        // Statically-folded token bodies join the alternation directly (they
+        // are closed patterns: no captures, no runtime resolution).
+        branches.extend(inline_branches);
         if let Some(atom) = class_atom {
             branches.push(make_pattern(atom));
         }

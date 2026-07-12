@@ -68,6 +68,8 @@ impl Interpreter {
             self.registry_mut().functions = saved_functions;
             self.registry_mut().proto_functions = saved_proto_functions;
             self.registry_mut().token_defs = saved_token_defs;
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.registry_mut().proto_subs = saved_proto_subs;
             self.registry_mut().proto_tokens = saved_proto_tokens;
             self.registry_mut().classes = saved_classes;
@@ -96,6 +98,8 @@ impl Interpreter {
         self.registry_mut().functions = saved_functions;
         self.registry_mut().proto_functions = saved_proto_functions;
         self.registry_mut().token_defs = saved_token_defs;
+        crate::runtime::regex_parse::TOKEN_DEFS_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.registry_mut().proto_subs = saved_proto_subs;
         self.registry_mut().proto_tokens = saved_proto_tokens;
         self.registry_mut().classes = saved_classes;
@@ -157,6 +161,8 @@ impl Interpreter {
         self.registry_mut().functions = saved_functions;
         self.registry_mut().proto_functions = saved_proto_functions;
         self.registry_mut().token_defs = saved_token_defs;
+        crate::runtime::regex_parse::TOKEN_DEFS_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.registry_mut().proto_subs = saved_proto_subs;
         self.registry_mut().proto_tokens = saved_proto_tokens;
         self.registry_mut().classes = saved_classes;

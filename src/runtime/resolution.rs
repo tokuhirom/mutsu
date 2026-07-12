@@ -80,6 +80,10 @@ impl Interpreter {
         } else {
             self.registry_mut().token_defs.insert(key, vec![def]);
         }
+        // Regex parses may fold token bodies in (parse_combined_class); a new /
+        // redefined token must invalidate those cached parses.
+        crate::runtime::regex_parse::TOKEN_DEFS_GEN
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Collect token defs for a given scope (exact + :sym<> variants).

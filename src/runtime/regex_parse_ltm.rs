@@ -1116,7 +1116,18 @@ impl Interpreter {
     /// cache cloned the tree on every hit — ANALYSIS §8.4).
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<std::sync::Arc<RegexPattern>> {
         if regex_pattern_is_static(pattern) {
-            if let Some(cached) = REGEX_PARSE_CACHE.with(|c| c.borrow().get(pattern).cloned()) {
+            // Parsing resolves grammar tokens against the current package (and
+            // may fold their bodies in), so the cache key includes the package;
+            // a stale token-registry generation forces a re-parse.
+            let tok_gen = crate::runtime::regex_parse::TOKEN_DEFS_GEN
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let key = format!("{}\u{0}{}", self.current_package(), pattern);
+            if let Some(cached) = REGEX_PARSE_CACHE.with(|c| {
+                c.borrow()
+                    .get(&key)
+                    .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                    .map(|(_, p)| std::sync::Arc::clone(p))
+            }) {
                 return Some(cached);
             }
             let parsed = self
@@ -1125,7 +1136,7 @@ impl Interpreter {
             if let Some(ref p) = parsed {
                 REGEX_PARSE_CACHE.with(|c| {
                     c.borrow_mut()
-                        .insert(pattern.to_string(), std::sync::Arc::clone(p));
+                        .insert(key, (tok_gen, std::sync::Arc::clone(p)));
                 });
             }
             return parsed;
