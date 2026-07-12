@@ -337,6 +337,12 @@ impl Interpreter {
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
         let method = &*method_cow;
+        // Interned once per call: the unmodified (borrowed) name comes from the
+        // per-chunk constant-symbol table, so the hot path pays no re-intern.
+        let method_sym = match &method_cow {
+            std::borrow::Cow::Borrowed(_) => code.const_sym(name_idx),
+            std::borrow::Cow::Owned(m) => crate::symbol::Symbol::intern(m),
+        };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new(
@@ -565,10 +571,10 @@ impl Interpreter {
                     self.maybe_autothread_method_args(v, method, &args)?
                 {
                     threaded
-                } else if let Some(nr) = self.try_native_method(v, Symbol::intern(method), &args) {
+                } else if let Some(nr) = self.try_native_method(v, method_sym, &args) {
                     nr?
                 } else {
-                    self.try_compiled_method_or_interpret(v.clone(), method, args.clone())?
+                    self.try_compiled_method_or_interpret_sym(v.clone(), method_sym, args.clone())?
                 };
                 results.push(r);
                 let pending: Vec<String> = self
@@ -1216,15 +1222,18 @@ impl Interpreter {
                         // (the actual mutation is handled in the mut path)
                         if !skip_native
                             && let Some(native_result) =
-                                self.try_native_method(&storage, Symbol::intern(method), &args)
+                                self.try_native_method(&storage, method_sym, &args)
                         {
                             // Native method on the by-value backing storage is
                             // env-pure: no env_dirty mark needed.
                             self.stack.push(native_result?);
                             return Ok(());
                         }
-                        let result =
-                            self.try_compiled_method_or_interpret(storage, method, args.clone());
+                        let result = self.try_compiled_method_or_interpret_sym(
+                            storage,
+                            method_sym,
+                            args.clone(),
+                        );
                         if let Ok(val) = result {
                             self.stack.push(val);
                             return Ok(());
@@ -1302,7 +1311,7 @@ impl Interpreter {
                             let msg = "Use of Nil in numeric context".to_string();
                             return Err(RuntimeError::warn_signal_with_resume(
                                 msg,
-                                Value::package(Symbol::intern(method)),
+                                Value::package(method_sym),
                             ));
                         }
                         // `Nil.ords` warns ("Use of Nil in string context") and
@@ -1418,7 +1427,7 @@ impl Interpreter {
                     {
                         let resolved = self.resolve_hash_for_iteration(items);
                         if let Some(native_result) =
-                            self.try_native_method(&resolved, Symbol::intern(method), &args)
+                            self.try_native_method(&resolved, method_sym, &args)
                         {
                             let result = native_result;
                             // Native method on a by-value resolved hash is env-pure
@@ -1460,25 +1469,25 @@ impl Interpreter {
                             self.method_dispatch_pure = true;
                             Ok(Value::slip(converted))
                         } else if let Some(native_result) =
-                            self.try_native_method(&target, Symbol::intern(method), &args)
+                            self.try_native_method(&target, method_sym, &args)
                         {
                             // Native method on a by-value (read) target: env-pure.
                             self.method_dispatch_pure = true;
                             native_result
                         } else {
-                            self.try_compiled_method_or_interpret(target, method, args)
+                            self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                         }
                     } else if let Some(native_result) =
-                        self.try_native_method(&target, Symbol::intern(method), &args)
+                        self.try_native_method(&target, method_sym, &args)
                     {
                         // Native method on a by-value (read) target: env-pure.
                         self.method_dispatch_pure = true;
                         native_result
                     } else {
-                        self.try_compiled_method_or_interpret(target, method, args)
+                        self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                     }
                 } else {
-                    self.try_compiled_method_or_interpret(target, method, args)
+                    self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                 };
                 // Slice 6.3: mark env dirty only when the dispatch was not a
                 // proven-pure compiled method call.

@@ -391,6 +391,12 @@ impl Interpreter {
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let method = Self::rewrite_method_name(method_raw, modifier);
+        // Interned once per call: the unrewritten name comes from the per-chunk
+        // constant-symbol table, so the hot path pays no re-intern.
+        let method_sym = match modifier {
+            Some("^") | Some("!") => crate::symbol::Symbol::intern(&method),
+            _ => code.const_sym(name_idx),
+        };
         let arity = arity as usize;
         if self.stack.len() < arity + 1 {
             return Err(RuntimeError::new(
@@ -674,10 +680,10 @@ impl Interpreter {
                     self.maybe_autothread_method_args(v, &method, &args)?
                 {
                     threaded
-                } else if let Some(nr) = self.try_native_method(v, Symbol::intern(&method), &args) {
+                } else if let Some(nr) = self.try_native_method(v, method_sym, &args) {
                     nr?
                 } else {
-                    self.try_compiled_method_or_interpret(v.clone(), &method, args.clone())?
+                    self.try_compiled_method_or_interpret_sym(v.clone(), method_sym, args.clone())?
                 };
                 results.push(r);
                 let pending: Vec<String> = self
@@ -1071,14 +1077,14 @@ impl Interpreter {
                         crate::value::ArrayKind::List,
                     );
                     let call_result = if let Some(native_result) =
-                        self.try_native_method(&array_target, Symbol::intern(&method), &args)
+                        self.try_native_method(&array_target, method_sym, &args)
                     {
                         native_result
                     } else {
-                        self.try_compiled_method_mut_or_interpret(
+                        self.try_compiled_method_mut_or_interpret_sym(
                             &target_name,
                             array_target,
-                            &method,
+                            method_sym,
                             args,
                         )
                     };
@@ -1714,8 +1720,7 @@ impl Interpreter {
                         // rw view into, nor a mutation of, the source), so the
                         // by-value `&storage` borrow is correct for the instance.
                         if Self::is_array_storage_native_safe(&method)
-                            && let Some(r) =
-                                self.try_native_method(&storage, Symbol::intern(&method), &args)
+                            && let Some(r) = self.try_native_method(&storage, method_sym, &args)
                         {
                             self.stack.push(r?);
                             return Ok(());
@@ -1778,7 +1783,7 @@ impl Interpreter {
                     };
                     let dispatch_target = effective_target.as_ref().unwrap_or(&target);
                     if let Some(native_result) =
-                        self.try_native_method(dispatch_target, Symbol::intern(&method), &args)
+                        self.try_native_method(dispatch_target, method_sym, &args)
                     {
                         // A native method reaching this tail returns a value and
                         // does not write the receiver back into env (mutating
@@ -1788,15 +1793,20 @@ impl Interpreter {
                         self.method_dispatch_pure = true;
                         native_result
                     } else {
-                        self.try_compiled_method_mut_or_interpret(
+                        self.try_compiled_method_mut_or_interpret_sym(
                             &target_name,
                             target,
-                            &method,
+                            method_sym,
                             args,
                         )
                     }
                 } else {
-                    self.try_compiled_method_mut_or_interpret(&target_name, target, &method, args)
+                    self.try_compiled_method_mut_or_interpret_sym(
+                        &target_name,
+                        target,
+                        method_sym,
+                        args,
+                    )
                 };
                 match modifier {
                     Some("?") => match call_result {

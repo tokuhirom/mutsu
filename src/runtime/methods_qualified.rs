@@ -226,7 +226,7 @@ impl Interpreter {
                                 .get(qualifier)
                                 .cloned();
                             {
-                                let bindings: std::collections::HashMap<String, Value> =
+                                let bindings: rustc_hash::FxHashMap<String, Value> =
                                     tparams.iter().cloned().zip(tvals.iter().cloned()).collect();
                                 self.registry_mut()
                                     .class_role_param_bindings

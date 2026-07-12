@@ -600,7 +600,8 @@ impl Interpreter {
         let mut direct_composed_roles: Vec<String> = Vec::new();
         let mut punned_roles = Vec::new();
         let mut hidden_punned_role_bases: HashSet<String> = HashSet::new();
-        let mut class_role_param_bindings: HashMap<String, Value> = HashMap::new();
+        let mut class_role_param_bindings: rustc_hash::FxHashMap<String, Value> =
+            rustc_hash::FxHashMap::default();
         for parent in parents {
             let resolved_parent_name = self.resolve_declared_type_name(parent);
             let base_role_name = resolved_parent_name

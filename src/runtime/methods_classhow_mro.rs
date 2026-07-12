@@ -142,7 +142,7 @@ impl Interpreter {
             _ => value_type_name(invocant).to_string(),
         };
         // Collect hidden parent names for this class
-        let hidden_parents: HashSet<String> = self
+        let hidden_parents: rustc_hash::FxHashSet<String> = self
             .registry()
             .hidden_defer_parents
             .get(&class_name)

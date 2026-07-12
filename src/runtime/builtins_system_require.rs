@@ -246,7 +246,7 @@ impl Interpreter {
     }
 
     pub(crate) fn remove_leaked_main_routines(
-        functions: &mut HashMap<Symbol, std::sync::Arc<FunctionDef>>,
+        functions: &mut rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
         before_keys: &std::collections::HashSet<Symbol>,
         main_exported: bool,
     ) {

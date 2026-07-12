@@ -306,7 +306,7 @@ impl Interpreter {
         // carries `__mutsu_role__X` / `__mutsu_attr__X` keys; overlay them onto
         // the attribute value so `$o.attr.VAR does Role` (and the role's
         // accessors) resolve on the instance.
-        let container_mixins: Vec<(String, Vec<HashMap<String, Value>>)> = self
+        let container_mixins: Vec<(String, Vec<rustc_hash::FxHashMap<String, Value>>)> = self
             .registry()
             .class_attribute_container_mixins
             .iter()

@@ -66,7 +66,7 @@ impl Interpreter {
             "*SCHEDULER".to_string(),
             Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
         );
-        let mut classes = HashMap::new();
+        let mut classes = rustc_hash::FxHashMap::default();
         classes.insert(
             "Mu".to_string(),
             ClassDef {
@@ -1858,7 +1858,7 @@ impl Interpreter {
                 // Built-in role definitions (PR-A slice 4: roles now live in the
                 // shared Registry instead of an Interpreter field).
                 registry.roles = {
-                    let mut roles = HashMap::new();
+                    let mut roles = rustc_hash::FxHashMap::default();
                     roles.insert(
                         "Encoding".to_string(),
                         RoleDef {

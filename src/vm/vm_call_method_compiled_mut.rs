@@ -1,13 +1,15 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn try_compiled_method_mut_or_interpret(
+    /// Symbol-keyed entry (see `try_compiled_method_or_interpret_sym`).
+    pub(super) fn try_compiled_method_mut_or_interpret_sym(
         &mut self,
         target_name: &str,
         target: Value,
-        method: &str,
+        method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let method: &str = method_sym.as_str();
         // Native default construction (see `try_compiled_method_or_interpret`).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
@@ -335,10 +337,8 @@ impl Interpreter {
         let class_name = class_sym_opt.map(|s| s.as_str());
         if let Some(cn) = class_name
             && let Some(class_sym) = class_sym_opt
-            && let Some((owner_class, method_def)) = {
-                let method_sym = crate::symbol::Symbol::intern(method);
+            && let Some((owner_class, method_def)) =
                 self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
-            }
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
