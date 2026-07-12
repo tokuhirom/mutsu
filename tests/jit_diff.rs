@@ -72,13 +72,51 @@ fn jit_actually_compiles_and_enters() {
     }
 }
 
+/// J2 coverage: a hot METHOD body (the `call_compiled_method*` entry hooks)
+/// built from J2 Tier A opcodes — comparisons (`NumLe`), arith (`Mul`),
+/// string concat (`Concat`), and attribute access via the generic `step` shim
+/// (`CallMethod`/`GetGlobal`) — must compile, enter, and produce
+/// interpreter-identical output.
+#[test]
+fn hot_method_body_compiles_and_matches() {
+    let src = "class Counter { has $.n is rw; method bump() { $.n = $.n * 2 <= 64 ?? $.n * 2 !! $.n + 1; } method label() { \"n=\" ~ $.n } }\nmy $c = Counter.new(n => 1);\nfor ^30 { $c.bump() }\nsay $c.label();";
+    let (off_out, off_err, off_ok) = run(src, &[("MUTSU_JIT", "off")]);
+    let (on_out, on_err, on_ok) = run(
+        src,
+        &[
+            ("MUTSU_JIT", "on"),
+            ("MUTSU_JIT_THRESHOLD", "1"),
+            ("MUTSU_VM_STATS", "1"),
+        ],
+    );
+    assert!(off_ok, "JIT-off run failed: {off_err}");
+    assert!(on_ok, "JIT-on run failed: {on_err}");
+    assert_eq!(off_out, on_out, "JIT on/off outputs diverge");
+    if cfg!(feature = "jit") {
+        let jit_line = on_err
+            .lines()
+            .find(|l| l.contains("jit: compiles="))
+            .expect("no jit stats line");
+        let compiles: u64 = jit_line
+            .split_whitespace()
+            .find_map(|w| w.strip_prefix("compiles="))
+            .and_then(|v| v.parse().ok())
+            .expect("missing compiles=");
+        assert!(
+            compiles >= 1,
+            "hot method chunk was not compiled: {jit_line}"
+        );
+    }
+}
+
 /// A function whose chunk contains an unsupported opcode must be counted as a
 /// bailout and keep producing interpreter-identical output.
 #[test]
 fn unsupported_opcode_bails_out_cleanly() {
-    // `~` string concat compiles to an opcode outside the J1 Tier A set.
-    let src =
-        "sub cat($a) { return $a ~ \"!\" }\nmy $s = \"\";\nfor ^50 { $s = cat(\"x\") }\nsay $s;";
+    // A `while` loop compiles to the compound `WhileLoop` opcode, which is
+    // outside the Tier A set (loop bodies run through the interpreter until
+    // J4 hot-loop entry).
+    let src = "sub count($n) { my $i = 0; while $i < $n { $i = $i + 1 } return $i }\nmy $s = 0;\nfor ^50 { $s = count(3) }\nsay $s;";
     let (off_out, _, off_ok) = run(src, &[("MUTSU_JIT", "off")]);
     let (on_out, on_err, on_ok) = run(
         src,

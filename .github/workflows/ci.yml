@@ -299,3 +299,75 @@ jobs:
             tmp/gc-stress-roast.log
           retention-days: 7
           if-no-files-found: ignore
+
+  jit-stress:
+    # Runs the whole test + roast suite with the Cranelift JIT ON (ADR-0004
+    # §2.5 J2, same shape as gc-stress). MUTSU_JIT_THRESHOLD=2 compiles every
+    # Tier A-eligible chunk on its second call, so JIT-compiled bodies (not
+    # the interpreter) execute for essentially all repeatedly-called code in
+    # the suite. The JIT's correctness contract is byte-identical output to
+    # the interpreter, so every step is a BLOCKING gate: any failure here that
+    # does not reproduce with MUTSU_JIT=off is a JIT codegen/shim bug.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MUTSU_JIT: "on"
+      MUTSU_JIT_THRESHOLD: "2"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-jitstress-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-jitstress-${{ runner.os }}-
+
+      - name: Install prove
+        run: sudo apt-get update && sudo apt-get install -y perl
+
+      - name: Build (debug, for TAP tests)
+        run: cargo build
+
+      - name: TAP tests (prove t/, JIT on)
+        run: |
+          set -o pipefail
+          mkdir -p tmp
+          prove --merge -e 'timeout 60 target/debug/mutsu' t/ 2>&1 | tee tmp/jit-stress-t.log
+
+      - name: Build (release, for roast)
+        run: cargo build --release
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: "false"
+
+      - name: Clean precomp cache and restore roast files
+        run: |
+          rm -rf ~/.cache/mutsu/precomp
+          git checkout -- roast/
+
+      - name: Roast tests (make roast, JIT on)
+        run: |
+          set -o pipefail
+          mkdir -p tmp
+          prove -j4 --merge -e 'scripts/run-roast-test.sh' \
+            $(cat roast-whitelist.txt) 2>&1 | tee tmp/jit-stress-roast.log
+        env:
+          MUTSU_BIN: target/release/mutsu
+
+      - name: Upload JIT stress logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jit-stress-logs
+          path: |
+            tmp/jit-stress-t.log
+            tmp/jit-stress-roast.log
+          retention-days: 7
+          if-no-files-found: ignore

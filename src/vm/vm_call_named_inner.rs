@@ -228,7 +228,19 @@ impl Interpreter {
         let mut explicit_return: Option<Value> = None;
         let mut fail_bypass = false;
         while ip < cf.code.ops.len() {
-            match self.exec_one(&cf.code, &mut ip, compiled_fns) {
+            // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
+            // start, run the whole body natively when the chunk is hot and
+            // Tier A-compilable; the native outcome threads through the same
+            // match arms below.
+            let step = if ip == 0
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns)
+            {
+                ip = cf.code.ops.len();
+                r
+            } else {
+                self.exec_one(&cf.code, &mut ip, compiled_fns)
+            };
+            match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{fn_package}::{fn_name}");
