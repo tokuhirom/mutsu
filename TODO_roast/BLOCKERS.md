@@ -4,7 +4,8 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 今どこを直せば何がまとめて動くかを判断するために使う。
 
 **最終更新 2026-07-12**（全セクションを単一の残件表に統合。途中経過・完了報告の類は
-`news/` に移し、本ファイルは「現在開いている残件」だけを持つ。数値は同日に再取得）。
+`news/` に移し、本ファイルは「現在開いている残件」だけを持つ。数値は同日に再取得。
+同日、ローカル raku を **Rakudo v2022.12 → v2026.06** に更新し、raku 列を全行再測定）。
 
 ## この文書の読み方
 
@@ -16,10 +17,11 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 - **数字は執筆時点のスナップショット。** このファイルは複数セッションから並行更新される
   ため、着手前に必ず `MUTSU_FUDGE=1 prove -e target/debug/mutsu roast/<path>.t` で
   実際の pass/fail を取り直すこと。
-- **raku 列の読み方**: ローカル参照実装は **Rakudo v2022.12（Raku 6.d）**。
-  `SORRY` はローカル raku がコンパイル不能＝多くは 6.e 専用構文か廃止構文で、
-  「テストが不正」を意味しない。raku が満点なのに mutsu が落ちるものだけが
-  達成可能な実バグ（★）。
+- **raku 列の読み方**: ローカル参照実装は **Rakudo v2026.06（デフォルト言語 6.d）**。
+  raku は **未 fudge の生ファイル**を直接実行して測る（fudge は roast/ 書き換えを要する
+  ため適用不可）。`SORRY` はローカル raku がコンパイル不能＝廃止構文・rakudo 未実装構文・
+  fudge 前提の行などで、「テストが不正」を意味しない。raku が満点なのに mutsu が
+  落ちるものだけが達成可能な実バグ（★）。
 
 ## 現在の前提
 
@@ -44,23 +46,23 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
   ついでに触れるのはよいが、**そのファイルの whitelist を目標にしない**。
 - **通過不能** — テスト自体が意図的 flunk 等を含み、通せないと確定。
 
-| 分類 | ファイル | mutsu | raku (v2022.12/6.d) | ブロッカー（一言） |
+| 分類 | ファイル | mutsu | raku (v2026.06/6.d) | ブロッカー（一言） |
 |---|---|---|---|---|
-| 基盤待ち | `S32-str/format.t` | 26/49 で中断 | SORRY（6.e `Format`） | `Formatter::Syntax.parse`→Match、`Formatter.AST`→`RakuAST::Node` を要求＝**RakuAST サブシステム不在**。stub 化は禁止のため据え置き |
-| 基盤待ち | `S02-types/generics.t` | 0/1 | SORRY（6.e） | 6.e coercion type 項 + `Array[T]` サブクラス化が必要。ローカル raku 自身もコンパイル不能で参照検証すらできない |
-| oracle 不能 | `S02-names/pseudo-6d.t` | 116/159 で中断 | SORRY（6.e 要） | `::("CALLER")::<$*bar>` CALLER 疑似パッケージ deref 未対応 |
-| oracle 不能 | `S02-names/pseudo-6e.t` | 79/202 で中断 | SORRY（6.e 要） | 同上（6.e 版） |
-| oracle 不能 | `S02-names-vars/names.t` | 144/156・notok 3 | SORRY | test 142「Null PMC access when printing a var typed as ::foo」edge |
-| oracle 不能 | `S02-types/array-shapes.t` | 35/43 で中断 | 38/43（raku も中断） | shaped array `.pairs` の `.value` が writable container を返さない |
-| oracle 不能 | `S05-metasyntax/longest-alternative.t` | 57/62・notok 5 | SORRY | LTM（longest-token-match）の tie-break edge |
-| oracle 不能 | `S06-advanced/return-prioritization.t` | 9/11・notok 2 | 4/11（mutsu 先行） | `return` in LEAVE phaser（別 lexical scope）edge |
-| oracle 不能 | `S10-packages/basic.t` | 59/83・notok 9 | 6/83（mutsu 先行） | package 宣言 semicolon form のエラー検出 edge |
-| oracle 不能 | `S12-attributes/trusts.t` | 9/15・notok 6 | SORRY | `trusts` によるクラス間 private アクセス未対応 |
-| oracle 不能 | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | 0/8（`$*OS` 未対応） | `-I` + `@*INC` + `$*OS` イントロスペクション（is_run サブプロセス） |
-| oracle 不能 | `S32-basics/xxPOS.t` | 11/64 で中断 | 53/64（raku も中断） | test 12 以降で深い機能により abort |
+| ★達成可能 | `S06-advanced/return-prioritization.t` | 9/11・notok 2 | **11/11 満点**（v2022.12 は 4/11） | `return` in LEAVE phaser が戻り値を上書きできない（test 5）・別 lexical scope の LEAVE 内 `return`（test 9）。raku 更新で oracle 復活＝実バグ確定 |
+| 基盤待ち | `S32-str/format.t` | 26/49 で中断 | **49/49 満点**（v2022.12 は SORRY） | `Formatter::Syntax.parse`→Match、`Formatter.AST`→`RakuAST::Node` を要求＝**RakuAST サブシステム不在**。raku 更新で oracle は得られたが、stub 化は禁止のため据え置きのまま |
+| 基盤待ち | `S02-types/generics.t` | 0/1 | **1/1 満点**（v2022.12 は SORRY） | 6.e coercion type 項 + `Array[T]` サブクラス化が必要。raku 更新で参照検証は可能になったが、要求される基盤の大きさは不変 |
+| oracle 不能 | `S02-names/pseudo-6d.t` | 116/159 で中断 | SORRY（`::=` NYI） | `::("CALLER")::<$*bar>` CALLER 疑似パッケージ deref 未対応。v2026.06 でも rakudo が `::=` 束縛未実装で SORRY |
+| oracle 不能 | `S02-names/pseudo-6e.t` | 79/202 で中断 | SORRY（`$?` 定数 twigil NYI） | 同上（6.e 版）。v2026.06 でも SORRY |
+| oracle 不能 | `S02-names-vars/names.t` | 144/156・notok 3 | SORRY（未 fudge 行） | test 142「Null PMC access when printing a var typed as ::foo」edge。raku は fudge 前提の行（裸の `$`）で SORRY |
+| oracle 不能 | `S02-types/array-shapes.t` | 35/43 で中断 | 38/43（raku も中断・v2026.06 でも同じ） | shaped array `.pairs` の `.value` が writable container を返さない |
+| oracle 不能 | `S05-metasyntax/longest-alternative.t` | 57/62・notok 5 | SORRY（`::` LTM stopper NYI） | LTM（longest-token-match）の tie-break edge。v2026.06 でも rakudo が `::` 未実装で SORRY |
+| oracle 不能 | `S10-packages/basic.t` | 59/83・notok 9 | 6/83（mutsu 先行・v2026.06 でも同じ） | package 宣言 semicolon form のエラー検出 edge |
+| oracle 不能 | `S12-attributes/trusts.t` | 9/15・notok 6 | SORRY（前方参照 `trusts B`） | `trusts` によるクラス間 private アクセス未対応。v2026.06 でも SORRY |
+| oracle 不能 | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | 0/8（`$*OS` 未対応・v2026.06 でも同じ） | `-I` + `@*INC` + `$*OS` イントロスペクション（is_run サブプロセス） |
+| oracle 不能 | `S32-basics/xxPOS.t` | 11/64 で中断 | 53/64（raku も中断・v2026.06 でも同じ） | test 12 以降で深い機能により abort |
 | 非目標 | `S05-capture/hash.t` | 拒否（raku と一致） | SORRY（廃止） | regex 内ハッシュキャプチャ `%<name>=(...)` は現行仕様で削除・予約。mutsu も raku 同様コンパイルエラー＝**実装不要** |
 | 非目標 | `S05-mass/rx.t` | test 20 で中断 | SORRY（`::` NYI） | rakudo 自身 `::` backtracking control NYI でコンパイル不能。mutsu 残: `<commit>`、`::`/`:::` cut、廃止メタ文字の compile-time 例外群 |
-| 非目標 | `S05-metasyntax/angle-brackets.t` | 51/95 で中断 | 同地点で死ぬ | 到達可能な 51 subtest は全 pass。test 52 の code-string subrule（`{...}` 入り文字列を regex 化）は raku も死ぬ＝MONKEY-SEE-NO-EVAL 相当が必要 |
+| 非目標 | `S05-metasyntax/angle-brackets.t` | 51/95 で中断 | SORRY（v2026.06 は `<*xyz>` を compile 時拒否） | 到達可能な 51 subtest は全 pass。test 52 の code-string subrule（`{...}` 入り文字列を regex 化）は旧 raku も死ぬ＝MONKEY-SEE-NO-EVAL 相当が必要。新 raku は line 267 の未 fudge `<*xyz>` で走行すらしない |
 | 非目標 | `S05-nonstrings/basic.t` | 0/5（ran 0） | SORRY（廃止） | 非文字列（stream/array）への regex マッチ＝早期 Perl 6 仕様。Rakudo 未実装のまま言語から削除 |
 | 非目標 | `S06-advanced/caller.t` | 19 ran / plan 22 | SORRY | stale test・over-stated plan（22 planned vs 実質 19 assertion）。unpassable 確定（#3975） |
 | 非目標 | `S06-advanced/return_function.t` | 1/4 で中断 | SORRY | 旧 Pair-flattening 挙動を期待。rakudo もコンパイル拒否。spectest.data 外 |
@@ -69,15 +71,19 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 | 非目標 | `S12-meta/exporthow.t` | 1/12 で中断 | 2/12 で ABORT | rakudo 自身が line 22 で死ぬ（`ClassHOW` に `tryit` 無し） |
 | 非目標 | `S12-traits/basic.t` | parse で 0 | SORRY（廃止） | 廃止 `trait_auxiliary` 構文。raku も拒否 |
 | 非目標 | `S12-traits/parameterized.t` | 6/8 で中断 | SORRY（廃止） | 同上（`trait_auxiliary:<is>` カテゴリは言語から削除済み） |
-| 非目標 | `S32-str/sprintf.t` | 170/174（fail 101-104） | SORRY（`zprintf` 6.e） | 残 101-104 は zero-pad `%g` sci の raku quirk（`34.1e+30`）。参照 raku に `zprintf` が無く正解アルゴリズムを検証不能 |
+| 非目標 | `S32-str/sprintf.t` | 170/174（fail 101-104） | SORRY（`zprintf` 未定義・v2026.06 でも同じ） | 残 101-104 は zero-pad `%g` sci の raku quirk（`34.1e+30`）。参照 raku に `zprintf` が無く正解アルゴリズムを検証不能 |
 | 通過不能 | `S32-temporal/time.t` | 8/10・notok 2 | SORRY | テスト側に `flunk("FIXME ...")` の意図的失敗が 2 本 + raku も `gmtime`/`localtime`/`times` 未定義 |
 
 ## 今のおすすめ着手順
 
-- 「次の 1 本」に適する残件は無い。**構造工事の選定は [PLAN.md](../PLAN.md) を正とする。**
-- **★達成可能（ローカル raku 満点なのに mutsu が落ちる実バグ）の残件は現在ゼロ。**
-  最後の 1 本 `S32-hash/perl.t` は 2026-07-12 に whitelist 済み（#4452：typed hash
-  `.raku` idempotence + `Associative[T]` 型キャプチャ束縛）。残る表項目はすべて
-  基盤待ち・oracle 不能・非目標・通過不能で、単発 quick win は無い。
+- **★達成可能が 1 本復活**: raku を v2026.06 に更新した再測定（2026-07-12）で
+  `S06-advanced/return-prioritization.t` が raku 満点と判明（旧 raku は 4/11）。
+  mutsu 残 2 本はどちらも **LEAVE phaser 内の `return`**（戻り値上書き / 別 lexical
+  scope からの return）で、単一機能の edge。「次の 1 本」はこれ。
+- それ以外に「次の 1 本」に適する残件は無い。**構造工事の選定は
+  [PLAN.md](../PLAN.md) を正とする。**（直前の ★ 消化: `S32-hash/perl.t` は
+  2026-07-12 に whitelist 済み #4452）
+- `S32-str/format.t`・`S02-types/generics.t` も raku 更新で oracle が得られたが、
+  必要基盤（RakuAST / 6.e generics）の大きさは変わらないため 基盤待ち のまま。
 - 非目標・oracle 不能の項目は、mutsu 側の一般改善のついでに前進させるのはよいが、
   そのファイル単体の whitelist を目的にしない。
