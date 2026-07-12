@@ -1,7 +1,7 @@
 # ADR-0005: NaN-boxing 表現スイッチ（3b-1）のエンコーディング選択と newtype seal 統合
 
-- **Status**: Proposed（承認待ち）
-- **Date**: 2026-07-07
+- **Status**: **Accepted**（2026-07-12 tokuhirom 承認）
+- **Date**: 2026-07-07（Proposed）/ 2026-07-12（Accepted）
 - **Deciders**: tokuhirom, Claude
 - **関連**: [ADR-0001](0001-gc-strategy-and-phasing.md)（層3b の位置づけ・順序 3a→3b→4）,
   [ADR-0004](0004-jit-strategy.md)（JIT は 8B 固定幅 `Value` を前提）,
@@ -173,5 +173,6 @@ inline `Int` の幅（48bit inline / 32bit inline / 範囲外は `Gc<i64>` 箱 o
 
 ---
 
-*本 ADR は Proposed。承認後、3b-1 step A（newtype seal・byte-identical）から着手し、
-step B（pointer-favored 表現差し替え）を §3.2 のベンチゲートで受け入れる。*
+*本 ADR は 2026-07-12 に Accepted。3b-1 step A（newtype seal・byte-identical）は先行完了済み
+（2026-07-11・news/2026-07.md）。承認により **step B（pointer-favored 表現差し替え）が着手可能** —
+§3.2 のベンチゲート（make test＋roast＋gc-stress green・マイクロベンチ）で受け入れる。*
