@@ -239,6 +239,51 @@ impl Interpreter {
         items: Vec<Value>,
         prepend: bool,
     ) -> Value {
+        let (_, updated) = self.shared_array_mutate(arr_name, |elements, kind| {
+            if prepend {
+                for (i, it) in items.into_iter().enumerate() {
+                    elements.insert(i, it);
+                }
+            } else {
+                elements.extend(items);
+            }
+            if *kind == crate::value::ArrayKind::List {
+                *kind = crate::value::ArrayKind::Array;
+            }
+        });
+        updated
+    }
+
+    /// Whether `@arr` already has an authoritative `__mutsu_atomic_arr::`
+    /// entry (created by a prior shared push/extend/CAS). Once it exists,
+    /// reads prefer it, so every subsequent mutation must go through
+    /// `shared_array_mutate` or it is silently lost.
+    pub(crate) fn atomic_array_entry_exists(&self, arr_name: &str) -> bool {
+        let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
+        matches!(
+            self.shared_vars
+                .read()
+                .unwrap()
+                .get(&atomic_key)
+                .map(Value::view),
+            Some(ValueView::Array(..))
+        )
+    }
+
+    /// Generic thread-safe read-modify-write of a plain lexical `@arr` through
+    /// the `__mutsu_atomic_arr::` shared store: seeds the atomic entry (same
+    /// contract as `shared_array_extend`), applies `f` to the `ArrayData`
+    /// under the `shared_vars` write lock, and marks the user-visible name
+    /// dirty. Returns `f`'s result (e.g. a popped element) plus the updated
+    /// array value. Every mutating array op in shared context must funnel
+    /// through here: once the atomic entry exists, reads prefer it, so a
+    /// mutation applied anywhere else (a stale base/env copy) is invisible —
+    /// the zef `populate-distributions` append-loss bug.
+    pub(crate) fn shared_array_mutate<R>(
+        &mut self,
+        arr_name: &str,
+        f: impl FnOnce(&mut crate::value::ArrayData, &mut crate::value::ArrayKind) -> R,
+    ) -> (R, Value) {
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
         let is_thread_clone = self.is_thread_clone();
         if is_thread_clone {
@@ -247,7 +292,7 @@ impl Interpreter {
             // (O(1) amortized) instead of a full-array COW per push.
             self.env.remove(arr_name);
         }
-        let updated = {
+        let (result, updated) = {
             let mut shared = self.shared_vars.write().unwrap();
             // Seed the atomic entry once from the base key (or this thread's
             // local snapshot), preserving ArrayData metadata (default/
@@ -278,17 +323,11 @@ impl Interpreter {
             };
             slot.with_array_mut(|arc_items, kind| {
                 let elements = crate::gc::Gc::make_mut(arc_items);
-                if prepend {
-                    for (i, it) in items.into_iter().enumerate() {
-                        elements.insert(i, it);
-                    }
-                } else {
-                    elements.extend(items);
-                }
-                if *kind == crate::value::ArrayKind::List {
-                    *kind = crate::value::ArrayKind::Array;
-                }
-                Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
+                let result = f(elements, kind);
+                (
+                    result,
+                    Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind),
+                )
             })
             .expect("atomic array entry seeded just above")
         };
@@ -308,7 +347,7 @@ impl Interpreter {
             // immediately even on direct env reads.
             self.env.insert(arr_name.to_string(), updated.clone());
         }
-        updated
+        (result, updated)
     }
 
     /// Thread-safe `@arr[$i] = $v` in shared (threaded) context.
