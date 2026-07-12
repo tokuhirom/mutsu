@@ -310,6 +310,7 @@ mod resolution_method;
 mod resolution_private_method;
 mod run;
 mod run_dist;
+mod run_main;
 mod run_modules;
 mod run_prelude;
 mod run_roast_preprocess;
@@ -1016,6 +1017,16 @@ pub struct Interpreter {
     tap: TapState,
     halted: bool,
     exit_code: i64,
+    /// Body fingerprints (see [`crate::ast::function_body_fingerprint`]) of MAIN
+    /// candidates declared `is hidden-from-USAGE`. Such a candidate is skipped
+    /// when generating the usage message (but still participates in dispatch).
+    main_hidden_from_usage: std::collections::HashSet<u64>,
+    /// Set once the program explicitly calls `RUN-MAIN`. When set, the implicit
+    /// end-of-program `MAIN` dispatch is suppressed: a program that drives MAIN
+    /// itself via `RUN-MAIN` (as the `S06-other/main-refactored` spec does) must
+    /// not have mutsu re-run MAIN a second time — Rakudo has no separate implicit
+    /// dispatch, `RUN-MAIN` *is* the mechanism.
+    explicit_run_main: bool,
     /// When true, `exit` sets the `halted` flag instead of calling
     /// `std::process::exit()`.  Used by in-process `is_run` so that
     /// the nested interpreter does not kill the parent process.

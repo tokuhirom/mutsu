@@ -185,6 +185,14 @@ pub(crate) struct ForLoopSpec {
     /// the source name via `find_local_slot`. `None` when the source is not a
     /// resolvable local (keeps the by-name + env fallback).
     pub(crate) single_array_source_local: Option<u32>,
+    /// When true, the loop body declares one or more routines (`sub`/`token`/…)
+    /// at its top level. Such declarations are lexically scoped to the loop
+    /// body in Raku: they are hoisted (visible before their textual position,
+    /// via `RegisterSub` ops emitted at body start) and must NOT leak past the
+    /// loop. The VM snapshots the routine registry before the loop and restores
+    /// it after, but only when this flag is set — hot numeric loops (the common
+    /// case, no nested `sub`) skip the snapshot entirely and pay zero cost.
+    pub(crate) body_declares_routines: bool,
 }
 
 /// Payload of `OpCode::RuntimeHasDecl`. A `has $.x` that reaches the VM (rather

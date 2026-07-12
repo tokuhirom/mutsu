@@ -290,6 +290,14 @@ impl Compiler {
         }
     }
 
+    /// Whether a statement list declares any routine (`sub`/`token`/`rule`/…)
+    /// at its top level. Used to decide whether a for-loop body needs
+    /// routine-registry scoping (hoist + snapshot/restore). Mirrors the set of
+    /// statements that [`hoist_sub_decls`] acts on (`Stmt::SubDecl`).
+    pub(super) fn stmts_declare_routines(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| matches!(s, Stmt::SubDecl { .. }))
+    }
+
     /// Hoist sub declarations: emit RegisterSub for all SubDecl statements
     /// before executing the rest of the block, so that `&name` references
     /// are available before the sub declaration appears in source order.

@@ -3,12 +3,23 @@ use crate::ast::{FunctionDef, ParamDef};
 use crate::opcode::CompiledFunction;
 use std::collections::HashMap;
 
-struct ParsedMainArgs {
-    positional: Vec<Value>,
-    named: Vec<(String, Value)>,
+pub(super) struct ParsedMainArgs {
+    pub(super) positional: Vec<Value>,
+    pub(super) named: Vec<(String, Value)>,
 }
 
-struct NamedParamInfo {
+/// Outcome of attempting to dispatch one MAIN candidate against a fixed set of
+/// parsed arguments (see [`Interpreter::try_dispatch_candidate`]).
+pub(super) enum CandidateDispatch {
+    /// The candidate accepted the args and its body ran to completion.
+    Called,
+    /// The candidate's signature does not accept these args — try the next one.
+    NoMatch,
+    /// The candidate matched but its body raised a real error — propagate it.
+    Error(RuntimeError),
+}
+
+pub(super) struct NamedParamInfo {
     names: Vec<String>,
     is_bool: bool,
     requires_value: bool,
@@ -16,7 +27,7 @@ struct NamedParamInfo {
 }
 
 #[derive(Default)]
-struct SubMainOpts {
+pub(super) struct SubMainOpts {
     named_anywhere: bool,
     bundling: bool,
     allow_no: bool,
@@ -25,7 +36,7 @@ struct SubMainOpts {
 }
 
 impl Interpreter {
-    fn read_sub_main_opts(&self) -> SubMainOpts {
+    pub(super) fn read_sub_main_opts(&self) -> SubMainOpts {
         let mut opts = SubMainOpts::default();
         let hash = self
             .env
@@ -102,115 +113,14 @@ impl Interpreter {
 
         for candidate in &all_candidates {
             let named_info = Self::extract_named_param_info(candidate);
-            let has_capture = candidate.param_defs.iter().any(|p| {
-                p.slurpy
-                    && !p.named
-                    && !p.double_slurpy
-                    && !p.name.starts_with(['$', '@', '%', '*'])
-            });
-            let has_slurpy_named = has_capture
-                || candidate
-                    .param_defs
-                    .iter()
-                    .any(|p| p.double_slurpy || (p.named && p.slurpy));
-            let has_slurpy_positional = candidate
-                .param_defs
-                .iter()
-                .any(|p| p.slurpy && !p.named && !p.double_slurpy);
-
-            match Self::parse_cli_args(&raw_args, &named_info, &sub_main_opts) {
-                Ok(parsed) => {
-                    let positional_params: Vec<&ParamDef> = candidate
-                        .param_defs
-                        .iter()
-                        .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
-                        .collect();
-                    let required_positional = positional_params
-                        .iter()
-                        .filter(|p| p.default.is_none() && !p.optional_marker)
-                        .count();
-                    let max_positional = if has_slurpy_positional {
-                        usize::MAX
-                    } else {
-                        positional_params.len()
-                    };
-                    if parsed.positional.len() < required_positional
-                        || parsed.positional.len() > max_positional
-                    {
-                        continue;
-                    }
-                    // A literal positional constraint (e.g. `multi MAIN('info', ...)`)
-                    // must match the corresponding argument by value -- otherwise a
-                    // literal candidate would greedily match any call of the same
-                    // arity, dropping the literal arg into the slurpy of the wrong
-                    // command. The CLI string is coerced to the param's type before
-                    // comparison so numeric literals (`MAIN(42, ...)`) match too.
-                    let mut literal_ok = true;
-                    for (idx, pd) in positional_params.iter().enumerate() {
-                        if let Some(lit) = &pd.literal_value {
-                            match parsed.positional.get(idx) {
-                                Some(arg) => {
-                                    let coerced = self.coerce_cli_arg(arg, pd);
-                                    if coerced != *lit
-                                        && coerced.to_string_value() != lit.to_string_value()
-                                    {
-                                        literal_ok = false;
-                                        break;
-                                    }
-                                }
-                                None => {
-                                    literal_ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if !literal_ok {
-                        continue;
-                    }
-                    let mut named_ok = true;
-                    for pd in &candidate.param_defs {
-                        if pd.named && pd.required && pd.default.is_none() && !pd.optional_marker {
-                            let param_names = Self::param_all_names(pd);
-                            if !parsed.named.iter().any(|(n, _)| param_names.contains(n)) {
-                                named_ok = false;
-                                break;
-                            }
-                        }
-                    }
-                    if !named_ok {
-                        continue;
-                    }
-                    if !has_slurpy_named {
-                        let all_accepted: Vec<String> =
-                            named_info.iter().flat_map(|ni| ni.names.clone()).collect();
-                        if parsed.named.iter().any(|(n, _)| !all_accepted.contains(n)) {
-                            continue;
-                        }
-                    }
-                    match self.call_main_with_parsed_args(candidate, &parsed, &sub_main_opts) {
-                        Ok(()) => return Ok(()),
-                        Err(e) => {
-                            // Fall through to the next candidate ONLY when argument
-                            // binding was rejected (a parameter type / `where`
-                            // constraint mismatch or an arity mismatch) — i.e. this
-                            // candidate does not accept these args. An error raised
-                            // from the *body* of a matched candidate must propagate,
-                            // not be masked as a dispatch failure that prints Usage.
-                            // A broad substring match on "type check"/"where"
-                            // previously swallowed body errors like "Type check
-                            // failed for return value" (X::TypeCheck::Return) and
-                            // "... where hash initializer expected"
-                            // (X::Hash::Store::OddNumber), so `zef install` reported
-                            // Usage instead of the real failure.
-                            if Self::is_main_binding_rejection(&e) {
-                                continue;
-                            }
-                            return Err(e);
-                        }
-                    }
-                }
+            let parsed = match Self::parse_cli_args(&raw_args, &named_info, &sub_main_opts) {
+                Ok(parsed) => parsed,
                 Err(_) => continue,
+            };
+            match self.try_dispatch_candidate(candidate, &parsed, &sub_main_opts) {
+                CandidateDispatch::Called => return Ok(()),
+                CandidateDispatch::NoMatch => continue,
+                CandidateDispatch::Error(e) => return Err(e),
             }
         }
 
@@ -218,7 +128,104 @@ impl Interpreter {
         Ok(())
     }
 
-    fn collect_main_candidates(&self) -> Vec<FunctionDef> {
+    /// Check whether a single MAIN candidate accepts the already-parsed
+    /// positional/named args and, if so, call it. Shared by the automatic MAIN
+    /// dispatch (`dispatch_main`, parsing `@*ARGS`) and the user-facing
+    /// `RUN-MAIN` (parsing a `Capture`). `parsed` is the fixed argument set for
+    /// this attempt; the per-candidate signature shape decides acceptance.
+    pub(super) fn try_dispatch_candidate(
+        &mut self,
+        candidate: &FunctionDef,
+        parsed: &ParsedMainArgs,
+        sub_main_opts: &SubMainOpts,
+    ) -> CandidateDispatch {
+        let named_info = Self::extract_named_param_info(candidate);
+        let has_capture = candidate.param_defs.iter().any(|p| {
+            p.slurpy && !p.named && !p.double_slurpy && !p.name.starts_with(['$', '@', '%', '*'])
+        });
+        let has_slurpy_named = has_capture
+            || candidate.param_defs.iter().any(|p| {
+                // A `*%rest` hash slurpy collects leftover named args; it carries
+                // a `%` sigil but is not itself flagged `named`, so match on the
+                // sigil too — otherwise a MAIN taking only `*%_` would reject any
+                // named CLI arg as unexpected.
+                p.double_slurpy || (p.named && p.slurpy) || (p.slurpy && p.name.starts_with('%'))
+            });
+        let has_slurpy_positional = candidate
+            .param_defs
+            .iter()
+            .any(|p| p.slurpy && !p.named && !p.double_slurpy);
+
+        let positional_params: Vec<&ParamDef> = candidate
+            .param_defs
+            .iter()
+            .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
+            .collect();
+        let required_positional = positional_params
+            .iter()
+            .filter(|p| p.default.is_none() && !p.optional_marker)
+            .count();
+        let max_positional = if has_slurpy_positional {
+            usize::MAX
+        } else {
+            positional_params.len()
+        };
+        if parsed.positional.len() < required_positional || parsed.positional.len() > max_positional
+        {
+            return CandidateDispatch::NoMatch;
+        }
+        // A literal positional constraint (e.g. `multi MAIN('info', ...)`)
+        // must match the corresponding argument by value -- otherwise a
+        // literal candidate would greedily match any call of the same
+        // arity, dropping the literal arg into the slurpy of the wrong
+        // command. The CLI string is coerced to the param's type before
+        // comparison so numeric literals (`MAIN(42, ...)`) match too.
+        for (idx, pd) in positional_params.iter().enumerate() {
+            if let Some(lit) = &pd.literal_value {
+                match parsed.positional.get(idx) {
+                    Some(arg) => {
+                        let coerced = self.coerce_cli_arg(arg, pd);
+                        if coerced != *lit && coerced.to_string_value() != lit.to_string_value() {
+                            return CandidateDispatch::NoMatch;
+                        }
+                    }
+                    None => return CandidateDispatch::NoMatch,
+                }
+            }
+        }
+        for pd in &candidate.param_defs {
+            if pd.named && pd.required && pd.default.is_none() && !pd.optional_marker {
+                let param_names = Self::param_all_names(pd);
+                if !parsed.named.iter().any(|(n, _)| param_names.contains(n)) {
+                    return CandidateDispatch::NoMatch;
+                }
+            }
+        }
+        if !has_slurpy_named {
+            let all_accepted: Vec<String> =
+                named_info.iter().flat_map(|ni| ni.names.clone()).collect();
+            if parsed.named.iter().any(|(n, _)| !all_accepted.contains(n)) {
+                return CandidateDispatch::NoMatch;
+            }
+        }
+        match self.call_main_with_parsed_args(candidate, parsed, sub_main_opts) {
+            Ok(()) => CandidateDispatch::Called,
+            Err(e) => {
+                // Fall through to the next candidate ONLY when argument binding
+                // was rejected (a parameter type / `where` constraint mismatch
+                // or an arity mismatch) — i.e. this candidate does not accept
+                // these args. An error raised from the *body* of a matched
+                // candidate must propagate, not be masked as a dispatch failure.
+                if Self::is_main_binding_rejection(&e) {
+                    CandidateDispatch::NoMatch
+                } else {
+                    CandidateDispatch::Error(e)
+                }
+            }
+        }
+    }
+
+    pub(super) fn collect_main_candidates(&self) -> Vec<FunctionDef> {
         let mut candidates = Vec::new();
         let mut seen_keys = std::collections::HashSet::new();
         let prefixes: Vec<String> = {
@@ -267,7 +274,7 @@ impl Interpreter {
         score
     }
 
-    fn extract_named_param_info(def: &FunctionDef) -> Vec<NamedParamInfo> {
+    pub(super) fn extract_named_param_info(def: &FunctionDef) -> Vec<NamedParamInfo> {
         def.param_defs
             .iter()
             .filter(|pd| pd.named)
@@ -296,7 +303,7 @@ impl Interpreter {
         names
     }
 
-    fn parse_cli_args(
+    pub(super) fn parse_cli_args(
         raw_args: &[String],
         named_info: &[NamedParamInfo],
         opts: &SubMainOpts,
@@ -551,7 +558,7 @@ impl Interpreter {
         }
     }
 
-    fn generate_usage_from_candidates(&self, candidates: &[FunctionDef]) -> String {
+    pub(super) fn generate_usage_from_candidates(&self, candidates: &[FunctionDef]) -> String {
         let program = self
             .env
             .get("*PROGRAM-NAME")
@@ -560,6 +567,15 @@ impl Interpreter {
             .unwrap_or_else(|| "program".to_string());
         let mut lines = Vec::new();
         for candidate in candidates {
+            // Skip candidates declared `is hidden-from-USAGE`.
+            let fp = crate::ast::function_body_fingerprint(
+                &candidate.params,
+                &candidate.param_defs,
+                &candidate.body,
+            );
+            if self.main_hidden_from_usage.contains(&fp) {
+                continue;
+            }
             let mut parts = vec![format!("  {}", program)];
             for pd in &candidate.param_defs {
                 if pd.named {

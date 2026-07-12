@@ -9,6 +9,28 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &HashMap<String, CompiledFunction>,
     ) -> Result<(), RuntimeError> {
+        // Routine declarations inside a loop body are lexically scoped to that
+        // body (Raku): snapshot the routine registry before the loop and restore
+        // it after so those `sub`s do not leak past the loop (or into a later
+        // sibling loop). Gated on the compile-time flag so the overwhelmingly
+        // common no-`sub` loop body pays zero cost. Snapshot happens once per
+        // loop entry, not per iteration.
+        if !spec.body_declares_routines {
+            return self.exec_for_loop_op_inner(code, spec, ip, compiled_fns);
+        }
+        let snapshot = self.snapshot_routine_registry();
+        let result = self.exec_for_loop_op_inner(code, spec, ip, compiled_fns);
+        self.restore_routine_registry(snapshot);
+        result
+    }
+
+    fn exec_for_loop_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        spec: &ForLoopSpec,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
         // Check for gather coroutine resume state. A `CStyleLoop` marker belongs
         // to a `loop`/`while` opcode, not this for-loop, so leave it in place.
         if !matches!(

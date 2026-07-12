@@ -378,13 +378,11 @@ impl Interpreter {
             // `dispatch_new` arm via the single `build_native_proc_async_value`.
             Some(Ok(Self::build_native_proc_async_value(class_name, args)))
         } else if cn == "Capture" {
-            // The default `Capture.new` produces an *empty* Capture: named args
-            // are dropped (Capture has no buildable public attributes — `bless`
-            // ignores them) and positional args are rejected (`Mu.new` is
-            // named-only). A *populated* Capture is built with the `\(...)`
-            // literal, not `.new`. A named arg reaches here as a `Pair`;
-            // anything else (a literal, a positional `"a" => 1` `ValuePair`) is
-            // positional and dies, exactly as raku does.
+            // `Capture.new` is named-only (`Mu.new`): a positional arg dies. Its
+            // build signature is `:@list, :%hash`, so a `list`/`hash` named arg
+            // populates the Capture's positional/named parts; every *other* named
+            // arg is dropped (bless ignores unknown attributes), yielding an
+            // empty `\()`. A `\(...)` literal is the other way to build one.
             if args
                 .iter()
                 .any(|a| !matches!(a.view(), ValueView::Pair(..)))
@@ -393,7 +391,24 @@ impl Interpreter {
                     "Default constructor for 'Capture' only takes named arguments",
                 )))
             } else {
-                Some(Ok(Value::capture(Vec::new(), HashMap::new())))
+                let mut positional = Vec::new();
+                let mut named = HashMap::new();
+                for a in args {
+                    if let ValueView::Pair(k, v) = a.view() {
+                        match k.as_str() {
+                            "list" => positional = Self::value_to_list(v),
+                            "hash" => {
+                                if let ValueView::Hash(h) = v.view() {
+                                    for (hk, hv) in h.iter() {
+                                        named.insert(hk.clone(), hv.clone());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Some(Ok(Value::capture(positional, named)))
             }
         } else if cn == "FakeScheduler" {
             Some(Ok(Self::build_native_fakescheduler_value()))

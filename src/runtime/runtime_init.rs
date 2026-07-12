@@ -1782,6 +1782,8 @@ impl Interpreter {
             tap: TapState::default(),
             halted: false,
             exit_code: 0,
+            main_hidden_from_usage: std::collections::HashSet::new(),
+            explicit_run_main: false,
             nested_mode: false,
             native_call_specs: HashMap::new(),
             operator_assoc: HashMap::new(),

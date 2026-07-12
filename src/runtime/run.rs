@@ -169,8 +169,11 @@ impl Interpreter {
         // Check for unresolved package/class stubs (X::Package::Stubbed)
         self.check_unresolved_stubs()?;
 
-        // Auto-call MAIN sub if defined, with CLI argument parsing
-        self.dispatch_main(&compiled_fns)?;
+        // Auto-call MAIN sub if defined, with CLI argument parsing. Skipped when
+        // the program already drove MAIN itself via an explicit `RUN-MAIN`.
+        if !self.explicit_run_main {
+            self.dispatch_main(&compiled_fns)?;
+        }
         self.finish()?;
         // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
         // when nothing can observe it (no DESTROY classes, no gc log/verify/
