@@ -543,7 +543,19 @@ impl Interpreter {
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
         while ip < cc.ops.len() {
-            match self.exec_one(cc, &mut ip, compiled_fns) {
+            // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
+            // start, run the whole body natively when the chunk is hot and
+            // Tier A-compilable; the native outcome threads through the same
+            // match arms below.
+            let step = if ip == 0
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+            {
+                ip = cc.ops.len();
+                r
+            } else {
+                self.exec_one(cc, &mut ip, compiled_fns)
+            };
+            match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", owner_class, method_name);
@@ -1283,7 +1295,19 @@ impl Interpreter {
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
         while ip < cc.ops.len() {
-            match self.exec_one(cc, &mut ip, compiled_fns) {
+            // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
+            // start, run the whole body natively when the chunk is hot and
+            // Tier A-compilable; the native outcome threads through the same
+            // match arms below.
+            let step = if ip == 0
+                && let Some(r) = crate::vm::vm_jit::try_enter(self, cc, compiled_fns)
+            {
+                ip = cc.ops.len();
+                r
+            } else {
+                self.exec_one(cc, &mut ip, compiled_fns)
+            };
+            match step {
                 Ok(()) => {}
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", owner_class, method_name);

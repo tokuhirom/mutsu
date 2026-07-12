@@ -82,29 +82,75 @@ pub(super) unsafe extern "C" fn set_local(
     }
 }
 
-/// `OpCode::Add`
-pub(super) unsafe extern "C" fn add(interp: *mut Interpreter) -> u32 {
-    let interp = unsafe { &mut *interp };
-    match interp.exec_add_op() {
-        Ok(()) => JIT_STATUS_OK,
-        Err(e) => park_err(interp, e),
-    }
+/// Dedicated shims for the payload-free fallible opcodes (arith / compare /
+/// string): each delegates to the interpreter's own `exec_*_op`, skipping the
+/// dispatch match entirely. These are the hot loop-body opcodes, so they get
+/// a direct shim instead of the generic `step` below.
+macro_rules! fallible_noarg_shims {
+    ($($shim:ident => $method:ident),+ $(,)?) => {$(
+        #[doc = concat!("Shim delegating to `", stringify!($method), "`.")]
+        pub(super) unsafe extern "C" fn $shim(interp: *mut Interpreter) -> u32 {
+            let interp = unsafe { &mut *interp };
+            match interp.$method() {
+                Ok(()) => JIT_STATUS_OK,
+                Err(e) => park_err(interp, e),
+            }
+        }
+    )+};
 }
 
-/// `OpCode::Sub`
-pub(super) unsafe extern "C" fn sub(interp: *mut Interpreter) -> u32 {
-    let interp = unsafe { &mut *interp };
-    match interp.exec_sub_op() {
-        Ok(()) => JIT_STATUS_OK,
-        Err(e) => park_err(interp, e),
-    }
+fallible_noarg_shims! {
+    add => exec_add_op,
+    sub => exec_sub_op,
+    mul => exec_mul_op,
+    div => exec_div_op,
+    modulo => exec_mod_op,
+    pow => exec_pow_op,
+    negate => exec_negate_op,
+    num_lt => exec_num_lt_op,
+    num_le => exec_num_le_op,
+    num_gt => exec_num_gt_op,
+    num_ge => exec_num_ge_op,
+    num_eq => exec_num_eq_op,
+    num_ne => exec_num_ne_op,
+    concat => exec_concat_op,
+    str_eq => exec_str_eq_op,
+    str_ne => exec_str_ne_op,
 }
 
-/// `OpCode::NumLt`
-pub(super) unsafe extern "C" fn num_lt(interp: *mut Interpreter) -> u32 {
-    let interp = unsafe { &mut *interp };
-    match interp.exec_num_lt_op() {
-        Ok(()) => JIT_STATUS_OK,
+/// Generic single-opcode step for straight-line opcodes without a dedicated
+/// shim: runs the interpreter's own dispatch arm at `op_idx` via `exec_one`,
+/// so the arm's full behavior (resume-point recording, rw writeback, ...) is
+/// reproduced verbatim. Only opcodes on the `step_supported` whitelist
+/// (vm_jit_compile.rs) are emitted through here — each is verified to always
+/// leave `ip == op_idx + 1` on Ok (no control flow), so the native caller's
+/// fall-through to the next opcode matches the interpreter exactly.
+/// `current_code` is restored afterwards: a re-entrant arm (CallMethod, ...)
+/// overwrites it, and unlike the interpreter loop the following native
+/// opcodes do not reset it per step.
+pub(super) unsafe extern "C" fn step(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+    fns: *const HashMap<String, CompiledFunction>,
+) -> u32 {
+    let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
+    let mut ip = op_idx as usize;
+    let r = interp.exec_one(code, &mut ip, fns);
+    interp.current_code = code as *const CompiledCode as usize;
+    match r {
+        Ok(()) => {
+            debug_assert_eq!(
+                ip,
+                op_idx as usize + 1,
+                "non-straight-line opcode on the Tier A step whitelist"
+            );
+            if interp.is_halted() {
+                JIT_STATUS_HALT
+            } else {
+                JIT_STATUS_OK
+            }
+        }
         Err(e) => park_err(interp, e),
     }
 }
@@ -118,6 +164,30 @@ pub(super) unsafe extern "C" fn jump_if_false_cond(interp: *mut Interpreter) -> 
     let val = interp.stack.pop().unwrap();
     if !interp.eval_truthy(&val) {
         Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
+        1
+    } else {
+        0
+    }
+}
+
+/// `OpCode::JumpIfTrue` condition: PEEKS the tested value (the interpreter
+/// arm keeps it on the stack on both paths — `||`-style short-circuit);
+/// returns 1 when the jump must be taken (truthy), 0 to fall through.
+pub(super) unsafe extern "C" fn jump_if_true_cond(interp: *mut Interpreter) -> u32 {
+    let interp = unsafe { &mut *interp };
+    Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
+    let val = interp.stack.last().unwrap().clone();
+    if interp.eval_truthy(&val) { 1 } else { 0 }
+}
+
+/// `OpCode::JumpIfNotNil` condition: PEEKS the tested value (kept on the
+/// stack on both paths — `//`-style short-circuit); returns 1 when the jump
+/// must be taken (defined), 0 to fall through.
+pub(super) unsafe extern "C" fn jump_if_not_nil_cond(interp: *mut Interpreter) -> u32 {
+    let interp = unsafe { &mut *interp };
+    Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
+    let val = interp.stack.last().unwrap();
+    if crate::runtime::types::value_is_defined(val) {
         1
     } else {
         0

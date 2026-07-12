@@ -34,6 +34,137 @@ unsafe impl Send for Engine {}
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 
+/// Payload-free fallible opcodes with a dedicated `(interp) -> status` shim
+/// (the hot arith / compare / string family, plus `Return`). Returns the shim
+/// address for emission, `None` when the opcode is not in this family.
+fn noarg_shim(op: &OpCode) -> Option<usize> {
+    let f: unsafe extern "C" fn(*mut Interpreter) -> u32 = match op {
+        OpCode::Add => helpers::add,
+        OpCode::Sub => helpers::sub,
+        OpCode::Mul => helpers::mul,
+        OpCode::Div => helpers::div,
+        OpCode::Mod => helpers::modulo,
+        OpCode::Pow => helpers::pow,
+        OpCode::Negate => helpers::negate,
+        OpCode::NumLt => helpers::num_lt,
+        OpCode::NumLe => helpers::num_le,
+        OpCode::NumGt => helpers::num_gt,
+        OpCode::NumGe => helpers::num_ge,
+        OpCode::NumEq => helpers::num_eq,
+        OpCode::NumNe => helpers::num_ne,
+        OpCode::Concat => helpers::concat,
+        OpCode::StrEq => helpers::str_eq,
+        OpCode::StrNe => helpers::str_ne,
+        OpCode::Return => helpers::ret,
+        _ => return None,
+    };
+    Some(f as *const () as usize)
+}
+
+/// Straight-line opcodes without a dedicated shim, executed through the
+/// generic `helpers::step` (one interpreter dispatch per opcode). Every entry
+/// is verified against its `exec_one` arm to unconditionally leave
+/// `ip == start + 1` on Ok — no jumps, no compound-loop bodies, no arms that
+/// consult or rewrite `ip` beyond the increment. Anything not provably
+/// straight-line stays OFF this list and bails the chunk out.
+fn step_supported(op: &OpCode) -> bool {
+    matches!(
+        op,
+        // Constants / stack shape
+        OpCode::LoadNil
+            | OpCode::LoadTrue
+            | OpCode::LoadFalse
+            | OpCode::Dup
+            | OpCode::Pop
+            // Variable reads
+            | OpCode::GetGlobal(_)
+            | OpCode::GetOurVar(_)
+            | OpCode::GetArrayVar(_)
+            | OpCode::GetHashVar(_)
+            | OpCode::GetBareWord(_)
+            | OpCode::GetCaptureVar(_)
+            | OpCode::GetCodeVar(_)
+            | OpCode::GetSelfOrNoSelf(_)
+            | OpCode::GetUpvalue { .. }
+            // Variable writes / declarations
+            | OpCode::SetGlobal(_)
+            | OpCode::SetGlobalRaw(_)
+            | OpCode::SetVarDynamic { .. }
+            | OpCode::SetVarType { .. }
+            | OpCode::AssignExpr(_)
+            | OpCode::TopicDotAssign(_)
+            | OpCode::AtomicCompoundVar { .. }
+            | OpCode::IndexAssignExprNamed { .. }
+            | OpCode::WrapVarRef(_)
+            | OpCode::LetSave { .. }
+            | OpCode::CheckReadOnly(_)
+            | OpCode::MarkVarReadonly(_)
+            | OpCode::CheckDynamicVarDeclared(_)
+            // Increment / decrement
+            | OpCode::PostIncrement(..)
+            | OpCode::PostDecrement(..)
+            | OpCode::PreIncrement(..)
+            | OpCode::PreDecrement(..)
+            | OpCode::PreIncrementIndex(_)
+            | OpCode::PreDecrementIndex(_)
+            // Method calls (re-entrant; `step` restores current_code)
+            | OpCode::CallMethod { .. }
+            | OpCode::CallMethodMut { .. }
+            // Arith predicates
+            | OpCode::DivisibleBy
+            | OpCode::NotDivisibleBy
+            // Closure construction
+            | OpCode::MakeLambda(..)
+            | OpCode::MakeAnonSub(..)
+            | OpCode::MakeAnonSubParams(..)
+            | OpCode::MakeGather(..)
+            // Calls through a code variable (re-entrant, like CallMethod)
+            | OpCode::CallOnCodeVar { .. }
+            | OpCode::ExecCallPairs { .. }
+            // In-place container mutation
+            | OpCode::ArrayPush { .. }
+            | OpCode::TagContainerRef(..)
+            | OpCode::TagContainerRefReversed(..)
+            | OpCode::MarkAccessorRefContext
+            // List / hash construction, indexing and coercion
+            | OpCode::MakeArray(_)
+            | OpCode::MakeRealArray(_)
+            | OpCode::MakeRealArrayNoFlatten(_)
+            | OpCode::MakeHash(_)
+            | OpCode::MakePair
+            | OpCode::CoerceToList
+            | OpCode::Itemize
+            | OpCode::DeitemizeZen
+            | OpCode::Decont
+            | OpCode::Index { .. }
+            | OpCode::IndexAutovivifyLazy
+            // String / bool / numeric helpers
+            | OpCode::StringConcat(_)
+            | OpCode::StrCoerce
+            | OpCode::BoolCoerce
+            | OpCode::Not
+            | OpCode::Gcd
+            | OpCode::Lcm
+            | OpCode::IntDiv
+            | OpCode::IntMod
+            | OpCode::NumCoerce
+            // Sink context (forces lazies / throws unhandled Failures)
+            | OpCode::SinkPop(_)
+            // Topic / context markers
+            | OpCode::MarkBindContext
+            | OpCode::MarkVarDeclContext
+            | OpCode::MarkExplicitInitializerContext
+            | OpCode::MarkShapedDeclContext
+            | OpCode::SetTopic
+            | OpCode::SaveTopic
+            | OpCode::RestoreTopic
+            | OpCode::PushEnterResult
+            | OpCode::LoadEnterResult
+            // Always-throwing terminator (records its own resume point)
+            | OpCode::Die
+    )
+}
+
 /// Compile `code` to a native Tier A body. `None` = bailout (unsupported
 /// opcode, or an internal Cranelift failure): the caller marks the chunk so
 /// it is never scanned again.
@@ -42,21 +173,20 @@ pub(super) fn compile_chunk(code: &CompiledCode) -> Option<JitEntryFn> {
     // Tier A set rejects the whole chunk (no partial compilation).
     let mut targets: std::collections::HashSet<usize> = std::collections::HashSet::new();
     for op in code.ops.iter() {
+        if noarg_shim(op).is_some() || step_supported(op) {
+            continue;
+        }
         match op {
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
-            | OpCode::Add
-            | OpCode::Sub
-            | OpCode::NumLt
             | OpCode::ContainerizePair
             | OpCode::SetSourceLine(_)
-            | OpCode::Return
             | OpCode::CallFunc { .. } => {}
-            OpCode::Jump(t) => {
-                targets.insert(*t as usize);
-            }
-            OpCode::JumpIfFalse(t) => {
+            OpCode::Jump(t)
+            | OpCode::JumpIfFalse(t)
+            | OpCode::JumpIfTrue(t)
+            | OpCode::JumpIfNotNil(t) => {
                 targets.insert(*t as usize);
             }
             other => {
@@ -231,45 +361,6 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
                 )?;
                 check_status(&mut b, status);
             }
-            OpCode::Add => {
-                let status = call_helper(
-                    &mut b,
-                    sigs.s1,
-                    helpers::add as *const () as usize,
-                    &[interp],
-                )?;
-                check_status(&mut b, status);
-            }
-            OpCode::Sub => {
-                let status = call_helper(
-                    &mut b,
-                    sigs.s1,
-                    helpers::sub as *const () as usize,
-                    &[interp],
-                )?;
-                check_status(&mut b, status);
-            }
-            OpCode::NumLt => {
-                let status = call_helper(
-                    &mut b,
-                    sigs.s1,
-                    helpers::num_lt as *const () as usize,
-                    &[interp],
-                )?;
-                check_status(&mut b, status);
-            }
-            OpCode::Return => {
-                // OK status = a rebound `&return` ran; fall through to the
-                // next opcode. Otherwise the return signal is parked and the
-                // nonzero status exits the native body.
-                let status = call_helper(
-                    &mut b,
-                    sigs.s1,
-                    helpers::ret as *const () as usize,
-                    &[interp],
-                )?;
-                check_status(&mut b, status);
-            }
             OpCode::CallFunc { .. } => {
                 let opidx = b.ins().iconst(types::I32, i as i64);
                 let status = call_helper(
@@ -295,14 +386,17 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
                 b.ins().jump(block_at[&t], &[]);
                 open = false;
             }
-            OpCode::JumpIfFalse(t) => {
+            OpCode::JumpIfFalse(t) | OpCode::JumpIfTrue(t) | OpCode::JumpIfNotNil(t) => {
+                // Conditional branch: the cond helper returns 1 when the jump
+                // must be taken (JumpIfFalse pops the tested value; the other
+                // two peek, mirroring their interpreter arms).
+                let cond_fn = match op {
+                    OpCode::JumpIfFalse(_) => helpers::jump_if_false_cond as *const () as usize,
+                    OpCode::JumpIfTrue(_) => helpers::jump_if_true_cond as *const () as usize,
+                    _ => helpers::jump_if_not_nil_cond as *const () as usize,
+                };
                 let t = *t as usize;
-                let cond = call_helper(
-                    &mut b,
-                    sigs.s1,
-                    helpers::jump_if_false_cond as *const () as usize,
-                    &[interp],
-                )?;
+                let cond = call_helper(&mut b, sigs.s1, cond_fn, &[interp])?;
                 let next = b.create_block();
                 if t <= i {
                     let poll = b.create_block();
@@ -320,8 +414,29 @@ fn build(code: &CompiledCode, targets: &std::collections::HashSet<usize>) -> Opt
                 }
                 b.switch_to_block(next);
             }
-            // The support scan rejected everything else.
-            _ => unreachable!("unsupported opcode reached JIT emission"),
+            op => {
+                if let Some(f) = noarg_shim(op) {
+                    // Dedicated payload-free shim (arith / compare / Return —
+                    // for Return, OK status = a rebound `&return` ran and
+                    // execution falls through; otherwise the parked return
+                    // signal exits the native body via the status check).
+                    let status = call_helper(&mut b, sigs.s1, f, &[interp])?;
+                    check_status(&mut b, status);
+                } else if step_supported(op) {
+                    // Generic straight-line step: one interpreter dispatch.
+                    let opidx = b.ins().iconst(types::I32, i as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_call,
+                        helpers::step as *const () as usize,
+                        &[interp, codep, opidx, fnsp],
+                    )?;
+                    check_status(&mut b, status);
+                } else {
+                    // The support scan rejected everything else.
+                    unreachable!("unsupported opcode reached JIT emission")
+                }
+            }
         }
     }
     // Fall off the end of the chunk: OK status (result is on the stack).
