@@ -3,12 +3,9 @@ use crate::compiler::Compiler;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    /// Get the current source line number from the interpreter env.
+    /// Get the current source line number from the interpreter.
     pub(super) fn current_source_line(&self) -> Option<u32> {
-        self.env().get("?LINE").and_then(|v| match v.view() {
-            ValueView::Int(n) => Some(n as u32),
-            _ => None,
-        })
+        Some(self.cur_source_line as u32)
     }
 
     /// Get the current source file from the interpreter env.

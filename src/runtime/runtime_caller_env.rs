@@ -13,14 +13,7 @@ impl Interpreter {
             .get("?FILE")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let line = self
-            .env
-            .get("?LINE")
-            .and_then(|v| match v.view() {
-                ValueView::Int(i) => Some(i),
-                _ => None,
-            })
-            .unwrap_or(0);
+        let line = self.cur_source_line;
         let code = code.or_else(|| self.block_stack.last().cloned());
         self.callframe_stack.push(CallFrameEntry {
             file,
@@ -32,7 +25,12 @@ impl Interpreter {
 
     pub(crate) fn pop_caller_env(&mut self) {
         self.caller_env_stack.pop();
-        self.callframe_stack.pop();
+        // Restore the caller's current line (recorded at push time). The
+        // env-based `?LINE` got this for free from the `saved_env` restore;
+        // the field must be rolled back explicitly.
+        if let Some(entry) = self.callframe_stack.pop() {
+            self.cur_source_line = entry.line;
+        }
     }
 
     /// Push the caller frames an `EVAL` inserts between the EVAL'd unit's
@@ -84,17 +82,19 @@ impl Interpreter {
                 });
             }
         }
-        self.callframe_stack.pop();
+        if let Some(entry) = self.callframe_stack.pop() {
+            self.cur_source_line = entry.line;
+        }
     }
 
     pub(crate) fn get_caller_line(&self, depth: usize) -> Option<Value> {
-        let stack_len = self.caller_env_stack.len();
+        let stack_len = self.callframe_stack.len();
         if depth == 0 || depth > stack_len {
             return None;
         }
-        self.caller_env_stack
+        self.callframe_stack
             .get(stack_len - depth)
-            .and_then(|env| env.get("?LINE").cloned())
+            .map(|entry| Value::int(entry.line))
     }
 
     /// Look up a variable through the $CALLER:: chain.

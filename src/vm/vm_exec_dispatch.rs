@@ -4200,8 +4200,7 @@ impl Interpreter {
                 self.exec_let_block_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::SetSourceLine(line) => {
-                self.env_mut()
-                    .insert("?LINE".to_string(), Value::int(*line));
+                self.cur_source_line = *line;
                 *ip += 1;
             }
         }

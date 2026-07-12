@@ -112,6 +112,8 @@ impl Interpreter {
         // lose package-var reads/writes.
         let saved_package = self.enter_routine_package(cf);
         let let_mark = self.let_saves_len();
+        // Frame-less path: roll back the body's SetSourceLine updates manually.
+        let saved_line = self.cur_source_line;
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -168,6 +170,7 @@ impl Interpreter {
 
         self.stack.truncate(saved_stack_depth);
 
+        self.cur_source_line = saved_line;
         // Sync state variables back to persistent storage. Prefer the env
         // value over locals because methods like .push() mutate the Value
         // in the env in-place, and the locals copy may be stale.

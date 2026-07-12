@@ -128,6 +128,10 @@ impl Interpreter {
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
+        // This path skips push_caller_env, so roll back the callee body's
+        // SetSourceLine updates manually (env-based ?LINE got this for free
+        // from the overlay drop).
+        let saved_line = self.cur_source_line;
         // Run the body under the routine's declaring package (set after the
         // arity/type-check early returns above, which run under the caller's
         // package). Restored after the env merge below.
@@ -189,6 +193,7 @@ impl Interpreter {
 
         self.stack.truncate(saved_stack_depth);
 
+        self.cur_source_line = saved_line;
         self.locals = saved_locals;
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;

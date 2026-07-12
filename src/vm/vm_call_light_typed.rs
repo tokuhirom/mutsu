@@ -277,6 +277,8 @@ impl Interpreter {
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
+        // Frame-less path: roll back the body's SetSourceLine updates manually.
+        let saved_line = self.cur_source_line;
         // Run the body under the routine's declaring package (set after the
         // required-param early returns above). Restored after the env merge below.
         let saved_package = self.enter_routine_package(cf);
@@ -338,6 +340,7 @@ impl Interpreter {
 
         self.stack.truncate(saved_stack_depth);
 
+        self.cur_source_line = saved_line;
         // Restore locals
         self.locals = saved_locals;
         self.loop_local_vars = saved_loop_local_vars;

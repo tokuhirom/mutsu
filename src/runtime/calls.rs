@@ -20,14 +20,7 @@ impl Interpreter {
                 .get("*PROGRAM-NAME")
                 .map(|v| v.to_string_value())
                 .unwrap_or_default();
-            let line = callsite_line
-                .or_else(|| {
-                    self.env.get("?LINE").and_then(|v| match v.view() {
-                        ValueView::Int(i) => Some(i),
-                        _ => None,
-                    })
-                })
-                .unwrap_or(0);
+            let line = callsite_line.unwrap_or(self.cur_source_line);
             let kind = if def.is_method { "Method" } else { "Sub" };
             let pkg = def.package.resolve();
             super::deprecation::record_deprecation(
@@ -59,14 +52,7 @@ impl Interpreter {
             .get("*PROGRAM-NAME")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let line = callsite_line
-            .or_else(|| {
-                self.env.get("?LINE").and_then(|v| match v.view() {
-                    ValueView::Int(i) => Some(i),
-                    _ => None,
-                })
-            })
-            .unwrap_or(0);
+        let line = callsite_line.unwrap_or(self.cur_source_line);
         super::deprecation::record_deprecation("Method", name, package, message, &file, line);
     }
 
@@ -129,7 +115,7 @@ impl Interpreter {
         let saved_env = self.env.clone();
         let saved_readonly = self.save_readonly_vars();
         if let Some(line) = self.test_pending_callsite_line {
-            self.env.insert("?LINE".to_string(), Value::int(line));
+            self.cur_source_line = line;
         }
         self.push_caller_env();
         // Set current_package to the function's defining package so that default
@@ -325,7 +311,7 @@ impl Interpreter {
                     let saved_env = self.env.clone();
                     let saved_readonly = self.save_readonly_vars();
                     if let Some(line) = self.test_pending_callsite_line {
-                        self.env.insert("?LINE".to_string(), Value::int(line));
+                        self.cur_source_line = line;
                     }
                     self.push_caller_env();
                     let saved_package = self.current_package().to_string();
