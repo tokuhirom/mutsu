@@ -1896,12 +1896,12 @@ pub(crate) struct SubtestContext {
 }
 
 pub(crate) type RoutineRegistrySnapshot = (
-    HashMap<Symbol, Arc<FunctionDef>>,
-    HashMap<Symbol, Arc<FunctionDef>>,
-    HashMap<Symbol, Vec<Arc<FunctionDef>>>,
-    HashSet<String>,
-    HashSet<String>,
-    HashSet<Symbol>,
+    rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
+    rustc_hash::FxHashMap<Symbol, Arc<FunctionDef>>,
+    rustc_hash::FxHashMap<Symbol, Vec<Arc<FunctionDef>>>,
+    rustc_hash::FxHashSet<String>,
+    rustc_hash::FxHashSet<String>,
+    rustc_hash::FxHashSet<Symbol>,
 );
 
 pub(crate) type ImportScopeSnapshot = (

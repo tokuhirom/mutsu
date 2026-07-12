@@ -831,7 +831,7 @@ impl Interpreter {
     pub(crate) fn class_role_param_bindings(
         &self,
         class_name: &str,
-    ) -> Option<HashMap<String, Value>> {
+    ) -> Option<rustc_hash::FxHashMap<String, Value>> {
         self.registry()
             .class_role_param_bindings
             .get(class_name)

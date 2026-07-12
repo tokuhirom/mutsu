@@ -7,8 +7,24 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        self.try_compiled_method_or_interpret_sym(
+            target,
+            crate::symbol::Symbol::intern(method),
+            args,
+        )
+    }
+
+    /// Symbol-keyed entry: callers that already hold the method name as an
+    /// interned `Symbol` (the CallMethod opcode via `CompiledCode::const_sym`)
+    /// use this to keep the per-call `Symbol::intern` off the dispatch path.
+    pub(super) fn try_compiled_method_or_interpret_sym(
+        &mut self,
+        target: Value,
+        method_sym: crate::symbol::Symbol,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         let saved_self = self.get_env_with_main_alias("self");
-        let result = self.try_compiled_method_or_interpret_inner(target, method, args);
+        let result = self.try_compiled_method_or_interpret_inner(target, method_sym, args);
         match saved_self {
             Some(s) => self.set_env_with_main_alias("self", s),
             None => {
@@ -21,9 +37,10 @@ impl Interpreter {
     fn try_compiled_method_or_interpret_inner(
         &mut self,
         target: Value,
-        method: &str,
+        method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let method: &str = method_sym.as_str();
         // Native default construction: `Foo.new(...)` for a simple user-defined
         // class is pure data assembly (named args + attribute defaults), so the
         // Interpreter builds the instance directly instead of routing through the
@@ -405,7 +422,6 @@ impl Interpreter {
         };
         if let Some(class_sym) = class_sym_opt {
             let cn = class_sym.as_str();
-            let method_sym = crate::symbol::Symbol::intern(method);
             let cache_key = (class_sym, method_sym);
 
             // Fast method dispatch cache: skip wrap chain check, compiled_code

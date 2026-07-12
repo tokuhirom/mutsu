@@ -1743,6 +1743,10 @@ pub(crate) struct CompiledCode {
     /// avoid leaking a callee's env-only `my` back into a same-named caller
     /// lexical across (self-)recursion. Populated by `compute_needs_env_sync`.
     pub(crate) env_only_decls: Vec<String>,
+    /// Lazily-built `Symbol` per constant-pool slot (see `const_sym`). Sized on
+    /// first use; each slot interns on first access. Cloning a chunk clones the
+    /// already-resolved entries (cheap: `Symbol` is a `u32`).
+    pub(crate) const_syms: std::sync::OnceLock<Box<[std::sync::OnceLock<Symbol>]>>,
 }
 
 impl CompiledCode {
@@ -1786,6 +1790,30 @@ impl CompiledCode {
             sub_fingerprints: std::collections::HashMap::new(),
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
+            const_syms: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// The `Symbol` for the string constant at `idx`, interned once per slot
+    /// via a lazily-built side table. Keeps `Symbol::intern` (a thread-local
+    /// hash lookup) off the per-call dispatch path: method names are string
+    /// constants that would otherwise be re-interned on every `CallMethod`.
+    pub(crate) fn const_sym(&self, idx: u32) -> Symbol {
+        let resolve = |i: usize| match self.constants[i].view() {
+            ValueView::Str(s) => Symbol::intern(s.as_str()),
+            _ => unreachable!("expected string constant"),
+        };
+        let slots = self.const_syms.get_or_init(|| {
+            (0..self.constants.len())
+                .map(|_| std::sync::OnceLock::new())
+                .collect()
+        });
+        match slots.get(idx as usize) {
+            Some(slot) => *slot.get_or_init(|| resolve(idx as usize)),
+            // A constant appended after the table was sized (compile-time
+            // chunks are finalized before execution, so this is defensive):
+            // fall back to a plain intern.
+            None => resolve(idx as usize),
         }
     }
 

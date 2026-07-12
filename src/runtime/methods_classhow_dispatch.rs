@@ -716,46 +716,47 @@ impl Interpreter {
                     |a| matches!(a.view(), ValueView::Pair(k, v) if k == "local" && v.truthy()),
                 );
                 // Check direct composed roles and transitive sub-roles
-                let check_transitive = |class_composed: &HashMap<String, Vec<String>>,
-                                        role_parents: &HashMap<String, Vec<String>>,
-                                        cn: &str|
-                 -> Option<Value> {
-                    let composed = class_composed.get(cn).cloned().unwrap_or_default();
-                    // Check direct matches
-                    for cr in &composed {
-                        let cr_base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
-                        if *cr == role_name || cr_base == base_role_name {
-                            return Some(Value::package(Symbol::intern(cr_base)));
-                        }
-                    }
-                    // Check transitive sub-roles
-                    let mut stack: Vec<String> = composed
-                        .iter()
-                        .map(|cr| {
-                            cr.split_once('[')
-                                .map(|(b, _)| b)
-                                .unwrap_or(cr.as_str())
-                                .to_string()
-                        })
-                        .collect();
-                    let mut seen = std::collections::HashSet::new();
-                    while let Some(rn) = stack.pop() {
-                        if !seen.insert(rn.clone()) {
-                            continue;
-                        }
-                        if let Some(rp) = role_parents.get(&rn) {
-                            for p in rp {
-                                let p_base =
-                                    p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
-                                if p_base == base_role_name || *p == role_name {
-                                    return Some(Value::package(Symbol::intern(p_base)));
-                                }
-                                stack.push(p_base.to_string());
+                let check_transitive =
+                    |class_composed: &rustc_hash::FxHashMap<String, Vec<String>>,
+                     role_parents: &rustc_hash::FxHashMap<String, Vec<String>>,
+                     cn: &str|
+                     -> Option<Value> {
+                        let composed = class_composed.get(cn).cloned().unwrap_or_default();
+                        // Check direct matches
+                        for cr in &composed {
+                            let cr_base = cr.split_once('[').map(|(b, _)| b).unwrap_or(cr.as_str());
+                            if *cr == role_name || cr_base == base_role_name {
+                                return Some(Value::package(Symbol::intern(cr_base)));
                             }
                         }
-                    }
-                    None
-                };
+                        // Check transitive sub-roles
+                        let mut stack: Vec<String> = composed
+                            .iter()
+                            .map(|cr| {
+                                cr.split_once('[')
+                                    .map(|(b, _)| b)
+                                    .unwrap_or(cr.as_str())
+                                    .to_string()
+                            })
+                            .collect();
+                        let mut seen = std::collections::HashSet::new();
+                        while let Some(rn) = stack.pop() {
+                            if !seen.insert(rn.clone()) {
+                                continue;
+                            }
+                            if let Some(rp) = role_parents.get(&rn) {
+                                for p in rp {
+                                    let p_base =
+                                        p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
+                                    if p_base == base_role_name || *p == role_name {
+                                        return Some(Value::package(Symbol::intern(p_base)));
+                                    }
+                                    stack.push(p_base.to_string());
+                                }
+                            }
+                        }
+                        None
+                    };
                 if let Some(result) = check_transitive(
                     &self.registry().class_composed_roles,
                     &self.registry().role_parents,

@@ -263,7 +263,7 @@ impl Interpreter {
         };
         // Drop the sentinel descriptor's own tag keys; keep only the role/
         // attribute mixin keys that apply to a real attribute value.
-        let clean: std::collections::HashMap<String, Value> = overrides
+        let clean: rustc_hash::FxHashMap<String, Value> = overrides
             .iter()
             .filter(|(k, _)| !k.starts_with("__mutsu_attr_container_"))
             .map(|(k, v)| (k.clone(), v.clone()))

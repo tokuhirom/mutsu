@@ -16,7 +16,7 @@ impl Interpreter {
         class_name: &str,
         def: &MethodDef,
         arg_values: &[Value],
-        role_bindings: Option<&HashMap<String, Value>>,
+        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
         invocant: Option<&Value>,
     ) -> bool {
         let saved_env = self.env.clone();

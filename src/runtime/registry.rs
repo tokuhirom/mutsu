@@ -24,7 +24,12 @@
 //! Always use a *temporary* guard (`self.registry().subsets.get(..)`), never a
 //! `let`-bound guard that lives across such a call.
 
-use std::collections::{HashMap, HashSet};
+// Registry maps are String-keyed and hit on dispatch cache-miss paths; use
+// FxHash instead of SipHash (registry keys are program identifiers, not
+// attacker-controlled data, so HashDoS hardening buys nothing here). The
+// `HashMap`/`HashSet` names are aliased so the ~40 field declarations below
+// stay textually unchanged.
+use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 
 use crate::ast::FunctionDef;
 use crate::symbol::Symbol;
