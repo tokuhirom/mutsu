@@ -665,50 +665,23 @@ impl Interpreter {
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
             attrs_adjusted = self.reconcile_attrs(&base, cc, &mut attributes);
-            let mut method_local_keys: HashSet<String> = HashSet::from_iter([
-                "self".to_string(),
-                "__ANON_STATE__".to_string(),
-                "?CLASS".to_string(),
-                "?ROLE".to_string(),
-                "_".to_string(),
-            ]);
-            for p in &method_def.params {
-                method_local_keys.insert(p.clone());
-            }
-            for attr_name in attributes.keys() {
-                if attr_name.contains('\0') {
-                    continue;
-                }
-                if let Some(actual_attr) = attr_name.strip_prefix(ATTR_ALIAS_META_PREFIX) {
-                    if let Some(ValueView::Str(alias_name)) =
-                        attributes.get(attr_name).map(Value::view)
-                    {
-                        method_local_keys.insert(alias_name.to_string());
-                        method_local_keys.insert(actual_attr.to_string());
-                    }
-                    continue;
-                }
-                method_local_keys.insert(format!("!{}", attr_name));
-                method_local_keys.insert(format!(".{}", attr_name));
-                method_local_keys.insert(format!("@!{}", attr_name));
-                method_local_keys.insert(format!("@.{}", attr_name));
-                method_local_keys.insert(format!("%!{}", attr_name));
-                method_local_keys.insert(format!("%.{}", attr_name));
-            }
-            for local_name in &cc.locals {
-                if !local_name.is_empty() {
-                    method_local_keys.insert(local_name.clone());
-                }
-            }
-            // Env-only `my` declarations (no compiled slot, e.g. a `my @x`
-            // declared in a `next unless my @x = ...` condition) are callee-local
-            // too: without excluding them, a self-recursive method leaks the
-            // callee's `my @x` value back into the caller's same-named `@x`
-            // (zef `!find-prereq-candidates` `@needed`). The light-call merge
-            // already excludes these via `declared_locals`.
-            for name in &cc.env_only_decls {
-                method_local_keys.insert(name.clone());
-            }
+            // Callee-frame key predicate for the merge (formerly a per-call
+            // materialized HashSet<String>): the method's params and locals,
+            // the frame fixtures, the attribute twigil forms and sigilless
+            // aliases, and env-only `my` declarations (no compiled slot, e.g. a
+            // `my @x` declared in a `next unless my @x = ...` condition) — a
+            // self-recursive method must not leak the callee's `my @x` back
+            // into the caller's same-named `@x` (zef `!find-prereq-candidates`
+            // `@needed`). The light-call merge already excludes these via
+            // `declared_locals`.
+            let is_method_local = |s: &str| -> bool {
+                matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
+                    || method_def.params.iter().any(|p| p == s)
+                    || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+                    || cc.env_only_decls.iter().any(|n| n == s)
+                    || attr_twigil_local(&attributes, s)
+                    || attr_alias_local(&attributes, s)
+            };
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
@@ -729,7 +702,7 @@ impl Interpreter {
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
             let (mut merged_env, wrote_caller, changed_caller_locals) =
-                merge_method_env(frame.saved_env, current_env, &method_local_keys);
+                merge_method_env(frame.saved_env, current_env, &is_method_local);
             // Precise dirty signal (Slice 6.3): the caller only needs an
             // env->locals re-sync when this method actually merged a
             // caller-visible write (captured-outer var, global, &sub) or wrote
@@ -1441,38 +1414,21 @@ impl Interpreter {
                 self.method_dispatch_pure = true;
                 self.set_env(frame.saved_env);
             } else {
-                // Build method_local_keys set (keys that should NOT leak to caller)
-                let mut method_local_keys: HashSet<String> = HashSet::from_iter([
-                    "self".to_string(),
-                    "__ANON_STATE__".to_string(),
-                    "?CLASS".to_string(),
-                    "?ROLE".to_string(),
-                    "_".to_string(),
-                ]);
-                for p in &method_def.params {
-                    method_local_keys.insert(p.clone());
-                }
-                for attr_name in attributes.keys() {
-                    if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
-                        continue;
-                    }
-                    method_local_keys.insert(format!("!{}", attr_name));
-                    method_local_keys.insert(format!(".{}", attr_name));
-                    method_local_keys.insert(format!("@!{}", attr_name));
-                    method_local_keys.insert(format!("@.{}", attr_name));
-                    method_local_keys.insert(format!("%!{}", attr_name));
-                    method_local_keys.insert(format!("%.{}", attr_name));
-                }
-                for local_name in &cc.locals {
-                    if !local_name.is_empty() {
-                        method_local_keys.insert(local_name.clone());
-                    }
-                }
+                // Callee-frame key predicate for the merge (keys that should NOT
+                // leak to the caller): frame fixtures, params, attribute twigil
+                // forms, and compiled locals. No alias arm — the fast-path gate
+                // excludes alias-carrying instances.
+                let is_method_local = |s: &str| -> bool {
+                    matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
+                        || method_def.params.iter().any(|p| p == s)
+                        || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+                        || attr_twigil_local(&attributes, s)
+                };
                 // Own both envs (frame already popped above; take the live callee
                 // env) so the merge mutates the caller env in place, no deep copy.
                 let current_env = self.take_env();
                 let (merged, wrote_caller, changed_caller_locals) =
-                    merge_method_env(frame.saved_env, current_env, &method_local_keys);
+                    merge_method_env(frame.saved_env, current_env, &is_method_local);
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.method_dispatch_pure = !wrote_caller;
@@ -1580,6 +1536,37 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
     }
 }
 
+/// True if `s` is an attribute-twigil env key (`!x` / `.x` / `@!x` / `@.x` /
+/// `%!x` / `%.x`) whose bare name is an attribute of this instance. Predicate
+/// form of the former per-call set build, which inserted all 6 twigil forms
+/// for every attribute key (skipping class-qualified `"C\0attr"` storage keys
+/// and `__mutsu_attr_alias::` metadata keys).
+fn attr_twigil_local(attributes: &HashMap<String, Value>, s: &str) -> bool {
+    let bare = match s.as_bytes() {
+        [b'@' | b'%', b'!' | b'.', ..] => &s[2..],
+        [b'!' | b'.', ..] => &s[1..],
+        _ => return false,
+    };
+    !bare.contains('\0')
+        && !bare.starts_with(ATTR_ALIAS_META_PREFIX)
+        && attributes.contains_key(bare)
+}
+
+/// True if `s` is a sigilless-attribute alias name for this instance: either
+/// the alias name stored as the value of a `__mutsu_attr_alias::<attr>` key,
+/// or the `<attr>` suffix of such a key. Predicate form of the former set
+/// build's alias branch (slow path only — the fast path gate excludes
+/// alias-carrying instances).
+fn attr_alias_local(attributes: &HashMap<String, Value>, s: &str) -> bool {
+    attributes.iter().any(|(k, v)| {
+        !k.contains('\0')
+            && k.strip_prefix(ATTR_ALIAS_META_PREFIX)
+                .is_some_and(|actual| {
+                    actual == s || matches!(v.view(), ValueView::Str(alias) if alias.as_str() == s)
+                })
+    })
+}
+
 /// Merge the callee method frame's caller-visible overlay writes back into the
 /// saved caller env. Returns the merged env and a flag that is `true` iff the
 /// merge changed a value that could alias a caller compiled-local slot — the
@@ -1599,14 +1586,18 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
 fn merge_method_env(
     mut saved: Env,
     current: Env,
-    method_local_keys: &HashSet<String>,
+    is_method_local: &dyn Fn(&str) -> bool,
 ) -> (Env, bool, Vec<Symbol>) {
     let writes: Vec<(Symbol, Value)> = current
         .overlay_iter()
         .filter_map(|(k, v)| {
             // Skip keys introduced by the method frame (params, self, attributes,
-            // locals) -- these must not leak back into the caller.
-            if k.with_str(|s| method_local_keys.contains(s)) {
+            // locals) -- these must not leak back into the caller. The membership
+            // test is a call-site predicate over the frame's params/locals/attr
+            // names, replacing the former per-call materialized
+            // `HashSet<String>` (~dozens of String allocations per non-pure
+            // method call for a set consulted only against the few overlay keys).
+            if k.with_str(|s| is_method_local(s)) {
                 return None;
             }
             let keep = saved.contains_key_sym(*k)
