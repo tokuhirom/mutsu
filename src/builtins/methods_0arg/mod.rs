@@ -351,6 +351,38 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // Version introspection: `.parts` (list of Int/Str/Whatever parts),
+    // `.plus` (trailing `+`), `.whatever` (any `*` part). Used by zef's
+    // DependencySpecification version matching.
+    if let ValueView::Version { parts, plus, .. } = target.view() {
+        match method {
+            "parts" => {
+                let items: Vec<Value> = parts
+                    .iter()
+                    .map(|p| match p {
+                        crate::value::VersionPart::Num(n) => Value::int(*n),
+                        crate::value::VersionPart::Str(s) => Value::str_from(s.as_str()),
+                        crate::value::VersionPart::Whatever => Value::WHATEVER,
+                    })
+                    .collect();
+                return Some(Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                    crate::value::ArrayKind::List,
+                )));
+            }
+            "plus" => {
+                return Some(Ok(if plus { Value::TRUE } else { Value::FALSE }));
+            }
+            "whatever" => {
+                let any_star = parts
+                    .iter()
+                    .any(|p| matches!(p, crate::value::VersionPart::Whatever));
+                return Some(Ok(if any_star { Value::TRUE } else { Value::FALSE }));
+            }
+            _ => {}
+        }
+    }
+
     // $!.pending returns a list of all tracked Failure values (S04 spec).
     if method == "pending" {
         let failures = crate::value::get_pending_failures();
