@@ -748,7 +748,48 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                let name = name_str.to_string();
+                let mut name = name_str.to_string();
+                // Outer-lexical write fallback (symmetric with the GetGlobal read
+                // fallback above): the compiler auto-qualifies a bare free variable
+                // with the current package (`$x` inside `grammar G { ... }` compiles
+                // to `SetGlobal("G::x")`). When that qualified name is NOT a real
+                // package/`our` variable but the BARE name IS a captured lexical in
+                // env (an outer `my $x` the block closes over — e.g. an embedded
+                // `regex TOP { x { $x = 42 } }` mutating a top-level lexical),
+                // redirect the write to the bare lexical so the outer variable is
+                // updated in place instead of stranding a stray `G::x` package var.
+                // Confined to embedded regex code blocks so ordinary `our`/
+                // package-qualified writes are never redirected.
+                if self.in_regex_code_block
+                    && !is_rebind
+                    && let Some(pos) = name.rfind("::")
+                {
+                    // Split an optional leading sigil, then `Qualifier::tail`.
+                    let sigil = match name.as_bytes().first().copied() {
+                        Some(b @ (b'$' | b'@' | b'%' | b'&')) => Some(b as char),
+                        _ => None,
+                    };
+                    let sig_len = sigil.map(|_| 1).unwrap_or(0);
+                    let qualifier = &name[sig_len..pos];
+                    let bare_after = &name[pos + 2..];
+                    if !qualifier.is_empty() && !bare_after.is_empty() && !bare_after.contains("::")
+                    {
+                        let cur = self.current_package();
+                        let bare = match sigil {
+                            Some(s) => format!("{s}{bare_after}"),
+                            None => bare_after.to_string(),
+                        };
+                        if !cur.is_empty()
+                            && cur != "GLOBAL"
+                            && qualifier == cur
+                            && self.get_our_var(&name).is_none()
+                            && !self.env().contains_key(&name)
+                            && self.env().contains_key(&bare)
+                        {
+                            name = bare;
+                        }
+                    }
+                }
                 // Reject private attribute twigil (!) assignment when no self is available
                 {
                     let bare = name.trim_start_matches(['$', '@', '%', '&']);
@@ -2742,6 +2783,9 @@ impl Interpreter {
                 // Slice F: write any `is rw` method-param writeback through to the
                 // caller's local slot (no-op unless the dispatch recorded one).
                 self.apply_pending_rw_writeback(code);
+                // A `Grammar.parse` may run embedded regex `{ ... }` blocks that
+                // wrote caller lexicals into `env`; reconcile them into slots.
+                self.drain_pending_local_updates_after_call(code);
                 *ip += 1;
             }
             OpCode::CallMethodDynamic {
@@ -2762,6 +2806,7 @@ impl Interpreter {
                 }
                 // Slice F: drain any `is rw` method-param writeback into the caller's slots.
                 self.apply_pending_rw_writeback(code);
+                self.drain_pending_local_updates_after_call(code);
                 *ip += 1;
             }
             OpCode::CallMethodDynamicMut {
@@ -2785,6 +2830,7 @@ impl Interpreter {
                     }
                 }
                 self.apply_pending_rw_writeback(code);
+                self.drain_pending_local_updates_after_call(code);
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }
@@ -2839,6 +2885,7 @@ impl Interpreter {
                     }
                 }
                 self.apply_pending_rw_writeback(code);
+                self.drain_pending_local_updates_after_call(code);
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
                 *ip += 1;
             }

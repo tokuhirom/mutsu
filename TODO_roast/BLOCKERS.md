@@ -23,7 +23,7 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 ## 現在の前提
 
-- whitelist は **1380**（2026-07-12、`wc -l roast-whitelist.txt`）。
+- whitelist は **1382**（2026-07-12、`wc -l roast-whitelist.txt`）。
 - **roast 由来の大型共通ブロッカーは出尽くした。** かつての大型 campaign
   （真の lazy 配列 / dispatch・演算子 sugar の desugar / S17 並行・非同期 /
   第一級コンテナ container identity / cross-thread lexical writeback）はすべて完了済み。
@@ -47,7 +47,6 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 | 分類 | ファイル | mutsu | raku (v2022.12/6.d) | ブロッカー（一言） |
 |---|---|---|---|---|
 | ★達成可能 | `S32-hash/perl.t` | 47/55・notok 8 | 55/55 満点 | 残 8 は匿名 typed hash `$(my Any %)` の EVAL round-trip 型喪失＝パラメータ化ロール type-capture binding 待ち（匿名 typed 容器タグ付けが binding を壊す既存制限） |
-| ★達成可能 | `6.c/S05-grammar/methods.t` | 4/8・notok 4 | 8/8 満点 | grammar エンジンの深い複合: regex 内 die の伝播、埋め込みブロックの外側レキシカルキャプチャ、dup-token エラー |
 | ★達成可能 | `6.c/S06-other/main-refactored.t` | 0/501 | 501/501 満点 | 新 MAIN インターフェース全体（USAGE 生成・引数 coercion 等）が必要 |
 | 基盤待ち | `S32-str/format.t` | 26/49 で中断 | SORRY（6.e `Format`） | `Formatter::Syntax.parse`→Match、`Formatter.AST`→`RakuAST::Node` を要求＝**RakuAST サブシステム不在**。stub 化は禁止のため据え置き |
 | 基盤待ち | `S02-types/generics.t` | 0/1 | SORRY（6.e） | 6.e coercion type 項 + `Array[T]` サブクラス化が必要。ローカル raku 自身もコンパイル不能で参照検証すらできない |
