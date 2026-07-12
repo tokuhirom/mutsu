@@ -27,6 +27,7 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
         self.func_multi_resolve_cache.clear();
@@ -65,6 +66,7 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
         self.func_multi_resolve_cache.clear();
@@ -94,6 +96,7 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
         self.func_multi_resolve_cache.clear();
@@ -119,6 +122,7 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
         self.func_multi_resolve_cache.clear();

@@ -6,6 +6,7 @@ impl Interpreter {
         class_name: Symbol,
         cn_resolved: &str,
         args: &[Value],
+        plan: &super::NativeCtorPlan,
     ) -> Option<Result<Value, RuntimeError>> {
         // The default `.new` accepts only named arguments (`method new(*%_)`); a
         // positional argument is an error (`X::Constructor::Positional`). The
@@ -20,12 +21,11 @@ impl Interpreter {
         {
             return None;
         }
-        let class_attrs = self.collect_class_attributes(cn_resolved);
-        // Attribute type constraints (MRO-wide) live in `attribute_types`, not in
-        // the `ClassAttributeDef` tuple's constraint slot — and the gate already
-        // guaranteed every one is a simple `type_matches_value`-checkable class
-        // type. Owned map, so it can be read while `self` is borrowed mutably.
-        let type_constraints = self.collect_attribute_type_constraints(cn_resolved);
+        // Class-shape facts (attribute defs, MRO-wide type constraints, the
+        // BUILD/TWEAK/smiley probes) come precomputed from the per-class
+        // `NativeCtorPlan` instead of being re-derived on every construction.
+        let class_attrs = &*plan.class_attrs;
+        let type_constraints = &*plan.type_constraints;
 
         let sigil_of = |name: &str| -> char {
             class_attrs
@@ -42,12 +42,7 @@ impl Interpreter {
         // `class P { has $.x = 42; submethod BUILD() {} }; P.new(:666x).x` is 42.
         // Skip the auto-assignment loop when the class has a BUILD; defaults are
         // still filled below and BUILD runs afterward.
-        let has_build = self.mro_readonly(cn_resolved).iter().any(|cls| {
-            self.registry()
-                .classes
-                .get(cls)
-                .is_some_and(|cd| cd.methods.contains_key("BUILD"))
-        });
+        let has_build = plan.has_build;
 
         let mut attrs = HashMap::new();
         for arg in args {
@@ -110,7 +105,7 @@ impl Interpreter {
         // `is_rw`, which must NOT gate construction (an unprovided `is rw`
         // attribute just gets its normal default, so it stays native).
         if !has_build {
-            for (attr_name, _, _, _is_rw, is_required, _, _) in &class_attrs {
+            for (attr_name, _, _, _is_rw, is_required, _, _) in class_attrs.iter() {
                 if let Some(reason) = is_required
                     && !attrs.contains_key(attr_name)
                 {
@@ -135,7 +130,7 @@ impl Interpreter {
         // the interpreter's construction — fall through whether or not it was
         // provided (a shaped attribute must stay shaped even when assigned).
         // Only the empty-default `@`/`%` case (handled below) is native.
-        for (_attr_name, _, default_expr, _, _, sigil, _) in &class_attrs {
+        for (_attr_name, _, default_expr, _, _, sigil, _) in class_attrs.iter() {
             if matches!(sigil, '@' | '%') && default_expr.is_some() {
                 return None;
             }
@@ -153,7 +148,7 @@ impl Interpreter {
         // that fast path made a 20k-iteration native-attr loop time out.
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
-        for (attr_name, _is_public, default_expr, _, _, sigil, _) in &class_attrs {
+        for (attr_name, _is_public, default_expr, _, _, sigil, _) in class_attrs.iter() {
             if attrs.contains_key(attr_name) {
                 continue;
             }
@@ -294,7 +289,7 @@ impl Interpreter {
         // `coerce_value_for_constraint` is the exact path the interpreter uses, so
         // the result is identical; the gate already excluded user-class targets,
         // so only built-in coercion logic runs here.
-        for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
+        for (attr_name, _, _, _, _, sigil, _) in class_attrs.iter() {
             if *sigil != '$' {
                 continue;
             }
@@ -318,7 +313,7 @@ impl Interpreter {
         // container flattens it (just like `my @a = |@x` yields an `Array`, not a
         // `Slip`), so materialize it into a plain mutable `Array` here. Without
         // this the attribute keeps a `Slip` whose `.^name` is `Slip`.
-        for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
+        for (attr_name, _, _, _, _, sigil, _) in class_attrs.iter() {
             if *sigil != '@' {
                 continue;
             }
@@ -332,7 +327,7 @@ impl Interpreter {
                 attrs.insert(attr_name.clone(), flattened);
             }
         }
-        for (attr_name, _, _, _, _, sigil, _) in &class_attrs {
+        for (attr_name, _, _, _, _, sigil, _) in class_attrs.iter() {
             if !matches!(sigil, '@' | '%') {
                 continue;
             }
@@ -360,12 +355,7 @@ impl Interpreter {
         // applies defaults before BUILD). `has_build` was computed above (it
         // gates the named-arg auto-assignment); the TWEAK check is cheap so the
         // common no-submethod case pays nothing extra.
-        let has_tweak = self.mro_readonly(cn_resolved).iter().any(|cls| {
-            self.registry()
-                .classes
-                .get(cls)
-                .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
-        });
+        let has_tweak = plan.has_tweak;
         // Enforce `where` constraints at attribute-assignment time, i.e. *before*
         // BUILD/TWEAK run (matches the interpreter's pre-BUILD enforcement): a
         // provided/defaulted value that fails its `where` is rejected here, and a
@@ -374,7 +364,7 @@ impl Interpreter {
         let has_where = class_attrs.iter().any(|(.., where_c)| where_c.is_some());
         if has_where
             && let Err(e) =
-                self.enforce_attribute_where_constraints(cn_resolved, &class_attrs, &attrs)
+                self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)
         {
             return Some(Err(e));
         }
@@ -383,12 +373,7 @@ impl Interpreter {
         // definedness does not match its `:D`/`:U` smiley is rejected here, exactly
         // as the full constructor does (`enforce_attribute_smiley_constraints`,
         // which itself skips `is required` attributes). `:_` imposes no constraint.
-        let has_smiley = self.mro_readonly(cn_resolved).iter().any(|cls| {
-            self.registry()
-                .classes
-                .get(cls)
-                .is_some_and(|cd| !cd.attribute_smileys.is_empty())
-        });
+        let has_smiley = plan.has_smiley;
         if has_smiley && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs)
         {
             return Some(Err(e));
@@ -405,7 +390,7 @@ impl Interpreter {
             // exactly where the full constructor does its post-BUILD required
             // check. A still-unset attribute (`None` or `Nil`) raises
             // `X::Attribute::Required` with the same message and reason.
-            for (attr_name, _, _, _, is_required, _, _) in &class_attrs {
+            for (attr_name, _, _, _, is_required, _, _) in class_attrs.iter() {
                 if let Some(reason) = is_required {
                     let is_set = !matches!(
                         attrs.get(attr_name).map(Value::view),
@@ -447,7 +432,7 @@ impl Interpreter {
         if has_where
             && (has_build || has_tweak)
             && let Err(e) =
-                self.enforce_attribute_where_constraints(cn_resolved, &class_attrs, &attrs)
+                self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)
         {
             return Some(Err(e));
         }

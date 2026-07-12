@@ -243,6 +243,83 @@ impl Interpreter {
         })
     }
 
+    /// Compute (or fetch the memoized) per-class plan for the native default
+    /// constructor. The eligibility gate, the MRO-collected attribute defs, the
+    /// attribute type constraints, and the BUILD/TWEAK/smiley probes are all
+    /// pure functions of the registry's class shape, yet they were re-derived
+    /// (with Vec/HashMap clones and multiple MRO walks) on EVERY construction.
+    /// The cache is invalidated with the method-dispatch caches at every
+    /// registry/type mutation site plus the MOP class-shape mutators.
+    pub(crate) fn native_ctor_plan(
+        &mut self,
+        class_name: Symbol,
+    ) -> std::sync::Arc<super::NativeCtorPlan> {
+        if let Some(plan) = self.native_ctor_plan_cache.get(&class_name) {
+            return plan.clone();
+        }
+        let cn_resolved = class_name.as_str();
+        let is_cunion = self.registry().cunion_classes.contains(cn_resolved);
+        let registered = self.registry().classes.contains_key(cn_resolved);
+        let eligible = !is_cunion && self.is_native_default_constructible(cn_resolved);
+        let (class_attrs, type_constraints, has_build, has_tweak, has_smiley) = if eligible {
+            let class_attrs = std::sync::Arc::new(self.collect_class_attributes(cn_resolved));
+            let type_constraints =
+                std::sync::Arc::new(self.collect_attribute_type_constraints(cn_resolved));
+            let mro = self.mro_readonly(cn_resolved);
+            let registry = self.registry();
+            let has_build = mro.iter().any(|cls| {
+                registry
+                    .classes
+                    .get(cls)
+                    .is_some_and(|cd| cd.methods.contains_key("BUILD"))
+            });
+            let has_tweak = mro.iter().any(|cls| {
+                registry
+                    .classes
+                    .get(cls)
+                    .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
+            });
+            let has_smiley = mro.iter().any(|cls| {
+                registry
+                    .classes
+                    .get(cls)
+                    .is_some_and(|cd| !cd.attribute_smileys.is_empty())
+            });
+            drop(registry);
+            (
+                class_attrs,
+                type_constraints,
+                has_build,
+                has_tweak,
+                has_smiley,
+            )
+        } else {
+            (
+                std::sync::Arc::new(Vec::new()),
+                std::sync::Arc::new(HashMap::new()),
+                false,
+                false,
+                false,
+            )
+        };
+        let plan = std::sync::Arc::new(super::NativeCtorPlan {
+            is_cunion,
+            eligible,
+            class_attrs,
+            type_constraints,
+            has_build,
+            has_tweak,
+            has_smiley,
+        });
+        // Don't freeze a plan for a class that is not (yet) registered: e.g. a
+        // role punned to a class on first use would otherwise keep a stale
+        // negative plan without passing any invalidation site.
+        if registered || is_cunion {
+            self.native_ctor_plan_cache.insert(class_name, plan.clone());
+        }
+        plan
+    }
+
     /// Default-construct `class_name` natively when it is eligible (see
     /// `is_native_default_constructible`). Returns `None` for ineligible
     /// classes so callers fall through to the full constructor dispatch.
@@ -252,7 +329,7 @@ impl Interpreter {
         class_name: Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let cn_resolved = class_name.resolve();
+        let plan = self.native_ctor_plan(class_name);
         // A `repr('CUnion')` class constructs via a byte overlay
         // (`construct_cunion_instance`): its native-int fields share the same
         // underlying bytes. The interpreter's `dispatch_new` does *nothing else*
@@ -261,13 +338,13 @@ impl Interpreter {
         // constructible` still rejects CUnion classes, keeping
         // `build_native_default_instance` (plain per-attribute assignment) from
         // ever touching the byte overlay.
-        if self.registry().cunion_classes.contains(&cn_resolved) {
-            return Some(self.construct_cunion_instance(&cn_resolved, args));
+        if plan.is_cunion {
+            return Some(self.construct_cunion_instance(class_name.as_str(), args));
         }
-        if !self.is_native_default_constructible(&cn_resolved) {
+        if !plan.eligible {
             return None;
         }
-        self.build_native_default_instance(class_name, &cn_resolved, args)
+        self.build_native_default_instance(class_name, class_name.as_str(), args, &plan)
     }
 
     /// Apply `has $.x does Role` attribute traits: mix each declared role into
