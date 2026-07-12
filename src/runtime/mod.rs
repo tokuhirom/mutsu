@@ -363,7 +363,7 @@ pub(crate) use methods_collection_ops::{current_mutsu_thread_id, is_initial_thre
 
 use self::unicode::{check_unicode_property, check_unicode_property_with_args};
 
-pub(super) type ClassAttributeDef = (
+pub(crate) type ClassAttributeDef = (
     String,
     bool,
     Option<Expr>,
@@ -372,6 +372,25 @@ pub(super) type ClassAttributeDef = (
     char,
     Option<Expr>,
 );
+
+/// Per-class plan for the native default constructor
+/// (`try_native_default_construct`): everything about the class shape that the
+/// constructor consulted on EVERY construction but that only changes when the
+/// registry's class shape changes — eligibility, the MRO-collected attribute
+/// defs, attribute type constraints, and the BUILD/TWEAK/smiley MRO probes.
+/// Cached in `Interpreter::native_ctor_plan_cache`; invalidated together with
+/// the method-dispatch caches at every registry/type mutation site, plus the
+/// MOP mutators that alter class shape without passing those sites
+/// (`Attribute.set_build`, `^add_attribute`, `^add_method`, `^compose`).
+pub(crate) struct NativeCtorPlan {
+    pub(crate) is_cunion: bool,
+    pub(crate) eligible: bool,
+    pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
+    pub(crate) type_constraints: Arc<HashMap<String, String>>,
+    pub(crate) has_build: bool,
+    pub(crate) has_tweak: bool,
+    pub(crate) has_smiley: bool,
+}
 
 /// Kind of declaration a doc comment is attached to.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1716,6 +1735,12 @@ pub struct Interpreter {
     pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
+    /// Memoized `class -> NativeCtorPlan` for the native default constructor.
+    /// Cleared wherever `fast_method_cache` is cleared, plus the MOP class-shape
+    /// mutators (`Attribute.set_build`, `^add_attribute`, `^add_method`,
+    /// `^compose`). A class not yet registered is never cached (a role punned
+    /// to a class on first use must not freeze a negative plan).
+    pub(crate) native_ctor_plan_cache: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
     /// Sound multi-method resolution cache (§B): for a multi whose dispatch is
     /// purely type+arity based (no `where` / literal / subset / `:D`/`:U` smiley /
     /// coercion candidate), the resolved candidate is a function of the receiver

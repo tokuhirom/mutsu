@@ -463,6 +463,9 @@ impl Interpreter {
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.methods.insert(method_name, vec![def]);
                 }
+                // Class shape changed (an added BUILD/TWEAK/new flips ctor
+                // eligibility) — drop cached construction plans.
+                self.native_ctor_plan_cache.clear();
                 // Return Nil even if the class was not found (e.g. built-in types
                 // like Rat that are not in the user-defined class registry).
                 // Raku's add_method returns the method name; returning Nil is
@@ -502,8 +505,15 @@ impl Interpreter {
                     deprecated_message: None,
                     is_submethod: false,
                 };
-                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
-                    class_def.methods.entry(method_name).or_default().push(def);
+                let inserted =
+                    if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
+                        class_def.methods.entry(method_name).or_default().push(def);
+                        true
+                    } else {
+                        false
+                    };
+                if inserted {
+                    self.native_ctor_plan_cache.clear();
                     return Ok(Value::NIL);
                 }
                 Err(RuntimeError::new(format!(
@@ -546,6 +556,7 @@ impl Interpreter {
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
                     class_def.mro = mro;
                 }
+                self.native_ctor_plan_cache.clear();
                 Ok(Value::NIL)
             }
             "add_attribute" if args.len() >= 2 => {
@@ -606,6 +617,8 @@ impl Interpreter {
                             class_def.attribute_types.insert(bare_name, tc);
                         }
                     }
+                    // Attribute set changed — drop cached construction plans.
+                    self.native_ctor_plan_cache.clear();
                 }
                 Ok(Value::NIL)
             }

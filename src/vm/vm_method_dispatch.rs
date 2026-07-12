@@ -462,25 +462,31 @@ impl Interpreter {
         }
 
         // Register `is default(...)` values for attribute variables so that
-        // .VAR.default returns the correct value inside methods.
-        for attr_name in attributes.keys() {
-            if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
-                continue;
-            }
-            // Check both the owner class and the receiver class for defaults
-            let default_val = self
-                .class_attribute_default(owner_class, attr_name)
-                .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
-            if let Some(def) = default_val {
-                // Register for $!attr and $.attr variable names
-                self.set_var_default(&format!("!{}", attr_name), def.clone());
-                self.set_var_default(&format!(".{}", attr_name), def.clone());
-                // Also register for @!attr/@.attr and %!attr/%.attr so
-                // .VAR.default works on array/hash attributes.
-                self.set_var_default(&format!("@!{}", attr_name), def.clone());
-                self.set_var_default(&format!("@.{}", attr_name), def.clone());
-                self.set_var_default(&format!("%!{}", attr_name), def.clone());
-                self.set_var_default(&format!("%.{}", attr_name), def);
+        // .VAR.default returns the correct value inside methods. Gated on the
+        // program declaring ANY attribute default: the common no-default case
+        // otherwise paid 2 lookups (each allocating a (String, String) key)
+        // per attribute on every method call.
+        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
+        if any_attr_defaults {
+            for attr_name in attributes.keys() {
+                if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+                    continue;
+                }
+                // Check both the owner class and the receiver class for defaults
+                let default_val = self
+                    .class_attribute_default(owner_class, attr_name)
+                    .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
+                if let Some(def) = default_val {
+                    // Register for $!attr and $.attr variable names
+                    self.set_var_default(&format!("!{}", attr_name), def.clone());
+                    self.set_var_default(&format!(".{}", attr_name), def.clone());
+                    // Also register for @!attr/@.attr and %!attr/%.attr so
+                    // .VAR.default works on array/hash attributes.
+                    self.set_var_default(&format!("@!{}", attr_name), def.clone());
+                    self.set_var_default(&format!("@.{}", attr_name), def.clone());
+                    self.set_var_default(&format!("%!{}", attr_name), def.clone());
+                    self.set_var_default(&format!("%.{}", attr_name), def);
+                }
             }
         }
 
@@ -1272,21 +1278,25 @@ impl Interpreter {
             }
         }
 
-        // Register `is default(...)` values for attribute variables
-        for attr_name in attributes.keys() {
-            if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
-                continue;
-            }
-            let default_val = self
-                .class_attribute_default(owner_class, attr_name)
-                .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
-            if let Some(def) = default_val {
-                self.set_var_default(&format!("!{}", attr_name), def.clone());
-                self.set_var_default(&format!(".{}", attr_name), def.clone());
-                self.set_var_default(&format!("@!{}", attr_name), def.clone());
-                self.set_var_default(&format!("@.{}", attr_name), def.clone());
-                self.set_var_default(&format!("%!{}", attr_name), def.clone());
-                self.set_var_default(&format!("%.{}", attr_name), def);
+        // Register `is default(...)` values for attribute variables. Gated on
+        // the program declaring ANY attribute default (see the slow path).
+        let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
+        if any_attr_defaults {
+            for attr_name in attributes.keys() {
+                if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
+                    continue;
+                }
+                let default_val = self
+                    .class_attribute_default(owner_class, attr_name)
+                    .or_else(|| self.class_attribute_default(receiver_class_name, attr_name));
+                if let Some(def) = default_val {
+                    self.set_var_default(&format!("!{}", attr_name), def.clone());
+                    self.set_var_default(&format!(".{}", attr_name), def.clone());
+                    self.set_var_default(&format!("@!{}", attr_name), def.clone());
+                    self.set_var_default(&format!("@.{}", attr_name), def.clone());
+                    self.set_var_default(&format!("%!{}", attr_name), def.clone());
+                    self.set_var_default(&format!("%.{}", attr_name), def);
+                }
             }
         }
 

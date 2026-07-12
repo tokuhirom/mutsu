@@ -49,6 +49,7 @@ impl Interpreter {
         self.method_resolve_cache.clear();
         self.last_method_resolve = None;
         self.fast_method_cache.clear();
+        self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
         self.func_multi_resolve_cache.clear();
@@ -305,6 +306,8 @@ impl Interpreter {
             loan_env!(self, augment_class(&name_str, body))?;
             // Recompile augmented class methods for the fast path
             self.compile_class_methods(&name_str);
+            // Augment can add methods/attributes — drop cached construction plans.
+            self.native_ctor_plan_cache.clear();
             Ok(())
         } else {
             Err(RuntimeError::new("AugmentClass expects AugmentClass stmt"))
