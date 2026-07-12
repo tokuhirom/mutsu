@@ -47,6 +47,42 @@ pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     Ok(format!("{:#?}", stmts))
 }
 
+/// Parse and compile source code, returning a disassembly of the compiled
+/// bytecode: the mainline followed by each compiled function. Used for
+/// compiler/JIT debugging (`--dump-bytecode`).
+pub fn dump_bytecode(input: &str) -> Result<String, RuntimeError> {
+    use std::fmt::Write;
+    let (stmts, _) = parse_dispatch::parse_source(input)?;
+    let mut compiler = compiler::Compiler::new();
+    compiler.is_mainline = true;
+    let (code, compiled_fns) = compiler.compile(&stmts);
+    let mut out = String::new();
+    let disasm = |out: &mut String, code: &opcode::CompiledCode| {
+        for (i, op) in code.ops.iter().enumerate() {
+            let _ = writeln!(out, "  {:4}: {:?}", i, op);
+        }
+        if !code.constants.is_empty() {
+            let _ = writeln!(out, "  constants:");
+            for (i, c) in code.constants.iter().enumerate() {
+                let _ = writeln!(out, "    {:4}: {:?}", i, c);
+            }
+        }
+        if !code.locals.is_empty() {
+            let _ = writeln!(out, "  locals: {:?}", code.locals);
+        }
+    };
+    let _ = writeln!(out, "== mainline ==");
+    disasm(&mut out, &code);
+    let mut names: Vec<&String> = compiled_fns.keys().collect();
+    names.sort();
+    for name in names {
+        let cf = &compiled_fns[name];
+        let _ = writeln!(out, "== sub {} ==", name);
+        disasm(&mut out, &cf.code);
+    }
+    Ok(out)
+}
+
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 

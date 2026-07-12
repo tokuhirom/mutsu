@@ -1641,6 +1641,11 @@ pub struct Interpreter {
     /// package-qualified writes elsewhere are unaffected.
     pub(crate) in_regex_code_block: bool,
     pub(crate) resume_ip: Option<usize>,
+    /// Error slot for JIT-compiled bodies (ADR-0004 J1): an `extern "C"` opcode
+    /// helper cannot return a `RuntimeError` by value across the native-code
+    /// boundary, so it parks the error here and returns a nonzero status; the
+    /// JIT entry wrapper takes it back out. Always `None` outside a JIT call.
+    pub(crate) jit_error: Option<RuntimeError>,
     pub(crate) bind_context: bool,
     pub(crate) scalar_bind_context: bool,
     pub(crate) bound_decont_active: bool,

@@ -343,6 +343,7 @@ impl Interpreter {
             method_dispatch_pure: false,
             in_regex_code_block: false,
             resume_ip: None,
+            jit_error: None,
             bind_context: false,
             scalar_bind_context: false,
             bound_decont_active: false,

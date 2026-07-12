@@ -2,18 +2,27 @@
 name = "mutsu"
 version = "0.2.34"
 edition = "2024"
-rust-version = "1.92.0"
+rust-version = "1.93.0"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [features]
-default = ["native"]
+default = ["native", "jit"]
 native = ["rustyline", "libc", "pcre2", "libloading", "libffi"]
 wasm = ["wasm-bindgen", "console_error_panic_hook"]
 # NativeCall (C FFI) support — gated under `native`; wasm builds cannot do FFI.
 libloading = ["dep:libloading"]
 libffi = ["dep:libffi"]
+# Cranelift method JIT (ADR-0004, layer 4). Compiled in by default but inert
+# unless MUTSU_JIT=on at runtime. Disable for targets Cranelift can't build on.
+jit = [
+    "dep:cranelift-codegen",
+    "dep:cranelift-frontend",
+    "dep:cranelift-jit",
+    "dep:cranelift-module",
+    "dep:cranelift-native",
+]
 
 [dependencies]
 regex = "1.12.3"
@@ -39,6 +48,11 @@ icu_collator = "2.1"
 icu_collator_data = "2.1"
 libloading = { version = "0.8", optional = true }
 libffi = { version = "3", optional = true }
+cranelift-codegen = { version = "0.132", optional = true }
+cranelift-frontend = { version = "0.132", optional = true }
+cranelift-jit = { version = "0.132", optional = true }
+cranelift-module = { version = "0.132", optional = true }
+cranelift-native = { version = "0.132", optional = true }
 
 [profile.release]
 debug = true

@@ -25,7 +25,7 @@ jobs:
 
       # tagpr bumps the version in Cargo.toml; keep Cargo.lock's `mutsu` entry in
       # sync so the release PR (and merged main) carries a coherent lockfile.
-      - uses: dtolnay/rust-toolchain@b5826f8eb73f40ac7c19ef631dce17a9680f8129 # 1.92.0
+      - uses: dtolnay/rust-toolchain@45f5412a0cc5dee553bb061a37369fc8e63fa137 # 1.93.0
 
       - uses: Songmu/tagpr@e84001bd5dac8defa0c75b3913937d284a3b3660 # v1.20.0
         env:

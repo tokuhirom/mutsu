@@ -1747,6 +1747,26 @@ pub(crate) struct CompiledCode {
     /// first use; each slot interns on first access. Cloning a chunk clones the
     /// already-resolved entries (cheap: `Symbol` is a `u32`).
     pub(crate) const_syms: std::sync::OnceLock<Box<[std::sync::OnceLock<Symbol>]>>,
+    /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
+    pub(crate) jit: JitCodeState,
+}
+
+/// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
+/// `entry` caches the compiled native entry so the per-call cost once compiled
+/// is a single atomic load: 0 = cold (counting), `JIT_ENTRY_BAILOUT` = chunk
+/// contains an unsupported opcode (never retry), any other value = the native
+/// function pointer. Cloning a chunk resets the state — a clone is a distinct
+/// compilation identity (the global fingerprint cache still avoids recompiles).
+#[derive(Debug, Default)]
+pub(crate) struct JitCodeState {
+    pub(crate) calls: std::sync::atomic::AtomicU32,
+    pub(crate) entry: std::sync::atomic::AtomicU64,
+}
+
+impl Clone for JitCodeState {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 impl CompiledCode {
@@ -1791,6 +1811,7 @@ impl CompiledCode {
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
             const_syms: std::sync::OnceLock::new(),
+            jit: JitCodeState::default(),
         }
     }
 

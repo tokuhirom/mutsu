@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    fn mark_failure_handled_on_stack(stack: &mut [Value]) {
+    pub(super) fn mark_failure_handled_on_stack(stack: &mut [Value]) {
         if let Some(ValueView::Instance {
             class_name,
             id,
