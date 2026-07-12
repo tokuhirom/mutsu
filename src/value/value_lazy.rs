@@ -59,8 +59,8 @@ impl LazyList {
     /// Whether this lazy list was assigned into an `@` array (see marker above).
     pub(crate) fn in_array_context(&self) -> bool {
         matches!(
-            self.env.get(Self::ARRAY_CONTEXT_MARKER),
-            Some(Value(ValueRepr::Bool(true)))
+            self.env.get(Self::ARRAY_CONTEXT_MARKER).map(Value::view),
+            Some(ValueView::Bool(true))
         )
     }
 
@@ -120,8 +120,10 @@ impl LazyList {
     /// `__mutsu_lazylist_from_gather` env marker).
     pub(crate) fn is_from_gather(&self) -> bool {
         matches!(
-            self.env.get("__mutsu_lazylist_from_gather"),
-            Some(Value(ValueRepr::Bool(true)))
+            self.env
+                .get("__mutsu_lazylist_from_gather")
+                .map(Value::view),
+            Some(ValueView::Bool(true))
         )
     }
 
@@ -194,8 +196,10 @@ impl LazyList {
     /// statement prefix / `.lazy` method).
     fn is_lazy_marked(&self) -> bool {
         matches!(
-            self.env.get("__mutsu_preserve_lazy_on_array_assign"),
-            Some(Value(ValueRepr::Bool(true)))
+            self.env
+                .get("__mutsu_preserve_lazy_on_array_assign")
+                .map(Value::view),
+            Some(ValueView::Bool(true))
         )
     }
 
@@ -214,8 +218,8 @@ impl LazyList {
     /// not the default `Seq`). Mutually exclusive with array context in practice.
     pub(crate) fn in_list_context(&self) -> bool {
         matches!(
-            self.env.get(Self::LIST_CONTEXT_MARKER),
-            Some(Value(ValueRepr::Bool(true)))
+            self.env.get(Self::LIST_CONTEXT_MARKER).map(Value::view),
+            Some(ValueView::Bool(true))
         )
     }
 
@@ -238,8 +242,8 @@ impl LazyList {
     /// Whether this list is a `.cache`-returned view whose sink is a no-op.
     pub(crate) fn is_cached_no_sink(&self) -> bool {
         matches!(
-            self.env.get(Self::CACHED_NO_SINK_MARKER),
-            Some(Value(ValueRepr::Bool(true)))
+            self.env.get(Self::CACHED_NO_SINK_MARKER).map(Value::view),
+            Some(ValueView::Bool(true))
         )
     }
 
@@ -459,23 +463,15 @@ impl LazyList {
         let negate = spec.negate;
 
         // Generate source values
-        let new_values: Vec<Value> = match &source {
-            Value(ValueRepr::Range(a, b)) => {
-                let start = *a + already as i64;
-                let end = if *b == i64::MAX {
-                    *a + needed as i64
-                } else {
-                    *b
-                };
+        let new_values: Vec<Value> = match source.view() {
+            ValueView::Range(a, b) => {
+                let start = a + already as i64;
+                let end = if b == i64::MAX { a + needed as i64 } else { b };
                 (start..=end).take(remaining).map(Value::Int).collect()
             }
-            Value(ValueRepr::RangeExcl(a, b)) => {
-                let start = *a + already as i64;
-                let end = if *b == i64::MAX {
-                    *a + needed as i64
-                } else {
-                    *b
-                };
+            ValueView::RangeExcl(a, b) => {
+                let start = a + already as i64;
+                let end = if b == i64::MAX { a + needed as i64 } else { b };
                 (start..end).take(remaining).map(Value::Int).collect()
             }
             _ => {

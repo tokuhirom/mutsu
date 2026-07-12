@@ -113,9 +113,9 @@ impl HashData {
     /// a single scalar item). See t/bind-hash-value-pairs.t.
     pub fn typed_pair(&self, str_key: &str, value: Value) -> Value {
         let value = value.deref_container();
-        match self.typed_key(str_key) {
-            Value(ValueRepr::Str(s)) => Value::Pair((*s).clone(), Box::new(value)),
-            other => Value::ValuePair(Box::new(other), Box::new(value)),
+        match self.typed_key(str_key).into_repr() {
+            ValueRepr::Str(s) => Value::Pair((*s).clone(), Box::new(value)),
+            other => Value::ValuePair(Box::new(Value::from_repr(other)), Box::new(value)),
         }
     }
 }

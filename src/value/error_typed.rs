@@ -1,7 +1,8 @@
 //! `RuntimeError` constructors for declaration/syntax/typecheck errors,
 //! plus JSON exception rendering (`to_json_exception`).
+use super::ValueView;
 use super::expected_type_object;
-use super::{RuntimeError, Value, ValueRepr};
+use super::{RuntimeError, Value};
 use std::collections::HashMap;
 
 impl RuntimeError {
@@ -433,12 +434,12 @@ impl RuntimeError {
     /// `message` key (null when the exception has no message attribute).
     pub fn to_json_exception(&self) -> String {
         let (class_name, attrs): (String, HashMap<String, Value>) = match &self.exception {
-            Some(boxed) => match boxed.as_ref() {
-                Value(ValueRepr::Instance {
+            Some(boxed) => match boxed.view() {
+                ValueView::Instance {
                     class_name,
                     attributes,
                     ..
-                }) => (
+                } => (
                     class_name.resolve(),
                     attributes
                         .as_map()
@@ -446,9 +447,9 @@ impl RuntimeError {
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
                 ),
-                other => ("X::AdHoc".to_string(), {
+                _ => ("X::AdHoc".to_string(), {
                     let mut m = HashMap::new();
-                    m.insert("message".to_string(), Value::str(other.to_string_value()));
+                    m.insert("message".to_string(), Value::str(boxed.to_string_value()));
                     m
                 }),
             },
@@ -503,23 +504,23 @@ fn json_string(s: &str) -> String {
 
 /// Encode a runtime Value as a JSON value for the exception handler.
 fn json_value(v: &Value) -> String {
-    match v {
-        Value(ValueRepr::Nil) => "null".to_string(),
-        Value(ValueRepr::Bool(b)) => b.to_string(),
-        Value(ValueRepr::Int(n)) => n.to_string(),
-        Value(ValueRepr::Num(f)) => {
+    match v.view() {
+        ValueView::Nil => "null".to_string(),
+        ValueView::Bool(b) => b.to_string(),
+        ValueView::Int(n) => n.to_string(),
+        ValueView::Num(f) => {
             if f.is_finite() {
                 f.to_string()
             } else {
                 "null".to_string()
             }
         }
-        Value(ValueRepr::Str(s)) => json_string(s),
-        Value(ValueRepr::Array(items, _)) => {
+        ValueView::Str(s) => json_string(s),
+        ValueView::Array(items, _) => {
             let elems: Vec<String> = items.iter().map(json_value).collect();
             format!("[{}]", elems.join(","))
         }
-        Value(ValueRepr::Hash(map, _)) => {
+        ValueView::Hash(map) => {
             let mut keys: Vec<&String> = map.keys().collect();
             keys.sort();
             let pairs: Vec<String> = keys
@@ -528,6 +529,6 @@ fn json_value(v: &Value) -> String {
                 .collect();
             format!("{{{}}}", pairs.join(","))
         }
-        other => json_string(&other.to_string_value()),
+        _ => json_string(&v.to_string_value()),
     }
 }
