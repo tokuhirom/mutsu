@@ -96,6 +96,44 @@ impl Interpreter {
             (ValueView::Int(a), ValueView::Int(b)) => a == b,
             (ValueView::Num(a), ValueView::Num(b)) => a == b,
             (ValueView::Bool(a), ValueView::Bool(b)) => a == b,
+            // Same instance object (same `Gc<InstanceAttrs>`): attribute
+            // mutations write through the shared cell, so the source element
+            // already observes them — the O(n) array rebuild would only re-store
+            // the identical handle. A rebound loop var (`$_ = Other.new`) holds
+            // a different Gc and still falls through to the writeback. Without
+            // this arm, a read-only `for @instances { .method }` cloned the
+            // whole backing array every iteration (O(n^2) — the dominant cost
+            // of bench-class's polymorphism loop).
+            (
+                ValueView::Instance {
+                    class_name: ca,
+                    attributes: a,
+                    id: ia,
+                },
+                ValueView::Instance {
+                    class_name: cb,
+                    attributes: b,
+                    id: ib,
+                },
+            ) => ca == cb && ia == ib && crate::gc::Gc::ptr_eq(a, b),
+            // Immutable-by-value variants: equal means the writeback is a no-op.
+            (ValueView::Package(a), ValueView::Package(b)) => a == b,
+            (ValueView::Rat(a, b), ValueView::Rat(c, d)) => a == c && b == d,
+            (
+                ValueView::Enum {
+                    enum_type: ta,
+                    key: ka,
+                    index: ia,
+                    ..
+                },
+                ValueView::Enum {
+                    enum_type: tb,
+                    key: kb,
+                    index: ib,
+                    ..
+                },
+            ) => ta == tb && ka == kb && ia == ib,
+            (ValueView::Nil, ValueView::Nil) => true,
             _ => false,
         }
     }
