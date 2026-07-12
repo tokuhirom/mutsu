@@ -458,10 +458,34 @@ impl Interpreter {
                 return Err(e);
             }
         }
-        if let Err(e) = queue_res
-            && body_result.is_ok()
-        {
-            return Err(e);
+        if let Err(e) = queue_res {
+            if body_result.is_ok() {
+                return Err(e);
+            }
+            // Return prioritization (S06-advanced/return-prioritization.t):
+            // when both the body and the LEAVE queue exited via `return`, a
+            // return raised *inside* a LEAVE phaser overrides an in-flight
+            // return that targets this same routine (`LEAVE return 1; return
+            // 0` returns 1), and a closure called in LEAVE may redirect the
+            // unwind to an outer routine. But an in-flight return already
+            // unwinding to an *outer* routine is not interruptible by a
+            // LEAVE-side return aimed at this frame (tests 6/7).
+            if e.is_return()
+                && let Err(ref be) = body_result
+                && be.is_return()
+            {
+                let current_id = match self.env().get("__mutsu_callable_id").map(Value::view) {
+                    Some(ValueView::Int(id)) => Some(id as u64),
+                    _ => None,
+                };
+                let body_target = be.return_target_callable_id();
+                if body_target.is_none()
+                    || body_target == current_id
+                    || body_target == e.return_target_callable_id()
+                {
+                    return Err(e);
+                }
+            }
         }
         body_result?;
         *ip = end;

@@ -48,7 +48,6 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 | 分類 | ファイル | mutsu | raku (v2026.06/6.d) | ブロッカー（一言） |
 |---|---|---|---|---|
-| ★達成可能 | `S06-advanced/return-prioritization.t` | 9/11・notok 2 | **11/11 満点**（v2022.12 は 4/11） | `return` in LEAVE phaser が戻り値を上書きできない（test 5）・別 lexical scope の LEAVE 内 `return`（test 9）。raku 更新で oracle 復活＝実バグ確定 |
 | 基盤待ち | `S32-str/format.t` | 26/49 で中断 | **49/49 満点**（v2022.12 は SORRY） | `Formatter::Syntax.parse`→Match、`Formatter.AST`→`RakuAST::Node` を要求＝**RakuAST サブシステム不在**。raku 更新で oracle は得られたが、stub 化は禁止のため据え置きのまま |
 | 基盤待ち | `S02-types/generics.t` | 0/1 | **1/1 満点**（v2022.12 は SORRY） | 6.e coercion type 項 + `Array[T]` サブクラス化が必要。raku 更新で参照検証は可能になったが、要求される基盤の大きさは不変 |
 | oracle 不能 | `S02-names/pseudo-6d.t` | 116/159 で中断 | SORRY（`::=` NYI） | `::("CALLER")::<$*bar>` CALLER 疑似パッケージ deref 未対応。v2026.06 でも rakudo が `::=` 束縛未実装で SORRY |
@@ -76,13 +75,10 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 ## 今のおすすめ着手順
 
-- **★達成可能が 1 本復活**: raku を v2026.06 に更新した再測定（2026-07-12）で
-  `S06-advanced/return-prioritization.t` が raku 満点と判明（旧 raku は 4/11）。
-  mutsu 残 2 本はどちらも **LEAVE phaser 内の `return`**（戻り値上書き / 別 lexical
-  scope からの return）で、単一機能の edge。「次の 1 本」はこれ。
-- それ以外に「次の 1 本」に適する残件は無い。**構造工事の選定は
-  [PLAN.md](../PLAN.md) を正とする。**（直前の ★ 消化: `S32-hash/perl.t` は
-  2026-07-12 に whitelist 済み #4452）
+- 直前の ★ 消化: `S06-advanced/return-prioritization.t` は 2026-07-12 に whitelist 済み
+  （LEAVE phaser 内 `return` の優先規則を実装）。`S32-hash/perl.t` も同日 whitelist 済み #4452。
+- 現在、表に ★達成可能 の残件は無い。「次の 1 本」に適する残件も無く、**構造工事の選定は
+  [PLAN.md](../PLAN.md) を正とする。**
 - `S32-str/format.t`・`S02-types/generics.t` も raku 更新で oracle が得られたが、
   必要基盤（RakuAST / 6.e generics）の大きさは変わらないため 基盤待ち のまま。
 - 非目標・oracle 不能の項目は、mutsu 側の一般改善のついでに前進させるのはよいが、
