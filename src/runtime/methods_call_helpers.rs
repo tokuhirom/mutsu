@@ -277,55 +277,60 @@ impl Interpreter {
             }
             "splice" => {
                 let removed = target
-                    .with_array_inplace(|data, _| {
-                        let len = data.items.len();
-                        let resolve = |v: &Value| -> i64 {
-                            match v.view() {
-                                ValueView::Int(i) => i,
-                                ValueView::Whatever => len as i64,
-                                ValueView::Num(n) => n as i64,
-                                ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
-                                ValueView::Mixin(inner, _) => match inner.as_ref().view() {
-                                    ValueView::Int(i) => i,
-                                    _ => 0,
-                                },
-                                _ => 0,
-                            }
-                        };
-                        let start =
-                            (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
-                        let count = args
-                            .get(1)
-                            .map(&resolve)
-                            .unwrap_or((len - start) as i64)
-                            .max(0) as usize;
-                        let end = (start + count).min(len);
-                        // Snapshot the replacement BEFORE draining: a
-                        // self-splice (`f().splice(1, 0, f())`) aliases the
-                        // items being mutated in place.
-                        let mut replacement: Vec<Value> = Vec::new();
-                        for arg in args.iter().skip(2) {
-                            match arg.view() {
-                                ValueView::Array(arr, ..) => {
-                                    replacement.extend(arr.iter().cloned())
-                                }
-                                ValueView::Seq(arr) | ValueView::Slip(arr) => {
-                                    replacement.extend(arr.iter().cloned())
-                                }
-                                _ => replacement.push(arg.clone()),
-                            }
-                        }
-                        let removed: Vec<Value> = data.items.drain(start..end).collect();
-                        for (i, item) in replacement.into_iter().enumerate() {
-                            data.items.insert(start + i, item);
-                        }
-                        removed
-                    })
+                    .with_array_inplace(|data, _| Self::splice_array_data(data, &args))
                     .unwrap_or_default();
                 Ok(Value::real_array(removed))
             }
             _ => unreachable!(),
         }
+    }
+
+    /// Apply `@a.splice($start?, $count?, *@replacement)` to an `ArrayData` in
+    /// place, returning the removed elements. Shared by the by-value invocant
+    /// path (`array_mutate_copy`) and the shared-context atomic-store path
+    /// (`shared_array_mutate` callers in the VM).
+    pub(crate) fn splice_array_data(
+        data: &mut crate::value::ArrayData,
+        args: &[Value],
+    ) -> Vec<Value> {
+        let len = data.items.len();
+        let resolve = |v: &Value| -> i64 {
+            match v.view() {
+                ValueView::Int(i) => i,
+                ValueView::Whatever => len as i64,
+                ValueView::Num(n) => n as i64,
+                ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
+                ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                    ValueView::Int(i) => i,
+                    _ => 0,
+                },
+                _ => 0,
+            }
+        };
+        let start = (args.first().map(&resolve).unwrap_or(0).max(0) as usize).min(len);
+        let count = args
+            .get(1)
+            .map(&resolve)
+            .unwrap_or((len - start) as i64)
+            .max(0) as usize;
+        let end = (start + count).min(len);
+        // Snapshot the replacement BEFORE draining: a self-splice
+        // (`f().splice(1, 0, f())`) aliases the items being mutated in place.
+        let mut replacement: Vec<Value> = Vec::new();
+        for arg in args.iter().skip(2) {
+            match arg.view() {
+                ValueView::Array(arr, ..) => replacement.extend(arr.iter().cloned()),
+                ValueView::Seq(arr) | ValueView::Slip(arr) => {
+                    replacement.extend(arr.iter().cloned())
+                }
+                _ => replacement.push(arg.clone()),
+            }
+        }
+        let removed: Vec<Value> = data.items.drain(start..end).collect();
+        for (i, item) in replacement.into_iter().enumerate() {
+            data.items.insert(start + i, item);
+        }
+        removed
     }
 
     /// Normalize push/unshift arguments (unwrap Scalar containers, deitemize).

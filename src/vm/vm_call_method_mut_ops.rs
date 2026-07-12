@@ -767,14 +767,12 @@ impl Interpreter {
             return Ok(());
         }
 
-        // Fast path for push/unshift on shared @-arrays.
+        // Fast path for mutating array methods on shared @-arrays.
         // Bypasses the full method dispatch chain (try_native_method →
         // call_method_mut_with_values → push_to_shared_var) for the common case
         // of pushing simple values to a shared array inside a tight loop
         // (e.g. Lock::Async.protect { push @target, $i }).
-        if matches!(method.as_str(), "push" | "unshift")
-            && !args.is_empty()
-            && target_name.starts_with('@')
+        if target_name.starts_with('@')
             && matches!(target.view(), ValueView::Array(..))
             && self.shared_vars_active
         {
@@ -785,7 +783,8 @@ impl Interpreter {
             // keyed by name — that would accumulate pushes across every object
             // (roles-6e.t DESTROY: each `C1` instance's `@!order` doubled). They
             // keep the original base-key / interior-mutation path.
-            if Self::is_plain_lexical_array_name(&target_name) {
+            let plain = Self::is_plain_lexical_array_name(&target_name);
+            match method.as_str() {
                 // Route through the atomic shared store. The base-key
                 // `push_to_existing_shared_array`/`push_to_shared_var` write the
                 // plain `@a` shared entry, which `set_shared_var` can clobber with
@@ -794,18 +793,75 @@ impl Interpreter {
                 // base-key path also `extend`ed for `unshift`, appending instead
                 // of prepending.) The `__mutsu_atomic_arr::` store is exempt from
                 // that clobber, so concurrent push/unshift serialize and all land.
-                let norm = crate::runtime::Interpreter::normalize_push_unshift_args(args.clone());
-                let result = self.shared_array_extend(&target_name, norm, method == "unshift");
-                self.stack.push(result);
-                return Ok(());
+                //
+                // append/prepend MUST funnel here too: once a push created the
+                // atomic entry, reads prefer it, so an append applied to the
+                // stale base/env copy is silently invisible — the zef
+                // `populate-distributions` bug (`push @idx, ...; append @idx,
+                // ...` on a hyper worker lost every appended element).
+                "push" | "unshift" | "append" | "prepend" if plain && !args.is_empty() => {
+                    let items = if matches!(method.as_str(), "push" | "unshift") {
+                        crate::runtime::Interpreter::normalize_push_unshift_args(args.clone())
+                    } else {
+                        crate::runtime::flatten_append_args(args.clone())
+                    };
+                    let front = matches!(method.as_str(), "unshift" | "prepend");
+                    let result = self.shared_array_extend(&target_name, items, front);
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                "push" | "unshift" if !args.is_empty() => {
+                    let result = loan_env!(
+                        self,
+                        push_to_existing_shared_array(&target_name, args.clone())
+                    )
+                    .unwrap_or_else(|| {
+                        loan_env!(self, push_to_shared_var(&target_name, args, &target))
+                    });
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                // Removal ops only lose updates once the atomic entry shadows
+                // the base copy, so gate on its existence and keep the richer
+                // slow path (arity/lazy/immutable errors, callable splice
+                // args) for the unshadowed case.
+                "pop" | "shift"
+                    if plain
+                        && args.is_empty()
+                        && matches!(
+                            target.view(),
+                            ValueView::Array(_, crate::value::ArrayKind::Array)
+                        )
+                        && self.atomic_array_entry_exists(&target_name) =>
+                {
+                    let (result, _) = self.shared_array_mutate(&target_name, |data, _| {
+                        if data.items.is_empty() {
+                            crate::runtime::utils::make_empty_array_failure_what(&method, "Array")
+                        } else if method == "shift" {
+                            data.items.remove(0)
+                        } else {
+                            data.items.pop().unwrap_or(Value::NIL)
+                        }
+                    });
+                    self.stack.push(result);
+                    return Ok(());
+                }
+                "splice"
+                    if plain
+                        && matches!(
+                            target.view(),
+                            ValueView::Array(_, crate::value::ArrayKind::Array)
+                        )
+                        && self.atomic_array_entry_exists(&target_name) =>
+                {
+                    let (removed, _) = self.shared_array_mutate(&target_name, |data, _| {
+                        crate::runtime::Interpreter::splice_array_data(data, &args)
+                    });
+                    self.stack.push(Value::real_array(removed));
+                    return Ok(());
+                }
+                _ => {}
             }
-            let result = loan_env!(
-                self,
-                push_to_existing_shared_array(&target_name, args.clone())
-            )
-            .unwrap_or_else(|| loan_env!(self, push_to_shared_var(&target_name, args, &target)));
-            self.stack.push(result);
-            return Ok(());
         }
 
         let mut skip_native = quoted
