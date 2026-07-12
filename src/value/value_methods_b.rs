@@ -18,7 +18,7 @@ impl Value {
     /// Safety: same assumptions as hash_autovivify — callers ensure no
     /// concurrent reads/writes to the same Arc.
     pub fn array_push_in_place(&self, val: Value) -> bool {
-        if let Value(ValueRepr::Array(arc, _)) = self {
+        if let ValueView::Array(arc, _) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the push.
             let data = unsafe { crate::value::gc_contents_mut(arc) };
@@ -37,7 +37,7 @@ impl Value {
     /// `None` if `self` is not an Array or the existing element is a non-array
     /// container (a Hash — a shape the caller cannot descend as an array index).
     pub fn ensure_array_child(&self, idx: usize) -> Option<Value> {
-        let Value(ValueRepr::Array(arc, _kind)) = self else {
+        let ValueView::Array(arc, _kind) = self.view() else {
             return None;
         };
         // SAFETY: aliased in-place mutation of a shared container; see
@@ -57,29 +57,28 @@ impl Value {
         // (`Int`/`Str`/…) or a `Hash` is NOT overwritten — returning `None` there
         // makes the caller fall back to a plain read, so a read-only use of the
         // subscript cannot corrupt existing data.
-        let is_hole =
-            |v: &Value| matches!(v, Value(ValueRepr::Nil) | Value(ValueRepr::Package(..)));
+        let is_hole = |v: &Value| matches!(v.view(), ValueView::Nil | ValueView::Package(..));
         // Deref an existing ContainerRef cell so we inspect/replace its inner value.
-        if let Value(ValueRepr::ContainerRef(cell)) = &data[idx] {
+        if let ValueView::ContainerRef(cell) = data[idx].view() {
             let inner = cell.lock().unwrap().clone();
-            match &inner {
-                Value(ValueRepr::Array(..)) => return Some(inner),
-                v if is_hole(v) => {
-                    let fresh = Value::real_array(Vec::new());
-                    *cell.lock().unwrap() = fresh.clone();
-                    return Some(fresh);
-                }
-                _ => return None,
+            if matches!(inner.view(), ValueView::Array(..)) {
+                return Some(inner);
             }
-        }
-        match &data[idx] {
-            Value(ValueRepr::Array(..)) => Some(data[idx].clone()),
-            v if is_hole(v) => {
+            if is_hole(&inner) {
                 let fresh = Value::real_array(Vec::new());
-                data[idx] = fresh.clone();
-                Some(fresh)
+                *cell.lock().unwrap() = fresh.clone();
+                return Some(fresh);
             }
-            _ => None,
+            return None;
+        }
+        if matches!(data[idx].view(), ValueView::Array(..)) {
+            Some(data[idx].clone())
+        } else if is_hole(&data[idx]) {
+            let fresh = Value::real_array(Vec::new());
+            data[idx] = fresh.clone();
+            Some(fresh)
+        } else {
+            None
         }
     }
 
@@ -93,7 +92,7 @@ impl Value {
     /// arbitrarily deep `$struct[..]<..>[..]` paths. Reads decontainerize the
     /// element at the single read chokepoint (`resolve_array_entry`).
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
-        if let Value(ValueRepr::Array(arc, _kind)) = self {
+        if let ValueView::Array(arc, _kind) = self.view() {
             // SAFETY: aliased in-place mutation of a shared container; see
             // `arc_contents_mut`. No borrow into the items is live across the
             // growth/promotion below.
@@ -113,7 +112,7 @@ impl Value {
                 data.push(hole.clone());
             }
             let elem = &mut data[idx];
-            if let Value(ValueRepr::ContainerRef(cell)) = elem {
+            if let ValueView::ContainerRef(cell) = elem.view() {
                 return Some(Value::ContainerRef(cell.clone()));
             }
             // Only promote a *scalar* leaf to a cell. A container element
@@ -123,12 +122,7 @@ impl Value {
             // the next index op lands in the same physical Vec/HashMap the
             // stored element points to (Stage 2: no array element back-reference
             // back-reference needed).
-            if !terminal
-                && matches!(
-                    elem,
-                    Value(ValueRepr::Array(..)) | Value(ValueRepr::Hash(..))
-                )
-            {
+            if !terminal && matches!(elem.view(), ValueView::Array(..) | ValueView::Hash(..)) {
                 return Some(elem.clone());
             }
             let cell = crate::gc::Gc::new(Mutex::new(std::mem::replace(elem, Value::Nil)));
@@ -142,11 +136,11 @@ impl Value {
     /// Encode a Value as a hash key string.
     /// Regex values are encoded with a special prefix to preserve their identity.
     pub fn hash_key_encode(val: &Value) -> String {
-        match val {
-            Value(ValueRepr::Regex(pattern)) => {
+        match val.view() {
+            ValueView::Regex(pattern) => {
                 format!("\0rx:{}", pattern)
             }
-            other => other.to_string_value(),
+            _ => val.to_string_value(),
         }
     }
 
@@ -175,9 +169,9 @@ impl Value {
     /// RECURSIVE: nested `$($(...))` are fully stripped. Non-Scalar values are
     /// returned as-is. See the decont family note above; this is the Scalar axis only.
     pub fn descalarize(&self) -> &Value {
-        match self {
-            Value(ValueRepr::Scalar(inner)) => inner.descalarize(),
-            other => other,
+        match self.view() {
+            ValueView::Scalar(inner) => inner.descalarize(),
+            _ => self,
         }
     }
 
@@ -186,9 +180,9 @@ impl Value {
     /// callers that already own the value). Canonical replacement for the former
     /// `runtime::methods_mut::strip_scalar`.
     pub fn into_descalarized(self) -> Value {
-        match self {
-            Value(ValueRepr::Scalar(inner)) => inner.into_descalarized(),
-            other => other,
+        match self.into_repr() {
+            ValueRepr::Scalar(inner) => inner.into_descalarized(),
+            other => Value::from_repr(other),
         }
     }
     pub fn set(s: HashSet<String>) -> Self {
@@ -315,7 +309,7 @@ impl Value {
         Value::Slip(Arc::new(items))
     }
     pub fn junction(kind: JunctionKind, values: Vec<Value>) -> Self {
-        Value(ValueRepr::Junction {
+        Value::from_repr(ValueRepr::Junction {
             kind,
             values: Arc::new(values),
         })
@@ -390,6 +384,11 @@ impl Value {
     }
 
     /// Access SubData fields if this is a Sub (or upgraded WeakSub).
+    ///
+    /// Deliberately still a place-based match (B-wall-in exemption): it hands
+    /// out a `&SubData` borrowed from `self`, which a `view()` guard cannot do
+    /// (the guard is a by-value temporary scoped to the match). At flip time
+    /// this body is reimplemented inside the seam as a pointee deref.
     #[allow(dead_code)]
     pub(crate) fn as_sub(&self) -> Option<&SubData> {
         match self {
@@ -401,12 +400,12 @@ impl Value {
     /// Upgrade a WeakSub to a Sub, or return Nil if expired.
     #[allow(dead_code)]
     pub(crate) fn upgrade_weak(&self) -> Value {
-        match self {
-            Value(ValueRepr::WeakSub(weak)) => match weak.upgrade() {
+        match self.view() {
+            ValueView::WeakSub(weak) => match weak.upgrade() {
                 Some(strong) => Value::Sub(strong),
                 None => Value::Nil,
             },
-            other => other.clone(),
+            _ => self.clone(),
         }
     }
 
@@ -465,7 +464,7 @@ impl Value {
         attributes: HashMap<String, Value>,
         id: u64,
     ) -> Self {
-        Value(ValueRepr::Instance {
+        Value::from_repr(ValueRepr::Instance {
             class_name,
             attributes: crate::gc::Gc::new(InstanceAttrs::new(class_name, attributes, id, true)),
             id,
@@ -489,7 +488,7 @@ impl Value {
         } else {
             crate::gc::Gc::new(attrs.with_class(class_name))
         };
-        Value(ValueRepr::Instance {
+        Value::from_repr(ValueRepr::Instance {
             class_name,
             attributes,
             id,
@@ -517,17 +516,17 @@ impl Value {
     /// CoW `Arc` (forked on first mutation), so a plain clone is already
     /// independent for them.
     pub(crate) fn into_temp_snapshot(self) -> Value {
-        match self {
-            Value(ValueRepr::Instance {
+        match self.into_repr() {
+            ValueRepr::Instance {
                 class_name,
                 attributes,
                 id,
-            }) => Value(ValueRepr::Instance {
+            } => Value::from_repr(ValueRepr::Instance {
                 class_name,
                 attributes: crate::gc::Gc::new((*attributes).clone()),
                 id,
             }),
-            other => other,
+            other => Value::from_repr(other),
         }
     }
 
@@ -537,7 +536,7 @@ impl Value {
         queue_destroy: bool,
     ) -> Self {
         let id = next_instance_id();
-        Value(ValueRepr::Instance {
+        Value::from_repr(ValueRepr::Instance {
             class_name,
             attributes: crate::gc::Gc::new(InstanceAttrs::new(
                 class_name,
