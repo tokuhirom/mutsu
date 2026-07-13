@@ -269,6 +269,15 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       news/2026-07.md）。ベンチ数字の正本 = bench-data ブランチ（`+jit` 系列）。
 - [ ] **Lever 6: biased reference counting = ADR-0001 層3c（GC 後の独立 perf）**。凍結 — 着手トリガは
       「JIT J4 完了後の profile で atomic inc/dec が上位に残る」のみ（gc-post-3a-roadmap §4）。
+- [ ] **Lever 7: ベースライン（古典的）バイトコード最適化 = [ADR-0006](docs/adr/0006-baseline-interpreter-optimizations.md)**。
+      JIT と直交（実行する opcode 列そのものを短くする）。ADR の実装順どおりに進める:
+      - [x] §2.1 定数畳み込み（#4485 — literal-only の算術/比較/連結を emit 時に評価。
+            time-parts の実行 opcode 7.60M→6.40M・`Mul` 1.0M→0.4M。
+            演算子オーバーライド安全条件は「宣言を見つけたらユニットごと fold なしで再コンパイル」）
+      - [ ] §2.4 定数プール dedup（`add_constant` の逆引き — `CompiledCode` のメモリ・locality）
+      - [ ] §2.2 `constant` 読みのインライン化 + 定数条件 DCE（debug-guard 2.2x の本命）
+      - [ ] §2.3 peephole（administrative op 列 — `SetSourceLine` 重複除去・`my $x = <expr>` 宣言列の融合。
+            ヒストグラム駆動で対象選定）
 - [ ] **opcode 残件（[docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6・#4279 の続き）**:
       ラベル等の inline `Option<String>` payload（`Last`/`Next`/`Redo`/loop 系/`SmartMatchExpr.lhs_var`）
       の定数プール `Option<u32>` 化（`OpCode` を 48B 未満へ） / per-instruction 定数コスト
