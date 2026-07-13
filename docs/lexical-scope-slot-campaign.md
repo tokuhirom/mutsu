@@ -344,6 +344,43 @@ three of these were missed until now — re-run the FULL survey periodically.
       runtime snapshot path remains). Deserves its own dedicated session with
       full `make roast` validation, per the doc's per-slice rule.
 
+## §1.3 is an ARCHITECTURE slice, not a perf slice (measured 2026-07-14)
+
+Two things were established by measurement while chasing the call-path profile
+(see [docs/perf-callpath-scouting.md](perf-callpath-scouting.md) §4). Both matter
+for how this step is scoped:
+
+1. **The clone is not where the time is.** `exec_block_scope_op`'s
+   `self.locals.clone()` does not appear in any benchmark profile. The interpreter's
+   real per-op cost was runtime-built `__mutsu_*::<name>` metadata keys (`format!` +
+   `Symbol::intern` + SipHash), removed in #4492–#4495 for 24–39% on the benches.
+   Do §1.3 because it removes the dual store, not because it is expected to be fast.
+
+2. **The clone removal and the `needs_env_sync` blanket are ONE change, and the
+   order is forced.** `compute_needs_env_sync` marks every local of a
+   `BlockScope`-carrying frame as env-synced precisely *because* the block exit
+   restores the whole `locals` array and re-seeds it from env by name: a block
+   body's write to an **enclosing** local only survives the block through its env
+   mirror. Narrowing the blanket first is not possible — removing `BlockScope` from
+   it deterministically breaks `FIRST`/`NEXT`/`LAST` loop phasers (`t/phasers.t` #3,
+   `t/dualstore-slot-local-gate.t` #6: the `LAST` body's `$seq ~= "L"` is reverted at
+   block exit). So:
+
+   > bake `block_declared_slots` onto the `BlockScope` opcode → replace the
+   > whole-array restore with a targeted reset of just those slots → *then* drop
+   > `BlockScope` from the flush blanket.
+
+   Caveat for the last step: the loop-phaser desugaring's control temps
+   (`__mutsu_loop_first_*`, `__mutsu_loop_ran_*`, `__mutsu_loop_result_*`, …) are
+   threaded through env by name **deliberately** and must stay `needs_env_sync`
+   regardless of the blanket. They are recognisable by their `__mutsu_loop_` prefix.
+
+   (`ForLoop` can be dropped from the flush blanket independently — its body is
+   compiled into the same chunk, so the per-op scan already sees every by-name read.
+   Measured: **±0% on every benchmark**, because the loop benchmarks never reach
+   `flush_local_to_env` at all — see the `simple_locals` finding in the scouting
+   doc. So it is not worth a PR on its own.)
+
 ## Fresh full toggle-ON survey (2026-07-12, debug, 1379 whitelisted files)
 
 `MUTSU_SHADOW_SLOTS=1` (pre-flip) run of every whitelisted file, each ON failure
