@@ -116,45 +116,67 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 
 impl Interpreter {
     /// Save the current readonly_vars set (call before function body execution).
-    pub(crate) fn save_readonly_vars(&self) -> HashSet<String> {
-        self.readonly_vars.clone()
+    ///
+    /// O(1): an `Arc` bump, not a deep copy. The set is copy-on-write (see
+    /// [`ReadonlySet`]), so the snapshot only materializes if the callee
+    /// actually changes the set — and a callee whose params are already marked
+    /// (the monomorphic/recursive steady state) changes nothing, so a call pays
+    /// no allocation at all.
+    pub(crate) fn save_readonly_vars(&self) -> ReadonlySet {
+        ReadonlySet::clone(&self.readonly_vars)
     }
 
     /// Restore the readonly_vars set (call after function body execution).
-    pub(crate) fn restore_readonly_vars(&mut self, saved: HashSet<String>) {
+    pub(crate) fn restore_readonly_vars(&mut self, saved: ReadonlySet) {
         self.readonly_vars = saved;
-    }
-
-    /// Get read access to readonly_vars set.
-    pub(crate) fn readonly_vars(&self) -> &HashSet<String> {
-        &self.readonly_vars
-    }
-
-    /// Get mutable access to readonly_vars set.
-    pub(crate) fn readonly_vars_mut(&mut self) -> &mut HashSet<String> {
-        &mut self.readonly_vars
     }
 
     /// Check if a variable is readonly.
     pub(crate) fn is_readonly(&self, name: &str) -> bool {
-        self.readonly_vars.contains(name)
+        self.is_readonly_sym(Symbol::intern(name))
+    }
+
+    /// Check if an already-interned name is readonly.
+    #[inline]
+    pub(crate) fn is_readonly_sym(&self, sym: Symbol) -> bool {
+        self.readonly_vars.contains(&sym)
     }
 
     /// Mark a variable as readonly.
     pub(crate) fn mark_readonly(&mut self, name: &str) {
-        self.readonly_vars.insert(name.to_string());
+        self.mark_readonly_sym(Symbol::intern(name));
+    }
+
+    /// Mark an already-interned name as readonly. The membership test comes
+    /// first so a no-op mark (the common case: a recursive/monomorphic call
+    /// re-marking a param the caller's frame already marked) does not trigger
+    /// the copy-on-write clone.
+    #[inline]
+    pub(crate) fn mark_readonly_sym(&mut self, sym: Symbol) {
+        if !self.readonly_vars.contains(&sym) {
+            std::sync::Arc::make_mut(&mut self.readonly_vars).insert(sym);
+        }
     }
 
     /// Remove a variable from the readonly set.
     pub(crate) fn unmark_readonly(&mut self, name: &str) {
-        self.readonly_vars.remove(name);
+        self.unmark_readonly_sym(Symbol::intern(name));
+    }
+
+    /// Remove an already-interned name from the readonly set. Like
+    /// `mark_readonly_sym`, a no-op unmark skips the copy-on-write clone.
+    #[inline]
+    pub(crate) fn unmark_readonly_sym(&mut self, sym: Symbol) {
+        if self.readonly_vars.contains(&sym) {
+            std::sync::Arc::make_mut(&mut self.readonly_vars).remove(&sym);
+        }
     }
 
     /// Check if a variable is readonly and return an error if so.
     /// Returns Ok(()) if writable, Err with X::Multi::NoMatch for increment/decrement,
     /// or Err with a generic message for assignment.
     pub(crate) fn check_readonly_for_modify(&self, name: &str) -> Result<(), RuntimeError> {
-        if self.readonly_vars.contains(name) {
+        if self.is_readonly(name) {
             let msg = format!("Cannot assign to a readonly variable ({}) or a value", name);
             let mut err = RuntimeError::new(msg.clone());
             let mut attrs = std::collections::HashMap::new();
@@ -184,7 +206,7 @@ impl Interpreter {
         name: &str,
         op: &str,
     ) -> Result<(), RuntimeError> {
-        if self.readonly_vars.contains(name) {
+        if self.is_readonly(name) {
             let msg = format!(
                 "Cannot resolve caller {op}({}); the parameter requires mutable arguments",
                 name

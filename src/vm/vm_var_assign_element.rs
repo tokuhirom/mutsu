@@ -56,7 +56,7 @@ impl Interpreter {
         if self.var_type_constraint_fast(var_name).is_some()
             || self.var_default(var_name).is_some()
             || self.var_hash_key_constraint_fast(var_name)
-            || self.readonly_vars().contains(var_name)
+            || self.is_readonly(var_name)
         {
             return None;
         }
@@ -130,7 +130,7 @@ impl Interpreter {
         // the full path's native-fill, hole, and shape handling.
         if self.var_type_constraint_fast(var_name).is_some()
             || self.var_default(var_name).is_some()
-            || self.readonly_vars().contains(var_name)
+            || self.is_readonly(var_name)
         {
             return None;
         }
@@ -232,7 +232,7 @@ impl Interpreter {
         if self.var_type_constraint_fast(var_name).is_some()
             || self.var_default(var_name).is_some()
             || self.var_hash_key_constraint_fast(var_name)
-            || self.readonly_vars().contains(var_name)
+            || self.is_readonly(var_name)
         {
             return None;
         }

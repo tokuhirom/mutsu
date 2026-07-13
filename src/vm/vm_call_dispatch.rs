@@ -167,10 +167,12 @@ impl Interpreter {
             named_param_slots: None,
             deprecated_info,
             declared_locals: None,
+            param_name_syms: Vec::new(),
             package: pkg.clone(),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_param_slots();
+        cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();
         self.otf_compile_cache.insert(cache_key, cf.clone());

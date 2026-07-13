@@ -97,9 +97,7 @@ impl Interpreter {
         ) {
             return None;
         }
-        if self.var_type_constraint_fast(var_name).is_some()
-            || self.readonly_vars().contains(var_name)
-        {
+        if self.var_type_constraint_fast(var_name).is_some() || self.is_readonly(var_name) {
             return None;
         }
         let env = self.env();

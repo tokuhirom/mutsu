@@ -44,7 +44,7 @@ impl Interpreter {
             .then(|| self.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
-        let was_topic_readonly = self.readonly_vars().contains("_");
+        let was_topic_readonly = self.is_readonly("_");
 
         if !spec.is_rw {
             if let Some(ref name) = param_name {
@@ -126,7 +126,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
@@ -148,7 +148,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
@@ -175,7 +175,7 @@ impl Interpreter {
         if !spec.is_rw
             && let Some(ref name) = param_name
         {
-            self.readonly_vars_mut().remove(name);
+            self.unmark_readonly(name);
         }
         if !was_topic_readonly {
             self.unmark_readonly("_");
@@ -331,7 +331,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         if spec.restore_topic {
                             match saved_topic.clone() {
@@ -356,7 +356,7 @@ impl Interpreter {
         if !spec.is_rw
             && let Some(ref name) = param_name
         {
-            self.readonly_vars_mut().remove(name);
+            self.unmark_readonly(name);
         }
         self.topic_source_var = saved_topic_source;
         if spec.restore_topic {

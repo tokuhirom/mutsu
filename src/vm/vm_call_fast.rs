@@ -91,9 +91,19 @@ impl Interpreter {
         // Reuse a pooled locals vec to avoid per-call allocation
         let num_locals = cf.code.locals.len();
         self.locals = self.take_locals_from_pool(num_locals);
-        for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(local_name) {
-                self.locals[i] = val.clone();
+        // Seed from the pre-interned local names (see the matching comment in
+        // `call_compiled_function_positional_light`).
+        if cf.code.locals_sym.len() == num_locals {
+            for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+                if let Some(val) = self.env().get_sym(*sym) {
+                    self.locals[i] = val.clone();
+                }
+            }
+        } else {
+            for (i, local_name) in cf.code.locals.iter().enumerate() {
+                if let Some(val) = self.env().get(local_name) {
+                    self.locals[i] = val.clone();
+                }
             }
         }
         // Load persisted state variable values
@@ -213,12 +223,9 @@ impl Interpreter {
         if let Some(caller_env) = caller_env {
             // Scoped path: restore the caller env, then merge the callee's
             // overlay (its own writes only) back, dropping callee-local writes.
-            let local_names: std::collections::HashSet<&str> =
-                if let Some(ref declared) = cf.declared_locals {
-                    declared.iter().map(|s| s.as_str()).collect()
-                } else {
-                    cf.code.locals.iter().map(|s| s.as_str()).collect()
-                };
+            // The callee-local test reads the compile-time `Symbol` set instead
+            // of building a `HashSet<&str>` on every call (see
+            // `call_compiled_function_positional_light`).
             let scoped = std::mem::replace(self.env_mut(), caller_env);
             for (k, v) in scoped.overlay_iter() {
                 // The callee's private topic / arg array / routine-id must not
@@ -226,7 +233,7 @@ impl Interpreter {
                 if *k == "_" || *k == "@_" || *k == "%_" || *k == "__mutsu_callable_id" {
                     continue;
                 }
-                if !k.with_str(|s| local_names.contains(s)) {
+                if !cf.is_callee_local_sym(*k) {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
             }
@@ -236,15 +243,9 @@ impl Interpreter {
             } else {
                 // Use declared_locals to only filter out function-local vars.
                 // Captured outer variables should propagate their modifications.
-                let local_names: std::collections::HashSet<&str> =
-                    if let Some(ref declared) = cf.declared_locals {
-                        declared.iter().map(|s| s.as_str()).collect()
-                    } else {
-                        cf.code.locals.iter().map(|s| s.as_str()).collect()
-                    };
                 let mut restored_env = saved_env;
                 for (k, v) in self.env().iter() {
-                    if !k.with_str(|s| local_names.contains(s)) {
+                    if !cf.is_callee_local_sym(*k) {
                         restored_env.insert_sym(*k, v.clone());
                     }
                 }

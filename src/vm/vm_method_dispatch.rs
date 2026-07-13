@@ -984,7 +984,7 @@ impl Interpreter {
                 // variable (the readonly set is keyed by bare name, shared across
                 // frames). Drop the mark and record it so `pop_call_frame`
                 // restores the caller's state.
-                if self.readonly_vars().contains(pd.name.as_str()) {
+                if self.is_readonly(&pd.name) {
                     self.unmark_readonly(&pd.name);
                     if let Some(frame) = self.call_frames.last_mut() {
                         frame.readonly_removed.push(pd.name.clone());
@@ -992,7 +992,7 @@ impl Interpreter {
                 }
                 continue;
             }
-            if self.readonly_vars().contains(pd.name.as_str()) {
+            if self.is_readonly(&pd.name) {
                 continue; // already read-only (e.g. caller-owned same name)
             }
             self.mark_readonly(&pd.name);

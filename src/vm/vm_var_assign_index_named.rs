@@ -1353,8 +1353,7 @@ impl Interpreter {
                 // marker (see `Stmt::MarkBoundContainer`), which distinguishes a
                 // writable bound hash from a `constant %M` — both are readonly,
                 // but only the former may be mutated in place.
-                let is_readonly_hash_var =
-                    var_name.starts_with('%') && self.readonly_vars().contains(&var_name);
+                let is_readonly_hash_var = var_name.starts_with('%') && self.is_readonly(&var_name);
                 let is_bound_hash_var = is_readonly_hash_var
                     && self
                         .env()
