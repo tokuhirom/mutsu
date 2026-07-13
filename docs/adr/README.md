@@ -24,4 +24,4 @@
 | [0003](0003-default-on-gc-trigger.md) | デフォルト GC=on のトリガ方針（同期 + バッファサイズ閾値 + adaptive backoff） | Accepted |
 | [0004](0004-jit-strategy.md) | JIT の方式選定とフェーズ計画（Cranelift method JIT・deopt なし） | Accepted |
 | [0005](0005-nanbox-representation-encoding.md) | NaN-boxing 表現スイッチ（3b-1）のエンコーディング選択と newtype seal 統合 | Accepted |
-| [0006](0006-baseline-interpreter-optimizations.md) | ベースライン（古典的）インタープリタ最適化の採否と優先順位 | Proposed |
+| [0006](0006-baseline-interpreter-optimizations.md) | ベースライン（古典的）インタープリタ最適化の採否と優先順位 | Accepted |

@@ -1,6 +1,6 @@
 # ADR-0006: ベースライン（古典的）インタープリタ最適化の採否と優先順位
 
-- **Status**: Proposed
+- **Status**: Accepted（2026-07-13 tokuhirom 承認）
 - **Date**: 2026-07-13
 - **Deciders**: tokuhirom, Claude
 - **関連**: [ADR-0004](0004-jit-strategy.md)（JIT・threaded dispatch 凍結の判断）,
