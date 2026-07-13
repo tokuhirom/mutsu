@@ -90,6 +90,23 @@ pub(super) unsafe extern "C" fn set_local(
     }
 }
 
+/// `OpCode::SetLocalDecl` — the fused `my $x = <expr>` store (ADR-0006 §2.3).
+/// `marks` is 1 when the declaration had an explicit initializer.
+pub(super) unsafe extern "C" fn set_local_decl(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    idx: u32,
+    explicit_init: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    interp.explicit_initializer_context = explicit_init != 0;
+    interp.vardecl_context = true;
+    match interp.exec_set_local_op(code, idx) {
+        Ok(()) => JIT_STATUS_OK,
+        Err(e) => park_err(interp, e),
+    }
+}
+
 /// Dedicated shims for the payload-free fallible opcodes (arith / compare /
 /// string): each delegates to the interpreter's own `exec_*_op`, skipping the
 /// dispatch match entirely. These are the hot loop-body opcodes, so they get

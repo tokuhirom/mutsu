@@ -280,8 +280,15 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       - [x] §2.2 `constant` 読みのインライン化 + 定数条件 DCE（#4487 — `constant DEBUG = False;
             if DEBUG {...}` がブロックごと消える。debug-guard 実行 opcode 3.00M→2.60M・
             raku 比 **2.2x→1.3x**。死んだ分岐に宣言があるときは消さず通常コンパイル）
-      - [ ] §2.3 peephole（administrative op 列 — `SetSourceLine` 重複除去・`my $x = <expr>` 宣言列の融合。
-            ヒストグラム駆動で対象選定）
+      - [x] §2.3-a peephole 宣言列融合（#4488 — `my $x = <expr>` の
+            `MarkExplicitInitializerContext`+`MarkVarDeclContext`+`SetLocal` を
+            `SetLocalDecl` 1 命令に。time-parts 6.40M→5.40M opcode。emit 時に自分が積んだ
+            マーカーだけを書き換えるので jump index の再割当が不要）
+      - [ ] **§2.3-b `SetSourceLine` の廃止（ip→行の静的テーブル化）** — 残る最大の
+            administrative op。bench-fib の実行 opcode 8.9M 中 **1.9M（21%）**・time-parts 600k（11%）。
+            opcode を消して `CompiledCode` に per-ip 行テーブルを持ち、`cur_source_line` は
+            呼び出し境界とエラー生成時にだけ ip から引く。post-pass での op 削除は
+            jump/compound-op の index 書き換えを伴うので、テーブル化のほうが安全。
 - [ ] **opcode 残件（[docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6・#4279 の続き）**:
       ラベル等の inline `Option<String>` payload（`Last`/`Next`/`Redo`/loop 系/`SmartMatchExpr.lhs_var`）
       の定数プール `Option<u32>` 化（`OpCode` を 48B 未満へ） / per-instruction 定数コスト

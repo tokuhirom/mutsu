@@ -234,6 +234,17 @@ pub(crate) enum OpCode {
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
     SetLocal(u32),
+    /// `SetLocal` fused with the declaration markers that always precede it in a
+    /// `my $x = <expr>` (ADR-0006 §2.3 peephole): `MarkExplicitInitializerContext`
+    /// (only when `explicit_init`) + `MarkVarDeclContext` + `SetLocal(slot)`.
+    /// Three dispatches per declaration collapse into one; the VM sets the same
+    /// two context flags before running the identical `SetLocal` body, so the
+    /// semantics are unchanged. Fusion happens in `emit()`, which can only see —
+    /// and therefore only ever rewrite — a marker pair it just emitted itself.
+    SetLocalDecl {
+        slot: u32,
+        explicit_init: bool,
+    },
     GetGlobal(u32),
     /// Read a captured read-only scalar free variable by index from this frame's
     /// upvalue array (`self.upvalues`). Emitted in place of `GetGlobal` for a
@@ -2441,6 +2452,9 @@ impl CompiledCode {
                     }
                     pending_decl = false;
                 }
+                // The fused declaration (ADR-0006 §2.3) carries the marker with
+                // it, so it is a declaration, never a reassignment.
+                OpCode::SetLocalDecl { .. } => pending_decl = false,
                 OpCode::AssignExprLocal(slot) => {
                     if let Some(name) = self.locals.get(*slot as usize) {
                         self_mutated.insert(Symbol::intern(name));
@@ -2798,9 +2812,44 @@ impl CompiledCode {
                     | OpCode::RegisterPackageMy { .. }
             );
         }
+        // Peephole (ADR-0006 §2.3): a `my $x = <expr>` declaration always ends in
+        // `MarkExplicitInitializerContext; MarkVarDeclContext; SetLocal(slot)` —
+        // two dispatches whose only effect is to set two flags the `SetLocal` body
+        // reads and clears. Fuse them into one instruction.
+        //
+        // Safe because the fusion only ever rewrites markers this `emit()` just
+        // appended, with nothing in between: no jump can target the middle of the
+        // pair (a target is only ever recorded at the tail *between* statements,
+        // and the three ops are emitted back-to-back), and a jump landing on the
+        // first marker lands on the fused instruction instead, which does exactly
+        // what falling through the pair into `SetLocal` did.
+        if let OpCode::SetLocal(slot) = op
+            && let Some(fused) = self.fuse_decl_markers(slot)
+        {
+            return fused;
+        }
         let idx = self.ops.len();
         self.ops.push(op);
         idx
+    }
+
+    /// Replace a just-emitted trailing declaration-marker run with the fused
+    /// `SetLocalDecl`. Returns the index of the fused instruction, or `None` when
+    /// the tail is not a declaration (an ordinary assignment `$x = 1`).
+    fn fuse_decl_markers(&mut self, slot: u32) -> Option<usize> {
+        let n = self.ops.len();
+        if n == 0 || !matches!(self.ops[n - 1], OpCode::MarkVarDeclContext) {
+            return None;
+        }
+        let explicit_init =
+            n >= 2 && matches!(self.ops[n - 2], OpCode::MarkExplicitInitializerContext);
+        self.ops.truncate(if explicit_init { n - 2 } else { n - 1 });
+        let idx = self.ops.len();
+        self.ops.push(OpCode::SetLocalDecl {
+            slot,
+            explicit_init,
+        });
+        Some(idx)
     }
 
     /// Patch a jump instruction at `idx` to point to the current position.
