@@ -1596,6 +1596,14 @@ pub(crate) struct CompiledCode {
     /// for each local — the readonly half of the pair described above, probed on
     /// every assignment for the same reason.
     pub(crate) locals_readonly_sym: Vec<Symbol>,
+    /// Pre-interned Symbols of the two per-variable metadata keys a `my`
+    /// DECLARATION speculatively clears (`__mutsu_deleted_index::<name>` and
+    /// `__mutsu_bound_array_slice::<name>`), so a redeclaration cannot inherit an
+    /// earlier same-named variable's state. Both keys are almost never present,
+    /// but the clears ran per declaration — in a loop body (`my $t = ...`) that
+    /// is once per iteration.
+    pub(crate) locals_deleted_index_sym: Vec<Symbol>,
+    pub(crate) locals_bound_slice_sym: Vec<Symbol>,
     /// Bitmap: true if local[i] is eligible for SetLocal fast path
     /// (simple $-prefixed scalar, no twigils, no ::, no _ topic, no ./! attrs).
     pub(crate) simple_locals: Vec<bool>,
@@ -1928,6 +1936,8 @@ impl CompiledCode {
             locals_sym: Vec::new(),
             locals_alias_sym: Vec::new(),
             locals_readonly_sym: Vec::new(),
+            locals_deleted_index_sym: Vec::new(),
+            locals_bound_slice_sym: Vec::new(),
             simple_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
@@ -2071,6 +2081,30 @@ impl CompiledCode {
         }
     }
 
+    /// The interned `__mutsu_deleted_index::<name>` env key of local `idx`.
+    /// See [`CompiledCode::alias_sym`].
+    pub(crate) fn deleted_index_sym(&self, idx: usize) -> Option<Symbol> {
+        match self.locals_deleted_index_sym.get(idx) {
+            Some(sym) => Some(*sym),
+            None => self
+                .locals
+                .get(idx)
+                .map(|n| Symbol::intern(&crate::runtime::deleted_index_key(n))),
+        }
+    }
+
+    /// The interned `__mutsu_bound_array_slice::<name>` env key of local `idx`.
+    /// See [`CompiledCode::alias_sym`].
+    pub(crate) fn bound_slice_sym(&self, idx: usize) -> Option<Symbol> {
+        match self.locals_bound_slice_sym.get(idx) {
+            Some(sym) => Some(*sym),
+            None => self
+                .locals
+                .get(idx)
+                .map(|n| Symbol::intern(&crate::runtime::bound_array_slice_key(n))),
+        }
+    }
+
     pub(crate) fn compute_locals_sym(&mut self) {
         self.locals_sym = self.locals.iter().map(|s| Symbol::intern(s)).collect();
         self.locals_alias_sym = self
@@ -2082,6 +2116,16 @@ impl CompiledCode {
             .locals
             .iter()
             .map(|s| Symbol::intern(&crate::runtime::sigilless_readonly_key(s)))
+            .collect();
+        self.locals_deleted_index_sym = self
+            .locals
+            .iter()
+            .map(|s| Symbol::intern(&crate::runtime::deleted_index_key(s)))
+            .collect();
+        self.locals_bound_slice_sym = self
+            .locals
+            .iter()
+            .map(|s| Symbol::intern(&crate::runtime::bound_array_slice_key(s)))
             .collect();
     }
 

@@ -257,12 +257,12 @@ impl Interpreter {
             // Inherit monotonically: if the parent ever registered an atomic var,
             // the child (which shares the atomic storage via shared_vars) must keep
             // running the atomic-variable read check.
-            atomic_var_seen: self.atomic_var_seen,
             // Inherit monotonically: the parent's env-scoped constraints are copied
             // into the child's env, so the child must keep consulting env-first.
             env_type_constraint_seen: self.env_type_constraint_seen,
             // Inherit monotonically: the parent's sigilless-alias env keys are
             // copied into the child env, so the child must keep walking the chain.
+            atomic_var_seen: self.atomic_var_seen,
             sigilless_alias_seen: self.sigilless_alias_seen,
             var_defaults: self.var_defaults.clone(),
             var_hash_key_constraints: self.var_hash_key_constraints.clone(),

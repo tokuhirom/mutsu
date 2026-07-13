@@ -1378,7 +1378,9 @@ pub struct Interpreter {
     /// plus two `var_type_constraint` lookups, each itself a `format!`), yet
     /// atomics are exotic; when this flag is clear the entire check is skipped,
     /// which removes that cost from the hot variable-read path. Never cleared, so
-    /// a program that stops using an atomic still resolves correctly.
+    /// a program that stops using an atomic still resolves correctly. See also the
+    /// process-global `atomic_var_seen_anywhere`, which the reset path needs
+    /// because a worker thread's `cas` marks only the WORKER's copy of this field.
     atomic_var_seen: bool,
     /// Monotonic flag: set once any *env-scoped* variable type constraint has been
     /// written (via `set_var_type_constraint`'s `env.insert` branch or

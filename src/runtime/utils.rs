@@ -25,6 +25,21 @@ pub(crate) fn sigilless_readonly_key(name: &str) -> String {
     format!("__mutsu_sigilless_readonly::{name}")
 }
 
+/// The env key tracking which indices of `name` were `:delete`d. A `my`
+/// redeclaration clears it so a fresh variable cannot inherit an earlier
+/// same-named one's holes.
+pub(crate) fn deleted_index_key(name: &str) -> String {
+    format!("__mutsu_deleted_index::{name}")
+}
+
+/// The env key marking `name` as a genuine bound array SLICE (`@slice :=
+/// @array[1,2]`), i.e. "this variable's elements are write-through cells". Set
+/// only at the bind moment that produces them, and cleared on every
+/// redeclaration of the same name.
+pub(crate) fn bound_array_slice_key(name: &str) -> String {
+    format!("__mutsu_bound_array_slice::{name}")
+}
+
 /// Build the `Failure` value raku yields when a count/numeric coercion is
 /// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
 /// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.
