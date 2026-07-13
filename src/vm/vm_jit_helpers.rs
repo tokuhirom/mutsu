@@ -28,11 +28,6 @@ pub(super) unsafe extern "C" fn load_const(
     interp.stack.push(code.constants[idx as usize].clone());
 }
 
-/// `OpCode::SetSourceLine`
-pub(super) unsafe extern "C" fn set_source_line(interp: *mut Interpreter, line: i64) {
-    unsafe { &mut *interp }.cur_source_line = line;
-}
-
 /// `OpCode::ContainerizePair`
 pub(super) unsafe extern "C" fn containerize_pair(interp: *mut Interpreter) {
     let interp = unsafe { &mut *interp };
@@ -263,6 +258,9 @@ pub(super) unsafe extern "C" fn call_method(
     else {
         unreachable!("jit call_method shim on a non-CallMethod opcode")
     };
+    // Native code runs no per-op line update, so the callee's frame/backtrace
+    // line must be pulled from the static ip -> line table at the call site.
+    interp.sync_source_line(code, op_idx as usize);
     let r = interp.exec_call_method_op(
         code,
         *name_idx,
@@ -311,6 +309,7 @@ pub(super) unsafe extern "C" fn call_method_mut(
     else {
         unreachable!("jit call_method_mut shim on a non-CallMethodMut opcode")
     };
+    interp.sync_source_line(code, op_idx as usize);
     let pre = interp.array_hash_attr_env_snapshot(code, *target_name_idx);
     let r = interp.exec_call_method_mut_op(
         code,
@@ -370,6 +369,7 @@ pub(super) unsafe extern "C" fn call_func(
     else {
         unreachable!("jit call_func shim on a non-CallFunc opcode")
     };
+    interp.sync_source_line(code, op_idx as usize);
     let r = interp.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, fns);
     interp.current_code = code as *const CompiledCode as usize;
     match r {

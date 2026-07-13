@@ -128,8 +128,25 @@ time-parts の per-iteration 64 op のうち約 27% が administrative
 `SetVarDynamic`・`CheckReadOnly`）。古典的な push/pop 除去より、
 この mutsu 固有の administrative 列の静的化・融合の方が実測上大きい:
 
-- 連続する `SetSourceLine` の重複除去（値が変わらない限り 1 個）、
-  および `my $x = <expr>` の宣言 3-4 op 列の複合 op 化ないし静的フラグ化。
+- `my $x = <expr>` の宣言 3-4 op 列の複合 op 化ないし静的フラグ化（`SetLocalDecl`, #4488）。
+- **`SetSourceLine` は「重複除去」ではなく opcode ごと廃止する（実装済み）**:
+  行番号は命令ごとの**静的データ**であり、それを運ぶために dispatch される命令は要らない。
+  `CompiledCode` に ip→行の静的テーブル（`op_lines`、`ops` と平行な `Vec<u32>`）を持たせ、
+  `Stmt::SetLine` は opcode を emit せず emit カーソル（`set_emit_line`）を進めるだけにする。
+  `cur_source_line` は**行を観測し得る命令だけ**が `sync_source_line(code, ip)` で引く
+  （呼び出し/ユーザコードへの再入・フレーム push・宣言登録・raise site の各 arm と、
+  ネイティブ実行される JIT の call shim）。算術・ローカル・分岐といった純粋な hot op は
+  一切払わない。
+  - **毎命令リフレッシュは駄目**（実測）: `exec_one` プロローグで全命令に対して
+    テーブル参照 + ストアを行う版は、削減した dispatch より高くつき fib で
+    **命令数 +7.8%**。「観測点のみ」に絞ると fib で **-3.4%**（インタプリタ経路）。
+  - 実行 opcode 数自体は fib で -21%（1.91M/8.90M が `SetSourceLine` だった）、
+    time-parts で -11% 減るが、**opcode 数の削減幅と時間の削減幅は一致しない**
+    （`SetSourceLine` は 1 命令ストアの最安 op で、mutsu の平均 op は桁違いに重い）。
+    JIT 経路（既定構成）では ±0%。bytecode のメモリは ~15% 減る。
+  - 行番号はむしろ**より正確**になる（従来はブロック/ループ本体の実行後に行が古いまま
+    残るため、メソッド呼び出し前に `SetSourceLine` を防御的に再 emit していた
+    `emit_source_line_if_known` が必要だった。これも削除）。pin: `t/source-line-table.t`。
 - jump-to-jump は複合ループ op のおかげで現状ほぼ発生しないため優先しない。
 - 対象の選定は**ヒストグラム駆動**（`MUTSU_VM_STATS=1` の opcode_histogram）で行い、
   美学による書き換えはしない — [opcode-design-review.md](../opcode-design-review.md) §6

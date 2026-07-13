@@ -128,8 +128,8 @@ impl Interpreter {
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
-        // This path skips push_caller_env, so roll back the callee body's
-        // SetSourceLine updates manually (env-based ?LINE got this for free
+        // This path skips push_caller_env, so roll back the line the callee
+        // body's ops advanced to manually (env-based ?LINE got this for free
         // from the overlay drop).
         let saved_line = self.cur_source_line;
         // Run the body under the routine's declaring package (set after the

@@ -202,7 +202,8 @@ pub(crate) struct Compiler {
     /// consumes it so the emitted `TryCatch` is marked as a bare-block
     /// callframe. Other `compile_try` callers (e.g. `try { }`) leave it false.
     next_try_is_bare_block: bool,
-    /// Last source line emitted via SetSourceLine (for tracking block definition lines).
+    /// Line of the `Stmt::SetLine` marker last seen (the line attached to the ops
+    /// emitted since; also the definition line of a block/sub compiled here).
     last_source_line: Option<i64>,
     /// Pending writebacks for Index expressions passed to function calls.
     /// After the call returns, if the `is rw` parameter was written to,
@@ -331,15 +332,6 @@ impl Compiler {
         let r = f(self);
         self.escaping_position = saved;
         r
-    }
-
-    /// Emit a SetSourceLine opcode for the current source line, if known.
-    /// Used before method/function calls to ensure ?LINE is up-to-date for
-    /// deprecation tracking and error reporting.
-    pub(super) fn emit_source_line_if_known(&mut self) {
-        if let Some(line) = self.last_source_line {
-            self.code.emit(OpCode::SetSourceLine(line));
-        }
     }
 
     pub(crate) fn set_current_package(&mut self, package: String) {

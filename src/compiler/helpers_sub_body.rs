@@ -178,10 +178,11 @@ impl Compiler {
         sub_compiler.record_param_local_slots(params, param_defs);
         // Hoist sub declarations within the sub body
         sub_compiler.hoist_sub_decls(body, true);
-        // Emit SetSourceLine at the start of the function body so that
-        // ?LINE is set to the sub's definition line on entry.
+        // Seed the body chunk's ip -> line table with the sub's definition line so
+        // its prologue ops (before the body's first statement marker) already
+        // carry a line.
         if let Some(line) = sub_compiler.last_source_line {
-            sub_compiler.code.emit(OpCode::SetSourceLine(line));
+            sub_compiler.code.set_emit_line(line);
         }
         // If sub body contains CATCH/CONTROL, wrap in implicit try. compile_try
         // leaves the body's final-expression value on the stack; for a normal
@@ -615,8 +616,11 @@ impl Compiler {
         sub_compiler.current_distribution = self.current_distribution.clone();
         // Propagate last_source_line so closures inside blocks that
         // lack their own SetLine can still inherit the line from the
-        // enclosing statement.
+        // enclosing statement, and seed the body chunk's ip -> line table with it.
         sub_compiler.last_source_line = self.last_source_line;
+        if let Some(line) = self.last_source_line {
+            sub_compiler.code.set_emit_line(line);
+        }
         // Give closures a unique package name so their state variables don't
         // collide with state variables in the enclosing code that happen to
         // share the same variable name.

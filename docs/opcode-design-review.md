@@ -78,10 +78,23 @@ per-opcode histogram (discriminant-keyed; variant name derived once via
 stats are off (one cached bool load).
 
 First data point (`my $s = 0; for 1..1000 { $s += $_ }`): one iteration of
-`$s += $_` executes 6 ops — `SetSourceLine`, `GetLocal`, `SetLocal`, `Add`,
-`CheckReadOnly`, `GetGlobal`. That immediately suggests follow-up targets:
-`SetSourceLine` fires per statement even in hot loops, and a compound-assign
+`$s += $_` executed 6 ops — `SetSourceLine`, `GetLocal`, `SetLocal`, `Add`,
+`CheckReadOnly`, `GetGlobal`. That immediately suggested follow-up targets:
+`SetSourceLine` fired per statement even in hot loops, and a compound-assign
 to a local still pays a `CheckReadOnly` + env-path `GetGlobal` pair.
+
+`SetSourceLine` is now gone (ADR-0006 §2.3): the source line is static
+per-instruction data, so `CompiledCode` carries an ip -> line table
+(`op_lines`) and `cur_source_line` is refreshed by `sync_source_line(code, ip)`
+in the arms that can *observe* a line (calls/reentry into user code, frame
+pushes, declaration registrations, raise sites) plus the JIT call shims. That
+removed 11% (time-parts) to 21% (fib) of executed opcodes, for -3.4%
+instructions on fib in the interpreter — refreshing on *every* op instead cost
+more than the dispatch it saved (+7.8% instructions), which is why the sync is
+opcode-selective. **When adding an opcode whose handler can call user code, push
+a frame, register a declaration, or raise a warning/error, call
+`sync_source_line` at the top of its arm.** `CheckReadOnly` / `GetGlobal` on a
+compound-assign remain open.
 
 ### 5. Per-instruction dispatch overhead — OPEN (deferred)
 

@@ -111,7 +111,7 @@ impl Interpreter {
         // lose package-var reads/writes.
         let saved_package = self.enter_routine_package(cf);
         let let_mark = self.let_saves_len();
-        // Frame-less path: roll back the body's SetSourceLine updates manually.
+        // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
         let mut ip = 0;
         let mut result = Ok(());

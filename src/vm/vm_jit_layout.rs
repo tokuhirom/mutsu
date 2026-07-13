@@ -15,8 +15,6 @@ use super::*;
 pub(super) struct JitLayout {
     /// Byte offset of `Interpreter::stack` (a `Vec<Value>`).
     pub(super) stack: i32,
-    /// Byte offset of `Interpreter::cur_source_line` (an `i64`).
-    pub(super) cur_source_line: i32,
     /// Byte offsets of the data pointer / length / capacity words inside
     /// `Vec<Value>` (relative to the start of the `Vec`).
     pub(super) vec_ptr: i32,
@@ -62,7 +60,6 @@ pub(super) fn layout() -> Option<&'static JitLayout> {
             let (vec_ptr, vec_len, vec_cap) = probe_vec_layout()?;
             Some(JitLayout {
                 stack: std::mem::offset_of!(Interpreter, stack) as i32,
-                cur_source_line: std::mem::offset_of!(Interpreter, cur_source_line) as i32,
                 vec_ptr,
                 vec_len,
                 vec_cap,

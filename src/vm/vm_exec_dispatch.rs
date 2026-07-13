@@ -1743,6 +1743,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::BoolCoerce => {
+                self.sync_source_line(code, *ip);
                 self.exec_bool_coerce_op();
                 *ip += 1;
             }
@@ -1794,6 +1795,7 @@ impl Interpreter {
 
             // -- String --
             OpCode::Concat => {
+                self.sync_source_line(code, *ip);
                 self.exec_concat_op()?;
                 *ip += 1;
             }
@@ -1931,6 +1933,7 @@ impl Interpreter {
                 lhs_is_literal,
                 rhs_pure_regex,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_smart_match_expr_op(
                     code,
                     ip,
@@ -1995,6 +1998,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::FunctionCompose => {
+                self.sync_source_line(code, *ip);
                 self.exec_function_compose_op();
                 *ip += 1;
             }
@@ -2170,6 +2174,7 @@ impl Interpreter {
 
             // -- Sequence --
             OpCode::Sequence { exclude_end } => {
+                self.sync_source_line(code, *ip);
                 let right = self.stack.pop().unwrap();
                 let left = self.stack.pop().unwrap();
                 let out = loan_env!(self, eval_sequence_values(left, right, *exclude_end))?;
@@ -2224,6 +2229,7 @@ impl Interpreter {
             }
 
             OpCode::CallDefined => {
+                self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap();
                 // Check if the value has a user-defined .defined method
                 let class_name = match val.view() {
@@ -2332,6 +2338,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::CoerceToList => {
+                self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let list_val = match val.view() {
                     // Explicit Arrays ([1,2,3]) are preserved as-is.
@@ -2472,6 +2479,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::ThrowIfFailure => {
+                self.sync_source_line(code, *ip);
                 // Peek (do not pop): a trailing unhandled Failure must be thrown
                 // so the enclosing CATCH handler (or `try`) sees it, while a
                 // normal value remains on the stack as the block's return value.
@@ -2499,6 +2507,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SinkPop(user_sink) => {
+                self.sync_source_line(code, *ip);
                 let user_sink = *user_sink;
                 if let Some(val) = self.stack.pop() {
                     // A bare statement value whose class defines its own `sink`
@@ -2731,21 +2740,25 @@ impl Interpreter {
 
             // -- I/O --
             OpCode::Say(n) => {
+                self.sync_source_line(code, *ip);
                 self.sync_env_from_locals(code);
                 self.exec_say_op(*n)?;
                 *ip += 1;
             }
             OpCode::Put(n) => {
+                self.sync_source_line(code, *ip);
                 self.sync_env_from_locals(code);
                 self.exec_put_op(*n)?;
                 *ip += 1;
             }
             OpCode::Print(n) => {
+                self.sync_source_line(code, *ip);
                 self.sync_env_from_locals(code);
                 self.exec_print_op(*n)?;
                 *ip += 1;
             }
             OpCode::Note(n) => {
+                self.sync_source_line(code, *ip);
                 self.sync_env_from_locals(code);
                 self.exec_note_op(*n)?;
                 *ip += 1;
@@ -2757,6 +2770,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_call_func_op(
                     code,
                     *name_idx,
@@ -2783,6 +2797,7 @@ impl Interpreter {
                 arg_sources_idx,
                 slip_pos,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_call_func_slip_op(
                     code,
                     *name_idx,
@@ -2800,6 +2815,7 @@ impl Interpreter {
                 quoted,
                 arg_sources_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_call_method_op(
                     code,
                     *name_idx,
@@ -2834,6 +2850,7 @@ impl Interpreter {
                 arity,
                 modifier_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_call_method_dynamic_op(code, *arity, *modifier_idx) {
                     Ok(()) => {}
                     Err(e) => {
@@ -2856,6 +2873,7 @@ impl Interpreter {
                 target_name_idx,
                 modifier_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
                 match self.exec_call_method_dynamic_mut_op(
                     code,
@@ -2880,6 +2898,7 @@ impl Interpreter {
                 target_name_idx,
                 value_source_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
                 self.exec_array_push_op(code, *target_name_idx, *value_source_idx)?;
                 self.mirror_array_hash_attr_to_cell(code, *target_name_idx, pre);
@@ -2893,6 +2912,7 @@ impl Interpreter {
                 quoted,
                 arg_sources_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
                 match self.exec_call_method_mut_op(
                     code,
@@ -2935,6 +2955,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 // Set a resume point before propagating a control signal so an
                 // enclosing `CONTROL {}` can `.resume` after this call — e.g.
                 // `my $w = &warn; $w.("x")` raises a resumable `warn` signal from
@@ -2956,6 +2977,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_call_on_code_var_op(
                     code,
                     *name_idx,
@@ -2978,6 +3000,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_exec_call_op(
                     code,
                     *name_idx,
@@ -2996,6 +3019,7 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::ExecCallPairs { name_idx, arity } => {
+                self.sync_source_line(code, *ip);
                 self.exec_exec_call_pairs_op(code, compiled_fns, *name_idx, *arity)?;
                 *ip += 1;
             }
@@ -3005,6 +3029,7 @@ impl Interpreter {
                 arg_sources_idx,
                 slip_pos,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_exec_call_slip_op(
                     code,
                     compiled_fns,
@@ -3063,6 +3088,7 @@ impl Interpreter {
             }
             // -- String interpolation --
             OpCode::StringConcat(n) => {
+                self.sync_source_line(code, *ip);
                 self.exec_string_concat_op(*n)?;
                 *ip += 1;
             }
@@ -3253,10 +3279,12 @@ impl Interpreter {
 
             // -- Unary coercion --
             OpCode::NumCoerce => {
+                self.sync_source_line(code, *ip);
                 self.exec_num_coerce_op()?;
                 *ip += 1;
             }
             OpCode::StrCoerce => {
+                self.sync_source_line(code, *ip);
                 self.exec_str_coerce_op()?;
                 *ip += 1;
             }
@@ -3315,6 +3343,7 @@ impl Interpreter {
                 collect,
                 isolate_topic,
             } => {
+                self.sync_source_line(code, *ip);
                 let spec = vm_control_ops::WhileLoopSpec {
                     cond_end: *cond_end,
                     body_end: *body_end,
@@ -3325,6 +3354,7 @@ impl Interpreter {
                 self.exec_while_loop_op(code, &spec, ip, compiled_fns)?;
             }
             OpCode::ForLoop(spec) => {
+                self.sync_source_line(code, *ip);
                 self.exec_for_loop_op(code, spec, ip, compiled_fns)?;
             }
             OpCode::RestoreForParam => {
@@ -3351,6 +3381,7 @@ impl Interpreter {
                 label,
                 collect,
             } => {
+                self.sync_source_line(code, *ip);
                 let spec = vm_control_ops::CStyleLoopSpec {
                     cond_end: *cond_end,
                     step_start: *step_start,
@@ -3367,6 +3398,7 @@ impl Interpreter {
                 topic_readonly,
                 pointy_param_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_given_op(
                     code,
                     *body_end,
@@ -3377,9 +3409,11 @@ impl Interpreter {
                 )?;
             }
             OpCode::When { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_when_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::Default { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_default_op(code, *body_end, ip, compiled_fns)?;
             }
 
@@ -3389,6 +3423,7 @@ impl Interpreter {
                 body_end,
                 label,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_repeat_loop_op(code, *cond_end, *body_end, label, ip, compiled_fns)?;
             }
 
@@ -3401,6 +3436,7 @@ impl Interpreter {
                 resume_safe,
                 is_bare_block,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_try_catch_op(
                     code,
                     *catch_start,
@@ -3450,6 +3486,7 @@ impl Interpreter {
                 }
             }
             OpCode::Die => {
+                self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Store the resume point (instruction after Die) for .resume support
                 self.resume_ip = Some(*ip + 1);
@@ -3490,6 +3527,7 @@ impl Interpreter {
                 return Err(err);
             }
             OpCode::Fail => {
+                self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // When fail() receives a Failure:D, extract the inner exception
                 // and re-arm it (Raku behavior: fail(Failure:D) re-arms)
@@ -3587,6 +3625,7 @@ impl Interpreter {
 
             // -- Reduction --
             OpCode::Reduction(op_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_reduction_op(code, *op_idx)?;
                 *ip += 1;
             }
@@ -3614,6 +3653,7 @@ impl Interpreter {
                 x_idx,
                 perl5,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_subst_op(
                     code,
                     *pattern_idx,
@@ -3641,6 +3681,7 @@ impl Interpreter {
                 x_idx,
                 perl5,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_non_destructive_subst_op(
                     code,
                     *pattern_idx,
@@ -3664,6 +3705,7 @@ impl Interpreter {
                 squash,
                 non_destructive,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_transliterate_op(
                     code,
                     *from_idx,
@@ -3678,12 +3720,14 @@ impl Interpreter {
 
             // -- Take --
             OpCode::Take => {
+                self.sync_source_line(code, *ip);
                 self.exec_take_op()?;
                 *ip += 1;
             }
 
             // -- Package scope --
             OpCode::PackageScope { name_idx, body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_package_scope_op(code, *name_idx, *body_end, ip, compiled_fns)?;
             }
             OpCode::RegisterPackage { name_idx } => {
@@ -3725,12 +3769,14 @@ impl Interpreter {
 
             // -- Phaser END --
             OpCode::PhaserEnd { idx, site_id } => {
+                self.sync_source_line(code, *ip);
                 self.exec_phaser_end_op(code, *idx, *site_id);
                 *ip += 1;
             }
 
             // -- CHECK Phaser scope --
             OpCode::CheckPhaserStart { .. } => {
+                self.sync_source_line(code, *ip);
                 self.check_phaser_depth += 1;
                 *ip += 1;
             }
@@ -3747,6 +3793,7 @@ impl Interpreter {
                 quoted,
                 target_name_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_hyper_method_call_op(
                     code,
                     *name_idx,
@@ -3772,6 +3819,7 @@ impl Interpreter {
                 arity,
                 modifier_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 match self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx) {
                     Ok(()) => {}
                     Err(e) => {
@@ -3790,6 +3838,7 @@ impl Interpreter {
                 dwim_left,
                 dwim_right,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_hyper_op(code, *op_idx, *dwim_left, *dwim_right)?;
                 *ip += 1;
             }
@@ -3801,6 +3850,7 @@ impl Interpreter {
                 dwim_right,
                 writeback,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_hyper_func_op(
                     code,
                     *name_idx,
@@ -3814,6 +3864,7 @@ impl Interpreter {
 
             // -- MetaOp --
             OpCode::MetaOp { meta_idx, op_idx } => {
+                self.sync_source_line(code, *ip);
                 self.exec_meta_op(code, *meta_idx, *op_idx)?;
                 *ip += 1;
             }
@@ -3823,6 +3874,7 @@ impl Interpreter {
                 op_idx,
                 count,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_meta_op_nary(code, *meta_idx, *op_idx, *count)?;
                 *ip += 1;
             }
@@ -3833,6 +3885,7 @@ impl Interpreter {
                 right_arity,
                 modifier_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_infix_func_op(code, *name_idx, *right_arity, modifier_idx, compiled_fns)?;
                 *ip += 1;
             }
@@ -3859,10 +3912,12 @@ impl Interpreter {
 
             // -- Type checking --
             OpCode::TypeCheck(tc_idx, var_name_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_type_check_op(code, *tc_idx, *var_name_idx)?;
                 *ip += 1;
             }
             OpCode::TypeCheckBind(tc_idx, var_name_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_type_check_bind_op(code, *tc_idx, *var_name_idx)?;
                 *ip += 1;
             }
@@ -3928,6 +3983,7 @@ impl Interpreter {
                 end,
                 is_bare_block,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_block_scope_op(
                     code,
                     [
@@ -3945,12 +4001,14 @@ impl Interpreter {
                 )?;
             }
             OpCode::BlockLocalScope { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_block_local_scope_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::CheckPhaser {
                 is_pre,
                 condition_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 let condition = condition_idx.map(|idx| Self::const_str(code, idx).to_string());
                 self.exec_check_phaser_op(*is_pre, condition)?;
                 *ip += 1;
@@ -3966,6 +4024,7 @@ impl Interpreter {
                 scope_isolate,
                 isolate_decls_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_do_block_expr_op(
                     code,
                     *body_end,
@@ -3977,18 +4036,22 @@ impl Interpreter {
                 )?;
             }
             OpCode::OnceExpr { key_idx, body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_once_expr_op(code, *key_idx, *body_end, ip, compiled_fns)?;
             }
             OpCode::DoGivenExpr { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;
             }
 
             // -- Closures and registration --
             OpCode::MakeGather(idx, cc_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_make_gather_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
             OpCode::Eager => {
+                self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let result = match val.view() {
                     ValueView::LazyList(ll) => {
@@ -4017,14 +4080,17 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MakeAnonSub(idx, cc_idx, is_block) => {
+                self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_op(code, *idx, *cc_idx, *is_block)?;
                 *ip += 1;
             }
             OpCode::MakeAnonSubParams(idx, cc_idx, is_wc) => {
+                self.sync_source_line(code, *ip);
                 self.exec_make_anon_sub_params_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
             OpCode::MakeLambda(idx, cc_idx, is_wc) => {
+                self.sync_source_line(code, *ip);
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
@@ -4033,38 +4099,47 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MakeBlockClosure(idx, cc_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_make_block_closure_op(code, *idx, *cc_idx)?;
                 *ip += 1;
             }
             OpCode::RegisterSub(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_sub_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterToken(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_token_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterProtoSub(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_proto_sub_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterProtoToken(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_proto_token_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::UseModule { name_idx, tags_idx } => {
+                self.sync_source_line(code, *ip);
                 self.exec_use_module_op(code, *name_idx, *tags_idx)?;
                 *ip += 1;
             }
             OpCode::ImportModule { name_idx, tags_idx } => {
+                self.sync_source_line(code, *ip);
                 self.exec_import_module_op(code, *name_idx, *tags_idx)?;
                 *ip += 1;
             }
             OpCode::NoModule(name_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_no_module_op(code, *name_idx)?;
                 *ip += 1;
             }
             OpCode::NeedModule(name_idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_need_module_op(code, *name_idx)?;
                 *ip += 1;
             }
@@ -4081,29 +4156,36 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::RegisterEnum(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_enum_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterClass(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_class_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::AugmentClass(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_augment_class_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterRole(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_role_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::RegisterSubset(idx) => {
+                self.sync_source_line(code, *ip);
                 self.exec_register_subset_op(code, *idx)?;
                 *ip += 1;
             }
             OpCode::SubtestScope { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_subtest_scope_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::ReactScope { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_react_scope_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::WheneverScope {
@@ -4111,6 +4193,7 @@ impl Interpreter {
                 param_idx,
                 target_var_idx,
             } => {
+                self.sync_source_line(code, *ip);
                 self.exec_whenever_scope_op(code, *body_idx, param_idx, target_var_idx)?;
                 *ip += 1;
             }
@@ -4257,14 +4340,32 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::LetBlock { body_end } => {
+                self.sync_source_line(code, *ip);
                 self.exec_let_block_op(code, *body_end, ip, compiled_fns)?;
-            }
-            OpCode::SetSourceLine(line) => {
-                self.cur_source_line = *line;
-                *ip += 1;
             }
         }
         Ok(())
+    }
+
+    /// Adopt the source line of the instruction at `ip` as the current line.
+    ///
+    /// The line is static per-instruction data (`CompiledCode::op_lines`), so no
+    /// dispatched instruction is needed to carry it (the former `SetSourceLine`).
+    /// Instead this is called from the instructions that can *observe* a line —
+    /// every call/reentry into user code, frame push, declaration registration
+    /// and raise site — and from the JIT call shims, whose native code has no
+    /// interpreter loop to refresh anything. Instructions that cannot observe it
+    /// (arithmetic, local slots, jumps, stack shuffling) pay nothing at all,
+    /// which is the point: refreshing on every op costs more than the dispatch it
+    /// saves (measured: +7.8% instructions on fib).
+    ///
+    /// A chunk with no line information for `ip` (hand-built bytecode) leaves the
+    /// current line untouched.
+    #[inline]
+    pub(crate) fn sync_source_line(&mut self, code: &CompiledCode, ip: usize) {
+        if let Some(line) = code.line_at(ip) {
+            self.cur_source_line = line;
+        }
     }
 
     /// Check if a value represents a "successful" block exit for `let` purposes.
