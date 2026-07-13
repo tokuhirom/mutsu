@@ -298,13 +298,29 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
         先に確認する**こと。空振りなら深追いしない。
       - [ ] **§2.3-c 残 administrative op（`SetVarDynamic`・`CheckReadOnly`）** — 上記の
             事前計測ゲートを通ってから着手。
-- [ ] **★perf の次の的は profile が示す「割当と call path」（opcode ヒストグラムではない）**:
-      fib の profile 上位は ① `call_compiled_function_positional_light`（call path）
-      ② `malloc`/`free`（**呼び出しごとの割当チャーン**）③ `Env::get_sym`（dual store の名前引き）。
-      ② と ③ は locals↔env の dual store という同じ根から出ており、**§6 の
-      「`BlockScope` の locals 全 clone/restore 撤去」＝レキシカルスコープ slot キャンペーン**
-      （[docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md)）が直接叩く。
-      これを perf の本丸として §6 から昇格させる。
+- [ ] **★perf の次の的は profile が示す「割当・ハッシュ・env」（opcode ヒストグラムではない）**。
+      release・JIT on（既定構成）・P-core 固定の `perf record -e cycles:u`（2026-07-13・#4489 後）:
+
+      | bench-fib（call 主体） | % | bench-class（オブジェクト主体） | % |
+      |---|---|---|---|
+      | `call_compiled_function_positional_light` | 10.9 | `malloc`＋`_int_malloc`＋`_int_free`＋`malloc_consolidate` | **19.5** |
+      | `_int_free`＋`_int_malloc` | **11.8** | `__memcmp_avx2`（属性名 `String` キー比較） | 5.2 |
+      | `Env::scoped_child` | 5.4 | `nanbox::gc_op`＋`Gc::drop` | 7.7 |
+      | **JIT ネイティブコード本体** | *5.7* | `exec_call_method_mut_op` | 2.7 |
+      | `Env::get_sym` | 4.4 | `AttrReadGuard::drop` | 2.3 |
+      | **SipHash `Hasher::write`** | 4.1 | | |
+      | `hashbrown RawTable::clone`（env の table 複製） | 3.7 | | |
+
+      読み: fib では **JIT が生成したネイティブコードは 5.7% しか回っておらず、割当（11.8%）＋
+      ハッシュ／env table 複製（12%超）＋ call path（10.9%）が支配**。bench-class では
+      **アロケータだけで ~20%**、加えて属性名の `String` キー比較（memcmp 5.2%）。つまり:
+      1. **env の per-call clone とハッシュ**（`Env::scoped_child` が hashbrown table を複製し、
+         キーのハッシュに **SipHash（デフォルトハッシャ）** を使っている）→ FxHashMap 化と
+         per-call clone 撤去。根は locals↔env の dual store なので、**§6 の
+         「`BlockScope` の locals 全 clone/restore 撤去」＝レキシカルスコープ slot キャンペーン**
+         （[docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md)）が本丸。
+      2. **属性 `HashMap<String, Value>` の Symbol 化**（memcmp/malloc の出所・上の Lever 2 残件と同一）。
+      これらを perf の本丸として §6 から昇格させる。
 - [ ] **opcode 残件（[docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6・#4279 の続き）**:
       ラベル等の inline `Option<String>` payload（`Last`/`Next`/`Redo`/loop 系/`SmartMatchExpr.lhs_var`）
       の定数プール `Option<u32>` 化（`OpCode` を 48B 未満へ） / per-instruction 定数コスト
