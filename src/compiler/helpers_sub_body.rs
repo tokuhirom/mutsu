@@ -98,6 +98,7 @@ impl Compiler {
             .map(|s| Self::is_definite_return_spec(s))
             .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
+        self.inherit_fold_ctx(&mut sub_compiler);
         sub_compiler.is_routine = true;
         sub_compiler.lexically_in_routine = true;
         // A method body carries the synthetic `?CLASS` parameter injected by the
@@ -587,6 +588,7 @@ impl Compiler {
         is_routine: bool,
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
+        self.inherit_fold_ctx(&mut sub_compiler);
         sub_compiler.is_routine = is_routine;
         // Make the names of all constants visible at this closure's definition
         // point known to the child compiler, so a `constant X` inside the body

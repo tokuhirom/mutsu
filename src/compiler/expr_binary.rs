@@ -117,6 +117,13 @@ impl Compiler {
         op: &TokenKind,
         right: &Expr,
     ) {
+        // Constant folding (ADR-0006 §2.1): a literal-only pure expression
+        // (`60 * 60 * 24`) is evaluated here and collapses to one LoadConst.
+        if let Some(folded) = self.try_const_fold_binary(left, op, right) {
+            let idx = self.code.add_constant(folded);
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
         // `$var andthen/orelse/notandthen .=method` writes the `.=` result back to
         // the chain's root variable (the topic `$_` aliases it in raku).
         let retargeted_right;

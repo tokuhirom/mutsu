@@ -29,6 +29,7 @@ pub(crate) fn shadow_slots_active() -> bool {
     static ACTIVE: OnceLock<bool> = OnceLock::new();
     *ACTIVE.get_or_init(|| std::env::var_os("MUTSU_NO_SHADOW_SLOTS").is_none())
 }
+mod const_fold;
 mod expr;
 mod expr_binary;
 mod expr_block;
@@ -53,6 +54,7 @@ mod helpers_stmt_analysis;
 mod helpers_sub_body;
 mod stmt;
 
+#[derive(Clone)]
 pub(crate) struct Compiler {
     code: CompiledCode,
     local_map: HashMap<String, u32>,
@@ -237,6 +239,13 @@ pub(crate) struct Compiler {
     /// Standalone Pair literals (`my $p = (k => $v)`) still capture for
     /// write-through (S02:1704).
     suppress_pair_capture: bool,
+    /// Constant-folding state (ADR-0006 §2.1), shared with every child compiler
+    /// of this compilation unit so an operator declaration found while compiling
+    /// a sub body disables folding for the whole unit.
+    fold_ctx: std::sync::Arc<const_fold::FoldCtx>,
+    /// True only for the compiler that owns `fold_ctx` (the unit-level one).
+    /// Child compilers inherit the Arc and must not trigger the refold pass.
+    fold_root: bool,
 }
 
 impl Compiler {
@@ -281,6 +290,8 @@ impl Compiler {
             suppress_pair_capture: false,
             synthetic_block_body: false,
             next_try_is_bare_block: false,
+            fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),
+            fold_root: true,
         }
     }
 
@@ -1207,10 +1218,35 @@ impl Compiler {
         }
     }
 
+    /// Compile a compilation unit.
+    ///
+    /// Constant folding (ADR-0006 §2.1) is only valid while no user-defined
+    /// operator is declared in the unit — a `sub infix:<+>` overrides even
+    /// native `Int + Int`. Declarations can hide anywhere (a nested block, a sub
+    /// body, a class body), so instead of statically walking the AST for them,
+    /// the declaration sites flag the shared `FoldCtx` as they are compiled and
+    /// the unit is recompiled here, folding disabled, if one turned up after
+    /// something had already been folded. Only files that declare operators pay
+    /// the second pass.
     pub(crate) fn compile(
-        mut self,
+        self,
         stmts: &[Stmt],
     ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+        if !self.fold_root || !self.fold_ctx.is_enabled() {
+            return self.compile_unit(stmts);
+        }
+        let pristine = self.clone();
+        let ctx = std::sync::Arc::clone(&self.fold_ctx);
+        let compiled = self.compile_unit(stmts);
+        if !ctx.needs_refold_pass() {
+            return compiled;
+        }
+        let mut retry = pristine;
+        retry.fold_ctx = std::sync::Arc::new(const_fold::FoldCtx::disabled());
+        retry.compile_unit(stmts)
+    }
+
+    fn compile_unit(mut self, stmts: &[Stmt]) -> (CompiledCode, HashMap<String, CompiledFunction>) {
         // Hoist top-level `use Test` declarations to the front (Raku `use` is
         // BEGIN-time, so test functions are available throughout the file even
         // when `plan`/`ok` appear textually before `use Test;`).

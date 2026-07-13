@@ -789,6 +789,9 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
+                // `my &infix:<+> = ...` installs a user operator just like a
+                // `sub infix:<+>` does — disable constant folding (ADR-0006 §2.1).
+                self.note_operator_decl(name);
                 // Record this declaration for an enclosing scope-isolating
                 // do-block (string-interpolation `{...}`) so it can revert
                 // exactly its own block-local declarations on exit.
@@ -2726,6 +2729,13 @@ impl Compiler {
                 custom_traits,
                 ..
             } => {
+                // A user-defined operator overrides even native `Int + Int`, so
+                // it disables constant folding for the whole unit (ADR-0006
+                // §2.1). A runtime-named sub (`sub ::($n)`) could be anything.
+                self.note_operator_decl(&name.resolve());
+                if name_expr.is_some() {
+                    self.fold_ctx.note_operator_decl();
+                }
                 // Reject overriding a reserved special-form operator
                 // (`infix:<=>`, `infix:<:=>`, `infix:<::=>`, `infix:<~~>`,
                 // `prefix:<|>`) — these are handled directly by the compiler and
@@ -2887,12 +2897,14 @@ impl Compiler {
                 self.code.emit(OpCode::RegisterToken(idx));
             }
             Stmt::ProtoDecl {
+                name,
                 params,
                 param_defs,
                 body,
                 ..
             } => {
                 let _ = (params.len(), param_defs.len(), body.len());
+                self.note_operator_decl(&name.resolve());
                 let idx = self.code.add_stmt(stmt.clone());
                 self.code.emit(OpCode::RegisterProtoSub(idx));
             }
