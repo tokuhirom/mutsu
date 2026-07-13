@@ -669,7 +669,7 @@ impl Interpreter {
                 let mut new_attrs: std::collections::HashMap<String, Value> = attributes
                     .as_map()
                     .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .map(|(k, v)| (k.resolve(), v.clone()))
                     .collect();
                 new_attrs.insert("message".to_string(), Value::str(enhanced_msg));
                 enhanced.exception = Some(Box::new(Value::make_instance(class_name, new_attrs)));

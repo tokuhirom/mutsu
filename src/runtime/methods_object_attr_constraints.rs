@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     fn check_attribute_where_constraint(&mut self, pred: &Expr, value: &Value) -> bool {
@@ -115,7 +116,7 @@ impl Interpreter {
         &mut self,
         class_name: &str,
         class_attrs_info: &[ClassAttributeDef],
-        attrs: &HashMap<String, Value>,
+        attrs: &AttrMap,
     ) -> Result<(), RuntimeError> {
         let type_constraints = self.collect_attribute_type_constraints(class_name);
         for (attr_name, _is_public, _default, _is_rw, _is_required, sigil, where_constraint) in
@@ -165,7 +166,7 @@ impl Interpreter {
     pub(crate) fn enforce_attribute_smiley_constraints(
         &mut self,
         class_name: &str,
-        attrs: &HashMap<String, Value>,
+        attrs: &AttrMap,
     ) -> Result<(), RuntimeError> {
         // Collect smileys and required status from this class and all parent classes in the MRO
         let mut smileys: HashMap<String, String> = HashMap::new();
@@ -269,7 +270,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut fetcher = Value::NIL;
         let mut storer = Value::NIL;
-        let mut extra_attrs = HashMap::new();
+        let mut extra_attrs = AttrMap::new();
 
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
@@ -304,7 +305,8 @@ impl Interpreter {
         }
         self.enforce_attribute_where_constraints(class_name, &class_attrs_info, &extra_attrs)?;
 
-        let subclass_attrs = std::sync::Arc::new(std::sync::Mutex::new(extra_attrs));
+        let subclass_attrs =
+            std::sync::Arc::new(std::sync::Mutex::new(HashMap::from(&extra_attrs)));
         Ok(Value::proxy_parts(
             fetcher,
             storer,

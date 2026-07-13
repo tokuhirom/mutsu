@@ -232,7 +232,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             let ser_attrs: Result<HashMap<_, _>, _> = attributes
                 .as_map()
                 .iter()
-                .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
+                .map(|(k, v)| value_to_ser(v).map(|sv| (k.resolve(), sv)))
                 .collect();
             Ok(SerValue::Instance {
                 class_name,

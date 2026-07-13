@@ -2267,7 +2267,7 @@ impl Interpreter {
                     let cn = class_name.unwrap();
                     let attrs = match val.view() {
                         ValueView::Instance { attributes, .. } => attributes.to_map(),
-                        _ => std::collections::HashMap::new(),
+                        _ => AttrMap::new(),
                     };
                     match self.vm_run_instance_method(
                         &cn.resolve(),
@@ -2544,7 +2544,7 @@ impl Interpreter {
                     if let Some(cn) = sink_class {
                         let attrs = match val.view() {
                             ValueView::Instance { attributes, .. } => attributes.to_map(),
-                            _ => std::collections::HashMap::new(),
+                            _ => AttrMap::new(),
                         };
                         // `sink` can mutate a captured-outer caller lexical by
                         // name (`my @reg; method sink { @reg.push(...) }`) via

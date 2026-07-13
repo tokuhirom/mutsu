@@ -1002,7 +1002,7 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         ValueView::Instance { attributes, .. } => {
             let mut named = HashMap::new();
             for (k, v) in attributes.as_map().iter() {
-                named.insert(k.clone(), v.clone());
+                named.insert(k.resolve(), v.clone());
             }
             Ok(Value::capture(vec![], named))
         }

@@ -5,6 +5,7 @@ use super::subtest::ReactSubscription;
 use super::*;
 use crate::runtime::native_methods::take_supply_channel;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use std::collections::HashMap;
 
 impl Interpreter {
@@ -143,7 +144,7 @@ impl Interpreter {
     // Helpers that duplicate subtest.rs private helpers (to avoid
     // visibility issues).
 
-    fn extract_supply_head_limit(attributes: &HashMap<String, Value>) -> Option<usize> {
+    fn extract_supply_head_limit(attributes: &AttrMap) -> Option<usize> {
         if let Some(ValueView::Int(n)) = attributes.get("head_limit").map(Value::view) {
             Some(n as usize)
         } else {
@@ -151,7 +152,7 @@ impl Interpreter {
         }
     }
 
-    fn extract_supply_on_close_cbs(attributes: &HashMap<String, Value>) -> Vec<Value> {
+    fn extract_supply_on_close_cbs(attributes: &AttrMap) -> Vec<Value> {
         if let Some(ValueView::Array(callbacks, ..)) =
             attributes.get("on_close_callbacks").map(Value::view)
         {
@@ -169,10 +170,7 @@ impl Interpreter {
         }
     }
 
-    fn resolve_supply_channel_id_for_react(
-        &self,
-        attributes: &HashMap<String, Value>,
-    ) -> Option<u64> {
+    fn resolve_supply_channel_id_for_react(&self, attributes: &AttrMap) -> Option<u64> {
         if let Some(ValueView::Int(parent_id)) = attributes.get("parent_supply_id").map(Value::view)
         {
             return Some(parent_id as u64);

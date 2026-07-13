@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Join a `child`/`add` name onto a path lexically (no filesystem access),
@@ -7,7 +8,7 @@ impl Interpreter {
     /// (the pure fast path) and `native_io_path`'s `child :secure` arm so the
     /// join is implemented once.
     pub(crate) fn io_path_join_child(
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         p: &str,
         child_name: &str,
     ) -> Result<String, RuntimeError> {
@@ -48,7 +49,7 @@ impl Interpreter {
     }
 
     pub(crate) fn clone_io_path_with_path(
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         class: Symbol,
         path: String,
     ) -> Value {
@@ -58,7 +59,7 @@ impl Interpreter {
     }
 
     /// Check if the IO::Path instance has a Win32 SPEC attribute.
-    pub(crate) fn is_win32_spec(attributes: &HashMap<String, Value>) -> bool {
+    pub(crate) fn is_win32_spec(attributes: &AttrMap) -> bool {
         attributes
             .get("SPEC")
             .map(|s| {
@@ -75,7 +76,7 @@ impl Interpreter {
     /// Whether the path's SPEC is `IO::Spec::Cygwin`. Cygwin uses Win32-style
     /// volume/absoluteness semantics (UNC, drive letters) but normalizes all
     /// backslashes to forward slashes in its output.
-    pub(crate) fn is_cygwin_spec(attributes: &HashMap<String, Value>) -> bool {
+    pub(crate) fn is_cygwin_spec(attributes: &AttrMap) -> bool {
         attributes
             .get("SPEC")
             .map(|s| {
@@ -92,11 +93,7 @@ impl Interpreter {
     /// Whether `p` is absolute under the receiver's SPEC. Win32/Cygwin use
     /// drive-letter / UNC / leading-separator rules; other SPECs defer to the
     /// platform's `Path::is_absolute`.
-    pub(crate) fn io_path_is_absolute_spec(
-        attributes: &HashMap<String, Value>,
-        p: &str,
-        original: &Path,
-    ) -> bool {
+    pub(crate) fn io_path_is_absolute_spec(attributes: &AttrMap, p: &str, original: &Path) -> bool {
         if Self::is_win32_spec(attributes) {
             Self::io_path_is_absolute_win32(p)
         } else if Self::is_cygwin_spec(attributes) {
@@ -109,10 +106,7 @@ impl Interpreter {
     /// Split a path into (volume, dirname, basename), honoring the Cygwin SPEC
     /// by first converting backslashes to forward slashes (Cygwin treats `\`
     /// and `/` interchangeably and emits forward slashes).
-    pub(crate) fn io_path_parts_spec(
-        path: &str,
-        attributes: &HashMap<String, Value>,
-    ) -> (String, String, String) {
+    pub(crate) fn io_path_parts_spec(path: &str, attributes: &AttrMap) -> (String, String, String) {
         if Self::is_cygwin_spec(attributes) {
             Self::io_path_parts(&path.replace('\\', "/"))
         } else {
@@ -121,7 +115,7 @@ impl Interpreter {
     }
 
     /// Get the directory separator based on the SPEC attribute.
-    pub(crate) fn io_path_sep(attributes: &HashMap<String, Value>) -> char {
+    pub(crate) fn io_path_sep(attributes: &AttrMap) -> char {
         if Self::is_win32_spec(attributes) {
             '\\'
         } else {

@@ -528,11 +528,11 @@ impl Interpreter {
                 // Start from the inner instance's attributes (for compose-time
                 // roles whose state lives on the class), then layer mixin-stored
                 // role attributes on top (for run-time-applied roles).
-                let mut role_attrs: HashMap<String, Value> =
+                let mut role_attrs: AttrMap =
                     if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
                         attributes.to_map()
                     } else {
-                        HashMap::new()
+                        AttrMap::new()
                     };
                 for (key, value) in mixins.iter() {
                     if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
@@ -604,7 +604,7 @@ impl Interpreter {
                     if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {
                         attributes.to_map()
                     } else {
-                        HashMap::new()
+                        AttrMap::new()
                     };
                 let res = self.run_resolved_method_compiled_or_treewalk(
                     &inst_cn_str,

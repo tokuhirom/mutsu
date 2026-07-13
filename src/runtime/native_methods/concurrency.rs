@@ -3,11 +3,12 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 use super::state_lock::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(in crate::runtime) fn native_lock(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -109,7 +110,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_semaphore(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         _args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -157,7 +158,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_condition_variable(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -248,10 +249,10 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_promise_mut(
         &mut self,
-        mut attrs: HashMap<String, Value>,
+        mut attrs: AttrMap,
         method: &str,
         _args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "keep" => {
                 let value = _args.first().cloned().unwrap_or(Value::NIL);
@@ -270,10 +271,10 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_channel_mut(
         &mut self,
-        mut attrs: HashMap<String, Value>,
+        mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "send" => {
                 let value = args.first().cloned().unwrap_or(Value::NIL);
@@ -312,7 +313,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_promise(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -345,7 +346,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_promise_vow(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -402,11 +403,7 @@ impl Interpreter {
 
     // --- Channel immutable ---
 
-    pub(in crate::runtime) fn native_channel(
-        &self,
-        attributes: &HashMap<String, Value>,
-        method: &str,
-    ) -> Value {
+    pub(in crate::runtime) fn native_channel(&self, attributes: &AttrMap, method: &str) -> Value {
         match method {
             "closed" => attributes.get("closed").cloned().unwrap_or(Value::FALSE),
             _ => Value::NIL,
@@ -417,7 +414,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_thread(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
     ) -> Result<Value, RuntimeError> {
         match method {

@@ -503,7 +503,7 @@ impl Interpreter {
                     // Now build the subclass instance with all Date attrs plus any custom named attrs
                     let mut new_args = Vec::new();
                     for (k, v) in attributes.as_map().iter() {
-                        new_args.push(Value::pair(k.clone(), v.clone()));
+                        new_args.push(Value::pair(k.resolve(), v.clone()));
                     }
                     // Add any non-Date named args from the original call
                     for arg in &args {
@@ -1315,7 +1315,7 @@ impl Interpreter {
                 }
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
-                    let empty_attrs = HashMap::new();
+                    let empty_attrs = AttrMap::new();
                     match self.run_instance_method(
                         &class_name.resolve(),
                         empty_attrs,
@@ -1370,7 +1370,7 @@ impl Interpreter {
                         }
                     }
                 }
-                let mut attrs = HashMap::new();
+                let mut attrs = AttrMap::new();
                 let mut positional_ctor_args: Vec<Value> = Vec::new();
                 let saved_default_env = self.env.clone();
                 let role_bindings = {
@@ -1488,7 +1488,7 @@ impl Interpreter {
                             ..
                         } if class_mro.iter().any(|name| name == &src_class.resolve()) => {
                             for (attr, value) in src_attrs.as_map().iter() {
-                                attrs.insert(attr.clone(), value.clone());
+                                attrs.insert(*attr, value.clone());
                             }
                         }
                         _ => {

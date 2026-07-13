@@ -2,6 +2,7 @@ use super::Value;
 use super::ValueView;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -381,7 +382,7 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
 }
 
 /// Construct the `.raku` string for a Parameter instance from its attributes.
-pub(crate) fn parameter_to_raku(attrs: &HashMap<String, Value>) -> String {
+pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
     let mut parts = Vec::new();
 
     // Type constraint

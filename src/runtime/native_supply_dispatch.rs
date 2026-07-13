@@ -3,12 +3,13 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use unicode_segmentation::UnicodeSegmentation;
 
 impl Interpreter {
     pub(super) fn native_supply(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -977,8 +978,7 @@ impl Interpreter {
 
                         // Collect all sources (self + others). Own each map so we
                         // don't hold attribute read guards across the loop below.
-                        let mut all_supplies: Vec<HashMap<String, Value>> =
-                            vec![attributes.clone()];
+                        let mut all_supplies: Vec<AttrMap> = vec![attributes.clone()];
                         for supply in &other_supplies {
                             if let ValueView::Instance { attributes: a, .. } = supply.view() {
                                 all_supplies.push(a.to_map());

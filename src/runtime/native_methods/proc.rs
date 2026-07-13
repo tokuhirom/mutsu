@@ -2,6 +2,7 @@ use crate::runtime::*;
 use crate::symbol::Symbol;
 
 use super::state::proc_stdin_map;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Mutating Proc methods (`.spawn`, `.run`, `.shell`) re-run a command and
@@ -12,10 +13,10 @@ impl Interpreter {
     /// always starts a shell, so its `.pid` updates even for a missing command.
     pub(in crate::runtime) fn native_proc_mut(
         &mut self,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         let new_proc = match method {
             "spawn" | "run" => self.builtin_run(&args)?,
             "shell" => self.builtin_shell(&args)?,
@@ -64,7 +65,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_proc_async(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -170,11 +171,7 @@ impl Interpreter {
 
     // --- Proc immutable ---
 
-    pub(in crate::runtime) fn native_proc(
-        &self,
-        attributes: &HashMap<String, Value>,
-        method: &str,
-    ) -> Value {
+    pub(in crate::runtime) fn native_proc(&self, attributes: &AttrMap, method: &str) -> Value {
         // For live procs (with :in), finalize the child on exitcode/out/err/signal access
         let is_live = matches!(
             attributes.get("live").map(Value::view),

@@ -1,6 +1,7 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use std::io::{Read, Write};
 use std::sync::mpsc;
 
@@ -76,10 +77,10 @@ pub(in crate::runtime) fn malformed_utf8_quit_value() -> Value {
 impl Interpreter {
     pub(super) fn native_proc_async_mut(
         &mut self,
-        mut attrs: HashMap<String, Value>,
+        mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         let proc_async_error = |class_name: &str, attrs: &[(&str, Value)]| {
             let mut ex_attrs = HashMap::new();
             for (k, v) in attrs {
@@ -729,7 +730,7 @@ impl Interpreter {
                 };
                 if attrs.get("supply_selected").is_some_and(|v| v.truthy())
                     || attrs
-                        .get(&format!("{}_selected", handle_name))
+                        .get(format!("{}_selected", handle_name))
                         .is_some_and(|v| v.truthy())
                 {
                     return Err(proc_async_error(
@@ -760,7 +761,7 @@ impl Interpreter {
             }
             "stdout" | "stderr" => {
                 if attrs
-                    .get(&format!("{}_bind", method))
+                    .get(format!("{}_bind", method))
                     .is_some_and(|v| !v.is_nil())
                 {
                     return Err(proc_async_error(

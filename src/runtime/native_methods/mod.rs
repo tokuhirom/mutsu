@@ -70,6 +70,7 @@ pub(in crate::runtime) use state_supplier::{
 };
 
 use super::*;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 use std::time::Duration;
 
@@ -93,7 +94,7 @@ impl Interpreter {
         Ok(delay.max(0.0))
     }
 
-    pub(super) fn supply_delay_seconds(attributes: &HashMap<String, Value>) -> f64 {
+    pub(super) fn supply_delay_seconds(attributes: &AttrMap) -> f64 {
         attributes
             .get("delay_seconds")
             .map(Value::to_f64)
@@ -265,10 +266,10 @@ impl Interpreter {
     pub(super) fn call_native_instance_method_mut(
         &mut self,
         class_name: &str,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         let dispatch_class = if matches!(
             class_name,
             "Promise"
@@ -326,7 +327,7 @@ impl Interpreter {
     pub(super) fn call_native_instance_method(
         &mut self,
         class_name: &str,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

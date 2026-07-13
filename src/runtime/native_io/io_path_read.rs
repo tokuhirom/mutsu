@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 use unicode_segmentation::UnicodeSegmentation;
 
 impl Interpreter {
@@ -14,7 +15,7 @@ impl Interpreter {
     /// `native_io_path`. Behavior-invariant (same read + split/decode logic).
     pub(crate) fn try_io_path_content_read(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
@@ -30,7 +31,7 @@ impl Interpreter {
     /// previously held.
     fn io_path_content_read(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -114,7 +115,7 @@ impl Interpreter {
     /// method.
     pub(crate) fn try_io_path_open(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
@@ -183,7 +184,7 @@ impl Interpreter {
     /// for any other method.
     pub(crate) fn try_io_path_comb(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {

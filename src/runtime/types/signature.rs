@@ -291,7 +291,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         // params `(:$a, :$b)` binds each pair's key to its value.
         ValueView::Array(data, _) => pairs_in_list_to_named(&data.items),
         ValueView::Seq(items) | ValueView::Slip(items) => pairs_in_list_to_named(&items),
-        ValueView::Instance { attributes, .. } => attributes.to_map(),
+        ValueView::Instance { attributes, .. } => HashMap::from(&*attributes.as_map()),
         _ => std::collections::HashMap::new(),
     }
 }

@@ -168,7 +168,9 @@ impl Interpreter {
         // bindings keep their ContainerRef handling. The cell lookup returns None
         // for non-attribute names and when `self` is not an instance.
         if !self.locals[idx].is_container_ref()
-            && let Some(cell_val) = self.read_self_attr_cell(name)
+            // Slot form: the attribute `Symbol` is pre-resolved per chunk, so
+            // this read parses no twigil and interns no string (ADR-0006 §2.4).
+            && let Some(cell_val) = self.read_self_attr_cell_slot(code, idx)
         {
             self.locals[idx] = cell_val.clone();
             self.stack.push(cell_val);

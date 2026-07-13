@@ -113,11 +113,11 @@ impl Interpreter {
                     ValueView::Instance { attributes, .. } => {
                         (Some(attributes.clone()), attributes.to_map())
                     }
-                    _ => (None, HashMap::new()),
+                    _ => (None, AttrMap::new()),
                 };
                 for (key, value) in mixins.iter() {
                     if let Some(attr) = key.strip_prefix("__mutsu_attr__") {
-                        method_attrs.insert(attr.to_string(), value.clone());
+                        method_attrs.insert(attr, value.clone());
                     }
                 }
                 // Set up a method-dispatch frame so `nextsame`/`callsame` inside

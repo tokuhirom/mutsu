@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 /// Decode bytes as strict UTF-8, mirroring `IO::Path.slurp`: an invalid byte
 /// sequence is an error (surfaced as an `X::AdHoc`), not a lossy U+FFFD
@@ -26,10 +27,10 @@ impl Interpreter {
     /// via the sentinel "No native mutable method" error.
     pub(crate) fn native_io_handle_mut(
         &mut self,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         if method == "open" {
             let result = self.native_io_handle(&attributes, "open", args)?;
             // A successful open returns an `IO::Handle` instance carrying the new
@@ -55,7 +56,7 @@ impl Interpreter {
 
     pub(crate) fn native_io_handle(
         &mut self,
-        target: &HashMap<String, Value>,
+        target: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -199,11 +200,12 @@ impl Interpreter {
                 }
                 // Add instance attributes as pairs (only if not overridden by open args)
                 for (key, value) in target.iter() {
+                    let key = key.as_str();
                     if key == "handle" || key == "path" || key == "mode" {
                         continue;
                     }
                     if !explicit_keys.contains(key) {
-                        merged_args.push(Value::pair(key.clone(), value.clone()));
+                        merged_args.push(Value::pair(key.to_string(), value.clone()));
                     }
                 }
                 merged_args.extend(args.iter().cloned());
@@ -782,11 +784,7 @@ impl Interpreter {
         }
     }
 
-    fn handle_supply(
-        &mut self,
-        target: &HashMap<String, Value>,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
+    fn handle_supply(&mut self, target: &AttrMap, args: &[Value]) -> Result<Value, RuntimeError> {
         // Extract :size named parameter (default 65536)
         let size = args
             .iter()

@@ -310,7 +310,7 @@ impl Interpreter {
                 let proxy_attrs = match (&reconciled, &attrs_cell) {
                     (Some(m), _) => m.clone(),
                     (None, Some(cell)) => cell.to_map(),
-                    (None, None) => HashMap::new(),
+                    (None, None) => AttrMap::new(),
                 };
                 return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
             }

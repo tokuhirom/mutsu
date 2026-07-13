@@ -266,7 +266,7 @@ impl Interpreter {
                         };
                         let attributes = match target.view() {
                             ValueView::Instance { attributes, .. } => attributes.to_map(),
-                            _ => std::collections::HashMap::new(),
+                            _ => AttrMap::new(),
                         };
                         let invocant_for_dispatch = if attributes.is_empty() {
                             Value::package(class_sym)
@@ -311,7 +311,7 @@ impl Interpreter {
                                 let proxy_attrs = match (&reconciled, &attrs_cell) {
                                     (Some(m), _) => m.clone(),
                                     (None, Some(cell)) => cell.to_map(),
-                                    (None, None) => std::collections::HashMap::new(),
+                                    (None, None) => AttrMap::new(),
                                 };
                                 return loan_env!(
                                     self,
@@ -378,7 +378,7 @@ impl Interpreter {
                 };
                 let attributes = match target.view() {
                     ValueView::Instance { attributes, .. } => attributes.to_map(),
-                    _ => std::collections::HashMap::new(),
+                    _ => AttrMap::new(),
                 };
                 let invocant_for_dispatch = if attributes.is_empty() {
                     Value::package(class_sym)
@@ -421,7 +421,7 @@ impl Interpreter {
                         let proxy_attrs = match (&reconciled, &attrs_cell) {
                             (Some(m), _) => m.clone(),
                             (None, Some(cell)) => cell.to_map(),
-                            (None, None) => std::collections::HashMap::new(),
+                            (None, None) => AttrMap::new(),
                         };
                         return loan_env!(self, proxy_fetch(fetcher, None, cn, &proxy_attrs, id));
                     }

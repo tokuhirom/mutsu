@@ -3,8 +3,9 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 use super::state::SupplyEvent;
+use crate::value::AttrMap;
 
-fn decoder_buffer(attrs: &HashMap<String, Value>) -> Vec<u8> {
+fn decoder_buffer(attrs: &AttrMap) -> Vec<u8> {
     let mut out = Vec::new();
     if let Some(v) = attrs.get("buffer") {
         extend_buffer_from_value(&mut out, v);
@@ -81,7 +82,7 @@ fn decode_available(bytes: &[u8], encoding: &str) -> (String, Vec<u8>) {
 
 impl Interpreter {
     pub(in crate::runtime) fn native_encoding_builtin(
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Value {
@@ -143,7 +144,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn native_encoding_encoder(
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -207,7 +208,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn native_encoding_decoder(
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Value {
@@ -233,10 +234,10 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn native_encoding_decoder_mut(
-        mut attributes: HashMap<String, Value>,
+        mut attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "add-bytes" => {
                 let mut buf = decoder_buffer(&attributes);

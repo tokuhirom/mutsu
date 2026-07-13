@@ -1,9 +1,10 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(crate) fn native_io_pipe(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {

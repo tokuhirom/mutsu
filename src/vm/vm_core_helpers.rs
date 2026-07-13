@@ -98,11 +98,11 @@ impl Interpreter {
     pub(crate) fn vm_run_instance_method(
         &mut self,
         receiver_class_name: &str,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method_name: &str,
         args: Vec<Value>,
         invocant: Option<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         self.loan_env_for(|i| {
             i.run_instance_method(receiver_class_name, attributes, method_name, args, invocant)
         })

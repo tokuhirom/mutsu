@@ -122,7 +122,9 @@ impl Interpreter {
                 named.insert(k.clone(), v.clone());
                 Some((Vec::new(), named))
             }
-            ValueView::Instance { attributes, .. } => Some((Vec::new(), (attributes.to_map()))),
+            ValueView::Instance { attributes, .. } => {
+                Some((Vec::new(), HashMap::from(&*attributes.as_map())))
+            }
             ValueView::Mixin(inner, _) => Self::signature_capture_like(inner),
             _ => None,
         }

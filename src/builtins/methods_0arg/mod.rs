@@ -1561,7 +1561,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let map: HashMap<String, Value> = attributes
             .as_map()
             .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|(k, v)| (k.resolve(), v.clone()))
             .collect();
         return Some(Ok(Value::hash(map)));
     }

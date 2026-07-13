@@ -3,9 +3,10 @@
 use super::*;
 use crate::runtime::native_methods::next_supplier_id;
 use crate::runtime::subtest::{ReactSubscription, StreamConsumer};
+use crate::value::AttrMap;
 
 impl Interpreter {
-    pub(super) fn extract_head_limit(attributes: &HashMap<String, Value>) -> Option<usize> {
+    pub(super) fn extract_head_limit(attributes: &AttrMap) -> Option<usize> {
         if let Some(ValueView::Int(n)) = attributes.get("head_limit").map(Value::view) {
             Some(n as usize)
         } else {
@@ -13,9 +14,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn extract_supply_on_close_callbacks(
-        attributes: &HashMap<String, Value>,
-    ) -> Vec<Value> {
+    pub(super) fn extract_supply_on_close_callbacks(attributes: &AttrMap) -> Vec<Value> {
         if let Some(ValueView::Array(callbacks, ..)) =
             attributes.get("on_close_callbacks").map(Value::view)
         {
@@ -35,10 +34,7 @@ impl Interpreter {
 
     /// Resolve the supply_id to use for channel lookup.
     /// For a "lines" supply, use the parent_supply_id.
-    pub(super) fn resolve_supply_channel_id(
-        &self,
-        attributes: &HashMap<String, Value>,
-    ) -> Option<u64> {
+    pub(super) fn resolve_supply_channel_id(&self, attributes: &AttrMap) -> Option<u64> {
         // If this is a "lines" supply, use the parent's supply_id
         if let Some(ValueView::Int(parent_id)) = attributes.get("parent_supply_id").map(Value::view)
         {
@@ -217,7 +213,7 @@ impl Interpreter {
 
     pub(super) fn replay_static_supply(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         callback: &Value,
         last_callbacks: &[Value],
     ) -> Result<bool, RuntimeError> {

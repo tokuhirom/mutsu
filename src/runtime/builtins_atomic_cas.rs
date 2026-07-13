@@ -247,11 +247,24 @@ impl Interpreter {
                 // but the variable itself was modified (e.g., `{ $x = expr }`),
                 // use the variable's current value from the env. This handles
                 // blocks that modify the variable as a side effect.
-                let effective_new = if new_val == current || new_val.is_nil() {
-                    self.env.get(&name).cloned().unwrap_or(new_val)
-                } else {
-                    new_val
-                };
+                //
+                // "Same as the old value" must be judged with the *identity*
+                // rule the CAS compare itself uses (`cas_retry_matches`): for a
+                // reference type the question is whether the block handed back
+                // the very object it was given, not whether it built a distinct
+                // object that happens to compare equal. A structural `==` here
+                // deep-walks the object graph — on the linked-list CAS idiom
+                // (`cas $head, -> $orig { Node.new(value => $i, next => $orig) }`)
+                // that recursed through the whole list on every iteration, which
+                // is quadratic and also just wrong (a freshly built node is not
+                // the old head). Scalars keep the value comparison, since
+                // `cas_retry_matches` falls back to `==` for them.
+                let effective_new =
+                    if Self::cas_retry_matches(&new_val, &current) || new_val.is_nil() {
+                        self.env.get(&name).cloned().unwrap_or(new_val)
+                    } else {
+                        new_val
+                    };
                 let coerced = self.atomic_assign_coerced_value(&name, effective_new)?;
                 // Restore the env variable to `current` before the CAS comparison,
                 // so that atomic_current_value (which falls back to env) reads the

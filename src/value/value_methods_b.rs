@@ -405,14 +405,19 @@ impl Value {
         }
     }
 
-    pub(crate) fn make_instance(class_name: Symbol, attributes: HashMap<String, Value>) -> Self {
+    /// Build a fresh instance. `attributes` is an [`AttrMap`] (the `Symbol`-keyed
+    /// storage) or anything convertible into one — notably a
+    /// `HashMap<String, Value>`, which the many cold construction sites (typed
+    /// exceptions, native-type constructors) still build; those keys are interned
+    /// here, once, at construction.
+    pub(crate) fn make_instance(class_name: Symbol, attributes: impl Into<AttrMap>) -> Self {
         let id = next_instance_id();
         Self::make_instance_with_id(class_name, attributes, id)
     }
 
     pub(crate) fn make_instance_without_destroy(
         class_name: Symbol,
-        attributes: HashMap<String, Value>,
+        attributes: impl Into<AttrMap>,
     ) -> Self {
         Self::make_instance_with_destroy(class_name, attributes, false)
     }
@@ -457,12 +462,17 @@ impl Value {
     /// not from this constructor — so this never reuses another holder's cell.
     pub(crate) fn make_instance_with_id(
         class_name: Symbol,
-        attributes: HashMap<String, Value>,
+        attributes: impl Into<AttrMap>,
         id: u64,
     ) -> Self {
         Value::from_repr(ValueRepr::Instance {
             class_name,
-            attributes: crate::gc::Gc::new(InstanceAttrs::new(class_name, attributes, id, true)),
+            attributes: crate::gc::Gc::new(InstanceAttrs::new(
+                class_name,
+                attributes.into(),
+                id,
+                true,
+            )),
             id,
         })
     }
@@ -498,10 +508,10 @@ impl Value {
     pub(crate) fn write_back_sharing(
         attrs: &crate::gc::Gc<InstanceAttrs>,
         class_name: Symbol,
-        map: HashMap<String, Value>,
+        map: impl Into<AttrMap>,
         id: u64,
     ) -> Value {
-        attrs.commit_attrs(map);
+        attrs.commit_attrs(map.into());
         Value::instance_sharing_cell(attrs, class_name, id)
     }
 
@@ -528,7 +538,7 @@ impl Value {
 
     fn make_instance_with_destroy(
         class_name: Symbol,
-        attributes: HashMap<String, Value>,
+        attributes: impl Into<AttrMap>,
         queue_destroy: bool,
     ) -> Self {
         let id = next_instance_id();
@@ -536,7 +546,7 @@ impl Value {
             class_name,
             attributes: crate::gc::Gc::new(InstanceAttrs::new(
                 class_name,
-                attributes,
+                attributes.into(),
                 id,
                 queue_destroy,
             )),

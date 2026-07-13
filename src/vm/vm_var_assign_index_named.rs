@@ -1457,7 +1457,7 @@ impl Interpreter {
                         let display = format!("{}()", cn);
                         return Err(RuntimeError::assignment_ro_typename(&cn, &display));
                     }
-                    let hash_map: HashMap<String, Value> = HashMap::clone(&attributes.as_map());
+                    let hash_map: HashMap<String, Value> = HashMap::from(&*attributes.as_map());
                     let hash_val = Value::hash(hash_map);
                     self.env_mut().insert(var_name.clone(), hash_val);
                 }

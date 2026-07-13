@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Build a `Failure` value wrapping an `X::IO::*` exception with the given
@@ -19,7 +20,7 @@ impl Interpreter {
 
     pub(crate) fn native_io_path(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         class_name: &str,
         method: &str,
         args: Vec<Value>,

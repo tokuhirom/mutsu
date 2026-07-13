@@ -113,7 +113,7 @@ impl Interpreter {
                     Symbol::intern("X::Cannot::Lazy"),
                     [("what".to_string(), Value::str(what.to_string()))]
                         .into_iter()
-                        .collect(),
+                        .collect::<AttrMap>(),
                 )));
                 return Err(err);
             }
@@ -240,7 +240,7 @@ impl Interpreter {
             ));
         }
         // Initialize with default attribute values
-        let mut attributes = HashMap::new();
+        let mut attributes = AttrMap::new();
         if self.registry().classes.contains_key(&class_name.resolve()) {
             for (attr_name, _is_public, default, _is_rw, _, sigil, _) in
                 self.collect_class_attributes(&class_name.resolve())
@@ -416,9 +416,9 @@ impl Interpreter {
     pub(crate) fn run_tweak_phase(
         &mut self,
         class_name: Symbol,
-        mut attributes: HashMap<String, Value>,
+        mut attributes: AttrMap,
         tweak_args: &[Value],
-    ) -> Result<HashMap<String, Value>, RuntimeError> {
+    ) -> Result<AttrMap, RuntimeError> {
         let cn = class_name.resolve();
         let mro = self.class_mro(&cn);
         let class_lang_rev = self
@@ -521,9 +521,9 @@ impl Interpreter {
     pub(crate) fn run_build_phase(
         &mut self,
         class_name: Symbol,
-        mut attributes: HashMap<String, Value>,
+        mut attributes: AttrMap,
         build_args: &[Value],
-    ) -> Result<Result<HashMap<String, Value>, Value>, RuntimeError> {
+    ) -> Result<Result<AttrMap, Value>, RuntimeError> {
         let cn = class_name.resolve();
         let mro = self.class_mro(&cn);
         let class_lang_rev = self
@@ -694,8 +694,8 @@ impl Interpreter {
     /// attribute keyed by its bare name with a type-default empty value (native
     /// numerics → 0, `str` → "", everything else → `Nil`). Unlike `bless`, this
     /// does not evaluate `has $.x = EXPR` default expressions.
-    fn create_default_attr_slots(&mut self, class_name: &str) -> HashMap<String, Value> {
-        let mut attributes = HashMap::new();
+    fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
+        let mut attributes = AttrMap::new();
         if self.registry().classes.contains_key(class_name) {
             for (attr_name, _is_public, _default, _is_rw, _, _, _) in
                 self.collect_class_attributes(class_name)

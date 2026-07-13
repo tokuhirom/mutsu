@@ -3,12 +3,13 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Implement Supply.throttle($limit, $seconds-or-block, :$control, :$status)
     pub(super) fn supply_throttle(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         use crate::value::SharedPromise;
@@ -220,7 +221,7 @@ impl Interpreter {
     pub(super) fn make_supply_from_values(
         &self,
         values: Vec<Value>,
-        _source_attrs: &HashMap<String, Value>,
+        _source_attrs: &AttrMap,
     ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(values));

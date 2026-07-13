@@ -1,4 +1,5 @@
 use crate::runtime::*;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -6,7 +7,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_socket_inet(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

@@ -44,7 +44,7 @@ impl Interpreter {
         // still filled below and BUILD runs afterward.
         let has_build = plan.has_build;
 
-        let mut attrs = HashMap::new();
+        let mut attrs = AttrMap::new();
         for arg in args {
             if has_build {
                 break;

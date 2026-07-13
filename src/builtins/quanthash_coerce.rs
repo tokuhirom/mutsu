@@ -443,7 +443,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                         ("range".to_string(), Value::str_from("-Inf^..^Inf")),
                     ]
                     .into_iter()
-                    .collect(),
+                    .collect::<crate::value::AttrMap>(),
                 )));
                 Err(err)
             } else if n.is_nan() {
@@ -457,7 +457,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                         ("range".to_string(), Value::str_from("-Inf^..^Inf")),
                     ]
                     .into_iter()
-                    .collect(),
+                    .collect::<crate::value::AttrMap>(),
                 )));
                 Err(err)
             } else {
@@ -481,7 +481,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                     ("target".to_string(), Value::str_from("Real")),
                 ]
                 .into_iter()
-                .collect(),
+                .collect::<crate::value::AttrMap>(),
             )));
             Err(err)
         }
@@ -505,7 +505,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                             ),
                         ]
                         .into_iter()
-                        .collect(),
+                        .collect::<crate::value::AttrMap>(),
                     )));
                     return Err(err);
                 }
@@ -525,7 +525,7 @@ pub(crate) fn mix_pair_weight(v: &Value) -> Result<f64, RuntimeError> {
                         ),
                     ]
                     .into_iter()
-                    .collect(),
+                    .collect::<crate::value::AttrMap>(),
                 )));
                 Err(err)
             }
@@ -639,7 +639,7 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
             crate::symbol::Symbol::intern("X::Cannot::Lazy"),
             [("what".to_string(), Value::str_from(what))]
                 .into_iter()
-                .collect(),
+                .collect::<crate::value::AttrMap>(),
         )));
         return Err(err);
     }

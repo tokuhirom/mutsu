@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// `.absolute` / `.relative` on an `IO::Path`: like [`try_io_path_lexical`],
@@ -11,7 +12,7 @@ impl Interpreter {
     /// real filesystem and stays in `native_io_path`).
     pub(crate) fn try_io_path_cwd_method(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
@@ -142,7 +143,7 @@ impl Interpreter {
     /// `io_handles` and stay in `native_io_path`).
     pub(crate) fn try_io_path_fs_stat(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
         if !matches!(
@@ -178,11 +179,7 @@ impl Interpreter {
     /// the process cwd), applying any chroot. Purely lexical (no filesystem
     /// access) — shared by the `&self` native IO::Path methods
     /// (`try_io_path_fs_stat` / `try_io_path_content_read`) and `native_io_path`.
-    pub(crate) fn resolve_io_path_buf(
-        &self,
-        attributes: &HashMap<String, Value>,
-        p: &str,
-    ) -> PathBuf {
+    pub(crate) fn resolve_io_path_buf(&self, attributes: &AttrMap, p: &str) -> PathBuf {
         let instance_cwd = attributes.get("cwd").map(|v| v.to_string_value());
         if Path::new(p).is_absolute() {
             self.resolve_path(p)

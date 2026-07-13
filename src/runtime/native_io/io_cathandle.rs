@@ -14,6 +14,7 @@
 //! - `closed`   — Bool, set by `.close`/`.DESTROY` (reads then yield `Nil`)
 //! - `on-switch`— Callable invoked when the active handle changes, or `Nil`
 use super::*;
+use crate::value::AttrMap;
 use std::collections::HashMap;
 
 /// Extract an integer from an `Int` value (allomorphs/strings yield `None`).
@@ -59,7 +60,7 @@ impl Interpreter {
                 _ => sources.push(arg.clone()),
             }
         }
-        let mut attrs: HashMap<String, Value> = HashMap::new();
+        let mut attrs: AttrMap = AttrMap::new();
         attrs.insert("sources".to_string(), Value::array(sources));
         attrs.insert("pos".to_string(), Value::int(0));
         attrs.insert("active".to_string(), Value::NIL);
@@ -108,7 +109,7 @@ impl Interpreter {
     }
 
     /// The currently-open active `IO::Handle` value, if any.
-    fn cat_active_handle(attrs: &HashMap<String, Value>) -> Option<Value> {
+    fn cat_active_handle(attrs: &AttrMap) -> Option<Value> {
         let active = attrs.get("active")?;
         match active.view() {
             ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => {
@@ -124,7 +125,7 @@ impl Interpreter {
     /// the live handle, but mutsu's accessor-assignment path writes the attribute
     /// without notifying the handle, so we re-sync before every read instead.
     /// Re-pushing an unchanged value is a harmless idempotent field set.
-    fn cat_sync_active_settings(&mut self, attrs: &HashMap<String, Value>) {
+    fn cat_sync_active_settings(&mut self, attrs: &AttrMap) {
         let Some(active) = Self::cat_active_handle(attrs) else {
             return;
         };
@@ -141,7 +142,7 @@ impl Interpreter {
 
     /// Open one source value into a read handle, applying the cat's `chomp` /
     /// `nl-in` / `encoding`. Returns `None` when the source cannot be opened.
-    fn cat_open_source(&mut self, src: &Value, attrs: &HashMap<String, Value>) -> Option<Value> {
+    fn cat_open_source(&mut self, src: &Value, attrs: &AttrMap) -> Option<Value> {
         let chomp = attrs.get("chomp").cloned().unwrap_or(Value::TRUE);
         let nl_in = attrs
             .get("nl-in")
@@ -195,7 +196,7 @@ impl Interpreter {
                     _ => src.to_string_value(),
                 };
                 let io_path = self.make_io_path_instance(&path_str);
-                let mut h_attrs: HashMap<String, Value> = HashMap::new();
+                let mut h_attrs: AttrMap = AttrMap::new();
                 h_attrs.insert("path".to_string(), io_path);
                 let open_args = vec![
                     Value::pair("r".to_string(), Value::TRUE),
@@ -229,7 +230,7 @@ impl Interpreter {
 
     /// Close the active handle (if any) and open the next source. Returns the new
     /// active handle, or `Nil` when the sources are exhausted.
-    fn cat_next_handle(&mut self, attrs: &mut HashMap<String, Value>) -> Value {
+    fn cat_next_handle(&mut self, attrs: &mut AttrMap) -> Value {
         // Remember the previously-active handle: it becomes the `$old` argument
         // to `on-switch` and must be closed before we open the next source.
         let old = match attrs.get("active").cloned() {
@@ -286,7 +287,7 @@ impl Interpreter {
 
     /// Ensure there is an active handle, opening the first/next source if needed.
     /// Returns `Nil` when nothing more can be read.
-    fn cat_ensure_active(&mut self, attrs: &mut HashMap<String, Value>) -> Value {
+    fn cat_ensure_active(&mut self, attrs: &mut AttrMap) -> Value {
         let active = attrs.get("active").cloned();
         if let Some(active) = &active
             && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
@@ -302,7 +303,7 @@ impl Interpreter {
     }
 
     /// Read the next line across all handles, switching when one is exhausted.
-    fn cat_get(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
+    fn cat_get(&mut self, attrs: &mut AttrMap) -> Result<Value, RuntimeError> {
         loop {
             let active = self.cat_ensure_active(attrs);
             if active.is_nil() {
@@ -322,7 +323,7 @@ impl Interpreter {
     }
 
     /// Read one character across all handles.
-    fn cat_getc(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
+    fn cat_getc(&mut self, attrs: &mut AttrMap) -> Result<Value, RuntimeError> {
         loop {
             let active = self.cat_ensure_active(attrs);
             if active.is_nil() {
@@ -342,7 +343,7 @@ impl Interpreter {
     }
 
     /// Slurp the remaining content of all handles into one string.
-    fn cat_slurp(&mut self, attrs: &mut HashMap<String, Value>) -> Result<Value, RuntimeError> {
+    fn cat_slurp(&mut self, attrs: &mut AttrMap) -> Result<Value, RuntimeError> {
         if attrs.get("closed").is_some_and(|v| v.truthy()) {
             return Ok(Value::NIL);
         }
@@ -383,11 +384,7 @@ impl Interpreter {
 
     /// Collect remaining lines into a Seq, honouring an optional positional
     /// `$limit` (max number of lines) and a `:close` named arg.
-    fn cat_lines(
-        &mut self,
-        attrs: &mut HashMap<String, Value>,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
+    fn cat_lines(&mut self, attrs: &mut AttrMap, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut limit: Option<i64> = None;
         let mut close = false;
         for arg in args {
@@ -420,7 +417,7 @@ impl Interpreter {
 
     /// Close the active handle and all `IO::Handle` sources, marking the cat
     /// closed. Shared by `.close`/`.DESTROY` and `:close` read adverbs.
-    fn cat_close(&mut self, attrs: &mut HashMap<String, Value>) {
+    fn cat_close(&mut self, attrs: &mut AttrMap) {
         let active = attrs.get("active").cloned();
         if let Some(active) = &active
             && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
@@ -486,10 +483,10 @@ impl Interpreter {
     pub(crate) fn native_io_cathandle_mut(
         &mut self,
         class_name: Symbol,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         let mut attrs = attributes;
         // Character-oriented reads are illegal on a binary-mode cat handle.
         if attrs.get("bin").is_some_and(|v| v.truthy())

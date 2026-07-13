@@ -1,5 +1,6 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -7,7 +8,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_distro(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
     ) -> Result<Value, RuntimeError> {
         match method {
@@ -84,7 +85,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_kernel(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -167,7 +168,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_vm(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -226,11 +227,7 @@ impl Interpreter {
 
     // --- Perl ---
 
-    pub(in crate::runtime) fn native_perl(
-        &self,
-        attributes: &HashMap<String, Value>,
-        method: &str,
-    ) -> Value {
+    pub(in crate::runtime) fn native_perl(&self, attributes: &AttrMap, method: &str) -> Value {
         match method {
             "compiler" => {
                 let mut compiler_attrs = HashMap::new();

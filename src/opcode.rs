@@ -1832,9 +1832,20 @@ pub(crate) struct CompiledCode {
     /// first use; each slot interns on first access. Cloning a chunk clones the
     /// already-resolved entries (cheap: `Symbol` is a `u32`).
     pub(crate) const_syms: std::sync::OnceLock<Box<[std::sync::OnceLock<Symbol>]>>,
+    /// Lazily-built attribute-cell key per local slot (see `local_attr_key`):
+    /// `Some((bare attribute Symbol, is_private))` when the slot's name is an
+    /// attribute twigil (`!x`, `$.x`, `@!a`, …), `None` otherwise. Resolving it
+    /// once per chunk keeps the twigil string parse *and* `Symbol::intern` off
+    /// the per-access `$!x` / `$.x` read-write path (ADR-0006 §2.4).
+    pub(crate) local_attr_keys: std::sync::OnceLock<LocalAttrKeys>,
     /// Per-chunk JIT hotness counter and compiled-entry cache (ADR-0004 J1).
     pub(crate) jit: JitCodeState,
 }
+
+/// The per-local-slot attribute-key table of a chunk (see
+/// [`CompiledCode::local_attr_keys`]): one entry per slot, `Some((bare attribute
+/// `Symbol`, is_private))` for an attribute twigil and `None` otherwise.
+pub(crate) type LocalAttrKeys = Box<[Option<(Symbol, bool)>]>;
 
 /// JIT hotness/entry state carried on each `CompiledCode` (ADR-0004 layer 4).
 /// `entry` caches the compiled native entry so the per-call cost once compiled
@@ -1951,8 +1962,26 @@ impl CompiledCode {
             upvalue_syms: Vec::new(),
             env_only_decls: Vec::new(),
             const_syms: std::sync::OnceLock::new(),
+            local_attr_keys: std::sync::OnceLock::new(),
             jit: JitCodeState::default(),
         }
+    }
+
+    /// The attribute-cell key of local slot `idx`, or `None` when that slot is
+    /// not an attribute twigil. Built once per chunk (see `local_attr_keys`): the
+    /// VM's `$!x` / `$.x` read and write paths would otherwise re-parse the
+    /// twigil and re-intern the bare name on every access.
+    pub(crate) fn local_attr_key(&self, idx: usize) -> Option<(Symbol, bool)> {
+        let slots = self.local_attr_keys.get_or_init(|| {
+            self.locals
+                .iter()
+                .map(|name| {
+                    crate::value::attr_twigil_base(name)
+                        .map(|(bare, is_private)| (Symbol::intern(bare), is_private))
+                })
+                .collect()
+        });
+        slots.get(idx).copied().flatten()
     }
 
     /// The `Symbol` for the string constant at `idx`, interned once per slot

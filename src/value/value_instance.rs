@@ -1,10 +1,7 @@
 use super::*;
 
 impl<'a> AttrReadGuard<'a> {
-    pub(super) fn new(
-        guard: std::sync::RwLockReadGuard<'a, HashMap<String, Value>>,
-        addr: usize,
-    ) -> Self {
+    pub(super) fn new(guard: std::sync::RwLockReadGuard<'a, AttrMap>, addr: usize) -> Self {
         HELD_READ_CELLS.with(|c| c.borrow_mut().push(addr));
         Self {
             guard: Some(guard),
@@ -14,7 +11,7 @@ impl<'a> AttrReadGuard<'a> {
 }
 
 impl std::ops::Deref for AttrReadGuard<'_> {
-    type Target = HashMap<String, Value>;
+    type Target = AttrMap;
     fn deref(&self) -> &Self::Target {
         self.guard.as_ref().expect("attr read guard live")
     }
@@ -37,7 +34,7 @@ impl Drop for AttrReadGuard<'_> {
         }
         let flush = PENDING_CELL_WRITES.with(|p| {
             let mut v = p.borrow_mut();
-            let mut mine: Vec<(AttrCell, HashMap<String, Value>)> = Vec::new();
+            let mut mine: Vec<(AttrCell, AttrMap)> = Vec::new();
             v.retain(|(a, cell, map)| {
                 if *a == self.addr {
                     mine.push((cell.clone(), map.clone()));
@@ -88,7 +85,7 @@ impl Clone for InstanceAttrs {
 impl InstanceAttrs {
     pub(crate) fn new(
         class_name: Symbol,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         id: u64,
         queue_destroy: bool,
     ) -> Self {
@@ -133,7 +130,7 @@ impl InstanceAttrs {
     }
 
     /// An owned clone of the backing map.
-    pub(crate) fn to_map(&self) -> HashMap<String, Value> {
+    pub(crate) fn to_map(&self) -> AttrMap {
         self.as_map().clone()
     }
 
@@ -142,12 +139,12 @@ impl InstanceAttrs {
         self.id
     }
 
-    pub(crate) fn contains_key(&self, key: &str) -> bool {
+    pub(crate) fn contains_key<K: AttrKey>(&self, key: K) -> bool {
         self.as_map().contains_key(key)
     }
 
     /// In-place insert through the shared cell (visible to all aliases).
-    pub(crate) fn insert(&self, key: String, value: Value) -> Option<Value> {
+    pub(crate) fn insert<K: AttrKey>(&self, key: K, value: Value) -> Option<Value> {
         write_attrs(&self.attributes).insert(key, value)
     }
 
@@ -162,14 +159,18 @@ impl InstanceAttrs {
     /// Mutate one attribute in place under the write lock, returning the
     /// closure's result. Returns `None` if the key is absent. Replaces the old
     /// `get_mut` (which cannot hand out a `&mut` past the guard).
-    pub(crate) fn with_attr_mut<R>(&self, key: &str, f: impl FnOnce(&mut Value) -> R) -> Option<R> {
+    pub(crate) fn with_attr_mut<K: AttrKey, R>(
+        &self,
+        key: K,
+        f: impl FnOnce(&mut Value) -> R,
+    ) -> Option<R> {
         let mut guard = write_attrs(&self.attributes);
         guard.get_mut(key).map(f)
     }
 
     /// Insert `value` only if `key` is absent (the `entry(..).or_insert(..)`
     /// idiom), in place under the write lock.
-    pub(crate) fn insert_if_absent(&self, key: String, value: Value) {
+    pub(crate) fn insert_if_absent<K: AttrKey>(&self, key: K, value: Value) {
         write_attrs(&self.attributes).entry(key).or_insert(value);
     }
 
@@ -180,7 +181,7 @@ impl InstanceAttrs {
     /// absent key materializes as a fresh cell holding `Nil`. This gives an
     /// accessor result container identity: writes through the accessor and reads
     /// through the bound alias observe the same slot.
-    pub(crate) fn promote_attr_to_container(&self, key: &str) -> Value {
+    pub(crate) fn promote_attr_to_container<K: AttrKey + Copy>(&self, key: K) -> Value {
         let mut guard = write_attrs(&self.attributes);
         match guard.get_mut(key) {
             Some(slot) => {
@@ -193,7 +194,7 @@ impl InstanceAttrs {
             }
             None => {
                 let cell = crate::gc::Gc::new(Mutex::new(Value::Nil));
-                guard.insert(key.to_string(), Value::ContainerRef(cell.clone()));
+                guard.insert(key, Value::ContainerRef(cell.clone()));
                 Value::ContainerRef(cell)
             }
         }
@@ -208,7 +209,7 @@ impl InstanceAttrs {
     /// the in-place replacement for the legacy id→cell registry writeback
     /// (`overwrite_instance_bindings_by_identity` / `update_instance_cell`), which
     /// computed an updated `HashMap` and looked the cell up by id.
-    pub(crate) fn commit_attrs(&self, map: HashMap<String, Value>) {
+    pub(crate) fn commit_attrs(&self, map: AttrMap) {
         write_cell_respecting_reads(&self.attributes, map);
     }
 
@@ -218,9 +219,9 @@ impl InstanceAttrs {
     /// atomic primitive for cross-thread `cas`/atomic ops on instance
     /// attributes — every alias of the instance shares this cell, so the swap
     /// is immediately visible everywhere (no shared_vars side channel).
-    pub(crate) fn compare_and_swap(
+    pub(crate) fn compare_and_swap<K: AttrKey + Copy>(
         &self,
-        key: &str,
+        key: K,
         matches: impl FnOnce(&Value) -> bool,
         new: Value,
     ) -> (Value, bool) {
@@ -228,7 +229,7 @@ impl InstanceAttrs {
         let current = guard.get(key).cloned().unwrap_or(Value::Nil);
         let swapped = matches(&current);
         if swapped {
-            guard.insert(key.to_string(), new);
+            guard.insert(key, new);
         }
         (current, swapped)
     }
@@ -236,15 +237,15 @@ impl InstanceAttrs {
     /// Phase 3 cell-CAS: atomically read-modify-write one attribute under a
     /// single write lock (atomic add / increment / decrement). Returns
     /// `(old, new)`; an error from `f` leaves the attribute unchanged.
-    pub(crate) fn fetch_update(
+    pub(crate) fn fetch_update<K: AttrKey + Copy>(
         &self,
-        key: &str,
+        key: K,
         f: impl FnOnce(&Value) -> Result<Value, RuntimeError>,
     ) -> Result<(Value, Value), RuntimeError> {
         let mut guard = write_attrs(&self.attributes);
         let current = guard.get(key).cloned().unwrap_or(Value::Nil);
         let next = f(&current)?;
-        guard.insert(key.to_string(), next.clone());
+        guard.insert(key, next.clone());
         Ok((current, next))
     }
 

@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -42,7 +43,7 @@ impl Interpreter {
 
     pub(super) fn supply_list_values(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         wait_until_done: bool,
     ) -> Result<Vec<Value>, RuntimeError> {
         // An on-demand supply (`supply { ... }` block) materializes by running
@@ -118,9 +119,7 @@ impl Interpreter {
         )
     }
 
-    pub(super) fn iterator_supports_predictive_methods(
-        attributes: &HashMap<String, Value>,
-    ) -> bool {
+    pub(super) fn iterator_supports_predictive_methods(attributes: &AttrMap) -> bool {
         matches!(
             attributes.get("items").map(Value::view),
             Some(ValueView::Array(..))
@@ -132,7 +131,7 @@ impl Interpreter {
 
     pub(super) fn iterator_count_only_from_attrs(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
     ) -> Result<Option<Value>, RuntimeError> {
         // A known logical count (set for `LHS xx N` lazy repeats) takes priority:
         // the materialized `items` are only a bounded prefix of the true length.
@@ -210,7 +209,7 @@ impl Interpreter {
 
     pub(super) fn iterator_bool_only_from_attrs(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
     ) -> Result<Option<Value>, RuntimeError> {
         let Some(count) = self.iterator_count_only_from_attrs(attributes)? else {
             return Ok(None);

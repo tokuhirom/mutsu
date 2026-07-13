@@ -1,4 +1,5 @@
 use crate::runtime::*;
+use crate::value::AttrMap;
 use std::net::TcpStream;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
@@ -184,9 +185,7 @@ fn supplier_state_map() -> &'static SupplierStateMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-pub(in crate::runtime) fn supplier_id_from_attrs(
-    attributes: &HashMap<String, Value>,
-) -> Option<u64> {
+pub(in crate::runtime) fn supplier_id_from_attrs(attributes: &AttrMap) -> Option<u64> {
     match attributes.get("supplier_id").and_then(|v| v.as_int()) {
         Some(id) if id > 0 => Some(id as u64),
         _ => None,

@@ -390,11 +390,7 @@ impl Interpreter {
 
     /// Add `__mutsu_attr_alias::x` metadata for attributes declared with `has $x`
     /// (no twigil), so the method call dispatch can set up bidirectional aliases.
-    pub(super) fn add_alias_attribute_metadata(
-        &mut self,
-        class_name: &str,
-        attrs: &mut HashMap<String, Value>,
-    ) {
+    pub(super) fn add_alias_attribute_metadata(&mut self, class_name: &str, attrs: &mut AttrMap) {
         let mro = self.class_mro(class_name);
         for cn in &mro {
             if let Some(class_def) = self.registry().classes.get(cn) {

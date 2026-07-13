@@ -6,6 +6,7 @@ use std::sync::mpsc;
 
 use super::state::*;
 use super::state_supplier::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     fn async_socket_status_result(status: &str, result: Value, cause: Value) -> Value {
@@ -235,7 +236,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_socket_async_listener(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -484,7 +485,7 @@ impl Interpreter {
     /// Handle instance methods on UDP sockets (created by bind-udp / udp).
     pub(super) fn native_socket_async_udp(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

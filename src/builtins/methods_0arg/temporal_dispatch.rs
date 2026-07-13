@@ -1,5 +1,6 @@
 use super::temporal::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
@@ -34,10 +35,7 @@ pub(crate) fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
 }
 
 /// Dispatch 0-arg methods for Date instances.
-pub fn date_method_0arg(
-    attributes: &HashMap<String, Value>,
-    method: &str,
-) -> Option<Result<Value, RuntimeError>> {
+pub fn date_method_0arg(attributes: &AttrMap, method: &str) -> Option<Result<Value, RuntimeError>> {
     let (year, month, day) = date_attrs(attributes);
     let days = civil_to_epoch_days(year, month, day);
 
@@ -123,7 +121,7 @@ pub fn date_method_0arg(
 
 /// Dispatch 0-arg methods for DateTime instances.
 pub fn datetime_method_0arg(
-    attributes: &HashMap<String, Value>,
+    attributes: &AttrMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
     let (year, month, day, hour, minute, second, timezone) = datetime_attrs(attributes);
