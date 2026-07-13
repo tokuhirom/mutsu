@@ -64,8 +64,7 @@ impl Interpreter {
         // `@p[0]=v`, and `@p.push` all propagate). So when a pointy param is
         // present, don't mark `$_` read-only: that would propagate read-only to
         // `@p` through its `@p := $_` bind and block element assignment.
-        let mark_ro =
-            topic_readonly && pointy_param.is_none() && !self.readonly_vars().contains("_");
+        let mark_ro = topic_readonly && pointy_param.is_none() && !self.is_readonly("_");
         if mark_ro {
             self.mark_readonly("_");
         }

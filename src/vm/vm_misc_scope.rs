@@ -431,7 +431,7 @@ impl Interpreter {
         // the now-gone binding (`my %h := SetHash.new(...)` inside a block
         // must not leave `%h` readonly in the outer scope).
         for name in &block_declared {
-            self.readonly_vars_mut().remove(name);
+            self.unmark_readonly(name);
         }
         // Note: `our`-scoped variables persist in our_vars and are accessible
         // via package-qualified names (e.g., $Pkg::var) after block exit.

@@ -373,6 +373,18 @@ pub(crate) type ClassAttributeDef = (
     Option<Expr>,
 );
 
+/// The set of read-only variable names (`readonly_vars`), and the type of a
+/// snapshot taken by `save_readonly_vars`.
+///
+/// `Symbol`-keyed and copy-on-write: every user function call snapshots this set
+/// on entry and restores it on return, so a `HashSet<String>` cost one table
+/// allocation plus one heap `String` per entry *per call*. Behind an `Arc` the
+/// snapshot is a refcount bump, and a mutation (`mark_readonly` /
+/// `unmark_readonly`) pays a `memcpy` of `u32`s only when it actually changes
+/// the set while a snapshot is alive. `Symbol` keys also replace the default
+/// hasher's SipHash-over-the-name with a `u32` hash.
+pub(crate) type ReadonlySet = Arc<rustc_hash::FxHashSet<Symbol>>;
+
 /// Per-class plan for the native default constructor
 /// (`try_native_default_construct`): everything about the class shape that the
 /// constructor consulted on EVERY construction but that only changes when the
@@ -1548,7 +1560,8 @@ pub struct Interpreter {
     /// Pending env updates from regex code blocks, to be synced to VM locals.
     pub(crate) pending_local_updates: Vec<(String, Value)>,
     /// Set of variable names that are readonly (default parameter binding).
-    readonly_vars: HashSet<String>,
+    /// Copy-on-write and `Symbol`-keyed — see [`ReadonlySet`].
+    readonly_vars: ReadonlySet,
     /// Metadata for Seq values produced by `squish` with callbacks, used to
     /// provide callback-aware iterator behavior.
     pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,

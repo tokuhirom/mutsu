@@ -247,7 +247,7 @@ impl Interpreter {
         code: &CompiledCode,
         result: Value,
     ) -> Result<(), RuntimeError> {
-        if self.readonly_vars().contains("_") {
+        if self.is_readonly("_") {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert(
                 "message".to_string(),

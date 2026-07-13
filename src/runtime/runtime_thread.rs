@@ -308,7 +308,7 @@ impl Interpreter {
             lexical_class_owner_scopes: self.lexical_class_owner_scopes.clone(),
             last_value: None,
             pending_local_updates: Vec::new(),
-            readonly_vars: HashSet::new(),
+            readonly_vars: crate::runtime::ReadonlySet::default(),
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),

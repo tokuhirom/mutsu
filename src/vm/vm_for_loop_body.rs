@@ -146,7 +146,7 @@ impl Interpreter {
             .iter()
             .map(|name| {
                 let val = self.env().get(name).cloned();
-                let was_readonly = self.readonly_vars().contains(name);
+                let was_readonly = self.is_readonly(name);
                 let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let sigilless_ro = self.env().get(&sigilless_key).cloned();
                 (name.clone(), val, was_readonly, sigilless_ro)
@@ -573,7 +573,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         self.topic_source_var = saved_topic_source;
                         self.quanthash_bind_params = saved_quanthash_bind.clone();
@@ -599,7 +599,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         if spec.restore_topic {
                             match saved_topic.clone() {
@@ -629,7 +629,7 @@ impl Interpreter {
         if !spec.is_rw
             && let Some(ref name) = param_name
         {
-            self.readonly_vars_mut().remove(name);
+            self.unmark_readonly(name);
         }
         // Restore saved multi-param values and readonly state
         for (name, saved_val, was_readonly, sigilless_ro) in saved_multi_params {

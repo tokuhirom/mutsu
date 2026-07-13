@@ -30,7 +30,7 @@ impl Interpreter {
                 target.view(),
                 ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_topic_ro__")
             );
-            if mixin_ro || self.readonly_vars().contains("_") {
+            if mixin_ro || self.is_readonly("_") {
                 let type_name = match target.view() {
                     ValueView::Int(_) => "Int",
                     ValueView::Num(_) => "Num",

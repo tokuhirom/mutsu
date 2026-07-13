@@ -3212,7 +3212,15 @@ pub(crate) struct CompiledFunction {
     /// Used by the positional light call path to distinguish function-local vars
     /// (which should be restored after recursive calls) from captured outer vars
     /// (which should keep their modified values).
-    pub(crate) declared_locals: Option<std::collections::HashSet<String>>,
+    ///
+    /// `Symbol`-keyed: the call paths test it against the callee's env-overlay
+    /// keys, which are already `Symbol`s, so the return merge compares `u32`s
+    /// instead of rebuilding a `HashSet<&str>` (SipHash) on every call.
+    pub(crate) declared_locals: Option<rustc_hash::FxHashSet<Symbol>>,
+    /// Pre-interned `param_defs[i].name`, parallel to `param_defs`. The call
+    /// paths mark every param read-only on entry; without this each mark would
+    /// re-hash the parameter name string on every call.
+    pub(crate) param_name_syms: Vec<Symbol>,
     /// The package this routine was declared in (e.g. `"P"` for a sub in
     /// `package P { ... }`, `"GLOBAL"` for a top-level sub). The dispatch sets
     /// `current_package` from this on entry so package-scoped variable
@@ -3348,7 +3356,7 @@ impl CompiledFunction {
     /// Also includes parameter names. Used to distinguish function-local vars
     /// from captured outer vars in the positional light call path.
     pub(crate) fn compute_declared_locals(&mut self) {
-        let mut declared = std::collections::HashSet::new();
+        let mut declared: std::collections::HashSet<String> = std::collections::HashSet::new();
         // Parameters are always function-local (including sub-signature params)
         Self::collect_param_names(&self.param_defs, &mut declared);
         for p in &self.params {
@@ -3390,7 +3398,40 @@ impl CompiledFunction {
                 _ => {}
             }
         }
-        self.declared_locals = Some(declared);
+        self.declared_locals = Some(declared.iter().map(|n| Symbol::intern(n)).collect());
+    }
+
+    /// Pre-intern the parameter names (see `param_name_syms`).
+    pub(crate) fn precompute_param_name_syms(&mut self) {
+        self.param_name_syms = self
+            .param_defs
+            .iter()
+            .map(|pd| Symbol::intern(&pd.name))
+            .collect();
+    }
+
+    /// True if `sym` names a *callee-local* of this function — a parameter, a
+    /// `my` declaration, or a `for`-loop parameter. The scoped-overlay return
+    /// merge uses this to decide which of the callee's env writes are its own
+    /// (dropped with the overlay) and which target a captured outer variable
+    /// (merged back into the caller).
+    ///
+    /// Prefers the precomputed `declared_locals`; a hand-built chunk that never
+    /// ran `compute_declared_locals` falls back to the code's own local names,
+    /// exactly as the call sites did before.
+    #[inline]
+    pub(crate) fn is_callee_local_sym(&self, sym: Symbol) -> bool {
+        match &self.declared_locals {
+            Some(declared) => declared.contains(&sym),
+            None if self.code.locals_sym.len() == self.code.locals.len() => {
+                self.code.locals_sym.contains(&sym)
+            }
+            // Unfinalized chunk: `locals_sym` was never computed, so compare by name.
+            None => {
+                let name = sym.as_str();
+                self.code.locals.iter().any(|n| n == name)
+            }
+        }
     }
 
     /// Recursively collect parameter names from param_defs, including

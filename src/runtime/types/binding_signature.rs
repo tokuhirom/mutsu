@@ -1922,7 +1922,7 @@ impl Interpreter {
             let is_container_param = pd.name.starts_with('@') || pd.name.starts_with('%');
             if !is_container_param {
                 if !has_mutable_trait || raw_nonlvalue_params.contains(&pd.name) {
-                    self.readonly_vars.insert(pd.name.clone());
+                    self.mark_readonly(&pd.name);
                 } else {
                     // Writable `is copy`/`is rw`/`is raw` scalar param: the
                     // readonly set is keyed by bare name and shared across frames,
@@ -1930,7 +1930,7 @@ impl Interpreter {
                     // would otherwise leak in and make this writable param appear
                     // readonly. Drop the mark; the surrounding call path restores
                     // the caller's readonly state via `restore_readonly_vars`.
-                    self.readonly_vars.remove(&pd.name);
+                    self.unmark_readonly(&pd.name);
                 }
             }
         }

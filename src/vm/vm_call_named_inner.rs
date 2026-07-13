@@ -444,12 +444,6 @@ impl Interpreter {
             // Use declared_locals (vars declared via `my` or as params) instead
             // of all locals. Captured outer variables should propagate their
             // modifications back to the caller.
-            let local_names: std::collections::HashSet<&str> =
-                if let Some(ref declared) = cf.declared_locals {
-                    declared.iter().map(|s| s.as_str()).collect()
-                } else {
-                    cf.code.locals.iter().map(|s| s.as_str()).collect()
-                };
             for (k, v) in self.env().iter() {
                 if *k == "_" || *k == "@_" || *k == "%_" {
                     continue;
@@ -461,7 +455,7 @@ impl Interpreter {
                     continue;
                 }
                 if restored_env.contains_key_sym(*k)
-                    && !k.with_str(|s| local_names.contains(s))
+                    && !cf.is_callee_local_sym(*k)
                     && !k.with_str(|s| rw_sources.contains(s))
                 {
                     restored_env.insert_sym(*k, v.clone());
@@ -481,11 +475,11 @@ impl Interpreter {
                 if restored_env.contains_key_sym(*sym) {
                     continue;
                 }
-                let skip = sym.with_str(|s| {
-                    s == "_"
+                let skip = cf.is_callee_local_sym(*sym)
+                    || sym.with_str(|s| {
+                        s == "_"
                         || s == "@_"
                         || s == "%_"
-                        || local_names.contains(s)
                         || rw_sources.contains(s)
                         // Compiler-internal bookkeeping symbols (e.g. the
                         // `__mutsu_sigilless_readonly::p` marker emitted for a
@@ -496,7 +490,7 @@ impl Interpreter {
                         // Dynamic vars (`$*x`) are reconciled by
                         // pop_caller_env_with_writeback, not the lexical merge.
                         || s.as_bytes().get(1) == Some(&b'*')
-                });
+                    });
                 if skip {
                     continue;
                 }

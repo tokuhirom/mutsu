@@ -289,7 +289,7 @@ pub(crate) struct VmCallFrame {
     pub saved_upvalues: Vec<Option<Value>>,
     pub saved_stack_depth: usize,
     /// None when using light call frame (simple methods that don't use `:=` binding).
-    pub saved_readonly: Option<HashSet<String>>,
+    pub saved_readonly: Option<crate::runtime::ReadonlySet>,
     /// Read-only var names this frame *newly* added to `readonly_vars` (used by
     /// the light-frame method path, which marks `$` scalar params read-only
     /// without cloning the whole set). Removed on `pop_call_frame`. Empty for the

@@ -193,7 +193,7 @@ impl Interpreter {
         // Mark parameters as readonly (by default, params are immutable in Raku).
         // Save existing readonly state so we can restore it after the call.
         let saved_readonly = self.save_readonly_vars();
-        for pd in &cf.param_defs {
+        for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()
                 && !pd.sigilless
                 && !pd.name.starts_with('!')
@@ -203,8 +203,14 @@ impl Interpreter {
                     .traits
                     .iter()
                     .any(|t| t == "rw" || t == "copy" || t == "raw");
+                // `param_name_syms` is `param_defs[i].name` pre-interned; fall
+                // back to interning for a chunk that never precomputed it.
+                let sym = cf.param_name_syms.get(i).copied();
                 if !has_mutable_trait {
-                    self.mark_readonly(&pd.name);
+                    match sym {
+                        Some(sym) => self.mark_readonly_sym(sym),
+                        None => self.mark_readonly(&pd.name),
+                    }
                 } else {
                     // `is copy`/`is rw`/`is raw` params are writable. The readonly
                     // set is keyed by bare name and shared across frames, so a
@@ -212,7 +218,10 @@ impl Interpreter {
                     // otherwise leak in and make this writable param appear readonly.
                     // Unmark it; `restore_readonly_vars` reinstates the caller's
                     // state after the call.
-                    self.unmark_readonly(&pd.name);
+                    match sym {
+                        Some(sym) => self.unmark_readonly_sym(sym),
+                        None => self.unmark_readonly(&pd.name),
+                    }
                 }
             }
         }
@@ -371,12 +380,6 @@ impl Interpreter {
         // params/locals/aliases are dropped with the overlay. This replaces the
         // per-key `modified_env_keys` save/restore.
         {
-            let local_names: std::collections::HashSet<&str> =
-                if let Some(ref declared) = cf.declared_locals {
-                    declared.iter().map(|s| s.as_str()).collect()
-                } else {
-                    cf.code.locals.iter().map(|s| s.as_str()).collect()
-                };
             let scoped = std::mem::replace(self.env_mut(), caller_env);
             for (k, v) in scoped.overlay_iter() {
                 if *k == "_"
@@ -387,7 +390,7 @@ impl Interpreter {
                 {
                     continue;
                 }
-                if !k.with_str(|s| local_names.contains(s)) {
+                if !cf.is_callee_local_sym(*k) {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
             }

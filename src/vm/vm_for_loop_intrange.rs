@@ -27,7 +27,7 @@ impl Interpreter {
             .then(|| self.env().get("_").cloned())
             .flatten();
         let saved_topic_source = self.topic_source_var.take();
-        let was_topic_readonly = self.readonly_vars().contains("_");
+        let was_topic_readonly = self.is_readonly("_");
 
         // Save the single named loop param (`for ... -> $x`) prior binding so it
         // does not leak past the loop into the enclosing scope. Without this, a
@@ -157,7 +157,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
@@ -181,7 +181,7 @@ impl Interpreter {
                         if !spec.is_rw
                             && let Some(ref name) = param_name
                         {
-                            self.readonly_vars_mut().remove(name);
+                            self.unmark_readonly(name);
                         }
                         if !was_topic_readonly {
                             self.unmark_readonly("_");
@@ -214,7 +214,7 @@ impl Interpreter {
         if !spec.is_rw
             && let Some(ref name) = param_name
         {
-            self.readonly_vars_mut().remove(name);
+            self.unmark_readonly(name);
         }
         if !was_topic_readonly {
             self.unmark_readonly("_");

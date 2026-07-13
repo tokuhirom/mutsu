@@ -66,10 +66,21 @@ impl Interpreter {
 
         // Read-through to the caller (parent tier) for the initial value of a
         // local that shadows a same-named caller variable, matching the prior
-        // env().get() semantics.
-        for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(local_name) {
-                self.locals[i] = val.clone();
+        // env().get() semantics. `locals_sym` is `locals` pre-interned at
+        // finalize(), so the seed loop hashes a `u32` per local instead of
+        // re-interning the name string on every call.
+        if cf.code.locals_sym.len() == num_locals {
+            for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+                if let Some(val) = self.env().get_sym(*sym) {
+                    self.locals[i] = val.clone();
+                }
+            }
+        } else {
+            // Hand-built chunk with no pre-interned locals: resolve by name.
+            for (i, local_name) in cf.code.locals.iter().enumerate() {
+                if let Some(val) = self.env().get(local_name) {
+                    self.locals[i] = val.clone();
+                }
             }
         }
 
@@ -116,7 +127,10 @@ impl Interpreter {
                 if needs_env {
                     self.env_mut().insert(param_name.clone(), val);
                 }
-                self.mark_readonly(&cf.param_defs[param_idx].name);
+                match cf.param_name_syms.get(param_idx) {
+                    Some(sym) => self.mark_readonly_sym(*sym),
+                    None => self.mark_readonly(&cf.param_defs[param_idx].name),
+                }
             }
         }
         // Bind-time param values that a name-based reader can observe were
@@ -219,12 +233,11 @@ impl Interpreter {
         // this function) persists in the caller; the function's params/locals are
         // dropped with the overlay. This replaces the prior per-name save/restore.
         {
-            let local_names: std::collections::HashSet<&str> =
-                if let Some(ref declared) = cf.declared_locals {
-                    declared.iter().map(|s| s.as_str()).collect()
-                } else {
-                    cf.code.locals.iter().map(|s| s.as_str()).collect()
-                };
+            // The callee-local test reads the compile-time `Symbol` set
+            // (`is_callee_local_sym`) instead of materializing a `HashSet<&str>`
+            // per call: the old set was built even when the overlay was empty
+            // (a body whose params/locals are all slot-resolved never writes
+            // env), and hashed every local name with SipHash to build it.
             let scoped = std::mem::replace(self.env_mut(), caller_env);
             for (k, v) in scoped.overlay_iter() {
                 // The callee's private topic / arg array / routine id, and the
@@ -240,7 +253,7 @@ impl Interpreter {
                 {
                     continue;
                 }
-                if !k.with_str(|s| local_names.contains(s)) {
+                if !cf.is_callee_local_sym(*k) {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
             }
