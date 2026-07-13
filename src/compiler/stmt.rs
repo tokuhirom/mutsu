@@ -902,6 +902,14 @@ impl Compiler {
                     }
                     self.constant_vars.insert(name.clone());
                     self.constant_vars_in_scope.insert(name.clone());
+                    // A `constant` with a compile-time-constant scalar value is
+                    // inlined at its read sites (ADR-0006 §2.2).
+                    self.note_constant_decl(name, expr);
+                } else {
+                    // An ordinary `my`/`state` of the same bare name shadows the
+                    // constant — mutsu strips sigils, so `my $DEBUG` and a
+                    // sigilless `constant DEBUG` collide. Stop inlining it.
+                    self.forget_constant(name);
                 }
                 // X::ParametricConstant: typed @/% constants are forbidden
                 if is_constant_decl
@@ -1553,6 +1561,26 @@ impl Compiler {
                 // the condition value as @_ in Raku).
                 let needs_at_underscore =
                     binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
+                // A condition that is a compile-time constant resolves the branch
+                // here (ADR-0006 §2.2): `constant DEBUG = False; if DEBUG { note
+                // ... }` emits nothing at all. The unreachable branch is only
+                // dropped when it declares nothing (raku installs declarations
+                // even in a never-taken branch) — otherwise the runtime branch is
+                // compiled as usual.
+                if binding_var.is_none()
+                    && !needs_at_underscore
+                    && let Some(taken) = self.const_condition(cond)
+                {
+                    let (live, dead) = if taken {
+                        (then_branch, else_branch)
+                    } else {
+                        (else_branch, then_branch)
+                    };
+                    if Self::branch_is_droppable(dead) {
+                        self.compile_resolved_branch(live);
+                        return;
+                    }
+                }
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }

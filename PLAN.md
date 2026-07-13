@@ -277,7 +277,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       - [x] §2.4 定数プール dedup（#4486 — `add_constant` に逆引き index。
             同値スカラ定数がスロットを共有し、実測で add_constant の 29〜45% が dedup。
             `MUTSU_VM_STATS` の `const-pool:` 行で追跡）
-      - [ ] §2.2 `constant` 読みのインライン化 + 定数条件 DCE（debug-guard 2.2x の本命）
+      - [x] §2.2 `constant` 読みのインライン化 + 定数条件 DCE（#4487 — `constant DEBUG = False;
+            if DEBUG {...}` がブロックごと消える。debug-guard 実行 opcode 3.00M→2.60M・
+            raku 比 **2.2x→1.3x**。死んだ分岐に宣言があるときは消さず通常コンパイル）
       - [ ] §2.3 peephole（administrative op 列 — `SetSourceLine` 重複除去・`my $x = <expr>` 宣言列の融合。
             ヒストグラム駆動で対象選定）
 - [ ] **opcode 残件（[docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6・#4279 の続き）**:

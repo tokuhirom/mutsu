@@ -299,6 +299,26 @@ impl Compiler {
         self.code.patch_block_local_body_end(idx);
     }
 
+    /// Emit the branch a compile-time-constant `if` condition selected, with no
+    /// condition evaluation and no jumps around it (ADR-0006 §2.2). Mirrors how
+    /// the ordinary `Stmt::If` arm compiles the branch it jumps to, including the
+    /// `elsif` chain (which arrives as a lone nested `If` in the else position).
+    pub(super) fn compile_resolved_branch(&mut self, stmts: &[Stmt]) {
+        if stmts.is_empty() {
+            return;
+        }
+        if stmts.len() == 1 && matches!(stmts[0], Stmt::If { .. }) {
+            self.compile_stmt(&stmts[0]);
+        } else if Self::body_mutates_topic(stmts) {
+            self.synthetic_block_body = true;
+            self.compile_stmt(&Stmt::Block(stmts.to_vec()));
+        } else if Self::branch_declares_block_local(stmts) {
+            self.compile_block_local_branch(stmts);
+        } else {
+            self.compile_body_with_implicit_try(stmts);
+        }
+    }
+
     /// Compile a block body, automatically wrapping in implicit try if it contains
     /// CATCH or CONTROL blocks. This should be used for any block context (bare blocks,
     /// if branches, loop bodies, sub bodies) to ensure CATCH/CONTROL are not silently ignored.
