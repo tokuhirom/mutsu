@@ -14,7 +14,8 @@ cargo build --release
 > Source of truth: the **bench CI history** (`bench-history.tsv` on the
 > `bench-data` branch; median of 7 runs per main push, raku measured on the
 > same runner in the same job so the ratio normalizes runner speed). The
-> `+jit` column is the `MUTSU_JIT=on` series (recorded since #4480). Local
+> `+jit` column is the JIT-on series (recorded since #4480; the **default**
+> configuration since J5 — the plain series pins `MUTSU_JIT=off`). Local
 > numbers drift with thermals/binary layout — use them only for in-flight
 > A/B decisions, and check for stray `mutsu` processes before measuring.
 
@@ -159,11 +160,12 @@ tag-dispatched inline arithmetic (below).
 Rejected in favor of the JIT: Tier A subroutine threading removes the same
 dispatch-loop cost with a larger ceiling. Revisit only if the JIT stalls.
 
-### Phase 4c: JIT compilation (Cranelift) — IN PROGRESS (J1–J4 core landed)
+### Phase 4c: JIT compilation (Cranelift) — DEFAULT ON since J5 (2026-07-13)
 
 Method JIT per ADR-0004: hot `CompiledCode` chunks (and, since J4b, hot
 compound-loop body sub-ranges via the `run_range` hook) compile to native
-code. Off by default until J5; run with `MUTSU_JIT=on`.
+code. **On by default** since J5; `MUTSU_JIT=off` is the interpreter-only
+opt-out.
 
 - **J1 (#4471)**: skeleton — call counting, Tier A helper-call bodies, fib native.
 - **J2 (#4474)**: Tier A opcode coverage, all 6 call-path entry hooks, jit-stress CI.
@@ -173,12 +175,16 @@ code. Off by default until J5; run with `MUTSU_JIT=on`.
   Int/Num fast paths in CLIF, zero refcount/GC traffic), hot-loop entry
   (int-arith-class top-level loops finally JIT), and variable-op helper
   hot-path fixes (which also sped the interpreter itself: int-arith −34%).
+- **J5 (default on, 2026-07-13)**: gates verified on bench CI main `f19946ad`
+  — every `+jit` series at or ahead of the interpreter (fib 0.59x vs 0.77x,
+  bench-fib 1.26x vs 1.64x, no series slower) and bench-startup unchanged
+  (0.0086s vs 0.0087s: cold code never compiles, so the startup budget is
+  untouched); gc-stress × jit-stress matrix green since J2.
 - Remaining: **J4d** — Tier B variable-op inlining (GetLocal/SetLocal),
   JIT→JIT call inlining, args-Vec alloc removal (this is where the original
   "5-10x for tight numeric loops" expectation now lives: after J4c the
   interpreter is fast enough that the residual JIT gap IS the variable-op
-  helper calls) — then **J5**: default-on switch (gc-stress × jit-stress
-  matrix already green; startup budget + bench-parity check pending).
+  helper calls).
 
 ### Function calls with type constraints
 
@@ -191,8 +197,9 @@ territory).
 
 - **Numbers in documents come from the bench CI** (`bench-history.tsv` on the
   `bench-data` branch; appended per main push, median of 7 runs plus a
-  same-runner raku ratio). The `<bench>+jit` rows are the `MUTSU_JIT=on`
-  series (recorded since #4480). Cite the commit hash a number belongs to.
+  same-runner raku ratio). The `<bench>+jit` rows are the JIT-on series
+  (recorded since #4480; the default configuration since J5 — plain rows pin
+  `MUTSU_JIT=off`). Cite the commit hash a number belongs to.
 - Local `perf stat -r5` under `taskset` is fine for in-flight A/B decisions
   and PR descriptions, but drifts with thermals and binary layout (±5%);
   check for stray `mutsu` processes before measuring.

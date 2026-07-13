@@ -335,7 +335,7 @@ The `MUTSU_VM_STATS=1` dual-store counters (`locals_pulls`, `env_flushes`, `env_
 
 ### Benchmark numbers in documents come from the bench CI, not local runs
 
-Numbers recorded in PERFORMANCE.md / PLAN.md / news must come from the **bench CI history** (`bench-history.tsv` on the `bench-data` branch, appended on every main push: median of 7 runs plus a same-runner raku ratio that normalizes runner speed), citing the main commit hash the row belongs to. Read it with `git show origin/bench-data:bench-history.tsv`. The `<bench>+jit` rows are the `MUTSU_JIT=on` series. Local `perf stat` A/B measurements are fine for PR descriptions and in-flight development decisions, but they drift with thermals and binary layout (±5% is common), so they are NOT the source of truth for documents.
+Numbers recorded in PERFORMANCE.md / PLAN.md / news must come from the **bench CI history** (`bench-history.tsv` on the `bench-data` branch, appended on every main push: median of 7 runs plus a same-runner raku ratio that normalizes runner speed), citing the main commit hash the row belongs to. Read it with `git show origin/bench-data:bench-history.tsv`. The `<bench>+jit` rows are the JIT-on series — the default configuration since J5 (2026-07-13); the plain rows pin `MUTSU_JIT=off` as the interpreter baseline. Local `perf stat` A/B measurements are fine for PR descriptions and in-flight development decisions, but they drift with thermals and binary layout (±5% is common), so they are NOT the source of truth for documents.
 
 ## Checking `make test` / `make roast` results
 

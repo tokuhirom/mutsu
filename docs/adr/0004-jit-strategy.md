@@ -38,6 +38,8 @@
   arch ごとの保守コスト。wasm 経由は間接層が無駄。
 - 依存は **feature flag + 実行時 flag**（`MUTSU_JIT=on|off`、既定は当面 off）で隔離し、
   JIT なしビルド（非対応 arch）でも full 機能を維持する。
+  （**2026-07-13 更新**: J5 ゲート達成により既定 on へ切替済み — 末尾の追記参照。
+  `MUTSU_JIT=off` が明示オプトアウト。）
 
 ### 2.2 コンパイル単位 = **`CompiledCode` 関数全体**（method JIT）。tracing はしない
 
@@ -125,3 +127,13 @@ JIT の最初の形は「opcode 列を、**VM ヘルパ関数呼び出しの列*
 
 *2026-07-06 ユーザー承認により Accepted（Lever 3 の凍結も同時承認）。実装は
 gc-post-3a-roadmap の層3b（NaN-boxing）完了後、§2.5 のフェーズ J1 から着手する。*
+
+*2026-07-13 追記: **J5 完了 — `MUTSU_JIT` 既定 on**。ゲート実測（bench CI main
+`f19946ad`）: gc-stress × jit-stress マトリクス green（J2 以降常設）・
+bench-startup 0.0087s → +jit 0.0086s（起動予算不変 — cold code は閾値未満で
+コンパイルされないため）・全 `+jit` 系列がインタプリタ同等以上
+（fib 0.77x→0.59x・bench-fib 1.64x→1.26x・回帰系列なし）。bench CI の plain
+系列は以後 `MUTSU_JIT=off` を明示 pin してインタプリタ基準線の意味を維持する。
+J4 の「int ループ 5–10x」ゲートは文言上未達のまま J5 を先行した: J4c で
+インタプリタ自体が -34% 高速化して相対差の分母が縮んだためで、絶対性能は
+両系列とも改善している。残る J4d（変数 op インライン）は既定 on の上で続行。*

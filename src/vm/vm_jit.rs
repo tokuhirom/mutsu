@@ -7,8 +7,9 @@
 //! any unsupported opcode is marked bailout and stays on the interpreter
 //! forever — no guards, no deopt, no OSR (ADR-0004 §2.3).
 //!
-//! Off by default: compiled in under the `jit` cargo feature, activated at
-//! runtime with `MUTSU_JIT=on` (threshold tunable via `MUTSU_JIT_THRESHOLD`).
+//! **On by default** since the ADR-0004 J5 gates passed (2026-07-13):
+//! compiled in under the `jit` cargo feature, disabled at runtime with
+//! `MUTSU_JIT=off` (threshold tunable via `MUTSU_JIT_THRESHOLD`).
 
 use super::*;
 
@@ -51,15 +52,29 @@ pub(crate) type JitEntryFn = unsafe extern "C" fn(
     *const HashMap<String, CompiledFunction>,
 ) -> u32;
 
-/// True when the JIT is switched on for this process (`MUTSU_JIT=on|1`).
+/// True when the JIT is switched on for this process. **Default ON** since
+/// the ADR-0004 J5 gates passed (2026-07-13): gc-stress × jit-stress green,
+/// startup budget unchanged, and every bench-CI `+jit` series at or ahead of
+/// the interpreter — `MUTSU_JIT=off` is the explicit opt-out (interpreter
+/// baselines, debugging the JIT itself).
+///
+/// Resolved once from `MUTSU_JIT` (`off`/`0` = off; `on`/`1` = on; an
+/// unrecognized value warns once and keeps the default on). Unlike
+/// `gc_enabled()` there is no `cfg!(test)` exception: JIT state is
+/// per-`CompiledCode` (plus a `Mutex`-guarded engine), so parallel in-process
+/// unit tests cannot cross-talk through it.
 #[cfg(feature = "jit")]
 #[inline]
 pub(crate) fn jit_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("MUTSU_JIT")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("on"))
-            .unwrap_or(false)
+    *ENABLED.get_or_init(|| match std::env::var("MUTSU_JIT").ok().as_deref() {
+        Some(v) if v == "0" || v.eq_ignore_ascii_case("off") => false,
+        Some(v) if v == "1" || v.eq_ignore_ascii_case("on") => true,
+        None => true,
+        Some(other) => {
+            eprintln!("[mutsu jit] warning: unrecognized MUTSU_JIT={other:?}, defaulting to on");
+            true
+        }
     })
 }
 
