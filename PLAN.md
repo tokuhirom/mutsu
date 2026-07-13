@@ -274,7 +274,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
       - [x] §2.1 定数畳み込み（#4485 — literal-only の算術/比較/連結を emit 時に評価。
             time-parts の実行 opcode 7.60M→6.40M・`Mul` 1.0M→0.4M。
             演算子オーバーライド安全条件は「宣言を見つけたらユニットごと fold なしで再コンパイル」）
-      - [ ] §2.4 定数プール dedup（`add_constant` の逆引き — `CompiledCode` のメモリ・locality）
+      - [x] §2.4 定数プール dedup（#4486 — `add_constant` に逆引き index。
+            同値スカラ定数がスロットを共有し、実測で add_constant の 29〜45% が dedup。
+            `MUTSU_VM_STATS` の `const-pool:` 行で追跡）
       - [ ] §2.2 `constant` 読みのインライン化 + 定数条件 DCE（debug-guard 2.2x の本命）
       - [ ] §2.3 peephole（administrative op 列 — `SetSourceLine` 重複除去・`my $x = <expr>` 宣言列の融合。
             ヒストグラム駆動で対象選定）
