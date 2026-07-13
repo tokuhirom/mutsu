@@ -8,8 +8,8 @@ use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{
-    ArrayKind, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError, Value,
-    ValueView, make_rat,
+    ArrayKind, AttrMap, EnumValue, GatherCoroutineState, JunctionKind, LazyList, RuntimeError,
+    Value, ValueView, make_rat,
 };
 use num_traits::{Signed, Zero};
 

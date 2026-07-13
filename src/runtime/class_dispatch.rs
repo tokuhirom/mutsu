@@ -5,16 +5,17 @@
 
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(crate) fn run_instance_method(
         &mut self,
         receiver_class_name: &str,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method_name: &str,
         args: Vec<Value>,
         invocant: Option<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         crate::vm::vm_stats::record_resolver_method_dispatch(method_name);
         let inv_value = if let Some(inv) = &invocant {
             inv.clone()
@@ -99,7 +100,7 @@ impl Interpreter {
             remaining
         };
         let make_invocant_for_dispatch =
-            |invocant: &Option<Value>, attributes: &HashMap<String, Value>| -> Value {
+            |invocant: &Option<Value>, attributes: &AttrMap| -> Value {
                 if let Some(inv) = invocant {
                     inv.clone()
                 } else if attributes.is_empty() {
@@ -252,10 +253,10 @@ impl Interpreter {
         owner_class: &str,
         method_name: &str,
         method_def: MethodDef,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         // Writeback-safety gate (§B, #3658 step 4 — free_var_writes filter REMOVED).
         // Any resolved candidate that has compiled bytecode and is not a delegation
         // forwarder now runs compiled, regardless of what free vars it writes:
@@ -377,10 +378,10 @@ impl Interpreter {
         receiver_class_name: &str,
         owner_class: &str,
         method_def: MethodDef,
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         if let Some((ref attr_var_name, ref target_method)) = method_def.delegation {
             // Clear skip_pseudo_method_native: the outer call set it for the
             // delegator's own method name, but we're about to forward to a

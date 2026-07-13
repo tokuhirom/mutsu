@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 use std::collections::HashMap;
 
 impl Interpreter {
@@ -12,7 +13,7 @@ impl Interpreter {
     /// Handle method dispatch on IO::Special instances.
     pub(super) fn native_io_special(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

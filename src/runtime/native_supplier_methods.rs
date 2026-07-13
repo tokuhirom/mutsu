@@ -4,11 +4,12 @@ use super::native_methods::*;
 use super::native_supply_methods::QuitOutcome;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(super) fn native_supplier(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -436,10 +437,10 @@ impl Interpreter {
 
     pub(super) fn native_supplier_mut(
         &mut self,
-        mut attrs: HashMap<String, Value>,
+        mut attrs: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "emit" => {
                 let value = args.first().cloned().unwrap_or(Value::NIL);

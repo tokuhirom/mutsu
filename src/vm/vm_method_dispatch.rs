@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
@@ -13,11 +14,11 @@ impl Interpreter {
         method_name: &str,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
-        mut attributes: HashMap<String, Value>,
+        mut attributes: AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
         compiled_fns: &HashMap<String, CompiledFunction>,
-    ) -> Result<(Value, Option<HashMap<String, Value>>), RuntimeError> {
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         // Slice F: the rw-writeback source list is drained by the CallMethod /
         // CallMethodMut op right after this dispatch returns, so it must hold
         // only this call's sources. Clear any leftover from a sibling whose call
@@ -413,6 +414,7 @@ impl Interpreter {
 
         // Bind attributes
         for (attr_name, attr_val) in &attributes {
+            let attr_name = attr_name.as_str();
             // Skip class-qualified private attribute entries (ClassName\0attrName)
             // — these are handled below when binding $!attr for the owner class.
             if attr_name.contains('\0') {
@@ -465,6 +467,7 @@ impl Interpreter {
         let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
         if any_attr_defaults {
             for attr_name in attributes.keys() {
+                let attr_name = attr_name.as_str();
                 if attr_name.contains('\0') || attr_name.starts_with(ATTR_ALIAS_META_PREFIX) {
                     continue;
                 }
@@ -854,7 +857,7 @@ impl Interpreter {
     /// consumer that needs the post-method map (proxy_fetch) re-snapshots the
     /// live cell on demand instead — so the common exit pays no `to_map()`
     /// (full attr-map clone) at all.
-    fn reconcile_attrs(&self, base: &Value, code: &CompiledCode) -> Option<HashMap<String, Value>> {
+    fn reconcile_attrs(&self, base: &Value, code: &CompiledCode) -> Option<AttrMap> {
         let ValueView::Instance {
             attributes: cell, ..
         } = base.view()
@@ -885,14 +888,15 @@ impl Interpreter {
         // under the cell's read guard (attr_env_or_local touches only
         // env/locals, never the cell), so no map clone is materialized when —
         // as in the overwhelmingly common case — no `:=` binding exists.
-        let mut overrides: Vec<(String, Value)> = Vec::new();
+        let mut overrides: Vec<(crate::symbol::Symbol, Value)> = Vec::new();
         {
             let cell_map = cell.as_map();
             for k in cell_map.keys() {
-                if k.starts_with(ATTR_ALIAS_META_PREFIX) {
+                let ks = k.as_str();
+                if ks.starts_with(ATTR_ALIAS_META_PREFIX) {
                     continue;
                 }
-                let bare = k.rsplit('\0').next().unwrap_or(k);
+                let bare = ks.rsplit('\0').next().unwrap_or(ks);
                 // Sigilless (`has $x` → bare `x`) and twigil (`$!x`/`@.x`/…) keys
                 // may hold the `:=` ContainerRef alias.
                 let candidates = [
@@ -908,7 +912,7 @@ impl Interpreter {
                     if let Some(v) = self.attr_env_or_local(code, &key)
                         && v.is_container_ref()
                     {
-                        overrides.push((k.clone(), v));
+                        overrides.push((*k, v));
                         break;
                     }
                 }
@@ -1021,7 +1025,7 @@ impl Interpreter {
         base: Value,
         compiled_fns: &HashMap<String, CompiledFunction>,
         can_skip_merge: bool,
-    ) -> Result<(Value, Option<HashMap<String, Value>>), RuntimeError> {
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         let attrs_cell = match base.view() {
             ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             _ => None,
@@ -1291,11 +1295,11 @@ impl Interpreter {
         // the program declaring ANY attribute default (see the slow path).
         let any_attr_defaults = !self.registry().class_attribute_defaults.is_empty();
         if any_attr_defaults && let Some(cell) = &attrs_cell {
-            let attr_names: Vec<String> = cell
+            let attr_names: Vec<&'static str> = cell
                 .as_map()
                 .keys()
+                .map(|k| k.as_str())
                 .filter(|k| !k.contains('\0') && !k.starts_with(ATTR_ALIAS_META_PREFIX))
-                .cloned()
                 .collect();
             for attr_name in &attr_names {
                 let default_val = self
@@ -1591,7 +1595,7 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
 /// form of the former per-call set build, which inserted all 6 twigil forms
 /// for every attribute key (skipping class-qualified `"C\0attr"` storage keys
 /// and `__mutsu_attr_alias::` metadata keys).
-fn attr_twigil_local(attributes: &HashMap<String, Value>, s: &str) -> bool {
+fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
     let bare = match s.as_bytes() {
         [b'@' | b'%', b'!' | b'.', ..] => &s[2..],
         [b'!' | b'.', ..] => &s[1..],
@@ -1607,8 +1611,9 @@ fn attr_twigil_local(attributes: &HashMap<String, Value>, s: &str) -> bool {
 /// or the `<attr>` suffix of such a key. Predicate form of the former set
 /// build's alias branch (slow path only — the fast path gate excludes
 /// alias-carrying instances).
-fn attr_alias_local(attributes: &HashMap<String, Value>, s: &str) -> bool {
+fn attr_alias_local(attributes: &AttrMap, s: &str) -> bool {
     attributes.iter().any(|(k, v)| {
+        let k = k.as_str();
         !k.contains('\0')
             && k.strip_prefix(ATTR_ALIAS_META_PREFIX)
                 .is_some_and(|actual| {

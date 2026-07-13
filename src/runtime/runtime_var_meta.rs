@@ -263,12 +263,12 @@ impl Interpreter {
     pub(crate) fn apply_container_attribute_defaults(
         &mut self,
         class_name: &str,
-        attributes: &mut std::collections::HashMap<String, Value>,
+        attributes: &mut crate::value::AttrMap,
     ) {
-        let names: Vec<String> = attributes.keys().cloned().collect();
+        let names: Vec<crate::symbol::Symbol> = attributes.keys().copied().collect();
         for attr_name in names {
             if !matches!(
-                attributes.get(&attr_name).map(Value::view),
+                attributes.get(attr_name).map(Value::view),
                 Some(ValueView::Array(..)) | Some(ValueView::Hash(_))
             ) {
                 continue;
@@ -277,17 +277,17 @@ impl Interpreter {
             // to a deferred expression carried from a parametric role, evaluated now
             // (the caller has bound the role's type params in `self.env`).
             let def = self
-                .class_attribute_default(class_name, &attr_name)
+                .class_attribute_default(class_name, attr_name.as_str())
                 .or_else(|| {
                     let expr = self
                         .registry()
                         .class_attribute_default_exprs
-                        .get(&(class_name.to_string(), attr_name.clone()))
+                        .get(&(class_name.to_string(), attr_name.resolve()))
                         .cloned()?;
                     self.eval_block_value(&[crate::ast::Stmt::Expr(expr)]).ok()
                 });
             if let Some(def) = def
-                && let Some(val) = attributes.remove(&attr_name)
+                && let Some(val) = attributes.remove(attr_name)
             {
                 let tagged = self.tag_container_default(val, def);
                 attributes.insert(attr_name, tagged);

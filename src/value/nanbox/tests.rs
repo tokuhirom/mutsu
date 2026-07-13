@@ -260,7 +260,7 @@ fn weak_sub_stays_weak_and_expires() {
 #[test]
 fn instance_reads_class_and_id_back_from_the_pointee() {
     let class = Symbol::intern("NanboxTestClass");
-    let mut attrs = HashMap::new();
+    let mut attrs = AttrMap::new();
     attrs.insert("x".to_string(), Value::int(1));
     // queue_destroy=false: keep the DESTROY registry out of a unit test.
     let node = Gc::new(InstanceAttrs::new(class, attrs, 777, false));

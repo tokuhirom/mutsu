@@ -283,6 +283,8 @@ pub(crate) struct MixData {
 }
 
 mod aliased_mut;
+/// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
+mod attr_map;
 mod display;
 mod error;
 mod error_construct;
@@ -314,6 +316,7 @@ mod view;
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
+pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 
@@ -352,7 +355,7 @@ static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone)]
 pub(crate) struct PendingInstanceDestroy {
     pub(crate) class_name: Symbol,
-    pub(crate) attributes: HashMap<String, Value>,
+    pub(crate) attributes: AttrMap,
 }
 
 thread_local! {
@@ -390,7 +393,7 @@ fn live_instance_refcounts(id: u64) -> &'static Mutex<HashMap<u64, usize>> {
 }
 
 /// The shared mutable attribute cell of an instance (Phase 3, Stage 1).
-pub(crate) type AttrCell = Arc<RwLock<HashMap<String, Value>>>;
+pub(crate) type AttrCell = Arc<RwLock<AttrMap>>;
 
 thread_local! {
     /// Addresses of attribute cells this thread is currently holding a read
@@ -413,15 +416,15 @@ thread_local! {
 
 /// A deferred cell write: `(cell address, cell, new map)`. See
 /// [`PENDING_CELL_WRITES`].
-type PendingCellWrite = (usize, AttrCell, HashMap<String, Value>);
+type PendingCellWrite = (usize, AttrCell, AttrMap);
 
-fn cell_addr(cell: &RwLock<HashMap<String, Value>>) -> usize {
-    cell as *const RwLock<HashMap<String, Value>> as usize
+fn cell_addr(cell: &RwLock<AttrMap>) -> usize {
+    cell as *const RwLock<AttrMap> as usize
 }
 
-/// A read guard over an instance's attribute map. Derefs to `&HashMap`, so the
+/// A read guard over an instance's attribute map. Derefs to `&AttrMap`, so the
 /// vast majority of read sites (`.get`, `.iter`, `.len`, `for (k, v) in ...`)
-/// and `&guard` argument coercions to `&HashMap` keep working unchanged. On
+/// and `&guard` argument coercions to `&AttrMap` keep working unchanged. On
 /// construction it records the cell address in [`HELD_READ_CELLS`]; on drop it
 /// removes it and, when this was the last read guard on the cell, applies any
 /// write that was deferred while the cell was read-locked.
@@ -429,7 +432,7 @@ pub(crate) struct AttrReadGuard<'a> {
     // `Option` so `Drop` can release the read lock *before* flushing deferred
     // writes — otherwise the flush's blocking write lock would deadlock against
     // this guard's own still-held read lock (struct fields drop after `drop`).
-    guard: Option<std::sync::RwLockReadGuard<'a, HashMap<String, Value>>>,
+    guard: Option<std::sync::RwLockReadGuard<'a, AttrMap>>,
     addr: usize,
 }
 
@@ -501,7 +504,7 @@ pub fn lookup_container_constraint(cell: &crate::gc::Gc<Mutex<Value>>) -> Option
 /// When this thread is *not* reading the cell we take a blocking write lock,
 /// which is required for correctness under genuine cross-thread contention
 /// (e.g. concurrent `cas` on a shared instance attribute must not drop updates).
-fn write_cell_respecting_reads(cell: &AttrCell, map: HashMap<String, Value>) {
+fn write_cell_respecting_reads(cell: &AttrCell, map: AttrMap) {
     let addr = cell_addr(cell);
     if HELD_READ_CELLS.with(|c| c.borrow().contains(&addr)) {
         PENDING_CELL_WRITES.with(|p| p.borrow_mut().push((addr, cell.clone(), map)));
@@ -514,14 +517,12 @@ fn write_cell_respecting_reads(cell: &AttrCell, map: HashMap<String, Value>) {
 /// poisoned attribute lock only means some thread panicked mid-mutation; the
 /// map itself is still a valid `HashMap`, and matching the codebase's other
 /// `lock().unwrap()` sites would just turn a poison into a second panic.
-fn read_attrs(cell: &RwLock<HashMap<String, Value>>) -> AttrReadGuard<'_> {
+fn read_attrs(cell: &RwLock<AttrMap>) -> AttrReadGuard<'_> {
     let guard = cell.read().unwrap_or_else(|e| e.into_inner());
     AttrReadGuard::new(guard, cell_addr(cell))
 }
 
-fn write_attrs(
-    cell: &RwLock<HashMap<String, Value>>,
-) -> std::sync::RwLockWriteGuard<'_, HashMap<String, Value>> {
+fn write_attrs(cell: &RwLock<AttrMap>) -> std::sync::RwLockWriteGuard<'_, AttrMap> {
     cell.write().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -1648,7 +1649,7 @@ pub(crate) struct WalkPendingState {
     pub(crate) targets: Vec<String>,
     pub(crate) args: Vec<Value>,
     pub(crate) invocant: Value,
-    pub(crate) attributes: std::collections::HashMap<String, Value>,
+    pub(crate) attributes: AttrMap,
     pub(crate) quiet: bool,
     pub(crate) idx: usize,
 }

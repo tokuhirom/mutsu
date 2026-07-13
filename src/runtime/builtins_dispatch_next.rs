@@ -387,7 +387,7 @@ impl Interpreter {
                             &method_name_for_dispatch,
                             &method_def,
                             &cc,
-                            HashMap::new(),
+                            AttrMap::new(),
                             call_args,
                             Some(invocant.clone()),
                             &empty_fns,
@@ -398,7 +398,7 @@ impl Interpreter {
                             &receiver_class,
                             &owner_class,
                             method_def,
-                            HashMap::new(),
+                            AttrMap::new(),
                             call_args,
                             Some(invocant.clone()),
                         )

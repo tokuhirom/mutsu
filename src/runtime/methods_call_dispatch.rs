@@ -271,7 +271,7 @@ impl Interpreter {
             if let Some(cn) = class_name
                 && self.has_user_method(&cn, method)
             {
-                let attrs = std::collections::HashMap::new();
+                let attrs = AttrMap::new();
                 let (result, _) = self.run_instance_method(&cn, attrs, method, args, None)?;
                 return Ok(result);
             }
@@ -1047,7 +1047,7 @@ impl Interpreter {
             && name.resolve() == "IO::Special"
             && method == "new"
         {
-            return self.native_io_special(&HashMap::new(), "new", args);
+            return self.native_io_special(&AttrMap::new(), "new", args);
         }
         // IO::Spec::* class methods
         if let ValueView::Package(name) = target.view() {

@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use num_bigint::BigInt;
 
 impl Interpreter {
@@ -97,7 +98,7 @@ impl Interpreter {
     /// single-class case, no qualified key) fall back to the bare key as before.
     pub(crate) fn store_qualified_attr(
         &mut self,
-        updated: &mut std::collections::HashMap<String, Value>,
+        updated: &mut AttrMap,
         instance_class: &str,
         qualifier: &str,
         attr: &str,
@@ -322,14 +323,14 @@ impl Interpreter {
         needle: &crate::gc::Gc<crate::value::ArrayData>,
         replacement: &Value,
     ) {
-        let mut updates: Vec<(Symbol, String)> = Vec::new();
+        let mut updates: Vec<(Symbol, Symbol)> = Vec::new();
         for (var_name, value) in self.env.iter() {
             if let ValueView::Instance { attributes, .. } = value.view() {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let ValueView::Array(arc, ..) = attr_val.view()
                         && crate::gc::Gc::ptr_eq(&arc, needle)
                     {
-                        updates.push((*var_name, attr_key.clone()));
+                        updates.push((*var_name, *attr_key));
                     }
                 }
             }
@@ -351,14 +352,14 @@ impl Interpreter {
         needle: &crate::gc::Gc<crate::value::HashData>,
         replacement: &Value,
     ) {
-        let mut updates: Vec<(Symbol, String)> = Vec::new();
+        let mut updates: Vec<(Symbol, Symbol)> = Vec::new();
         for (var_name, value) in self.env.iter() {
             if let ValueView::Instance { attributes, .. } = value.view() {
                 for (attr_key, attr_val) in attributes.as_map().iter() {
                     if let ValueView::Hash(arc) = attr_val.view()
                         && crate::gc::Gc::ptr_eq(&arc, needle)
                     {
-                        updates.push((*var_name, attr_key.clone()));
+                        updates.push((*var_name, *attr_key));
                     }
                 }
             }

@@ -1,6 +1,7 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 /// How a `whenever` QUIT phaser handled (or did not handle) an exception.
@@ -125,7 +126,7 @@ impl Interpreter {
         err
     }
 
-    pub(super) fn supply_is_terminated(attributes: &HashMap<String, Value>) -> bool {
+    pub(super) fn supply_is_terminated(attributes: &AttrMap) -> bool {
         supplier_id_from_attrs(attributes)
             .map(|supplier_id| {
                 let (_, done, quit_reason) = supplier_snapshot(supplier_id);

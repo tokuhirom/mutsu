@@ -1,4 +1,12 @@
 use super::*;
+use std::borrow::Cow;
+use std::cell::RefCell;
+
+thread_local! {
+    /// Reusable scratch buffer for the qualified private-attribute key
+    /// (`Owner\0attr`). Assembling it here keeps the hot `$!x` read allocation-free.
+    static QUALIFIED_ATTR_KEY: RefCell<String> = const { RefCell::new(String::new()) };
+}
 
 impl Interpreter {
     /// Assign a single value into a stack-computed Hash/Array `target` at `key`
@@ -90,47 +98,42 @@ impl Interpreter {
     /// cell stores attributes under the bare name, so all six twigil forms of an
     /// attribute resolve to the same cell slot.
     pub(super) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
-        // Optional `@`/`%` sigil, then the `!` (private) / `.` (public) twigil.
-        let rest = name
-            .strip_prefix('@')
-            .or_else(|| name.strip_prefix('%'))
-            .unwrap_or(name);
-        let (bare, is_private) = if let Some(b) = rest.strip_prefix('!') {
-            (b, true)
-        } else if let Some(b) = rest.strip_prefix('.') {
-            (b, false)
-        } else {
-            return None;
-        };
-        // Attribute names are ordinary identifiers (start alpha/underscore). This
-        // filters out `!=`, the bare `!`/`.` special vars, and `__mutsu_` keys.
-        match bare.chars().next() {
-            Some(c) if c.is_alphabetic() || c == '_' => Some((bare, is_private)),
-            _ => None,
-        }
+        crate::value::attr_twigil_base(name)
     }
 
-    /// Resolve the cell key for an attribute on the given instance, preferring
-    /// the method owner class's qualified private key when present (Parent/Child
-    /// same-named `$!priv` disambiguation), matching the order used when method
-    /// frames materialize attributes. Returns `None` when the attribute does not
-    /// exist in the cell (so non-attribute `.foo`/`!foo` lvalues fall through to
-    /// the normal local/env handling).
-    pub(crate) fn resolve_attr_cell_key(
+    /// The interned qualified private-attribute key `Owner\0bare`. Assembled in a
+    /// reusable thread-local buffer so the hot `$!x` read does not heap-allocate
+    /// a fresh key string on every access (it used to `format!` one).
+    fn qualified_attr_symbol(owner: &str, bare: &str) -> crate::symbol::Symbol {
+        QUALIFIED_ATTR_KEY.with(|buf| {
+            let mut buf = buf.borrow_mut();
+            buf.clear();
+            buf.push_str(owner);
+            buf.push('\0');
+            buf.push_str(bare);
+            crate::symbol::Symbol::intern(&buf)
+        })
+    }
+
+    /// Pick the cell key actually present in `map` for the attribute `(bare,
+    /// is_private)`, preferring the method owner class's qualified private key
+    /// when present (Parent/Child same-named `$!priv` disambiguation), matching
+    /// the order used when method frames materialize attributes. `None` when the
+    /// attribute does not exist in the cell.
+    fn attr_key_in_map(
         &self,
-        name: &str,
-        attrs: &crate::value::InstanceAttrs,
-    ) -> Option<String> {
-        let (bare, is_private) = Self::attr_twigil_base(name)?;
-        let map = attrs.as_map();
-        if is_private && let Some(owner) = self.method_class_stack_top() {
-            let qkey = format!("{}\0{}", owner, bare);
-            if map.contains_key(&qkey) {
-                return Some(qkey);
+        bare: crate::symbol::Symbol,
+        is_private: bool,
+        map: &crate::value::AttrMap,
+    ) -> Option<crate::symbol::Symbol> {
+        if is_private && let Some(owner) = self.method_class_stack_top_str() {
+            let qsym = Self::qualified_attr_symbol(owner, bare.as_str());
+            if map.contains_key(qsym) {
+                return Some(qsym);
             }
         }
         if map.contains_key(bare) {
-            Some(bare.to_string())
+            Some(bare)
         } else {
             None
         }
@@ -157,10 +160,43 @@ impl Interpreter {
     /// Mixin wrapping one), and the attribute exists in the cell.
     pub(super) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
         let twigil = self.canonical_attr_twigil(name)?;
+        let (bare, is_private) = Self::attr_twigil_base(&twigil)?;
+        self.read_attr_cell_by_key(crate::symbol::Symbol::intern(bare), is_private)
+    }
+
+    /// Slot form of [`Self::read_self_attr_cell`]: the attribute `Symbol` comes
+    /// pre-resolved from the chunk's local-slot table, so the hot `$!x` / `$.x`
+    /// read parses no twigil, interns no string and allocates nothing. Falls back
+    /// to the name-keyed path only for sigilless attributes (`has $x`), whose
+    /// alias must be followed through the runtime alias table.
+    pub(super) fn read_self_attr_cell_slot(
+        &self,
+        code: &CompiledCode,
+        idx: usize,
+    ) -> Option<Value> {
+        match code.local_attr_key(idx) {
+            Some((bare, is_private)) => self.read_attr_cell_by_key(bare, is_private),
+            None => {
+                if !self.sigilless_attrs_active {
+                    return None;
+                }
+                self.read_self_attr_cell(code.locals.get(idx)?)
+            }
+        }
+    }
+
+    /// The shared tail of both read paths: resolve `(bare, is_private)` against
+    /// `self`'s live cell under a single read guard and clone the value out.
+    fn read_attr_cell_by_key(
+        &self,
+        bare: crate::symbol::Symbol,
+        is_private: bool,
+    ) -> Option<Value> {
         let self_val = self.get_env_with_main_alias("self")?;
         let attributes = Self::self_instance_attrs(&self_val)?;
-        let key = self.resolve_attr_cell_key(&twigil, &attributes)?;
-        attributes.as_map().get(&key).cloned()
+        let map = attributes.as_map();
+        let key = self.attr_key_in_map(bare, is_private, &map)?;
+        map.get(key).cloned()
     }
 
     /// Map a variable name to its canonical attribute-twigil form for cell access:
@@ -169,14 +205,16 @@ impl Interpreter {
     /// `!x` twigil. Returns `None` for ordinary (non-attribute) names. The
     /// sigilless lookup is gated on `sigilless_attrs_active` so the common case
     /// (no sigilless attributes) costs only a string check on the hot read path.
-    pub(crate) fn canonical_attr_twigil(&self, name: &str) -> Option<String> {
+    pub(crate) fn canonical_attr_twigil<'n>(&self, name: &'n str) -> Option<Cow<'n, str>> {
         if Self::attr_twigil_base(name).is_some() {
-            return Some(name.to_string());
+            // The overwhelmingly common case: the name already *is* the twigil.
+            // Borrow it — this used to allocate a `String` on every attribute read.
+            return Some(Cow::Borrowed(name));
         }
         if !self.sigilless_attrs_active {
             return None;
         }
-        self.sigilless_attr_twigil(name)
+        self.sigilless_attr_twigil(name).map(Cow::Owned)
     }
 
     /// Follow the `__mutsu_sigilless_alias::` chain from a bare sigilless name
@@ -216,35 +254,45 @@ impl Interpreter {
     /// No-op when `name` is not a scalar attr-twigil, `self` is not a concrete
     /// instance, or the attribute does not exist on `self`.
     pub(super) fn write_self_attr_cell(&self, name: &str, val: Value) {
-        if Self::attr_twigil_base(name).is_none() {
+        let Some((bare, is_private)) = Self::attr_twigil_base(name) else {
             return;
-        }
+        };
+        self.write_attr_cell_by_key(crate::symbol::Symbol::intern(bare), is_private, val);
+    }
+
+    /// The shared tail of both write paths. Unwraps a `Mixin` self to the inner
+    /// instance's shared cell so a runtime-`does` mixin method's `$.attr`/`$!attr`
+    /// write persists (the cell is an `Arc<RwLock>` shared with the caller's
+    /// Mixin). No-op when `self` is not a concrete instance or the attribute does
+    /// not exist on it.
+    fn write_attr_cell_by_key(&self, bare: crate::symbol::Symbol, is_private: bool, val: Value) {
         let Some(self_val) = self.get_env_with_main_alias("self") else {
             return;
         };
-        // Unwrap a `Mixin` self to the inner instance's shared cell so a
-        // runtime-`does` mixin method's `$.attr`/`$!attr` write persists (the cell
-        // is an `Arc<RwLock>` shared with the caller's Mixin).
         let Some(attributes) = Self::self_instance_attrs(&self_val) else {
             return;
         };
-        if let Some(key) = self.resolve_attr_cell_key(name, &attributes) {
+        let key = {
+            let map = attributes.as_map();
+            self.attr_key_in_map(bare, is_private, &map)
+        };
+        if let Some(key) = key {
             attributes.insert(key, val);
         }
     }
 
     /// Mirror the current local slot value into `self`'s shared cell for a scalar
-    /// attribute, after the normal write logic has finalized the slot.
+    /// attribute, after the normal write logic has finalized the slot. The
+    /// attribute `Symbol` is pre-resolved per chunk, so a non-attribute slot (the
+    /// common case) costs one table load and an attribute slot allocates nothing.
     pub(super) fn mirror_attr_local_to_cell(&self, code: &CompiledCode, idx: usize) {
-        let Some(name) = code.locals.get(idx) else {
+        let Some((bare, is_private)) = code.local_attr_key(idx) else {
             return;
         };
-        if Self::attr_twigil_base(name).is_none()
-            || Self::is_non_mirrorable_attr_value(&self.locals[idx])
-        {
+        if Self::is_non_mirrorable_attr_value(&self.locals[idx]) {
             return;
         }
-        self.write_self_attr_cell(&name.clone(), self.locals[idx].clone());
+        self.write_attr_cell_by_key(bare, is_private, self.locals[idx].clone());
     }
 
     /// Mirror the finalized value of the variable named `name` into `self`'s

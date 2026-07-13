@@ -1,4 +1,5 @@
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
@@ -480,7 +481,7 @@ fn parse_tz_offset(s: &str) -> Result<i64, RuntimeError> {
 }
 
 /// Extract (year, month, day) from a Date instance's attributes.
-pub fn date_attrs(attributes: &HashMap<String, Value>) -> (i64, i64, i64) {
+pub fn date_attrs(attributes: &AttrMap) -> (i64, i64, i64) {
     // New format: year/month/day as separate attributes
     if let Some(ValueView::Int(y)) = attributes.get("year").map(Value::view) {
         let m = match attributes.get("month").map(Value::view) {
@@ -501,7 +502,7 @@ pub fn date_attrs(attributes: &HashMap<String, Value>) -> (i64, i64, i64) {
 }
 
 /// Extract DateTime components from attributes.
-pub fn datetime_attrs(attributes: &HashMap<String, Value>) -> (i64, i64, i64, i64, i64, f64, i64) {
+pub fn datetime_attrs(attributes: &AttrMap) -> (i64, i64, i64, i64, i64, f64, i64) {
     let year = match attributes.get("year").map(Value::view) {
         Some(ValueView::Int(y)) => y,
         _ => 1970,

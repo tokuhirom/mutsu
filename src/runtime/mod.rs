@@ -27,8 +27,8 @@ use crate::opcode::{CompiledCode, CompiledFunction};
 use crate::parse_dispatch;
 use crate::value::ValueView;
 use crate::value::{
-    ArrayKind, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel, SharedPromise,
-    Value, make_rat, take_pending_instance_destroys,
+    ArrayKind, AttrMap, EnumValue, JunctionKind, LazyList, RuntimeError, SharedChannel,
+    SharedPromise, Value, make_rat, take_pending_instance_destroys,
 };
 
 /// Flatten arguments for `append` using Raku's "one-arg rule":

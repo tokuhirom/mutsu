@@ -1,10 +1,10 @@
 use crate::value::{Value, ValueView};
-use std::collections::HashMap;
 
 use super::raku_repr::raku_value;
+use crate::value::AttrMap;
 
 /// Produce Raku-compatible `.raku` representation for a Match object.
-pub(super) fn match_raku_repr(attributes: &HashMap<String, Value>) -> String {
+pub(super) fn match_raku_repr(attributes: &AttrMap) -> String {
     let orig = attributes
         .get("orig")
         .map(|v| v.to_string_value())
@@ -100,7 +100,7 @@ pub(super) fn match_value_to(val: &Value) -> i64 {
 /// Collect all captures from a Match object sorted by position.
 /// Positional captures use `ValuePair(Int => Match)` and named captures use
 /// `Pair(Str => Match)` to preserve the Raku-visible key types.
-pub(super) fn match_caps(attributes: &HashMap<String, Value>) -> Value {
+pub(super) fn match_caps(attributes: &AttrMap) -> Value {
     let mut pairs: Vec<(i64, i64, Value)> = Vec::new();
 
     // Collect named capture positions to filter out shadowed positional captures
@@ -168,7 +168,7 @@ fn expand_capture_items(val: &Value) -> Vec<Value> {
 }
 
 /// Like `.caps` but also includes non-captured text between captures as `~ => text` pairs.
-pub(super) fn match_chunks(attributes: &HashMap<String, Value>) -> Value {
+pub(super) fn match_chunks(attributes: &AttrMap) -> Value {
     // Collect named capture positions to filter out shadowed positional captures
     let mut named_positions: Vec<(i64, i64)> = Vec::new();
     if let Some(ValueView::Hash(named)) = attributes.get("named").map(Value::view) {

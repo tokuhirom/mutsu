@@ -97,6 +97,26 @@ impl Symbol {
         sym
     }
 
+    /// Look a string up *without* interning it: `Some` only if the string has
+    /// already been interned by someone. Used by [`crate::value::AttrMap`]'s
+    /// string-keyed convenience lookups (`attrs.get("name")`), where a name that
+    /// was never interned cannot possibly be a key in the map — so a miss must
+    /// not grow the (append-only, leaked) symbol table with a name nothing else
+    /// uses.
+    pub fn lookup(s: &str) -> Option<Symbol> {
+        if let Some(sym) = INTERN_CACHE.with(|c| c.borrow().get(s).copied()) {
+            return Some(sym);
+        }
+        let sym = {
+            let table = global_table().read().unwrap();
+            table.str_to_id.get(s).copied()
+        }?;
+        INTERN_CACHE.with(|c| {
+            c.borrow_mut().insert(s.to_owned(), sym);
+        });
+        Some(sym)
+    }
+
     /// Intern via the globally-shared table (the source of truth for id
     /// assignment). Only reached on a thread-local cache miss.
     fn intern_global(s: &str) -> Symbol {

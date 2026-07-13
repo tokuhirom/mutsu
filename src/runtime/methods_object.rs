@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -358,7 +359,7 @@ impl Interpreter {
     pub(crate) fn apply_attribute_does_role_mixins(
         &mut self,
         class_key: &str,
-        attrs: &mut HashMap<String, Value>,
+        attrs: &mut AttrMap,
     ) {
         let mro = self.class_mro(class_key);
         let does_attrs: Vec<(String, Vec<String>)> = self

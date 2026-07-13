@@ -115,7 +115,8 @@ impl Interpreter {
                 if let Some(updated_iter) = self.env.get(iter_slot).cloned() {
                     if let ValueView::Instance { attributes, .. } = updated_iter.view() {
                         for (meta_key, source_name) in attributes.as_map().iter() {
-                            let Some(attr_name) = meta_key.strip_prefix("__mutsu_attr_alias::")
+                            let Some(attr_name) =
+                                meta_key.as_str().strip_prefix("__mutsu_attr_alias::")
                             else {
                                 continue;
                             };

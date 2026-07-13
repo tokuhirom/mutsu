@@ -3,6 +3,7 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Phase A of the on-demand supply runtime, shared by `tap`/`act`, the react
@@ -36,7 +37,7 @@ impl Interpreter {
     /// Extract source values from a Supply's attributes.
     pub(super) fn supply_get_values(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
     ) -> Result<Vec<Value>, RuntimeError> {
         if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
             let (_, emitted, _) = self.run_on_demand_body(on_demand_cb.clone(), None);
@@ -96,7 +97,7 @@ impl Interpreter {
     /// Keeps the promise with the last emitted value when done.
     pub(super) fn supply_promise_on_demand(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         promise: &crate::value::SharedPromise,
     ) -> Result<(), RuntimeError> {
         use crate::runtime::native_methods::take_supply_channel;

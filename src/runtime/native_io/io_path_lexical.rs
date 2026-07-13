@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Whether `class_name` is one of the built-in `IO::Path` family classes
@@ -35,7 +36,7 @@ impl Interpreter {
     /// receiver class (`IO::Path::Win32.parent` stays `IO::Path::Win32`).
     pub(crate) fn try_io_path_lexical(
         class_name: &str,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {

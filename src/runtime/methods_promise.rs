@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(crate) fn as_exception_value(value: Value) -> Value {
@@ -301,7 +302,7 @@ impl Interpreter {
 
     pub(super) fn dispatch_promise_vow_method(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

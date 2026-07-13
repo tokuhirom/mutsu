@@ -7,6 +7,7 @@ use super::state::*;
 use super::state_lock::*;
 use super::state_scheduler::{self, *};
 use super::state_supplier::{close_supplier_tap, take_supplier_close_callbacks};
+use crate::value::AttrMap;
 
 /// Parameters for a scheduled cue operation.
 struct CueParams {
@@ -121,7 +122,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_tap(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
     ) -> Result<Value, RuntimeError> {
         match method {
@@ -168,7 +169,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_cancellation(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
     ) -> Result<Value, RuntimeError> {
         match method {
@@ -190,7 +191,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_scheduler(
         &mut self,
-        _attributes: &HashMap<String, Value>,
+        _attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
         is_current_thread: bool,
@@ -294,10 +295,10 @@ impl Interpreter {
     /// Mutable dispatch for Scheduler: handles uncaught_handler setter.
     /// Returns (result_value, updated_attributes).
     pub(in crate::runtime) fn native_scheduler_mut(
-        attributes: HashMap<String, Value>,
+        attributes: AttrMap,
         method: &str,
         args: Vec<Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "uncaught_handler" => {
                 let handler = args.into_iter().next().unwrap_or(Value::NIL);
@@ -468,7 +469,7 @@ impl Interpreter {
 
     pub(in crate::runtime) fn native_fake_scheduler(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {

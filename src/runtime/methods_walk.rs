@@ -299,7 +299,7 @@ impl Interpreter {
         };
         let attributes_map = match invocant.view() {
             ValueView::Instance { attributes, .. } => attributes.to_map(),
-            _ => std::collections::HashMap::new(),
+            _ => AttrMap::new(),
         };
         let mut order: Vec<String> = targets;
         if reversed {

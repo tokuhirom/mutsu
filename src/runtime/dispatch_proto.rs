@@ -266,7 +266,7 @@ impl Interpreter {
         };
         let attributes = match invocant.view() {
             ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
-            _ => std::collections::HashMap::new(),
+            _ => crate::value::AttrMap::new(),
         };
         self.proto_dispatch_stack.push((
             method_name.to_string(),

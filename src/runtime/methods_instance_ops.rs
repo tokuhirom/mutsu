@@ -3,6 +3,7 @@ use super::methods_signature_errors::{
 };
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -982,7 +983,7 @@ impl Interpreter {
                     .unwrap_or(Value::NIL));
             }
             if method == "clone" {
-                let mut attrs: HashMap<String, Value> = attributes.to_map();
+                let mut attrs: AttrMap = attributes.to_map();
                 // A slot promoted to a `ContainerRef` cell (a `:=`-bound
                 // attribute) must not leak its cell into the clone: snapshot
                 // the inner value so a write to the clone's attribute stays
@@ -1416,7 +1417,7 @@ impl Interpreter {
                             caller_class.as_deref().unwrap_or("GLOBAL"),
                         ));
                     }
-                    let attrs = HashMap::new();
+                    let attrs = AttrMap::new();
                     let (result, _updated) = self.run_resolved_method_compiled_or_treewalk(
                         &name.resolve(),
                         &resolved_owner,
@@ -1432,7 +1433,7 @@ impl Interpreter {
             }
             // Package (type object) dispatch -- check user-defined methods
             if self.has_user_method(&name.resolve(), method) {
-                let attrs = HashMap::new();
+                let attrs = AttrMap::new();
                 let (result, _updated) =
                     self.run_instance_method(&name.resolve(), attrs, method, args, None)?;
                 return Ok(result);
@@ -1468,7 +1469,7 @@ impl Interpreter {
                 None
             };
             if let Some(dispatch_class) = dispatch_class {
-                let attrs = HashMap::new();
+                let attrs = AttrMap::new();
                 let (result, _updated) = self.run_instance_method(
                     dispatch_class,
                     attrs,
@@ -2162,11 +2163,7 @@ impl Interpreter {
 
     /// Collect public attribute representations for `.raku` output.
     /// Returns a list of `"name => value.raku"` strings for public attributes.
-    fn collect_public_raku_attrs(
-        &mut self,
-        class_name: &str,
-        attributes: &HashMap<String, Value>,
-    ) -> Vec<String> {
+    fn collect_public_raku_attrs(&mut self, class_name: &str, attributes: &AttrMap) -> Vec<String> {
         let class_attrs = self.collect_class_attributes(class_name);
         let mut parts = Vec::new();
         for (attr_name, is_public, _default, _is_rw, _is_required, _sigil, _where) in &class_attrs {

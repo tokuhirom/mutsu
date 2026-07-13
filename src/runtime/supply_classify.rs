@@ -3,13 +3,14 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Supply.unique implementation — filters duplicate values.
     /// Supports `:as`, `:with`, and `:expires` named parameters.
     pub(super) fn supply_unique(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let as_fn = Self::named_value(args, "as");
@@ -94,7 +95,7 @@ impl Interpreter {
     /// classification group. The mapper can be a Block, Hash, or Array.
     pub(super) fn supply_classify(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: &[Value],
         categorize: bool,
     ) -> Result<Value, RuntimeError> {

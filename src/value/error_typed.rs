@@ -444,7 +444,7 @@ impl RuntimeError {
                     attributes
                         .as_map()
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .map(|(k, v)| (k.resolve(), v.clone()))
                         .collect(),
                 ),
                 _ => ("X::AdHoc".to_string(), {

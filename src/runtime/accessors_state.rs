@@ -410,6 +410,13 @@ impl Interpreter {
         self.method_class_stack.last().cloned()
     }
 
+    /// Borrowing form of [`Self::method_class_stack_top`]. The attribute cell-key
+    /// resolution consults this on every `$!x` read, where the owned clone was a
+    /// per-access heap allocation.
+    pub(crate) fn method_class_stack_top_str(&self) -> Option<&str> {
+        self.method_class_stack.last().map(String::as_str)
+    }
+
     /// Set up a method dispatch frame for nextsame/callsame support.
     /// Returns true if a frame was pushed (caller must call pop_method_dispatch).
     /// Also pushes a samewith context unconditionally for samewith() support.

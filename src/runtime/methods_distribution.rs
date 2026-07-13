@@ -9,6 +9,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 
 use super::methods_distribution_helpers::{hash_strings, parse_json_value};
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Parse a JSON string into a Hash.
@@ -62,7 +63,7 @@ impl Interpreter {
     pub(crate) fn dispatch_distribution_method(
         &self,
         _class_name: &str,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -119,7 +120,7 @@ impl Interpreter {
     /// CUR::Installation method dispatch.
     pub(crate) fn dispatch_cur_installation_method(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {

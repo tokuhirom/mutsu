@@ -1,13 +1,10 @@
+use crate::value::AttrMap;
 use crate::value::{Value, ValueView};
-use std::collections::HashMap;
 
 /// Construct the `.message` string for a structured exception from its class
 /// name and attribute map.  Returns `None` when the class name is not
 /// recognised (caller should fall back to the generic behaviour).
-pub fn format_exception_message(
-    class_name: &str,
-    attrs: &HashMap<String, Value>,
-) -> Option<String> {
+pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<String> {
     match class_name {
         "X::Str::Numeric" => {
             let reason = attr_str(attrs, "reason");
@@ -158,7 +155,7 @@ pub fn format_exception_message(
 }
 
 /// Extract a string attribute, defaulting to "" if absent.
-fn attr_str(attrs: &HashMap<String, Value>, key: &str) -> String {
+fn attr_str(attrs: &AttrMap, key: &str) -> String {
     attrs
         .get(key)
         .map(|v| v.to_string_value())
@@ -166,7 +163,7 @@ fn attr_str(attrs: &HashMap<String, Value>, key: &str) -> String {
 }
 
 /// Extract a string attribute with a custom default.
-fn attr_str_or(attrs: &HashMap<String, Value>, key: &str, default: &str) -> String {
+fn attr_str_or(attrs: &AttrMap, key: &str, default: &str) -> String {
     attrs
         .get(key)
         .map(|v| v.to_string_value())

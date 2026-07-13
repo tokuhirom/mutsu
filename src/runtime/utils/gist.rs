@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 /// Render the `.gist` form of a Set/Bag/Mix (and their mutable `*Hash`
 /// variants): `Set(a b c)`, `Bag(a b(2))`, `Mix(a(1.5) b)`. Keys are sorted
@@ -241,7 +242,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
 ///
 /// A quantified capture (`(\w)+`) is a list of Match values, each emitted under
 /// the same index. `depth` controls indentation (one leading space per level).
-pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> String {
+pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
     let matched = attributes
         .get("str")
         .map(|s| s.to_string_value())
@@ -335,7 +336,7 @@ pub(crate) fn match_gist(attributes: &HashMap<String, Value>, depth: usize) -> S
 }
 
 /// The `from` (start offset) of a Match's attributes, or 0 when absent.
-fn match_from(attributes: &HashMap<String, Value>) -> i64 {
+fn match_from(attributes: &AttrMap) -> i64 {
     match attributes.get("from").map(Value::view) {
         Some(ValueView::Int(n)) => n,
         _ => 0,

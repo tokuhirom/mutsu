@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Single-path filesystem *mutations* on an `IO::Path`
@@ -13,7 +14,7 @@ impl Interpreter {
     /// and handle-opening `open` return `None` and stay in `native_io_path`.
     pub(crate) fn try_io_path_fs_mutate(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         class_name: &str,
         method: &str,
         args: &[Value],
@@ -29,7 +30,7 @@ impl Interpreter {
     /// previously held.
     fn io_path_fs_mutate(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         class_name: &str,
         method: &str,
         args: &[Value],
@@ -215,7 +216,7 @@ impl Interpreter {
     /// `None` for any other method.
     pub(crate) fn try_io_path_two_path_op(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
@@ -230,7 +231,7 @@ impl Interpreter {
     /// previously held.
     fn io_path_two_path_op(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {

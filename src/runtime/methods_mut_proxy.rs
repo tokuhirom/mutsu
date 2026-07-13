@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 use crate::value::InstanceAttrs;
 use crate::value::ValueView;
 
@@ -8,8 +9,8 @@ impl Interpreter {
         &mut self,
         callback: &Value,
         args: Vec<Value>,
-        instance_attrs: &HashMap<String, Value>,
-    ) -> Result<(Value, HashMap<String, Value>), RuntimeError> {
+        instance_attrs: &AttrMap,
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         if let ValueView::Sub(data) = callback.view() {
             let saved_env = self.env.clone();
             let mut new_env = saved_env.clone();
@@ -49,7 +50,7 @@ impl Interpreter {
             let mut updated_attrs = instance_attrs.clone();
             for attr_name in instance_attrs.keys() {
                 if let Some(val) = self.env.get(&format!("!{}", attr_name)) {
-                    updated_attrs.insert(attr_name.clone(), val.clone());
+                    updated_attrs.insert(*attr_name, val.clone());
                 }
             }
             // Propagate outer variable changes (e.g., our variables, closured scalars).
@@ -95,7 +96,7 @@ impl Interpreter {
         fetcher: &Value,
         target_var: Option<&str>,
         class_name: &str,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         target_id: u64,
     ) -> Result<Value, RuntimeError> {
         let proxy_val = Value::proxy_parts(fetcher.clone(), Value::NIL, None, false);
@@ -117,7 +118,7 @@ impl Interpreter {
         storer: &Value,
         target_var: Option<&str>,
         class_name: Symbol,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         attrs_cell: &crate::gc::Gc<InstanceAttrs>,
         new_value: Value,
     ) -> Result<Value, RuntimeError> {

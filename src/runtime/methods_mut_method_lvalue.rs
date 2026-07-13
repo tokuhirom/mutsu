@@ -974,13 +974,13 @@ impl Interpreter {
                 }
                 let attr_key = if attributes.contains_key(method) {
                     method.to_string()
-                } else if attributes.contains_key(&format!("@{}", method)) {
+                } else if attributes.contains_key(format!("@{}", method)) {
                     format!("@{}", method)
-                } else if attributes.contains_key(&format!("%{}", method)) {
+                } else if attributes.contains_key(format!("%{}", method)) {
                     format!("%{}", method)
-                } else if attributes.contains_key(&format!("${}", method)) {
+                } else if attributes.contains_key(format!("${}", method)) {
                     format!("${}", method)
-                } else if attributes.contains_key(&format!("!{}", method)) {
+                } else if attributes.contains_key(format!("!{}", method)) {
                     format!("!{}", method)
                 } else {
                     method.to_string()
@@ -1036,7 +1036,7 @@ impl Interpreter {
                 // Write through an existing `ContainerRef` slot (preserving any
                 // `:=`-bound alias of the attribute container); otherwise replace
                 // the entry as a bare value.
-                Value::hash_insert_through(&mut updated, attr_key.clone(), assigned_value.clone());
+                updated.insert_through(attr_key.as_str(), assigned_value.clone());
                 // Always propagate the change into this instance's live shared
                 // cell. This handles chained accessor assignment like
                 // `$outer.inner.arr = ...` where target_var may be None but the

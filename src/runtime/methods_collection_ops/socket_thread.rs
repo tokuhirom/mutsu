@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -443,7 +444,7 @@ impl Interpreter {
     /// Thread.finish -- join the thread (block until it completes)
     pub(in crate::runtime) fn dispatch_thread_finish(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
     ) -> Result<Value, RuntimeError> {
         let thread_id = attributes
             .get("id")

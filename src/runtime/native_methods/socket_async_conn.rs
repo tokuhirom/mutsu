@@ -4,11 +4,12 @@ use crate::symbol::Symbol;
 use std::sync::mpsc;
 
 use super::state::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(in crate::runtime) fn native_socket_async(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
@@ -165,7 +166,7 @@ impl Interpreter {
         &mut self,
         conn_id: Option<u64>,
         args: &[Value],
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
     ) -> Result<Value, RuntimeError> {
         let id = conn_id.ok_or_else(|| RuntimeError::new("Missing async conn-id"))?;
         let is_bin = Self::named_bool(args, "bin");

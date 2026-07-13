@@ -1,5 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
+use crate::value::AttrMap;
 
 impl Interpreter {
     /// Supply.merge(...) as a class method
@@ -350,7 +351,7 @@ impl Interpreter {
     /// Handle Supply instance .grab method
     pub(super) fn dispatch_supply_grab(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let values = match attributes.get("values").map(Value::view) {
@@ -371,7 +372,7 @@ impl Interpreter {
     /// Handle Supply instance .skip method
     pub(super) fn dispatch_supply_skip(
         &self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let n = if args.is_empty() {
@@ -404,7 +405,7 @@ impl Interpreter {
     /// Handle Supply.elems method
     pub(super) fn dispatch_supply_elems(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let interval = args.first().map(Value::to_f64).unwrap_or(0.0).max(0.0);
@@ -450,7 +451,7 @@ impl Interpreter {
     /// Handle Supply.map method
     pub(super) fn dispatch_supply_map(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let mapper = args.first().cloned().unwrap_or(Value::NIL);
@@ -499,7 +500,7 @@ impl Interpreter {
     /// eagerly instead.
     pub(in crate::runtime) fn make_live_transform_supply(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         callable: Value,
         mode: crate::runtime::native_methods::TransformMode,
     ) -> Option<Value> {
@@ -523,7 +524,7 @@ impl Interpreter {
     pub(super) fn dispatch_supply_reduce(
         &mut self,
         target: Value,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         callable: Value,
     ) -> Result<Value, RuntimeError> {
         if !matches!(

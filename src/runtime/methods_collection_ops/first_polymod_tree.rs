@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::AttrMap;
 
 impl Interpreter {
     pub(in crate::runtime) fn dispatch_first(
@@ -111,7 +112,7 @@ impl Interpreter {
 
     fn dispatch_supply_first(
         &mut self,
-        attributes: &HashMap<String, Value>,
+        attributes: &AttrMap,
         func: Option<Value>,
         has_end: bool,
     ) -> Result<Value, RuntimeError> {
