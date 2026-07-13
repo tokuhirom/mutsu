@@ -1501,11 +1501,67 @@ mod opcode_size_guard {
     }
 }
 
+#[cfg(test)]
+mod const_pool_dedup {
+    use super::*;
+
+    #[test]
+    fn equal_scalars_share_a_slot() {
+        let mut code = CompiledCode::new();
+        let a = code.add_constant(Value::int(42));
+        let b = code.add_constant(Value::int(42));
+        let s1 = code.add_constant(Value::str("elems".to_string()));
+        let s2 = code.add_constant(Value::str("elems".to_string()));
+        let other = code.add_constant(Value::int(7));
+        assert_eq!(a, b, "the same Int shares one slot");
+        assert_eq!(s1, s2, "the same Str shares one slot");
+        assert_ne!(a, other);
+        assert_eq!(code.constants.len(), 3, "42, \"elems\", 7");
+    }
+
+    #[test]
+    fn distinct_num_bit_patterns_keep_distinct_slots() {
+        let mut code = CompiledCode::new();
+        let pos = code.add_constant(Value::num(0.0));
+        let neg = code.add_constant(Value::num(-0.0));
+        // 0.0 == -0.0 numerically, but they are distinguishable values
+        // (1/0.0 vs 1/-0.0), so the pool must not merge them.
+        assert_ne!(pos, neg);
+    }
+
+    #[test]
+    fn identity_bearing_values_are_never_shared() {
+        let mut code = CompiledCode::new();
+        // Containers have an observable identity (`=:=`), so two equal-looking
+        // ones must keep their own slots.
+        let a = code.add_constant(Value::array(vec![Value::int(1)]));
+        let b = code.add_constant(Value::array(vec![Value::int(1)]));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn finalizing_drops_the_dedup_index() {
+        let mut code = CompiledCode::new();
+        code.add_constant(Value::int(1));
+        assert!(!code.const_index.is_empty());
+        code.compute_needs_env_sync();
+        assert!(
+            code.const_index.is_empty(),
+            "the index is compile-time scaffolding"
+        );
+    }
+}
+
 /// A compiled chunk of bytecode.
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
     pub(crate) constants: Vec<Value>,
+    /// Reverse index over `constants` for pool dedup (ADR-0006 §2.4): the same
+    /// literal or name string emitted at N sites shares one slot instead of
+    /// pushing N copies. Compile-time only — `finalize()` drops it once the
+    /// chunk stops growing, so it costs no memory in the executed code.
+    const_index: rustc_hash::FxHashMap<ConstKey, u32>,
     pub(crate) stmt_pool: Vec<Stmt>,
     pub(crate) locals: Vec<String>,
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
@@ -1787,11 +1843,44 @@ impl Clone for JitCodeState {
     }
 }
 
+/// Dedup key for the constant pool (ADR-0006 §2.4).
+///
+/// Only *value-identical-is-indistinguishable* scalars are keyed: two `Str`
+/// constants with the same text are interchangeable, whereas a container or an
+/// Instance has an observable identity and must keep its own slot (they simply
+/// get no key and are always pushed).
+///
+/// `Num` is keyed by its bit pattern, so `0.0` and `-0.0` stay distinct slots
+/// and NaN never dedups against anything (`to_bits` of two NaNs may differ,
+/// and a NaN key would never be looked up by an equal key anyway).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ConstKey {
+    Int(i64),
+    Num(u64),
+    Str(Arc<String>),
+    Bool(bool),
+    Rat(i64, i64),
+}
+
+impl ConstKey {
+    fn of(value: &Value) -> Option<Self> {
+        match value.view() {
+            ValueView::Int(i) => Some(ConstKey::Int(i)),
+            ValueView::Num(n) => Some(ConstKey::Num(n.to_bits())),
+            ValueView::Str(s) => Some(ConstKey::Str(Arc::clone(&s))),
+            ValueView::Bool(b) => Some(ConstKey::Bool(b)),
+            ValueView::Rat(n, d) => Some(ConstKey::Rat(n, d)),
+            _ => None,
+        }
+    }
+}
+
 impl CompiledCode {
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
             constants: Vec::new(),
+            const_index: rustc_hash::FxHashMap::default(),
             stmt_pool: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
@@ -1903,6 +1992,10 @@ impl CompiledCode {
     /// in this code. Locals only accessed via GetLocal don't need env sync,
     /// which reduces env size and makes method call env clones cheaper.
     pub(crate) fn compute_needs_env_sync(&mut self) {
+        // This chunk is finalized: drop the constant-pool dedup index, which is
+        // compile-time scaffolding (ADR-0006 §2.4). A constant added afterwards
+        // (a runtime-built chunk being patched) simply takes a fresh slot.
+        self.const_index = rustc_hash::FxHashMap::default();
         self.compute_locals_sym();
         self.compute_free_vars();
         // Collect env-only `my` declarations so the method-dispatch return merge
@@ -2924,9 +3017,29 @@ impl CompiledCode {
         }
     }
 
+    /// Intern `value` into the constant pool, sharing the slot of an identical
+    /// scalar constant already in it (ADR-0006 §2.4). The compiler pushes the
+    /// same name/literal from many emit sites (a method name string per call
+    /// site, `Value::NIL` per implicit return, ...), so the pool is heavily
+    /// duplicated without this.
+    ///
+    /// Values with an observable identity (containers, Instances, Regex, ...)
+    /// get no key and always take a fresh slot.
     pub(crate) fn add_constant(&mut self, value: Value) -> u32 {
+        let Some(key) = ConstKey::of(&value) else {
+            let idx = self.constants.len() as u32;
+            self.constants.push(value);
+            crate::vm::vm_stats::record_const_add(false);
+            return idx;
+        };
+        if let Some(&idx) = self.const_index.get(&key) {
+            crate::vm::vm_stats::record_const_add(true);
+            return idx;
+        }
         let idx = self.constants.len() as u32;
         self.constants.push(value);
+        self.const_index.insert(key, idx);
+        crate::vm::vm_stats::record_const_add(false);
         idx
     }
 

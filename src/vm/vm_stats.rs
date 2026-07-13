@@ -83,6 +83,14 @@ static ENV_DEEP_COPY: AtomicU64 = AtomicU64::new(0);
 static ENV_FLUSH: AtomicU64 = AtomicU64::new(0);
 static ENV_SLOTS_FLUSHED: AtomicU64 = AtomicU64::new(0);
 
+// Constant-pool interning (ADR-0006 §2.4). `CONST_POOL_ADDS` counts every
+// `CompiledCode::add_constant` call, `CONST_POOL_DEDUP_HITS` the ones that
+// reused an existing slot instead of pushing a copy. Compile-time counters:
+// they are fully accumulated before the program runs (plus whatever EVAL and
+// runtime-compiled blocks add later).
+static CONST_POOL_ADDS: AtomicU64 = AtomicU64::new(0);
+static CONST_POOL_DEDUP_HITS: AtomicU64 = AtomicU64::new(0);
+
 // GC Level 1a counters (ADR-0001/0002, docs/gc-level1-detailed-design.md
 // §8/§9.4a). As of §11 step 4 the candidate buffer exists, so
 // `candidate_pushes`/`dedup_hits` are live (they increment when `MUTSU_GC` is
@@ -287,6 +295,16 @@ pub(crate) fn record_env_flush(slots: u64) {
 /// `Value` variant is `Gc`-managed (§11 step 5) — dead until then.
 #[inline]
 #[allow(dead_code)]
+/// Record one `add_constant` call; `deduped` = it reused an existing pool slot.
+pub(crate) fn record_const_add(deduped: bool) {
+    if enabled() {
+        CONST_POOL_ADDS.fetch_add(1, Ordering::Relaxed);
+        if deduped {
+            CONST_POOL_DEDUP_HITS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
 pub(crate) fn record_gc_candidate_push() {
     if enabled() {
         GC_CANDIDATE_PUSHES.fetch_add(1, Ordering::Relaxed);
@@ -367,6 +385,16 @@ pub(crate) fn dump() {
     let slots = ENV_SLOTS_FLUSHED.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_flushes={env_flush} slots_flushed={slots}"
+    );
+    let const_adds = CONST_POOL_ADDS.load(Ordering::Relaxed);
+    let const_hits = CONST_POOL_DEDUP_HITS.load(Ordering::Relaxed);
+    let const_pct = if const_adds == 0 {
+        0.0
+    } else {
+        const_hits as f64 * 100.0 / const_adds as f64
+    };
+    eprintln!(
+        "[mutsu vm-stats] const-pool: add_constant={const_adds} dedup_hits={const_hits} ({const_pct:.1}% shared a slot)"
     );
     // GC Level 1a: candidate_pushes/dedup_hits are live as of §11 step 4
     // (nonzero only with MUTSU_GC=on once a Value variant is Gc-managed);
