@@ -481,6 +481,14 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key(&mut self, name: &str) {
+        // No atomic variable has ever been registered, so no `__mutsu_atomic_*`
+        // key can exist: skip the `format!`, the env probe, and the `shared_vars`
+        // read lock. This runs on EVERY scalar assignment, so the guard belongs
+        // here rather than at the (three, easily-missed) call sites — one of
+        // which already had it.
+        if !Self::atomic_var_seen_anywhere() {
+            return;
+        }
         let name_key = format!("__mutsu_atomic_name::{name}");
         // The name -> value_key mapping is authoritative in `shared_vars`
         // (it survives across frames), while `env` only mirrors it for the
@@ -514,6 +522,11 @@ impl Interpreter {
     }
 
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
+        // Same guard as `reset_atomic_var_key`: nothing to clear before any
+        // atomic variable exists, and this runs on every declaration.
+        if !Self::atomic_var_seen_anywhere() {
+            return;
+        }
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
         let mut shared = self.shared_vars.write().unwrap();

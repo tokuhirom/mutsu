@@ -1,5 +1,10 @@
 use super::*;
 
+/// Process-global, monotonic: set the first time any atomic variable / atomic
+/// storage is registered on ANY interpreter. See
+/// [`Interpreter::atomic_var_seen`] for why this cannot be per-interpreter.
+static ATOMIC_VAR_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl Interpreter {
     pub(crate) fn env(&self) -> &Env {
         &self.env
@@ -60,7 +65,7 @@ impl Interpreter {
         if let Some(constraint) = constraint {
             let info = Self::parse_container_constraint(name, &constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
-                self.atomic_var_seen = true;
+                self.mark_atomic_var_seen();
             }
             self.var_type_constraints
                 .insert(key.clone(), info.value_type.clone());
@@ -116,7 +121,7 @@ impl Interpreter {
             Some(c) => {
                 let info = Self::parse_container_constraint(name, &c);
                 if info.value_type == "atomicint" || c.contains("atomicint") {
-                    self.atomic_var_seen = true;
+                    self.mark_atomic_var_seen();
                 }
                 self.env.insert(meta_key, Value::str(info.value_type));
                 self.env_type_constraint_seen = true;
@@ -165,17 +170,35 @@ impl Interpreter {
     }
 
     /// Whether any `atomicint`/atomic-storage variable has ever been registered
-    /// (monotonic). When false, the hot variable-read path can skip the entire
-    /// atomic-variable check (which otherwise costs `format!`s and constraint
-    /// lookups on every `GetGlobal`/`GetLocal`).
+    /// *on this interpreter* (monotonic). When false, the hot variable-read path
+    /// skips the entire atomic-variable check (which otherwise costs `format!`s
+    /// and constraint lookups on every `GetGlobal`/`GetLocal`). Deliberately a
+    /// plain field, not the atomic below: this is read on the hottest op in the
+    /// VM, and an opaque atomic load there is not free.
     #[inline(always)]
     pub(crate) fn atomic_var_seen(&self) -> bool {
         self.atomic_var_seen
     }
 
-    /// Mark that an atomic variable / atomic storage has been registered.
+    /// Whether any atomic variable has ever been registered *anywhere in the
+    /// process* (monotonic). Needed — and only used — by the reset path
+    /// (`reset_atomic_var_key`), because `cas $x` inside a `start` block runs on
+    /// the WORKER's interpreter: with a per-interpreter flag the parent's copy
+    /// stays false, so a later `my $x` redeclaration in the parent skipped the
+    /// reset that detaches the new variable from the worker's shared atomic cell
+    /// (`t/cross-thread-shared-var-writeback-coherence.t` 4/6 — a later block's
+    /// `$seen` inherited an earlier block's contents). An over-set is
+    /// conservative: it only makes the (correct) reset run.
+    #[inline(always)]
+    pub(crate) fn atomic_var_seen_anywhere() -> bool {
+        ATOMIC_VAR_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Mark that an atomic variable / atomic storage has been registered, both on
+    /// this interpreter (for the read gates) and process-wide (for the reset gate).
     pub(crate) fn mark_atomic_var_seen(&mut self) {
         self.atomic_var_seen = true;
+        ATOMIC_VAR_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Whether any sigilless-parameter alias (`__mutsu_sigilless_alias::name` env

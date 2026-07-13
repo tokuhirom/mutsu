@@ -8,7 +8,7 @@ impl Interpreter {
     /// checks in `vm_var_assign_local.rs` and this file's non-bind path for
     /// why "elements are cells" alone is not a safe trigger.
     pub(crate) fn bound_array_slice_marker_key(name: &str) -> String {
-        format!("__mutsu_bound_array_slice::{name}")
+        runtime::bound_array_slice_key(name)
     }
 
     /// If `name` is a raw `\target` bound to a multi-dim slice lvalue (marked at
@@ -264,14 +264,18 @@ impl Interpreter {
             let name = &code.locals[idx];
             self.clear_var_default(name);
             // Clear the deleted-index tracker left over from a previous
-            // same-named variable in an outer scope.
-            let deleted_key = format!("__mutsu_deleted_index::{}", name);
-            self.env_mut().remove(&deleted_key);
+            // same-named variable in an outer scope. (Pre-interned key: this
+            // whole block runs on every declaration, so a loop-body `my $t`
+            // pays it once per iteration.)
+            if let Some(sym) = code.deleted_index_sym(idx) {
+                self.env_mut().remove_sym(sym);
+            }
             // Clear any sigilless-readonly flag inherited from an outer
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
             // in a called sub).
-            let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-            self.env_mut().remove(&readonly_key);
+            if let Some(sym) = code.readonly_sym(idx) {
+                self.env_mut().remove_sym(sym);
+            }
             // A fresh `my $x = ...` declaration (plain `=`, not `:=`) drops the
             // FORWARD sigilless `:=` alias (`alias::x = Y`) a PRIOR same-name
             // binding left, so `$x = v` no longer propagates to `Y`. Without
@@ -283,9 +287,11 @@ impl Interpreter {
             // redeclaration (`my $x = 2; my $y := $x; my $x = 3`) is the SAME
             // variable in raku, so `$y` must still track `$x`. `:=` (re)binds run
             // their own alias bookkeeping and are excluded.
-            if !is_bind && !scalar_bind {
-                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-                self.env_mut().remove(&alias_key);
+            if !is_bind
+                && !scalar_bind
+                && let Some(sym) = code.alias_sym(idx)
+            {
+                self.env_mut().remove_sym(sym);
             }
             // Clear any readonly-parameter flag inherited from a caller/outer
             // scope. `readonly_vars` is keyed by bare name and is NOT cleared on
@@ -304,12 +310,16 @@ impl Interpreter {
             }
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
-            // so saved frame propagation can still find it.
-            if matches!(
-                self.env().get(name).map(Value::view),
-                Some(ValueView::ContainerRef(_))
-            ) {
-                self.env_mut().insert(name.to_string(), Value::NIL);
+            // so saved frame propagation can still find it. Probed through the
+            // pre-interned local Symbol (a by-name `get` would re-intern on every
+            // declaration).
+            if let Some(sym) = code.locals_sym.get(idx).copied()
+                && matches!(
+                    self.env().get_sym(sym).map(Value::view),
+                    Some(ValueView::ContainerRef(_))
+                )
+            {
+                self.env_mut().insert_sym(sym, Value::NIL);
             }
             // Per-iteration freshness for box-on-capture (lever C Slice 2): if a
             // previous iteration's closure boxed this loop-body `my` into a
@@ -325,9 +335,13 @@ impl Interpreter {
             // declaration (bind or not) must not inherit "this array's
             // elements are write-through cells" from a prior scope/iteration.
             // Re-set below, in the `is_bind` arm, only if THIS declaration is
-            // genuinely a bound array slice.
-            self.env_mut()
-                .remove(&Self::bound_array_slice_marker_key(name));
+            // genuinely a bound array slice. Skipped entirely when no such
+            // marker was ever created (the common program).
+            if crate::env::bound_array_slice_possible()
+                && let Some(sym) = code.bound_slice_sym(idx)
+            {
+                self.env_mut().remove_sym(sym);
+            }
         }
 
         // Lazily convert pending alias bind names into local_bind_pairs.
