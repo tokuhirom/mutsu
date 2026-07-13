@@ -4128,6 +4128,19 @@ impl Interpreter {
                 self.exec_set_local_op(code, *idx)?;
                 *ip += 1;
             }
+            OpCode::SetLocalDecl {
+                slot,
+                explicit_init,
+            } => {
+                // The fused form of `MarkExplicitInitializerContext;
+                // MarkVarDeclContext; SetLocal` (ADR-0006 §2.3): set the very
+                // flags those markers set, then run the identical SetLocal body
+                // (which reads and clears them).
+                self.explicit_initializer_context = *explicit_init;
+                self.vardecl_context = true;
+                self.exec_set_local_op(code, *slot)?;
+                *ip += 1;
+            }
             OpCode::SetVarDynamic { name_idx, dynamic } => {
                 self.exec_set_var_dynamic_op(code, *name_idx, *dynamic);
                 *ip += 1;

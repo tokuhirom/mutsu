@@ -60,6 +60,7 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             OpCode::LoadConst(_)
             | OpCode::GetLocal(_)
             | OpCode::SetLocal(_)
+            | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
             | OpCode::SetSourceLine(_)
             | OpCode::CallFunc { .. }
@@ -101,6 +102,8 @@ struct Sigs {
     v_code_u32: SigRef,
     /// `(interp, code, u32) -> i32`
     s_code_u32: SigRef,
+    /// `(interp, code, u32, u32) -> i32`
+    s_code_u32_u32: SigRef,
     /// `(interp, code, u32, fns) -> i32`
     s_call: SigRef,
 }
@@ -122,6 +125,7 @@ fn make_sigs(module: &JITModule, b: &mut FunctionBuilder, ptr: Type) -> Sigs {
         v_i64: sig(&[ptr, types::I64], None),
         v_code_u32: sig(&[ptr, ptr, types::I32], None),
         s_code_u32: sig(&[ptr, ptr, types::I32], Some(types::I32)),
+        s_code_u32_u32: sig(&[ptr, ptr, types::I32, types::I32], Some(types::I32)),
         s_call: sig(&[ptr, ptr, types::I32, ptr], Some(types::I32)),
     }
 }
@@ -334,6 +338,20 @@ fn build(
                     sigs.s_code_u32,
                     helpers::set_local as *const () as usize,
                     &[interp, codep, idxv],
+                )?;
+                check_status(&mut b, status);
+            }
+            OpCode::SetLocalDecl {
+                slot,
+                explicit_init,
+            } => {
+                let slotv = b.ins().iconst(types::I32, *slot as i64);
+                let initv = b.ins().iconst(types::I32, i64::from(*explicit_init));
+                let status = call_helper(
+                    &mut b,
+                    sigs.s_code_u32_u32,
+                    helpers::set_local_decl as *const () as usize,
+                    &[interp, codep, slotv, initv],
                 )?;
                 check_status(&mut b, status);
             }
