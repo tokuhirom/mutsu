@@ -9,6 +9,7 @@ pub(super) struct LexicalScopeSnapshot {
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     constant_vars_in_scope: std::collections::HashSet<String>,
     constant_vars_current_scope: std::collections::HashSet<String>,
+    constant_values: std::collections::HashMap<String, Value>,
     my_vars_current_scope: std::collections::HashSet<String>,
     class_names_current_scope: std::collections::HashSet<String>,
 }
@@ -30,6 +31,11 @@ impl Compiler {
             dynamic_scope_names: self.dynamic_scope_names.clone(),
             constant_vars_in_scope: self.constant_vars_in_scope.clone(),
             constant_vars_current_scope: std::mem::take(&mut self.constant_vars_current_scope),
+            // Inlinable constant values follow the same lifecycle: one declared
+            // inside the entered block stops being inlined once it exits (it is
+            // then reached as an `our`-scoped package symbol), and an inner
+            // constant may shadow an outer one for the block's duration.
+            constant_values: self.constant_values.clone(),
             // The entered block starts with no `my` vars of its own, so a same-named
             // `my` inside it shadows (rather than redeclares) an outer one.
             my_vars_current_scope: std::mem::take(&mut self.my_vars_current_scope),
@@ -50,6 +56,7 @@ impl Compiler {
         // then resolves them via GetBareWord (package/global lookup).
         self.constant_vars_in_scope = saved.constant_vars_in_scope;
         self.constant_vars_current_scope = saved.constant_vars_current_scope;
+        self.constant_values = saved.constant_values;
         self.my_vars_current_scope = saved.my_vars_current_scope;
         self.class_names_current_scope = saved.class_names_current_scope;
     }

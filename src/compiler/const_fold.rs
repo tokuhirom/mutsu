@@ -1,11 +1,19 @@
-//! Compile-time constant folding of literal-only expressions (ADR-0006 §2.1).
+//! Compile-time constant folding and `constant` inlining (ADR-0006 §2.1/§2.2).
 //!
-//! A binary/unary expression whose operands are all literal scalars is
+//! A binary/unary expression whose operands are all constant scalars is
 //! evaluated at emit time and replaced by a single `LoadConst`. The evaluation
 //! calls the *same* native operator implementations the VM uses
 //! (`builtins::arith_*`, `Interpreter::concat_values`), so Int→BigInt
 //! promotion, `Int/Int → Rat`, and Num formatting automatically agree with
 //! runtime semantics — no separate "compile-time arithmetic" exists.
+//!
+//! An operand may also be an in-scope `constant` whose own initializer was a
+//! constant scalar (§2.2): its reads compile to `LoadConst` rather than a
+//! package lookup, and an `if`/`unless` whose condition becomes constant that
+//! way resolves its branch at compile time (`constant DEBUG = False;
+//! if DEBUG { note ... }` emits nothing). A branch proved unreachable is only
+//! dropped when it declares nothing — raku installs declarations even in a
+//! never-taken branch — see [`Compiler::branch_is_droppable`].
 //!
 //! Safety (ADR-0006 §2.1):
 //!
@@ -40,7 +48,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::Compiler;
-use crate::ast::Expr;
+use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
 
@@ -124,7 +132,9 @@ impl Compiler {
         if !self.const_fold_enabled() {
             return None;
         }
-        let value = fold_binary(left, op, right)?;
+        let l = self.const_operand(left)?;
+        let r = self.const_operand(right)?;
+        let value = fold_values(op, l, r)?;
         self.fold_ctx.folded.store(true, Ordering::Relaxed);
         Some(value)
     }
@@ -134,15 +144,133 @@ impl Compiler {
         if !self.const_fold_enabled() {
             return None;
         }
-        let value = fold_unary(op, expr)?;
+        let value = self.fold_unary(op, expr)?;
         self.fold_ctx.folded.store(true, Ordering::Relaxed);
         Some(value)
     }
 
+    /// The compile-time value of an in-scope `constant` NAME, if it has one
+    /// (ADR-0006 §2.2). Only constants whose initializer is itself a constant
+    /// *scalar* are tracked; a container constant keeps an observable identity
+    /// and is never inlined.
+    pub(super) fn constant_value(&self, name: &str) -> Option<&Value> {
+        if !self.const_fold_enabled() {
+            return None;
+        }
+        // mutsu strips sigils in the AST, so a `my $DEBUG` / a parameter `$DEBUG`
+        // and a sigilless `constant DEBUG` collide on the same `local_map` key.
+        // Anything holding that key which is not the constant itself shadows it:
+        // fall back to the ordinary (GetLocal/GetBareWord) resolution.
+        if self.local_map.contains_key(name) && !self.constant_vars_in_scope.contains(name) {
+            return None;
+        }
+        if self.sigilless_locals.contains(name) {
+            return None;
+        }
+        self.constant_values
+            .get(name)
+            .or_else(|| self.outer_constant_values.get(name))
+    }
+
+    /// Record `constant NAME = <expr>` when its value is a constant scalar, so
+    /// later reads compile to `LoadConst` instead of a package/global lookup.
+    pub(super) fn note_constant_decl(&mut self, name: &str, init: &Expr) {
+        if !self.const_fold_enabled() {
+            return;
+        }
+        match self.const_operand(init) {
+            Some(value) => {
+                self.constant_values.insert(name.to_string(), value);
+            }
+            // A non-constant initializer (`constant NOW = now`) shadows any outer
+            // same-named constant's value: reads of it must not inline.
+            None => self.forget_constant(name),
+        }
+    }
+
+    /// An ordinary declaration of `name` (a `my`/`state` variable) shadows a
+    /// same-named constant — stop inlining it.
+    pub(super) fn forget_constant(&mut self, name: &str) {
+        self.constant_values.remove(name);
+        self.outer_constant_values.remove(name);
+    }
+
+    /// Evaluate an expression to a constant scalar, resolving in-scope
+    /// `constant` reads. `None` = not a compile-time constant.
+    pub(super) fn const_operand(&self, expr: &Expr) -> Option<Value> {
+        match expr {
+            Expr::Literal(v) | Expr::LiteralSrc(v, _) => const_scalar(v).then(|| v.clone()),
+            Expr::Grouped(inner) => self.const_operand(inner),
+            Expr::Unary { op, expr } => self.fold_unary(op, expr),
+            Expr::Binary { left, op, right } => {
+                let l = self.const_operand(left)?;
+                let r = self.const_operand(right)?;
+                fold_values(op, l, r)
+            }
+            // Only sigilless constant reads (`constant DEBUG = False`) resolve
+            // here. A `constant $x` is read as `Expr::Var`, which shares its
+            // `local_map` key with an ordinary `my $x`, so it is left alone.
+            Expr::BareWord(name) => self.constant_value(name).cloned(),
+            _ => None,
+        }
+    }
+
+    fn fold_unary(&self, op: &TokenKind, expr: &Expr) -> Option<Value> {
+        let value = self.const_operand(expr)?;
+        match op {
+            // `-"3"` goes through the VM's string→numeric coercion (which can
+            // raise X::Str::Numeric), so only numeric constants fold.
+            TokenKind::Minus if const_numeric(&value) => crate::builtins::arith_negate(value).ok(),
+            TokenKind::Bang => Some(Value::truth(!value.truthy())),
+            _ => None,
+        }
+    }
+
     /// Share this unit's fold state with a child (sub/closure body) compiler.
+    /// The child also inherits the constants visible at its definition point, so
+    /// a `constant DEBUG` read inside a sub body still inlines.
     pub(super) fn inherit_fold_ctx(&self, child: &mut Compiler) {
         child.fold_ctx = Arc::clone(&self.fold_ctx);
         child.fold_root = false;
+        child.outer_constant_values = self
+            .outer_constant_values
+            .iter()
+            .chain(self.constant_values.iter())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+    }
+
+    /// The `if`/`unless` condition's compile-time truth value, if it has one
+    /// (ADR-0006 §2.2 — `constant DEBUG = False; if DEBUG {...}`).
+    pub(super) fn const_condition(&self, cond: &Expr) -> Option<bool> {
+        self.const_operand(cond).map(|v| v.truthy())
+    }
+
+    /// Whether a branch that a constant condition proved unreachable may simply
+    /// not be emitted.
+    ///
+    /// Raku *compiles* declarations regardless of the branch being taken — a
+    /// `sub` or `constant` inside `if False {...}` is still installed — so a
+    /// branch is only dropped when it holds nothing but plain expression
+    /// statements (the `if DEBUG { note ... }` logging-guard shape). Anything
+    /// else (declarations, phasers, control flow, `use`) compiles normally and
+    /// the runtime branch stays.
+    pub(super) fn branch_is_droppable(stmts: &[Stmt]) -> bool {
+        stmts.iter().all(|s| match s {
+            Stmt::SetLine(_) => true,
+            Stmt::Expr(e) => expr_is_droppable(e),
+            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+                es.iter().all(expr_is_droppable)
+            }
+            Stmt::Call { args, .. } => args.iter().all(|a| match a {
+                crate::ast::CallArg::Positional(e)
+                | crate::ast::CallArg::Invocant(e)
+                | crate::ast::CallArg::Slip(e)
+                | crate::ast::CallArg::Named { value: Some(e), .. } => expr_is_droppable(e),
+                crate::ast::CallArg::Named { value: None, .. } => true,
+            }),
+            _ => false,
+        })
     }
 
     /// Flag a declaration whose name may install a user-defined operator
@@ -151,6 +279,27 @@ impl Compiler {
         if declares_operator(name) {
             self.fold_ctx.note_operator_decl();
         }
+    }
+}
+
+/// Whether an expression is free of anything Raku installs at *compile* time
+/// (a declaration, an embedded block that could hold one, a phaser), so a
+/// constant-false branch containing it can simply not be emitted. Deliberately
+/// a small whitelist: an expression form not listed here keeps the branch.
+fn expr_is_droppable(expr: &Expr) -> bool {
+    match expr {
+        Expr::Literal(_)
+        | Expr::LiteralSrc(..)
+        | Expr::Var(_)
+        | Expr::ArrayVar(_)
+        | Expr::HashVar(_)
+        | Expr::BareWord(_) => true,
+        Expr::Grouped(inner) => expr_is_droppable(inner),
+        Expr::StringInterpolation(parts) => parts.iter().all(expr_is_droppable),
+        Expr::Unary { expr, .. } => expr_is_droppable(expr),
+        Expr::Binary { left, right, .. } => expr_is_droppable(left) && expr_is_droppable(right),
+        Expr::Call { args, .. } => args.iter().all(expr_is_droppable),
+        _ => false,
     }
 }
 
@@ -176,33 +325,6 @@ fn const_numeric(value: &Value) -> bool {
         value.view(),
         ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Num(_) | ValueView::Rat(..)
     )
-}
-
-/// Evaluate an expression to a constant scalar, or `None` if it is not one.
-fn const_operand(expr: &Expr) -> Option<Value> {
-    match expr {
-        Expr::Literal(v) | Expr::LiteralSrc(v, _) => const_scalar(v).then(|| v.clone()),
-        Expr::Grouped(inner) => const_operand(inner),
-        Expr::Unary { op, expr } => fold_unary(op, expr),
-        Expr::Binary { left, op, right } => fold_binary(left, op, right),
-        _ => None,
-    }
-}
-
-fn fold_unary(op: &TokenKind, expr: &Expr) -> Option<Value> {
-    let value = const_operand(expr)?;
-    match op {
-        // `-"3"` goes through the VM's string→numeric coercion (which can raise
-        // X::Str::Numeric), so only numeric literals fold.
-        TokenKind::Minus if const_numeric(&value) => crate::builtins::arith_negate(value).ok(),
-        _ => None,
-    }
-}
-
-fn fold_binary(left: &Expr, op: &TokenKind, right: &Expr) -> Option<Value> {
-    let l = const_operand(left)?;
-    let r = const_operand(right)?;
-    fold_values(op, l, r)
 }
 
 /// Apply `op` to two constant scalars using the VM's own operator
@@ -297,7 +419,7 @@ mod tests {
             TokenKind::Star,
             int(24),
         );
-        let folded = const_operand(&expr).expect("folds");
+        let folded = Compiler::new().const_operand(&expr).expect("folds");
         assert_eq!(folded.as_int(), Some(86400));
     }
 
@@ -307,7 +429,10 @@ mod tests {
             op: TokenKind::Minus,
             expr: Box::new(int(7)),
         };
-        assert_eq!(const_operand(&expr).unwrap().as_int(), Some(-7));
+        assert_eq!(
+            Compiler::new().const_operand(&expr).unwrap().as_int(),
+            Some(-7)
+        );
     }
 
     #[test]
@@ -364,6 +489,6 @@ mod tests {
     #[test]
     fn variables_do_not_fold() {
         let expr = bin(Expr::Var("x".to_string()), TokenKind::Plus, int(1));
-        assert!(const_operand(&expr).is_none());
+        assert!(Compiler::new().const_operand(&expr).is_none());
     }
 }

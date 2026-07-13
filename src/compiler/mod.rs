@@ -246,6 +246,16 @@ pub(crate) struct Compiler {
     /// True only for the compiler that owns `fold_ctx` (the unit-level one).
     /// Child compilers inherit the Arc and must not trigger the refold pass.
     fold_root: bool,
+    /// Compile-time values of in-scope `constant`s whose initializer is itself a
+    /// constant scalar (ADR-0006 §2.2). Reads of these compile to `LoadConst`
+    /// instead of a package lookup, and an `if`/`unless` on one resolves its
+    /// branch at compile time. Follows `constant_vars_in_scope`'s lifecycle: a
+    /// constant leaving its declaring block stops being inlined (it is then an
+    /// `our`-scoped package symbol again).
+    constant_values: HashMap<String, Value>,
+    /// Same, for constants declared in an *enclosing* compiler — a sub body must
+    /// still inline the file-level `constant DEBUG` it reads.
+    outer_constant_values: HashMap<String, Value>,
 }
 
 impl Compiler {
@@ -292,6 +302,8 @@ impl Compiler {
             next_try_is_bare_block: false,
             fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),
             fold_root: true,
+            constant_values: HashMap::new(),
+            outer_constant_values: HashMap::new(),
         }
     }
 

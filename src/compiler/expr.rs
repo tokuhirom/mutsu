@@ -155,6 +155,14 @@ impl Compiler {
                 self.code.emit(OpCode::ReactDone);
             }
             Expr::BareWord(name) => {
+                // An in-scope `constant` with a compile-time scalar value is read
+                // straight from the constant pool (ADR-0006 §2.2) instead of a
+                // GetLocal / GetBareWord package lookup.
+                if let Some(value) = self.constant_value(name).cloned() {
+                    let idx = self.code.add_constant(value);
+                    self.code.emit(OpCode::LoadConst(idx));
+                    return;
+                }
                 // Only resolve to GetLocal for sigilless bindings (e.g. `my \Foo = ...`)
                 // or builtin-type-safe locals.  `$`-sigiled variables whose `$` was
                 // stripped share the same key in local_map but must NOT shadow type
