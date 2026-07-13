@@ -1585,6 +1585,17 @@ pub(crate) struct CompiledCode {
     /// Pre-interned Symbol for each local name. Avoids Symbol::intern()
     /// on every env sync in hot paths.
     pub(crate) locals_sym: Vec<Symbol>,
+    /// Pre-interned Symbol of the `__mutsu_sigilless_alias::<name>` env key for
+    /// each local. The scalar-assignment hot path probes that key on EVERY store
+    /// (to propagate the new value to a `:=` alias target); building the key with
+    /// `format!` per store cost a String allocation plus a `Symbol::intern` string
+    /// hash, which profiled as ~19% of bench-mandelbrot. Interned once here, the
+    /// probe is a plain `Env::get_sym`.
+    pub(crate) locals_alias_sym: Vec<Symbol>,
+    /// Pre-interned Symbol of the `__mutsu_sigilless_readonly::<name>` env key
+    /// for each local — the readonly half of the pair described above, probed on
+    /// every assignment for the same reason.
+    pub(crate) locals_readonly_sym: Vec<Symbol>,
     /// Bitmap: true if local[i] is eligible for SetLocal fast path
     /// (simple $-prefixed scalar, no twigils, no ::, no _ topic, no ./! attrs).
     pub(crate) simple_locals: Vec<bool>,
@@ -1904,6 +1915,8 @@ impl CompiledCode {
             stmt_pool: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
+            locals_alias_sym: Vec::new(),
+            locals_readonly_sym: Vec::new(),
             simple_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
@@ -2003,8 +2016,44 @@ impl CompiledCode {
     }
 
     /// Pre-intern all local names as Symbols.
+    /// The interned `__mutsu_sigilless_alias::<name>` env key of local `idx`.
+    /// Served from the pre-interned table; a hand-built chunk that never ran
+    /// `compute_locals_sym` falls back to interning it on the spot, so the probe
+    /// is never silently skipped.
+    pub(crate) fn alias_sym(&self, idx: usize) -> Option<Symbol> {
+        match self.locals_alias_sym.get(idx) {
+            Some(sym) => Some(*sym),
+            None => self
+                .locals
+                .get(idx)
+                .map(|n| Symbol::intern(&crate::runtime::sigilless_alias_key(n))),
+        }
+    }
+
+    /// The interned `__mutsu_sigilless_readonly::<name>` env key of local `idx`.
+    /// See [`CompiledCode::alias_sym`].
+    pub(crate) fn readonly_sym(&self, idx: usize) -> Option<Symbol> {
+        match self.locals_readonly_sym.get(idx) {
+            Some(sym) => Some(*sym),
+            None => self
+                .locals
+                .get(idx)
+                .map(|n| Symbol::intern(&crate::runtime::sigilless_readonly_key(n))),
+        }
+    }
+
     pub(crate) fn compute_locals_sym(&mut self) {
         self.locals_sym = self.locals.iter().map(|s| Symbol::intern(s)).collect();
+        self.locals_alias_sym = self
+            .locals
+            .iter()
+            .map(|s| Symbol::intern(&crate::runtime::sigilless_alias_key(s)))
+            .collect();
+        self.locals_readonly_sym = self
+            .locals
+            .iter()
+            .map(|s| Symbol::intern(&crate::runtime::sigilless_readonly_key(s)))
+            .collect();
     }
 
     /// Compute which locals need to be synced to env.

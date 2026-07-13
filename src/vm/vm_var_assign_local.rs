@@ -346,15 +346,21 @@ impl Interpreter {
             // object Any (the reset guard is a no-op for `@`/`%` containers).
             val = self.reset_nil_untyped_scalar(name, val);
         }
-        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-        if matches!(
-            self.env().get(&readonly_key).map(Value::view),
-            Some(ValueView::Bool(true))
-        ) && !matches!(
-            self.env().get(&alias_key).map(Value::view),
-            Some(ValueView::Str(_))
-        ) {
+        // A sigilless-readonly binding can only exist once the program created a
+        // `__mutsu_sigilless_*` key, so skip the probe (and its two `format!`s)
+        // entirely otherwise — this runs on every expression-context assignment.
+        if crate::env::closure_meta_keys_possible()
+            && let Some(readonly_sym) = code.readonly_sym(idx)
+            && let Some(alias_sym) = code.alias_sym(idx)
+            && matches!(
+                self.env().get_sym(readonly_sym).map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+            && !matches!(
+                self.env().get_sym(alias_sym).map(Value::view),
+                Some(ValueView::Str(_))
+            )
+        {
             return Err(RuntimeError::assignment_ro(None));
         }
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
@@ -410,13 +416,18 @@ impl Interpreter {
         }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
-        if let Some(alias_name) = self.env().get(&alias_key).and_then(|v| {
-            if let ValueView::Str(name) = v.view() {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        }) {
+        if crate::env::closure_meta_keys_possible()
+            && let Some(alias_name) = code
+                .alias_sym(idx)
+                .and_then(|sym| self.env().get_sym(sym))
+                .and_then(|v| {
+                    if let ValueView::Str(name) = v.view() {
+                        Some(name.to_string())
+                    } else {
+                        None
+                    }
+                })
+        {
             self.update_local_if_exists(code, &alias_name, &val);
             self.env_mut().insert(alias_name.clone(), val.clone());
             // Slice F: a sigilless param (`\target`) aliases a caller variable;
