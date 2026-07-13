@@ -113,6 +113,18 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
 /// reads it, so `Relaxed` ordering suffices.
 static CLOSURE_META_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for `__mutsu_bound::*` keys (the `:=`-bound
+/// container markers consulted by `CheckReadOnly` on every whole-variable
+/// assignment). Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every
+/// creation site flows through the String-keyed [`Env::insert`], the flag is
+/// monotonic, and an over-set only makes the (correct) check run.
+static BOUND_KEY_SEEN: AtomicBool = AtomicBool::new(false);
+
+/// Monotonic, process-global flag for `__mutsu_bound_array_slice::*` markers
+/// (sigilless multi-dim slice binds), consulted by
+/// `distribute_bound_multidim_slice` on every scalar `SetLocal`/assignment.
+static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// True if any closure-writeback metadata key may exist in some env. See
 /// [`CLOSURE_META_KEY_SEEN`].
 #[inline]
@@ -120,17 +132,36 @@ pub(crate) fn closure_meta_keys_possible() -> bool {
     CLOSURE_META_KEY_SEEN.load(Ordering::Relaxed)
 }
 
-/// Flip [`CLOSURE_META_KEY_SEEN`] if `key` is a closure-writeback metadata key.
-/// The outer `__mutsu_` gate keeps this ~1 byte compare for ordinary lexical
-/// names (which never start with `_`).
+/// True if any `__mutsu_bound::*` marker may exist in some env. See
+/// [`BOUND_KEY_SEEN`].
+#[inline]
+pub(crate) fn bound_marker_possible() -> bool {
+    BOUND_KEY_SEEN.load(Ordering::Relaxed)
+}
+
+/// True if any `__mutsu_bound_array_slice::*` marker may exist in some env.
+/// See [`BOUND_SLICE_KEY_SEEN`].
+#[inline]
+pub(crate) fn bound_array_slice_possible() -> bool {
+    BOUND_SLICE_KEY_SEEN.load(Ordering::Relaxed)
+}
+
+/// Flip [`CLOSURE_META_KEY_SEEN`] / [`BOUND_KEY_SEEN`] if `key` is one of the
+/// tracked metadata keys. The outer `__mutsu_` gate keeps this ~1 byte compare
+/// for ordinary lexical names (which never start with `_`).
 #[inline]
 fn note_closure_meta_key(key: &str) {
-    if key.as_bytes().starts_with(b"__mutsu_")
-        && (key.starts_with("__mutsu_sigilless_")
+    if key.as_bytes().starts_with(b"__mutsu_") {
+        if key.starts_with("__mutsu_sigilless_")
             || key.starts_with("__mutsu_state_key::")
-            || key.starts_with("__mutsu_predictive_seq_iter::"))
-    {
-        CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
+            || key.starts_with("__mutsu_predictive_seq_iter::")
+        {
+            CLOSURE_META_KEY_SEEN.store(true, Ordering::Relaxed);
+        } else if key.starts_with("__mutsu_bound::") {
+            BOUND_KEY_SEEN.store(true, Ordering::Relaxed);
+        } else if key.starts_with("__mutsu_bound_array_slice::") {
+            BOUND_SLICE_KEY_SEEN.store(true, Ordering::Relaxed);
+        }
     }
 }
 

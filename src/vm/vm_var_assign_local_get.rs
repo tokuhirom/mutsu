@@ -149,10 +149,16 @@ impl Interpreter {
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
             )
-            && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
+            // Probe via the pre-interned Symbol (this read runs on every
+            // GetLocal — a by-name lookup would re-intern per read).
+            && let Some(env_hit) = code
+                .locals_sym
+                .get(idx)
+                .map_or_else(|| self.env().get(name), |sym| self.env().get_sym(*sym))
+            && let Some(arc) = match env_hit.view() {
                 ValueView::ContainerRef(arc) => Some(arc.clone()),
                 _ => None,
-            })
+            }
         {
             self.locals[idx] = Value::container_ref(arc);
         }

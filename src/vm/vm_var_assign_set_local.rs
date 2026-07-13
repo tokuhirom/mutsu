@@ -31,6 +31,11 @@ impl Interpreter {
         if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
             return None;
         }
+        // No `__mutsu_bound_array_slice::*` marker was ever created (the
+        // common program): skip the per-assignment `format!` + env probe.
+        if !crate::env::bound_array_slice_possible() {
+            return None;
+        }
         if !matches!(
             self.env()
                 .get(&Self::bound_array_slice_marker_key(name))
@@ -234,7 +239,14 @@ impl Interpreter {
         // `SetLocal` counterpart of the same write-through in
         // `exec_assign_expr_local_op_inner` / `exec_assign_expr_op_inner`.
         // Excluded for a `:=` bind / declaration, which replaces the binding.
-        if !is_bind && !is_vardecl && !is_rebind && !scalar_bind {
+        if !is_bind
+            && !is_vardecl
+            && !is_rebind
+            && !scalar_bind
+            // Gate before the String/holder clones: no slice marker was ever
+            // created in the common program.
+            && crate::env::bound_array_slice_possible()
+        {
             let name = code.locals[idx].clone();
             let holder = self.locals[idx].clone();
             if let Some(res) = self.distribute_bound_multidim_slice(&name, &holder, &raw_popped) {
@@ -332,10 +344,16 @@ impl Interpreter {
             if !is_rebind
                 && !self.locals[idx].is_container_ref()
                 && !is_vardecl
-                && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
+                // Probe via the pre-interned Symbol (this runs on every simple
+                // SetLocal — a by-name lookup would re-intern per write).
+                && let Some(env_hit) = code
+                    .locals_sym
+                    .get(idx)
+                    .map_or_else(|| self.env().get(name), |sym| self.env().get_sym(*sym))
+                && let Some(arc) = match env_hit.view() {
                     ValueView::ContainerRef(arc) => Some(arc.clone()),
                     _ => None,
-                })
+                }
             {
                 self.locals[idx] = Value::container_ref(arc);
             }

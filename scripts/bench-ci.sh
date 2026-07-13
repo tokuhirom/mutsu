@@ -66,4 +66,17 @@ for bench in benchmarks/*.raku; do
         ratio=NA
     fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$RUNS"
+
+    # JIT-on pass (ADR-0004 layer 4): recorded as its own benchmark name so
+    # the history/regression tooling treats it as a separate series. The raku
+    # median from the plain pass above is reused for the ratio (same runner,
+    # same job — measuring raku twice would only add noise).
+    read -r j_med j_min <<<"$(export MUTSU_JIT=on; bench_binary "$MUTSU" "$bench")"
+    if [ "$j_med" != NA ] && [ "$r_med" != NA ]; then
+        j_ratio=$(awk -v m="$j_med" -v r="$r_med" \
+            'BEGIN{ if (r > 0) printf "%.2f", m / r; else print "NA" }')
+    else
+        j_ratio=NA
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name+jit" "$j_med" "$j_min" "$r_med" "$j_ratio" "$RUNS"
 done
