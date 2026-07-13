@@ -476,11 +476,12 @@ impl Interpreter {
             {
                 return Err(err);
             }
-            // Update env when shared_vars is active; otherwise write through to env.
+            // Update env when shared_vars is active. The non-shared write-through
+            // is the unconditional `flush_local_to_env` at the end of this path;
+            // `self.locals[idx]` is not touched in between, so flushing here too
+            // would be a second env insert (and a second COW fork) per store.
             if self.shared_vars_active {
                 loan_env!(self, set_shared_var(name, self.locals[idx].clone()));
-            } else {
-                self.flush_local_to_env(code, idx);
             }
             // When rebinding (`$x := expr`), remove old bind pairs and reverse aliases.
             if is_rebind {
@@ -511,20 +512,21 @@ impl Interpreter {
                 }
             }
             // Propagate to env-based alias targets (for `:=` bindings where
-            // the source is an env variable like `$_`).
-            {
-                let alias_key = format!("__mutsu_sigilless_alias::{}", name);
-                if let Some(target) = self.env().get(&alias_key).and_then(|v| match v.view() {
+            // the source is an env variable like `$_`). The alias key is
+            // pre-interned per local slot (`locals_alias_sym`) and the whole probe
+            // is skipped when no `__mutsu_sigilless_*` key has ever been created,
+            // so a program without `:=`/sigilless aliases pays nothing here.
+            if crate::env::closure_meta_keys_possible()
+                && let Some(alias_sym) = code.alias_sym(idx)
+                && let Some(target) = self.env().get_sym(alias_sym).and_then(|v| match v.view() {
                     ValueView::Str(s) => Some(s.clone()),
                     _ => None,
-                }) {
-                    let is_co_local = code.locals.iter().any(|n| n == target.as_str());
-                    if !is_co_local {
-                        {
-                            let __v = self.locals[idx].clone();
-                            self.env_mut().insert(target.to_string(), __v);
-                        }
-                    }
+                })
+            {
+                let is_co_local = code.locals.iter().any(|n| n == target.as_str());
+                if !is_co_local {
+                    let __v = self.locals[idx].clone();
+                    self.env_mut().insert(target.to_string(), __v);
                 }
             }
             // Track topic mutations for map rw writeback
@@ -1220,18 +1222,21 @@ impl Interpreter {
             // and internal temps.
             val = self.reset_nil_untyped_scalar(name, val);
         }
-        let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-        let alias_key = format!("__mutsu_sigilless_alias::{}", name);
         // Only enforce sigilless-readonly when this is NOT a new variable
         // declaration (my $x = ...).  A `my` decl creates a fresh variable
-        // that shadows the sigilless one, so it must not be blocked.
+        // that shadows the sigilless one, so it must not be blocked. Skipped
+        // outright when no `__mutsu_sigilless_*` key has ever been created, so a
+        // program with no sigilless/`:=` binding pays no `format!` per store.
         if !is_vardecl
+            && crate::env::closure_meta_keys_possible()
+            && let Some(readonly_sym) = code.readonly_sym(idx)
+            && let Some(alias_sym) = code.alias_sym(idx)
             && matches!(
-                self.env().get(&readonly_key).map(Value::view),
+                self.env().get_sym(readonly_sym).map(Value::view),
                 Some(ValueView::Bool(true))
             )
             && !matches!(
-                self.env().get(&alias_key).map(Value::view),
+                self.env().get_sym(alias_sym).map(Value::view),
                 Some(ValueView::Str(_))
             )
         {
@@ -1262,10 +1267,12 @@ impl Interpreter {
             }
         }
         if let Some(source_name) = bind_source {
+            let alias_key = runtime::sigilless_alias_key(name);
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
             self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source.clone()));
-            self.env_mut().insert(readonly_key, Value::FALSE);
+            self.env_mut()
+                .insert(runtime::sigilless_readonly_key(name), Value::FALSE);
             self.mark_sigilless_alias_seen();
             // Create a shared ContainerRef for cross-scope binding (source in
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
@@ -1717,13 +1724,23 @@ impl Interpreter {
                     .insert(format!("{pkg}::term:<{symbol}>"), val.clone());
             }
         }
-        let mut alias_name = self.env().get(&alias_key).and_then(|v| {
-            if let ValueView::Str(name) = v.view() {
-                Some(name.to_string())
-            } else {
-                None
-            }
-        });
+        // Follow the `:=` alias chain from this variable, if it has one. No
+        // `__mutsu_sigilless_*` key can exist unless the program created a
+        // sigilless/`:=` binding, so the whole walk (and its `format!`) is skipped
+        // otherwise.
+        let mut alias_name = if crate::env::closure_meta_keys_possible() {
+            code.alias_sym(idx)
+                .and_then(|sym| self.env().get_sym(sym))
+                .and_then(|v| {
+                    if let ValueView::Str(name) = v.view() {
+                        Some(name.to_string())
+                    } else {
+                        None
+                    }
+                })
+        } else {
+            None
+        };
         let mut seen_aliases = std::collections::HashSet::new();
         while let Some(current_alias) = alias_name {
             if !seen_aliases.insert(current_alias.clone()) {

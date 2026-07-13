@@ -9,6 +9,22 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// The env key recording the `:=` alias target of the sigilless/aliased variable
+/// `name` (`my $b := $a` stores `a` under the key for `b`). The single definition
+/// of the key shape, so a hot path can pre-intern it instead of rebuilding it per
+/// store — see `CompiledCode::locals_alias_sym`.
+pub(crate) fn sigilless_alias_key(name: &str) -> String {
+    format!("__mutsu_sigilless_alias::{name}")
+}
+
+/// The env key marking the sigilless variable `name` as readonly (`my \x = 42`).
+/// Companion of [`sigilless_alias_key`]; both are only ever present once the
+/// program creates a sigilless/`:=` binding, which `closure_meta_keys_possible`
+/// reports.
+pub(crate) fn sigilless_readonly_key(name: &str) -> String {
+    format!("__mutsu_sigilless_readonly::{name}")
+}
+
 /// Build the `Failure` value raku yields when a count/numeric coercion is
 /// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
 /// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.
