@@ -9,39 +9,39 @@ cargo build --release
 ./benchmarks/run-all.sh
 ```
 
-## Current Status (benchmarks: 2026-07-12, post ?LINE/overlay fix)
+## Current Status (bench CI, main commit `c8955d2e`, 2026-07-13)
 
-> Measured 2026-07-12 with `perf stat -r5` under `taskset -c 0-3` on a quiet
-> machine, release build (`opt + debuginfo`), rakudo v2022.12. Includes the July
-> perf slices #4447/#4451/#4454 and the `?LINE`-field + empty-overlay-tier fix
-> (see below). **Caution: verify machine quietness before benchmarking** — a
-> single stray `mutsu`/`raku`-adjacent process inflates both sides' numbers 2-3x
-> (it corrupted two same-day measurement rounds on 2026-07-12 alone).
+> Source of truth: the **bench CI history** (`bench-history.tsv` on the
+> `bench-data` branch; median of 7 runs per main push, raku measured on the
+> same runner in the same job so the ratio normalizes runner speed). The
+> `+jit` column is the `MUTSU_JIT=on` series (recorded since #4480). Local
+> numbers drift with thermals/binary layout — use them only for in-flight
+> A/B decisions, and check for stray `mutsu` processes before measuring.
 
-| Benchmark | mutsu | raku | ratio | notes |
-|-----------|-------|------|-------|-------|
-| fib(25) | 0.150s | 0.164s | **0.91x** | recursive function calls (was 4.8x before the ?LINE/overlay fix) |
-| bench-fib | 0.398s | 0.207s | 1.92x | fib with type constraint (`Int $n --> Int`) (was 10.5x; `<=`/`>`/`>=` Int fast paths landed the <2x target) |
-| int-arith | 0.089s | 0.15s | **0.60x** | `for ^100000 { $sum += $_ * 3 + 1 }` |
-| string-concat | 0.03s | 0.17s | **0.18x** | `$s ~= 'x'` × 10000 |
-| hash-access | 0.03s | 0.18s | **0.16x** | 10K hash inserts + value iteration |
-| method-call | 0.182s | 0.160s | 1.14x | Point.distance-to × 10000 (was 2.7x on 2026-05) |
-| array-ops | 0.10s | 0.23s | **0.44x** | grep+map on 1000-elem array × 100 |
-| bench-array | 0.043s | 0.23s | **0.19x** | push+map+grep+sort+reverse on 10K |
-| bench-hash | 0.027s | 0.25s | **0.11x** | 10K insert+lookup+delete+keys+values |
-| bench-class | 0.181s | 0.194s | **0.93x** | class instantiation + method calls + inheritance (1.06s → 0.18s across the July slices) |
-| bench-startup | 0.004s | 0.12s | **0.03x** | startup overhead |
-| bench-string | 0.064s | 0.27s | **0.24x** | string operations |
-
-Note: raku times include ~120ms startup overhead. mutsu startup is ~4ms.
+| Benchmark | ratio (interp) | ratio (JIT on) | notes |
+|-----------|----------------|----------------|-------|
+| fib(25) | 0.82x | **0.65x** | recursive function calls (was 4.8x before the ?LINE/overlay fix) |
+| bench-fib | 1.78x | **1.39x** | fib with type constraint (`Int $n --> Int`); was 10.5x pre-July |
+| int-arith | **0.47x** | **0.43x** | `for ^100000 { $sum += $_ * 3 + 1 }`; interpreter alone gained −27% in J4c |
+| string-concat | 0.14x | 0.13x | `$s ~= 'x'` × 10000 |
+| hash-access | 0.16x | 0.16x | 10K hash inserts + value iteration |
+| method-call | 1.19x | 1.16x | Point.distance-to × 10000 (was 2.7x on 2026-05) |
+| array-ops | 0.37x | 0.37x | grep+map on 1000-elem array × 100 |
+| bench-array | 0.19x | 0.19x | push+map+grep+sort+reverse on 10K |
+| bench-hash | 0.16x | 0.16x | 10K insert+lookup+delete+keys+values |
+| bench-class | 1.02x | 1.00x | class instantiation + method calls + inheritance |
+| bench-startup | **0.06x** | **0.06x** | JIT on does NOT hurt startup (hot-only compilation) |
+| bench-string | 0.35x | 0.35x | string operations |
 
 ### Summary
 
-- **Faster than raku (11/12)**: startup, string-concat, bench-string, int-arith,
-  array-ops, hash-access, bench-hash, bench-array, bench-class, fib, method-call*
-  (*1.14x, within noise of parity)
-- **Above parity (1/12)**: bench-fib (1.92x — `<2x` target met; the residual is
-  per-call param/return type checking plus dispatch overhead)
+- **Faster than raku on 10/12** with the interpreter alone; JIT on pushes the
+  call-heavy pair further (fib 0.65x, bench-fib 1.39x) and regresses nothing —
+  benchmarks without JIT-eligible hot code measure identical on/off.
+- **Above parity (2/12)**: bench-fib 1.39x (JIT on; per-call binding/dispatch
+  is the residual — J4d territory) and method-call ~1.16x (near-parity).
+- CI runners are slower and noisier than the local box, so ratios are the
+  comparable quantity, not absolute times.
 
 ### ✔ fib / bench-fib absolute regression — RESOLVED (2026-07-12)
 
@@ -148,28 +148,53 @@ Remaining, in priority order (measured 2026-06-28):
   NaN-boxing (Lever 2, ADR-0001 layer 3b) shrinks the common variants but is
   sequenced *after* GC.
 
-### Phase 4a: Value representation (NaN-boxing)
+### Phase 4a: Value representation (NaN-boxing) — DONE (2026-07-12)
 
-`Value` enum is currently 48 bytes (down from 72 after boxing the oversized
-variants — Capture, BigRat, CustomTypeInstance, Uni, etc.; guarded by the
-`value_size_guard` test in `src/value/mod.rs`). NaN-boxing would encode common
-types (Int, Num, Bool, Nil) in 8 bytes using NaN payload bits. Expected: 2x
-improvement on int-arith, ~30% on fib.
+`Value` is one NaN-boxed 8-byte word (ADR-0001 layer 3b, #4467/#4469; was 48
+bytes). All benchmarks gained 5-9%; the flip also unblocked the JIT's Tier B
+tag-dispatched inline arithmetic (below).
 
-### Phase 4b: Threaded dispatch (direct threading)
+### Phase 4b: Threaded dispatch — FROZEN (ADR-0004 §2.5 J0)
 
-Replace the `match` opcode dispatch with a function pointer table. Expected: 10-30% on instruction-bound benchmarks (fib, int-arith).
+Rejected in favor of the JIT: Tier A subroutine threading removes the same
+dispatch-loop cost with a larger ceiling. Revisit only if the JIT stalls.
 
-### Phase 4c: JIT compilation (Cranelift)
+### Phase 4c: JIT compilation (Cranelift) — IN PROGRESS (J1–J4 core landed)
 
-Compile hot bytecode sequences to native code. Expected: 5-10x for tight numeric loops.
+Method JIT per ADR-0004: hot `CompiledCode` chunks (and, since J4b, hot
+compound-loop body sub-ranges via the `run_range` hook) compile to native
+code. Off by default until J5; run with `MUTSU_JIT=on`.
 
-### Function calls with type constraints (3.2x slower)
+- **J1 (#4471)**: skeleton — call counting, Tier A helper-call bodies, fib native.
+- **J2 (#4474)**: Tier A opcode coverage, all 6 call-path entry hooks, jit-stress CI.
+- **J3 (#4476)**: call convention — CallMethod shims, `to_map()` removal,
+  type-check fast accept, `const_sym` memoization.
+- **J4 (#4478/#4479/#4480)**: Tier B inline arithmetic (NaN-box tag-dispatched
+  Int/Num fast paths in CLIF, zero refcount/GC traffic), hot-loop entry
+  (int-arith-class top-level loops finally JIT), and variable-op helper
+  hot-path fixes (which also sped the interpreter itself: int-arith −34%).
+- Remaining: **J4d** — Tier B variable-op inlining (GetLocal/SetLocal),
+  JIT→JIT call inlining, args-Vec alloc removal (this is where the original
+  "5-10x for tight numeric loops" expectation now lives: after J4c the
+  interpreter is fast enough that the residual JIT gap IS the variable-op
+  helper calls) — then **J5**: default-on switch (gc-stress × jit-stress
+  matrix already green; startup budget + bench-parity check pending).
 
-bench-fib uses `sub fib(Int $n --> Int)` which adds type constraint checking per call. Potential: trust type constraints after first check in tight loops.
+### Function calls with type constraints
+
+bench-fib (`sub fib(Int $n --> Int)`) is at ~1.7-1.9x of raku (was 3.2x): the
+J3 `type_matches_value` tag/class fast accept recovered most of the per-call
+type-check cost. The residual is per-call binding/dispatch overhead (J4d
+territory).
 
 ## Measurement Notes
 
-- All benchmarks run with `--release` build
-- raku times include ~170ms startup overhead; mutsu startup is ~4ms
-- Run 3x and take median for precise measurements
+- **Numbers in documents come from the bench CI** (`bench-history.tsv` on the
+  `bench-data` branch; appended per main push, median of 7 runs plus a
+  same-runner raku ratio). The `<bench>+jit` rows are the `MUTSU_JIT=on`
+  series (recorded since #4480). Cite the commit hash a number belongs to.
+- Local `perf stat -r5` under `taskset` is fine for in-flight A/B decisions
+  and PR descriptions, but drifts with thermals and binary layout (±5%);
+  check for stray `mutsu` processes before measuring.
+- All benchmarks run with the `--release` build; raku times include ~120-170ms
+  startup overhead, mutsu startup is ~4-8ms.
