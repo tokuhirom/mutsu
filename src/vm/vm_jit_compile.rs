@@ -62,7 +62,6 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             | OpCode::SetLocal(_)
             | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
-            | OpCode::SetSourceLine(_)
             | OpCode::CallFunc { .. }
             | OpCode::CallMethod { .. }
             | OpCode::CallMethodMut { .. } => {}
@@ -96,8 +95,6 @@ struct Sigs {
     v1: SigRef,
     /// `(interp) -> i32`
     s1: SigRef,
-    /// `(interp, i64) -> ()`
-    v_i64: SigRef,
     /// `(interp, code, u32) -> ()`
     v_code_u32: SigRef,
     /// `(interp, code, u32) -> i32`
@@ -122,7 +119,6 @@ fn make_sigs(module: &JITModule, b: &mut FunctionBuilder, ptr: Type) -> Sigs {
     Sigs {
         v1: sig(&[ptr], None),
         s1: sig(&[ptr], Some(types::I32)),
-        v_i64: sig(&[ptr, types::I64], None),
         v_code_u32: sig(&[ptr, ptr, types::I32], None),
         s_code_u32: sig(&[ptr, ptr, types::I32], Some(types::I32)),
         s_code_u32_u32: sig(&[ptr, ptr, types::I32, types::I32], Some(types::I32)),
@@ -252,19 +248,6 @@ fn build(
                         sigs.v_code_u32,
                         helpers::load_const as *const () as usize,
                         &[interp, codep, idxv],
-                    );
-                }
-            }
-            OpCode::SetSourceLine(line) => {
-                if let Some(tb) = &tier_b {
-                    tb.emit_set_source_line(&mut b, *line);
-                } else {
-                    let linev = b.ins().iconst(types::I64, *line);
-                    call_helper(
-                        &mut b,
-                        sigs.v_i64,
-                        helpers::set_source_line as *const () as usize,
-                        &[interp, linev],
                     );
                 }
             }

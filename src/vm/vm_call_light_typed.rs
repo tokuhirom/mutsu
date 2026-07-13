@@ -279,7 +279,7 @@ impl Interpreter {
 
         let saved_stack_depth = self.stack.len();
         let let_mark = self.let_saves_len();
-        // Frame-less path: roll back the body's SetSourceLine updates manually.
+        // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
         // Run the body under the routine's declaring package (set after the
         // required-param early returns above). Restored after the env merge below.

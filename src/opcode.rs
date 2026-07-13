@@ -1486,9 +1486,6 @@ pub(crate) enum OpCode {
     LetBlock {
         body_end: u32,
     },
-
-    /// Set the current source line number (for deprecation tracking, error messages, etc.).
-    SetSourceLine(i64),
 }
 
 #[cfg(test)]
@@ -1567,6 +1564,16 @@ mod const_pool_dedup {
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
+    /// Static ip -> source line table, parallel to `ops` (0 = unknown). Replaces
+    /// the former per-statement `SetSourceLine` opcode: the line an instruction
+    /// belongs to is compile-time data, so it does not need a dispatched
+    /// instruction to carry it. The VM reads it with `line_at()` at the points
+    /// that can *observe* a line (call/reentry boundaries, error and warning
+    /// raise sites) instead of maintaining `cur_source_line` on every statement.
+    pub(crate) op_lines: Vec<u32>,
+    /// Compile-time cursor: the source line attached to every op emitted from
+    /// now on (set by the `Stmt::SetLine` marker). Not used at runtime.
+    emit_line: u32,
     pub(crate) constants: Vec<Value>,
     /// Reverse index over `constants` for pool dedup (ADR-0006 §2.4): the same
     /// literal or name string emitted at N sites shares one slot instead of
@@ -1890,6 +1897,8 @@ impl CompiledCode {
     pub(crate) fn new() -> Self {
         Self {
             ops: Vec::new(),
+            op_lines: Vec::new(),
+            emit_line: 0,
             constants: Vec::new(),
             const_index: rustc_hash::FxHashMap::default(),
             stmt_pool: Vec::new(),
@@ -2003,6 +2012,17 @@ impl CompiledCode {
     /// in this code. Locals only accessed via GetLocal don't need env sync,
     /// which reduces env size and makes method call env clones cheaper.
     pub(crate) fn compute_needs_env_sync(&mut self) {
+        // The ip -> line table must stay index-aligned with `ops`: a code path
+        // that pushes/removes an op without going through `emit()` (or without
+        // mirroring the change into `op_lines`) would shift every later line.
+        // A chunk built entirely by hand never calls `emit()`, so an empty table
+        // is also valid — `line_at` then reports "no line information".
+        debug_assert!(
+            self.op_lines.is_empty() || self.op_lines.len() == self.ops.len(),
+            "op_lines desynced from ops ({} vs {})",
+            self.op_lines.len(),
+            self.ops.len()
+        );
         // This chunk is finalized: drop the constant-pool dedup index, which is
         // compile-time scaffolding (ADR-0006 §2.4). A constant added afterwards
         // (a runtime-built chunk being patched) simply takes a fresh slot.
@@ -2830,6 +2850,7 @@ impl CompiledCode {
         }
         let idx = self.ops.len();
         self.ops.push(op);
+        self.op_lines.push(self.emit_line);
         idx
     }
 
@@ -2843,13 +2864,36 @@ impl CompiledCode {
         }
         let explicit_init =
             n >= 2 && matches!(self.ops[n - 2], OpCode::MarkExplicitInitializerContext);
-        self.ops.truncate(if explicit_init { n - 2 } else { n - 1 });
+        let keep = if explicit_init { n - 2 } else { n - 1 };
+        self.ops.truncate(keep);
+        self.op_lines.truncate(keep);
         let idx = self.ops.len();
         self.ops.push(OpCode::SetLocalDecl {
             slot,
             explicit_init,
         });
+        self.op_lines.push(self.emit_line);
         Some(idx)
+    }
+
+    /// Attach `line` to every op emitted from now on (the compile-time half of
+    /// the ip -> line table). Called for the `Stmt::SetLine` marker the parser
+    /// inserts before each statement, and once at a sub/block body's start so
+    /// its prologue ops carry the declaration line.
+    pub(crate) fn set_emit_line(&mut self, line: i64) {
+        self.emit_line = u32::try_from(line).unwrap_or(0);
+    }
+
+    /// The source line of the instruction at `ip`, or `None` when this chunk has
+    /// no line information for it (a hand-built chunk, or a prologue emitted
+    /// before any line marker). `None` means "leave the current line alone" —
+    /// never report line 0.
+    #[inline]
+    pub(crate) fn line_at(&self, ip: usize) -> Option<i64> {
+        match self.op_lines.get(ip) {
+            Some(&0) | None => None,
+            Some(&line) => Some(line as i64),
+        }
     }
 
     /// Patch a jump instruction at `idx` to point to the current position.

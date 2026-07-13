@@ -39,7 +39,6 @@ impl Compiler {
             // the accessor method to validate it exists.
             self.emit_load_self_for_accessor(&format!("${}", name));
             let method_idx = self.code.add_constant(Value::str(attr_name.to_string()));
-            self.emit_source_line_if_known();
             self.code.emit(OpCode::CallMethod {
                 name_idx: method_idx,
                 arity: 0,

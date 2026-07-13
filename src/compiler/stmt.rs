@@ -3257,8 +3257,11 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
             }
             Stmt::SetLine(line) => {
+                // No instruction: the line is static data. Attach it to every op
+                // emitted for the statements that follow (`CompiledCode::op_lines`),
+                // and let the VM read it back from `ip` where a line is observable.
                 self.last_source_line = Some(*line);
-                self.code.emit(OpCode::SetSourceLine(*line));
+                self.code.set_emit_line(*line);
             }
         }
     }

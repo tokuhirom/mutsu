@@ -407,13 +407,6 @@ impl TierB {
         b.switch_to_block(done);
     }
 
-    /// `SetSourceLine`: a single immediate store to the interpreter field.
-    pub(super) fn emit_set_source_line(&self, b: &mut FunctionBuilder, line: i64) {
-        let v = b.ins().iconst(types::I64, line);
-        b.ins()
-            .store(Self::mf(), v, self.interp, self.lay.cur_source_line);
-    }
-
     /// `ContainerizePair`: a no-op unless the top word is a `Pair` (the only
     /// shape the interpreter arm rewrites), which goes to the Tier A shim.
     pub(super) fn emit_containerize_pair(&self, b: &mut FunctionBuilder, slow_fn: usize) {

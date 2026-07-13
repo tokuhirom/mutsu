@@ -320,7 +320,11 @@ impl Compiler {
             match &self.code.ops[i - 1] {
                 OpCode::Decont | OpCode::ContainerizePair => i -= 1,
                 OpCode::CallMethod { .. } | OpCode::CallMethodMut { .. } => {
+                    // Keep the ip -> line table (`op_lines`) aligned with `ops`:
+                    // the marker inherits the call's line.
+                    let line = self.code.op_lines[i - 1];
                     self.code.ops.insert(i - 1, OpCode::MarkAccessorRefContext);
+                    self.code.op_lines.insert(i - 1, line);
                     return;
                 }
                 _ => return,
