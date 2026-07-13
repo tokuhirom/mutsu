@@ -109,6 +109,33 @@ fn hot_method_body_compiles_and_matches() {
     }
 }
 
+/// J5 pin (ADR-0004 §2.5): with `MUTSU_JIT` unset, the JIT is ON by default —
+/// a hot Tier A chunk compiles and enters without any opt-in flag.
+#[test]
+fn jit_is_on_by_default() {
+    let (out, err, ok) = run(
+        FIB,
+        &[("MUTSU_JIT_THRESHOLD", "1"), ("MUTSU_VM_STATS", "1")],
+    );
+    assert!(ok, "default run failed: {err}");
+    assert_eq!(out, "2584\n");
+    if cfg!(feature = "jit") {
+        let jit_line = err
+            .lines()
+            .find(|l| l.contains("jit: compiles="))
+            .unwrap_or_else(|| panic!("no jit stats line in stderr: {err}"));
+        let compiles: u64 = jit_line
+            .split_whitespace()
+            .find_map(|w| w.strip_prefix("compiles="))
+            .and_then(|v| v.parse().ok())
+            .expect("missing compiles=");
+        assert!(
+            compiles >= 1,
+            "MUTSU_JIT unset must default to on: {jit_line}"
+        );
+    }
+}
+
 /// A function whose chunk contains an unsupported opcode must be counted as a
 /// bailout and keep producing interpreter-identical output.
 #[test]

@@ -53,7 +53,11 @@ fi
 
 for bench in benchmarks/*.raku; do
     name=$(basename "$bench" .raku)
-    read -r m_med m_min <<<"$(bench_binary "$MUTSU" "$bench")"
+    # Interpreter-only pass: MUTSU_JIT defaults to on since J5 (ADR-0004), so
+    # the plain series pins JIT off explicitly to keep its historical meaning
+    # (pure interpreter baseline) — the `+jit` series below is the default
+    # configuration users actually run.
+    read -r m_med m_min <<<"$(export MUTSU_JIT=off; bench_binary "$MUTSU" "$bench")"
     if [ "$have_raku" = 1 ]; then
         read -r r_med _ <<<"$(bench_binary "$RAKU" "$bench")"
     else
@@ -67,10 +71,11 @@ for bench in benchmarks/*.raku; do
     fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$RUNS"
 
-    # JIT-on pass (ADR-0004 layer 4): recorded as its own benchmark name so
-    # the history/regression tooling treats it as a separate series. The raku
-    # median from the plain pass above is reused for the ratio (same runner,
-    # same job — measuring raku twice would only add noise).
+    # JIT-on pass (ADR-0004 layer 4; the default configuration since J5):
+    # recorded as its own benchmark name so the history/regression tooling
+    # treats it as a separate series. The raku median from the plain pass
+    # above is reused for the ratio (same runner, same job — measuring raku
+    # twice would only add noise).
     read -r j_med j_min <<<"$(export MUTSU_JIT=on; bench_binary "$MUTSU" "$bench")"
     if [ "$j_med" != NA ] && [ "$r_med" != NA ]; then
         j_ratio=$(awk -v m="$j_med" -v r="$r_med" \

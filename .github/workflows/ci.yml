@@ -301,13 +301,16 @@ jobs:
           if-no-files-found: ignore
 
   jit-stress:
-    # Runs the whole test + roast suite with the Cranelift JIT ON (ADR-0004
-    # §2.5 J2, same shape as gc-stress). MUTSU_JIT_THRESHOLD=2 compiles every
-    # Tier A-eligible chunk on its second call, so JIT-compiled bodies (not
-    # the interpreter) execute for essentially all repeatedly-called code in
-    # the suite. The JIT's correctness contract is byte-identical output to
-    # the interpreter, so every step is a BLOCKING gate: any failure here that
-    # does not reproduce with MUTSU_JIT=off is a JIT codegen/shim bug.
+    # Runs the whole test + roast suite with the Cranelift JIT forced hot
+    # (ADR-0004 §2.5 J2, same shape as gc-stress). MUTSU_JIT defaults to ON
+    # since J5, so the main test job already covers the default (threshold
+    # 100) configuration; this job's stress value is MUTSU_JIT_THRESHOLD=2,
+    # which compiles every Tier A-eligible chunk on its second call, so
+    # JIT-compiled bodies (not the interpreter) execute for essentially all
+    # repeatedly-called code in the suite. The JIT's correctness contract is
+    # byte-identical output to the interpreter, so every step is a BLOCKING
+    # gate: any failure here that does not reproduce with MUTSU_JIT=off is a
+    # JIT codegen/shim bug.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
