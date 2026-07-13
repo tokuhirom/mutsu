@@ -216,6 +216,47 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // Fast scalar read (J4 helper hot path): the dominant GetGlobal
+                // shape is a plain env hit (topic `$_` reads in loop bodies,
+                // dynamic vars). Serve it through the memoized per-slot Symbol —
+                // no per-read intern, and no kebab-alias re-probe for the 1-char
+                // topic name `_` (whose underscore otherwise sends every read
+                // through the `_`->`-` pre-pass of get_env_with_main_alias).
+                // Gate order reproduces the slow chain's precedence: the stores
+                // consulted before env must be provably inactive (escaping-our
+                // captures empty, no real current package), @/% names keep the
+                // slow path's atomic/thread-clone arms, and Nil / LazyThunk /
+                // ContainerRef hits fall through for the slow tail's
+                // default/type-object, force and deref handling.
+                let fast_hit = {
+                    let b0 = name.as_bytes().first().copied();
+                    if !matches!(b0, Some(b'@' | b'%'))
+                        && (name == "_" || !name.contains('_'))
+                        && self.escaping_our_lexical_names.is_empty()
+                        && {
+                            let cur = self.current_package();
+                            cur.is_empty() || cur == "GLOBAL"
+                        }
+                    {
+                        match self.env().get_sym(code.const_sym(*name_idx)) {
+                            Some(val)
+                                if !val.is_nil()
+                                    && !val.is_container_ref()
+                                    && !matches!(val.view(), ValueView::LazyThunk(_)) =>
+                            {
+                                Some(val.clone())
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                };
+                if let Some(val) = fast_hit {
+                    self.stack.push(val);
+                    *ip += 1;
+                    return Ok(());
+                }
                 let val = self
                     // A package-block `my` lexical is stored in `package_lexicals`;
                     // it is the authoritative store for a bare free-variable read from
@@ -4155,25 +4196,34 @@ impl Interpreter {
                 // bind signal, but a whole reassignment (`%a = (...)`) is allowed
                 // — it writes through to the bound source. The `__mutsu_bound::`
                 // marker distinguishes it from a genuinely immutable `constant`.
-                let bound_key = format!("__mutsu_bound::{}", name);
-                if matches!(
-                    self.env().get(&bound_key).map(Value::view),
-                    Some(ValueView::Bool(true))
-                ) {
-                    *ip += 1;
-                    return Ok(());
+                // Both marker probes are gated on their process-global
+                // "ever created" flags: this opcode runs on every whole-variable
+                // assignment (per iteration in tight loops), and the common
+                // program never creates either marker — skipping the two
+                // `format!` allocations plus env lookups entirely.
+                if crate::env::bound_marker_possible() {
+                    let bound_key = format!("__mutsu_bound::{}", name);
+                    if matches!(
+                        self.env().get(&bound_key).map(Value::view),
+                        Some(ValueView::Bool(true))
+                    ) {
+                        *ip += 1;
+                        return Ok(());
+                    }
                 }
                 self.check_readonly_for_modify(name)?;
                 // Also check env-based readonly status set by cross-scope
                 // `:=` binding (e.g. binding to a readonly sub parameter
                 // in a closure).  The readonly_vars set is scope-local
                 // and gets restored on frame pop, but the env key persists.
-                let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
-                if matches!(
-                    self.env().get(&readonly_key).map(Value::view),
-                    Some(ValueView::Bool(true))
-                ) {
-                    return Err(RuntimeError::assignment_ro(Some(name)));
+                if crate::env::closure_meta_keys_possible() {
+                    let readonly_key = format!("__mutsu_sigilless_readonly::{}", name);
+                    if matches!(
+                        self.env().get(&readonly_key).map(Value::view),
+                        Some(ValueView::Bool(true))
+                    ) {
+                        return Err(RuntimeError::assignment_ro(Some(name)));
+                    }
                 }
                 *ip += 1;
             }

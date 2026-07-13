@@ -333,6 +333,10 @@ Running the entire roast suite locally is wasteful and slow — **let CI run the
 
 The `MUTSU_VM_STATS=1` dual-store counters (`locals_pulls`, `env_flushes`, `env_deep_copies`, `clone_env`, ...) are **deterministic and independent of the optimization level** — they count VM events, not time. So when tuning a perf/decoupling change against those counters, **iterate with the debug build** (`cargo build`, ~30-70s) and read the counters off `target/debug/mutsu`; the numbers are identical to release. Reserve the slow `cargo build --release` (which here also emits debuginfo and can take 10-15 min) for the **final wall-clock measurement** only. Do NOT default to release just because the task is perf-related — that wastes ~10× the build time per iteration for byte-identical counter output.
 
+### Benchmark numbers in documents come from the bench CI, not local runs
+
+Numbers recorded in PERFORMANCE.md / PLAN.md / news must come from the **bench CI history** (`bench-history.tsv` on the `bench-data` branch, appended on every main push: median of 7 runs plus a same-runner raku ratio that normalizes runner speed), citing the main commit hash the row belongs to. Read it with `git show origin/bench-data:bench-history.tsv`. The `<bench>+jit` rows are the `MUTSU_JIT=on` series. Local `perf stat` A/B measurements are fine for PR descriptions and in-flight development decisions, but they drift with thermals and binary layout (±5% is common), so they are NOT the source of truth for documents.
+
 ## Checking `make test` / `make roast` results
 
 `make test` and `make roast` automatically save their full output to log files via `tee`:

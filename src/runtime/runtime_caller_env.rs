@@ -226,6 +226,11 @@ impl Interpreter {
 
     /// Resolve a variable name through bindings (follow aliases).
     pub(crate) fn resolve_binding(&self, name: &str) -> Option<&str> {
+        // Empty-map fast exit: this runs on every GetLocal, and the common
+        // program never creates a `$CALLER::x := ...` binding.
+        if self.var_bindings.is_empty() {
+            return None;
+        }
         self.var_bindings.get(name).map(|s| s.as_str())
     }
 
