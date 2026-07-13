@@ -1,5 +1,195 @@
 # Changelog
 
+## [v0.3.0](https://github.com/tokuhirom/mutsu/compare/v0.2.34...v0.3.0) - 2026-07-13
+
+- fix(dispatch): OTF-compile module subs with standard param traits by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4306
+- fix(closure): resolve $OUTER:: against captured lexical scope in stored closures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4305
+- refactor(value): migrate src/builtins/ to the 3b-0 Value API wall (slice c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4308
+- docs(plan): record sigilless-scalar OTF is blocked by EVAL writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4309
+- docs(plan): record sigilless-scalar OTF is confirmed-blocked by EVAL writeback by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4310
+- fix(phasers): run nested-block BEGIN before reads that precede it by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4311
+- fix(state): share a module sub's state cell across threads via a captured compiled body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4312
+- docs(plan): record compiled_fns expansion slice 1 (#4312) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4313
+- feat(traits): support Attribute.container.VAR does Role in custom trait_mod:<is> by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4314
+- refactor(value): migrate src/runtime/ to the 3b-0 Value API wall (slice d) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4315
+- refactor(value): complete the 3b-0 Value API wall (slice e — compiler/parser/stragglers) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4316
+- docs(plan): record 3b-0 Value API wall complete; queue seal -> 3b-1 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4317
+- docs(blockers): drop stale S06 infix.t entry (already 50/50 + whitelisted) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4318
+- docs(adr): Proposed ADR-0005 — 3b-1 NaN-box encoding (pointer-favored) + fold variant-privacy seal into 3b-1 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4319
+- fix(parser): register imported module types so `when X::Foo {}` isn't misflagged by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4320
+- fix(vm): don't leak the WhateverCode identity marker into inner blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4321
+- fix(compunit): repository-for-name('core') + repo-chain/next-repo methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4322
+- docs(blockers): audit BLOCKERS.md — move whitelisted items to news by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4324
+- fix(supply): live grep/map forwarding + react emit-order delivery (syntax.t test 90) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4326
+- fix(vm): reify a plain `gather` RHS when initializing a typed array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4325
+- fix(supply): nested whenever on-demand closing on the react thread (syntax.t 75) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4327
+- fix(vm): coerce an object bound to a %-sigil target to a Hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4328
+- fix(subscript): multi-dim slice lvalues, missing-leaf autoviv, || spread, :delete:k order (S32 multislice-6e) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4329
+- fix(runtime): honor `next`/`last` loop control inside `.first` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4332
+- fix(supply): serialize whenever handlers + drain channel before close (syntax.t 53/57) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4330
+- fix(vm): keep an array-contextualized Seq (`@$s`) re-iterable in `for` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4331
+- test(supply): de-flake react-nested-whenever-on-demand-close (drop fixed-timer race) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4334
+- fix(zef): unblock `zef install` — can-install, map/grep tail assign, MAIN body errors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4335
+- fix(promise): box lexicals captured by a .then closure as shared cells by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4336
+- fix(parser): a bare trailing comma on a `return` value is a separator, not a 1-list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4338
+- fix(destructure): bind an absent named-array key to an empty array, not [Any] by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4337
+- fix(regex): match a user grammar token inside a character class by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4339
+- fix(proc-async): single-delivery taps via await-time replay + escape-box tap/act closures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4340
+- fix(regex): escaped delimiter in a lookahead, and `<( ... )>` capture markers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4341
+- fix(regex): `ATOM+ %% SEP` matches one ATOM per item, not a greedy run by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4342
+- fix(regex): propagate `<(` / `)>` capture markers out of groups and goalposts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4344
+- fix(regex): a `[...]`-group atom with a separator is quantified once per item by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4343
+- fix(compiler): surface whenever-body free vars to escape analysis for cell promotion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4345
+- fix(regex,control-flow): unblock Zef::Identity — value grammar + pointy-if value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4346
+- fix(compunit): can-install walks up to the nearest existing ancestor by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4347
+- fix(gather): cell-promote captured lexicals read by a lazy gather body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4348
+- docs(blockers): close §4 concurrency/async — all 99 S17 files and socket tests whitelisted by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4349
+- fix(parser): bind @_/%_ pointy params and coercion-typed for-loop vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4350
+- fix(parser): accept parenthesized :ver/:auth/:api version adverbs on use by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4351
+- fix(supply): drive supply blocks outside react — cold whenever replay, live do/on-close by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4352
+- fix(vm,runtime): stop in-loop recursion leaking a callee's loop var into caller by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4353
+- fix(container): hash multislice \target binds, Whatever adverbs, Test-fn &-refs, boxed-cell identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4354
+- fix(vm,runtime): clear stale call arg-sources; hash {||} splat; unbounded range dims by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4355
+- fix(builtins): descend into itemized arrays for .keys/.values/.kv/.pairs/.antipairs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4356
+- fix(runtime): construct `(TypeObject but Role).new` composed subtypes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4357
+- fix(runtime): resolve $?DISTRIBUTION inside routine/method bodies by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4358
+- fix(meta): store and expose the :api declarator adverb via .^api by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4359
+- fix(vm,compiler): attribute accessors are slot-based — := binds and .VAR mixins get container identity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4360
+- fix(vm): stop a nested := bind from clobbering a caller local at the same slot index by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4361
+- fix(vm,runtime): element mutations write through the shared container node (container identity §3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4362
+- fix(runtime): resolve imported role alias in an anonymous class `does` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4364
+- fix(runtime): default `@!`/`%!` attributes to empty Array/Hash in `bless` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4363
+- fix(runtime): a `gather` block evaluates to a Seq, not an Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4365
+- fix(vm,runtime): make_mut site inventory — variable-container mutations write through the shared node (container identity §3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4366
+- fix(vm): reify a finite `.map`/`.grep` pipe over a gather source by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4367
+- fix(vm): reify a finite lazy `.map`/`.grep` pipe returned as a map element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4368
+- fix(runtime): a mixin object runs inherited methods with self bound to the mixin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4369
+- fix(vm,compiler): drop the post-call writeback for element mutating methods (container identity §3.2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4370
+- fix(runtime): give role-composed methods the implicit `*%_` named slurpy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4371
+- fix(compiler,vm): drop the post-call writeback for nested-subscript mutating methods (container identity §3.2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4372
+- fix(vm): roll back a hyper/race op's ephemeral env->shared lexical migrations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4373
+- fix(parser): keep a trailing comma in a `:name[...]` colonpair-bracket value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4374
+- fix(vm): preserve exception type when `die`ing a `but role` mixin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4375
+- fix(vm): isolate the caller's loop-local scope in the light-call fast paths by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4376
+- fix(runtime): mutate the shared node in place for value-path array methods (container identity §3.2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4377
+- fix(vm): make a thread's own shared-hash element writes visible to its re-reads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4378
+- fix(vm): stop callee `my` declarations leaking into a caller's block/method scope across recursion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4379
+- fix(parser): don't swallow `if`/`for` after `my @x = gather {...}` as a statement modifier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4380
+- fix(nativecall): accept `is native` in EVAL, Rakudo dlopen message, X::AdHoc.payload by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4381
+- fix(vm): itemize Array/List values assigned into $ scalar containers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4382
+- fix(vm): mixin private-method self-dispatch + Nil-to-typed-array default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4383
+- fix(runtime): CompUnit::Repository role does not require a `load` method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4384
+- fix(vm): route all writes to an escaped our-sub lexical through its persisted cell by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4385
+- docs(blockers): close the container-identity campaign — drop BLOCKERS §3/§2.3, record in news by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4386
+- fix(vm): skip shadow-duplicated names in whole-locals env broadcasts + bake container-writeback slot (§1.4 S12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4388
+- fix: populate $*REPO.repo-chain with the site Installation repo and fix for-loop hash destructuring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4387
+- fix(parser): support destructuring sub-signatures in pointy-block expressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4389
+- fix(vm): bake emit-point capture slots + cell-box shadowed captures (§1.3 S13) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4390
+- fix(vm): bake emit-point outer-binding slot onto GetOuterVar (§1.3 S14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4391
+- fix(vm): correct self binding in inline protect blocks + zef-fetch pipeline fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4392
+- fix(vm): keep (state @x) = ... paren-decl assignment by-name under shadow slots (§1.3 S15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4393
+- fix(vm): bake declared-var slot onto ApplyVarTrait (§1.5 S16) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4394
+- fix(vm): keep (my @x)/(my %h) paren-decl assignment by-name under shadow slots (§1.3 S17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4395
+- fix(module): keep a nested module's tag-gated imports visible to its own methods by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4396
+- fix(vm): make `for %h` iteration pairs live so an in-loop %h{key}=X is visible by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4397
+- Update roast history (2026-07-11): pass 1223 -> 1262 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4398
+- fix(roast): sweep with CWD=roast/ + BLOCKERS.md §6 triage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4399
+- fix(vm): don't panic on a non-finite array index (@a[Inf] = ...) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4400
+- fix(vm): flatten Seq in run(), type-object identity coercion, nested-:: default type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4401
+- perf(symbol): thread-local intern cache — unserialize CPU-bound threads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4402
+- perf(vm): stop allocating constant prefixes in the var-name hot path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4403
+- fix(vm): keep class-body `my` statics alive across a require-in-sub; Slip satisfies List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4404
+- perf(vm): gate var_type_constraint format!+env lookup behind monotonic flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4405
+- perf(vm): skip current_package RwLock+clone in write-back when no package-scope vars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4406
+- perf(vm): gate propagate_sigilless_alias_chain behind a monotonic flag by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4407
+- perf(regex): cache registry snapshot for grammar/regex sub-interpreters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4408
+- perf(regex): skip heavy Interpreter::new init for grammar/regex scratch sub-interpreters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4409
+- fix(gc): close two STW soundness races that corrupted the cycle scan under threads by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4410
+- perf(vm): skip block-scope routine-registry save/restore when block declares nothing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4411
+- perf(regex): resolve class-item token fallback statically, not via a scratch interp by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4412
+- docs: record grammar-parse GC churn finding for the GC campaign by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4413
+- fix: dispatch EXISTS-KEY for associative subscript :exists on user objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4415
+- chore(gc): post-default-on audit sweep (ANALYSIS rev8 §2.1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4414
+- fix(vm): route multidim cas through Track B element cells (roadmap T4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4416
+- fix(vm): enforce typed-container constraints on every cas write path (roadmap T5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4417
+- fix(compiler): capture aggregates used only via element ++/--/:delete in closures (roadmap T6) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4418
+- docs(roast): record reference raku baseline over the full roast suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4419
+- perf(gc): hold candidate-buffer entries weakly so buffering never delays refcount death by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4420
+- fix(raku): per-holder hash itemization — scalar-held hashes .raku as ${...} by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4421
+- test(roast): whitelist 4 tests mutsu already passes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4423
+- feat(operators): 6.c baggy set precedes/succeeds operators (<+) ≼ (>+) ≽ by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4424
+- refactor(value): seal the Value representation behind a newtype (3b-1 step A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4422
+- fix(roles): class attribute accessor prioritized over composed role method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4425
+- docs(roast): record 2026-07-11 achievable-target batch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4426
+- perf(vm): admit CATCH/CONTROL/phasers/nested decls/subtest/once to module-sub OTF (PLAN §3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4427
+- refactor(scope): flip shadow-slot allocation to default ON (§1.4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4428
+- perf(vm): admit nested class/role/grammar decls to module-sub OTF (PLAN §3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4429
+- docs(scope): scope the shadow-slot clone-removal (leak-prevention finding) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4430
+- perf(vm): admit coercion return types to module-sub OTF (PLAN §3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4431
+- docs(plan): record §3 slice results — @_ slurpy item stale, EVAL prereq bugs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4432
+- fix(parser): exempt EVAL's final statement from sink-context warnings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4433
+- docs(roast): consolidate BLOCKERS.md into a single classified table by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4434
+- fix(runtime): match raku CALLER:: frame semantics through EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4435
+- feat(class): compile-time attribute decl via BEGIN EVAL in class body (S12-attributes/class.t 28/28) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4436
+- perf(vm): admit EVAL/EVALFILE to module-sub OTF (PLAN §3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4437
+- chore: remove stray empty file named '-' by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4438
+- docs(plan): purge completed items from PLAN.md, archive to news/2026-07 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4439
+- docs(adr): accept ADR-0005 — NaN-boxing encoding (pointer-favored) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4440
+- perf(symbol): dissolve the intern round-trip via leaked-str Symbol::as_str (PLAN §5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4441
+- refactor(value): NaN-box 8-byte representation core (3b-1 step B kickoff) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4442
+- feat(main): implement user-facing RUN-MAIN core sub and its hooks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4443
+- perf(dispatch): pre-interned method symbols + FxHash registry maps (PLAN §5 symbol follow-ups) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4444
+- refactor(value): internal-wall seam APIs + exemplar migrations (3b-1 B-wall-in slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4445
+- refactor(value): B-wall-in slice 2 — signature.rs + value_methods_b.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4446
+- perf(vm): skip O(n) for-loop topic writeback for unchanged object elements by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4447
+- refactor(value): B-wall-in slice 3 — types_* + value_eq (403 sites) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4448
+- feat(grammar): method subrules, embedded-block outer lexicals, dup-token error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4449
+- refactor(value): B-wall-in slice 4 — display/serde/gc/methods (completes wall-in) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4450
+- perf(ctor): cache the per-class native-constructor plan; gate the is-default attr loop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4451
+- fix(hash): typed-hash .raku idempotence + Associative[T] type-capture binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4452
+- docs(roast): close S32-hash/perl.t blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4453
+- perf(dispatch): replace the per-call method_local_keys HashSet with a predicate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4454
+- docs(perf): re-measure the full benchmark table (2026-07-12); flag fib regression by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4455
+- ci(bench): measure benchmarks on every push to main; record history on bench-data branch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4456
+- fix(runtime): three general bugs surfaced by upstream zef 1.1.3 end-to-end run by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4457
+- docs(roast): re-baseline raku oracle against Rakudo v2026.06 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4458
+- fix(phasers): prioritize LEAVE-raised returns over same-routine in-flight returns by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4459
+- perf(regex): parse-time fold of static grammar tokens in enumerated char classes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4460
+- docs(roast): update HISTORY.tsv (1271 pass, 2026-07-12) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4461
+- feat(version): implement Version.parts / .plus / .whatever by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4462
+- perf(env): fix the fib 2.3x regression — ?LINE as an Interpreter field + empty-overlay-tier reuse by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4463
+- docs(plan): record mzef 2026-07-12 session results and the hyper instance-attr frontier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4464
+- perf(vm): Int/Num fast paths for <=/>/>=, GetLocal without String clone, pooled locals vecs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4465
+- fix(vm): route all mutating array ops through the atomic shared store by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4466
+- refactor(value): ValueView smart-pointer fields to guard types (3b-1 step B-guards) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4467
+- docs(plan): B2 hyper blocker solved by #4466 — zef info works with hyper enabled by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4468
+- feat(value): NaN-boxing representation flip — Value becomes one 8-byte word (3b-1 step B-flip) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4469
+- docs(plan): record layer 3b NaN-boxing completion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4470
+- feat(vm): Cranelift JIT skeleton — hot Tier A chunks run native (ADR-0004 J1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4471
+- docs(claude): tagpr version-bump labels are 'minor'/'major', not 'tagpr:*' by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4472
+- docs(plan): record JIT J1 completion — next slice is J2 Tier A coverage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4473
+- feat(vm): JIT J2 — Tier A opcode coverage + all call paths + jit-stress CI (ADR-0004 J2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4474
+- docs(plan): record JIT J2 completion — next slice is J3 call convention/IC by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4475
+- perf(vm): JIT J3 — call-convention optimization: CallMethod shims, to_map removal, type-check fast path (ADR-0004 J3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4476
+- docs(plan): record JIT J3 completion — next slice is J4 Tier B inline by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4477
+- perf(vm): JIT J4a — Tier B inline arithmetic (NaN-box tag-dispatched Int/Num fast paths, ADR-0004 J4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4478
+- perf(vm): JIT J4b — hot-loop entry: compound-loop bodies JIT via run_range hook (ADR-0004 J4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4479
+- perf(vm): JIT J4c — variable-op helper hot paths: gated marker probes, symbol-keyed reads (ADR-0004 J4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4480
+- docs(plan): record JIT J4 core completion — next slice is J4d variable-op inlining / J5 default-on by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4481
+- feat(jit): MUTSU_JIT defaults to ON — ADR-0004 J5 (phase plan complete) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4482
+- perf(jit): add numeric/call-kernel benchmarks + MarkArrayShareSource step coverage by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4483
+- docs(adr): ADR-0006 baseline interpreter optimizations audit + 4 sensitive benchmarks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4484
+- perf(compiler): constant folding of literal-only expressions (ADR-0006 §2.1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4485
+- perf(compiler): dedup the constant pool (ADR-0006 §2.4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4486
+- perf(compiler): inline `constant` reads and resolve constant conditions (ADR-0006 §2.2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4487
+- perf(vm): fuse the `my $x = <expr>` declaration markers into one opcode (ADR-0006 §2.3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4488
+- perf(vm): drop the SetSourceLine opcode for a static ip -> line table (ADR-0006 §2.3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4489
+- docs: record the "opcode count != time" lesson from #4489 and re-aim the next perf slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4490
+- docs: scout the call path and lay out the next perf slices by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4491
+- perf(vm): make the per-call readonly snapshot and the return merge allocation-free (fib -32%, tak -24%) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4492
+- perf(vm): pre-intern the per-assignment sigilless-alias/readonly env keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4493
+- perf(vm): key instance attributes by Symbol instead of String (ADR-0006 §2.4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4494
+
 ## [v0.2.34](https://github.com/tokuhirom/mutsu/compare/v0.2.33...v0.2.34) - 2026-07-06
 
 - fix(binding): sever a prior `:=` bind when a fresh `my $x = ...` reuses the slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4302
