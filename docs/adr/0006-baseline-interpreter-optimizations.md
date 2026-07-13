@@ -168,6 +168,37 @@ time-parts の per-iteration 64 op のうち約 27% が administrative
 ゲート: 各スライスで time-parts / debug-guard の改善を bench CI で確認し、
 既存 12 ベンチに退行がないこと。
 
+### 実装スライスの計測プロトコル（★2026-07-13 追記・#4489 の教訓）
+
+**opcode 数の削減幅は、時間の削減幅と一致しない。** `MUTSU_VM_STATS` の
+opcode ヒストグラムは「どの op が多いか」しか答えず、「その op が時間を食っているか」は
+答えない。実際 §2.3-b（`SetSourceLine` 廃止）は実行 opcode を fib で 21% 減らしたが、
+時間の削減は 1 桁小さかった（1 ストアの最安 op だったため）。さらに、削減と引き換えに
+**全命令に小さなコストを足す実装は簡単に赤字になる**（毎命令の行 refresh 版 = 命令数 +7.8%）。
+
+したがって administrative op の削減スライスは、着手前と実装後に**必ず命令数で検証**する:
+
+1. **ヒストグラムは候補出しにのみ使う**（`MUTSU_VM_STATS=1`・デバッグビルドで可・
+   最適化レベル非依存）。
+2. **判定は perf の retired instructions で行う**（wall-clock はこの規模では ±2〜6% 揺れて
+   判定不能）。ハイブリッド CPU（P/E コア）では計測が 8% 揺れるので、
+   **ユーザ空間のみ・コア固定**が必須:
+   ```
+   sudo perf stat -r 5 -x, -e instructions:u,task-clock -- taskset -c 2 <bin> <bench>
+   ```
+   （`instructions`（カーネル込み）で測るとページフォルト等が混ざって再現しない。
+   `:u` + `taskset` なら同一バイナリの再実行で 0.1% 以内に再現する。）
+3. **hot op に 1 命令でも足さない**設計を優先する（#4489 は「行を観測し得る op だけが
+   テーブルを引く」形にして初めて黒字化した）。
+4. 最終的なベンチ数字の正本は bench CI（`bench-data` ブランチ）— ローカル perf は
+   in-flight の設計判断用。
+
+**次の的の見直し**: fib の profile 上位は `call_compiled_function_positional_light` /
+`malloc`・`free` / `Env::get_sym` であり、administrative opcode ではない。残る
+`SetVarDynamic`（time-parts 500k）・`CheckReadOnly` に着手する前に、上記プロトコルで
+「時間を食っているか」を確認すること。食っていなければ **割当チャーンと call path
+（＝レキシカル slot キャンペーン）が本命**。
+
 ## 3. 保留・却下する施策（と、再開のトリガ）
 
 ### 3.1 per-call-site inline cache（PIC）— 保留

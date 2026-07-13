@@ -284,11 +284,27 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
             `MarkExplicitInitializerContext`+`MarkVarDeclContext`+`SetLocal` を
             `SetLocalDecl` 1 命令に。time-parts 6.40M→5.40M opcode。emit 時に自分が積んだ
             マーカーだけを書き換えるので jump index の再割当が不要）
-      - [ ] **§2.3-b `SetSourceLine` の廃止（ip→行の静的テーブル化）** — 残る最大の
-            administrative op。bench-fib の実行 opcode 8.9M 中 **1.9M（21%）**・time-parts 600k（11%）。
-            opcode を消して `CompiledCode` に per-ip 行テーブルを持ち、`cur_source_line` は
-            呼び出し境界とエラー生成時にだけ ip から引く。post-pass での op 削除は
-            jump/compound-op の index 書き換えを伴うので、テーブル化のほうが安全。
+      - [x] §2.3-b `SetSourceLine` 廃止（#4489 — ip→行の静的テーブル `CompiledCode::op_lines`。
+            `Stmt::SetLine` は emit カーソルを進めるだけ。`cur_source_line` は**行を観測し得る
+            op だけ**（呼び出し/再入・フレーム push・宣言登録・raise site ＋ JIT call shim）が
+            `sync_source_line` で引く）
+      - **★ここで判明した教訓 = opcode 数の削減 ≠ 時間の削減**（計測プロトコルは
+        [ADR-0006 §「実装スライスの計測プロトコル」](docs/adr/0006-baseline-interpreter-optimizations.md)）。
+        `SetSourceLine` は実行 opcode の 21%（fib）だったが 1 ストアの最安 op で、時間の
+        削減は 1 桁小さい（**-3.4% 命令数**・JIT 経路 ±0）。しかも全命令に refresh を足す実装は
+        **+7.8% 命令数**の赤字になった。残る administrative op（`SetVarDynamic` 500k・
+        `CheckReadOnly` 100k）に着手する前に、**perf の retired instructions
+        （`instructions:u` + `taskset` でコア固定・でないと 8% 揺れる）で「時間を食っているか」を
+        先に確認する**こと。空振りなら深追いしない。
+      - [ ] **§2.3-c 残 administrative op（`SetVarDynamic`・`CheckReadOnly`）** — 上記の
+            事前計測ゲートを通ってから着手。
+- [ ] **★perf の次の的は profile が示す「割当と call path」（opcode ヒストグラムではない）**:
+      fib の profile 上位は ① `call_compiled_function_positional_light`（call path）
+      ② `malloc`/`free`（**呼び出しごとの割当チャーン**）③ `Env::get_sym`（dual store の名前引き）。
+      ② と ③ は locals↔env の dual store という同じ根から出ており、**§6 の
+      「`BlockScope` の locals 全 clone/restore 撤去」＝レキシカルスコープ slot キャンペーン**
+      （[docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md)）が直接叩く。
+      これを perf の本丸として §6 から昇格させる。
 - [ ] **opcode 残件（[docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6・#4279 の続き）**:
       ラベル等の inline `Option<String>` payload（`Last`/`Next`/`Redo`/loop 系/`SmartMatchExpr.lhs_var`）
       の定数プール `Option<u32>` 化（`OpCode` を 48B 未満へ） / per-instruction 定数コスト
@@ -318,8 +334,9 @@ per-call env deep clone 撤廃は完了（news/2026-06.md）。残レバー:
 - [ ] 生ポインタ aliased write の撤廃: 旧 `arc_contents_mut` は dead 化済みで、本番経路は
       `gc::gc_contents_mut` / `Gc::{get,make}_mut` に移動（unsoundness は解消でなく移動 —
       ANALYSIS rev8 §2.1）。Track B T4–T6 完了（news/2026-07.md）を受けて残実態の棚卸しから。
-- [ ] **`BlockScope` の locals 全 clone/restore 撤去**（レキシカルスコープ slot キャンペーン
-      [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md) の最終手・perf 本丸）:
+- [ ] **★`BlockScope` の locals 全 clone/restore 撤去**（レキシカルスコープ slot キャンペーン
+      [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md) の最終手・**perf 本丸**
+      — #4489 の profile が示す malloc/free チャーンと `Env::get_sym` の根っこ・§5 参照）:
       `exec_block_scope_op` の `self.locals.clone()` を撤去する。`$OUTER::` 実行時 snapshot・
       GC roots・env 再同期と絡む load-bearing refactor で専用セッション向き。
       前段（S1–S17 slot 焼き込み＋shadow-slot 既定 ON 化）は完了済み（news/2026-07.md）。
