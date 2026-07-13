@@ -1,4 +1,4 @@
-# Perf scouting: what actually costs time on the call path (2026-07-13, post-#4489)
+# Perf scouting: what actually costs time on the call path
 
 Entry point for the next perf session. This is a **scouting document**: measured
 profiles, the root cause behind each hot symbol, and the slices they imply — in
@@ -11,45 +11,57 @@ The measurement discipline this document follows is
 and kernel-inclusive `instructions` swing 2–8% on this hybrid CPU and cannot
 decide a 3% change).
 
-## 1. The profile
+> **2026-07-14 rewrite.** The first version of this document (written at #4489)
+> named the *per-call env overlay* as the prize and pointed at the lexical-scope
+> slot campaign. That call was **wrong, and the measurements below disprove it** —
+> see §4. What actually cost the time was per-call and per-assignment **string
+> formatting and hashing**, which #4492–#4495 removed for gains of 24–39%. The
+> corrected model is recorded here so the next session does not re-derive it.
 
-`perf record -F 999 -e cycles:u`, release build, **JIT on (the default config)**,
-pinned to one P-core, `main` at #4489.
+## 1. What landed (2026-07-13/14) and what it bought
 
-### bench-fib (call-dominated)
+| PR | change | effect |
+|---|---|---|
+| #4492 | `readonly_vars` was a `HashSet<String>` **deep-cloned on every call** (`RawTable` alloc + a heap `String` per entry + SipHash). Now `Arc<FxHashSet<Symbol>>`, saved by `Arc` bump. Also removed the per-call `HashSet<&str>` built by the return merge, and the re-interning local-seed loop. | bench-fib **−32.3%**, bench-tak **−23.9%** |
+| #4493 | Every scalar store built two env keys with `format!("__mutsu_sigilless_{alias,readonly}::{name}")` + `Symbol::intern`. Now pre-interned per local slot (`CompiledCode::locals_alias_sym` / `locals_readonly_sym`). Also dropped a duplicated `flush_local_to_env`. | mandelbrot −14.9%, num-arith −21.6% |
+| #4494 | Instance attributes were `HashMap<String, Value>`. Now `AttrMap` = `FxHashMap<Symbol, Value>`, with the hot `$!x`/`$.x` paths resolving through a per-chunk `local_attr_keys` table (no twigil parse, no interning, no `format!`). | method-call **−11.5%**, bench-class −2.7% |
+| #4495 | A `my $t = ...` declaration ran **six `format!`s and four env probes before storing anything** (speculative clears of an earlier same-named variable's metadata). Every scalar store also called `reset_atomic_var_key` → `format!` + env probe + a `shared_vars` **read lock**. All pre-interned or gated. | mandelbrot **−33.7%** (cumulative), time-parts **−37.2%**, num-arith **−32.1%** |
+
+Cumulative vs. the pre-campaign `main`: time-parts −37%, mandelbrot −34%, fib
+−32%, num-arith −32%, tak −24%, method-call −15%, hash −8%, string −6%, class −4%.
+
+**The lesson generalizes:** the interpreter's hot paths were paying for
+*name-keyed metadata* — building `__mutsu_*::<name>` strings at runtime and
+hashing them. Every remaining `format!("__mutsu_…::{name}")` on a per-op path is
+a candidate; the fix is always the same (pre-intern the `Symbol` per local slot,
+plus a monotonic "was such a key ever created" gate).
+
+## 2. The profile now (post-#4495, release, JIT on, one P-core)
+
+### bench-tak — the next target (mutsu 0.36s vs raku 0.20s, **1.8×**)
 
 | symbol | % | what it really is |
 |---|---|---|
-| `call_compiled_function_positional_light` | 10.9 | the light-call frame itself |
-| `_int_free` + `_int_malloc` | **11.8** | per-call allocation churn |
-| `Env::scoped_child` | 5.4 | per-call env overlay |
-| **JIT native code (`mutsu_jit_1`)** | *5.7* | ← the actual compiled loop |
-| `exec_call_func_op` | 5.7 | dispatch + name lookup |
-| `Env::get_sym` | 4.4 | name-keyed reads |
-| **SipHash `Hasher::write`** | 4.1 | see §2.1 — `compiled_fns` lookup |
-| `hashbrown RawTable::clone` | 3.7 | env overlay / map clones |
-| `drop_in_place<Env>` | 2.0 | env teardown |
-| `peek_callsite_line` | 1.7 | see §2.3 |
+| `call_compiled_function_positional_light` | 12.5 | the light-call frame itself |
+| `_int_malloc` + `malloc` + `_int_free` + `cfree` | **28.4** | per-call allocation churn |
+| **SipHash `Hasher::write`** (+ `hash_one` ×2 ≈ 4.6) | **6.7** | see §3.1 — the `compiled_fns` lookup |
+| `exec_call_func_op` | 3.2 | dispatch |
+| `Env::scoped_child` | 2.9 | per-call env overlay |
+| `arg_is_container_value` | 2.9 | per-arg call-eligibility scan |
+| `indexed_varref_from_value` | 2.7 | per-arg signature binding |
+| `hashbrown::HashMap::insert` | 2.6 | |
 
-**The headline: the JIT-generated native code accounts for only 5.7% of fib.**
-Everything around the call — allocation, hashing, env — dwarfs it. Making the
-JIT better cannot fix this; the call path must get cheaper.
+### bench-mandelbrot (assignment-dominated)
 
-### bench-class (object-dominated)
+Now that the `format!`s are gone, what is left is `exec_set_local_op_inner`
+itself (~11%), the allocator, and `Env::get_sym`/`memcmp`/SipHash from the
+remaining `String`-keyed side maps (`var_type_constraints`, `var_defaults`).
 
-| symbol | % | what it really is |
-|---|---|---|
-| `malloc` + `_int_malloc` + `_int_free` + `malloc_consolidate` | **19.5** | allocator |
-| `nanbox::gc_op` + `Gc::drop` | 7.7 | refcount traffic |
-| `__memcmp_avx2` | 5.2 | `String`-keyed attribute lookups |
-| `exec_call_method_mut_op` | 2.7 | method dispatch |
-| `AttrReadGuard::drop` | 2.3 | attribute access |
+## 3. The slices, in order
 
-## 2. Root causes found by reading the code
+### 3.1 `compiled_fns` is a `HashMap<String, CompiledFunction>` with the default hasher — **do this first**
 
-### 2.1 `compiled_fns` is a `HashMap<String, CompiledFunction>` with the default hasher
-
-`src/vm/vm_call_func_ops.rs:121` — the function table is threaded through every
+`src/vm/vm_call_func_ops.rs` — the function table is threaded through every
 dispatch as `&HashMap<String, CompiledFunction>` (**std `HashMap` = SipHash**).
 Even the *ultra-fast* positional light-call path does, per call:
 
@@ -59,74 +71,102 @@ if let Some((cached_key, cached_fp)) = self.pos_light_call_cache.get(&name_sym) 
 ```
 
 So a monomorphic call that hits the cache *still* hashes the function name with
-SipHash and memcmps it. That is the 4.1% `Hasher::write` (and part of the
+SipHash and memcmps it. That is the 6.7% `Hasher::write` on tak (and part of the
 `memcmp`). The cache exists precisely to avoid resolution, yet it re-does a
 string hash to get back to the callee.
 
-Slices, cheapest first:
-
-- **S1a (mechanical)**: make the function table `FxHashMap` instead of the
-  default hasher. 84 occurrences of the type across 38 files — a type alias
+- **S1a (mechanical)**: make the table `FxHashMap`. A type alias
   (`type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>`) plus a
-  sweep. Kills the SipHash; keeps the memcmp.
-- **S1b (better)**: key the table by `Symbol` (`FxHashMap<Symbol, CompiledFunction>`).
-  `Symbol` is `Copy` + already interned per constant slot (`CompiledCode::const_sym`,
-  `opcode.rs:1949`), so hashing becomes a `u32` and the memcmp disappears.
-- **S1c (best, if S1b is not enough)**: have the light-call caches store what the
-  callee *is* (an index / `Arc<CompiledFunction>`) instead of a key to look it up
-  with — a cache hit should then do **zero** map lookups.
+  sweep of ~84 occurrences across 38 files. Kills the SipHash; keeps the memcmp.
+- **S1b (better)**: key the table by `Symbol`. `Symbol` is `Copy` and already
+  interned per constant slot (`CompiledCode::const_sym`), so hashing becomes a
+  `u32` and the memcmp disappears.
+- **S1c (best)**: have the light-call caches store what the callee *is* (an
+  index / `Arc<CompiledFunction>`) instead of a key to look it up with — a cache
+  hit then does **zero** map lookups.
 
-Gate: `instructions:u` on bench-fib / method-call / poly-call. Expect S1a+S1b to
-recover most of the 4.1% + a slice of the memcmp; if it does not, stop and
-re-profile rather than escalating to S1c on faith.
+Gate: `instructions:u` on bench-tak / bench-fib / method-call / poly-call.
 
-### 2.2 Per-call env overlay + allocation churn (the real prize)
+### 3.2 Per-call allocation churn (28% of tak)
 
-`Env::scoped_child` (5.4%) + `Env::get_sym` (4.4%) + `RawTable::clone` (3.7%) +
-`drop_in_place<Env>` (2.0%) + a large share of the 11.8% malloc/free is one
-thing: **every call still materializes a name-keyed env tier**, even for a body
-whose locals are all slot-resolved. `src/env.rs` documents the COW/overlay design
-(`scoped_child`, `MAX_OVERLAY_DEPTH` flatten) — it is already well optimized *as a
-name-keyed map*; the win is to not need it per call.
+The single biggest line on tak, and #4492 only took the `readonly_vars` share of
+it. Profile the remaining `malloc` callers with a DWARF call-graph before
+guessing: candidates are `Env::scoped_child`'s `Arc<SymMap>` box, the args `Vec`,
+`take_locals_from_pool` misses, and the `Value` clones in argument binding.
 
-This is the existing **lexical-scope slot campaign**
-([docs/lexical-scope-slot-campaign.md](lexical-scope-slot-campaign.md)), whose
-final step is removing `exec_block_scope_op`'s `self.locals.clone()`. It is the
-load-bearing refactor (`$OUTER::` runtime snapshots, GC roots, env re-sync) and
-deserves a dedicated session — but the profile says it is where the time is.
+### 3.3 The remaining `String`-keyed side maps
 
-### 2.3 `peek_callsite_line` scans the argument list on every call (1.7%)
+`var_type_constraints: HashMap<String, String>` and `var_defaults:
+HashMap<String, Value>` are probed by name on every assignment (they short-circuit
+when empty, so they cost nothing for programs that use neither — but any typed
+variable turns them on). Same treatment as #4493/#4494: key by `Symbol`.
 
-`src/runtime/call_helpers.rs:194` — every call walks its args looking for a
-synthetic `TEST_CALLSITE_LINE_KEY` pair marker. With #4489 the source line is now
-static per-instruction data (`CompiledCode::op_lines`), so the *marker itself* is
-arguably obsolete for anything the VM can reach from `ip`: the Test-module
-callsite line could be pulled from the line table at the call op instead of being
-smuggled through the argument vector. Small, self-contained, and it also removes
-an `args.retain()` on the NativeCall path.
+### 3.4 `Value::eq` on instances is super-linear — a correctness cliff, not just perf
 
-### 2.4 Attributes are `HashMap<String, Value>` (bench-class)
+Found while landing #4494. `Value::eq` deep-walks an instance's attribute map with
+**no cycle guard and no memo**, and `AttrReadGuard::new`/`drop` do O(depth)
+thread-local `Vec` scans. So *any* deep-equality compare on a long or recursive
+object graph is super-linear.
 
-`src/value/value_instance.rs:91` — attribute maps are `String`-keyed, hence the
-5.2% `memcmp` and a large share of bench-class's ~20% allocator time (each key is
-a heap `String`; `to_map()` clones). PLAN §5 already carries this as "attrs の
-`HashMap<String,Value>`/SipHash 起因の malloc 群（＝作り直し本体）". `Symbol` keys
-are the obvious move, and the same interning already exists.
+`cas` was the only caller the suite exercised that way, and it was only fast **by
+accident**: it used a structural `new_val == current` pre-check, and with `String`
+keys the SipHash iteration order happened to visit a cheap mismatching attribute
+first and short-circuit. Symbol keys reordered the map, the walk went down a
+4000-node linked list, and `roast/S17-lowlevel/cas-loop.t` went 2.7s → 53–80s.
+Fixed in #4494 by using the identity predicate (`cas_retry_matches`) the compare
+on the very next line already used. **The same cliff still sits under
+`is-deeply`/`eqv`** — worth a dedicated slice.
 
-## 3. Suggested order
+## 4. Disproved: what is NOT the problem (do not re-derive this)
 
-1. **S1a/S1b — `compiled_fns` hasher + `Symbol` key.** Mechanical, bounded, and
-   it removes a per-call string hash that the cache was supposed to make
-   unnecessary. Good first slice: it validates the measurement protocol on a
-   change whose expected effect is known.
-2. **§2.3 — retire the callsite-line argument marker** now that the line table
-   exists. Small and self-contained.
-3. **§2.4 — `Symbol`-keyed attributes.** Medium; directly targets bench-class's
-   allocator and memcmp time.
-4. **§2.2 — the lexical-scope slot campaign** (`BlockScope` locals clone/restore
-   removal). The big one; dedicated session.
+The previous version of this document claimed the prize was §2.2 "every call still
+materializes a name-keyed env tier" and pointed at the lexical-scope slot
+campaign. Three experiments (2026-07-14) say otherwise:
 
-Do **not** resume the opcode-histogram line (`SetVarDynamic`, `CheckReadOnly`)
-without first showing, per the ADR-0006 protocol, that those opcodes cost time —
-#4489 removed 21% of executed opcodes for -3.4% instructions precisely because
-opcode *count* is not opcode *cost*.
+1. **The `captures_env_by_name` flush blanket costs nothing on the loop
+   benchmarks.** `compute_needs_env_sync` marks *every* local of a frame
+   containing a `ForLoop`/`BlockScope` as `needs_env_sync`, which looks like "any
+   function with a `for` loop mirrors every local write into env". Removing
+   `ForLoop` from that list and re-measuring: **±0% on every benchmark.** The
+   reason is visible in `MUTSU_VM_STATS`: bench-mandelbrot reports
+   **`env_flushes=0`** — it never goes through `flush_local_to_env` at all. The
+   env write it *does* perform comes from the slow path's unconditional
+   `set_env_with_main_alias`, which `needs_env_sync` does not gate.
+
+2. **The SetLocal "fast path for simple scalar variables" is dead code.**
+   `simple_locals` is computed as `name.starts_with('$') && …`, but a plain
+   lexical scalar's local name is stored **sigil-stripped** (`my $x` → `"x"`). So
+   `simple_locals` is false for every ordinary scalar and the fast path in
+   `exec_set_local_op_inner` never runs. Widening the predicate does light it up
+   (verified: `env_flushes` goes 0 → 322417 on mandelbrot) — **but it breaks**
+   (`my $s = Supplier.new; $s.emit(1)` → "No such method 'emit' for invocant of
+   type 'Any'"). The fast path was written against sigiled names and has never
+   been exercised for scalars. Reviving it is its own slice with its own
+   validation, not a free win.
+
+3. **`exec_block_scope_op`'s whole-`locals` clone never appears in a profile.** It
+   is real technical debt (see below), but it is not where the time is.
+
+### What this means for the lexical-scope slot campaign
+
+[docs/lexical-scope-slot-campaign.md](lexical-scope-slot-campaign.md)'s remaining
+step (§1.3: drop the `exec_block_scope_op` whole-`locals` clone) should be
+motivated as **architecture, not perf**. The coupling was measured precisely:
+
+- `BlockScope` cannot leave the `needs_env_sync` blanket while
+  `exec_block_scope_op` restores the whole `locals` array and re-seeds it from env
+  by name — a block body's write to an *enclosing* local only survives the block
+  through its env mirror. Removing the blanket for `BlockScope` alone deterministically
+  breaks `FIRST/NEXT/LAST` loop phasers (`t/phasers.t` #3,
+  `t/dualstore-slot-local-gate.t` #6): the `LAST` body's `$seq ~= "L"` is reverted
+  at block exit.
+- So the clone removal and the blanket narrowing are **one change**, in this order:
+  bake a compile-time `block_declared_slots` onto the `BlockScope` opcode → replace
+  the whole-array restore with a targeted reset of just those slots → then drop
+  `BlockScope` from the flush blanket. (The loop-phaser control temps —
+  `__mutsu_loop_first_*`, `__mutsu_loop_ran_*`, … — are threaded through env by
+  name deliberately and must stay `needs_env_sync` regardless; they are recognisable
+  by their `__mutsu_loop_` prefix.)
+
+Do that work for the architecture (it removes the dual store), and expect the perf
+payoff to be small.
