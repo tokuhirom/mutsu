@@ -75,21 +75,44 @@ impl Interpreter {
         // local slot for much better performance in tight loops.
         let use_local_only = spec.param_local.is_some() && param_name.is_none();
 
+        // Pre-intern the per-iteration env keys once (J4d): `Env::insert` is
+        // `note_env_key` + `Symbol::intern` + `insert_sym`, and interning the
+        // same key (plus a `String` alloc for it) on every iteration profiled
+        // at ~3% of a hot numeric loop. The careted-placeholder alias pair is
+        // resolved here too, so the loop body is one or two `insert_sym`s.
+        let topic_sym = (!use_local_only && param_name.is_none()).then(|| {
+            crate::env::note_env_key("_");
+            crate::symbol::Symbol::intern("_")
+        });
+        let param_sym = param_name.as_ref().map(|name| {
+            crate::env::note_env_key(name);
+            crate::symbol::Symbol::intern(name)
+        });
+        let caret_alias_sym = param_name.as_ref().and_then(|name| {
+            let alias = if let Some(bare) = name.strip_prefix("&^") {
+                format!("&{}", bare)
+            } else if let Some(bare) = name.strip_prefix('^') {
+                bare.to_string()
+            } else {
+                return None;
+            };
+            crate::env::note_env_key(&alias);
+            Some(crate::symbol::Symbol::intern(&alias))
+        });
+
         // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
         // when end_val is i64::MAX
         'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
             let item = Value::int(i);
             self.topic_source_var = None;
 
-            if !use_local_only && param_name.is_none() {
-                self.env_mut().insert("_".to_string(), item.clone());
+            if let Some(sym) = topic_sym {
+                self.env_mut().insert_sym(sym, item.clone());
             }
-            if let Some(ref name) = param_name {
-                self.env_mut().insert(name.clone(), item.clone());
-                if let Some(bare) = name.strip_prefix("&^") {
-                    self.env_mut().insert(format!("&{}", bare), item.clone());
-                } else if let Some(bare) = name.strip_prefix('^') {
-                    self.env_mut().insert(bare.to_string(), item.clone());
+            if let Some(sym) = param_sym {
+                self.env_mut().insert_sym(sym, item.clone());
+                if let Some(alias) = caret_alias_sym {
+                    self.env_mut().insert_sym(alias, item.clone());
                 }
             }
             if let Some(slot) = spec.param_local {
