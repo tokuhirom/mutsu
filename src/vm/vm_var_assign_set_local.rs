@@ -1285,8 +1285,19 @@ impl Interpreter {
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
             self.env_mut()
                 .insert(alias_key.clone(), Value::str(resolved_source.clone()));
-            self.env_mut()
-                .insert(runtime::sigilless_readonly_key(name), Value::FALSE);
+            // Binding aliases the source, so the target inherits its readonly-ness:
+            // `sub f($ro) { my $c := $ro; $c = 3 }` is an assignment to a readonly
+            // variable, exactly as `$ro = 3` would be. Writing an unconditional
+            // `False` here made the alias writable and silently dropped the store.
+            // (The SetGlobal bind path already propagates this.)
+            let source_readonly = self.is_readonly(&resolved_source);
+            self.env_mut().insert(
+                runtime::sigilless_readonly_key(name),
+                Value::truth(source_readonly),
+            );
+            if source_readonly {
+                self.mark_readonly(name);
+            }
             self.mark_sigilless_alias_seen();
             // Create a shared ContainerRef for cross-scope binding (source in
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
@@ -1756,9 +1767,17 @@ impl Interpreter {
             None
         };
         let mut seen_aliases = std::collections::HashSet::new();
+        // Slots the forward walk writes. A `:=` records each alias's target as the
+        // *root* of the chain (`my $y := $x; my $z := $y` stores `alias::z == "x"`),
+        // so the walk from `z` reaches `x` but never the sibling alias `y`. Feeding
+        // these slots into the reverse propagation below closes the bind group.
+        let mut aliased_slots: Vec<usize> = Vec::new();
         while let Some(current_alias) = alias_name {
             if !seen_aliases.insert(current_alias.clone()) {
                 break;
+            }
+            if let Some(slot) = self.find_local_slot(code, &current_alias) {
+                aliased_slots.push(slot);
             }
             self.update_local_if_exists(code, &current_alias, &val);
             self.env_mut().insert(current_alias.clone(), val.clone());
@@ -1785,8 +1804,19 @@ impl Interpreter {
         // update $y's slot so it reads 3.
         // Uses local_bind_pairs recorded at binding time to avoid
         // cross-scope name collisions.
+        //
+        // The pairs point root -> alias, so writing the root reaches every alias
+        // directly. Writing an *alias* only reaches the root (through the forward
+        // chain walk above); the root's other aliases are its siblings, not its
+        // targets, and would keep a stale value (`my $y := $x; my $z := $y; $z = 9`
+        // left `$y` at its old value). Propagating from the slots the walk wrote —
+        // i.e. from the root as well as from `idx` — closes the group, so every name
+        // bound together observes the write regardless of which one is assigned.
+        // The pairs are per-frame (saved/restored across calls), but a frame torn
+        // down by an exception can leave a pair whose slot index does not address
+        // this frame's `locals`. Skip those rather than index out of bounds.
         for &(source, target) in &self.local_bind_pairs {
-            if source == idx {
+            if target < self.locals.len() && (source == idx || aliased_slots.contains(&source)) {
                 self.locals[target] = val.clone();
             }
         }
