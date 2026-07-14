@@ -47,8 +47,17 @@ impl Interpreter {
     }
 
     pub(crate) fn set_var_dynamic(&mut self, name: &str, dynamic: bool) {
-        let key = Self::normalize_var_meta_name(name).to_string();
-        self.var_dynamic_flags.insert(key, dynamic);
+        // `is_var_dynamic` reads this map as `.get(bare).copied().unwrap_or(false)`,
+        // so an absent entry already means "not dynamic". The common case — a plain
+        // non-dynamic `my $x` — therefore needs no owned-String key allocation +
+        // insert; only remove a stale `true` left by a same-named dynamic shadow
+        // (and only when the map is non-empty, avoiding the sigil-strip alloc).
+        let key = Self::normalize_var_meta_name(name);
+        if dynamic {
+            self.var_dynamic_flags.insert(key.to_string(), true);
+        } else if !self.var_dynamic_flags.is_empty() {
+            self.var_dynamic_flags.remove(key);
+        }
     }
 
     pub(crate) fn set_var_meta_value(&mut self, name: &str, value: Value) {
@@ -60,9 +69,9 @@ impl Interpreter {
     }
 
     pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
-        let key = name.to_string();
-        let meta_key = format!("__mutsu_type::{}", key);
         if let Some(constraint) = constraint {
+            let key = name.to_string();
+            let meta_key = format!("__mutsu_type::{}", key);
             let info = Self::parse_container_constraint(name, &constraint);
             if info.value_type == "atomicint" || constraint.contains("atomicint") {
                 self.mark_atomic_var_seen();
@@ -90,10 +99,21 @@ impl Interpreter {
                 self.register_var_container_type_metadata(&key, &info);
             }
         } else {
-            self.var_type_constraints.remove(&key);
-            self.var_hash_key_constraints.remove(&key);
-            self.env.remove(&meta_key);
-            self.env.remove(&format!("__mutsu_hash_key_type::{}", key));
+            // Fast path for the overwhelmingly common case: a plain `my $x`
+            // declaration clearing a constraint that was never set. Every such
+            // declaration reaches here (via `SetVarDynamic`), so avoid the two
+            // `format!` key allocations + the `Symbol::intern`ing `env.remove`s
+            // (the env is Symbol-keyed) unless there is actually something to
+            // clear. `env_type_constraint_seen` latches true only once an
+            // env-scoped `__mutsu_type::*` entry has ever been inserted, so when
+            // it is false no such env entry can exist to remove. The two map
+            // removes borrow `name` (`&str`) and never allocate.
+            let had_constraint = self.var_type_constraints.remove(name).is_some();
+            let had_hash_key = self.var_hash_key_constraints.remove(name).is_some();
+            if had_constraint || had_hash_key || self.env_type_constraint_seen {
+                self.env.remove(&format!("__mutsu_type::{}", name));
+                self.env.remove(&format!("__mutsu_hash_key_type::{}", name));
+            }
         }
     }
 
