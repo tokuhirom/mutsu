@@ -28,6 +28,29 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
 
+thread_local! {
+    /// The precedence level of the user-defined *prefix* operator whose operand is
+    /// currently being parsed, if any.
+    ///
+    /// A user-defined postfix normally binds to the term it follows, so the postfix loop
+    /// consumes it right there. The one exception is a postfix declared `is looser(...)`
+    /// than a prefix that is still waiting for its operand: `'foo1'3'bar1'` must be
+    /// `('foo1' 3)'bar1'`, so the postfix has to be left for the prefix branch to apply
+    /// after it has built its call. This records that pending prefix so the postfix loop
+    /// can tell the two situations apart — without it, the loop skipped *every*
+    /// precedence-annotated postfix, and a plain term (`4.7k`) then found no one to
+    /// consume it at all.
+    static PENDING_PREFIX_LEVEL: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` while parsing the operand of a user-defined prefix operator at `level`.
+fn with_pending_prefix_level<T>(level: Option<i32>, f: impl FnOnce() -> T) -> T {
+    let saved = PENDING_PREFIX_LEVEL.with(|c| c.replace(level));
+    let out = f();
+    PENDING_PREFIX_LEVEL.with(|c| c.set(saved));
+    out
+}
+
 /// Parse the operand of a `lazy`/`eager`/`hyper` statement prefix: like
 /// `return`'s `parse_comma_or_expr`, these bind looser than the comma
 /// operator, so `lazy 3,4,5` must wrap the *entire* list `(3,4,5)` rather
@@ -158,21 +181,25 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             let (rest, _) = ws(rest)?;
             // Check if this prefix has a custom precedence level
             let prec_level = crate::parser::stmt::simple::lookup_prefix_precedence(&name);
-            let (mut rest, arg) = match prec_level {
-                Some(level) if level <= crate::parser::stmt::simple::PREC_ADDITIVE => {
-                    // Looser than additive: grab everything up to additive level
-                    crate::parser::expr::precedence::loose_prefix_operand(rest, level)?
-                }
-                Some(level) if level <= crate::parser::stmt::simple::PREC_MULTIPLICATIVE => {
-                    // Between additive and multiplicative
-                    crate::parser::expr::precedence::multiplicative_operand(rest)?
-                }
-                Some(level) if level <= crate::parser::stmt::simple::PREC_POWER => {
-                    // Between multiplicative and power
-                    crate::parser::expr::precedence::power_operand(rest)?
-                }
-                _ => prefix_expr(rest)?,
-            };
+            let own_level = prec_level.unwrap_or(crate::parser::stmt::simple::PREC_PREFIX);
+            // While the operand is being parsed, a postfix looser than this prefix must be
+            // left alone -- it belongs to the whole prefix call, applied by the loop below.
+            let (mut rest, arg) =
+                with_pending_prefix_level(Some(own_level), || match prec_level {
+                    Some(level) if level <= crate::parser::stmt::simple::PREC_ADDITIVE => {
+                        // Looser than additive: grab everything up to additive level
+                        crate::parser::expr::precedence::loose_prefix_operand(rest, level)
+                    }
+                    Some(level) if level <= crate::parser::stmt::simple::PREC_MULTIPLICATIVE => {
+                        // Between additive and multiplicative
+                        crate::parser::expr::precedence::multiplicative_operand(rest)
+                    }
+                    Some(level) if level <= crate::parser::stmt::simple::PREC_POWER => {
+                        // Between multiplicative and power
+                        crate::parser::expr::precedence::power_operand(rest)
+                    }
+                    _ => prefix_expr(rest),
+                })?;
             let mut result = Expr::Call {
                 name: Symbol::intern(&name),
                 args: vec![arg],
@@ -184,7 +211,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 {
                     let post_prec =
                         crate::parser::stmt::simple::lookup_postfix_precedence(&post_name);
-                    if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
+                    if post_prec.is_some_and(|p| p < own_level) {
                         let after = &rest[post_len..];
                         result = Expr::Call {
                             name: Symbol::intern(&post_name),
@@ -2714,17 +2741,29 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         if let Some((name, len)) = crate::parser::stmt::simple::match_user_declared_postfix_op(rest)
         {
             let after = &rest[len..];
+            // A word character after the operator normally means we matched inside a longer
+            // identifier, not an operator. But two alphabetic postfixes can chain (`4.0kV`
+            // is `postfix:<V>(postfix:<k>(4.0))`), so a following *declared* postfix is a
+            // real boundary.
             let ident_continuation = after
                 .as_bytes()
                 .first()
                 .copied()
-                .is_some_and(|b| is_ident_char(Some(b)));
+                .is_some_and(|b| is_ident_char(Some(b)))
+                && crate::parser::stmt::simple::match_user_declared_postfix_op(after).is_none();
             if !ident_continuation {
-                // Skip postfix ops that have a precedence level lower than PREFIX
-                // (declared `is looser(&prefix:<...>)`). These will be handled
-                // at the prefix level after the prefix operand is parsed.
+                // A postfix declared looser than the user-defined prefix whose operand we
+                // are currently inside belongs to the whole prefix call, so leave it for the
+                // prefix branch. Outside such an operand there is nothing looser to wait
+                // for, and the postfix binds to the term it follows -- which is how a plain
+                // `4.7k` (postfix:<k> is tighter(&infix:<*>)) gets consumed at all.
                 let post_prec = crate::parser::stmt::simple::lookup_postfix_precedence(&name);
-                if post_prec.is_some_and(|p| p < crate::parser::stmt::simple::PREC_PREFIX) {
+                let pending = PENDING_PREFIX_LEVEL.with(|c| c.get());
+                let defer_to_prefix = match (post_prec, pending) {
+                    (Some(p), Some(prefix_level)) => p < prefix_level,
+                    _ => false,
+                };
+                if defer_to_prefix {
                     // Don't consume this postfix here; let it be consumed at prefix level
                 } else {
                     expr = Expr::Call {

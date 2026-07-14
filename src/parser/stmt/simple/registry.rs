@@ -42,7 +42,10 @@ pub(crate) fn resolve_op_precedence(ref_op: &str) -> Option<i32> {
         return resolve_infix_symbol_precedence(symbol);
     }
     if op.starts_with("prefix:<") || op.starts_with("postfix:<") {
-        return Some(PREC_PREFIX);
+        // A user-defined prefix/postfix may itself carry a precedence trait, and a later
+        // `is looser(&postfix:<k>)` has to be relative to *that* level, not to the default
+        // one it would have had without the trait.
+        return Some(lookup_op_precedence(op).unwrap_or(PREC_PREFIX));
     }
 
     // Bare symbol: +, *, **, ~
