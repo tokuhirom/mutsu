@@ -179,10 +179,15 @@ HTTP::Parser / MIME::Base64 / HTTP::Server::Tiny（end-to-end HTTP 配信）/ Tu
 
 - [ ] **層4 JIT（Cranelift・= §5 Lever 4）— J1〜J5 完了・既定 on（2026-07-13）**
       （J1 #4471・J2 #4474・J3 #4476・J4 #4478/#4479/#4480・J5 既定 on 切替、
-      詳細 = news/2026-07.md）。残スライス:
-      **J4d（Tier B 変数 op インライン: GetLocal/SetLocal fast path・JIT→JIT per-call
-      bind インライン・args Vec alloc 除去 — 「int ループ 5-10x」ゲートの本体）**
-      = [ADR-0004](docs/adr/0004-jit-strategy.md)。ベンチ数字の正本は bench CI
+      詳細 = news/2026-07.md）。J4d 第1弾（#4527: Tier B GetLocal インライン +
+      hot-loop entry の per-iteration ロック除去 — Num ループ -43%）完了。残スライス:
+      **J4d 続き** = [ADR-0004](docs/adr/0004-jit-strategy.md):
+      ① SetLocal の env-mirror 連鎖（`Symbol::intern`/TLS ~35% — インタプリタ側、
+      `set_env_with_main_alias_sym`→`set_shared_var_sym` の再 intern と for-loop の
+      per-iteration topic insert が主犯・profile = news 2026-07-15 の項）
+      ② JIT→JIT per-call bind インライン（fib profile:
+      `call_compiled_function_positional_light` 19% + `Env::scoped_child`/drop ~14%）
+      ③ args Vec alloc 除去。ベンチ数字の正本は bench CI
       （`bench-data` ブランチ・`+jit` 系列は #4480 から・J5 以降 plain 系列は
       `MUTSU_JIT=off` 明示 pin のインタプリタ基準線）。
 - [ ] **3b-2 traffic pruning**（[docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3.3）:
