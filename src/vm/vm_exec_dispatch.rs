@@ -2906,6 +2906,16 @@ impl Interpreter {
             } => {
                 self.sync_source_line(code, *ip);
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
+                // The receiver's env binding before the call, so the writeback
+                // below can tell whether this method actually rebound it (see
+                // there). Compared with `same_binding` — O(1), and it never walks
+                // container contents the way `PartialEq` would.
+                let receiver_before: Option<Option<Value>> =
+                    (!Self::const_str(code, *target_name_idx).is_empty()).then(|| {
+                        self.env()
+                            .get_sym(code.const_sym(*target_name_idx))
+                            .cloned()
+                    });
                 match self.exec_call_method_mut_op(
                     code,
                     *name_idx,
@@ -2931,11 +2941,39 @@ impl Interpreter {
                 // local slot. Write the receiver through to its slot here so it
                 // stays coherent without the pull. (`apply_pending_rw_writeback`
                 // mirrors the reverse pull's HashEntryRef-skip invariant.)
-                {
-                    let target_name = Self::const_str(code, *target_name_idx);
-                    if !target_name.is_empty() {
+                //
+                // ONLY when the call actually REBOUND `env[receiver]`. This used
+                // to fire after every method call on a named receiver, and
+                // `apply_pending_rw_writeback` copies `env[name]` into the local
+                // slot by name — but a frame's env also carries every same-named
+                // binding it inherited from its caller (the callee env is the
+                // flattened caller plus its own writes; parameters live in slots,
+                // not in env). So on an unchanged receiver it copied the CALLER's
+                // variable over the callee's parameter. A self-recursive routine is
+                // exactly that shape:
+                //
+                //     sub f($tree, $d) { ... ; f($tree[1], $d + 1) }
+                //
+                // Every frame has a `tree`, so *any* method call on `$tree` in the
+                // callee (`.defined`, `.gist`, even inside a `say`) silently
+                // reverted `$tree` to the caller's node, the descent never reached
+                // a leaf, and the recursion ran until the Rust stack gave out
+                // (roast integration/99problems-51-to-60.t P57 — a stack overflow
+                // that was really an infinite recursion).
+                //
+                // A method that mutates the receiver in place through its `Gc`
+                // (rather than rebinding the name) leaves the bits equal, and that
+                // is correct: the slot already holds the very same `Gc`.
+                if let Some(before) = receiver_before {
+                    let after = self.env().get_sym(code.const_sym(*target_name_idx));
+                    let rebound = match (&before, after) {
+                        (Some(b), Some(a)) => !b.same_binding(a),
+                        (None, None) => false,
+                        _ => true,
+                    };
+                    if rebound {
                         self.pending_rw_writeback_sources
-                            .push(target_name.to_string());
+                            .push(Self::const_str(code, *target_name_idx).to_string());
                     }
                 }
                 self.apply_pending_rw_writeback(code);
