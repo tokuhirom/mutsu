@@ -50,7 +50,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 
 | 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
 |---|---|---|---|
-| **① スタックオーバーフローで abort**（★根本原因は 1 つではない — 下節参照） | 4 | `99problems-41-to-50.t`・`99problems-51-to-60.t`・`man-or-boy.t`・`deep-recursion-initing-native-array.t` | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**症状は同じだが原因は 4 つ別々**で、うち「本当に深い再帰」は 1 本だけだった |
+| **① スタックオーバーフローで abort**（★同じ症状で原因は 4 つ別々 — 下節参照） | **残 1** | **残: `man-or-boy.t`**。`99problems-41-to-50.t`(#4510)・`99problems-51-to-60.t`(#4516) は無限再帰で修正済み、`deep-recursion-initing-native-array.t` は debug 計測の誤診（release では元から通る）＝whitelist 追加 | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**4 本のうち 3 本は無限再帰、1 本は計測ミス。「本当に深い再帰でスタックが足りない」ものは 1 本も無かった** |
 | **② パース不能（`===SORRY!===`）** | **残 1** | **残: `advent2012-day19.t`**（ユーザ定義演算子の優先順位） | **9 本は解消済み（#4511 / #4514 / #4515）** — 下の「② の内訳」参照。②はほぼ枯渇 |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
@@ -68,11 +68,16 @@ test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、
 | `99problems-41-to-50.t` | **無限再帰**。クロージャのフレーム env が *caller* の env の scoped child で、捕捉 env を「既にあれば入れない」でマージしていたため、caller の同名レキシカルが callee 自身の捕捉を shadow する（＝レキシカルスコープが動的スコープに化ける）。P46 のアクションは節ごとに `my @args` を持つクロージャを作るので、内側の節が外側の `@args`（自分自身を含む）を読み自己再帰した | **#4510 で修正**。P41・P46 通過。以降は P47 の パラメータ化 `multi rule expr($p)` 待ち（⑤へ） |
 | `99problems-51-to-60.t` | **無限再帰**（P57）。`CallMethodMut` が名前付きレシーバへのメソッド呼び出しのたびに `locals[slot] = env[name]` を無条件実行していたが、callee の env は「flat 化した caller + 自分の書き込み」で、**パラメータはスロットにしか無い**。よってレシーバが変わっていないとき caller の同名変数が callee のパラメータを上書きし、自己再帰 `add-to-tree($tree[1], …)` の `$tree` が呼び出し側のノードに巻き戻って葉に到達しなかった | **#4516 で修正**（rebind したときだけ書き戻す）。37 テスト完走。残 fail = test 8（平衡二分木の枝落ち）・test 21 |
 | `man-or-boy.t` | raku と 15 行完全一致したあと発散し、余分な `B` が発火する。`&x1..&x5` に兄弟フレームのクロージャが混入する**別の捕捉リーク**（`$k is copy` の共有が絡む） | 未着手。#4510 では直らない |
-| `deep-recursion-initing-native-array.t` | **これだけが本物の深い再帰**。約 20,000 段のネストが必要。`main.rs` は既に 256MB スタック（`thread::Builder::stack_size`）だが debug では 10k–20k 段で溢れる | 未着手。要 スタック拡張（`stacker`。ただし無限再帰が abort→OOM に化けるので Raku フレーム数の上限ガードとセット）または 呼び出しフレームのヒープ化 |
+| `deep-recursion-initing-native-array.t` | **バグではなかった。** 約 20,000 段のネストが要るのは本当だが、**release では元から通る**（7 秒・3/3 安定）。この表の初回計測が **debug ビルド**だったせいで overflow に見えていただけ（debug は 1 フレームあたりのネイティブスタックが数倍。release の限界は 20k–40k 段で、必要な 20k はぎりぎり収まる） | **whitelist 追加**。スタック拡張も上限ガードも不要だった |
 
 教訓: **abort の形（`stack overflow`）は原因を意味しない。** 深さを数えて raku と突き合わせ、
 無限再帰か有限の深い再帰かを先に分けること（`raku` 側は 8 呼び出しで終わるのに mutsu が
-1900 行トレースを吐く、で一発で分かる）。4 本中 3 本は無限再帰で、**真の深い再帰は 1 本だけ**だった。
+1900 行トレースを吐く、で一発で分かる）。4 本中 3 本は無限再帰で、残る 1 本は**計測ミス**だった。
+
+もう一つの教訓: **①の計測は debug ビルドで行われていた。** debug は 1 Raku フレームあたりの
+ネイティブスタック消費が release の数倍あり、`deep-recursion-initing-native-array.t`（約 20,000 段）
+は debug でだけ溢れていた。CI は release なので、**スタック深さが疑わしい失敗は必ず release で
+確認する**（CLAUDE.md の「Delegate the full roast run to CI」節と同じ話）。
 
 dual-store（locals ↔ env）由来のバグを疑うときの決定的 probe: **同一式の中で同じ変数を 2 回読む**。
 
@@ -157,13 +162,10 @@ postfix** が、項に対して一切適用されない（`4.7k` が SORRY）。
 
 ## 今のおすすめ着手順
 
-1. **① の残り 2 本**（`man-or-boy.t` / `deep-recursion-initing-native-array.t`）。
-   4 本を一撃で、という当初の想定は外れた（上の内訳表を参照）— 無限再帰だった 2 本は
-   #4510 / #4516 で片付き、残りは別物。
-   - `deep-recursion-initing-native-array.t` **だけが真の「深い再帰」**で、ここは機構の話
-     （スタック拡張 + Raku フレーム数の上限ガード / 呼び出しフレームのヒープ化）になる。
-     無制限にスタックを伸ばすと無限再帰が abort ではなく OOM に化けるので、上限ガードと必ずセット。
-   - `man-or-boy.t` は `&x1..&x5` に兄弟フレームのクロージャが混入する捕捉リーク。
+1. **① の残り 1 本 = `man-or-boy.t`**。`&x1..&x5` に兄弟フレームのクロージャが混入する
+   捕捉リーク（`$k is copy` の共有が絡む）。raku と 15 行完全一致してから発散する。
+   注意: `x4('TAG')` のような probe は B クロージャを起動して実行そのものを乱すので使えない。
+   **スタック拡張の機構は不要だった**（上の内訳表を参照）。
 2. **② パース不能 10 本を 1 本ずつ**。構文ごとに独立で、安い ★ が混じっている見込み
    （`q | … |` デリミタ・ユーザ定義 postfix `4.7k`・heredoc インデント等）。
 3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
