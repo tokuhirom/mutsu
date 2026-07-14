@@ -149,6 +149,11 @@ impl Interpreter {
         if let ValueView::LazyList(ll) = iterable.view()
             && (ll.coroutine.is_some()
                 || ll.sequence_spec.is_some()
+                // An endpoint-less closure sequence (`for 2, 3, *+2 ... * { }`) must be
+                // pulled on demand too. Without this it fell through to the eager path,
+                // which sees only the 32-element prefix `eval_sequence` generated up
+                // front and ends the loop there.
+                || ll.closure_seq.is_some()
                 || ll.lazy_pipe.is_some()
                 || ll.walk_pending.is_some()
                 // `for $cat.lines` / `for $cat.handles`: pull one element per
