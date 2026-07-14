@@ -50,7 +50,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 
 | 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
 |---|---|---|---|
-| **① 深い再帰で Rust スタックが溢れる** | 4 | `99problems-41-to-50.t`（mutsu 1/9・raku 9/9）・`99problems-51-to-60.t`・`man-or-boy.t`・`deep-recursion-initing-native-array.t` | `fatal runtime error: stack overflow, aborting`（プロセス abort）。Raku レベルの再帰が Rust の呼び出しスタックを消費している＝**インタプリタ再帰のフレーム深さ**が根本。man-or-boy は古典的な深いクロージャ再帰 |
+| **① スタックオーバーフローで abort**（★根本原因は 1 つではない — 下節参照） | 4 | `99problems-41-to-50.t`・`99problems-51-to-60.t`・`man-or-boy.t`・`deep-recursion-initing-native-array.t` | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**症状は同じだが原因は 4 つ別々**で、うち「本当に深い再帰」は 1 本だけだった |
 | **② パース不能（`===SORRY!===`）** | 10 | `advent2009-day16.t`(:58 `{`)・`advent2009-day23.t`(:122 `gather {`)・`advent2010-day11.t`(:24 `q \| … \|` = `\|` デリミタの q)・`advent2012-day04.t`(:22 `do {…} … *` 連番列)・`advent2012-day19.t`(:11 `4.7k` = ユーザ定義 postfix)・`advent2013-day04.t`(:31 heredoc インデント)・`advent2014-day16.t`(:99 `{`)・`advent2012-day15.t`（`Unexpected block in infix position`）・`6.c/MISC/bug-coverage.t`(:287 `subtest … => {`)・`6.c/APPENDICES/A04-experimental/01-misc.t` | 個別の構文が未対応。1 本ずつ潰す（安い ★ が混じっている可能性が高い） |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
@@ -58,6 +58,21 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 
 **近道（1 subtest 差のファイル）**: `6.c/S04-declarations/my-6c.t` は **111/112**（唯一の失敗＝
 test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、`advent2009-day24.t` は 3/4。
+
+### ① の内訳（2026-07-14 に 4 本とも root-cause 済み）
+
+「深い再帰でスタックが溢れる」という当初の診断は**誤り**だった。同じ abort に見えて原因は別物:
+
+| ファイル | 実際の原因 | 状態 |
+|---|---|---|
+| `99problems-41-to-50.t` | **無限再帰**。クロージャのフレーム env が *caller* の env の scoped child で、捕捉 env を「既にあれば入れない」でマージしていたため、caller の同名レキシカルが callee 自身の捕捉を shadow する（＝レキシカルスコープが動的スコープに化ける）。P46 のアクションは節ごとに `my @args` を持つクロージャを作るので、内側の節が外側の `@args`（自分自身を含む）を読み自己再帰した | **#4510 で修正**。P41・P46 通過。以降は P47 の パラメータ化 `multi rule expr($p)` 待ち（⑤へ） |
+| `99problems-51-to-60.t` | ベアブロック `{ }` 内で宣言した sub の中で `not $tree.defined` が `Any` に対し**偽**になり、`add-to-tree` が無限再帰（P57）。ファイル先頭 test 8 も別バグ（平衡二分木の枝落ち） | 未着手。`tmp/bst2.raku` 相当が最小再現 |
+| `man-or-boy.t` | raku と 15 行完全一致したあと発散し、余分な `B` が発火する。`&x1..&x5` に兄弟フレームのクロージャが混入する**別の捕捉リーク**（`$k is copy` の共有が絡む） | 未着手。#4510 では直らない |
+| `deep-recursion-initing-native-array.t` | **これだけが本物の深い再帰**。約 20,000 段のネストが必要。`main.rs` は既に 256MB スタック（`thread::Builder::stack_size`）だが debug では 10k–20k 段で溢れる | 未着手。要 スタック拡張（`stacker`。ただし無限再帰が abort→OOM に化けるので Raku フレーム数の上限ガードとセット）または 呼び出しフレームのヒープ化 |
+
+教訓: **abort の形（`stack overflow`）は原因を意味しない。** 深さを数えて raku と突き合わせ、
+無限再帰か有限の深い再帰かを先に分けること（`raku` 側は 8 呼び出しで終わるのに mutsu が
+1900 行トレースを吐く、で一発で分かる）。
 
 ## S* 系の個別ファイル残件
 
@@ -101,9 +116,11 @@ test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、
 
 ## 今のおすすめ着手順
 
-1. **① 深い再帰の stack overflow**（4 本を一撃・かつ**プロセス abort という品質問題そのもの**）。
-   Raku の再帰が Rust スタックを食う構造が根本なので、単発 fix ではなく機構の話になる
-   （呼び出しフレームのヒープ化 / スタック拡張 / 明示的な深さ制御）。インパクト最大。
+1. **① の残り 3 本**（`99problems-51-to-60.t` / `man-or-boy.t` / `deep-recursion-initing-native-array.t`）。
+   4 本を一撃で、という当初の想定は外れた（上の内訳表を参照）——
+   `99problems-41-to-50.t` はクロージャのスコープ修正（#4510）で片付いたが、残りは別物。
+   なかでも `deep-recursion-initing-native-array.t` だけが真の「深い再帰」で、ここは機構の話
+   （スタック拡張 + Raku フレーム数の上限ガード / 呼び出しフレームのヒープ化）になる。
 2. **② パース不能 10 本を 1 本ずつ**。構文ごとに独立で、安い ★ が混じっている見込み
    （`q | … |` デリミタ・ユーザ定義 postfix `4.7k`・heredoc インデント等）。
 3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
