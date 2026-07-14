@@ -1,6 +1,6 @@
 use Test;
 
-plan 14;
+plan 17;
 
 # A closure's free variables are bound in the scope where the closure was
 # *created*. When one closure calls another, the callee must read its own
@@ -120,6 +120,45 @@ plan 14;
         is ($bump(), $bump(), $a).join(','), '3,4,-10',
             'inner redeclaration does not write through the captured cell';
     }
+}
+
+# `&`-sigiled code parameters are lexicals too: a closure that forwards them
+# must read its OWN captured bindings, not same-named `&`-params in whichever
+# frame happens to invoke it. This is the man-or-boy shape: A#1's inner closure
+# fires from a deeper A frame whose &x-params are different subs
+# (roast integration/man-or-boy.t).
+{
+    sub trap(&cb, &x) { cb() }              # a frame with its own &x
+    sub mk(&x) { return sub { &x.() } }     # closure capturing the creator's &x
+    my $c = mk(sub { 'MINE' });
+    is trap($c, sub { 'CALLERS' }), 'MINE',
+        'closure reads its own captured &x, not the calling frame\'s';
+}
+
+{
+    # ... including when the &-param is only ever *forwarded as an argument*
+    # (the man-or-boy `A(--$k, $B, &x1, ...)` shape). Forwarding must not
+    # disqualify the capture: `is rw` is illegal on a `&`-parameter, so the
+    # callee cannot rebind it behind the analysis's back.
+    sub apply(&f, $v) { f($v) }
+    sub trap2(&cb, &x) { cb() }
+    sub mk2(&x) { return sub { apply(&x, 5) } }
+    my $c = mk2(sub ($n) { $n * 2 });
+    is trap2($c, sub ($n) { $n * 1000 }), 10,
+        'a forwarded &-param still resolves in the closure\'s own scope';
+}
+
+{
+    # The man-or-boy divergence in miniature: the k<=0 branch fires x1 from a
+    # frame whose own &x1 is a different sub.
+    sub A($k is copy, &x1) {
+        my $B;
+        $B = sub (*@) { A(--$k, &x1) };
+        if ($k <= 0) { return x1($k) }
+        return $B();
+    }
+    is A(2, sub (*@) { 'ORIG' }), 'ORIG',
+        'man-or-boy shape: &x1 resolves to the creating frame\'s sub';
 }
 
 # vim: expandtab shiftwidth=4

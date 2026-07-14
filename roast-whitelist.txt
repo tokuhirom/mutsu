@@ -1376,6 +1376,7 @@ roast/integration/failure-and-callsame.t
 roast/integration/lazy-bentley-generator.t
 roast/integration/lexical-array-in-inner-block.t
 roast/integration/lexicals-and-attributes.t
+roast/integration/man-or-boy.t
 roast/integration/method-calls-and-instantiation.t
 roast/integration/no-indirect-new.t
 roast/integration/packages.t

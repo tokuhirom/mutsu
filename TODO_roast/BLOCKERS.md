@@ -50,7 +50,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 
 | 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
 |---|---|---|---|
-| **① スタックオーバーフローで abort**（★同じ症状で原因は 4 つ別々 — 下節参照） | **残 1** | **残: `man-or-boy.t`**。`99problems-41-to-50.t`(#4510)・`99problems-51-to-60.t`(#4516) は無限再帰で修正済み、`deep-recursion-initing-native-array.t` は debug 計測の誤診（release では元から通る）＝whitelist 追加 | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**4 本のうち 3 本は無限再帰、1 本は計測ミス。「本当に深い再帰でスタックが足りない」ものは 1 本も無かった** |
+| **① スタックオーバーフローで abort**（★同じ症状で原因は 4 つ別々 — 下節参照） | **完了** | `99problems-41-to-50.t`(#4510)・`99problems-51-to-60.t`(#4516)・`man-or-boy.t`（`&`-シジル free var スキャン + vouch — 下節）は無限再帰で修正済み、`deep-recursion-initing-native-array.t` は debug 計測の誤診（release では元から通る）＝whitelist 追加 | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**4 本のうち 3 本は無限再帰、1 本は計測ミス。「本当に深い再帰でスタックが足りない」ものは 1 本も無かった** |
 | **② パース不能（`===SORRY!===`）** | **0（完了）** | 10 本すべて解消（#4511 / #4514 / #4515 / #4517 / #4518 / #4522） | **このクラスタは枯渇。** 7 本が whitelist 到達、3 本はパースを通過して機能ギャップへ移行 — 下の「② の内訳」参照 |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
@@ -67,7 +67,7 @@ test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、
 |---|---|---|
 | `99problems-41-to-50.t` | **無限再帰**。クロージャのフレーム env が *caller* の env の scoped child で、捕捉 env を「既にあれば入れない」でマージしていたため、caller の同名レキシカルが callee 自身の捕捉を shadow する（＝レキシカルスコープが動的スコープに化ける）。P46 のアクションは節ごとに `my @args` を持つクロージャを作るので、内側の節が外側の `@args`（自分自身を含む）を読み自己再帰した | **#4510 で修正**。P41・P46 通過。以降は P47 の パラメータ化 `multi rule expr($p)` 待ち（⑤へ） |
 | `99problems-51-to-60.t` | **無限再帰**（P57）。`CallMethodMut` が名前付きレシーバへのメソッド呼び出しのたびに `locals[slot] = env[name]` を無条件実行していたが、callee の env は「flat 化した caller + 自分の書き込み」で、**パラメータはスロットにしか無い**。よってレシーバが変わっていないとき caller の同名変数が callee のパラメータを上書きし、自己再帰 `add-to-tree($tree[1], …)` の `$tree` が呼び出し側のノードに巻き戻って葉に到達しなかった | **#4516 で修正**（rebind したときだけ書き戻す）。37 テスト完走。残 fail = test 8（平衡二分木の枝落ち）・test 21 |
-| `man-or-boy.t` | **無限再帰**。#4510 と同じ「呼び出し側フレームの同名レキシカルがクロージャ自身の捕捉を shadow する」バグの残り。ただし今回 shadow されるのは **`&x1..&x5`（A の `&`-シジル・パラメータ）**で、`authoritative_free_vars` に入っていないため上書き install されない。詳細は下記 | 未解決。`#4510` の権威判定を `&` コード変数まで届かせる必要がある |
+| `man-or-boy.t` | **無限再帰**。#4510 と同じ「呼び出し側フレームの同名レキシカルがクロージャ自身の捕捉を shadow する」バグの残り。ただし今回 shadow されるのは **`&x1..&x5`（A の `&`-シジル・パラメータ）**で、`authoritative_free_vars` に入っていないため上書き install されない。詳細は下記 | **修正済み・whitelist 追加**（10/10）。(a) `GetCodeVar`/`CallOnCodeVar` を free var スキャンに追加（定数はシジル無し `"x1"`・レキシカルは `&x1` なので `&` を付けて記録）、(b) rw-arg sink 除外（`own_call_arg_sources`）から `&` 名を免除（raku は `&` パラメータへの `is rw` を拒否するので rebind 経路が無い） |
 | `deep-recursion-initing-native-array.t` | **バグではなかった。** 約 20,000 段のネストが要るのは本当だが、**release では元から通る**（7 秒・3/3 安定）。この表の初回計測が **debug ビルド**だったせいで overflow に見えていただけ（debug は 1 フレームあたりのネイティブスタックが数倍。release の限界は 20k–40k 段で、必要な 20k はぎりぎり収まる） | **whitelist 追加**。スタック拡張も上限ガードも不要だった |
 
 教訓: **abort の形（`stack overflow`）は原因を意味しない。** 深さを数えて raku と突き合わせ、
@@ -116,10 +116,28 @@ A#6 は「A#1 の B が **A#5 の中から** 発火した」もの。B の本体
 これは #4510 で直した shadowing と同一のバグ。#4510 は「creator が捕捉後に変更しない
 plain lexical」だけを上書き install する（`CompiledCode::authoritative_free_vars`）が、
 `&x1..&x5` はそこに入っていないため don't-overwrite に落ち、呼び出し元の同名パラメータに
-負ける。`own_call_arg_sources`（`x4(&x1, …)` に渡すので除外）を `&` シジルだけ免除する実験は
-**効かなかった** ので、`&`-シジル・コード変数が free var / locals としてどのキー
-（`&x1` か `x1` か）で扱われているかを先に確認すること — `CallOnCodeVar { name_idx }` は
-シジル無しの名前を持つ疑いがある。
+負ける。
+
+**解決（2026-07-15）**: 原因は 2 段重ねで、両方を直す必要があった（片方だけの実験が
+「効かなかった」のはこのため）:
+
+1. **free var スキャン漏れ**: `&x1` の読みは `GetCodeVar`/`CallOnCodeVar` で行われ、定数は
+   シジル無しの `"x1"`。`op_name_const_idx`（GetGlobal 系）に含まれないため `free_var_syms` に
+   一切入らず、capture フィルタ（`&x1` は plain user lexical なのでシステム名ルールでも
+   残らない）が落として **捕捉すらされていなかった**＝純粋な動的スコープで解決されていた。
+   → スキャンに `&` を付けた `&x1` キーで記録する。
+2. **rw-arg sink 除外**: A は `x4($k, &x1, …)` と `&x1..&x5` を引数として転送するので
+   `own_call_arg_sources` が vouch を却下していた。だが **raku は `&`-シジル・パラメータへの
+   `is rw` を拒否する**（"Can only use 'is rw' on a scalar ('$' sigil) parameter"）ので、
+   `&` 引数が callee から rebind される経路はスペック上存在しない → `&` 名を免除。
+   （`is raw` での rebind は理論上残るが既知ギャップとして許容。直接の `&f = …` rebind は
+   name-write なので従来どおり捕捉される。）
+
+**残ギャップ（roast 上の既知 fail なし）**: ベアコール `x()` は `CallFunc { name_idx }` で
+callee 名としてしか現れず free var スキャン対象外のまま。`sub mk(&x) { sub { x() } }` の
+クロージャを同名 `&x` を持つ別フレームから呼ぶと今も動的スコープに落ちる（`&x.()` や
+引数転送 `f(&x)` は修正済み）。CallFunc 名の全登録は `&say` 等の bloat になるため、
+やるなら「creator の fold 時に `own` の `&name` と突き合わせる」設計が要る。
 
 ### ② の内訳（クラスタ完了・#4511 / #4514 / #4515 / #4517 / #4518 / #4522）
 
@@ -196,8 +214,9 @@ postfix** が、項に対して一切適用されない（`4.7k` が SORRY）。
 
 ## 今のおすすめ着手順
 
-1. **① の残り 1 本 = `man-or-boy.t`**（下記「man-or-boy の診断」に正確な根本原因あり）。
-   **スタック拡張の機構は不要だった**（上の内訳表を参照）。
+1. ~~**① の残り 1 本 = `man-or-boy.t`**~~ **完了**（2026-07-15・whitelist 追加。
+   「man-or-boy の診断」節の解決記録を参照）。①クラスタは全消化。
+   ②パース不能クラスタも #4522 で全消化（上の表参照）。
 3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
    （111/112）。`advent2011-day04.t` は 1/2。
 4. **④ エラーメッセージ品質**（`error-reporting.t` 4/33）は PLAN §6 の同名タスクと同じ的なので、

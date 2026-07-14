@@ -2586,6 +2586,18 @@ impl CompiledCode {
         }
     }
 
+    /// The constant-pool index of a code-variable read (`&f` as a value, or a
+    /// call through a code variable, `&f.()`). The constant holds the SIGIL-LESS
+    /// name (`"f"`), but the lexical itself lives under `&f` in `locals`/`env`,
+    /// so the free-var scan must re-key it with the sigil before matching.
+    fn op_code_var_read_const_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::GetCodeVar(idx) => Some(*idx),
+            OpCode::CallOnCodeVar { name_idx, .. } => Some(*name_idx),
+            _ => None,
+        }
+    }
+
     /// The `closure_compiled_codes` index an op embeds, for the ops that create a
     /// closure value (and so snapshot the creating frame's env at that point).
     fn op_closure_code_idx(op: &OpCode) -> Option<u32> {
@@ -2645,6 +2657,28 @@ impl CompiledCode {
             {
                 free.insert(Symbol::intern(&name));
             }
+            // A code-variable read (`&x1` as a value, `&x1.()`): the op's constant
+            // is the sigil-less name, but the lexical lives under `&x1`. Without
+            // this, a closure that captures a `&`-sigiled parameter never records
+            // it as a free variable — `&x1` is a plain user lexical, so the
+            // capture filter drops it and every read silently resolves through the
+            // CALLING frame's env instead (lexical scoping degrading into dynamic
+            // scoping). The closure looks right while it fires from its creator's
+            // own frame — the chains agree — and breaks the first time a sibling
+            // frame with same-named parameters invokes it (roast
+            // integration/man-or-boy.t). Non-lexical forms (`&!attr`, `&?ROUTINE`,
+            // `&*dyn`, package-qualified and operator names) keep resolving
+            // against the live env by design.
+            if let Some(idx) = Self::op_code_var_read_const_idx(op)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+                && !name.contains(':')
+            {
+                let key = format!("&{}", name.as_str());
+                if crate::env::is_plain_user_lexical(&key) && !own.contains(key.as_str()) {
+                    free.insert(Symbol::intern(&key));
+                }
+            }
             // Own locals reaching a call as arguments: an `is rw` parameter can
             // write straight back into them without any name-write op here.
             if let Some(idx) = Self::op_arg_sources_idx(op)
@@ -2658,8 +2692,19 @@ impl CompiledCode {
                         ValueView::Pair(k, _) => Some(k.to_string()),
                         _ => None,
                     };
+                    // `&`-sigiled arguments are exempt from the rw-arg-sink rule:
+                    // Raku rejects `is rw` on a non-scalar parameter ("Can only
+                    // use 'is rw' on a scalar ('$' sigil) parameter"), so a code
+                    // variable handed to a call cannot be rebound through one.
+                    // Without the exemption, a routine that both captures its
+                    // `&`-params in a closure and forwards them to calls (the
+                    // man-or-boy `A`) could never vouch for them. A direct
+                    // `&f = ...` rebind is a name-write and is still caught; an
+                    // `is raw` param rebinding a passed `&`-arg remains a known
+                    // gap of this analysis.
                     if let Some(name) = name
                         && own.contains(name.as_str())
+                        && !name.starts_with('&')
                     {
                         own_call_arg_sources.insert(Symbol::intern(&name));
                     }
