@@ -66,13 +66,26 @@ test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、
 | ファイル | 実際の原因 | 状態 |
 |---|---|---|
 | `99problems-41-to-50.t` | **無限再帰**。クロージャのフレーム env が *caller* の env の scoped child で、捕捉 env を「既にあれば入れない」でマージしていたため、caller の同名レキシカルが callee 自身の捕捉を shadow する（＝レキシカルスコープが動的スコープに化ける）。P46 のアクションは節ごとに `my @args` を持つクロージャを作るので、内側の節が外側の `@args`（自分自身を含む）を読み自己再帰した | **#4510 で修正**。P41・P46 通過。以降は P47 の パラメータ化 `multi rule expr($p)` 待ち（⑤へ） |
-| `99problems-51-to-60.t` | ベアブロック `{ }` 内で宣言した sub の中で `not $tree.defined` が `Any` に対し**偽**になり、`add-to-tree` が無限再帰（P57）。ファイル先頭 test 8 も別バグ（平衡二分木の枝落ち） | 未着手。`tmp/bst2.raku` 相当が最小再現 |
+| `99problems-51-to-60.t` | **無限再帰**（P57）。`CallMethodMut` が名前付きレシーバへのメソッド呼び出しのたびに `locals[slot] = env[name]` を無条件実行していたが、callee の env は「flat 化した caller + 自分の書き込み」で、**パラメータはスロットにしか無い**。よってレシーバが変わっていないとき caller の同名変数が callee のパラメータを上書きし、自己再帰 `add-to-tree($tree[1], …)` の `$tree` が呼び出し側のノードに巻き戻って葉に到達しなかった | **#4516 で修正**（rebind したときだけ書き戻す）。37 テスト完走。残 fail = test 8（平衡二分木の枝落ち）・test 21 |
 | `man-or-boy.t` | raku と 15 行完全一致したあと発散し、余分な `B` が発火する。`&x1..&x5` に兄弟フレームのクロージャが混入する**別の捕捉リーク**（`$k is copy` の共有が絡む） | 未着手。#4510 では直らない |
 | `deep-recursion-initing-native-array.t` | **これだけが本物の深い再帰**。約 20,000 段のネストが必要。`main.rs` は既に 256MB スタック（`thread::Builder::stack_size`）だが debug では 10k–20k 段で溢れる | 未着手。要 スタック拡張（`stacker`。ただし無限再帰が abort→OOM に化けるので Raku フレーム数の上限ガードとセット）または 呼び出しフレームのヒープ化 |
 
 教訓: **abort の形（`stack overflow`）は原因を意味しない。** 深さを数えて raku と突き合わせ、
 無限再帰か有限の深い再帰かを先に分けること（`raku` 側は 8 呼び出しで終わるのに mutsu が
-1900 行トレースを吐く、で一発で分かる）。
+1900 行トレースを吐く、で一発で分かる）。4 本中 3 本は無限再帰で、**真の深い再帰は 1 本だけ**だった。
+
+dual-store（locals ↔ env）由来のバグを疑うときの決定的 probe: **同一式の中で同じ変数を 2 回読む**。
+
+```raku
+sub f($tree, $d) {
+    say $tree.WHAT.^name ~ ' | ' ~ $tree.WHAT.^name;
+    return if $d >= 1;
+    f($tree[1], $d + 1);
+}
+f([3, Any, Any], 0);
+# raku:  Array | Array  /  Any | Any
+# 修正前 mutsu:            Any | Array   ← 1 回目は正・2 回目が呼び出し側の値に巻き戻る
+```
 
 ### ② の内訳（2026-07-14 実測・#4511 / #4514 / #4515 後）
 
@@ -144,11 +157,13 @@ postfix** が、項に対して一切適用されない（`4.7k` が SORRY）。
 
 ## 今のおすすめ着手順
 
-1. **① の残り 3 本**（`99problems-51-to-60.t` / `man-or-boy.t` / `deep-recursion-initing-native-array.t`）。
-   4 本を一撃で、という当初の想定は外れた（上の内訳表を参照）——
-   `99problems-41-to-50.t` はクロージャのスコープ修正（#4510）で片付いたが、残りは別物。
-   なかでも `deep-recursion-initing-native-array.t` だけが真の「深い再帰」で、ここは機構の話
-   （スタック拡張 + Raku フレーム数の上限ガード / 呼び出しフレームのヒープ化）になる。
+1. **① の残り 2 本**（`man-or-boy.t` / `deep-recursion-initing-native-array.t`）。
+   4 本を一撃で、という当初の想定は外れた（上の内訳表を参照）— 無限再帰だった 2 本は
+   #4510 / #4516 で片付き、残りは別物。
+   - `deep-recursion-initing-native-array.t` **だけが真の「深い再帰」**で、ここは機構の話
+     （スタック拡張 + Raku フレーム数の上限ガード / 呼び出しフレームのヒープ化）になる。
+     無制限にスタックを伸ばすと無限再帰が abort ではなく OOM に化けるので、上限ガードと必ずセット。
+   - `man-or-boy.t` は `&x1..&x5` に兄弟フレームのクロージャが混入する捕捉リーク。
 2. **② パース不能 10 本を 1 本ずつ**。構文ごとに独立で、安い ★ が混じっている見込み
    （`q | … |` デリミタ・ユーザ定義 postfix `4.7k`・heredoc インデント等）。
 3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
