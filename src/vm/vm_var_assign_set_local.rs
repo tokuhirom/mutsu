@@ -1283,8 +1283,24 @@ impl Interpreter {
         if let Some(source_name) = bind_source {
             let alias_key = runtime::sigilless_alias_key(name);
             let resolved_source = self.resolve_sigilless_alias_source_name(&source_name);
+            // The write path walks `__mutsu_sigilless_alias::<name>` hop by hop, so
+            // recording the *immediate* source keeps every intermediate name on the
+            // path. Pre-resolving straight to the chain's root skips them, and an
+            // `is rw` parameter is itself an alias of the caller's variable: in
+            // `sub f($x is rw) { my $c := $x; $c = 3 }` the source `x` resolved to
+            // the caller's `v`, a name with no slot in this frame, so neither `$x`
+            // nor the caller was ever updated. Redirect only when the immediate
+            // source really is a local here; otherwise keep the resolved root, as
+            // before (the walk reaches it either way).
+            let alias_target = if source_name != resolved_source
+                && code.locals.iter().any(|n| n == &source_name)
+            {
+                source_name.clone()
+            } else {
+                resolved_source.clone()
+            };
             self.env_mut()
-                .insert(alias_key.clone(), Value::str(resolved_source.clone()));
+                .insert(alias_key.clone(), Value::str(alias_target));
             // Binding aliases the source, so the target inherits its readonly-ness:
             // `sub f($ro) { my $c := $ro; $c = 3 }` is an assignment to a readonly
             // variable, exactly as `$ro = 3` would be. Writing an unconditional
@@ -1462,10 +1478,30 @@ impl Interpreter {
                 && !name.starts_with('%')
                 && !name.starts_with('&')
             {
-                let container = if let ValueView::ContainerRef(arc) = val.view() {
-                    Value::container_ref(arc.clone())
-                } else {
-                    val.clone().into_container_ref()
+                // Reuse the source's existing cell when it already has one, so a
+                // further bind joins the same cell instead of minting a rival.
+                // Reading the source derefs its cell, so `val` is the plain value
+                // and the `ContainerRef` arm below cannot catch this: without the
+                // lookup, `my $c := $x; my $d := $c` gave `$d` a fresh cell and cut
+                // it off from `$x`'s, so a write through `$d` never reached `$x`
+                // (nor, for an rw param, the caller). Mirrors the whole-container
+                // bind path, which already reuses the source cell.
+                let source_cell = code
+                    .locals
+                    .iter()
+                    .rposition(|n| n == &source_name)
+                    .and_then(|s| match self.locals[s].view() {
+                        ValueView::ContainerRef(arc) => Some(arc.clone()),
+                        _ => None,
+                    })
+                    .or_else(|| match self.env().get(&resolved_source).map(Value::view) {
+                        Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+                        _ => None,
+                    });
+                let container = match (val.view(), source_cell) {
+                    (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
+                    (_, Some(arc)) => Value::container_ref(arc),
+                    _ => val.clone().into_container_ref(),
                 };
                 self.locals[idx] = container.clone();
                 // Update source in locals if present
