@@ -43,6 +43,22 @@ impl Compiler {
             .collect()
     }
 
+    /// Thread the `&`-sigiled lexicals visible at this point (own `&` locals —
+    /// params like `&x1`, `my &f` — plus everything inherited from enclosing
+    /// scopes) down to a child sub/closure compiler. `compute_free_vars` uses
+    /// the set to recognise a bare call `x1(...)` as a read of the lexical
+    /// `&x1` that the child must capture (see
+    /// `CompiledCode::outer_code_var_names`).
+    pub(super) fn inherit_outer_code_var_names(&self, child: &mut Compiler) {
+        child.code.outer_code_var_names = self
+            .local_map
+            .keys()
+            .filter(|k| k.starts_with('&'))
+            .cloned()
+            .chain(self.code.outer_code_var_names.iter().cloned())
+            .collect();
+    }
+
     /// Compile a SubDecl body to a CompiledFunction and store it.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_sub_body(
@@ -99,6 +115,7 @@ impl Compiler {
             .unwrap_or(false);
         let mut sub_compiler = Compiler::new();
         self.inherit_fold_ctx(&mut sub_compiler);
+        self.inherit_outer_code_var_names(&mut sub_compiler);
         sub_compiler.is_routine = true;
         sub_compiler.lexically_in_routine = true;
         // A method body carries the synthetic `?CLASS` parameter injected by the
@@ -592,6 +609,7 @@ impl Compiler {
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
         self.inherit_fold_ctx(&mut sub_compiler);
+        self.inherit_outer_code_var_names(&mut sub_compiler);
         sub_compiler.is_routine = is_routine;
         // Make the names of all constants visible at this closure's definition
         // point known to the child compiler, so a `constant X` inside the body

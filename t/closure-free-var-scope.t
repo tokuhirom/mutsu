@@ -1,6 +1,6 @@
 use Test;
 
-plan 17;
+plan 22;
 
 # A closure's free variables are bound in the scope where the closure was
 # *created*. When one closure calls another, the callee must read its own
@@ -159,6 +159,51 @@ plan 17;
     }
     is A(2, sub (*@) { 'ORIG' }), 'ORIG',
         'man-or-boy shape: &x1 resolves to the creating frame\'s sub';
+}
+
+{
+    # A BARE call `x()` reaches the callee name only through the call opcode
+    # (there is no separate read op), and must still capture the creator's &x.
+    sub trap-b(&cb, &x) { cb() }
+    sub mk-b(&x) { return sub { x() } }
+    my $c = mk-b(sub { 'BARE-MINE' });
+    is trap-b($c, sub { 'BARE-CALLERS' }), 'BARE-MINE',
+        'a bare call x() captures the creating frame\'s &x';
+}
+
+{
+    # ... in statement position too (a different call opcode).
+    sub trap-s(&cb, &x) { cb() }
+    sub mk-s(&x) { return sub { x(); 'done' } }
+    my $c = mk-s(sub { 'ignored' });
+    is trap-s($c, sub { die 'read the wrong &x' }), 'done',
+        'a statement-position bare call resolves in the closure\'s own scope';
+}
+
+# A vouched capture must stay authoritative arbitrarily deep: a closure created
+# inside ANOTHER closure's frame captures the same never-mutated binding, and a
+# same-named lexical in whatever frame finally calls it must not shadow it.
+{
+    sub trap-d(&cb, $x) { cb() }
+    sub mk-d($x) { my $mid = sub { sub { $x } }; return $mid.() }
+    is trap-d(mk-d('DEEP-MINE'), 'DEEP-CALLERS'), 'DEEP-MINE',
+        'a two-level-deep scalar capture survives a shadowing caller frame';
+}
+
+{
+    sub trap-e(&cb, &x) { cb() }
+    sub mk-e(&x) { my $mid = sub { sub { x() } }; return $mid.() }
+    is trap-e(mk-e(sub { 'DEEP-AMP-MINE' }), sub { 'DEEP-AMP-CALLERS' }),
+        'DEEP-AMP-MINE',
+        'a two-level-deep &-capture (bare call) survives a shadowing caller frame';
+}
+
+{
+    # A closure's own `my &x` shadows an outer &-param for its bare calls.
+    sub trap-o(&cb, &x) { cb() }
+    sub mk-o(&x) { return sub { my &x = sub { 'LOCAL' }; x() } }
+    is trap-o(mk-o(sub { 'OUTER' }), sub { 'CALLER' }), 'LOCAL',
+        'an own my &x shadows the captured outer one for bare calls';
 }
 
 # vim: expandtab shiftwidth=4

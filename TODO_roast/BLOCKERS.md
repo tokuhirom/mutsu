@@ -133,11 +133,21 @@ plain lexical」だけを上書き install する（`CompiledCode::authoritative
    （`is raw` での rebind は理論上残るが既知ギャップとして許容。直接の `&f = …` rebind は
    name-write なので従来どおり捕捉される。）
 
-**残ギャップ（roast 上の既知 fail なし）**: ベアコール `x()` は `CallFunc { name_idx }` で
-callee 名としてしか現れず free var スキャン対象外のまま。`sub mk(&x) { sub { x() } }` の
-クロージャを同名 `&x` を持つ別フレームから呼ぶと今も動的スコープに落ちる（`&x.()` や
-引数転送 `f(&x)` は修正済み）。CallFunc 名の全登録は `&say` 等の bloat になるため、
-やるなら「creator の fold 時に `own` の `&name` と突き合わせる」設計が要る。
+**残ギャップも解消（同 PR の追いコミット）**:
+
+- **ベアコール `x()`**: `CallFunc`/`ExecCall` 系は callee 名としてしか読みを記録しないため
+  free var スキャン対象外だった。全 callee 名の登録は `&say` 等で `free_var_syms` が bloat
+  する（クロージャ呼び出しごとの `free_at_entry` lookup 代）ので、**定義点で見えている
+  enclosing `&`-シジル・レキシカルの集合**（`CompiledCode::outer_code_var_names`、
+  `compile_closure_body`/`compile_sub_body` が親の `local_map` から transitively に伝搬）に
+  一致する callee 名だけを `&name` free var として記録する。ゼロ bloat・レキシカルに正確。
+- **多段ネストの authority 消失**（scalar でも同じだった pre-existing バグ）: vouch は
+  「creator 直下の子」にしか焼かれず、`sub mk($x) { my $mid = sub { sub { $x } }; $mid.() }`
+  の内側クロージャは中間フレームが vouch できない（`$x` は中間の local でない）ため、
+  呼び出し側の同名レキシカルに再び shadow された。vouch は「サブツリー全体が書かない」
+  ことを既に保証している（nested の free-var write は creator まで fold される）ので、
+  **中間クロージャが同名を再宣言しない限り authority を子孫へ伝搬**して解決
+  （`propagate_authoritative_down`）。
 
 ### ② の内訳（クラスタ完了・#4511 / #4514 / #4515 / #4517 / #4518 / #4522）
 
