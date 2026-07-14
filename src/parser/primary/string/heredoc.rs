@@ -5,106 +5,41 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::value::ValueView;
 
-pub(crate) fn parse_to_heredoc(input: &str, interpolate: bool) -> PResult<'_, Expr> {
-    let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
-    // In Raku, heredoc content starts on the NEXT line.
-    // The rest of the current line (after q:to/DELIM/) continues as normal code.
-    // Find the next newline to split current-line remainder from heredoc body.
-    let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
-        (&r[..nl], &r[nl + 1..])
-    } else {
-        // No newline after heredoc declaration — no heredoc body
-        return Err(PError::expected("heredoc body after newline"));
-    };
-    // Find the terminator line in the heredoc body
-    let mut content_end = None;
-    let mut terminator_end = None;
-    let mut terminator_indent = 0usize;
-    let mut search_pos = 0;
-    while search_pos <= heredoc_start.len() {
-        // Raku allows indentation before heredoc terminators.
-        let line = &heredoc_start[search_pos..];
-        let leading_ws_bytes: usize = line
-            .chars()
-            .take_while(|c| matches!(c, ' ' | '\t'))
-            .map(char::len_utf8)
-            .sum();
-        let term_pos = search_pos + leading_ws_bytes;
-        if heredoc_start[term_pos..].starts_with(delimiter) {
-            let after_delim = &heredoc_start[term_pos + delimiter.len()..];
-            if after_delim.is_empty()
-                || after_delim.starts_with('\n')
-                || after_delim.starts_with('\r')
-                || after_delim.starts_with(';')
-            {
-                content_end = Some(search_pos);
-                terminator_end = Some(term_pos + delimiter.len());
-                terminator_indent = ws_column_width(line);
-                break;
+/// Find the newline that ends the *logical* source line starting at `r`.
+///
+/// A heredoc body begins after the line on which the heredoc was introduced, but a
+/// newline that a string literal or a comment has already swallowed does not end that
+/// line. `q:to/END/, "a\nb";` therefore keeps its body below the `b";` line, not below
+/// the `a` line. Returns the byte offset of the terminating newline.
+fn logical_line_end(r: &str) -> Option<usize> {
+    let bytes = r.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\n' => return Some(i),
+            // A comment runs to the end of the line, so the next newline ends the line.
+            b'#' => return r[i..].find('\n').map(|nl| i + nl),
+            q @ (b'"' | b'\'') => {
+                // An apostrophe between word characters is part of an identifier
+                // (`isn't-ok`), not the start of a string.
+                let ident_tick = q == b'\''
+                    && i > 0
+                    && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_')
+                    && bytes.get(i + 1).is_some_and(|c| c.is_ascii_alphabetic());
+                i += 1;
+                if ident_tick {
+                    continue;
+                }
+                while i < bytes.len() && bytes[i] != q {
+                    // Skip the escaped character so `"\""` does not close early.
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
             }
-        }
-        if let Some(nl) = heredoc_start[search_pos..].find('\n') {
-            search_pos += nl + 1;
-        } else {
-            break;
+            _ => i += 1,
         }
     }
-    if let Some(end) = content_end {
-        let content = &heredoc_start[..end];
-        let content = if terminator_indent == 0 {
-            content.to_string()
-        } else {
-            dedent_heredoc(content, terminator_indent)
-        };
-        let after_terminator = &heredoc_start[terminator_end.expect("terminator end")..];
-        // Skip optional newline after terminator
-        let after_terminator = after_terminator
-            .strip_prefix('\n')
-            .unwrap_or(after_terminator);
-        // qq:to interpolates like double-quoted strings.
-        // Use HeredocInterpolation to defer variable resolution to compile time,
-        // so variables are resolved in the scope where the terminator appears
-        // (not where qq:to is declared).
-        let expr = if interpolate {
-            Expr::HeredocInterpolation(content)
-        // q:to keeps content literal; only process explicit \qq escapes.
-        } else if content.contains("\\qq") {
-            parse_single_quote_qq(&content)
-        } else {
-            // q:heredoc processes \\ → \ (same as single-quoted strings)
-            let processed = process_q_escapes(&content, '\0');
-            Expr::Literal(Value::str(processed))
-        };
-        // Return rest_of_line + after_terminator as remaining input.
-        if rest_of_line.trim().is_empty() {
-            return Ok((after_terminator, expr));
-        }
-        // We cannot return a disjoint slice pair, so concatenate.
-        // Compute the line number at the declaration point (rest_of_line's line)
-        // and the line after the terminator for correct $?LINE / SetLine tracking.
-        let decl_line = crate::parser::primary::current_line_number(rest_of_line);
-        // Count newlines in the heredoc body up to and including the terminator line
-        // to find the line number after the terminator.
-        let heredoc_body_lines = heredoc_start[..terminator_end.expect("terminator end")]
-            .matches('\n')
-            .count() as i64;
-        // +1 for the line after declaration, +heredoc_body_lines for newlines in body,
-        // +1 for the terminator line itself (the newline after it was consumed by strip_prefix)
-        let after_term_line = decl_line + 1 + heredoc_body_lines + 1;
-        let combined = format!("{}\n{}", rest_of_line, after_terminator);
-        let leaked: &'static str = Box::leak(combined.into_boxed_str());
-        // Register the leaked region with a line-jump mapping:
-        // rest_of_line portion maps to decl_line,
-        // after the \n, the rest maps to after_term_line.
-        crate::parser::primary::register_leaked_region_with_jump(
-            leaked,
-            rest_of_line.len() + 1, // offset of the \n separator + 1
-            decl_line,
-            after_term_line,
-        );
-        return Ok((leaked, expr));
-    }
-    Err(PError::expected("heredoc terminator"))
+    None
 }
 
 pub(crate) fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
@@ -143,7 +78,7 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
     use crate::parser::primary::quote_adverbs::process_content_with_flags;
 
     let (r, delimiter) = parse_to_heredoc_delimiter(input)?;
-    let (rest_of_line, heredoc_start) = if let Some(nl) = r.find('\n') {
+    let (rest_of_line, heredoc_start) = if let Some(nl) = logical_line_end(r) {
         (&r[..nl], &r[nl + 1..])
     } else {
         return Err(PError::expected("heredoc body after newline"));
@@ -195,7 +130,7 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         // Process content based on flags
         let expr = if interpolate {
             Expr::HeredocInterpolation(content)
-        } else if flags.closure || flags.words || flags.backslash {
+        } else if flags.has_interpolation() || flags.words || flags.backslash {
             // Use flags-based processing for heredoc with adverbs
             process_content_with_flags(&content, flags)
         } else if content.contains("\\qq") {
@@ -236,7 +171,8 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         let heredoc_body_lines = heredoc_start[..terminator_end.expect("terminator end")]
             .matches('\n')
             .count() as i64;
-        let after_term_line = decl_line + 1 + heredoc_body_lines + 1;
+        let rest_of_line_lines = rest_of_line.matches('\n').count() as i64;
+        let after_term_line = decl_line + rest_of_line_lines + 1 + heredoc_body_lines + 1;
         let combined = format!("{}\n{}", rest_of_line, after_terminator);
         let leaked: &'static str = Box::leak(combined.into_boxed_str());
         crate::parser::primary::register_leaked_region_with_jump(

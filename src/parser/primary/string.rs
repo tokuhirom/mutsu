@@ -41,7 +41,7 @@ pub(crate) use helpers::{
     count_repeated_bracket, process_q_escapes, quote_delimiters, read_delimited_content,
     read_multi_bracketed, unicode_bracket_close,
 };
-pub(crate) use heredoc::{parse_to_heredoc, parse_to_heredoc_with_flags};
+pub(crate) use heredoc::parse_to_heredoc_with_flags;
 pub(crate) use interp_content::parse_single_quote_qq;
 pub(crate) use interp_helpers::{
     has_malformed_angle_interpolation, parse_shell_words_index, try_double_sigil_interp,
