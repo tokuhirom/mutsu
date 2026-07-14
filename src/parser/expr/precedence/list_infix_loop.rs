@@ -383,13 +383,12 @@ pub(crate) fn parse_list_infix_loop<'a>(
             rest = r;
             continue;
         }
-        // User-defined infix words (typically via my &infix:<...> = ...),
-        // e.g. `42 same-in-Int "42"`.
-        // Do not span statement boundaries across newlines.
         let ws_before = &rest[..rest.len() - r.len()];
-        if !ws_before.contains('\n')
-            && let Some((feed_op, len)) = parse_feed_op(r)
-        {
+        // A feed operator may start a continuation line -- `==>` and `<==` are symbol
+        // operators that can never begin a statement, so crossing a newline is
+        // unambiguous. (The user-defined infix *word* below keeps the newline guard: a
+        // bare identifier opening the next line would otherwise be eaten as an infix.)
+        if let Some((feed_op, len)) = parse_feed_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = (if matches!(feed_op, FeedOp::ToLeft | FeedOp::AppendLeft) {
@@ -404,6 +403,9 @@ pub(crate) fn parse_list_infix_loop<'a>(
             rest = r;
             continue;
         }
+        // User-defined infix words (typically via my &infix:<...> = ...),
+        // e.g. `42 same-in-Int "42"`.
+        // Do not span statement boundaries across newlines.
         if !ws_before.contains('\n')
             && let Some((name, len)) = parse_custom_infix_word(r)
             && crate::parser::stmt::simple::lookup_custom_infix_precedence(&name)
