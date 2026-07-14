@@ -75,7 +75,9 @@ mod try_assign;
 
 // ---- Re-exports preserving each public function's original visibility ----
 pub(in crate::parser) use assign_stmt::assign_stmt;
-pub(in crate::parser) use comma::{parse_comma_or_expr, parse_comma_or_expr_item};
+pub(in crate::parser) use comma::{
+    normalize_comma_list_items, parse_comma_or_expr, parse_comma_or_expr_item,
+};
 pub(in crate::parser) use try_assign::try_parse_assign_expr;
 
 pub(crate) use bracket::parse_bracket_meta_assign_op;

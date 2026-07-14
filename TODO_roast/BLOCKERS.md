@@ -86,7 +86,7 @@ test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、
 
 | ファイル | 残 | ブロッカー |
 |---|---|---|
-| `integration/advent2012-day04.t` | 6/8 | **配列コンポーザ `[...]` の中で list infix がコンマより強く結合する**。`[0, \|@p Z+ \|@p, 0]` は Raku では `(0, \|@p) Z+ (\|@p, 0)`（`Z`/`X` はコンマより緩い）だが、`array_literal` がコンマで先に手分割してしまう。`parse_comma_or_expr` は `lift_meta_ops_in_list` で補正しているのに、配列コンポーザは通していない。#4515 で 0/8（コンパイル不能）→ 2/8 |
+| `integration/advent2012-day04.t` | test 5 で中断 | **pointy の分解シグネチャが sigilless 名をパーサに登録しない**。`-> [ \a, \u, \v ] { u %% v }` の `u` が宣言済みの項として見えず listop 呼び出しに化ける（`Unknown function: u`）。#4515 で 0/8（コンパイル不能）→ 2 本、#4516 で **test 1・2・4 pass ＋ test 3 は TODO（raku も同値 0 を返す）** まで前進 |
 | `integration/advent2012-day15.t` | 2/11 | phaser の文形式が独自スコープを作る（`NEXT (state $best) max= $_;` の `$best` が `LAST` から見えない）／`INIT` がメインラインより後に走る |
 | `6.c/MISC/bug-coverage.t` | 5/17 | `.count-only`/`.bool-only`、thunk のクロージャスコープ 等 |
 | `6.c/APPENDICES/A04-experimental/01-misc.t` | 3/19 | `:D`/`:U` DefiniteHow coercion（`Target:D(Source:U)`）。#4514 で 0/19 → 16/19 |

@@ -89,17 +89,24 @@ fn finalize_array_sections(
     trailing_comma: bool,
 ) -> Expr {
     if !saw_semicolon {
-        return Expr::BracketArray(merge_sequence_seeds(current), trailing_comma);
+        return Expr::BracketArray(normalize_array_items(current), trailing_comma);
     }
     if !current.is_empty() {
         sections.push(current);
     }
     if sections.len() <= 1 {
         let flat = sections.into_iter().next().unwrap_or_default();
-        return Expr::BracketArray(merge_sequence_seeds(flat), false);
+        return Expr::BracketArray(normalize_array_items(flat), false);
     }
     let elems = sections.into_iter().map(build_array_section).collect();
     Expr::BracketArray(elems, false)
+}
+
+/// `array_literal` splits the composer's contents on commas itself, so the operators that
+/// are looser than the comma have to be given their real precedence afterwards — the same
+/// repair `parse_comma_or_expr` applies to a bare comma list.
+fn normalize_array_items(items: Vec<Expr>) -> Vec<Expr> {
+    crate::parser::stmt::assign::normalize_comma_list_items(items)
 }
 
 /// Render one array section: a single item stays bare; multiple items form a
@@ -108,8 +115,20 @@ fn build_array_section(items: Vec<Expr>) -> Expr {
     if items.len() == 1 {
         items.into_iter().next().unwrap()
     } else {
-        Expr::ArrayLiteral(merge_sequence_seeds(items))
+        Expr::ArrayLiteral(normalize_array_items(items))
     }
+}
+
+/// Build a fatal `X::Syntax::Confused` parse error with reason
+/// "Two terms in a row".
+fn two_terms_confused() -> PError {
+    let reason = "Two terms in a row";
+    let message = format!("Confused: {}", reason);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("reason".to_string(), Value::str(reason.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Syntax::Confused"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
 }
 
 /// Build a fatal `X::Comp::FailGoal` parse error for an unterminated array
@@ -139,42 +158,6 @@ pub(crate) fn fail_goal_error_at(dba: &str, goal: &str, pos: Option<&str>) -> PE
     }
     let exception = Value::make_instance(Symbol::intern("X::Comp::FailGoal"), attrs);
     PError::fatal_with_exception(message, Box::new(exception))
-}
-
-/// Build a fatal `X::Syntax::Confused` parse error with reason
-/// "Two terms in a row".
-fn two_terms_confused() -> PError {
-    let reason = "Two terms in a row";
-    let message = format!("Confused: {}", reason);
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(message.clone()));
-    attrs.insert("reason".to_string(), Value::str(reason.to_string()));
-    let exception = Value::make_instance(Symbol::intern("X::Syntax::Confused"), attrs);
-    PError::fatal_with_exception(message, Box::new(exception))
-}
-
-fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
-    if items.len() < 2 {
-        return items;
-    }
-    let last = items.last().unwrap();
-    if let Expr::Binary { left, op, right } = last
-        && matches!(
-            op,
-            crate::token_kind::TokenKind::DotDotDot | crate::token_kind::TokenKind::DotDotDotCaret
-        )
-    {
-        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
-        seeds.push(*left.clone());
-        let merged = Expr::Binary {
-            left: Box::new(Expr::ArrayLiteral(seeds)),
-            op: op.clone(),
-            right: right.clone(),
-        };
-        vec![merged]
-    } else {
-        items
-    }
 }
 
 /// Parse a hash constructor literal: %(key => value, :name, ...)
