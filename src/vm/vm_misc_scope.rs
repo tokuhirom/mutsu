@@ -179,7 +179,7 @@ impl Interpreter {
         let once_scope = self.next_once_scope_id();
         // Track variables declared within this block scope.
         self.block_declared_vars
-            .push(std::collections::HashSet::new());
+            .push(crate::runtime::NameSet::default());
         // Push saved locals for $OUTER:: variable access.
         self.outer_scope_locals.push(saved_locals.clone());
         // Baseline for the ENTER-result stack: any value captured by this block's

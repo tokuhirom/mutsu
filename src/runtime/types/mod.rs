@@ -158,6 +158,14 @@ impl Interpreter {
         }
     }
 
+    /// True when nothing at all is marked readonly. Lets a caller on the
+    /// declaration hot path skip the sigil-strip + `Symbol::intern` that
+    /// [`unmark_readonly`] would need just to miss.
+    #[inline]
+    pub(crate) fn no_readonly_vars(&self) -> bool {
+        self.readonly_vars.is_empty()
+    }
+
     /// Remove a variable from the readonly set.
     pub(crate) fn unmark_readonly(&mut self, name: &str) {
         self.unmark_readonly_sym(Symbol::intern(name));

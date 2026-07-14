@@ -434,8 +434,10 @@ impl Interpreter {
             return self.env().get(&bare).cloned();
         }
         // Placeholder block parameters are stored as "^name". Allow lexical
-        // access by the de-careted name inside the same block.
-        if !name.starts_with('^') {
+        // access by the de-careted name inside the same block. Gated on the
+        // process-global latch: without a `^name` key anywhere, the `format!` +
+        // interning probe can only miss.
+        if crate::env::placeholder_var_possible() && !name.starts_with('^') {
             let placeholder = format!("^{name}");
             if let Some(val) = self.env().get(&placeholder) {
                 return Some(val.clone());
@@ -456,7 +458,7 @@ impl Interpreter {
     pub(super) fn set_env_with_main_alias_sym(
         &mut self,
         name: &str,
-        _name_sym: Option<Symbol>,
+        name_sym: Option<Symbol>,
         value: Value,
     ) {
         // Slice B (docs/vm-single-store.md): while a carrier (EVAL / interpreter
@@ -471,7 +473,11 @@ impl Interpreter {
             self.env_mut().insert(name.to_string(), value);
             return;
         }
-        if !name.starts_with('^') {
+        // A placeholder param (`$^a`) is bound under its careted name, so a write
+        // to the de-careted lexical must land on it. Skipped outright unless some
+        // `^name` key has ever been created (the common program), which otherwise
+        // costs a `format!` + an interning env probe on every mirrored local store.
+        if crate::env::placeholder_var_possible() && !name.starts_with('^') {
             let placeholder = format!("^{name}");
             if self.env().contains_key(&placeholder) {
                 loan_env!(self, set_shared_var(&placeholder, value.clone()));
@@ -479,7 +485,7 @@ impl Interpreter {
                 return;
             }
         }
-        loan_env!(self, set_shared_var(name, value.clone()));
+        loan_env!(self, set_shared_var_sym(name, name_sym, value.clone()));
         if let Some(alias) = Self::twigil_dynamic_alias(name) {
             self.env_mut().insert(alias, value.clone());
         }

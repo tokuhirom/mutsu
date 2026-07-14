@@ -308,7 +308,7 @@ pub(crate) struct VmCallFrame {
     /// snapshotting them here a callee invoked from inside a loop body would
     /// register its own `my` declarations in the *caller's* active loop scope and
     /// have them clobbered at the caller's loop exit.
-    pub saved_loop_local_vars: Vec<HashSet<String>>,
+    pub saved_loop_local_vars: Vec<crate::runtime::NameSet>,
     pub saved_loop_local_saved_env: Vec<HashMap<String, Value>>,
     /// The caller's block-scope `my`-declaration tracking stack. A `BlockScope`
     /// pushes a frame here and, on exit, reverts every name it records to the
@@ -318,7 +318,7 @@ pub(crate) struct VmCallFrame {
     /// its own blocks) would register in the *caller's* active `BlockScope` frame
     /// and get reverted at the caller's block exit — clobbering a same-named
     /// caller variable across a recursive call.
-    pub saved_block_declared_vars: Vec<HashSet<String>>,
+    pub saved_block_declared_vars: Vec<crate::runtime::NameSet>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

@@ -266,14 +266,21 @@ impl Interpreter {
             // Clear the deleted-index tracker left over from a previous
             // same-named variable in an outer scope. (Pre-interned key: this
             // whole block runs on every declaration, so a loop-body `my $t`
-            // pays it once per iteration.)
-            if let Some(sym) = code.deleted_index_sym(idx) {
+            // pays it once per iteration.) Skipped outright when no such key has
+            // ever been created -- the program never `:delete`d an index, so
+            // there is nothing to clear.
+            if crate::env::elem_index_meta_possible()
+                && let Some(sym) = code.deleted_index_sym(idx)
+            {
                 self.env_mut().remove_sym(sym);
             }
             // Clear any sigilless-readonly flag inherited from an outer
             // scope (e.g. a for-loop `\result` shouldn't block `my $result`
-            // in a called sub).
-            if let Some(sym) = code.readonly_sym(idx) {
+            // in a called sub). Same latch: the `__mutsu_sigilless_readonly::*`
+            // key only exists once the program creates a sigilless/`:=` alias.
+            if crate::env::closure_meta_keys_possible()
+                && let Some(sym) = code.readonly_sym(idx)
+            {
                 self.env_mut().remove_sym(sym);
             }
             // A fresh `my $x = ...` declaration (plain `=`, not `:=`) drops the
@@ -289,6 +296,7 @@ impl Interpreter {
             // their own alias bookkeeping and are excluded.
             if !is_bind
                 && !scalar_bind
+                && crate::env::closure_meta_keys_possible()
                 && let Some(sym) = code.alias_sym(idx)
             {
                 self.env_mut().remove_sym(sym);
@@ -304,7 +312,9 @@ impl Interpreter {
             // marking is set as part of the bind — unmarking it here would let a
             // subsequent `$y = 6` slip through. Strip the sigil to match the bare
             // key form used by check_readonly_for_modify.
-            if !is_bind && !scalar_bind {
+            // Nothing is readonly yet: skip the sigil-strip + `Symbol::intern` of
+            // the bare name (this runs on every declaration).
+            if !is_bind && !scalar_bind && !self.no_readonly_vars() {
                 let bare = name.trim_start_matches(['$', '@', '%', '&']);
                 self.unmark_readonly(bare);
             }
@@ -1881,6 +1891,11 @@ impl Interpreter {
         dynamic: bool,
     ) {
         let name = Self::const_str(code, name_idx);
+        // The env is Symbol-keyed and this op runs on *every* `my` declaration
+        // (five times per iteration of a loop body that declares five lexicals),
+        // so the name is interned once per constant slot instead of on each
+        // execution.
+        let name_sym = code.const_sym(name_idx);
         loan_env!(self, set_var_dynamic(name, dynamic));
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name.
@@ -1913,8 +1928,18 @@ impl Interpreter {
         // restored. Restoring it would wipe an accumulated `0,1,2` back to its
         // first-iteration value. Genuine body-local shadows (`for {...{ my @a }}`)
         // always get a slot, so this distinguishes the two reliably.
+        //
+        // `already_loop_local` is tested FIRST (it is a plain set probe): from the
+        // second iteration on it is true for every body-local `my`, which makes
+        // `has_coherent_slot` false regardless — so the env read and the O(locals)
+        // coherence scan below are pure waste on all but the first iteration.
+        let already_loop_local = self
+            .loop_local_vars
+            .last()
+            .is_some_and(|s| s.contains(name));
         if !self.loop_cond_active
-            && let Some(prev) = self.env().get(name).cloned()
+            && !already_loop_local
+            && let Some(prev) = self.env().get_sym(name_sym).cloned()
         {
             // Only record a *genuine, live* enclosing binding for restoration.
             // The restore writes back both env and the local slot, so the value
@@ -1928,21 +1953,17 @@ impl Interpreter {
             // at loop exit. Requiring slot==env restores only true shadows
             // (`my @a=1,2,3; for { my @a=7,8 }` keeps the outer `1,2,3`) and leaves
             // enclosing-scoped statement-modifier declarations alone.
-            // Also skip names this loop already declared in a prior iteration
-            // (`loop_local_vars`, populated below). After iteration 1 of an
+            // Names this loop already declared in a prior iteration
+            // (`loop_local_vars`, populated below) are excluded by the
+            // `already_loop_local` guard on the `if` above: after iteration 1 of an
             // accumulating statement-modifier loop, env and slot agree on the
             // partial result, which would spuriously look coherent; that value is
             // the loop's own, not an enclosing binding.
-            let already_loop_local = self
-                .loop_local_vars
-                .last()
-                .is_some_and(|s| s.contains(name));
-            let has_coherent_slot = !already_loop_local
-                && code
-                    .locals
-                    .iter()
-                    .enumerate()
-                    .any(|(i, n)| n.as_str() == name && self.locals.get(i) == Some(&prev));
+            let has_coherent_slot = code
+                .locals
+                .iter()
+                .enumerate()
+                .any(|(i, n)| n.as_str() == name && self.locals.get(i) == Some(&prev));
             if has_coherent_slot
                 && let Some(saved) = self.loop_local_saved_env.last_mut()
                 && !saved.contains_key(name)
@@ -1959,7 +1980,7 @@ impl Interpreter {
         // `&name = Any` before the RHS runs makes `EVAL(q[sub name() { ... }])`
         // look like a routine redeclaration instead of producing a callable to
         // bind into `my &name = ...`.
-        if !name.starts_with('&') && !self.env().contains_key(name) {
+        if !name.starts_with('&') && !self.env().contains_key_sym(name_sym) {
             let default = if name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if name.starts_with('%') {
@@ -1967,17 +1988,26 @@ impl Interpreter {
             } else {
                 Value::package(crate::symbol::Symbol::intern("Any"))
             };
-            self.env_mut().insert(name.to_string(), default);
+            crate::env::note_env_key(name);
+            self.env_mut().insert_sym(name_sym, default);
         }
         // Track this variable as declared within the current block scope.
         // BlockScope restoration uses this to avoid propagating block-local
         // variable values back to the outer scope.
-        if let Some(set) = self.block_declared_vars.last_mut() {
+        //
+        // Both sets are keyed by owned `String`s and both survive across loop
+        // iterations, so the `contains` probe (which borrows `name`) keeps a
+        // re-executed declaration from allocating a fresh key per iteration.
+        if let Some(set) = self.block_declared_vars.last_mut()
+            && !set.contains(name)
+        {
             set.insert(name.to_string());
         }
         // Track loop-body declarations so a closure created in the body can mark
         // this name as a per-iteration `owned_capture` (see Interpreter::loop_local_vars).
-        if let Some(set) = self.loop_local_vars.last_mut() {
+        if let Some(set) = self.loop_local_vars.last_mut()
+            && !set.contains(name)
+        {
             set.insert(name.to_string());
         }
     }
