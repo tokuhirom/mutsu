@@ -2906,15 +2906,15 @@ impl Interpreter {
             } => {
                 self.sync_source_line(code, *ip);
                 let pre = self.array_hash_attr_env_snapshot(code, *target_name_idx);
-                // Bit-identity of the receiver's env binding before the call, so
-                // the writeback below can tell whether this method actually
-                // rebound it (see there). `nanbox_bits` is O(1) and never walks
-                // container contents, unlike `PartialEq`.
-                let receiver_bits_before = (!Self::const_str(code, *target_name_idx).is_empty())
-                    .then(|| {
+                // The receiver's env binding before the call, so the writeback
+                // below can tell whether this method actually rebound it (see
+                // there). Compared with `same_binding` — O(1), and it never walks
+                // container contents the way `PartialEq` would.
+                let receiver_before: Option<Option<Value>> =
+                    (!Self::const_str(code, *target_name_idx).is_empty()).then(|| {
                         self.env()
                             .get_sym(code.const_sym(*target_name_idx))
-                            .map(Value::nanbox_bits)
+                            .cloned()
                     });
                 match self.exec_call_method_mut_op(
                     code,
@@ -2964,12 +2964,14 @@ impl Interpreter {
                 // A method that mutates the receiver in place through its `Gc`
                 // (rather than rebinding the name) leaves the bits equal, and that
                 // is correct: the slot already holds the very same `Gc`.
-                if let Some(before) = receiver_bits_before {
-                    let after = self
-                        .env()
-                        .get_sym(code.const_sym(*target_name_idx))
-                        .map(Value::nanbox_bits);
-                    if after != before {
+                if let Some(before) = receiver_before {
+                    let after = self.env().get_sym(code.const_sym(*target_name_idx));
+                    let rebound = match (&before, after) {
+                        (Some(b), Some(a)) => !b.same_binding(a),
+                        (None, None) => false,
+                        _ => true,
+                    };
+                    if rebound {
                         self.pending_rw_writeback_sources
                             .push(Self::const_str(code, *target_name_idx).to_string());
                     }

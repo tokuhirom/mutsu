@@ -995,6 +995,20 @@ impl Value {
     }
 }
 
+impl Value {
+    /// O(1) *binding* identity: the same immediate value, or the same heap
+    /// allocation. Unlike `PartialEq` it never walks container contents, so it is
+    /// usable on hot paths that only need to know whether a name was **rebound**
+    /// (as opposed to its container being mutated in place, which leaves the
+    /// binding — and these bits — unchanged).
+    ///
+    /// Available in every build, unlike the `jit`-gated `nanbox_bits`.
+    #[inline]
+    pub(crate) fn same_binding(&self, other: &Value) -> bool {
+        self.0.bits() == other.0.bits()
+    }
+}
+
 /// The `Value` representation (3b-1 step A). Private to `crate::value` — this
 /// is the compile-time seal: only the wall API (`view()` / `as_*` /
 /// constructors) crosses the module boundary. Tuple/unit variant construction
