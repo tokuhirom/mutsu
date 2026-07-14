@@ -573,9 +573,18 @@ pub(super) fn parse_or_or_op(input: &str) -> Option<(LogicalOp, usize)> {
         Some((LogicalOp::XorXor, 2))
     } else if input.starts_with("//") && !input.starts_with("///") && !input.starts_with("//=") {
         Some((LogicalOp::DefinedOr, 2))
-    } else if input.starts_with("min") && !is_ident_char(input.as_bytes().get(3).copied()) {
+    // `min=` / `max=` are compound assignments, not the infix followed by `=` — the same
+    // exclusion `||=` and `//=` get above. Without it, `(state $b) max= $_` eats the `max`
+    // here and then fails to find a right-hand expression.
+    } else if input.starts_with("min")
+        && !is_ident_char(input.as_bytes().get(3).copied())
+        && !input.starts_with("min=")
+    {
         Some((LogicalOp::Min, 3))
-    } else if input.starts_with("max") && !is_ident_char(input.as_bytes().get(3).copied()) {
+    } else if input.starts_with("max")
+        && !is_ident_char(input.as_bytes().get(3).copied())
+        && !input.starts_with("max=")
+    {
         Some((LogicalOp::Max, 3))
     } else {
         None

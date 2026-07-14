@@ -51,7 +51,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 | 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
 |---|---|---|---|
 | **① スタックオーバーフローで abort**（★根本原因は 1 つではない — 下節参照） | 4 | `99problems-41-to-50.t`・`99problems-51-to-60.t`・`man-or-boy.t`・`deep-recursion-initing-native-array.t` | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**症状は同じだが原因は 4 つ別々**で、うち「本当に深い再帰」は 1 本だけだった |
-| **② パース不能（`===SORRY!===`）** | 10 | `advent2009-day16.t`(:58 `{`)・`advent2009-day23.t`(:122 `gather {`)・`advent2010-day11.t`(:24 `q \| … \|` = `\|` デリミタの q)・`advent2012-day04.t`(:22 `do {…} … *` 連番列)・`advent2012-day19.t`(:11 `4.7k` = ユーザ定義 postfix)・`advent2013-day04.t`(:31 heredoc インデント)・`advent2014-day16.t`(:99 `{`)・`advent2012-day15.t`（`Unexpected block in infix position`）・`6.c/MISC/bug-coverage.t`(:287 `subtest … => {`)・`6.c/APPENDICES/A04-experimental/01-misc.t` | 個別の構文が未対応。1 本ずつ潰す（安い ★ が混じっている可能性が高い） |
+| **② パース不能（`===SORRY!===`）** | 残 2 | **残: `advent2012-day04.t`・`advent2012-day19.t`** | 個別の構文が未対応。**8 本は解消済み（#4511 / #4514）** — 下の「② の内訳」参照 |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
 | **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張）・`advent2010-day14.t`（`nextsame` の継承/mixin）・`advent2010-day22.t`（`Rat` の `$!numerator`/`$!denominator` 属性）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2009-day20.t`（signature の introspection/stringification）・`advent2009-day18.t`（パラメタ化 role の mixin）・`advent2013-day10.t`（`:round` 等の演算子 adverb）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。★の近道はここ |
@@ -73,6 +73,22 @@ test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、
 教訓: **abort の形（`stack overflow`）は原因を意味しない。** 深さを数えて raku と突き合わせ、
 無限再帰か有限の深い再帰かを先に分けること（`raku` 側は 8 呼び出しで終わるのに mutsu が
 1900 行トレースを吐く、で一発で分かる）。
+
+### ② の内訳（2026-07-14 実測・#4511 / #4514 後）
+
+**whitelist 到達（5 本）**: `advent2010-day11.t`・`advent2013-day04.t`・`advent2014-day16.t`（#4511:
+`qto`/`qqto` fused adverb、quote 語とデリミタ間の空白・改行、heredoc 本体の開始行、`q:to:c` の
+選択的 adverb、lazy gather Seq の多引数 `for`）／`advent2009-day16.t`・`advent2009-day23.t`（#4514:
+`when` 文修飾子、Match を RHS とする smartmatch、`(with …)`/`(given …)` の式化、`my@i` の
+空白なし宣言）。
+
+**パースは通ったが subtest が残る（3 本）** — ②ではなく機能ギャップに移行:
+
+| ファイル | 残 | ブロッカー |
+|---|---|---|
+| `integration/advent2012-day15.t` | 2/11 | phaser の文形式が独自スコープを作る（`NEXT (state $best) max= $_;` の `$best` が `LAST` から見えない）／`INIT` がメインラインより後に走る |
+| `6.c/MISC/bug-coverage.t` | 5/17 | `.count-only`/`.bool-only`、thunk のクロージャスコープ 等 |
+| `6.c/APPENDICES/A04-experimental/01-misc.t` | 3/19 | `:D`/`:U` DefiniteHow coercion（`Target:D(Source:U)`）。#4514 で 0/19 → 16/19 |
 
 ## S* 系の個別ファイル残件
 

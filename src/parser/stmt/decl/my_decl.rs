@@ -94,7 +94,14 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
             return Err(PError::expected("my/our/state declaration"));
         }
     }
-    let (mut rest, _) = ws1(rest)?;
+    // A sigil needs no whitespace to separate it from the declarator: `my@i = 1, 2` is a
+    // declaration, and so is `<a b>[my$i = 0]`. Anything else — `my enum`, `my Int $x` —
+    // still needs the space, and `my(...)` stays a call to a keyword-named sub.
+    let (mut rest, _) = if rest.starts_with(['$', '@', '%', '&']) {
+        (rest, ())
+    } else {
+        ws1(rest)?
+    };
 
     // my enum Foo <...>
     // my Array enum Foo <...>  (typed enum — base type is accepted but currently ignored)

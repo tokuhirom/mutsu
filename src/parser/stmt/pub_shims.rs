@@ -107,6 +107,18 @@ pub(crate) fn loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::loop_stmt(input)
 }
 
+/// Public accessor for the `with`/`without` statement parser (used by the term parser
+/// so `(with $x { ... })` works as an expression, like `(for ...)` already does).
+pub(crate) fn with_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::with_stmt(input)
+}
+
+/// Public accessor for the `given` statement parser (used by the term parser for
+/// `(given $x { ... })` as an expression).
+pub(crate) fn given_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::given_stmt(input)
+}
+
 pub(crate) fn labeled_loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::labeled_loop_stmt(input)
 }

@@ -253,6 +253,17 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
             Some(left.eqv(right))
         }
 
+        // A Match on the right is an already-decided match result, so it passes through
+        // like a Bool does: `$_ ~~ ($str ~~ /a/)` is true whatever the topic is. This is
+        // what makes `EXPR when $x ~~ /re/` work with no `given` to set the topic.
+        (
+            _,
+            ValueView::Instance {
+                class_name: rhs_class,
+                ..
+            },
+        ) if rhs_class == "Match" => Some(right.truthy()),
+
         // Mu instances: Mu ~~ Mu.new is True
         (
             ValueView::Package(lhs_type),

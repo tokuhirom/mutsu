@@ -1,5 +1,30 @@
 use super::*;
 
+/// Parse the type named by `returns` / `of` / `-->`, including a coercion type's
+/// parenthesized source: `Str`, `Str()`, `Int(Str)`. Without this, `returns Str()`
+/// stopped at the `(` and the trailing `()` was left to be parsed as a sub body.
+fn parse_trait_type_name(input: &str) -> PResult<'_, String> {
+    let (rest, base) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+    let Some(inner) = rest.strip_prefix('(') else {
+        return Ok((rest, base.to_string()));
+    };
+    let mut depth = 1usize;
+    for (idx, ch) in inner.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    let name = format!("{base}({})", &inner[..idx]);
+                    return Ok((&inner[idx + 1..], name));
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(PError::expected("closing ')' of a coercion type"))
+}
+
 /// Result of parsing sub traits.
 pub(crate) struct SubTraits {
     pub is_export: bool,
@@ -189,9 +214,8 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("returns", r) {
             let (r, _) = ws(r)?;
-            let (r, type_name) =
-                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
-            return_type = Some(type_name.to_string());
+            let (r, type_name) = parse_trait_type_name(r)?;
+            return_type = Some(type_name);
             // Mark that the return type came from a `returns`/`of` trait (not a
             // `-->` signature arrow): an undeclared one is X::InvalidType, while
             // an undeclared `-->` type is X::Undeclared.
@@ -203,13 +227,12 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("of", r) {
             let (r, _) = ws(r)?;
-            let (r, type_name) =
-                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+            let (r, type_name) = parse_trait_type_name(r)?;
             // `of` parameterizes a preceding `returns`/role type, e.g.
             // `returns Positional of Int` means return type `Positional[Int]`.
             return_type = Some(match return_type {
                 Some(base) if !base.contains('[') => format!("{base}[{type_name}]"),
-                _ => type_name.to_string(),
+                _ => type_name,
             });
             if !custom_traits.iter().any(|(t, _)| t == "__return_via_trait") {
                 custom_traits.push(("__return_via_trait".to_string(), None));
@@ -219,9 +242,8 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = r.strip_prefix("-->") {
             let (r, _) = ws(r)?;
-            let (r, type_name) =
-                take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
-            return_type = Some(type_name.to_string());
+            let (r, type_name) = parse_trait_type_name(r)?;
+            return_type = Some(type_name);
             input = r;
             continue;
         }
