@@ -15,6 +15,11 @@ impl Interpreter {
     }
 
     pub(super) fn is_bound_index(&self, var_name: &str, encoded: &str) -> bool {
+        // Runs on every element write. With no `:=` element bind anywhere in the
+        // program no such key can exist, so skip the `format!` + interned env probe.
+        if !crate::env::elem_index_meta_possible() {
+            return false;
+        }
         let key = format!("__mutsu_bound_index::{}", var_name);
         if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
             map.contains_key(encoded)
@@ -63,6 +68,10 @@ impl Interpreter {
     }
 
     pub(super) fn is_element_share(&self, var_name: &str, encoded: &str) -> bool {
+        // Runs on every element write; see `is_bound_index`.
+        if !crate::env::elem_index_meta_possible() {
+            return false;
+        }
         let key = format!("__mutsu_elem_share::{}", var_name);
         if let Some(ValueView::Hash(map)) = self.env().get(&key).map(Value::view) {
             map.contains_key(encoded)
@@ -72,6 +81,10 @@ impl Interpreter {
     }
 
     pub(super) fn clear_element_share(&mut self, var_name: &str, encoded: &str) {
+        // Runs on every element write; nothing to clear if no marker can exist.
+        if !crate::env::elem_index_meta_possible() {
+            return;
+        }
         let key = format!("__mutsu_elem_share::{}", var_name);
         if let Some(entry) = self.env_mut().get_mut(&key) {
             entry.with_hash_mut(|map| {
@@ -82,6 +95,9 @@ impl Interpreter {
 
     /// Remove a bound-index marker (e.g. after splice breaks the binding).
     pub(super) fn remove_bound_index(&mut self, var_name: &str, encoded: &str) {
+        if !crate::env::elem_index_meta_possible() {
+            return;
+        }
         let key = format!("__mutsu_bound_index::{}", var_name);
         if let Some(entry) = self.env_mut().get_mut(&key) {
             entry.with_hash_mut(|map| {
@@ -92,8 +108,10 @@ impl Interpreter {
 
     pub(super) fn mark_initialized_index(&mut self, var_name: &str, encoded: String) {
         // Assigning a slot clears any deleted-index marker so subsequent
-        // `:exists` checks report the slot as present again.
-        {
+        // `:exists` checks report the slot as present again. Skipped entirely when
+        // the program has never `:delete`d an index — this runs on every element
+        // write and would otherwise cost a `format!` + an interned env lookup.
+        if crate::env::elem_index_meta_possible() {
             let deleted_key = format!("__mutsu_deleted_index::{}", var_name);
             if let Some(entry) = self.env_mut().get_mut(&deleted_key) {
                 entry.with_hash_mut(|map| {
@@ -169,6 +187,11 @@ impl Interpreter {
     }
 
     pub(super) fn is_deleted_index(&self, var_name: &str, idx: i64) -> bool {
+        // Consulted per element by `:exists`; no marker can exist unless the program
+        // has `:delete`d an index. Skips the `format!` + the `idx.to_string()`.
+        if !crate::env::elem_index_meta_possible() {
+            return false;
+        }
         let key = format!("__mutsu_deleted_index::{}", var_name);
         matches!(
             self.env().get(&key).map(Value::view),
