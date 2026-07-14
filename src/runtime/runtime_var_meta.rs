@@ -108,6 +108,17 @@ impl Interpreter {
             // env-scoped `__mutsu_type::*` entry has ever been inserted, so when
             // it is false no such env entry can exist to remove. The two map
             // removes borrow `name` (`&str`) and never allocate.
+            // Both maps empty and no env-scoped constraint ever registered: there
+            // is nothing any of the three clears could find. Bail before the
+            // (SipHash-keyed) `remove` probes — this runs on every `my`
+            // declaration, so a hot loop body pays two string hashes per `my`
+            // just to look up keys that cannot exist.
+            if self.var_type_constraints.is_empty()
+                && self.var_hash_key_constraints.is_empty()
+                && !self.env_type_constraint_seen
+            {
+                return;
+            }
             let had_constraint = self.var_type_constraints.remove(name).is_some();
             let had_hash_key = self.var_hash_key_constraints.remove(name).is_some();
             if had_constraint || had_hash_key || self.env_type_constraint_seen {
@@ -243,6 +254,9 @@ impl Interpreter {
 
     /// Get the default value for a variable, if one was set with `is default(...)`.
     pub(crate) fn var_default(&self, name: &str) -> Option<&Value> {
+        if self.var_defaults.is_empty() {
+            return None;
+        }
         self.var_defaults.get(name)
     }
 
@@ -250,6 +264,11 @@ impl Interpreter {
     /// variable redeclaration so a new `my @a` does not inherit the
     /// default from an earlier same-named variable.
     pub(crate) fn clear_var_default(&mut self, name: &str) {
+        // Runs on every `my` declaration; `is default(...)` is rare, so the
+        // common program's map is empty and the (SipHash-keyed) probe is waste.
+        if self.var_defaults.is_empty() {
+            return;
+        }
         self.var_defaults.remove(name);
     }
 

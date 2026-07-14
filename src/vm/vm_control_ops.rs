@@ -149,7 +149,8 @@ impl Interpreter {
     /// per-iteration binding semantics. Must be balanced by `pop_loop_local_scope`
     /// on every exit path.
     pub(super) fn push_loop_local_scope(&mut self) {
-        self.loop_local_vars.push(std::collections::HashSet::new());
+        self.loop_local_vars
+            .push(crate::runtime::NameSet::default());
         self.loop_local_saved_env
             .push(std::collections::HashMap::new());
     }
@@ -219,7 +220,7 @@ impl Interpreter {
         self.push_loop_local_scope();
         // Track `my` declarations made directly in this branch.
         self.block_declared_vars
-            .push(std::collections::HashSet::new());
+            .push(crate::runtime::NameSet::default());
         let res = self.run_range(code, body_start, body_end, compiled_fns);
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
         // Restore shadowed outer bindings on every exit path (including errors

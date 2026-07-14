@@ -136,6 +136,16 @@ static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// over-set only makes the (correct) probe run.
 static ELEM_INDEX_META_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for `^name` placeholder-parameter keys (`$^a`
+/// & co, bound under their careted name). Every by-name env *write* and *read*
+/// (`set_env_with_main_alias` / `get_env_with_main_alias` — i.e. every mirrored
+/// local store) otherwise probes for a de-careted alias, costing a `format!` plus
+/// a `Symbol::intern`ing env lookup per store. Placeholder params are bound
+/// through the String-keyed [`Env::insert`], so the same soundness argument as
+/// [`CLOSURE_META_KEY_SEEN`] applies: monotonic, and an over-set only makes the
+/// (correct) probe run.
+static PLACEHOLDER_KEY_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// True if any closure-writeback metadata key may exist in some env. See
 /// [`CLOSURE_META_KEY_SEEN`].
 #[inline]
@@ -164,11 +174,28 @@ pub(crate) fn elem_index_meta_possible() -> bool {
     ELEM_INDEX_META_SEEN.load(Ordering::Relaxed)
 }
 
-/// Flip [`CLOSURE_META_KEY_SEEN`] / [`BOUND_KEY_SEEN`] if `key` is one of the
-/// tracked metadata keys. The outer `__mutsu_` gate keeps this ~1 byte compare
-/// for ordinary lexical names (which never start with `_`).
+/// True if any `^name` placeholder-parameter key may exist in some env. See
+/// [`PLACEHOLDER_KEY_SEEN`].
 #[inline]
-fn note_closure_meta_key(key: &str) {
+pub(crate) fn placeholder_var_possible() -> bool {
+    PLACEHOLDER_KEY_SEEN.load(Ordering::Relaxed)
+}
+
+/// Flip [`CLOSURE_META_KEY_SEEN`] / [`BOUND_KEY_SEEN`] / [`PLACEHOLDER_KEY_SEEN`]
+/// if `key` is one of the tracked metadata keys. The outer `__mutsu_` / `^` gates
+/// keep this ~1 byte compare for ordinary lexical names (which never start with
+/// `_` or `^`).
+///
+/// `pub(crate)` because the Symbol-keyed [`Env::insert_sym`] does not run it (its
+/// callers write pre-interned lexical slots, never metadata keys); a caller that
+/// routes a *name-derived* write through `insert_sym` must call this itself to
+/// keep the latches sound.
+#[inline]
+pub(crate) fn note_env_key(key: &str) {
+    if key.as_bytes().starts_with(b"^") {
+        PLACEHOLDER_KEY_SEEN.store(true, Ordering::Relaxed);
+        return;
+    }
     if key.as_bytes().starts_with(b"__mutsu_") {
         if key.starts_with("__mutsu_sigilless_")
             || key.starts_with("__mutsu_state_key::")
@@ -445,7 +472,7 @@ impl Env {
 
     #[inline]
     pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
-        note_closure_meta_key(&key);
+        note_env_key(&key);
         let sym = Symbol::intern(&key);
         self.untombstone(sym);
         self.cow_mut().insert(sym, value)
@@ -462,6 +489,16 @@ impl Env {
     }
 
     pub fn remove_sym(&mut self, key: Symbol) -> Option<Value> {
+        // Absent from a flat env's overlay: nothing to remove and no parent tier
+        // to tombstone, so the result is `None` either way. Bail before
+        // `cow_mut()`, whose `Arc::make_mut` costs an atomic RMW -- and a full
+        // map clone whenever the env is shared (a live closure/`saved_env` holds
+        // a handle). Every `my` declaration speculatively removes several
+        // metadata keys that the common program never creates, so this no-op
+        // removal is on the hottest declaration path in the VM.
+        if self.parent.is_none() && !self.inner.contains_key(&key) {
+            return None;
+        }
         let from_overlay = self.cow_mut().remove(&key);
         // Scoped env: if the key still exists in the parent/base tier, record a
         // tombstone so it stops shadowing through. The visible value before

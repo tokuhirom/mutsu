@@ -292,7 +292,32 @@ impl Interpreter {
 
     /// Write a shared variable. Updates both the local env and shared_vars.
     pub(crate) fn set_shared_var(&mut self, key: &str, value: Value) {
-        self.env.insert(key.to_string(), value.clone());
+        self.set_shared_var_sym(key, None, value);
+    }
+
+    /// [`set_shared_var`] with a pre-interned `Symbol` for `key`. The env is
+    /// Symbol-keyed, so the String-keyed entry point pays a `key.to_string()`
+    /// allocation plus a `Symbol::intern` on *every* mirrored local store
+    /// (`flush_local_to_env` runs on each `my $x = ...`). Callers that already
+    /// hold the slot's interned Symbol (`CompiledCode::locals_sym`) pass it here
+    /// and skip both. The latch bookkeeping the String path gets from
+    /// `Env::insert` is done explicitly (`note_env_key`) so the metadata flags
+    /// stay sound.
+    pub(crate) fn set_shared_var_sym(
+        &mut self,
+        key: &str,
+        sym: Option<crate::symbol::Symbol>,
+        value: Value,
+    ) {
+        match sym {
+            Some(sym) => {
+                crate::env::note_env_key(key);
+                self.env.insert_sym(sym, value.clone());
+            }
+            None => {
+                self.env.insert(key.to_string(), value.clone());
+            }
+        }
         if self.shared_vars_active {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS

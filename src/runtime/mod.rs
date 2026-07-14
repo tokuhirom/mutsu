@@ -385,6 +385,12 @@ pub(crate) type ClassAttributeDef = (
 /// hasher's SipHash-over-the-name with a `u32` hash.
 pub(crate) type ReadonlySet = Arc<rustc_hash::FxHashSet<Symbol>>;
 
+/// A set of variable names (`block_declared_vars` / `loop_local_vars`). Every
+/// `my` declaration probes both, so they use the same non-cryptographic hasher
+/// as the env rather than std's SipHash — the keys are short lexical names and
+/// the maps are process-internal, never fed untrusted input.
+pub(crate) type NameSet = rustc_hash::FxHashSet<String>;
+
 /// Per-class plan for the native default constructor
 /// (`try_native_default_construct`): everything about the class shape that the
 /// constructor consulted on EVERY construction but that only changes when the
@@ -1854,8 +1860,8 @@ pub struct Interpreter {
     /// in the stored map and are not collected — so the accessor fallback still
     /// reads them.
     pub(crate) user_declared_classes: std::collections::HashSet<String>,
-    pub(crate) block_declared_vars: Vec<HashSet<String>>,
-    pub(crate) loop_local_vars: Vec<HashSet<String>>,
+    pub(crate) block_declared_vars: Vec<NameSet>,
+    pub(crate) loop_local_vars: Vec<NameSet>,
     pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
     pub(crate) loop_cond_active: bool,
     pub(crate) outer_scope_locals: Vec<Vec<Value>>,
