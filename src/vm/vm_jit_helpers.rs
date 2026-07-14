@@ -125,6 +125,8 @@ fallible_noarg_shims! {
     mul => exec_mul_op,
     div => exec_div_op,
     modulo => exec_mod_op,
+    int_div => exec_int_div_op,
+    int_mod => exec_int_mod_op,
     pow => exec_pow_op,
     negate => exec_negate_op,
     num_lt => exec_num_lt_op,
