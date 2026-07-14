@@ -64,40 +64,64 @@ pub(crate) fn match_user_declared_prefix_op(input: &str) -> Option<(String, usiz
 pub(crate) fn match_user_declared_postfix_op(input: &str) -> Option<(String, usize)> {
     SCOPES.with(|s| {
         let scopes = s.borrow();
-        let mut best: Option<(String, usize)> = None;
-
-        for scope in scopes.iter().rev() {
-            for name in &scope.user_subs {
-                let Some(op) = name
-                    .strip_prefix("postfix:<")
+        let ops: Vec<(&String, &str)> = scopes
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.user_subs.iter())
+            .filter_map(|name| {
+                name.strip_prefix("postfix:<")
                     .and_then(|s| s.strip_suffix('>'))
+                    .map(|op| (name, op))
+            })
+            .collect();
+
+        // A word-like operator needs an identifier boundary after it, or we matched inside
+        // a longer name rather than an operator.
+        let word_like = |op: &str| {
+            op.as_bytes()
+                .last()
+                .copied()
+                .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+        };
+        let starts_ident = |rest: &str| {
+            rest.as_bytes()
+                .first()
+                .copied()
+                .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
+        };
+        // Alphabetic postfixes chain (`4kVW` is `W(V(k(4)))`), so what follows a word-like
+        // operator is a boundary as long as it can be peeled off by further declared
+        // postfixes. `4.7keys` still has no such peeling and stays one identifier.
+        let chain_ok = |mut rest: &str| {
+            while starts_ident(rest) {
+                let Some(next) = ops
+                    .iter()
+                    .map(|(_, op)| *op)
+                    .filter(|op| rest.starts_with(op))
+                    .max_by_key(|op| op.len())
                 else {
-                    continue;
+                    return false;
                 };
-                if !input.starts_with(op) {
-                    continue;
-                }
-                let consumed = op.len();
-                // For word-like operators, require identifier boundary.
-                if op
-                    .as_bytes()
-                    .last()
-                    .copied()
-                    .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
-                    && input
-                        .as_bytes()
-                        .get(consumed)
-                        .copied()
-                        .is_some_and(|b| crate::parser::helpers::is_ident_char(Some(b)))
-                {
-                    continue;
-                }
-                if best
-                    .as_ref()
-                    .is_none_or(|(_, best_len)| consumed > *best_len)
-                {
-                    best = Some((name.clone(), consumed));
-                }
+                rest = &rest[next.len()..];
+            }
+            true
+        };
+
+        let mut best: Option<(String, usize)> = None;
+        for (name, op) in &ops {
+            if !input.starts_with(op) {
+                continue;
+            }
+            let consumed = op.len();
+            let rest = &input[consumed..];
+            if word_like(op) && !chain_ok(rest) {
+                continue;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|(_, best_len)| consumed > *best_len)
+            {
+                best = Some(((*name).clone(), consumed));
             }
         }
         best

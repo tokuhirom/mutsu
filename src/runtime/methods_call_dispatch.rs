@@ -33,6 +33,25 @@ impl Interpreter {
             }
             return Err(RuntimeError::emit_signal(target));
         }
+        // `Mu.ACCEPTS`: every value can be smart-matched against, and `$x.ACCEPTS($y)` is
+        // just `$y ~~ $x`. The builtins carry their own ACCEPTS for the container types
+        // (Range, Set, Bag, Pair, ...) and a user class may define one, so this only backs
+        // the plain scalars, which otherwise threw X::Method::NotFound.
+        if method == "ACCEPTS"
+            && args.len() == 1
+            && matches!(
+                target.view(),
+                ValueView::Int(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(..)
+                    | ValueView::Complex(..)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+            )
+        {
+            let matched = self.smart_match(&args[0], &target);
+            return Ok(Value::truth(matched));
+        }
         // `.self` ignores any arguments (e.g. the fake-infix adverbs on
         // `$x .= self :42moews`); it always returns the invocant.
         if method == "self" && !args.is_empty() {

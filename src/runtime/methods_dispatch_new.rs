@@ -11,6 +11,40 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
         match method {
+            // `Range.new($min, $max)`, with the `:excludes-min` / `:excludes-max` adverbs.
+            // The same range `$min..$max` builds, just spelled as a constructor.
+            "new" if matches!(target.view(), ValueView::Package(name) if name == "Range") => {
+                let adverb = |key: &str| {
+                    args.iter().any(|a| match a.view() {
+                        ValueView::Pair(k, v) => k == key && v.truthy(),
+                        ValueView::ValuePair(k, v) => k.to_string_value() == key && v.truthy(),
+                        _ => false,
+                    })
+                };
+                let positional: Vec<Value> = args
+                    .iter()
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                    .cloned()
+                    .collect();
+                if positional.len() != 2 {
+                    return Some(Err(RuntimeError::new(
+                        "Range.new requires a minimum and a maximum".to_string(),
+                    )));
+                }
+                let (excl_min, excl_max) = (adverb("excludes-min"), adverb("excludes-max"));
+                if !excl_min && !excl_max {
+                    return Some(Ok(Self::make_inclusive_range_value(
+                        positional[0].clone(),
+                        positional[1].clone(),
+                    )));
+                }
+                Some(Ok(Value::generic_range(
+                    positional[0].clone(),
+                    positional[1].clone(),
+                    excl_min,
+                    excl_max,
+                )))
+            }
             "new" if matches!(target.view(), ValueView::Package(name) if name == "IO::ArgFiles") => {
                 // IO::ArgFiles.new(@files): an $*ARGFILES-like handle that reads
                 // from an explicit file list rather than the global @*ARGS.

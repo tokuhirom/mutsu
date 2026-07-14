@@ -51,7 +51,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 | 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
 |---|---|---|---|
 | **① スタックオーバーフローで abort**（★同じ症状で原因は 4 つ別々 — 下節参照） | **残 1** | **残: `man-or-boy.t`**。`99problems-41-to-50.t`(#4510)・`99problems-51-to-60.t`(#4516) は無限再帰で修正済み、`deep-recursion-initing-native-array.t` は debug 計測の誤診（release では元から通る）＝whitelist 追加 | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**4 本のうち 3 本は無限再帰、1 本は計測ミス。「本当に深い再帰でスタックが足りない」ものは 1 本も無かった** |
-| **② パース不能（`===SORRY!===`）** | **残 1** | **残: `advent2012-day19.t`**（ユーザ定義演算子の優先順位） | **9 本は解消済み（#4511 / #4514 / #4515 / #4517 / #4518）** — 下の「② の内訳」参照。②はほぼ枯渇 |
+| **② パース不能（`===SORRY!===`）** | **0（完了）** | 10 本すべて解消（#4511 / #4514 / #4515 / #4517 / #4518 / #4522） | **このクラスタは枯渇。** 7 本が whitelist 到達、3 本はパースを通過して機能ギャップへ移行 — 下の「② の内訳」参照 |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
 | **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張）・`advent2010-day14.t`（`nextsame` の継承/mixin）・`advent2010-day22.t`（`Rat` の `$!numerator`/`$!denominator` 属性）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2009-day20.t`（signature の introspection/stringification）・`advent2009-day18.t`（パラメタ化 role の mixin）・`advent2013-day10.t`（`:round` 等の演算子 adverb）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。★の近道はここ |
@@ -121,13 +121,19 @@ plain lexical」だけを上書き install する（`CompiledCode::authoritative
 （`&x1` か `x1` か）で扱われているかを先に確認すること — `CallOnCodeVar { name_idx }` は
 シジル無しの名前を持つ疑いがある。
 
-### ② の内訳（2026-07-14 実測・#4511 / #4514 / #4515 後）
+### ② の内訳（クラスタ完了・#4511 / #4514 / #4515 / #4517 / #4518 / #4522）
 
-**whitelist 到達（6 本）**: `advent2010-day11.t`・`advent2013-day04.t`・`advent2014-day16.t`（#4511:
+**whitelist 到達（7 本）**: `advent2010-day11.t`・`advent2013-day04.t`・`advent2014-day16.t`（#4511:
 `qto`/`qqto` fused adverb、quote 語とデリミタ間の空白・改行、heredoc 本体の開始行、`q:to:c` の
 選択的 adverb、lazy gather Seq の多引数 `for`）／`advent2009-day16.t`・`advent2009-day23.t`（#4514:
 `when` 文修飾子、Match を RHS とする smartmatch、`(with …)`/`(given …)` の式化、`my@i` の
-空白なし宣言）／`advent2012-day04.t`（#4515 の feed 継続行・無限 closure sequence の lazy `for`、#4517 のコンマより緩い演算子の優先順位、#4518 の分解シグネチャ＋grep バインダ）。
+空白なし宣言）／`advent2012-day04.t`（#4515 の feed 継続行・無限 closure sequence の lazy `for`、#4517 のコンマより緩い演算子の優先順位、#4518 の分解シグネチャ＋grep バインダ）／`advent2012-day19.t`（#4522）。
+
+最後の 1 本 `advent2012-day19.t` は #4522 で全 10 subtest 通過。**優先順位トレイト付きユーザ定義
+演算子**（`sub postfix:<k> is tighter(&infix:<*>)`）が項に一切適用されない問題（postfix ループが
+「prefix 層で拾われる」として全部スキップしていたが、その拾い上げはユーザ定義 prefix の分岐内に
+しか無かった）・英字 postfix の連鎖（`4kVW`）・`is looser(&postfix:<k>)` が k の登録レベルではなく
+`PREC_PREFIX` を基準にしていたバグ・`Mu.ACCEPTS`・`Range.new` を実装。
 
 **パースは通ったが subtest が残る（3 本）** — ②ではなく機能ギャップに移行:
 
@@ -192,8 +198,6 @@ postfix** が、項に対して一切適用されない（`4.7k` が SORRY）。
 
 1. **① の残り 1 本 = `man-or-boy.t`**（下記「man-or-boy の診断」に正確な根本原因あり）。
    **スタック拡張の機構は不要だった**（上の内訳表を参照）。
-2. **② パース不能 10 本を 1 本ずつ**。構文ごとに独立で、安い ★ が混じっている見込み
-   （`q | … |` デリミタ・ユーザ定義 postfix `4.7k`・heredoc インデント等）。
 3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
    （111/112）。`advent2011-day04.t` は 1/2。
 4. **④ エラーメッセージ品質**（`error-reporting.t` 4/33）は PLAN §6 の同名タスクと同じ的なので、
