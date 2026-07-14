@@ -93,9 +93,16 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
         }
     }
 
-    let annotation = rest[..idx].trim().to_string();
+    let mut annotation = rest[..idx].trim().to_string();
     if annotation.is_empty() {
         return Err(PError::expected("return type annotation"));
+    }
+    // A coercion type's empty source is `Any`: `--> Str()` is `Str(Any)`, which is the
+    // name `.returns` reports.
+    if let Some(base) = annotation.strip_suffix("()")
+        && !base.is_empty()
+    {
+        annotation = format!("{base}(Any)");
     }
     // Detect multiple prefix constraints in return type (e.g. `--> Int Str`)
     if let Some(space_pos) = annotation.find(' ') {

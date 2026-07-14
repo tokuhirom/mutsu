@@ -342,6 +342,19 @@ impl Interpreter {
             if left_fixed && right_fixed && left_len != right_len {
                 return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
             }
+            // A scalar leaf on the non-dwimmy side is a single element that cannot grow to
+            // meet the other side, so `5 »*» (2..4)` is X::HyperOp::NonDWIM even though the
+            // right dwims -- a dwim side adapts to the fixed side, and 1 is not 3. An empty
+            // other side still yields an empty result (`True »+» ()` is `()`).
+            let scalar_fixed_mismatch = |fixed: bool, is_scalar: bool, other_len: usize| {
+                fixed && is_scalar && other_len != 0 && other_len != 1
+            };
+            if scalar_fixed_mismatch(left_fixed, !Self::is_listy(left), right_len) {
+                return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
+            }
+            if scalar_fixed_mismatch(right_fixed, !Self::is_listy(right), left_len) {
+                return Err(Self::hyperop_nondwim_error(left_len, right_len, op));
+            }
             // An empty operand cannot be cycled or padded to fill a dwim side, so
             // any empty side yields an empty result (`True »+» ()` is `()`, not a
             // `0`-padded `(1,)`). The fixed-length mismatch above already covers

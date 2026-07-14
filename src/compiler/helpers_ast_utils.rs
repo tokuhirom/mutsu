@@ -294,7 +294,7 @@ impl Compiler {
     /// at its top level. Used to decide whether a for-loop body needs
     /// routine-registry scoping (hoist + snapshot/restore). Mirrors the set of
     /// statements that [`hoist_sub_decls`] acts on (`Stmt::SubDecl`).
-    pub(super) fn stmts_declare_routines(stmts: &[Stmt]) -> bool {
+    pub(crate) fn stmts_declare_routines(stmts: &[Stmt]) -> bool {
         stmts.iter().any(|s| matches!(s, Stmt::SubDecl { .. }))
     }
 

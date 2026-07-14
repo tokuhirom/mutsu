@@ -100,7 +100,10 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // Topicalize `$_` for the body. For a non-literal, non-`given` topic reuse the
     // `$tmp` holding the (once-evaluated) condition value.
     let topic_assign = topicalize(&tmp_var);
-    let mut with_body = if use_given_alias || route_literal_through_given {
+    // A block with an explicit signature does not bind `$_`: `with 1 -> $a { $_ }` leaves
+    // the outer topic alone, exactly as `for 1 -> $b { $_ }` does. Only the parameterless
+    // form topicalizes.
+    let mut with_body = if use_given_alias || route_literal_through_given || param_name.is_some() {
         Vec::new()
     } else {
         vec![topic_assign]

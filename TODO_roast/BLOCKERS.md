@@ -155,7 +155,7 @@ plain lexical」だけを上書き install する（`CompiledCode::authoritative
 `qto`/`qqto` fused adverb、quote 語とデリミタ間の空白・改行、heredoc 本体の開始行、`q:to:c` の
 選択的 adverb、lazy gather Seq の多引数 `for`）／`advent2009-day16.t`・`advent2009-day23.t`（#4514:
 `when` 文修飾子、Match を RHS とする smartmatch、`(with …)`/`(given …)` の式化、`my@i` の
-空白なし宣言）／`advent2012-day04.t`（#4515 の feed 継続行・無限 closure sequence の lazy `for`、#4517 のコンマより緩い演算子の優先順位、#4518 の分解シグネチャ＋grep バインダ）／`advent2012-day19.t`（#4522）。
+空白なし宣言）／`advent2012-day04.t`（#4515 の feed 継続行・無限 closure sequence の lazy `for`、#4517 のコンマより緩い演算子の優先順位、#4518 の分解シグネチャ＋grep バインダ）／`advent2012-day19.t`（#4522）／`6.c/APPENDICES/A04-experimental/01-misc.t`（#4523: `^find_method`/`^lookup` を具体値に対して引けるように、coercion 型の暗黙ソースを `Any` に、`Date`/`DateTime` の `.IO` を型オブジェクトで例外に）。
 
 最後の 1 本 `advent2012-day19.t` は #4522 で全 10 subtest 通過。**優先順位トレイト付きユーザ定義
 演算子**（`sub postfix:<k> is tighter(&infix:<*>)`）が項に一切適用されない問題（postfix ループが
@@ -163,13 +163,12 @@ plain lexical」だけを上書き install する（`CompiledCode::authoritative
 しか無かった）・英字 postfix の連鎖（`4kVW`）・`is looser(&postfix:<k>)` が k の登録レベルではなく
 `PREC_PREFIX` を基準にしていたバグ・`Mu.ACCEPTS`・`Range.new` を実装。
 
-**パースは通ったが subtest が残る（3 本）** — ②ではなく機能ギャップに移行:
+**パースは通ったが subtest が残る（2 本）** — ②ではなく機能ギャップに移行:
 
 | ファイル | 残 | ブロッカー |
 |---|---|---|
 | `integration/advent2012-day15.t` | 2/11 | phaser の文形式が独自スコープを作る（`NEXT (state $best) max= $_;` の `$best` が `LAST` から見えない）／`INIT` がメインラインより後に走る |
-| `6.c/MISC/bug-coverage.t` | 5/17 | `.count-only`/`.bool-only`、thunk のクロージャスコープ 等 |
-| `6.c/APPENDICES/A04-experimental/01-misc.t` | 3/19 | `:D`/`:U` DefiniteHow coercion（`Target:D(Source:U)`）。#4514 で 0/19 → 16/19 |
+| `6.c/MISC/bug-coverage.t` | 3/17 | **① `.count-only`/`.bool-only`（Iterator API 一式）が最大の壁**。② `is-deeply gather { … }` を続けて 2 回書くと 2 本目が空になる（gather の遅延評価と Test 関数の引数評価の相互作用）。③ 等差列 `0.1, 2 ... 3` の第 2 項は raku では「前項＋公差」で再計算され Rat 2.0 になるが mutsu は種 Int 2 をそのまま出す。#4523 で 12/17 → 14/17 |
 
 **②で唯一パースできないまま残った 1 本**: `integration/advent2012-day19.t`。
 `sub postfix:<k> ($a) is tighter(&infix:<*>)` のように**優先順位トレイト付きのユーザ定義
