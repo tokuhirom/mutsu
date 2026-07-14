@@ -177,7 +177,12 @@ impl Interpreter {
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
                         if !has_junction && !share_into_scalar {
                             let start = self.stack.len() - arity_usize;
-                            let args: Vec<Value> = self.stack.drain(start..).collect();
+                            // Pooled args buffer (J4d): `drain(..).collect()`
+                            // was one malloc/free per call on the hottest call
+                            // path; the locals pool already recycles
+                            // `Vec<Value>`s, so borrow it for the args too.
+                            let mut args = self.take_locals_from_pool(0);
+                            args.extend(self.stack.drain(start..));
                             // Extract callsite line for deprecation tracking
                             let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                             if cl.is_some() {
@@ -188,8 +193,9 @@ impl Interpreter {
                                 &args,
                                 compiled_fns,
                                 name_str,
-                            )?;
-                            self.stack.push(result);
+                            );
+                            self.recycle_locals(args);
+                            self.stack.push(result?);
                             // Slice F: drain any captured-outer writes the body
                             // recorded through to this caller frame's local slots
                             // (the slow dispatch path drains too; the cached fast

@@ -68,9 +68,16 @@ impl Interpreter {
         // local that shadows a same-named caller variable, matching the prior
         // env().get() semantics. `locals_sym` is `locals` pre-interned at
         // finalize(), so the seed loop hashes a `u32` per local instead of
-        // re-interning the name string on every call.
+        // re-interning the name string on every call. Param slots are skipped
+        // (J4d): the bind loop below overwrites them unconditionally (the
+        // arity check already returned on a shortfall), so seeding them is a
+        // wasted overlay-chain walk per call — for an all-params body like
+        // `fib` the whole seed disappears.
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+                if param_slots.contains(&i) {
+                    continue;
+                }
                 if let Some(val) = self.env().get_sym(*sym) {
                     self.locals[i] = val.clone();
                 }
@@ -78,6 +85,9 @@ impl Interpreter {
         } else {
             // Hand-built chunk with no pre-interned locals: resolve by name.
             for (i, local_name) in cf.code.locals.iter().enumerate() {
+                if param_slots.contains(&i) {
+                    continue;
+                }
                 if let Some(val) = self.env().get(local_name) {
                     self.locals[i] = val.clone();
                 }
