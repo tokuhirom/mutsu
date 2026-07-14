@@ -59,7 +59,15 @@ impl Interpreter {
         self.env = list.env.clone();
         self.gather_items.push(Vec::new());
         self.gather_take_limits.push(None);
+        // The gather body is a lexical block: a `sub` declared inside it shadows
+        // any same-named routine from an enclosing (or sibling) scope rather than
+        // redeclaring it. Without this depth bump the routine registration would
+        // see `&name` left in env by an earlier sibling block and raise a bogus
+        // X::Redeclaration. The VM force path never hits this because it dispatches
+        // the body's subs out of the body's own `compiled_fns`.
+        self.push_block_scope_depth();
         let run_res = self.run_block(&list.body);
+        self.pop_block_scope_depth();
         let items = self.gather_items.pop().unwrap_or_default();
         self.gather_take_limits.pop();
         while self.gather_items.len() > saved_len {

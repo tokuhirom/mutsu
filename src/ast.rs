@@ -1904,11 +1904,12 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Stmt::For { iterable, body, .. } => {
+        Stmt::For { iterable, .. } => {
+            // A `for` body is its own placeholder scope: with no explicit loop
+            // signature its placeholders become the loop's parameters (see
+            // parser::stmt::control::for_loops), so they must not also be claimed
+            // by the enclosing block/sub. Only the iterable is in this scope.
             collect_ph_expr_shallow(iterable, out);
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
-            }
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
             for s in body {

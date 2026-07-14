@@ -168,7 +168,7 @@ plain lexical」だけを上書き install する（`CompiledCode::authoritative
 | ファイル | 残 | ブロッカー |
 |---|---|---|
 | `integration/advent2012-day15.t` | 2/11 | phaser の文形式が独自スコープを作る（`NEXT (state $best) max= $_;` の `$best` が `LAST` から見えない）／`INIT` がメインラインより後に走る |
-| `6.c/MISC/bug-coverage.t` | 3/17 | **① `.count-only`/`.bool-only`（Iterator API 一式）が最大の壁**。② `is-deeply gather { … }` を続けて 2 回書くと 2 本目が空になる（gather の遅延評価と Test 関数の引数評価の相互作用）。③ 等差列 `0.1, 2 ... 3` の第 2 項は raku では「前項＋公差」で再計算され Rat 2.0 になるが mutsu は種 Int 2 をそのまま出す。#4523 で 12/17 → 14/17 |
+| `6.c/APPENDICES/A04-experimental/01-misc.t` | 3/19 | `:D`/`:U` DefiniteHow coercion（`Target:D(Source:U)`）。#4514 で 0/19 → 16/19 |
 
 **②で唯一パースできないまま残った 1 本**: `integration/advent2012-day19.t`。
 `sub postfix:<k> ($a) is tighter(&infix:<*>)` のように**優先順位トレイト付きのユーザ定義

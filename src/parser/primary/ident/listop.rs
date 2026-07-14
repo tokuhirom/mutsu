@@ -95,7 +95,15 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
         return Ok((r, make_call_expr(name, input, vec![arg])));
     }
 
-    let (r, first) = expression(input).map_err(|err| PError {
+    // Each argument parses at list-prefix precedence (`call_arg_expr`), exactly
+    // like the builtin listops (`grep`/`map`/...). The loose word-logicals
+    // (`and`/`or`/`andthen`/`orelse`/`xor`) are LOOSER than a list prefix, so they
+    // terminate the argument list rather than being swallowed into the last
+    // argument: `is-deeply $x, $y, 'desc' orelse .fail` is
+    // `(is-deeply $x, $y, 'desc') orelse .fail`, not `is-deeply $x, $y, ('desc'
+    // orelse .fail)`. Parsing with the full `expression` took the latter reading
+    // and silently dropped the right operand's side effects.
+    let (r, first) = call_arg_expr(input).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
         exception: None,
@@ -122,7 +130,7 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
         {
             break;
         }
-        let (r2, arg) = expression(r2).map_err(|err| PError {
+        let (r2, arg) = call_arg_expr(r2).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected listop argument expression after ','",
                 &err.messages,
