@@ -66,6 +66,7 @@ impl Interpreter {
                     finished: false,
                     started: false,
                     for_loop_resume: None,
+                    state_scope_id: crate::value::next_instance_id(),
                 })),
                 lazy_pipe: None,
                 closure_seq: None,

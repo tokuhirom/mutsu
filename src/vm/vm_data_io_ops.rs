@@ -67,6 +67,33 @@ fn element_needs_method_dispatch(v: &Value) -> bool {
     }
 }
 
+/// `say`/`put`/`print`/`note` on an *unhandled* Failure throws its wrapped
+/// exception: raku explodes a Failure as soon as `.gist`/`.Str` is called on
+/// it (`say 1.0000001 ** 10**90000` dies with X::Numeric::Overflow,
+/// A01-limits/overflow.t). A handled Failure renders normally.
+fn check_unhandled_failure(v: &Value) -> Result<(), RuntimeError> {
+    if let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = v.view()
+        && class_name == "Failure"
+    {
+        let handled = attributes
+            .as_map()
+            .get("handled")
+            .map(|h| h.truthy())
+            .unwrap_or(false);
+        if !handled && let Some(ex) = attributes.as_map().get("exception").cloned() {
+            let ex = crate::runtime::Interpreter::as_exception_value(ex);
+            let mut err = RuntimeError::new(ex.to_string_value());
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+    }
+    Ok(())
+}
+
 /// Check if a value is a Rat/FatRat/BigRat with zero denominator and throw
 /// X::Numeric::DivideByZero if so (Raku defers the error until the value is used).
 fn check_rat_divide_by_zero(v: &Value) -> Result<(), RuntimeError> {
@@ -118,6 +145,7 @@ impl Interpreter {
         for v in &values {
             let v = loan_env!(self, auto_fetch_proxy(v))?;
             check_rat_divide_by_zero(&v)?;
+            check_unhandled_failure(&v)?;
             // Resolve bound-element sentinels inside arrays before gist
             let v = self.resolve_bound_array_elements(v);
             if needs_method_dispatch(&v) {

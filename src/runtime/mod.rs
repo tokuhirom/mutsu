@@ -1356,6 +1356,15 @@ pub struct Interpreter {
     /// variable's name must keep resolving through its own live env capture.
     pub(crate) escaped_our_sub_names: std::collections::HashSet<String>,
     state_vars: HashMap<String, Value>,
+    /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
+    /// cross-thread shared store is active. A re-declaration is a fresh
+    /// binding shadowing the captured outer lexical, so subsequent writes to
+    /// the name must stay thread-local: `set_shared_var_sym` skips the shared
+    /// write and `sync_shared_vars_to_env` skips the pull for these names.
+    /// Reset to empty in `clone_for_thread` (a child thread captures the
+    /// parent's *current* bindings). Only populated while
+    /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
+    pub(crate) thread_redeclared_vars: std::collections::HashSet<String>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot
     /// closure-call persistence store (loaded/saved on every closure call for

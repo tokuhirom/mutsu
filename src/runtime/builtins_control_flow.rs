@@ -280,6 +280,38 @@ impl Interpreter {
         // and needs to wake up.
         if !self.nested_mode {
             set_global_exit_flag(code);
+            // `exit` terminates the PROCESS in raku, wherever it is called.
+            // The flag above only works if some thread polls it; when `exit`
+            // runs on a worker thread while the main thread is stuck inside a
+            // long non-polling computation (`start { sleep 2; exit }; EVAL
+            // 'say 1.0000001 ** 10**8'`, A01-limits/overflow.t), the process
+            // would hang forever. Flush this thread's buffered output, then
+            // exit for real.
+            if self.output_sink().is_thread_clone {
+                use std::io::Write;
+                let (out, err, shared_out, shared_err) = {
+                    let sink = self.output_sink();
+                    (
+                        sink.output.clone(),
+                        sink.stderr_output.clone(),
+                        sink.shared_thread_output.clone(),
+                        sink.shared_thread_stderr.clone(),
+                    )
+                };
+                let mut stdout = std::io::stdout();
+                if let Some(so) = shared_out {
+                    let _ = stdout.write_all(so.lock().unwrap().as_bytes());
+                }
+                let _ = stdout.write_all(out.as_bytes());
+                let _ = stdout.flush();
+                let mut stderr_h = std::io::stderr();
+                if let Some(se) = shared_err {
+                    let _ = stderr_h.write_all(se.lock().unwrap().as_bytes());
+                }
+                let _ = stderr_h.write_all(err.as_bytes());
+                let _ = stderr_h.flush();
+                std::process::exit(code as i32);
+            }
         }
         Ok(Value::NIL)
     }

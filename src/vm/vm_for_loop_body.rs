@@ -329,14 +329,15 @@ impl Interpreter {
                 {
                     body_result = Err(err);
                 }
+                // Sync state variables modified in this iteration so that
+                // StateVarInit in the next iteration sees the updated values.
+                // State mutations persist on every exit path (`next`/`redo`/
+                // `last`/exception), not just normal completion.
+                if !code.state_locals.is_empty() {
+                    self.sync_state_locals_in_range(code, body_start, loop_end);
+                }
                 match body_result {
                     Ok(()) => {
-                        // Sync state variables modified in this iteration so
-                        // that StateVarInit in the next iteration sees the
-                        // updated values.
-                        if !code.state_locals.is_empty() {
-                            self.sync_state_locals_in_range(code, body_start, loop_end);
-                        }
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,

@@ -50,8 +50,36 @@ impl Interpreter {
             }
         }
         let args_match = self.method_args_match(arg_values, &def.param_defs);
-        self.env = saved_env;
+        if def.param_defs.iter().any(|p| p.where_constraint.is_some()) {
+            // A `where` clause is user code: its writes to *dynamic* variables
+            // are observable side effects (`multi method f($ where { $*checked
+            // ~= "d1"; ... })`, A01-limits/misc.t) and must survive the
+            // restore, exactly as on the sub-dispatch path.
+            self.restore_env_preserving_dynamics(saved_env);
+        } else {
+            self.env = saved_env;
+        }
         args_match
+    }
+
+    /// Restore `self.env` to `saved` while keeping any *dynamic*-variable
+    /// (`$*name`) writes made since — the observable side effects of user code
+    /// (e.g. a `where` clause) run during a speculative dispatch match whose
+    /// bindings are otherwise rolled back.
+    pub(crate) fn restore_env_preserving_dynamics(&mut self, saved: crate::env::Env) {
+        let dyn_writes: Vec<(crate::symbol::Symbol, Value)> = self
+            .env
+            .iter()
+            .filter(|(k, v)| {
+                k.with_str(|name| name.starts_with('*') || name.starts_with("$*"))
+                    && saved.get_sym(**k) != Some(*v)
+            })
+            .map(|(k, v)| (*k, v.clone()))
+            .collect();
+        self.env = saved;
+        for (k, v) in dyn_writes {
+            self.env.insert_sym(k, v);
+        }
     }
 
     pub(crate) fn resolve_method_with_owner(

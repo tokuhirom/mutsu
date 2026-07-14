@@ -1915,11 +1915,13 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt_shallow(s, out);
             }
         }
-        Stmt::Whenever { supply, body, .. } => {
+        Stmt::Whenever { supply, .. } => {
+            // A whenever body is its own block scope: a placeholder inside it
+            // (`whenever $ch { %^content.kv }`) is the WHENEVER block's
+            // parameter (bound to the emitted value), not the enclosing
+            // block's — attributing it here would give e.g. the surrounding
+            // `start {}` block a phantom arity-1 signature.
             collect_ph_expr_shallow(supply, out);
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
-            }
         }
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)

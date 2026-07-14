@@ -2096,6 +2096,7 @@ impl Interpreter {
             escaping_our_lexical_names: std::collections::HashSet::new(),
             escaped_our_sub_names: std::collections::HashSet::new(),
             state_vars: HashMap::new(),
+            thread_redeclared_vars: std::collections::HashSet::new(),
             closure_captured_state: HashMap::new(),
             once_values: HashMap::new(),
             once_scope_stack: Vec::new(),

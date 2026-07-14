@@ -136,6 +136,36 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether two multi-method candidates whose positional type signatures
+    /// match are nonetheless distinguished by value-level constraints: a
+    /// differing literal parameter (`multi method f(1)` vs `f(3)`) or a
+    /// `where` clause on either side. Raku composes such candidates from
+    /// different roles into one candidate set instead of demanding the class
+    /// resolve a conflict (`where` equality is undecidable, so any `where` is
+    /// treated as distinguishing).
+    fn multi_constraints_distinguish(a: &MethodDef, b: &MethodDef) -> bool {
+        let positionals = |def: &MethodDef| -> Vec<(Option<Value>, bool)> {
+            def.param_defs
+                .iter()
+                .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
+                .map(|pd| (pd.literal_value.clone(), pd.where_constraint.is_some()))
+                .collect()
+        };
+        let pa = positionals(a);
+        let pb = positionals(b);
+        pa.iter()
+            .zip(pb.iter())
+            .any(|((lit_a, wh_a), (lit_b, wh_b))| {
+                *wh_a
+                    || *wh_b
+                    || match (lit_a, lit_b) {
+                        (Some(va), Some(vb)) => va != vb,
+                        (None, None) => false,
+                        _ => true,
+                    }
+            })
+    }
+
     pub(super) fn detect_unresolved_role_method_conflicts(
         &self,
         class_name: &str,
@@ -213,7 +243,9 @@ impl Interpreter {
                         roles_for_sig.push(r.clone());
                     }
                     for def_b in multi_defs.iter().skip(i + 1) {
-                        if Self::method_signatures_match(def_a, def_b) {
+                        if Self::method_signatures_match(def_a, def_b)
+                            && !Self::multi_constraints_distinguish(def_a, def_b)
+                        {
                             if def_b.role_origin.is_none() {
                                 class_resolves = true;
                             }

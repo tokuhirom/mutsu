@@ -1659,6 +1659,14 @@ pub(crate) struct GatherCoroutineState {
     /// instead of resuming double-applies the body's side effects on
     /// cell-promoted captured lexicals.
     pub(crate) started: bool,
+    /// Unique state-variable scope for this gather instance (from
+    /// `next_instance_id()` at `MakeGather` time). Each evaluation of a
+    /// `gather` expression is a fresh block clone, so its `state` variables
+    /// must not collide with a sibling gather's — the bodies are compiled
+    /// separately (ip restarts at 0), so the compile-time `@ip` key suffix
+    /// alone cannot distinguish them. Installed as `state_scope_id` while
+    /// the body runs. 0 = no scope (pre-existing coroutine states).
+    pub(crate) state_scope_id: u64,
     /// Saved for-loop iteration state when suspended inside a for loop.
     pub(crate) for_loop_resume: Option<ForLoopResumeState>,
 }

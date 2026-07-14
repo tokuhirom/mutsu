@@ -52,7 +52,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 |---|---|---|---|
 | **① スタックオーバーフローで abort**（★同じ症状で原因は 4 つ別々 — 下節参照） | **完了** | `99problems-41-to-50.t`(#4510)・`99problems-51-to-60.t`(#4516)・`man-or-boy.t`（`&`-シジル free var スキャン + vouch — 下節）は無限再帰で修正済み、`deep-recursion-initing-native-array.t` は debug 計測の誤診（release では元から通る）＝whitelist 追加 | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**4 本のうち 3 本は無限再帰、1 本は計測ミス。「本当に深い再帰でスタックが足りない」ものは 1 本も無かった** |
 | **② パース不能（`===SORRY!===`）** | **0（完了）** | 10 本すべて解消（#4511 / #4514 / #4515 / #4517 / #4518 / #4522） | **このクラスタは枯渇。** 7 本が whitelist 到達、3 本はパースを通過して機能ギャップへ移行 — 下の「② の内訳」参照 |
-| **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
+| **③ ハング / タイムアウト** | **完了** | 5 本すべて whitelist 到達（2026-07-15）: `gather-with-loops.t`（`next`/`redo` で終わったイテレーションの state 書き込み喪失＋sibling gather 間の state キー衝突＋ネストループの state 非リセット）・`advent2013-day14.t`（whenever ブロックの placeholder パラメータ非バインド＋thread 内再宣言の親レキシカル clobber）・`APPENDICES/A01-limits/misc.t`（`x` 演算子の O(n) push ループ→倍々 memcpy 化で 4GiB 文字列が数秒に＋異 role 間 multi method 合成＋where 節の動的変数副作用保持）・`overflow.t`（巨大指数 `**` の X::Numeric::Overflow/Underflow Failure 化＋worker thread からの `exit` のプロセス終了＋`say` の未 handled Failure 爆発）・`advent2012-day21.t`（純粋な速度ストレス — debug 102s/release は余裕。per-file timeout 120s を設定） | — |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
 | **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張）・`advent2010-day14.t`（`nextsame` の継承/mixin）・`advent2010-day22.t`（`Rat` の `$!numerator`/`$!denominator` 属性）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2009-day20.t`（signature の introspection/stringification）・`advent2009-day18.t`（パラメタ化 role の mixin）・`advent2013-day10.t`（`:round` 等の演算子 adverb）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。★の近道はここ |
 
@@ -226,6 +226,7 @@ postfix** が、項に対して一切適用されない（`4.7k` が SORRY）。
 1. ~~**① の残り 1 本 = `man-or-boy.t`**~~ **完了**（2026-07-15・whitelist 追加。
    「man-or-boy の診断」節の解決記録を参照）。①クラスタは全消化。
    ②パース不能クラスタも #4522 で全消化（上の表参照）。
+2. ~~**③ ハング / タイムアウト（5 本）**~~ **完了**（2026-07-15・5 本すべて whitelist 追加 — 表の ③ 行を参照）。
 3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
    （111/112）。`advent2011-day04.t` は 1/2。
 4. **④ エラーメッセージ品質**（`error-reporting.t` 4/33）は PLAN §6 の同名タスクと同じ的なので、

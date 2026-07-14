@@ -93,6 +93,15 @@ impl Interpreter {
             }
         }
 
+        // Fresh (non-resume) entry to the loop statement: state variables
+        // declared inside the body re-initialize (fresh block clone per
+        // statement execution — see `reset_state_locals_in_range`). The
+        // resume paths above returned early, so this never fires on a
+        // gather-coroutine re-entry.
+        if !code.state_locals.is_empty() {
+            self.reset_state_locals_in_range(code, *ip + 1, spec.body_end as usize);
+        }
+
         let iterable = self.stack.pop().unwrap();
 
         // Handle lazy IO lines: iterate by pulling one line at a time

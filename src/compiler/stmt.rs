@@ -3130,6 +3130,14 @@ impl Compiler {
             } => {
                 self.compile_expr(supply);
                 let body_idx = self.code.add_stmt(Stmt::Block(body.clone()));
+                // A whenever block without a pointy param may still declare
+                // its parameter as a placeholder (`whenever $ch { %^content.kv
+                // }`): the emitted value binds to it, arity-1 like `-> $v`.
+                let param = param.clone().or_else(|| {
+                    crate::ast::collect_placeholders_shallow(body)
+                        .into_iter()
+                        .next()
+                });
                 // Case B (cross-thread lexicals): surface the runtime-compiled
                 // body's free vars so a captured-and-mutated lexical read
                 // directly in the whenever body (`start { react { whenever $ch
