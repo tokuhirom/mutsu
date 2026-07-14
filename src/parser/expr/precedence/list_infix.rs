@@ -78,14 +78,19 @@ pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
                 return Err(non_list_associative_error(prev, op_str));
             }
             let (r2, _) = ws(r2)?;
-            let (r2, mut right) =
-                comparison_expr_mode(r2, ExprMode::NoSequence).map_err(|err| {
-                    enrich_expected_error(
-                        err,
-                        format!("expected expression after '{op_str}'").as_str(),
-                        r2.len(),
-                    )
-                })?;
+            // The endpoint is parsed *below* the list-infix layer. `NoSequence` routes
+            // through `list_infix_expr`, whose loop consumes a feed -- so `1, *+1 ... *
+            // ==> elems()` bound the feed into the endpoint (`* ==> elems()`), and the
+            // Whatever-curry below then turned that endpoint into a 1-ary WhateverCode.
+            // The feed is the loosest operator in Raku and belongs to this function's own
+            // list-infix loop below, outside the sequence.
+            let (r2, mut right) = comparison_expr_mode(r2, ExprMode::ListopArg).map_err(|err| {
+                enrich_expected_error(
+                    err,
+                    format!("expected expression after '{op_str}'").as_str(),
+                    r2.len(),
+                )
+            })?;
             if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
                 right = wrap_whatevercode(&right);
             }

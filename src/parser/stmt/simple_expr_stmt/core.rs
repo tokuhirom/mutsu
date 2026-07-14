@@ -1394,6 +1394,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         // A trailing comma before `}` always creates a list, even with
         // a single element (e.g. `{ 42, }` gives `(42,)`).
         if !is_stmt_modifier_keyword(r) {
+            // This split the comma list by hand, so the operators that are looser than the
+            // comma still need their real precedence: without this, `$[1], -> @p {...} ... *`
+            // seeds the sequence with the pointy block alone, dropping `$[1]`.
+            let mut exprs = crate::parser::stmt::assign::normalize_comma_list_items(exprs);
             let expr = if trailing_comma || exprs.len() > 1 {
                 Expr::ArrayLiteral(exprs)
             } else {

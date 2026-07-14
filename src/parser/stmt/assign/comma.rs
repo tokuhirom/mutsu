@@ -36,13 +36,13 @@ fn parse_comma_or_expr_impl(input: &str, item_context: bool) -> PResult<'_, Expr
         loop {
             let (r2, _) = ws(r)?;
             if !r2.starts_with(',') {
-                let items = merge_sequence_seeds(lift_meta_ops_in_list(items));
+                let items = normalize_comma_list_items(items);
                 return Ok((r2, finalize_list(items)));
             }
             let (r2, _) = parse_char(r2, ',')?;
             let (r2, _) = ws(r2)?;
             if r2.starts_with(';') || r2.is_empty() || r2.starts_with('}') || r2.starts_with(')') {
-                let items = merge_sequence_seeds(lift_meta_ops_in_list(items));
+                let items = normalize_comma_list_items(items);
                 return Ok((r2, finalize_list(items)));
             }
             let (r2, next) = expression(r2)?;
@@ -63,6 +63,16 @@ fn finalize_list(items: Vec<Expr>) -> Expr {
     }
 }
 
+/// Give the operators that are *looser than the comma* their real precedence.
+///
+/// Every parser that splits a comma list itself has to run this, or those operators end
+/// up binding tighter than the comma: the sequence `...` would take only its adjacent
+/// element as a seed (`0, 1, *+* ... *`), and a list infix meta-op only its adjacent
+/// element as an operand (`[0, |@p Z+ |@p, 0]`).
+pub(in crate::parser) fn normalize_comma_list_items(items: Vec<Expr>) -> Vec<Expr> {
+    merge_sequence_seeds(lift_meta_ops_in_list(items))
+}
+
 /// In a comma-separated list, if the last item is a sequence expression
 /// (Binary { ..., DotDotDot/DotDotDotCaret, ... }), merge all preceding
 /// items into the sequence LHS.
@@ -71,27 +81,56 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
     if items.len() < 2 {
         return items;
     }
-    let last = items.last().unwrap();
-    if let Expr::Binary { left, op, right } = last
-        && matches!(op, TokenKind::DotDotDot | TokenKind::DotDotDotCaret)
-    {
-        // Merge preceding items + sequence LHS into a new ArrayLiteral
-        let mut seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
-        seeds.push(*left.clone());
-        let merged = Expr::Binary {
-            left: Box::new(Expr::ArrayLiteral(seeds)),
-            op: op.clone(),
-            right: right.clone(),
-        };
-        vec![merged]
-    } else {
-        items
+    let seeds: Vec<Expr> = items[..items.len() - 1].to_vec();
+    match merge_seeds_into_sequence(items.last().unwrap(), &seeds) {
+        Some(merged) => vec![merged],
+        None => items,
+    }
+}
+
+/// Fold `seeds` into the LHS of the sequence at (or inside) `last`.
+///
+/// A feed is the loosest operator in Raku, so it sits *outside* the sequence:
+/// `$[1], -> @p {...} ... * ==> f()` is `(($[1], -> @p {...}) ... *) ==> f()`. The
+/// comma-list splitter sees the whole `-> @p {...} ... * ==> f()` as one element, so
+/// the sequence to merge into is one level down, under the feed's source.
+fn merge_seeds_into_sequence(last: &Expr, seeds: &[Expr]) -> Option<Expr> {
+    match last {
+        Expr::Binary { left, op, right }
+            if matches!(op, TokenKind::DotDotDot | TokenKind::DotDotDotCaret) =>
+        {
+            let mut merged_seeds: Vec<Expr> = seeds.to_vec();
+            merged_seeds.push(*left.clone());
+            Some(Expr::Binary {
+                left: Box::new(Expr::ArrayLiteral(merged_seeds)),
+                op: op.clone(),
+                right: right.clone(),
+            })
+        }
+        Expr::Feed {
+            source,
+            sink,
+            append,
+            left_is_source,
+        } if *left_is_source => {
+            let merged_source = merge_seeds_into_sequence(source, seeds)?;
+            Some(Expr::Feed {
+                source: Box::new(merged_source),
+                sink: sink.clone(),
+                append: *append,
+                left_is_source: *left_is_source,
+            })
+        }
+        _ => None,
     }
 }
 
 /// In a comma-separated list, if an item is a MetaOp (X+, Z-, etc.), merge
 /// all preceding items into its left operand. This gives meta-ops effective
 /// list-infix precedence: `1, 2 X+ 10` → `MetaOp(X, +, [1,2], 10)`.
+///
+/// The array composer needs this for `[0, |@p Z+ |@p, 0]`, which is
+/// `(0, |@p) Z+ (|@p, 0)` in Raku.
 fn lift_meta_ops_in_list(items: Vec<Expr>) -> Vec<Expr> {
     // Find the first MetaOp in the list
     let meta_idx = items.iter().position(|e| matches!(e, Expr::MetaOp { .. }));
