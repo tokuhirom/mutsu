@@ -24,7 +24,15 @@ impl Interpreter {
                 | ValueView::ContainerRef(_)
                 | ValueView::Pair(..)
                 | ValueView::ValuePair(..)
-                | ValueView::Capture { .. } => return None,
+                | ValueView::Capture { .. }
+                // A `VarRef` (a variable passed as an argument) dispatches on the
+                // *source variable's declared type* as well as the value's type --
+                // `unwrap_varref_for_dispatch` feeds that declared type into
+                // `candidate_type_distance`, so `my int $y` and `my $x` holding the
+                // same `Int` can pick different candidates (roast
+                // S06-multi/by-trait.t). Its value type alone is therefore not a
+                // sound cache key.
+                | ValueView::VarRef { .. } => return None,
                 _ => crate::symbol::Symbol::intern(crate::runtime::utils::value_type_name(a)),
             };
             keys.push(key);

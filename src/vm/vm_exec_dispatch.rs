@@ -768,9 +768,14 @@ impl Interpreter {
                     && !self.fatal_mode
                     && self.var_type_constraint_fast(name_str).is_none()
                     && !self.is_readonly(name_str)
+                    // A `VarRef` RHS (a `:=` bind of `$` to a variable) must reach
+                    // the general path, which is where the wrapper is unwrapped and
+                    // its `bind_source` recorded; storing the wrapper itself into the
+                    // env slot would corrupt `$`. It used to be caught by the
+                    // `Capture` arm here, back when a varref *was* a `Capture`.
                     && !matches!(
                         self.stack.last().map(Value::view),
-                        Some(ValueView::Capture { .. })
+                        Some(ValueView::Capture { .. } | ValueView::VarRef { .. })
                     )
                     && !matches!(
                         self.env().get(name_str).map(Value::view),

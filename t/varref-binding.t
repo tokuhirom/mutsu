@@ -10,7 +10,7 @@ use Test;
 # capture construction, pair construction, `:=`, multi dispatch, `.VAR`), so
 # these are the cases that would break if a path missed the migration.
 
-plan 14;
+plan 16;
 
 # is rw -- the binder aliases the caller's scalar container
 sub inc($x is rw) { $x++ }
@@ -75,3 +75,18 @@ is $v.VAR.name, '$v', '.VAR.name of a variable';
 sub what-of($x) { $x.WHAT.gist }
 my $w = 42;
 is what-of($w), '(Int)', 'a variable argument introspects as its value type';
+
+# A variable argument dispatches on the *source variable's declared type* too,
+# not just on its value's type -- so it must not be keyed into the multi-resolve
+# cache by value type alone. Calling with a plain `$x` first used to poison the
+# cache entry for a later native-typed `int $y` holding an equal Int value
+# (roast S06-multi/by-trait.t).
+my $ro = 0; my $rw = 0; my $primrw = 0;
+multi sub mas( Int $a       ) { $ro++;    1 + $a }
+multi sub mas( int $a is rw ) { $primrw++; $a * 2 }
+multi sub mas( Int $a is rw ) { $rw++;    ++$a }
+my $plain = 99;
+mas($plain);                        # picks `Int $a is rw`, keyed [Int]
+my int $native = 50;
+is mas($native), 100, 'a native-typed variable reaches the `int is rw` candidate';
+is $primrw, 1, 'the plain-Int call did not poison the multi cache for it';

@@ -451,15 +451,16 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     }
     // Reject unexpected named arguments (for the multi-dispatch case where the
     // value is a Capture).  A named slurpy (`*%h`) accepts any named argument.
-    if let ValueView::Capture { named, .. } = value.view() {
+    // Read through the `VarRef` wrapper a variable argument arrives in, as the
+    // positional/named extraction above already does — this used to skip any
+    // `__mutsu_`-prefixed key instead, because a varref *was* a `Capture` whose
+    // named map held the wrapper's magic keys.
+    if let ValueView::Capture { named, .. } = value.unwrap_varref().view() {
         let has_named_slurpy = sub_params
             .iter()
             .any(|p| p.slurpy && (p.named || p.name.starts_with('%')));
         if !has_named_slurpy {
             for key in named.keys() {
-                if key.starts_with("__mutsu_") {
-                    continue;
-                }
                 let consumed = sub_params.iter().any(|p| {
                     p.named && p.name.trim_start_matches(|c: char| "$@%&".contains(c)) == key
                 });
