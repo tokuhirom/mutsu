@@ -125,6 +125,17 @@ static BOUND_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 /// `distribute_bound_multidim_slice` on every scalar `SetLocal`/assignment.
 static BOUND_SLICE_KEY_SEEN: AtomicBool = AtomicBool::new(false);
 
+/// Monotonic, process-global flag for the per-element index metadata keys
+/// (`__mutsu_bound_index::*`, `__mutsu_elem_share::*`, `__mutsu_deleted_index::*`).
+/// Their probes run on *every* element write (`@a[i] = x`) and on `:exists`, and
+/// each would otherwise cost a `format!` plus a `Symbol::intern`ing env lookup.
+/// The keys only ever appear once the program `:=`-binds an element, `=`-shares a
+/// container into one, or `:delete`s an index — none of which the common program
+/// does. Same soundness argument as [`CLOSURE_META_KEY_SEEN`]: every creation site
+/// flows through the String-keyed [`Env::insert`], the flag is monotonic, and an
+/// over-set only makes the (correct) probe run.
+static ELEM_INDEX_META_SEEN: AtomicBool = AtomicBool::new(false);
+
 /// True if any closure-writeback metadata key may exist in some env. See
 /// [`CLOSURE_META_KEY_SEEN`].
 #[inline]
@@ -146,6 +157,13 @@ pub(crate) fn bound_array_slice_possible() -> bool {
     BOUND_SLICE_KEY_SEEN.load(Ordering::Relaxed)
 }
 
+/// True if any per-element index metadata key may exist in some env. See
+/// [`ELEM_INDEX_META_SEEN`].
+#[inline]
+pub(crate) fn elem_index_meta_possible() -> bool {
+    ELEM_INDEX_META_SEEN.load(Ordering::Relaxed)
+}
+
 /// Flip [`CLOSURE_META_KEY_SEEN`] / [`BOUND_KEY_SEEN`] if `key` is one of the
 /// tracked metadata keys. The outer `__mutsu_` gate keeps this ~1 byte compare
 /// for ordinary lexical names (which never start with `_`).
@@ -161,6 +179,11 @@ fn note_closure_meta_key(key: &str) {
             BOUND_KEY_SEEN.store(true, Ordering::Relaxed);
         } else if key.starts_with("__mutsu_bound_array_slice::") {
             BOUND_SLICE_KEY_SEEN.store(true, Ordering::Relaxed);
+        } else if key.starts_with("__mutsu_bound_index::")
+            || key.starts_with("__mutsu_elem_share::")
+            || key.starts_with("__mutsu_deleted_index::")
+        {
+            ELEM_INDEX_META_SEEN.store(true, Ordering::Relaxed);
         }
     }
 }
