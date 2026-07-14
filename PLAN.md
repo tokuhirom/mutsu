@@ -324,9 +324,25 @@ S\* 系で唯一残る実機能ギャップ（whitelist には直結しない）
       return マージの allocation-free 化（#4492 — **bench-fib -32.3% / bench-tak -23.9%**）／
       sigilless-alias・readonly の env キー事前 intern（#4493 — num-arith -21.6% /
       bench-mandelbrot -14.9%）／属性の `Symbol` キー化（#4494 — 上記 ✅）／宣言・store ごとの
-      メタデータキー再構築の停止（#4495 — time-parts -37.2% / bench-mandelbrot -33.7%）。
+      メタデータキー再構築の停止（#4495 — time-parts -37.2% / bench-mandelbrot -33.7%）／
+      **宣言パス（`my $x = ...`）の intern・SipHash・COW 撤去**（#4506/#4507/#4508 — time-parts
+      は **JIT on で raku 比 1.17 → 0.62**、interp 単体でも 1.46 → 0.93 と raku 超え。
+      内訳 = placeholder `^name` プローブのラッチ化・`flush_local_to_env` が捨てていた
+      事前 intern 済み Symbol の活用・`SetVarDynamic` の再 intern/String 確保撤去・
+      不在キー削除での `Arc::make_mut` 回避・空マップへの SipHash プローブ撤去・
+      宣言追跡セットの `Symbol` キー化。あわせて**到達不能だった `simple_locals`
+      fast path 約 310 行を削除**（scalar local はシジル無しで格納されるため
+      `name.starts_with('$')` が常に false ＝ 一度も実行されていなかった））。
 
       **残（着手順）**:
+      0. **★`needs_env_sync` のブランケット解除（次の本命・専用セッション向き）** — 現状
+         `captures_env_by_name`（frame に `ForLoop`/`BlockScope`/`MakeGather`/`WheneverScope`
+         が 1 つでもあれば true）が **frame の全 local を env ミラー対象にする**ため、
+         ループ本体の `my $ts` のように名前で読まれない local まで毎ストア env へ書いている
+         （time-parts 残プロファイルの最上位）。精密化するには `exec_do_block_op` の
+         「全 local を env から pull」する復元・ループの shadow save/restore・
+         closure capture の 3 つの env 名前依存を同時に外す必要があり、
+         **§1.3/§1.5 と一体のキャンペーン**（memory: 単独変更は 5 機構を壊す実績あり）。
       1. **`compiled_fns` の SipHash 撤去**（scouting §2.1 — 関数テーブルが今も
          `HashMap<String, CompiledFunction>`（`vm.rs:280`）で、**light-call キャッシュに当たった
          呼び出しでも毎回関数名を SipHash + memcmp している**）。FxHashMap 化 →`Symbol` キー化 →
