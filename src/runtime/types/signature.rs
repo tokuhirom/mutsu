@@ -6,6 +6,14 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
     if let Some((_, inner)) = varref_from_value(value) {
         return positional_values_from_unpack_target(&inner);
     }
+    // `grep` promotes each matched source slot to a shared `ContainerRef` cell so a
+    // writeback loop can mutate through it. A later destructuring bind of that element
+    // (`@a.grep(...); @a.map(-> [$x, $y] {...})`) has to look through the cell, or it
+    // sees one opaque value and reports "Too few positional arguments".
+    if let ValueView::ContainerRef(cell) = value.view() {
+        let inner = cell.lock().unwrap().clone();
+        return positional_values_from_unpack_target(&inner);
+    }
     match value.view() {
         ValueView::Capture { positional, .. } => (*positional).clone(),
         // For sub-signature destructuring, a list is always taken apart
