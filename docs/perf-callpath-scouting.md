@@ -18,6 +18,18 @@ decide a 3% change).
 > formatting and hashing**, which #4492–#4495 removed for gains of 24–39%. The
 > corrected model is recorded here so the next session does not re-derive it.
 
+> **2026-07-14 update (bench-tak beats raku).** §3.2 below said the remaining 28%
+> of tak was "per-call allocation churn — profile the callers before guessing".
+> Profiling them said: **it was not the call frame at all, it was the argument
+> wrapper.** `OpCode::WrapVarRef` — which runs once per *variable passed as an
+> argument*, 99.7% of tak's interpreted opcodes — encoded "a reference to a named
+> variable" as a `Capture` holding two magic string keys, and so allocated four
+> `String`s, a `HashMap` + `RawTable`, an empty `Vec` and a `Capture` box, and
+> SipHashed two 20-byte key strings, **per argument**. Giving it a first-class
+> `Value` variant took bench-tak from 4.94G to 2.73G `instructions:u` (**−45%**)
+> and 1.70× raku to **0.83×**. The name-keyed-metadata lesson held once more; §3.1
+> was the wrong first slice, and §3.2 was the right one for the wrong reason.
+
 ## 1. What landed (2026-07-13/14) and what it bought
 
 | PR | change | effect |
@@ -36,20 +48,69 @@ hashing them. Every remaining `format!("__mutsu_…::{name}")` on a per-op path 
 a candidate; the fix is always the same (pre-intern the `Symbol` per local slot,
 plus a monotonic "was such a key ever created" gate).
 
-## 2. The profile now (post-#4495, release, JIT on, one P-core)
+**And it generalizes past `format!`.** The same anti-pattern also hides in
+*values*: any runtime concept encoded as "a `Capture` / `Hash` with magic string
+keys" pays the identical `String` + `RawTable` + SipHash tax on every use. That
+is exactly what `WrapVarRef` was (see §1a). When looking for the next win, grep
+for magic-string keys on a per-op path, not just for `format!`.
 
-### bench-tak — the next target (mutsu 0.36s vs raku 0.20s, **1.8×**)
+## 1a. The argument wrapper (2026-07-14) — how bench-tak passed raku
+
+`OpCode::WrapVarRef` tags a call argument with the *name* of the variable it came
+from, so `is rw` / `is raw` / `:=` / `\($a)` can alias the caller's container
+instead of copying its value. It runs once per variable passed as an argument —
+**593,634 times in bench-tak, 99.7% of all interpreted opcodes** (the JIT traps
+out to the interpreter helper for it). It was implemented as:
+
+```rust
+let name = Self::const_str(code, name_idx).to_string();      // String
+let mut named = std::collections::HashMap::new();            // std HashMap = SipHash
+named.insert("__mutsu_varref_name".to_string(), Value::str(name));   // 2 String + 1 Value::str
+named.insert("__mutsu_varref_value".to_string(), value);             // 1 String
+self.stack.push(Value::capture(Vec::new(), named));          // Vec + Capture box
+```
+
+— four `String` allocations, a `HashMap` with its `RawTable`, an empty positional
+`Vec`, a `Capture` box, and two SipHashes over 20-byte string keys, **per
+argument**, immediately unwrapped again by the binder. That single opcode was
+most of tak's "28% allocation churn" and *all* of its SipHash.
+
+"A reference to a named variable" is a first-class concept in Raku's binder, so
+it now has a first-class representation: `ValueRepr::VarRef { name: Symbol, value,
+index }` (one `Arc` payload, no hashing), with the 42 magic-key probe sites across
+16 files replaced by typed destructures. The wrapper is *transparent* — it
+answers `.WHAT`, `isa`, truthiness and stringification as its inner value, where
+before it accidentally answered as a `Capture`.
+
+| | before | after |
+|---|---|---|
+| bench-tak `instructions:u` | 4.94G | **2.73G** (−44.7%) |
+| bench-tak wall (release, one P-core) | 0.40s | **0.20s** |
+| vs. raku (0.24s) | 1.70× | **0.83×** |
+
+It is broadly a call-path win, not a tak-specific one: method-call 0.86× → 0.65×
+raku, bench-class 0.84× → 0.59×. Pinned by `t/varref-binding.t`.
+
+## 2. The profile now (post-VarRef, release, JIT on, one P-core)
+
+### bench-tak (mutsu 0.20s vs raku 0.24s, **0.83×**)
 
 | symbol | % | what it really is |
 |---|---|---|
-| `call_compiled_function_positional_light` | 12.5 | the light-call frame itself |
-| `_int_malloc` + `malloc` + `_int_free` + `cfree` | **28.4** | per-call allocation churn |
-| **SipHash `Hasher::write`** (+ `hash_one` ×2 ≈ 4.6) | **6.7** | see §3.1 — the `compiled_fns` lookup |
-| `exec_call_func_op` | 3.2 | dispatch |
-| `Env::scoped_child` | 2.9 | per-call env overlay |
-| `arg_is_container_value` | 2.9 | per-arg call-eligibility scan |
-| `indexed_varref_from_value` | 2.7 | per-arg signature binding |
-| `hashbrown::HashMap::insert` | 2.6 | |
+| `call_compiled_function_positional_light` | 16.7 | the light-call frame itself |
+| **`Env::get_sym`** (two inlined copies) | **10.0** | the per-call **locals seed loop** — see §3.0 |
+| `_int_free` + `cfree` + `malloc` | 11.7 | what is left of the allocator (was 28.4) |
+| `exec_get_local_op` | 5.2 | |
+| `exec_call_func_op` | 3.7 | dispatch |
+| `Env::scoped_child` + `drop_in_place<Env>` | 5.1 | per-call env overlay |
+| `arc_op::<VarRefBox>` + `payload_op` | 5.7 | the one remaining varref alloc/drop |
+| SipHash `Hasher::write` | 1.9 | the `compiled_fns` lookup (§3.1) — now minor |
+
+The shape changed: with the string work gone, what dominates is now genuinely
+**the per-call env overlay** — `scoped_child` + the seed loop's `get_sym` per
+local per call + the overlay drop, ~15% together. §4's "disproved" note still
+stands for the *assignment* benchmarks, but on a call-heavy one the overlay is
+now the top structural cost, and §3.0 is the next slice.
 
 ### bench-mandelbrot (assignment-dominated)
 
@@ -58,6 +119,31 @@ itself (~11%), the allocator, and `Env::get_sym`/`memcmp`/SipHash from the
 remaining `String`-keyed side maps (`var_type_constraints`, `var_defaults`).
 
 ## 3. The slices, in order
+
+### 3.0 The per-call locals seed loop — **do this first**
+
+`call_compiled_function_positional_light` seeds every one of the callee's local
+slots from the env before running the body:
+
+```rust
+for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+    if let Some(val) = self.env().get_sym(*sym) { self.locals[i] = val.clone(); }
+}
+```
+
+so each call walks the whole parent env chain — and then `GLOBAL_BASE` — once
+*per local*, to answer "does a caller variable of this name shadow into me?".
+That is the 10% `Env::get_sym`. For a routine whose locals are all its own
+(the overwhelmingly common case, and every benchmark here) the answer is always
+`None`, and the loop is pure loss. The fix is a compile-time predicate: a local
+slot only needs seeding if its name can be resolved from an enclosing scope
+(a captured outer, a `state`, an `our`) — bake that as a `locals_needs_seed`
+bitmask on `CompiledCode` and skip the probe otherwise. Gate on `instructions:u`
+for bench-tak / bench-fib / method-call.
+
+Note this is *adjacent to but not the same as* the lexical-scope slot campaign:
+it removes the read side of the overlay for the common case without touching
+`BlockScope`'s whole-`locals` clone.
 
 ### 3.1 `compiled_fns` is a `HashMap<String, CompiledFunction>` with the default hasher — **do this first**
 

@@ -35,23 +35,10 @@ impl Interpreter {
             }
         }
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-        let (raw_val, bind_source) =
-            if let ValueView::Capture { positional, named } = raw_val.view() {
-                if positional.is_empty() {
-                    if let (Some(ValueView::Str(source_name)), Some(inner)) = (
-                        named.get("__mutsu_varref_name").map(Value::view),
-                        named.get("__mutsu_varref_value"),
-                    ) {
-                        (inner.clone(), Some(source_name.to_string()))
-                    } else {
-                        (raw_val, None)
-                    }
-                } else {
-                    (raw_val, None)
-                }
-            } else {
-                (raw_val, None)
-            };
+        let (raw_val, bind_source) = match raw_val.view() {
+            ValueView::VarRef { name, value, .. } => (value.clone(), Some(name.resolve())),
+            _ => (raw_val, None),
+        };
         // Capture old hash Arc pointer for circular reference fixup, and the
         // backing `Gc` for the in-place whole-container reassignment below. A
         // celled `@`/`%` aggregate (a `state @foo` / captured boxed container)
@@ -541,13 +528,19 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Tag the top-of-stack value with the name of the variable it was read
+    /// from, so the binder can alias the caller's container for an `is rw` /
+    /// `is raw` / `:=` target (see [`Value::varref`]).
+    ///
+    /// This runs once per variable passed as an argument — the single hottest
+    /// opcode in a call-heavy program (99.7% of `bench-tak`'s interpreted ops),
+    /// so it must not allocate more than the one `VarRef` payload. The name is
+    /// taken from the chunk's pre-interned constant symbols: no `String`, no
+    /// hashing.
     pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let value = self.stack.pop().unwrap_or(Value::NIL);
-        let name = Self::const_str(code, name_idx).to_string();
-        let mut named = std::collections::HashMap::new();
-        named.insert("__mutsu_varref_name".to_string(), Value::str(name));
-        named.insert("__mutsu_varref_value".to_string(), value);
-        self.stack.push(Value::capture(Vec::new(), named));
+        self.stack
+            .push(Value::varref(code.const_sym(name_idx), value, None));
     }
 
     /// Validate and coerce a value for native integer type assignment.

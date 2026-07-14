@@ -82,14 +82,10 @@ impl Interpreter {
     }
 
     pub(crate) fn extract_varref_binding(raw_val: Value) -> (Value, Option<String>) {
-        if let ValueView::Capture { positional, named } = raw_val.view()
-            && positional.is_empty()
-            && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
-            && let Some(inner) = named.get("__mutsu_varref_value")
-        {
-            return (inner.clone(), Some(name.to_string()));
+        match raw_val.as_varref() {
+            Some((name, inner, _)) => (inner.clone(), Some(name.resolve())),
+            None => (raw_val, None),
         }
-        (raw_val, None)
     }
 
     pub(crate) fn resolve_sigilless_alias_source_name(&self, source_name: &str) -> String {

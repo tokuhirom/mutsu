@@ -311,18 +311,15 @@ impl Interpreter {
         total
     }
 
-    /// Unwrap a VarRef Capture wrapper to get the inner value and the source
+    /// Unwrap a [`Value::varref`] wrapper to get the inner value and the source
     /// variable's declared type constraint (if any) for dispatch.
     fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
-        if let ValueView::Capture { positional, named } = value.view()
-            && positional.is_empty()
-            && let Some(var_name) = named.get("__mutsu_varref_name").and_then(|v| v.as_str())
-            && let Some(inner) = named.get("__mutsu_varref_value")
-        {
-            let var_type = self.var_type_constraint_fast(var_name).cloned();
-            (inner.clone(), var_type)
-        } else {
-            (value.clone(), None)
+        match value.as_varref() {
+            Some((name, inner, _)) => {
+                let var_type = name.with_str(|n| self.var_type_constraint_fast(n).cloned());
+                (inner.clone(), var_type)
+            }
+            None => (value.clone(), None),
         }
     }
 

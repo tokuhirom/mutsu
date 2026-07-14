@@ -139,6 +139,7 @@ pub(in crate::value) enum Kind {
     Routine,
     LazyIoLines,
     HashEntryRef,
+    VarRef,
     // -- Gc-backed pointer kinds (payload = GcBox<T> raw address) --
     Sub,
     WeakSub,
@@ -426,6 +427,7 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::Routine => arc_op::<RoutineBox>(bits, op),
             Kind::LazyIoLines => arc_op::<LazyIoLinesBox>(bits, op),
             Kind::HashEntryRef => arc_op::<HashEntryRefBox>(bits, op),
+            Kind::VarRef => arc_op::<VarRefBox>(bits, op),
             Kind::Sub => gc_op::<SubData>(bits, op),
             Kind::WeakSub => weak_op::<SubData>(bits, op),
             Kind::LazyList => gc_op::<LazyList>(bits, op),

@@ -167,14 +167,10 @@ impl Interpreter {
     }
 
     pub(super) fn unwrap_var_ref_value(value: Value) -> Value {
-        if let ValueView::Capture { positional, named } = value.view()
-            && positional.is_empty()
-            && let Some(ValueView::Str(_)) = named.get("__mutsu_varref_name").map(Value::view)
-            && let Some(inner) = named.get("__mutsu_varref_value")
-        {
-            return inner.clone();
+        match value.as_varref() {
+            Some((_, inner, _)) => inner.clone(),
+            None => value,
         }
-        value
     }
 
     pub(super) fn normalize_call_args_for_target(

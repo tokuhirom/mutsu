@@ -179,6 +179,7 @@ impl NanBox {
                 Kind::Pair => unique::<PairBox>(bits),
                 Kind::ValuePair => unique::<ValuePairBox>(bits),
                 Kind::Capture => unique::<CaptureBox>(bits),
+                Kind::VarRef => unique::<VarRefBox>(bits),
                 Kind::Proxy => unique::<ProxyBox>(bits),
                 Kind::GenericRange => unique::<GenericRangeBox>(bits),
                 Kind::LazyIoLines => unique::<LazyIoLinesBox>(bits),
@@ -346,6 +347,14 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 ValueView::Capture {
                     positional: &c.positional,
                     named: &c.named,
+                }
+            }
+            Kind::VarRef => {
+                let r = peek_arc::<VarRefBox>(bits);
+                ValueView::VarRef {
+                    name: r.name,
+                    value: &r.value,
+                    index: r.index,
                 }
             }
             Kind::Proxy => {

@@ -52,14 +52,8 @@ impl Interpreter {
     }
 
     pub(super) fn varref_parts(value: &Value) -> Option<(String, Value)> {
-        if let ValueView::Capture { positional, named } = value.view()
-            && positional.is_empty()
-            && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
-            && let Some(inner) = named.get("__mutsu_varref_value")
-        {
-            return Some((name.to_string(), inner.clone()));
-        }
-        None
+        let (name, inner, _) = value.as_varref()?;
+        Some((name.resolve(), inner.clone()))
     }
 
     pub(super) fn var_target_from_meta_value(value: &Value) -> Option<String> {

@@ -26,18 +26,8 @@ pub(in crate::runtime) fn varref_from_value(value: &Value) -> Option<(String, Va
 pub(in crate::runtime) fn indexed_varref_from_value(
     value: &Value,
 ) -> Option<(String, Value, Option<usize>)> {
-    if let ValueView::Capture { positional, named } = value.view()
-        && positional.is_empty()
-        && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
-        && let Some(inner) = named.get("__mutsu_varref_value")
-    {
-        let source_index = match named.get("__mutsu_varref_index").map(Value::view) {
-            Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
-            _ => None,
-        };
-        return Some((name.to_string(), inner.clone(), source_index));
-    }
-    None
+    let (name, inner, index) = value.as_varref()?;
+    Some((name.resolve(), inner.clone(), index.map(|i| i as usize)))
 }
 
 /// Wrap an integer value to fit within a native integer type's range
@@ -93,11 +83,13 @@ pub(in crate::runtime) fn wrap_native_int_for_binding(
         .unwrap_or_else(|| Value::bigint(wrapped)))
 }
 
+/// Strip the [`Value::varref`] wrapper the caller tagged an lvalue argument
+/// with, once the binder has taken the source name it needs. On the light-call
+/// path this runs once per parameter, so it must not materialize the name.
 pub(crate) fn unwrap_varref_value(value: Value) -> Value {
-    if let Some((_, inner)) = varref_from_value(&value) {
-        inner
-    } else {
-        value
+    match value.as_varref() {
+        Some((_, inner, _)) => inner.clone(),
+        None => value,
     }
 }
 
@@ -188,13 +180,7 @@ pub(in crate::runtime) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Va
 }
 
 pub(crate) fn make_varref_value(name: String, value: Value, source_index: Option<usize>) -> Value {
-    let mut named = std::collections::HashMap::new();
-    named.insert("__mutsu_varref_name".to_string(), Value::str(name));
-    named.insert("__mutsu_varref_value".to_string(), value);
-    if let Some(i) = source_index {
-        named.insert("__mutsu_varref_index".to_string(), Value::int(i as i64));
-    }
-    Value::capture(Vec::new(), named)
+    Value::varref(Symbol::intern(&name), value, source_index.map(|i| i as u32))
 }
 
 /// Sentinel prefix marking a `*@v is rw`/`is raw` slurpy element writeback entry

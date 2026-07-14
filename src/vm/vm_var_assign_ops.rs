@@ -170,17 +170,8 @@ impl Interpreter {
     }
 
     pub(crate) fn varref_target(value: &Value) -> Option<(String, Option<usize>)> {
-        if let ValueView::Capture { positional, named } = value.view()
-            && positional.is_empty()
-            && let Some(ValueView::Str(name)) = named.get("__mutsu_varref_name").map(Value::view)
-        {
-            let source_index = match named.get("__mutsu_varref_index").map(Value::view) {
-                Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
-                _ => None,
-            };
-            return Some((name.to_string(), source_index));
-        }
-        None
+        let (name, _, index) = value.as_varref()?;
+        Some((name.resolve(), index.map(|i| i as usize)))
     }
 
     pub(crate) fn make_varref_value(
@@ -188,13 +179,7 @@ impl Interpreter {
         value: Value,
         source_index: Option<usize>,
     ) -> Value {
-        let mut named = std::collections::HashMap::new();
-        named.insert("__mutsu_varref_name".to_string(), Value::str(name));
-        named.insert("__mutsu_varref_value".to_string(), value);
-        if let Some(i) = source_index {
-            named.insert("__mutsu_varref_index".to_string(), Value::int(i as i64));
-        }
-        Value::capture(Vec::new(), named)
+        Value::varref(Symbol::intern(&name), value, source_index.map(|i| i as u32))
     }
 
     pub(crate) fn assign_varref_target(

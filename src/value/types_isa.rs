@@ -10,7 +10,13 @@ impl Value {
             ValueView::Package(name) => Some(name.resolve()),
             _ => None,
         };
+        // A `VarRef` is a transient binder wrapper, not a type of its own: it
+        // answers as the variable's value.
+        if let ValueView::VarRef { value, .. } = self.view() {
+            return value.isa_check(type_name);
+        }
         let my_type = match self.view() {
+            ValueView::VarRef { .. } => unreachable!("unwrapped above"),
             ValueView::Int(_) | ValueView::BigInt(_) => "Int",
             ValueView::Num(_) => "Num",
             ValueView::Str(_) => "Str",

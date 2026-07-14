@@ -2,6 +2,9 @@ use super::*;
 
 pub(crate) fn value_type_name(value: &Value) -> &'static str {
     match value.view() {
+        // A `VarRef` is a transient binder wrapper, not a type: report the type
+        // of the variable's value.
+        ValueView::VarRef { value, .. } => value_type_name(value),
         ValueView::Int(_) => "Int",
         ValueView::BigInt(_) => "Int",
         ValueView::Num(_) => "Num",
@@ -82,18 +85,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Channel(_) => "Channel",
         ValueView::Whatever => "Whatever",
         ValueView::HyperWhatever => "HyperWhatever",
-        ValueView::Capture { positional, named } => {
-            // Unwrap internal VarRef captures used by the VM for rw binding
-            if positional.is_empty()
-                && named
-                    .get("__mutsu_varref_name")
-                    .is_some_and(|v| matches!(v.view(), ValueView::Str(_)))
-                && let Some(inner) = named.get("__mutsu_varref_value")
-            {
-                return value_type_name(inner);
-            }
-            "Capture"
-        }
+        ValueView::Capture { .. } => "Capture",
         ValueView::Uni(u) => match u.form.as_str() {
             "NFC" => "NFC",
             "NFD" => "NFD",

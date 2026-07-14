@@ -965,23 +965,10 @@ impl Interpreter {
                     )));
                 }
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-                let (raw_val, bind_source) =
-                    if let ValueView::Capture { positional, named } = raw_val.view() {
-                        if positional.is_empty() {
-                            if let (Some(ValueView::Str(source_name)), Some(inner)) = (
-                                named.get("__mutsu_varref_name").map(Value::view),
-                                named.get("__mutsu_varref_value"),
-                            ) {
-                                (inner.clone(), Some(source_name.to_string()))
-                            } else {
-                                (raw_val, None)
-                            }
-                        } else {
-                            (raw_val, None)
-                        }
-                    } else {
-                        (raw_val, None)
-                    };
+                let (raw_val, bind_source) = match raw_val.as_varref() {
+                    Some((source_name, inner, _)) => (inner.clone(), Some(source_name.resolve())),
+                    None => (raw_val, None),
+                };
                 let mut val = if raw_mode && name.starts_with('@') {
                     // Constants with @ sigil coerce to List (not Array).
                     // `constant @x = 42` gives `(42,)`, not `[42]`.

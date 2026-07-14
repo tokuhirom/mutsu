@@ -83,19 +83,7 @@ impl Interpreter {
 
     pub(crate) fn unwrap_test_arg_value(value: &Value) -> Value {
         match value.view() {
-            ValueView::Capture { positional, named }
-                if positional.is_empty()
-                    && named
-                        .get("__mutsu_varref_name")
-                        .and_then(|v| v.as_str())
-                        .is_some()
-                    && named.contains_key("__mutsu_varref_value") =>
-            {
-                named
-                    .get("__mutsu_varref_value")
-                    .cloned()
-                    .unwrap_or(Value::NIL)
-            }
+            ValueView::VarRef { value, .. } => value.clone(),
             ValueView::Pair(key, val) => Value::pair(key.clone(), Self::unwrap_test_arg_value(val)),
             _ => value.clone(),
         }
