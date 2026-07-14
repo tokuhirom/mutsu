@@ -31,6 +31,14 @@ pub(super) enum IntArith {
     Mul,
 }
 
+/// `div` / `mod` — Raku's *floor* integer division and modulo (`-7 div 3 == -3`,
+/// `-7 mod 3 == 2`), as opposed to `/` and `%`.
+#[derive(Clone, Copy)]
+pub(super) enum IntDivMod {
+    Div,
+    Mod,
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum NumCmp {
     Lt,
@@ -271,6 +279,87 @@ impl TierB {
             IntArith::Mul => b.ins().fmul(fa, fb),
         };
         let word = self.encode_num(b, fr);
+        b.ins().store(Self::mf(), word, a_addr, 0);
+        self.adjust_len(b, len, -1);
+        b.ins().jump(done, &[]);
+
+        // -- Slow path: the Tier A shim reruns the full interpreter arm --
+        b.switch_to_block(slow_blk);
+        self.call_status(b, slow_fn);
+        b.ins().jump(done, &[]);
+
+        b.switch_to_block(done);
+    }
+
+    /// `IntDiv`/`IntMod` (`div` / `mod`): pop two Int words, push the *floor*
+    /// quotient / remainder. The interpreter arm uses `Integer::div_floor` /
+    /// `mod_floor`, so the native path must match: Cranelift's `sdiv`/`srem`
+    /// truncate toward zero, so a floor correction is applied when the remainder
+    /// is non-zero and the operand signs differ.
+    ///
+    /// Fast-path conditions mirror the interpreter's Int/Int arm exactly: two
+    /// small-Int operands with a non-zero divisor. Everything else — a zero
+    /// divisor (which must raise `X::Numeric::DivideByZero`), `BigInt`, `Num`
+    /// (which the arm coerces via `to_int`), junctions — falls to the shim.
+    pub(super) fn emit_int_divmod(&self, b: &mut FunctionBuilder, op: IntDivMod, slow_fn: usize) {
+        let ptr = self.stack_ptr(b);
+        let len = self.stack_len(b);
+        let a_addr = self.slot_addr(b, ptr, len, 2);
+        let b_addr = self.slot_addr(b, ptr, len, 1);
+        let wa = b.ins().load(types::I64, Self::mf(), a_addr, 0);
+        let wb = b.ins().load(types::I64, Self::mf(), b_addr, 0);
+        let pa = self.page(b, wa);
+        let pb = self.page(b, wb);
+        let a_int = self.is_int_page(b, pa);
+        let b_int = self.is_int_page(b, pb);
+        let both_int = b.ins().band(a_int, b_int);
+
+        let int_blk = b.create_block();
+        let slow_blk = b.create_block();
+        let done = b.create_block();
+        b.ins().brif(both_int, int_blk, &[], slow_blk, &[]);
+
+        // -- Int fast path (divisor must be non-zero; `sdiv` would trap) --
+        b.switch_to_block(int_blk);
+        let av = self.sx48(b, wa);
+        let bv = self.sx48(b, wb);
+        let nonzero = b.ins().icmp_imm(IntCC::NotEqual, bv, 0);
+        let calc_blk = b.create_block();
+        b.ins().brif(nonzero, calc_blk, &[], slow_blk, &[]);
+
+        b.switch_to_block(calc_blk);
+        // Operands are sign-extended 48-bit, so `a == i64::MIN` is impossible and
+        // `sdiv` cannot trap on the INT_MIN / -1 overflow.
+        let rem = b.ins().srem(av, bv);
+        // Floor correction applies exactly when the truncated remainder is
+        // non-zero and the operand signs differ.
+        let rem_nz = b.ins().icmp_imm(IntCC::NotEqual, rem, 0);
+        let sign_xor = b.ins().bxor(av, bv);
+        let signs_differ = b.ins().icmp_imm(IntCC::SignedLessThan, sign_xor, 0);
+        let correct = b.ins().band(rem_nz, signs_differ);
+        let zero = b.ins().iconst(types::I64, 0);
+        let res = match op {
+            IntDivMod::Div => {
+                let q = b.ins().sdiv(av, bv);
+                let one = b.ins().iconst(types::I64, 1);
+                let adj = b.ins().select(correct, one, zero);
+                b.ins().isub(q, adj)
+            }
+            IntDivMod::Mod => {
+                let adj = b.ins().select(correct, bv, zero);
+                b.ins().iadd(rem, adj)
+            }
+        };
+        // `mod`'s result is bounded by the divisor and `div`'s by the dividend, so
+        // both fit the small-Int range for every input except `MIN_48 div -1`.
+        // Check anyway, and let the shim box the one case that does not.
+        let hi = b.ins().ishl_imm(res, 16);
+        let back = b.ins().sshr_imm(hi, 16);
+        let fits = b.ins().icmp(IntCC::Equal, back, res);
+        let int_store = b.create_block();
+        b.ins().brif(fits, int_store, &[], slow_blk, &[]);
+        b.switch_to_block(int_store);
+        let word = self.pack_int(b, res);
         b.ins().store(Self::mf(), word, a_addr, 0);
         self.adjust_len(b, len, -1);
         b.ins().jump(done, &[]);

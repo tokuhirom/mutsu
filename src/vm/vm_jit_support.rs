@@ -17,6 +17,8 @@ pub(super) fn noarg_shim(op: &OpCode) -> Option<usize> {
         OpCode::Mul => helpers::mul,
         OpCode::Div => helpers::div,
         OpCode::Mod => helpers::modulo,
+        OpCode::IntDiv => helpers::int_div,
+        OpCode::IntMod => helpers::int_mod,
         OpCode::Pow => helpers::pow,
         OpCode::Negate => helpers::negate,
         OpCode::NumLt => helpers::num_lt,
@@ -115,8 +117,6 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::Not
             | OpCode::Gcd
             | OpCode::Lcm
-            | OpCode::IntDiv
-            | OpCode::IntMod
             | OpCode::NumCoerce
             // Sink context (forces lazies / throws unhandled Failures)
             | OpCode::SinkPop(_)

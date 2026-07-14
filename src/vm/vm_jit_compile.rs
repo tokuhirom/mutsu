@@ -10,7 +10,7 @@
 use super::vm_jit::JitEntryFn;
 use super::vm_jit_helpers as helpers;
 use super::vm_jit_support::{noarg_shim, step_supported};
-use super::vm_jit_tier_b::{IntArith, NumCmp, TierB};
+use super::vm_jit_tier_b::{IntArith, IntDivMod, NumCmp, TierB};
 use super::*;
 
 use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, SigRef, Type, types};
@@ -279,6 +279,22 @@ fn build(
             OpCode::Mul if tier_b.is_some() => {
                 let tb = tier_b.as_ref().unwrap();
                 tb.emit_int_num_arith(&mut b, IntArith::Mul, helpers::mul as *const () as usize);
+            }
+            OpCode::IntDiv if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_int_divmod(
+                    &mut b,
+                    IntDivMod::Div,
+                    helpers::int_div as *const () as usize,
+                );
+            }
+            OpCode::IntMod if tier_b.is_some() => {
+                let tb = tier_b.as_ref().unwrap();
+                tb.emit_int_divmod(
+                    &mut b,
+                    IntDivMod::Mod,
+                    helpers::int_mod as *const () as usize,
+                );
             }
             OpCode::NumLt if tier_b.is_some() => {
                 let tb = tier_b.as_ref().unwrap();
