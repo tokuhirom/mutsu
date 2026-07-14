@@ -10,7 +10,12 @@ plan 3;
 # Capture via .tap (not `done` inside the Supply whenever) to isolate the
 # bin-vs-Str behaviour from the separate react/done teardown path.
 {
-    my $port = 19995;
+    # `whenever` taps the listen Supply for us, so there is no ListenSocket to
+    # ask for an OS-assigned port (unlike t/io-socket-recv-limit.t, which taps
+    # explicitly and uses port 0). Keep an explicit port, but one no other test
+    # shares — this file and io-socket-recv-limit.t both used 19995 and killed
+    # each other under `prove -j4`.
+    my $port = 19996;
     my $got-type = '';
     my $got-bytes;
 

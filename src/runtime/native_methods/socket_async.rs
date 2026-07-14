@@ -260,11 +260,17 @@ impl Interpreter {
                     .get("enc")
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| "utf-8".to_string());
-                let port = if requested_port == 0 {
-                    allocate_async_listen_port()
-                } else {
-                    requested_port
-                };
+                // Port 0 means "let the OS pick a free ephemeral port" (Raku
+                // semantics). Pass it straight to `bind()`: `local_addr()` below
+                // reports the port the kernel actually assigned, which is what
+                // `.socket-port` hands back. Substituting a port from a
+                // PROCESS-LOCAL counter here — as this used to — made every mutsu
+                // process start at the same number and consult only its own
+                // listener map for occupancy, so two concurrent processes both
+                // picked it and one failed to bind (t/io-socket-recv-limit.t and
+                // t/io-socket-async-bin.t collided under `prove -j4`, which is what
+                // the "flaky S17/io" label was actually made of).
+                let port = requested_port;
 
                 let host_ok = host == "0.0.0.0"
                     || host == "::"

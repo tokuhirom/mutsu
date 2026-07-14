@@ -9,18 +9,17 @@ plan 7;
 # excess buffered for the next recv. Covers roast S32-io/socket-recv-vs-read.t
 # tests 1-4 and guards the IO-Socket-INET.t multibyte recv.
 
-my $port = 19995;
-
 # A 3-byte character (U+A001) exercises "recv(1) returns 1 whole char".
 my $payload = 'he' ~ chr(0xA001) ~ 'llo';
 
-IO::Socket::Async.listen("127.0.0.1", $port).tap(-> $conn {
+# Port 0 = let the OS assign a free ephemeral port, and ask the tap which one it
+# got. A hardcoded port made this test collide with a sibling under `prove -j4`
+# (whichever bound second died), which is what the old "flaky" label was.
+my $tap = IO::Socket::Async.listen("127.0.0.1", 0).tap(-> $conn {
     $conn.print($payload);
     $conn.close;
 });
-
-# Give the listener time to bind.
-sleep 0.5;
+my $port = await $tap.socket-port;
 
 my $client = IO::Socket::INET.new(host => '127.0.0.1', port => $port);
 
