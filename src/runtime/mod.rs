@@ -2254,7 +2254,7 @@ mod tests {
             "@noise".to_string(),
             "$temp".to_string(),
         ];
-        compiled.simple_locals = vec![true, false, true];
+        compiled.plain_locals = vec![true, false, false];
         compiled.ops = vec![
             OpCode::GetGlobal(0),
             OpCode::GetArrayVar(1),
