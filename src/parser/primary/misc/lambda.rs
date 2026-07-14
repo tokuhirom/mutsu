@@ -317,6 +317,29 @@ pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>
     result
 }
 
+/// Whether any parameter -- including one nested in a destructuring sub-signature --
+/// is sigilless.
+fn has_sigilless_param(param_defs: &[crate::ast::ParamDef]) -> bool {
+    param_defs
+        .iter()
+        .any(|p| p.sigilless || p.sub_signature.as_deref().is_some_and(has_sigilless_param))
+}
+
+/// Register every sigilless parameter as a term symbol, descending into destructuring
+/// sub-signatures: `-> [ \a, \u, \v ] { u %% v }` binds `u` and `v` just as
+/// `-> \u, \v { ... }` does, so the body must see them as terms rather than parse `u`
+/// as the head of a listop call.
+fn register_sigilless_params(param_defs: &[crate::ast::ParamDef]) {
+    for pd in param_defs {
+        if pd.sigilless {
+            crate::parser::stmt::simple::register_user_term_symbol(&pd.name);
+        }
+        if let Some(sub) = pd.sub_signature.as_deref() {
+            register_sigilless_params(sub);
+        }
+    }
+}
+
 /// Like `parse_block_body`, but registers any sigilless parameters as term symbols
 /// before parsing the body.  This prevents bare names like `s` or `q` from being
 /// misinterpreted as substitution / quoting operators inside arrow-lambda bodies.
@@ -324,17 +347,12 @@ fn parse_block_body_with_sigilless<'a>(
     param_defs: &[crate::ast::ParamDef],
     input: &'a str,
 ) -> PResult<'a, Vec<crate::ast::Stmt>> {
-    let has_sigilless = param_defs.iter().any(|p| p.sigilless);
-    if !has_sigilless {
+    if !has_sigilless_param(param_defs) {
         return parse_block_body(input);
     }
     let (r, _) = parse_char(input, '{')?;
     crate::parser::stmt::simple::push_scope();
-    for pd in param_defs {
-        if pd.sigilless {
-            crate::parser::stmt::simple::register_user_term_symbol(&pd.name);
-        }
-    }
+    register_sigilless_params(param_defs);
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
         let (r, stmts) = crate::parser::stmt::stmt_list_pub(r)?;
         let (r, _) = ws_inner(r);

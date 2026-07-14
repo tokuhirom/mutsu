@@ -51,7 +51,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 | 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
 |---|---|---|---|
 | **① スタックオーバーフローで abort**（★同じ症状で原因は 4 つ別々 — 下節参照） | **残 1** | **残: `man-or-boy.t`**。`99problems-41-to-50.t`(#4510)・`99problems-51-to-60.t`(#4516) は無限再帰で修正済み、`deep-recursion-initing-native-array.t` は debug 計測の誤診（release では元から通る）＝whitelist 追加 | `fatal runtime error: stack overflow, aborting`（プロセス abort）。**4 本のうち 3 本は無限再帰、1 本は計測ミス。「本当に深い再帰でスタックが足りない」ものは 1 本も無かった** |
-| **② パース不能（`===SORRY!===`）** | **残 1** | **残: `advent2012-day19.t`**（ユーザ定義演算子の優先順位） | **9 本は解消済み（#4511 / #4514 / #4515）** — 下の「② の内訳」参照。②はほぼ枯渇 |
+| **② パース不能（`===SORRY!===`）** | **残 1** | **残: `advent2012-day19.t`**（ユーザ定義演算子の優先順位） | **9 本は解消済み（#4511 / #4514 / #4515 / #4517 / #4518）** — 下の「② の内訳」参照。②はほぼ枯渇 |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
 | **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張）・`advent2010-day14.t`（`nextsame` の継承/mixin）・`advent2010-day22.t`（`Rat` の `$!numerator`/`$!denominator` 属性）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2009-day20.t`（signature の introspection/stringification）・`advent2009-day18.t`（パラメタ化 role の mixin）・`advent2013-day10.t`（`:round` 等の演算子 adverb）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。★の近道はここ |
@@ -123,17 +123,16 @@ plain lexical」だけを上書き install する（`CompiledCode::authoritative
 
 ### ② の内訳（2026-07-14 実測・#4511 / #4514 / #4515 後）
 
-**whitelist 到達（5 本）**: `advent2010-day11.t`・`advent2013-day04.t`・`advent2014-day16.t`（#4511:
+**whitelist 到達（6 本）**: `advent2010-day11.t`・`advent2013-day04.t`・`advent2014-day16.t`（#4511:
 `qto`/`qqto` fused adverb、quote 語とデリミタ間の空白・改行、heredoc 本体の開始行、`q:to:c` の
 選択的 adverb、lazy gather Seq の多引数 `for`）／`advent2009-day16.t`・`advent2009-day23.t`（#4514:
 `when` 文修飾子、Match を RHS とする smartmatch、`(with …)`/`(given …)` の式化、`my@i` の
-空白なし宣言）。
+空白なし宣言）／`advent2012-day04.t`（#4515 の feed 継続行・無限 closure sequence の lazy `for`、#4517 のコンマより緩い演算子の優先順位、#4518 の分解シグネチャ＋grep バインダ）。
 
-**パースは通ったが subtest が残る（4 本）** — ②ではなく機能ギャップに移行:
+**パースは通ったが subtest が残る（3 本）** — ②ではなく機能ギャップに移行:
 
 | ファイル | 残 | ブロッカー |
 |---|---|---|
-| `integration/advent2012-day04.t` | test 5 で中断 | **pointy の分解シグネチャが sigilless 名をパーサに登録しない**。`-> [ \a, \u, \v ] { u %% v }` の `u` が宣言済みの項として見えず listop 呼び出しに化ける（`Unknown function: u`）。#4515 で 0/8（コンパイル不能）→ 2 本、#4516 で **test 1・2・4 pass ＋ test 3 は TODO（raku も同値 0 を返す）** まで前進 |
 | `integration/advent2012-day15.t` | 2/11 | phaser の文形式が独自スコープを作る（`NEXT (state $best) max= $_;` の `$best` が `LAST` から見えない）／`INIT` がメインラインより後に走る |
 | `6.c/MISC/bug-coverage.t` | 5/17 | `.count-only`/`.bool-only`、thunk のクロージャスコープ 等 |
 | `6.c/APPENDICES/A04-experimental/01-misc.t` | 3/19 | `:D`/`:U` DefiniteHow coercion（`Target:D(Source:U)`）。#4514 で 0/19 → 16/19 |

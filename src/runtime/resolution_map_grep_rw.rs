@@ -230,6 +230,27 @@ impl Interpreter {
         {
             let data = data.clone();
             let mut result = Vec::new();
+            // A destructuring sub-signature (`grep -> [ \a, \u, \v ] { u %% v }`) has to go
+            // through the real binder. The fast path below inserts each parameter into the
+            // env *by name*, which cannot take an element apart, so the inner names stayed
+            // unbound. `map` already routes such signatures to `call_sub_value`.
+            let needs_full_binding = data
+                .param_defs
+                .iter()
+                .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some());
+            if needs_full_binding {
+                for item in &list_items {
+                    let pred = self.call_sub_value(
+                        Value::sub_value(data.clone()),
+                        vec![item.clone()],
+                        false,
+                    )?;
+                    if pred.truthy() {
+                        result.push(item.clone());
+                    }
+                }
+                return Ok((Value::array(result), list_items));
+            }
             let arity = if !data.params.is_empty() {
                 let effective = data
                     .params
