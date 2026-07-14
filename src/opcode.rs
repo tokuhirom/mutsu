@@ -1909,6 +1909,18 @@ pub(crate) struct JitCodeState {
     /// `vm_jit::try_enter_range` on each `run_range` call once the JIT is on.
     /// A linear-scan Vec: chunks hold only a handful of distinct hot ranges.
     pub(crate) ranges: std::sync::Mutex<JitRangeTable>,
+    /// Lock-free read cache over `ranges` for *settled* sub-ranges (ADR-0004
+    /// J4d): once a range's entry word is final (a compiled function pointer
+    /// or `JIT_ENTRY_BAILOUT`), it is published here as a write-once
+    /// `(key, entry)` pair so the per-iteration `run_range` hook resolves it
+    /// with a couple of atomic loads instead of a mutex + linear scan (which
+    /// profiled at ~12% of a hot numeric loop). `key` packs
+    /// `(start << 32 | end) + 1` (never 0, so 0 = empty slot); the writer
+    /// stores `entry` before releasing `key`, and readers acquire `key` first,
+    /// so a visible key implies a visible entry. Slots are claimed under the
+    /// `ranges` mutex; ranges beyond the fixed capacity simply stay on the
+    /// mutex path (correct, just slower).
+    pub(crate) range_cache: [(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64); 4],
 }
 
 /// The per-chunk range table: `(start, end)` keys to shared range states.

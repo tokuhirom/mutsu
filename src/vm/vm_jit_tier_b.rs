@@ -59,6 +59,8 @@ pub(super) struct TierB {
     pub(super) v1: SigRef,
     /// `(interp, code, u32) -> ()` — the `load_const` slow path.
     pub(super) v_code_u32: SigRef,
+    /// `(interp, code, u32) -> i32` — the `get_local` slow path.
+    pub(super) s_code_u32: SigRef,
 }
 
 impl TierB {
@@ -491,6 +493,131 @@ impl TierB {
         let idxv = b.ins().iconst(types::I32, idx as i64);
         b.ins()
             .call_indirect(self.v_code_u32, callee, &[self.interp, codep, idxv]);
+        b.ins().jump(done, &[]);
+
+        b.switch_to_block(done);
+    }
+
+    /// `GetLocal` of a statically-eligible plain local (ADR-0004 J4d): when
+    /// no dynamic spoiler exists — no `ContainerRef` cell anywhere in the
+    /// process, no `$CALLER::x := ...` alias, no atomic variable on this
+    /// interpreter, no sigilless attribute alias — and the slot word is a
+    /// refcount-free scalar (small Int / Num / Bool / Package), the
+    /// interpreter arm reduces to `stack.push(locals[idx].clone())`, which is
+    /// emitted here as two loads and a store. Every other combination calls
+    /// the Tier A shim, which re-runs the full `exec_get_local_op` guard
+    /// chain (cell adoption, lazy thunks, HashEntryRef, Nil declaration
+    /// checks, ...) on the untouched stack.
+    ///
+    /// The static half of the eligibility (name shape, attribute slots) is
+    /// checked by the caller; see `get_local_tier_b_eligible`.
+    pub(super) fn emit_get_local(
+        &self,
+        b: &mut FunctionBuilder,
+        codep: CVal,
+        idx: u32,
+        slow_fn: usize,
+    ) {
+        let slow_blk = b.create_block();
+        let done = b.create_block();
+
+        // -- process-global spoiler latches (see vm_jit::CONTAINER_CELLS /
+        // CALLER_VAR_BINDS): both zero ⟺ the resolve_binding and env
+        // cell-adoption probes are provably no-ops everywhere.
+        let cells_addr = std::ptr::addr_of!(super::vm_jit::CONTAINER_CELLS) as usize;
+        let cells_addr = b.ins().iconst(self.ptr_ty, cells_addr as i64);
+        let cells = b.ins().load(types::I32, Self::mf(), cells_addr, 0);
+        let binds_addr = std::ptr::addr_of!(super::vm_jit::CALLER_VAR_BINDS) as usize;
+        let binds_addr = b.ins().iconst(self.ptr_ty, binds_addr as i64);
+        let binds = b.ins().load(types::I32, Self::mf(), binds_addr, 0);
+        let global_spoil = b.ins().bor(cells, binds);
+        // -- per-interpreter spoiler flags (plain bool fields, 0 or 1).
+        let atomic = b
+            .ins()
+            .load(types::I8, Self::mf(), self.interp, self.lay.atomic_var_seen);
+        let sigil = b.ins().load(
+            types::I8,
+            Self::mf(),
+            self.interp,
+            self.lay.sigilless_attrs_active,
+        );
+        let interp_spoil = b.ins().bor(atomic, sigil);
+        let interp_spoil = b.ins().uextend(types::I32, interp_spoil);
+        let spoiled = b.ins().bor(global_spoil, interp_spoil);
+        let word_chk = b.create_block();
+        b.ins().brif(spoiled, slow_blk, &[], word_chk, &[]);
+
+        // -- slot word load (bounds-checked: a non-standard runner may have
+        // installed a shorter locals vec; the shim handles that shape).
+        b.switch_to_block(word_chk);
+        let lptr = b.ins().load(
+            self.ptr_ty,
+            Self::mf(),
+            self.interp,
+            self.lay.locals + self.lay.vec_ptr,
+        );
+        let llen = b.ins().load(
+            types::I64,
+            Self::mf(),
+            self.interp,
+            self.lay.locals + self.lay.vec_len,
+        );
+        let inbounds = b
+            .ins()
+            .icmp_imm(IntCC::UnsignedGreaterThan, llen, idx as i64);
+        let tag_chk = b.create_block();
+        b.ins().brif(inbounds, tag_chk, &[], slow_blk, &[]);
+
+        b.switch_to_block(tag_chk);
+        let word = b.ins().load(types::I64, Self::mf(), lptr, (idx as i32) * 8);
+        // Refcount-free scalar probe: small Int page, encoded-Num page range,
+        // Bool kind, or Package kind. Everything else (Nil included — the arm
+        // has a whole undeclared-check branch for it) goes to the shim.
+        let page = self.page(b, word);
+        let is_int = self.is_int_page(b, page);
+        let is_num = self.is_num_page(b, page);
+        let masked = b.ins().band_imm(word, w::KIND_MASK as i64);
+        let is_bool = b
+            .ins()
+            .icmp_imm(IntCC::Equal, masked, w::BOOL_PATTERN as i64);
+        let is_pkg = b
+            .ins()
+            .icmp_imm(IntCC::Equal, masked, w::PACKAGE_PATTERN as i64);
+        let num_or_int = b.ins().bor(is_int, is_num);
+        let inline_kind = b.ins().bor(is_bool, is_pkg);
+        let ok = b.ins().bor(num_or_int, inline_kind);
+        let push_chk = b.create_block();
+        b.ins().brif(ok, push_chk, &[], slow_blk, &[]);
+
+        // -- push (only a full stack falls back, mirroring emit_load_const).
+        b.switch_to_block(push_chk);
+        let sptr = self.stack_ptr(b);
+        let slen = self.stack_len(b);
+        let scap = self.stack_cap(b);
+        let full = b.ins().icmp(IntCC::Equal, slen, scap);
+        let push_blk = b.create_block();
+        b.ins().brif(full, slow_blk, &[], push_blk, &[]);
+        b.switch_to_block(push_blk);
+        let off = b.ins().ishl_imm(slen, 3);
+        let addr = b.ins().iadd(sptr, off);
+        b.ins().store(Self::mf(), word, addr, 0);
+        self.adjust_len(b, slen, 1);
+        b.ins().jump(done, &[]);
+
+        // -- slow path: the Tier A shim re-runs the full interpreter arm.
+        b.switch_to_block(slow_blk);
+        let callee = b.ins().iconst(self.ptr_ty, slow_fn as i64);
+        let idxv = b.ins().iconst(types::I32, idx as i64);
+        let call = b
+            .ins()
+            .call_indirect(self.s_code_u32, callee, &[self.interp, codep, idxv]);
+        let status = b.inst_results(call)[0];
+        let err = b.create_block();
+        let cont = b.create_block();
+        b.ins().brif(status, err, &[], cont, &[]);
+        b.switch_to_block(err);
+        b.ins().return_(&[status]);
+        b.switch_to_block(cont);
         b.ins().jump(done, &[]);
 
         b.switch_to_block(done);

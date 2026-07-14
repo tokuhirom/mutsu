@@ -417,8 +417,12 @@ pub(crate) fn dump() {
     let jit_compiles = JIT_COMPILES.load(Ordering::Relaxed);
     let jit_entries = JIT_ENTRIES.load(Ordering::Relaxed);
     let jit_bailouts = JIT_BAILOUTS.load(Ordering::Relaxed);
+    // Tier B GetLocal fast-path spoiler latches (J4d): nonzero means every
+    // inline local read fell back to the shim for the rest of the run.
+    let cells = crate::vm::vm_jit::CONTAINER_CELLS.load(Ordering::Relaxed);
+    let caller_binds = crate::vm::vm_jit::CALLER_VAR_BINDS.load(Ordering::Relaxed);
     eprintln!(
-        "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts}"
+        "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts} container_cells={cells} caller_binds={caller_binds}"
     );
     if let Ok(map) = jit_bailout_by_opcode().lock()
         && !map.is_empty()

@@ -87,6 +87,29 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
     build(code, start, end, &targets)
 }
 
+/// Static half of the Tier B `GetLocal` fast-path eligibility (ADR-0004
+/// J4d). Rejected shapes stay on the Tier A shim unconditionally:
+/// - attribute slots (`$!x` / `$.x` / bare sigilless attrs): the arm reads
+///   `self`'s shared cell, resolved through `local_attr_key`;
+/// - `!` / `.` twigil names: shared-var dirty probes and accessor aliases;
+/// - `@` / `%` containers: atomic-key and cross-thread shared-snapshot
+///   probes are keyed on the sigil.
+///
+/// Everything dynamic (cells, atomics, thunks, Nil) is handled by the
+/// emitted word/latch checks — see `TierB::emit_get_local`.
+fn get_local_tier_b_eligible(code: &CompiledCode, idx: usize) -> bool {
+    let Some(name) = code.locals.get(idx) else {
+        return false;
+    };
+    if code.local_attr_key(idx).is_some() {
+        return false;
+    }
+    !matches!(
+        name.as_bytes().first(),
+        Some(b'!') | Some(b'@') | Some(b'%') | Some(b'.')
+    )
+}
+
 /// Helper-call signatures used by the emitted code, imported once per
 /// function. All shims take the interpreter pointer first; fallible ones
 /// return an `i32` status (see `vm_jit::JIT_STATUS_*`).
@@ -180,6 +203,7 @@ fn build(
             s1: sigs.s1,
             v1: sigs.v1,
             v_code_u32: sigs.v_code_u32,
+            s_code_u32: sigs.s_code_u32,
         })
     } else {
         None
@@ -321,14 +345,27 @@ fn build(
                 tb.emit_compare(&mut b, NumCmp::Ne, helpers::num_ne as *const () as usize);
             }
             OpCode::GetLocal(idx) => {
-                let idxv = b.ins().iconst(types::I32, *idx as i64);
-                let status = call_helper(
-                    &mut b,
-                    sigs.s_code_u32,
-                    helpers::get_local as *const () as usize,
-                    &[interp, codep, idxv],
-                )?;
-                check_status(&mut b, status);
+                if let Some(tb) = &tier_b
+                    && get_local_tier_b_eligible(code, *idx as usize)
+                {
+                    // Tier B inline fast path (ADR-0004 J4d): plain scalar
+                    // slot read as two loads + a store, shim otherwise.
+                    tb.emit_get_local(
+                        &mut b,
+                        codep,
+                        *idx,
+                        helpers::get_local as *const () as usize,
+                    );
+                } else {
+                    let idxv = b.ins().iconst(types::I32, *idx as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_code_u32,
+                        helpers::get_local as *const () as usize,
+                        &[interp, codep, idxv],
+                    )?;
+                    check_status(&mut b, status);
+                }
             }
             OpCode::SetLocal(idx) => {
                 let idxv = b.ins().iconst(types::I32, *idx as i64);

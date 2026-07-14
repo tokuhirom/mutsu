@@ -1392,7 +1392,9 @@ pub struct Interpreter {
     /// a program that stops using an atomic still resolves correctly. See also the
     /// process-global `atomic_var_seen_anywhere`, which the reset path needs
     /// because a worker thread's `cas` marks only the WORKER's copy of this field.
-    atomic_var_seen: bool,
+    /// pub(crate) so `vm_jit_layout` can `offset_of!` it: the Tier B inline
+    /// GetLocal fast path reads this flag from native code.
+    pub(crate) atomic_var_seen: bool,
     /// Monotonic flag: set once any *env-scoped* variable type constraint has been
     /// written (via `set_var_type_constraint`'s `env.insert` branch or
     /// `bind_param_type_constraint`). The hot `var_type_constraint` read does a

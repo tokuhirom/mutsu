@@ -191,7 +191,14 @@ impl NanBox {
             ValueRepr::CustomType(d) => pack_arc(Kind::CustomType, Arc::new(*d)),
             ValueRepr::CustomTypeInstance(d) => pack_arc(Kind::CustomTypeInstance, Arc::new(*d)),
             ValueRepr::Scalar(inner) => pack_arc(Kind::Scalar, Arc::new(*inner)),
-            ValueRepr::ContainerRef(cell) => pack_gc(Kind::ContainerRef, cell),
+            ValueRepr::ContainerRef(cell) => {
+                // Latch for the Tier B inline GetLocal fast path: this is the
+                // single point every ContainerRef word passes through, so a
+                // zero counter proves no cell exists anywhere (see
+                // `vm_jit::CONTAINER_CELLS`).
+                crate::vm::vm_jit::note_container_cell();
+                pack_gc(Kind::ContainerRef, cell)
+            }
             ValueRepr::LazyThunk(t) => pack_arc(Kind::LazyThunk, t),
             ValueRepr::LazyIoLines { handle, kv, words } => pack_arc(
                 Kind::LazyIoLines,
