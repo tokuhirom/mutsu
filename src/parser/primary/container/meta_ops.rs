@@ -463,7 +463,7 @@ pub(crate) fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PRes
     use crate::parser::stmt::modifier::parse_statement_modifier;
     // Check if the input starts with a modifier keyword
     let modifier_keywords = [
-        "if", "unless", "with", "without", "for", "while", "until", "given",
+        "if", "unless", "with", "without", "for", "while", "until", "given", "when",
     ];
     let is_modifier = modifier_keywords
         .iter()

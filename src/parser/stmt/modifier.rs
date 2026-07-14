@@ -160,12 +160,12 @@ fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
 }
 
 /// Whether a second statement modifier `next` is legal after a first `first`.
-/// Raku only allows a *conditional* modifier (`if`/`unless`/`with`/`without`)
+/// Raku only allows a *conditional* modifier (`if`/`unless`/`with`/`without`/`when`)
 /// followed by a *loop* modifier (`for`/`while`/`until`/`given`), e.g.
-/// `EXPR if COND for LIST`. Everything else (two conditionals, two loops, a loop
-/// then a conditional) is X::Syntax::Confused.
+/// `EXPR if COND for LIST` or `EXPR when COND given TOPIC`. Everything else (two
+/// conditionals, two loops, a loop then a conditional) is X::Syntax::Confused.
 fn second_modifier_allowed(first: &str, next: &str) -> bool {
-    let first_is_cond = matches!(first, "if" | "unless" | "with" | "without");
+    let first_is_cond = matches!(first, "if" | "unless" | "with" | "without" | "when");
     let next_is_loop = matches!(next, "for" | "while" | "until" | "given");
     first_is_cond && next_is_loop
 }
@@ -532,6 +532,35 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             Stmt::Given {
                 topic,
                 body: vec![given_stmt],
+            },
+        )));
+    }
+
+    if let Some(r) = keyword("when", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, cond) = expression(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected match expression after 'when'",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
+        })?;
+        // A real `when COND { ... }` statement is not a modifier — leave it to control::when_stmt.
+        if modified_ends_block && block_follows_modifier_condition(r) {
+            return Ok(None);
+        }
+        // `When` signals a match by raising `succeed`, which only an enclosing topicalizer
+        // catches. Wrapping in a `given $_` gives it that catcher without changing the topic,
+        // and composes with a following `given` modifier, which re-topicalizes `$_` first.
+        return Ok(Some((
+            r,
+            Stmt::Given {
+                topic: Expr::Var("_".to_string()),
+                body: vec![Stmt::When {
+                    cond,
+                    body: vec![stmt],
+                }],
             },
         )));
     }

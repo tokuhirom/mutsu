@@ -179,6 +179,33 @@ pub(crate) fn build_compound_assign_expr(
             op: op.token_kind(),
             right: Box::new(rhs),
         },
+        // `(state $best) max= $score` / `(my $n) += 1`: the declaration *is* the lvalue.
+        // Unlike plain `=`, the new value has to read the variable back, so this cannot
+        // become a `VarDecl` with an initializer — a `state` initializer runs once, but the
+        // compound assignment must run on every pass. Route it through the same
+        // callable-lvalue helper the parenthesized `=` form uses: the declaration is
+        // evaluated first (declaring the variable and yielding its container), the value
+        // then reads it, and the helper assigns back into that container.
+        Expr::DoStmt(stmt)
+            if crate::parser::stmt::simple_expr_stmt::decl_target_var_name(&stmt).is_some() =>
+        {
+            let name = crate::parser::stmt::simple_expr_stmt::decl_target_var_name(&stmt)
+                .expect("guarded by the match arm");
+            let read_back = match name.as_bytes().first() {
+                Some(b'@') => Expr::ArrayVar(name[1..].to_string()),
+                Some(b'%') => Expr::HashVar(name[1..].to_string()),
+                _ => Expr::Var(name),
+            };
+            let assigned_value = compound_assigned_value_expr(read_back, op, rhs);
+            Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![
+                    Expr::DoStmt(stmt),
+                    Expr::ArrayLiteral(Vec::new()),
+                    assigned_value,
+                ],
+            }
+        }
         other => {
             // For short-circuit operators (or=, and=, ||=, &&=, //=, orelse=,
             // andthen=), preserve short-circuit semantics so that when the LHS
