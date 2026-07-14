@@ -1791,6 +1791,34 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// The subset of this code's own `free_var_syms` whose captured value is
+    /// **authoritative**: the CREATING frame declares them as plain lexicals and
+    /// provably never mutates them after this closure captured them, so the
+    /// by-value snapshot in the closure's env can never go stale.
+    ///
+    /// Baked by the creator's `compute_free_vars` (which is the only place that
+    /// knows its own `captured_mutated` set) into each nested closure it embeds.
+    ///
+    /// The closure dispatch installs exactly these with OVERWRITE semantics, so a
+    /// same-named lexical in whatever frame happens to be calling can no longer
+    /// shadow the closure's own binding. Everything else — a capture the creator
+    /// mutates (its snapshot may be stale, so the live value must come from the
+    /// shared cell or the env chain), a free var inherited from an ancestor rather
+    /// than declared by the creator, and all non-plain-lexical names (dynamics,
+    /// the topic, `self`, `__mutsu_*`) — keeps the don't-overwrite merge.
+    pub(crate) authoritative_free_vars: Vec<Symbol>,
+    /// Locals whose own `my $x = ...` *initializer* creates a closure that
+    /// captures `$x` itself — the self-recursive closure (`my $f = -> $n { ...
+    /// $f($n-1) ... }`). The capture op runs BEFORE the declaration's store, so
+    /// the closure snapshots `$x` while it is still unset; only a shared cell can
+    /// carry the value the store is about to write. They are therefore boxed (the
+    /// store-after-capture rule adds them to `captured_mutated_locals`), and the
+    /// declaration's usual "clear the stale ContainerRef, this is a fresh binding"
+    /// step must be SKIPPED for them — that step exists for a loop redeclaration
+    /// re-boxing a *previous iteration's* cell, but here the cell was boxed by
+    /// this very declaration's initializer, so clearing it orphans the closure's
+    /// capture and `$f` reads back as `Any`.
+    pub(crate) self_capture_decl_locals: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -1976,6 +2004,8 @@ impl CompiledCode {
             needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            authoritative_free_vars: Vec::new(),
+            self_capture_decl_locals: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             captures_env_by_name: false,
@@ -2520,6 +2550,55 @@ impl CompiledCode {
         names
     }
 
+    /// The constant-pool index of a call op's *argument source names*. A lexical
+    /// that reaches a call as an argument can be written through by an `is rw` /
+    /// `is raw` parameter (`cas($x, $old, $new)` is the canonical sink), and that
+    /// write is invisible to the name-write op scan — the arg is only ever *read*
+    /// by name at the call site. So a local that appears here can go stale behind
+    /// the analysis's back and must never be vouched for.
+    fn op_arg_sources_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::CallFunc {
+                arg_sources_idx, ..
+            }
+            | OpCode::CallFuncSlip {
+                arg_sources_idx, ..
+            }
+            | OpCode::CallMethod {
+                arg_sources_idx, ..
+            }
+            | OpCode::CallMethodMut {
+                arg_sources_idx, ..
+            }
+            | OpCode::ExecCall {
+                arg_sources_idx, ..
+            }
+            | OpCode::ExecCallSlip {
+                arg_sources_idx, ..
+            }
+            | OpCode::CallOnValue {
+                arg_sources_idx, ..
+            }
+            | OpCode::CallOnCodeVar {
+                arg_sources_idx, ..
+            } => *arg_sources_idx,
+            _ => None,
+        }
+    }
+
+    /// The `closure_compiled_codes` index an op embeds, for the ops that create a
+    /// closure value (and so snapshot the creating frame's env at that point).
+    fn op_closure_code_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::MakeAnonSub(_, cc, _)
+            | OpCode::MakeAnonSubParams(_, cc, _)
+            | OpCode::MakeLambda(_, cc, _)
+            | OpCode::MakeBlockClosure(_, cc)
+            | OpCode::MakeGather(_, cc) => *cc,
+            _ => None,
+        }
+    }
+
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
@@ -2534,8 +2613,28 @@ impl CompiledCode {
         // Free `@`/`%` containers mutated in place (push/append/element-assign).
         let mut free_container_writes: std::collections::HashSet<Symbol> =
             std::collections::HashSet::new();
+        // OWN `@`/`%` containers mutated in place. A container write is not a
+        // name-write, so `self_mutated` never sees it — but it still makes a
+        // closure's by-value capture go stale (a `BagHash` element-assign
+        // copy-on-writes, so the captured Gc stops tracking the local). Tracked
+        // separately so `authoritative_free_vars` can refuse to vouch for them.
+        let mut own_container_writes: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
+        // Own locals that reach a call as an argument, and so may be written
+        // through an `is rw` / `is raw` parameter (`cas($x, ...)`). See
+        // `op_arg_sources_idx`.
+        let mut own_call_arg_sources: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         // Bare names read via `$OUTER::` (order-preserving, de-duplicated).
         let mut outer_ref_names: Vec<String> = Vec::new();
+        // Own locals captured by a closure created since the last store/decl
+        // marker — i.e. by the initializer currently being evaluated. Consumed by
+        // the store that ends it (see the self-capture rule below).
+        let mut captured_in_decl: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
+        // Own locals whose declaration's own initializer captured them.
+        let mut self_capture_decl: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         let mut pending_decl = false;
         for op in &self.ops {
             // Read+write free-var set (names referenced from an enclosing scope).
@@ -2545,6 +2644,35 @@ impl CompiledCode {
                 && !own.contains(name.as_str())
             {
                 free.insert(Symbol::intern(&name));
+            }
+            // Own locals reaching a call as arguments: an `is rw` parameter can
+            // write straight back into them without any name-write op here.
+            if let Some(idx) = Self::op_arg_sources_idx(op)
+                && let Some(ValueView::Array(items, ..)) =
+                    self.constants.get(idx as usize).map(Value::view)
+            {
+                for item in items.iter() {
+                    // Entries are either `Str(name)` or `Pair(name, Int(slot))`.
+                    let name = match item.view() {
+                        ValueView::Str(s) => Some(s.to_string()),
+                        ValueView::Pair(k, _) => Some(k.to_string()),
+                        _ => None,
+                    };
+                    if let Some(name) = name
+                        && own.contains(name.as_str())
+                    {
+                        own_call_arg_sources.insert(Symbol::intern(&name));
+                    }
+                }
+            }
+            // Own-container in-place mutation: not a name-write, so `self_mutated`
+            // misses it, but it still invalidates a closure's by-value capture.
+            if let Some(idx) = self.op_container_mutate_const_idx(op)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+                && own.contains(name.as_str())
+            {
+                own_container_writes.insert(Symbol::intern(&name));
             }
             // Free-var container in-place mutation (push/append/element-assign):
             // NOT a name-write, so tracked separately for cell boxing.
@@ -2604,6 +2732,44 @@ impl CompiledCode {
                 if !own.contains(name) {
                     free.insert(Symbol::intern(name));
                 }
+            }
+            // Self-capturing declaration: `my $f = -> $n { ... $f($n-1) ... }`.
+            // The initializer's closure-creation op snapshots the env BEFORE the
+            // declaration's store runs, so the closure captures `$f` while it is
+            // still unset. `pending_decl` cannot see this — it only separates
+            // `my $x = e` from `$x = e`, and both are "declarations" here. Treat
+            // the store as a mutation *from the closure's point of view*, which is
+            // what earns the local a shared cell (`captured_mutated` → the escape
+            // analysis then puts it in `needs_cell`, since an assigned closure
+            // escapes). The window is deliberately narrow: only closures created
+            // by the initializer that this very store completes.
+            if let Some(cc_idx) = Self::op_closure_code_idx(op)
+                && let Some(nested) = self.closure_compiled_codes.get(cc_idx as usize)
+            {
+                for sym in &nested.free_var_syms {
+                    if sym.with_str(|s| own.contains(s)) {
+                        captured_in_decl.insert(*sym);
+                    }
+                }
+            }
+            let store_slot = match op {
+                OpCode::SetLocal(slot) | OpCode::AssignExprLocal(slot) => Some(*slot),
+                OpCode::SetLocalDecl { slot, .. } => Some(*slot),
+                _ => None,
+            };
+            if let Some(slot) = store_slot {
+                if (matches!(op, OpCode::SetLocalDecl { .. }) || pending_decl)
+                    && let Some(name) = self.locals.get(slot as usize)
+                {
+                    let sym = Symbol::intern(name);
+                    if captured_in_decl.contains(&sym) {
+                        self_mutated.insert(sym);
+                        self_capture_decl.insert(sym);
+                    }
+                }
+                // The store ends this initializer: later closures belong to the
+                // next one.
+                captured_in_decl.clear();
             }
             match op {
                 OpCode::MarkVarDeclContext => pending_decl = true,
@@ -2666,7 +2832,9 @@ impl CompiledCode {
             // container free here unless we own it (it stays a container-write
             // contribution either way — own ones are handled by the cell at decl).
             for sym in &nested.free_var_container_writes {
-                if !sym.with_str(|s| own.contains(s)) {
+                if sym.with_str(|s| own.contains(s)) {
+                    own_container_writes.insert(*sym);
+                } else {
                     free_container_writes.insert(*sym);
                 }
             }
@@ -2795,7 +2963,46 @@ impl CompiledCode {
         self.free_var_container_writes = free_container_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
+        // A self-capturing declaration only matters when the local actually gets a
+        // cell — otherwise there is no cell for the declaration to preserve.
+        self.self_capture_decl_locals = self_capture_decl
+            .into_iter()
+            .filter(|sym| self.needs_cell_locals.contains(sym))
+            .collect();
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
+        // Tell each closure we embed which of ITS free variables we (the creating
+        // frame) vouch for: a plain lexical we declare and never mutate after the
+        // capture op runs. Only such a capture can be installed with overwrite
+        // semantics at call time — see `authoritative_free_vars`. This is the one
+        // place that knows `captured_mutated`, and the nested codes are still
+        // uniquely owned here, so `make_mut` does not clone.
+        let vouched: std::collections::HashSet<Symbol> = self
+            .locals
+            .iter()
+            .filter(|name| crate::env::is_plain_user_lexical(name))
+            .map(|name| Symbol::intern(name))
+            .filter(|sym| {
+                // Reassigned / inc-dec'd by name (directly or by a nested closure).
+                !self.captured_mutated_locals.contains(sym)
+                    // Mutated in place as a container — invisible to `self_mutated`,
+                    // but a `%h<k> = v` that copy-on-writes still strands the capture.
+                    && !own_container_writes.contains(sym)
+                    // Handed to a call, where an `is rw` param can write it back.
+                    && !own_call_arg_sources.contains(sym)
+            })
+            .collect();
+        for nested in &mut self.closure_compiled_codes {
+            let authoritative: Vec<Symbol> = nested
+                .free_var_syms
+                .iter()
+                .filter(|sym| vouched.contains(sym))
+                .copied()
+                .collect();
+            if authoritative.is_empty() && nested.authoritative_free_vars.is_empty() {
+                continue;
+            }
+            Arc::make_mut(nested).authoritative_free_vars = authoritative;
+        }
     }
 
     /// The constant-pool index of a *pure scalar read* of a lexical by name — the

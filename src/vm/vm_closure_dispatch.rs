@@ -236,6 +236,30 @@ impl Interpreter {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
+        // A closure's free variables are lexically bound in its captured env, so an
+        // *authoritative* capture must OVERWRITE whatever the caller env happens to
+        // hold under the same name. The frame env is a scoped child of the
+        // *caller's* env, so without this a caller lexical that merely shares a
+        // name shadows the closure's own binding — lexical scoping degrading into
+        // dynamic scoping. It bites whenever one closure calls another built by a
+        // sibling invocation of the same factory (both frames declare `$me`), e.g.
+        // a grammar-actions AST of nested closures: the callee re-read the caller's
+        // `@args`, which holds the callee itself, and recursed until the Rust stack
+        // blew (roast integration/99problems-41-to-50.t P46).
+        //
+        // Only `authoritative_free_vars` — plain lexicals the creating frame
+        // declares and never mutates after capture — can be installed this way. A
+        // capture the creator DOES mutate has a possibly-stale snapshot (mutsu
+        // captures by value), so its live value must keep coming from the shared
+        // `ContainerRef` cell or, when the escape analysis left it unboxed, the env
+        // chain: `my $s = 0; for 1..3 { @cb.push({ $s }) }; $s = 42` must still see
+        // 42. Dynamics, the topic, `self` and `__mutsu_*` metadata are excluded for
+        // the same reason — they are resolved against the live caller by design.
+        for sym in &cc.authoritative_free_vars {
+            if let Some(val) = data.env.get_sym(*sym).cloned() {
+                self.env_mut().insert_sym(*sym, val);
+            }
+        }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
         // created, so each iteration's closure froze a distinct value in its
@@ -271,6 +295,12 @@ impl Interpreter {
                     data.env.get_sym(*k).map(Value::view),
                     Some(ValueView::ContainerRef(_))
                 ) {
+                    return None;
+                }
+                // Skip dynamic variables: they are resolved through the caller
+                // chain at call time, so they carry no per-instance state (see
+                // `is_dynamic_var_name`). Nothing persists them either.
+                if k.with_str(crate::env::is_dynamic_var_name) {
                     return None;
                 }
                 self.get_closure_captured_state(data.id, *k)
@@ -698,8 +728,13 @@ impl Interpreter {
         // Persist captured variable state so this closure instance retains
         // its own mutable state across calls (independent from other closures).
         // Mirror of `cap_overrides` above: only free variables can be mutated by
-        // the body, so only those need persisting.
+        // the body, so only those need persisting — and dynamic variables are
+        // excluded there, so persisting them here would only pin the closure to
+        // the first call's value.
         for k in &cc.free_var_syms {
+            if k.with_str(crate::env::is_dynamic_var_name) {
+                continue;
+            }
             if let Some(val) = self.env().get_sym(*k).cloned() {
                 self.set_closure_captured_state(data.id, *k, val);
             }
@@ -822,6 +857,25 @@ impl Interpreter {
                 cc.locals_sym.iter().copied().collect();
             let underscore_sym = Symbol::intern("_");
             let at_underscore_sym = Symbol::intern("@_");
+            // Free variables the body did NOT touch. Their value in this frame is
+            // the closure's *own captured binding*, force-installed at entry (see
+            // the free-var overwrite in the merge above) — not a mutation the
+            // caller must observe. Propagating them would overwrite a same-named
+            // caller lexical that is a *different* binding, which is precisely how
+            // a tree of sibling closures corrupted each other: an inner node's
+            // `$func`/`@args` leaked into the outer node's frame on return, got
+            // persisted as the outer's per-instance state, and every later call ran
+            // the outer node as if it were the inner one (roast
+            // integration/99problems-41-to-50.t P46 evaluated `and(...)` as `or(...)`
+            // from the second truth-table row on). A free var the body *did* change
+            // is still written back — that check is what `free_at_entry` is for.
+            let unchanged_free: std::collections::HashSet<Symbol> = cc
+                .free_var_syms
+                .iter()
+                .zip(free_at_entry.iter())
+                .filter(|(k, old)| self.env().get_sym(**k) == old.as_ref())
+                .map(|(k, _)| *k)
+                .collect();
             // Caller lexicals this scan writes back with a *changed* value. They are
             // recorded (after the loop, to avoid borrowing `self` while iterating
             // `self.env()`) on the retain-on-miss writeback list so the call site
@@ -831,6 +885,9 @@ impl Interpreter {
             // free_var recording below misses it.
             let mut caller_writeback: Vec<Symbol> = Vec::new();
             for (k, v) in self.env().iter() {
+                if unchanged_free.contains(k) {
+                    continue;
+                }
                 if *k != underscore_sym
                     && *k != at_underscore_sym
                     && !rw_sources.contains(k)

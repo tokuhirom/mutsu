@@ -318,12 +318,24 @@ impl Interpreter {
                 let bare = name.trim_start_matches(['$', '@', '%', '&']);
                 self.unmark_readonly(bare);
             }
+            // A self-recursive closure declaration (`my $f = -> $n { $f($n-1) }`)
+            // boxed this very local into a cell while evaluating its own
+            // initializer, and the closure captured that cell. Both clears below
+            // would orphan it — leaving `$f` as `Any` inside the closure — so keep
+            // the cell and let the store below write THROUGH it. See
+            // `CompiledCode::self_capture_decl_locals`.
+            let self_captured_decl = !code.self_capture_decl_locals.is_empty()
+                && code
+                    .locals_sym
+                    .get(idx)
+                    .is_some_and(|sym| code.self_capture_decl_locals.contains(sym));
             // Replace stale ContainerRef in env with Nil so a new `my $var`
             // doesn't inherit a binding from an earlier scope. Keep the key
             // so saved frame propagation can still find it. Probed through the
             // pre-interned local Symbol (a by-name `get` would re-intern on every
             // declaration).
-            if let Some(sym) = code.locals_sym.get(idx).copied()
+            if !self_captured_decl
+                && let Some(sym) = code.locals_sym.get(idx).copied()
                 && matches!(
                     self.env().get_sym(sym).map(Value::view),
                     Some(ValueView::ContainerRef(_))
@@ -337,7 +349,8 @@ impl Interpreter {
             // *fresh binding* — clear the stale cell so the assignment below
             // writes a new plain value instead of writing *through* the old Arc
             // (which would corrupt the prior iteration's captured closure).
-            if matches!(self.locals[idx].view(), ValueView::ContainerRef(_)) {
+            if !self_captured_decl && matches!(self.locals[idx].view(), ValueView::ContainerRef(_))
+            {
                 self.locals[idx] = Value::NIL;
             }
             // Clear a stale bound-array-slice marker (§4 BLOCKERS.md test 15)

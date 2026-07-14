@@ -93,6 +93,30 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
     matches!(decider, Some(c) if c.is_ascii_lowercase())
 }
 
+/// True for a dynamic variable's env key (the `*` twigil): `$*x` → `"*x"` (scalars
+/// are stored sigil-less), `@*x` → `"@*x"`, `%*VAR` → `"%*VAR"`, `&*f` → `"&*f"`.
+///
+/// A dynamic variable is resolved through the *caller* chain at call time, never
+/// from a lexical capture. Closure machinery that freezes a captured value per
+/// closure instance (`closure_captured_state`) must therefore skip these names:
+/// persisting one pins the closure to the value seen on its first call, so a later
+/// re-assignment by the caller becomes invisible (`our %*VAR = ...` re-set per row
+/// of a truth table left every row reading row 1's bindings — roast
+/// integration/99problems-41-to-50.t P46).
+#[inline]
+pub(crate) fn is_dynamic_var_name(name: &str) -> bool {
+    let b = name.as_bytes();
+    let Some(&first) = b.first() else {
+        return false;
+    };
+    let decider = if matches!(first, b'@' | b'%' | b'&') {
+        b.get(1).copied()
+    } else {
+        Some(first)
+    };
+    decider == Some(b'*')
+}
+
 /// Monotonic, process-global flag: set the first time any closure-writeback
 /// metadata key is inserted into *any* env. These keys --
 /// `__mutsu_sigilless_readonly::*`, `__mutsu_sigilless_alias::*`,
