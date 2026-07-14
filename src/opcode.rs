@@ -1791,6 +1791,18 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// Locals whose own `my $x = ...` *initializer* creates a closure that
+    /// captures `$x` itself — the self-recursive closure (`my $f = -> $n { ...
+    /// $f($n-1) ... }`). The capture op runs BEFORE the declaration's store, so
+    /// the closure snapshots `$x` while it is still unset; only a shared cell can
+    /// carry the value the store is about to write. They are therefore boxed (the
+    /// store-after-capture rule adds them to `captured_mutated_locals`), and the
+    /// declaration's usual "clear the stale ContainerRef, this is a fresh binding"
+    /// step must be SKIPPED for them — that step exists for a loop redeclaration
+    /// re-boxing a *previous iteration's* cell, but here the cell was boxed by
+    /// this very declaration's initializer, so clearing it orphans the closure's
+    /// capture and `$f` reads back as `Any`.
+    pub(crate) self_capture_decl_locals: Vec<Symbol>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -1976,6 +1988,7 @@ impl CompiledCode {
             needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            self_capture_decl_locals: Vec::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             captures_env_by_name: false,
@@ -2510,6 +2523,19 @@ impl CompiledCode {
         names
     }
 
+    /// The `closure_compiled_codes` index an op embeds, for the ops that create a
+    /// closure value (and so snapshot the creating frame's env at that point).
+    fn op_closure_code_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::MakeAnonSub(_, cc, _)
+            | OpCode::MakeAnonSubParams(_, cc, _)
+            | OpCode::MakeLambda(_, cc, _)
+            | OpCode::MakeBlockClosure(_, cc)
+            | OpCode::MakeGather(_, cc) => *cc,
+            _ => None,
+        }
+    }
+
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
@@ -2526,6 +2552,14 @@ impl CompiledCode {
             std::collections::HashSet::new();
         // Bare names read via `$OUTER::` (order-preserving, de-duplicated).
         let mut outer_ref_names: Vec<String> = Vec::new();
+        // Own locals captured by a closure created since the last store/decl
+        // marker — i.e. by the initializer currently being evaluated. Consumed by
+        // the store that ends it (see the self-capture rule below).
+        let mut captured_in_decl: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
+        // Own locals whose declaration's own initializer captured them.
+        let mut self_capture_decl: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         let mut pending_decl = false;
         for op in &self.ops {
             // Read+write free-var set (names referenced from an enclosing scope).
@@ -2594,6 +2628,44 @@ impl CompiledCode {
                 if !own.contains(name) {
                     free.insert(Symbol::intern(name));
                 }
+            }
+            // Self-capturing declaration: `my $f = -> $n { ... $f($n-1) ... }`.
+            // The initializer's closure-creation op snapshots the env BEFORE the
+            // declaration's store runs, so the closure captures `$f` while it is
+            // still unset. `pending_decl` cannot see this — it only separates
+            // `my $x = e` from `$x = e`, and both are "declarations" here. Treat
+            // the store as a mutation *from the closure's point of view*, which is
+            // what earns the local a shared cell (`captured_mutated` → the escape
+            // analysis then puts it in `needs_cell`, since an assigned closure
+            // escapes). The window is deliberately narrow: only closures created
+            // by the initializer that this very store completes.
+            if let Some(cc_idx) = Self::op_closure_code_idx(op)
+                && let Some(nested) = self.closure_compiled_codes.get(cc_idx as usize)
+            {
+                for sym in &nested.free_var_syms {
+                    if sym.with_str(|s| own.contains(s)) {
+                        captured_in_decl.insert(*sym);
+                    }
+                }
+            }
+            let store_slot = match op {
+                OpCode::SetLocal(slot) | OpCode::AssignExprLocal(slot) => Some(*slot),
+                OpCode::SetLocalDecl { slot, .. } => Some(*slot),
+                _ => None,
+            };
+            if let Some(slot) = store_slot {
+                if (matches!(op, OpCode::SetLocalDecl { .. }) || pending_decl)
+                    && let Some(name) = self.locals.get(slot as usize)
+                {
+                    let sym = Symbol::intern(name);
+                    if captured_in_decl.contains(&sym) {
+                        self_mutated.insert(sym);
+                        self_capture_decl.insert(sym);
+                    }
+                }
+                // The store ends this initializer: later closures belong to the
+                // next one.
+                captured_in_decl.clear();
             }
             match op {
                 OpCode::MarkVarDeclContext => pending_decl = true,
@@ -2785,6 +2857,12 @@ impl CompiledCode {
         self.free_var_container_writes = free_container_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
+        // A self-capturing declaration only matters when the local actually gets a
+        // cell — otherwise there is no cell for the declaration to preserve.
+        self.self_capture_decl_locals = self_capture_decl
+            .into_iter()
+            .filter(|sym| self.needs_cell_locals.contains(sym))
+            .collect();
         self.needs_cell_free_vars = needs_cell_free.into_iter().collect();
     }
 
