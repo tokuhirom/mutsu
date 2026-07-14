@@ -1819,6 +1819,18 @@ pub(crate) struct CompiledCode {
     /// this very declaration's initializer, so clearing it orphans the closure's
     /// capture and `$f` reads back as `Any`.
     pub(crate) self_capture_decl_locals: Vec<Symbol>,
+    /// `&`-sigiled lexicals (params like `&x1`, `my &f = ...`) visible in the
+    /// ENCLOSING scopes at this closure's definition point, threaded down by
+    /// `compile_closure_body` (transitively, so a grandchild still sees an
+    /// ancestor's `&`-param). A bare call `x1(...)` records the callee only as a
+    /// call opcode's name constant — there is no separate read op — yet at
+    /// runtime it resolves against the lexical `&x1` before the global function
+    /// registry. `compute_free_vars` uses this set to decide which callee names
+    /// are really code-variable reads that must be captured: registering EVERY
+    /// called name would bloat `free_var_syms` with `&say` etc. on every closure
+    /// (a per-call `free_at_entry` cost), so only names matching a declared
+    /// `&`-lexical count.
+    pub(crate) outer_code_var_names: std::collections::HashSet<String>,
     /// Free variables (names NOT in this code's own locals) that must become a
     /// shared `ContainerRef` cell in whichever *ancestor* frame declares them,
     /// because they are captured-and-mutated by an ESCAPING closure somewhere in
@@ -2006,6 +2018,7 @@ impl CompiledCode {
             needs_cell_locals: Vec::new(),
             authoritative_free_vars: Vec::new(),
             self_capture_decl_locals: Vec::new(),
+            outer_code_var_names: std::collections::HashSet::new(),
             needs_cell_free_vars: Vec::new(),
             has_calls: false,
             captures_env_by_name: false,
@@ -2598,6 +2611,21 @@ impl CompiledCode {
         }
     }
 
+    /// The constant-pool index of a bare call's CALLEE name (`f(...)` in
+    /// expression or statement position). At runtime the callee resolves against
+    /// the lexical `&f` before the global function registry, so when an
+    /// enclosing scope declares `&f` (see `outer_code_var_names`) the call is
+    /// really a code-variable read this closure must capture.
+    fn op_callee_name_const_idx(op: &OpCode) -> Option<u32> {
+        match op {
+            OpCode::CallFunc { name_idx, .. }
+            | OpCode::CallFuncSlip { name_idx, .. }
+            | OpCode::ExecCall { name_idx, .. }
+            | OpCode::ExecCallSlip { name_idx, .. } => Some(*name_idx),
+            _ => None,
+        }
+    }
+
     /// The `closure_compiled_codes` index an op embeds, for the ops that create a
     /// closure value (and so snapshot the creating frame's env at that point).
     fn op_closure_code_idx(op: &OpCode) -> Option<u32> {
@@ -2676,6 +2704,22 @@ impl CompiledCode {
             {
                 let key = format!("&{}", name.as_str());
                 if crate::env::is_plain_user_lexical(&key) && !own.contains(key.as_str()) {
+                    free.insert(Symbol::intern(&key));
+                }
+            }
+            // A bare call `x1(...)` records the read of `&x1` only as the call
+            // opcode's callee name. Registering every called name would bloat
+            // `free_var_syms` with `&say` etc. on every closure, so only callees
+            // matching a `&`-sigiled lexical declared in an enclosing scope
+            // (`outer_code_var_names`, threaded down at compile time) count as
+            // code-variable reads.
+            if !self.outer_code_var_names.is_empty()
+                && let Some(idx) = Self::op_callee_name_const_idx(op)
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+            {
+                let key = format!("&{}", name.as_str());
+                if self.outer_code_var_names.contains(&key) && !own.contains(key.as_str()) {
                     free.insert(Symbol::intern(&key));
                 }
             }
@@ -3046,7 +3090,48 @@ impl CompiledCode {
             if authoritative.is_empty() && nested.authoritative_free_vars.is_empty() {
                 continue;
             }
-            Arc::make_mut(nested).authoritative_free_vars = authoritative;
+            let nested_mut = Arc::make_mut(nested);
+            nested_mut.authoritative_free_vars = authoritative;
+            // Transitive vouching: a vouched capture stays authoritative
+            // arbitrarily deep in this closure's subtree, as long as no
+            // intermediate closure redeclares the name. The vouch already
+            // guarantees the ENTIRE subtree never writes the name (nested
+            // free-var writes fold into `captured_mutated` here, at the
+            // declaring frame), so a grandchild's snapshot — taken from its own
+            // creator's frame, where this same vouched value was installed —
+            // cannot go stale either. Without this, a closure created inside
+            // another closure's frame lost its authority the moment it escaped:
+            // the middle frame cannot vouch (the name is not ITS local), so a
+            // same-named lexical in the eventual calling frame shadowed the
+            // capture again — the exact #4510 bug, one level deeper.
+            let names = nested_mut.authoritative_free_vars.clone();
+            for child in nested_mut.closure_compiled_codes.iter_mut() {
+                Self::propagate_authoritative_down(child, &names);
+            }
+        }
+    }
+
+    /// Append `names` to the authoritative set of `cc` (when it captures them)
+    /// and recurse into its closure subtree, stopping at any level that
+    /// redeclares a name — from there down the name is a different binding.
+    /// See the transitive-vouching comment in `compute_free_vars`.
+    fn propagate_authoritative_down(cc: &mut std::sync::Arc<CompiledCode>, names: &[Symbol]) {
+        let live: Vec<Symbol> = names
+            .iter()
+            .filter(|sym| sym.with_str(|s| !cc.locals.iter().any(|l| l == s)))
+            .copied()
+            .collect();
+        if live.is_empty() {
+            return;
+        }
+        let cc_mut = Arc::make_mut(cc);
+        for sym in &live {
+            if cc_mut.free_var_syms.contains(sym) && !cc_mut.authoritative_free_vars.contains(sym) {
+                cc_mut.authoritative_free_vars.push(*sym);
+            }
+        }
+        for child in cc_mut.closure_compiled_codes.iter_mut() {
+            Self::propagate_authoritative_down(child, &live);
         }
     }
 
