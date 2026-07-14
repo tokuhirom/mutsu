@@ -3743,8 +3743,9 @@ impl Interpreter {
                 self.mark_my_scoped_package_item(name.clone());
                 // Mark as block-declared so the name is cleaned up
                 // when the enclosing block scope exits.
+                let name_sym = code.const_sym(*name_idx);
                 if let Some(set) = self.block_declared_vars.last_mut() {
-                    set.insert(name);
+                    set.insert(name_sym);
                 }
                 *ip += 1;
             }

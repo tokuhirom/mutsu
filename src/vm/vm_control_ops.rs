@@ -211,11 +211,9 @@ impl Interpreter {
         // removed fresh declaration's frame slot can be reset to its pre-branch
         // value. Both are cheap relative to a full `BlockScope` env restore and
         // are only paid when the branch actually declares a block-local.
-        let env_had_before: std::collections::HashSet<String> = self
-            .env()
-            .keys()
-            .map(|s| s.with_str(|x| x.to_string()))
-            .collect();
+        // The env is Symbol-keyed, so the snapshot is a set of `Copy` u32s — no
+        // per-key String allocation.
+        let env_had_before: crate::runtime::NameSet = self.env().keys().copied().collect();
         let saved_locals = self.locals.clone();
         self.push_loop_local_scope();
         // Track `my` declarations made directly in this branch.
@@ -231,15 +229,15 @@ impl Interpreter {
         // `pop_loop_local_scope` only restores names that shadowed an existing
         // outer binding, so remove the fresh declarations here, resetting their
         // env entry and frame slot to the pre-branch state.
-        for name in &block_declared {
+        for sym in &block_declared {
             // `our`/dynamic/package-qualified names have their own scoping and
             // must persist; only plain lexicals were recorded as block-local.
-            if env_had_before.contains(name) {
+            if env_had_before.contains(sym) {
                 continue;
             }
-            self.env_mut().remove(name);
-            for (idx, slot_name) in code.locals.iter().enumerate() {
-                if slot_name == name && idx < self.locals.len() {
+            self.env_mut().remove_sym(*sym);
+            for idx in 0..code.locals.len().min(self.locals.len()) {
+                if code.local_sym(idx) == Some(*sym) {
                     self.locals[idx] = saved_locals.get(idx).cloned().unwrap_or(Value::NIL);
                 }
             }
