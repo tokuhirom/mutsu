@@ -421,16 +421,24 @@ impl Compiler {
     /// `my $x` shadowing an active-ancestor `$x` gets its own slot.
     fn alloc_fresh_local(&mut self, name: &str) -> u32 {
         let slot = self.code.locals.len() as u32;
-        let is_simple = name.starts_with('$')
-            && !name.starts_with("$*")
-            && !name.contains("::")
-            && name != "_"
-            && !name.starts_with('.')
-            && !name.starts_with('!');
         self.code.locals.push(name.to_string());
-        self.code.simple_locals.push(is_simple);
+        self.code
+            .plain_locals
+            .push(Self::is_plain_lexical_name(name));
         self.local_map.insert(name.to_string(), slot);
         slot
+    }
+
+    /// See [`CompiledCode::plain_locals`]. Scalars are stored sigil-less
+    /// (`my $x` -> `"x"`), so a plain lexical is a name with no sigil, twigil,
+    /// qualifier or attribute marker of any kind.
+    pub(crate) fn is_plain_lexical_name(name: &str) -> bool {
+        !name.is_empty()
+            && !name.starts_with(['$', '@', '%', '&', '.', '!', '^', '*'])
+            && name != "_"
+            && !name.contains("::")
+            && !name.starts_with("__mutsu_")
+            && !name.starts_with("__ANON")
     }
 
     /// Store a finalized closure body in this frame's `closure_compiled_codes`,

@@ -1604,9 +1604,20 @@ pub(crate) struct CompiledCode {
     /// is once per iteration.
     pub(crate) locals_deleted_index_sym: Vec<Symbol>,
     pub(crate) locals_bound_slice_sym: Vec<Symbol>,
-    /// Bitmap: true if local[i] is eligible for SetLocal fast path
-    /// (simple $-prefixed scalar, no twigils, no ::, no _ topic, no ./! attrs).
-    pub(crate) simple_locals: Vec<bool>,
+    /// Bitmap: true if local[i] is a *plain lexical* name — the sigil-less form
+    /// the compiler stores scalars under (`my $x` -> `"x"`, a scalar param
+    /// `$n` -> `"n"`), with no twigil (`*d`, `^a`), no attribute (`.x`, `!x`),
+    /// no `@`/`%`/`&` sigil, no `::` qualifier, not the topic `_`, and not a
+    /// compiler-internal name (`__mutsu_*`, `__ANON*`).
+    ///
+    /// Such a name has none of the aliases the by-name env writer
+    /// (`set_env_with_main_alias`) exists to maintain — no `$*d`/`*d` twigil
+    /// pair, no `&infix:<+>` operator alias, no `Main::`/`GLOBAL::`/`OUR::`
+    /// qualification — so its env mirror is a single Symbol-keyed insert. The
+    /// predicate is a scan of the name's bytes, so it is computed once here
+    /// rather than on every store (`flush_local_to_env` runs on each `my $x =
+    /// ...`).
+    pub(crate) plain_locals: Vec<bool>,
     /// Maps local slot indices to persistent state keys for `state` variables.
     pub(crate) state_locals: Vec<(usize, String)>,
     /// Maps local slot indices to qualified package names for `our` variables.
@@ -1938,7 +1949,7 @@ impl CompiledCode {
             locals_readonly_sym: Vec::new(),
             locals_deleted_index_sym: Vec::new(),
             locals_bound_slice_sym: Vec::new(),
-            simple_locals: Vec::new(),
+            plain_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
             param_local_slots: Vec::new(),

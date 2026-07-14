@@ -83,113 +83,6 @@ impl Interpreter {
             self.stack.push(val);
         }
 
-        // Fast path for simple scalar variables — skip all metadata checks
-        if code.simple_locals[idx] {
-            let mut val = self.stack.pop().unwrap_or(Value::NIL);
-            let name = &code.locals[idx];
-            // Lazy sync: if the local is not a ContainerRef but env has one
-            // (from a cross-scope `:=` binding), adopt the ContainerRef and
-            // write through it to preserve shared container identity.
-            // Skip for type objects and complex values.
-            if !self.locals[idx].is_container_ref()
-                && !matches!(
-                    self.locals[idx].view(),
-                    ValueView::Package(_)
-                        | ValueView::Array(..)
-                        | ValueView::Hash(..)
-                        | ValueView::Sub(..)
-                        | ValueView::Instance { .. }
-                )
-                && let Some(arc) = self.env().get(name).and_then(|v| match v.view() {
-                    ValueView::ContainerRef(arc) => Some(arc.clone()),
-                    _ => None,
-                })
-            {
-                self.locals[idx] = Value::container_ref(arc);
-            }
-            if let ValueView::ContainerRef(arc) = self.locals[idx].view() {
-                // Slice 2a: a `=`-array-shared scalar reassigned as a whole
-                // REPLACES the slot (raku value semantics); drop the share and
-                // fall through to the plain-replace path below.
-                let scalar = !name.starts_with('@') && !name.starts_with('%');
-                if scalar && self.array_share_active && self.is_array_share_scalar(name) {
-                    self.clear_array_share_marker(name);
-                } else {
-                    let arc = arc.clone();
-                    if scalar {
-                        val = Self::itemize_scalar_store(
-                            name,
-                            Self::normalize_scalar_assignment_value(val),
-                        );
-                    }
-                    self.check_container_cell_constraint(&arc, &val)?;
-                    Value::store_through_cell(&arc, &val);
-                    self.stack.push(val);
-                    self.flush_local_to_env(code, idx);
-                    return Ok(());
-                }
-            }
-            if !name.starts_with('@') && !name.starts_with('%') {
-                val =
-                    Self::itemize_scalar_store(name, Self::normalize_scalar_assignment_value(val));
-            }
-            if val.is_nil()
-                && !self.locals[idx].is_nil()
-                && let Some(def) = self.var_default(name)
-            {
-                val = def.clone();
-            }
-            if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
-                let val = if val.is_nil() {
-                    if constraint == "Mu" {
-                        val
-                    } else {
-                        let nominal =
-                            loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                        Value::package(Symbol::intern(&nominal))
-                    }
-                } else if !self.type_matches_value(&constraint, &val) {
-                    return Err(runtime::utils::type_check_assignment_typed_error(
-                        name,
-                        &constraint,
-                        &val,
-                    ));
-                } else if !matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
-                    loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?
-                } else {
-                    val
-                };
-                self.locals[idx] = val.clone();
-                self.stack
-                    .push(Self::itemize_scalar_assign_result(name, val));
-            } else {
-                let val = self.reset_nil_untyped_scalar(name, val);
-                self.locals[idx] = val.clone();
-                self.stack
-                    .push(Self::itemize_scalar_assign_result(name, val));
-            }
-            if self.fatal_mode
-                && !name.contains("__mutsu_")
-                && let Some(err) = self.failure_to_runtime_error_if_unhandled(&self.locals[idx])
-            {
-                return Err(err);
-            }
-            // Update env when shared_vars is active; otherwise write through to env.
-            if self.shared_vars_active {
-                loan_env!(self, set_shared_var(name, self.locals[idx].clone()));
-            } else {
-                self.flush_local_to_env(code, idx);
-            }
-            // Track topic mutations for map rw writeback
-            if name == "_" {
-                let topic = self.locals[idx].clone();
-                self.env_mut()
-                    .insert("__mutsu_rw_map_topic__".to_string(), topic);
-            }
-            self.flush_local_to_env(code, idx);
-            return Ok(());
-        }
-
         let raw_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = &code.locals[idx];
         self.check_readonly_for_modify(name)?;
@@ -199,8 +92,7 @@ impl Interpreter {
         // whole-array assignment writes through each cell instead of
         // replacing the slot, bounded by the slice's own (fixed) arity —
         // extra RHS values are discarded, matching raku's bound-slice
-        // semantics. `@`-sigil locals are never `simple_locals`, so this
-        // must live here rather than in the fast path above.
+        // semantics.
         if name.starts_with('@')
             && matches!(
                 self.env()

@@ -453,6 +453,33 @@ impl Interpreter {
         self.set_env_with_main_alias_sym(name, None, value);
     }
 
+    /// The by-name env write for a *plain lexical* (see
+    /// [`CompiledCode::plain_locals`]): everything
+    /// [`set_env_with_main_alias_sym`] does minus the alias maintenance, every
+    /// branch of which is unreachable for such a name.
+    ///
+    /// The name has no sigil, so it cannot be a `Main::`/`GLOBAL::`/`OUR::`/`MY::`
+    /// qualified or unqualified form (all of which need a `::` this name cannot
+    /// contain), nor an `&infix:<...>` operator alias; it has no `*` twigil, so it
+    /// has no `$*x`/`*x` dynamic-alias pair; and it is not a compiler-internal
+    /// `__ANON_STATE_*`. What is left is the carrier log, the (latched)
+    /// placeholder probe, and one Symbol-keyed insert -- which is what a
+    /// `my $x = ...` in a hot loop should cost.
+    pub(super) fn set_env_plain_lexical(&mut self, name: &str, sym: Option<Symbol>, value: Value) {
+        if let Some(set) = self.carrier_writes.as_mut() {
+            set.insert(name.to_string());
+        }
+        if crate::env::placeholder_var_possible() {
+            let placeholder = format!("^{name}");
+            if self.env().contains_key(&placeholder) {
+                loan_env!(self, set_shared_var(&placeholder, value.clone()));
+                self.env_mut().insert(placeholder, value);
+                return;
+            }
+        }
+        loan_env!(self, set_shared_var_sym(name, sym, value));
+    }
+
     /// Like `set_env_with_main_alias` but accepts a pre-interned Symbol
     /// to avoid Symbol::intern() overhead on hot paths.
     pub(super) fn set_env_with_main_alias_sym(
@@ -900,8 +927,8 @@ impl Interpreter {
     /// (GetGlobal-family op, closure capture, interpreter bridge) always observes
     /// the current value with no stale window. Only mirrors slots that such a
     /// reader can actually name (`needs_env_sync`) and that the old flush would
-    /// have mirrored (simple-scalar locals + bare-name params); a slot-only local
-    /// (read via GetLocal, e.g. `fib`'s `$n`) never reaches env.
+    /// have mirrored (bare-name lexicals and params); a slot-only local (read via
+    /// GetLocal, e.g. `fib`'s `$n`) never reaches env.
     #[inline]
     pub(super) fn flush_local_to_env(&mut self, code: &CompiledCode, idx: usize) {
         // Slot-only locals (no name-based reader) never need to reach env.
@@ -911,11 +938,20 @@ impl Interpreter {
         let Some(name) = code.locals.get(idx) else {
             return;
         };
-        // Mirror simple scalar locals (the SetLocal fast path) and bare-name
-        // params. Skip topic (_), attributes (.x, !x), dynamic vars ($*x), and
-        // package-qualified names to avoid corrupting outer scope.
-        if code.simple_locals.get(idx).copied().unwrap_or(false) || Self::is_bare_param_name(name) {
-            let sym = code.locals_sym.get(idx).copied();
+        let sym = code.locals_sym.get(idx).copied();
+        // A plain lexical (the overwhelmingly common local: `my $x`, a scalar
+        // param) has no aliases to maintain, so it takes the cheap writer. The
+        // predicate is precomputed per slot; `plain_locals` is a strict subset of
+        // `is_bare_param_name`, so the remaining mirrored names (dynamic `*x`,
+        // `__ANON*`) still take the full alias-maintaining path below.
+        if code.plain_locals.get(idx).copied().unwrap_or(false) {
+            crate::vm::vm_stats::record_env_flush(1);
+            self.set_env_plain_lexical(name, sym, self.locals[idx].clone());
+            return;
+        }
+        // Skip topic (_), attributes (.x, !x), and package-qualified names to
+        // avoid corrupting outer scope.
+        if Self::is_bare_param_name(name) {
             crate::vm::vm_stats::record_env_flush(1);
             self.set_env_with_main_alias_sym(name, sym, self.locals[idx].clone());
         }
