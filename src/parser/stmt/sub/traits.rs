@@ -15,8 +15,11 @@ fn parse_trait_type_name(input: &str) -> PResult<'_, String> {
             ')' => {
                 depth -= 1;
                 if depth == 0 {
-                    let name = format!("{base}({})", &inner[..idx]);
-                    return Ok((&inner[idx + 1..], name));
+                    // An empty source is `Any`: `Str()` is `Str(Any)`, which is what
+                    // `.returns` reports.
+                    let source = inner[..idx].trim();
+                    let source = if source.is_empty() { "Any" } else { source };
+                    return Ok((&inner[idx + 1..], format!("{base}({source})")));
                 }
             }
             _ => {}

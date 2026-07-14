@@ -351,7 +351,18 @@ impl Interpreter {
             }
             "find_method" if args.len() >= 2 => {
                 let invocant = &args[0];
-                let method_name = args[1].to_string_value();
+                // The method name is the last *positional* argument: calling
+                // `$obj.^find_method('v')` on a concrete value prepends the Package and
+                // leaves the instance in between (so `args[1]` is not the name), while
+                // `.^find_method('foo', :no_fallback)` trails an adverb after it.
+                let Some(name_arg) = args
+                    .iter()
+                    .rev()
+                    .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                else {
+                    return Ok(Value::NIL);
+                };
+                let method_name = name_arg.to_string_value();
                 Ok(self
                     .classhow_find_method(invocant, &method_name)
                     .unwrap_or(Value::NIL))

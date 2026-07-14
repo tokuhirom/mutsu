@@ -235,6 +235,9 @@ impl Interpreter {
                     if n == "IO::Path" || n.starts_with("IO::Path::") {
                         return Some(Ok(target.clone()));
                     }
+                    if let Some(err) = crate::runtime::utils::dateish_io_concreteness_error(&n) {
+                        return Some(Err(err));
+                    }
                 }
                 let s = target.to_string_value();
                 if s.contains('\0') {

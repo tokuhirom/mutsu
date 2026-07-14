@@ -1,5 +1,18 @@
 use super::*;
 
+/// `Date`/`DateTime` get their `.IO` from `Dateish`, whose signature takes a `Dateish:D`
+/// invocant, so calling it on the type object is a concreteness error rather than a
+/// stringification of `(Date)` into a path. Returns the error when `name` is one of them.
+pub(crate) fn dateish_io_concreteness_error(name: &str) -> Option<RuntimeError> {
+    if !matches!(name, "Date" | "DateTime") {
+        return None;
+    }
+    Some(RuntimeError::parameter_invalid_concreteness(
+        "Dateish", name, "IO", "self", true, // should_be_concrete
+        true, // param_is_invocant
+    ))
+}
+
 pub(crate) fn merge_junction(kind: JunctionKind, left: Value, right: Value) -> Value {
     // Infix junction operators (|, &, ^) always create a new 2-element
     // junction without flattening. List-associative flattening is handled

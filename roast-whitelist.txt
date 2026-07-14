@@ -1,3 +1,4 @@
+roast/6.c/APPENDICES/A04-experimental/01-misc.t
 roast/6.c/MISC/misc-6.c.t
 roast/6.c/S02-names/SETTING-6c.t
 roast/6.c/S02-types/subset-6c.t

@@ -144,10 +144,9 @@ impl Interpreter {
             ValueView::Package(name) => {
                 let n = name.resolve();
                 if n == "IO::Path" || n.starts_with("IO::Path::") {
-                    Some(Ok(target.clone()))
-                } else {
-                    None
+                    return Some(Ok(target.clone()));
                 }
+                crate::runtime::utils::dateish_io_concreteness_error(&n).map(Err)
             }
             // Plain stringifiable scalars coerce their string value to an IO::Path.
             ValueView::Str(_)

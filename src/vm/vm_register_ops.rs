@@ -35,9 +35,20 @@ impl Interpreter {
             self.box_captured_lexicals(code, &analysis_cc);
             let mut env = self.env().clone();
             env.insert("__mutsu_lazylist_from_gather".to_string(), Value::TRUE);
-            // Compile the gather body to bytecode for Interpreter-native forcing
+            // Compile the gather body to bytecode for Interpreter-native forcing.
+            // A `sub` declared in the body is lexical to it, so compile through a
+            // `Stmt::Block` (whose `BlockScope` restores the routine registry) when there
+            // is one. Without it two sibling `gather { sub foo {...} }` blocks collided
+            // with X::Redeclaration, and the first block's `foo` stayed callable outside.
             let compiler = Compiler::new();
-            let (compiled_code, compiled_fns) = compiler.compile(body);
+            let scoped_body: Vec<Stmt>;
+            let compile_target: &[Stmt] = if Compiler::stmts_declare_routines(body) {
+                scoped_body = vec![Stmt::Block(body.clone())];
+                &scoped_body
+            } else {
+                body
+            };
+            let (compiled_code, compiled_fns) = compiler.compile(compile_target);
             let list = LazyList {
                 body: body.clone(),
                 env,
