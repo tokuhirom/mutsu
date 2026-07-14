@@ -1589,6 +1589,14 @@ impl Interpreter {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
             self.env_mut().insert(name.to_string(), val.clone());
+        } else if code.plain_locals.get(idx).copied().unwrap_or(false) {
+            // Plain lexical (no sigil/twigil/qualifier — the overwhelmingly
+            // common SetLocal): every alias branch of the full mirror is
+            // unreachable, so take the one-Symbol-insert writer and skip the
+            // per-store `Symbol::intern` + `Main::` probe (J4d; profiled at
+            // ~12% of a hot Num loop). Same writer flush_local_to_env uses.
+            let sym = code.locals_sym.get(idx).copied();
+            self.set_env_plain_lexical(name, sym, val.clone());
         } else {
             self.set_env_with_main_alias(name, val.clone());
         }

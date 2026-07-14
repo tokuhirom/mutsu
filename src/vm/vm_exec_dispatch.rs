@@ -4338,7 +4338,14 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
-                self.check_readonly_for_modify(name)?;
+                // Probe through the pre-interned constant Symbol: this opcode
+                // runs on every whole-variable assignment (per iteration in
+                // tight loops), and `check_readonly_for_modify(name)` would
+                // re-intern the name on each execution just to miss the set.
+                // The error construction (readonly hit) is the cold path.
+                if self.is_readonly_sym(code.const_sym(*name_idx)) {
+                    self.check_readonly_for_modify(name)?;
+                }
                 // Also check env-based readonly status set by cross-scope
                 // `:=` binding (e.g. binding to a readonly sub parameter
                 // in a closure).  The readonly_vars set is scope-local
