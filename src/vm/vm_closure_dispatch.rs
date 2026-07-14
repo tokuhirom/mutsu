@@ -236,28 +236,26 @@ impl Interpreter {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
         }
-        // A closure's *free variables* are lexically bound in its captured env, so
-        // the captured value must OVERWRITE whatever the caller env happens to hold
-        // under the same name. The frame env is a scoped child of the *caller's*
-        // env, so without this a caller lexical that merely shares a name shadows
-        // the closure's own binding — lexical scoping degrading into dynamic
-        // scoping. It bites whenever one closure calls another that was built by a
+        // A closure's free variables are lexically bound in its captured env, so an
+        // *authoritative* capture must OVERWRITE whatever the caller env happens to
+        // hold under the same name. The frame env is a scoped child of the
+        // *caller's* env, so without this a caller lexical that merely shares a
+        // name shadows the closure's own binding — lexical scoping degrading into
+        // dynamic scoping. It bites whenever one closure calls another built by a
         // sibling invocation of the same factory (both frames declare `$me`), e.g.
         // a grammar-actions AST of nested closures: the callee re-read the caller's
-        // `@args` and recursed into itself until the Rust stack blew (roast
-        // integration/99problems-41-to-50.t P46/P47/P48).
+        // `@args`, which holds the callee itself, and recursed until the Rust stack
+        // blew (roast integration/99problems-41-to-50.t P46).
         //
-        // Restricted to plain user lexicals: dynamics (`$*OUT`), the topic (`$_`),
-        // `self`, positional captures and `__mutsu_*` metadata are deliberately
-        // resolved against the *live caller* env, and `capture_closure_env` keeps
-        // them in `data.env` only as a stale snapshot — overwriting those would
-        // break dynamic scoping. Mutation of a captured lexical still wins, because
-        // it flows through the `ContainerRef` cell above and the per-instance
-        // `closure_captured_state` override below, both applied after this.
-        for sym in &cc.free_var_syms {
-            if !sym.with_str(crate::env::is_plain_user_lexical) {
-                continue;
-            }
+        // Only `authoritative_free_vars` — plain lexicals the creating frame
+        // declares and never mutates after capture — can be installed this way. A
+        // capture the creator DOES mutate has a possibly-stale snapshot (mutsu
+        // captures by value), so its live value must keep coming from the shared
+        // `ContainerRef` cell or, when the escape analysis left it unboxed, the env
+        // chain: `my $s = 0; for 1..3 { @cb.push({ $s }) }; $s = 42` must still see
+        // 42. Dynamics, the topic, `self` and `__mutsu_*` metadata are excluded for
+        // the same reason — they are resolved against the live caller by design.
+        for sym in &cc.authoritative_free_vars {
             if let Some(val) = data.env.get_sym(*sym).cloned() {
                 self.env_mut().insert_sym(*sym, val);
             }
