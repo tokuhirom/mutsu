@@ -28,6 +28,11 @@ impl Interpreter {
             Some(crate::value::ForLoopResumeState::CStyleLoop)
         ) {
             self.gather_for_loop_resume = None;
+        } else if !code.state_locals.is_empty() {
+            // Fresh entry to the loop statement: state variables declared in
+            // the condition, body or step re-initialize (fresh block clone per
+            // statement execution — see `reset_state_locals_in_range`).
+            self.reset_state_locals_in_range(code, cond_start, loop_end);
         }
 
         // Track loop-body declarations for per-iteration closure capture
@@ -47,11 +52,14 @@ impl Interpreter {
                 break;
             }
             'body_redo: loop {
-                match self.run_range(code, body_start, step_begin, compiled_fns) {
+                let body_res = self.run_range(code, body_start, step_begin, compiled_fns);
+                // State mutations persist on every exit path (`next`/`redo`/
+                // `last`/exception), not just normal completion.
+                if !code.state_locals.is_empty() {
+                    self.sync_state_locals_in_range(code, body_start, step_begin);
+                }
+                match body_res {
                     Ok(()) => {
-                        if !code.state_locals.is_empty() {
-                            self.sync_state_locals_in_range(code, body_start, step_begin);
-                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
@@ -145,6 +153,15 @@ impl Interpreter {
         let cond_start = cond_end as usize;
         let loop_end = body_end as usize;
 
+        // Fresh entry to the loop statement: state variables declared in the
+        // body or condition re-initialize (fresh block clone per statement
+        // execution — see `reset_state_locals_in_range`). Skipped while a
+        // gather-coroutine resume marker is pending (the re-entry continues
+        // the same statement execution).
+        if self.gather_for_loop_resume.is_none() && !code.state_locals.is_empty() {
+            self.reset_state_locals_in_range(code, body_start, loop_end);
+        }
+
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit path.
         self.push_loop_local_scope();
@@ -166,11 +183,14 @@ impl Interpreter {
             }
             first = false;
             'body_redo: loop {
-                match self.run_range(code, body_start, cond_start, compiled_fns) {
+                let body_res = self.run_range(code, body_start, cond_start, compiled_fns);
+                // State mutations persist on every exit path (`next`/`redo`/
+                // `last`/exception), not just normal completion.
+                if !code.state_locals.is_empty() {
+                    self.sync_state_locals_in_range(code, body_start, cond_start);
+                }
+                match body_res {
                     Ok(()) => {
-                        if !code.state_locals.is_empty() {
-                            self.sync_state_locals_in_range(code, body_start, cond_start);
-                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, label) => {

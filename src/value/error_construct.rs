@@ -234,4 +234,17 @@ impl RuntimeError {
         failure_attrs.insert("exception".to_string(), ex);
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
+
+    /// Create a Failure wrapping an X::Numeric::Overflow exception.
+    pub(crate) fn numeric_overflow_failure() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Numeric overflow".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::Numeric::Overflow"), attrs);
+        let mut failure_attrs = HashMap::new();
+        failure_attrs.insert("exception".to_string(), ex);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
+    }
 }

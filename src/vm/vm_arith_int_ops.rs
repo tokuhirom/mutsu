@@ -386,15 +386,27 @@ impl Interpreter {
             .len()
             .checked_mul(n)
             .ok_or_else(|| RuntimeError::new("Cannot repeat string: length overflow"))?;
-        let mut repeated = String::new();
-        repeated.try_reserve(total).map_err(|_| {
+        // Build by doubling (`extend_from_within` = one memcpy per doubling)
+        // instead of `n` per-copy `push_str` calls: the roast A01-limits test
+        // declares `"a" x 2**32-1` (a 4 GiB string), which must complete in
+        // seconds, not minutes.
+        let mut buf: Vec<u8> = Vec::new();
+        buf.try_reserve_exact(total).map_err(|_| {
             RuntimeError::new(format!(
                 "Cannot repeat string to {total} bytes: memory allocation failed"
             ))
         })?;
-        for _ in 0..n {
-            repeated.push_str(&src);
+        if total > 0 {
+            buf.extend_from_slice(src.as_bytes());
+            while buf.len() < total {
+                let take = (total - buf.len()).min(buf.len());
+                buf.extend_from_within(..take);
+            }
         }
+        // SAFETY: `buf` is `src.as_bytes()` (valid UTF-8) repeated whole times;
+        // a concatenation of valid UTF-8 strings is valid UTF-8. Skipping the
+        // validation scan matters at this size (multi-GiB).
+        let repeated = unsafe { String::from_utf8_unchecked(buf) };
         let result = if repeated.is_ascii() {
             Value::str(repeated)
         } else {

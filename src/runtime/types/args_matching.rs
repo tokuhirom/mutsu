@@ -444,7 +444,9 @@ impl Interpreter {
                             .map(|v| self.smart_match(arg, &v))
                             .unwrap_or(false),
                     };
-                    self.env = saved;
+                    // Keep the where clause's dynamic-variable side effects
+                    // across the bindings rollback (A01-limits/misc.t).
+                    self.restore_env_preserving_dynamics(saved);
                     if !ok {
                         return false;
                     }
@@ -579,7 +581,9 @@ impl Interpreter {
                             .map(|v| self.smart_match(&val, &v))
                             .unwrap_or(false),
                     };
-                    self.env = saved;
+                    // Keep the where clause's dynamic-variable side effects
+                    // across the bindings rollback (A01-limits/misc.t).
+                    self.restore_env_preserving_dynamics(saved);
                     if !ok {
                         return false;
                     }
@@ -587,7 +591,13 @@ impl Interpreter {
             }
             true
         })();
-        self.env = saved_env;
+        if param_defs.iter().any(|pd| pd.where_constraint.is_some()) {
+            // Keep where clauses' dynamic-variable side effects across the
+            // bindings rollback (A01-limits/misc.t).
+            self.restore_env_preserving_dynamics(saved_env);
+        } else {
+            self.env = saved_env;
+        }
         result
     }
 

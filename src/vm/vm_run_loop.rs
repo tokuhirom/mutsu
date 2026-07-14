@@ -444,6 +444,32 @@ impl Interpreter {
         }
     }
 
+    /// Whether the state variable `(slot, key)` has its `StateVarInit` opcode
+    /// within [start..end). Matches both slot and key constant to avoid false
+    /// matches when multiple state variables share the same local slot.
+    fn state_local_init_in_range(
+        code: &CompiledCode,
+        slot: usize,
+        key: &str,
+        start: usize,
+        end: usize,
+    ) -> bool {
+        code.ops[start..end].iter().any(|op| {
+            if let OpCode::StateVarInit(s, k) = op {
+                if *s as usize != slot {
+                    return false;
+                }
+                if let ValueView::Str(stored_key) = code.constants[*k as usize].view() {
+                    stored_key.as_ref() == key
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        })
+    }
+
     /// Sync only state variables whose `StateVarInit` opcode falls within
     /// the given instruction range [start..end). This avoids prematurely
     /// syncing state variables that haven't been initialized yet.
@@ -454,25 +480,7 @@ impl Interpreter {
         end: usize,
     ) {
         for (slot, key) in &code.state_locals {
-            // Check if this exact state variable (by key) has its StateVarInit in the range.
-            // We match both slot and key_idx to avoid false matches when multiple
-            // state variables share the same local slot.
-            let has_init_in_range = code.ops[start..end].iter().any(|op| {
-                if let OpCode::StateVarInit(s, k) = op {
-                    if *s as usize != *slot {
-                        return false;
-                    }
-                    // Verify the key constant matches
-                    if let ValueView::Str(stored_key) = code.constants[*k as usize].view() {
-                        stored_key.as_ref() == key.as_str()
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            });
-            if !has_init_in_range {
+            if !Self::state_local_init_in_range(code, *slot, key, start, end) {
                 continue;
             }
             let local_name = &code.locals[*slot];
@@ -482,6 +490,30 @@ impl Interpreter {
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
             self.set_state_var(key.clone(), val);
+        }
+    }
+
+    /// Reset (drop from the state store) every state variable whose
+    /// `StateVarInit` falls within [start..end). Called on entry to a compound
+    /// loop opcode: each execution of the loop *statement* is a fresh clone of
+    /// its body block (Raku clones a block each time its enclosing block
+    /// runs), so `state` declarations inside the body — including nested loop
+    /// bodies — re-run their initializers. Iterations within one execution
+    /// share state (the loop re-invokes the same clone), which is why this
+    /// runs at statement entry, not per iteration. Callers must skip this when
+    /// resuming a suspended gather coroutine into the same loop opcode.
+    pub(crate) fn reset_state_locals_in_range(
+        &mut self,
+        code: &CompiledCode,
+        start: usize,
+        end: usize,
+    ) {
+        for (slot, key) in &code.state_locals {
+            if !Self::state_local_init_in_range(code, *slot, key, start, end) {
+                continue;
+            }
+            let scoped_key = self.scoped_state_key(key);
+            self.remove_state_var(&scoped_key);
         }
     }
 

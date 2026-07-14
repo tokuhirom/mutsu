@@ -82,9 +82,21 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
         let mag = wr.exp();
         Value::complex(mag * wi.cos(), mag * wi.sin())
     } else {
+        // Raku refuses to attempt astronomically large integer powers: an
+        // exponent with magnitude >= 2**32 yields a soft Failure —
+        // X::Numeric::Overflow for a positive exponent, X::Numeric::Underflow
+        // for a negative one (A01-limits/overflow.t; bases 0/±1 still compute).
+        const POW_EXP_LIMIT: i64 = 4_294_967_296;
         match (l.view(), r.view()) {
             (ValueView::Int(a), ValueView::Int(b)) if b >= 0 => {
-                if let Some(result) = a.checked_pow(b as u32) {
+                if b >= POW_EXP_LIMIT {
+                    match a {
+                        0 => Value::int(0),
+                        1 => Value::int(1),
+                        -1 => Value::int(if b % 2 == 0 { 1 } else { -1 }),
+                        _ => RuntimeError::numeric_overflow_failure(),
+                    }
+                } else if let Some(result) = a.checked_pow(b as u32) {
                     Value::int(result)
                 } else {
                     // Overflow: use BigInt
@@ -94,14 +106,33 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (ValueView::Int(a), ValueView::Int(b)) => {
+                if b <= -POW_EXP_LIMIT {
+                    return match a {
+                        0 => Value::num(f64::INFINITY),
+                        1 => Value::int(1),
+                        -1 => Value::int(if b % 2 == 0 { 1 } else { -1 }),
+                        _ => RuntimeError::numeric_underflow_failure(),
+                    };
+                }
                 let pos = (-b) as u32;
                 if let Some(base) = a.checked_pow(pos) {
                     make_rat(1, base)
                 } else {
-                    Value::num(1.0 / (a as f64).powi(pos as i32))
+                    // The exact reciprocal is out of integer range; degrade to
+                    // float. A result rounding to 0.0 is a numeric underflow
+                    // (raku: 2**-1074 is 5e-324, 2**-1075 is a Failure).
+                    let result = (a as f64).powf(b as f64);
+                    if result == 0.0 && a != 0 {
+                        RuntimeError::numeric_underflow_failure()
+                    } else {
+                        Value::num(result)
+                    }
                 }
             }
             (ValueView::Rat(n, d), ValueView::Int(b)) if b >= 0 => {
+                if b >= POW_EXP_LIMIT && n != 0 && n.unsigned_abs() != d.unsigned_abs() {
+                    return RuntimeError::numeric_overflow_failure();
+                }
                 let p = b as u32;
                 if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
                     make_rat(np, dp)
@@ -127,6 +158,9 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (ValueView::Rat(n, d), ValueView::Int(b)) => {
+                if b <= -POW_EXP_LIMIT && n != 0 && n.unsigned_abs() != d.unsigned_abs() {
+                    return RuntimeError::numeric_underflow_failure();
+                }
                 let p = (-b) as u32;
                 if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
                     make_rat(dp, np)
@@ -148,6 +182,9 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (ValueView::FatRat(n, d), ValueView::Int(b)) if b >= 0 => {
+                if b >= POW_EXP_LIMIT && n != 0 && n.unsigned_abs() != d.unsigned_abs() {
+                    return RuntimeError::numeric_overflow_failure();
+                }
                 let p = b as u32;
                 if let (Some(np), Some(dp)) = (n.checked_pow(p), d.checked_pow(p)) {
                     make_fat_rat(np, dp)
@@ -163,6 +200,9 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (ValueView::FatRat(n, d), ValueView::Int(b)) => {
+                if b <= -POW_EXP_LIMIT && n != 0 && n.unsigned_abs() != d.unsigned_abs() {
+                    return RuntimeError::numeric_underflow_failure();
+                }
                 let p = (-b) as u32;
                 if let (Some(dp), Some(np)) = (d.checked_pow(p), n.checked_pow(p)) {
                     make_fat_rat(dp, np)
@@ -178,10 +218,16 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                 }
             }
             (ValueView::BigRat(n, d), ValueView::Int(b)) if b >= 0 => {
+                if b >= POW_EXP_LIMIT && !n.is_zero() && n.magnitude() != d.magnitude() {
+                    return RuntimeError::numeric_overflow_failure();
+                }
                 let p = b as u32;
                 make_big_rat_arith(n.pow(p), d.pow(p))
             }
             (ValueView::BigRat(n, d), ValueView::Int(b)) => {
+                if b <= -POW_EXP_LIMIT && !n.is_zero() && n.magnitude() != d.magnitude() {
+                    return RuntimeError::numeric_underflow_failure();
+                }
                 let p = (-b) as u32;
                 make_big_rat_arith(d.pow(p), n.pow(p))
             }
@@ -244,8 +290,14 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     } else {
                         Value::bigint(NumBigInt::from(a).pow(exp_u))
                     }
+                } else if let Some(exp_i) = b.as_ref().to_i64() {
+                    // Negative or 2**32..2**63 exponent: same rules as Int**Int.
+                    arith_pow(Value::int(a), Value::int(exp_i))
+                } else if b.sign() == Sign::Minus {
+                    // |a| > 1 here (0/±1 handled above): soft under/overflow.
+                    RuntimeError::numeric_underflow_failure()
                 } else {
-                    Value::num((a as f64).powf(b.as_ref().to_f64().unwrap_or(f64::INFINITY)))
+                    RuntimeError::numeric_overflow_failure()
                 }
             }
             (ValueView::Num(a), ValueView::BigInt(b)) => {
@@ -266,6 +318,33 @@ pub(crate) fn arith_pow(left: Value, right: Value) -> Value {
                     RuntimeError::numeric_underflow_failure()
                 } else {
                     Value::num(result)
+                }
+            }
+            (
+                ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..),
+                ValueView::BigInt(b),
+            ) => {
+                if let Some(exp_i) = b.as_ref().to_i64() {
+                    arith_pow(l.clone(), Value::int(exp_i))
+                } else {
+                    // Exponent beyond i64: soft failure by exponent sign, unless
+                    // the base is 0 or ±1 (which stay exact).
+                    let (num_zero, mag_one) = match l.view() {
+                        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
+                            (n == 0, n.unsigned_abs() == d.unsigned_abs())
+                        }
+                        ValueView::BigRat(n, d) => (n.is_zero(), n.magnitude() == d.magnitude()),
+                        _ => (false, false),
+                    };
+                    if num_zero {
+                        Value::int(0)
+                    } else if mag_one {
+                        powf_or_zero(&l, &r)
+                    } else if b.sign() == Sign::Minus {
+                        RuntimeError::numeric_underflow_failure()
+                    } else {
+                        RuntimeError::numeric_overflow_failure()
+                    }
                 }
             }
             _ => powf_or_zero(&l, &r),

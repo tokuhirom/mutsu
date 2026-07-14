@@ -286,6 +286,15 @@ impl Interpreter {
         self.state_vars.get(key)
     }
 
+    /// Drop a `state` variable's stored value so the next `StateVarInit`
+    /// re-runs its initializer. Used when a loop statement is re-entered:
+    /// each execution of the statement is a fresh clone of its body block
+    /// (Raku clones a block each time its enclosing block runs), so `state`
+    /// declarations inside the body re-initialize.
+    pub(crate) fn remove_state_var(&mut self, key: &str) {
+        self.state_vars.remove(key);
+    }
+
     pub(crate) fn set_state_var(&mut self, key: String, value: Value) {
         // Track C/Track B: once a `state` variable lives in a shared
         // `ContainerRef` cell (StateVarInit under an active thread context),

@@ -73,6 +73,20 @@ impl Interpreter {
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
 
+        // Each gather instance is its own state-variable scope (a fresh block
+        // clone per `gather` evaluation): install its id so `state`
+        // declarations in the body cannot collide with a sibling gather's
+        // separately-compiled (ip-identical) body.
+        let saved_state_scope = self.state_scope_id;
+        let gather_scope_id = list
+            .coroutine
+            .as_ref()
+            .map(|m| m.lock().unwrap().state_scope_id)
+            .unwrap_or(0);
+        if gather_scope_id != 0 {
+            self.state_scope_id = Some(gather_scope_id);
+        }
+
         // Determine starting IP and locals from coroutine state or fresh start
         let mut ip;
         let has_prior_state;
@@ -208,6 +222,7 @@ impl Interpreter {
                 finished: false,
                 started: true,
                 for_loop_resume,
+                state_scope_id: gather_scope_id,
             };
             if let Some(ref coro_mutex) = list.coroutine {
                 *coro_mutex.lock().unwrap() = coro_state;
@@ -242,6 +257,7 @@ impl Interpreter {
         self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
         // Restore Interpreter state
+        self.state_scope_id = saved_state_scope;
         self.locals = saved_locals;
         self.stack = saved_stack;
 

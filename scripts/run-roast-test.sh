@@ -68,6 +68,24 @@ per_file_timeout() {
       # infinite sequences with head() truncation. Release builds take ~15s.
       echo 60
       ;;
+    roast/integration/advent2012-day21.t)
+      # A Collatz benchmark shoot-out: 8 sub-programs each computing 402
+      # collatz lengths in a subprocess (Test::Util::run). Pure wall-clock
+      # stress (~100s debug); give release headroom under -j4 contention.
+      echo 120
+      ;;
+    roast/integration/advent2013-day14.t)
+      # Promise/Channel pipeline with fixed sleeps (sleep 1/3/7 exchanges
+      # capped by Promise.in(5), plus a 2s .then chain) — ~12s of wall-clock
+      # waiting regardless of build, needs headroom under CI load.
+      echo 60
+      ;;
+    roast/APPENDICES/A01-limits/misc.t)
+      # Declares a 4 GiB native string ("a" x 2**32-1): allocation +
+      # doubling-memcpy build takes ~9s locally and is memory-bandwidth
+      # bound, so give CI runners headroom.
+      echo 90
+      ;;
     *)
       echo "$DEFAULT_TIMEOUT"
       ;;

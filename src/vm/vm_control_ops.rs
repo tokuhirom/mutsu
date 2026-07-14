@@ -272,6 +272,11 @@ impl Interpreter {
             Some(crate::value::ForLoopResumeState::CStyleLoop)
         ) {
             self.gather_for_loop_resume = None;
+        } else if !code.state_locals.is_empty() {
+            // Fresh entry to the loop statement: state variables declared in
+            // the condition or body re-initialize (fresh block clone per
+            // statement execution — see `reset_state_locals_in_range`).
+            self.reset_state_locals_in_range(code, cond_start, loop_end);
         }
 
         // Track loop-body declarations for per-iteration closure capture
@@ -297,13 +302,17 @@ impl Interpreter {
                 None
             };
             'body_redo: loop {
-                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                let body_res = self.run_range(code, body_start, loop_end, compiled_fns);
+                // Sync state variables modified in this iteration so the next
+                // iteration's StateVarInit sees updated values. State mutations
+                // persist on every exit path (`next`/`redo`/`last`/exception),
+                // not just normal completion — a `next if ++$count > 1` must
+                // not roll back the increment.
+                if !code.state_locals.is_empty() {
+                    self.sync_state_locals_in_range(code, body_start, loop_end);
+                }
+                match body_res {
                     Ok(()) => {
-                        // Sync state variables modified in this iteration so
-                        // the next iteration's StateVarInit sees updated values.
-                        if !code.state_locals.is_empty() {
-                            self.sync_state_locals_in_range(code, body_start, loop_end);
-                        }
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);

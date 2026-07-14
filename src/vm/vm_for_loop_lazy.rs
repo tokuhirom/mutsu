@@ -94,11 +94,14 @@ impl Interpreter {
                 self.env_mut().insert(key, Value::FALSE);
             }
             'body_redo: loop {
-                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                let body_res = self.run_range(code, body_start, loop_end, compiled_fns);
+                // State mutations persist on every exit path (`next`/`redo`/
+                // `last`/exception), not just normal completion.
+                if !code.state_locals.is_empty() {
+                    self.sync_state_locals_in_range(code, body_start, loop_end);
+                }
+                match body_res {
                     Ok(()) => {
-                        if !code.state_locals.is_empty() {
-                            self.sync_state_locals_in_range(code, body_start, loop_end);
-                        }
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
@@ -308,11 +311,14 @@ impl Interpreter {
             }
 
             'body_redo: loop {
-                match self.run_range(code, body_start, loop_end, compiled_fns) {
+                let body_res = self.run_range(code, body_start, loop_end, compiled_fns);
+                // State mutations persist on every exit path (`next`/`redo`/
+                // `last`/exception), not just normal completion.
+                if !code.state_locals.is_empty() {
+                    self.sync_state_locals_in_range(code, body_start, loop_end);
+                }
+                match body_res {
                     Ok(()) => {
-                        if !code.state_locals.is_empty() {
-                            self.sync_state_locals_in_range(code, body_start, loop_end);
-                        }
                         if let Some(ref mut coll) = collected {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {

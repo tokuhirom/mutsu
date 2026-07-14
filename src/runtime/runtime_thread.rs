@@ -40,7 +40,16 @@ impl Interpreter {
                 }
                 // Only insert if not already present — existing values may have
                 // been updated by earlier threads that are already running.
-                sv.entry(key.resolve()).or_insert_with(|| val.clone());
+                // EXCEPT names this thread re-declared: their shared entry (if
+                // any) belongs to the shadowed outer binding and was frozen at
+                // its pre-declaration value (writes were masked), so the child
+                // must see the parent's *current* binding instead.
+                let key = key.resolve();
+                if self.thread_redeclared_vars.contains(&key) {
+                    sv.insert(key, val.clone());
+                } else {
+                    sv.entry(key).or_insert_with(|| val.clone());
+                }
             }
             // Track C: migrate the parent's existing `state` variables into shared
             // cells (keyed by their normalized cross-compilation key) so a routine
@@ -59,6 +68,12 @@ impl Interpreter {
             }
         }
         self.shared_vars_active = true;
+        // The child captures the parent's CURRENT bindings — including any
+        // name the parent re-declared since an earlier spawn (its current
+        // value was force-seeded above). From this spawn on, writes to those
+        // names must flow both ways again, so drop the parent-side masks.
+        // (The child's own mask starts empty via the struct literal below.)
+        self.thread_redeclared_vars.clear();
         let mut referenced_handle_ids = std::collections::HashSet::new();
         for value in self.env.values() {
             if let Some(id) = Self::handle_id_from_value(value) {
@@ -241,6 +256,7 @@ impl Interpreter {
             escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),
             state_vars: HashMap::new(),
+            thread_redeclared_vars: std::collections::HashSet::new(),
             // Mirror state_vars: a thread clone starts with no persisted
             // closure captured state (falls back to the captured-env initial
             // values), exactly as before this store existed.

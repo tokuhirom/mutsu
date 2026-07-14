@@ -318,7 +318,7 @@ impl Interpreter {
                 self.env.insert(key.to_string(), value.clone());
             }
         }
-        if self.shared_vars_active {
+        if self.shared_vars_active && !self.thread_redeclared_vars.contains(key) {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
             // mechanism and expects non-flattening Array semantics. This must
@@ -406,7 +406,13 @@ impl Interpreter {
         // so we must not hold shared_vars_dirty while acquiring shared_vars.
         let dirty_keys: Vec<String> = {
             let dirty = self.shared_vars_dirty.read().unwrap();
-            dirty.iter().cloned().collect()
+            dirty
+                .iter()
+                // A name re-declared in this thread is a fresh local binding;
+                // pulling the shared (outer) value in would clobber it.
+                .filter(|k| !self.thread_redeclared_vars.contains(*k))
+                .cloned()
+                .collect()
         };
         if dirty_keys.is_empty() {
             return;
