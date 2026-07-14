@@ -302,6 +302,18 @@ pub struct Env {
 /// deep recursion ever hits it, paying one O(env) flatten per this many frames.
 const MAX_OVERLAY_DEPTH: u16 = 16;
 
+/// Process-wide shared empty overlay map for fresh scoped children. A brand-new
+/// overlay is always empty, so every frame can share one allocation: the first
+/// `insert` goes through `cow_mut`'s `Arc::make_mut`, which sees the shared
+/// refcount and clones the (empty) map into a private one — plain
+/// copy-on-write, no behavioral difference. `Env::ptr_eq` consumers are
+/// unaffected: two envs sharing this map are both empty, and any write
+/// un-shares the writer before it can be observed.
+fn empty_overlay() -> Arc<SymMap> {
+    static EMPTY: std::sync::OnceLock<Arc<SymMap>> = std::sync::OnceLock::new();
+    EMPTY.get_or_init(|| Arc::new(SymMap::default())).clone()
+}
+
 impl Env {
     pub(crate) fn new() -> Self {
         Self {
@@ -345,14 +357,40 @@ impl Env {
         // writes) then runs at constant chain depth and never triggers the
         // MAX_OVERLAY_DEPTH flatten — which was measured at >40% of fib(25)
         // wall time (HashMap deep clone + drop per flatten).
-        while parent.inner.is_empty() && parent.tombstones.is_none() {
-            match &parent.parent {
-                Some(gp) => {
-                    let gp = Env::clone(gp);
-                    parent = gp;
-                }
-                None => break,
+        //
+        // J4d: the walked-to tier is reused as its existing `Arc` (instead of
+        // cloning the `Env` out and re-wrapping it in a fresh `Arc`), and the
+        // new empty overlay shares the process-wide [`empty_overlay`] map
+        // (copy-on-write on first insert via `cow_mut`'s `Arc::make_mut`).
+        // Steady-state recursion therefore allocates nothing here — the two
+        // `Arc::new`s per call were ~14% of fib with the JIT on.
+        if parent.inner.is_empty()
+            && parent.tombstones.is_none()
+            && let Some(gp) = parent.parent.take()
+        {
+            let mut arc = gp;
+            while arc.inner.is_empty()
+                && arc.tombstones.is_none()
+                && let Some(gp) = &arc.parent
+            {
+                let gp = Arc::clone(gp);
+                arc = gp;
             }
+            if arc.depth >= MAX_OVERLAY_DEPTH {
+                let flat = arc.flattened();
+                return Self {
+                    inner: empty_overlay(),
+                    depth: flat.depth + 1,
+                    parent: Some(Arc::new(flat)),
+                    tombstones: None,
+                };
+            }
+            return Self {
+                inner: empty_overlay(),
+                depth: arc.depth + 1,
+                parent: Some(arc),
+                tombstones: None,
+            };
         }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
             parent.flattened()
@@ -360,7 +398,7 @@ impl Env {
             parent
         };
         Self {
-            inner: Arc::new(SymMap::default()),
+            inner: empty_overlay(),
             depth: parent.depth + 1,
             parent: Some(Arc::new(parent)),
             tombstones: None,
