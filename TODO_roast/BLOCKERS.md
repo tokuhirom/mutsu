@@ -3,9 +3,14 @@
 roast の失敗を「テストファイル単位」ではなく**根本原因単位**で追うための索引。
 今どこを直せば何がまとめて動くかを判断するために使う。
 
-**最終更新 2026-07-12**（全セクションを単一の残件表に統合。途中経過・完了報告の類は
-`news/` に移し、本ファイルは「現在開いている残件」だけを持つ。数値は同日に再取得。
-同日、ローカル raku を **Rakudo v2022.12 → v2026.06** に更新し、raku 列を全行再測定）。
+**最終更新 2026-07-14**（★未 whitelist 79 本を全数実測し直したところ、**旧版の残件表は
+S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・APPENDICES 4 本が丸ごと
+抜けていた**。それらはほぼ全ファイルが **raku 満点＝★達成可能** で、「★の残件は無い」という
+旧版の結論は誤りだった。§「integration — 実プログラム互換」を新設）。
+
+**2026-07-12**: 全セクションを単一の残件表に統合。途中経過・完了報告の類は `news/` に移し、
+本ファイルは「現在開いている残件」だけを持つ。同日、ローカル raku を
+**Rakudo v2022.12 → v2026.06** に更新し、raku 列を全行再測定。
 
 ## この文書の読み方
 
@@ -25,15 +30,36 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 ## 現在の前提
 
-- whitelist は **1383**（2026-07-12、`wc -l roast-whitelist.txt`）。
-- **roast 由来の大型共通ブロッカーは出尽くした。** かつての大型 campaign
-  （真の lazy 配列 / dispatch・演算子 sugar の desugar / S17 並行・非同期 /
-  第一級コンテナ container identity / cross-thread lexical writeback）はすべて完了済み。
-- 残件は下表の個別ファイルのみで、campaign を組める共通根本原因は無い。
-  **次の構造工事の選定は [PLAN.md](../PLAN.md) を正とする**（lexical-scope slot /
-  GC post-3a / Batteries）。
+- whitelist は **1384 / 1463**（2026-07-14、`wc -l roast-whitelist.txt`）＝未 whitelist **79 本**。
+- **S\* 系（各シノプシスの機能テスト）は出尽くした。** かつての大型 campaign（真の lazy 配列 /
+  dispatch・演算子 sugar の desugar / S17 並行・非同期 / 第一級コンテナ container identity /
+  cross-thread lexical writeback）はすべて完了済みで、S\* に残るのは下の
+  [個別ファイル表](#s-系の個別ファイル残件)（**全て 非目標／oracle 不能／基盤待ち**）だけ。
+- **★フロンティアは `integration/` に移った**（下節）。未 whitelist 79 本の内訳は
+  S\* 系 24 本ではなく **`integration/` 41 本＋`6.c/` 7 本＋APPENDICES 4 本＋roast 自身の
+  ツール test 2 本＋MISC 1 本**が主体で、`integration/` はほぼ全ファイルが raku 満点。
 
-## 残件一覧
+## integration — 実プログラム互換（★達成可能の本体・2026-07-14 全数実測）
+
+`integration/` は Advent Calendar・99 problems といった**実在の Raku プログラム**を走らせる
+テスト群で、「実用コードがそのまま動く」というプロジェクトゴールに最も近い互換性指標。
+`raku-baseline.tsv` 上、未 whitelist の `integration/` は **ほぼ全ファイルが `raku_status=PASS`
+（raku 満点）＝定義上すべて ★達成可能**。1 ファイル 1 バグではなく**根本原因が数個に集約**する。
+
+計測: `MUTSU_FUDGE=1 timeout 25 prove -e target/debug/mutsu <file>`（2026-07-14・debug build）。
+
+| 根本原因クラスタ | 本数 | 該当ファイル（抜粋） | 症状 |
+|---|---|---|---|
+| **① 深い再帰で Rust スタックが溢れる** | 4 | `99problems-41-to-50.t`（mutsu 1/9・raku 9/9）・`99problems-51-to-60.t`・`man-or-boy.t`・`deep-recursion-initing-native-array.t` | `fatal runtime error: stack overflow, aborting`（プロセス abort）。Raku レベルの再帰が Rust の呼び出しスタックを消費している＝**インタプリタ再帰のフレーム深さ**が根本。man-or-boy は古典的な深いクロージャ再帰 |
+| **② パース不能（`===SORRY!===`）** | 10 | `advent2009-day16.t`(:58 `{`)・`advent2009-day23.t`(:122 `gather {`)・`advent2010-day11.t`(:24 `q \| … \|` = `\|` デリミタの q)・`advent2012-day04.t`(:22 `do {…} … *` 連番列)・`advent2012-day19.t`(:11 `4.7k` = ユーザ定義 postfix)・`advent2013-day04.t`(:31 heredoc インデント)・`advent2014-day16.t`(:99 `{`)・`advent2012-day15.t`（`Unexpected block in infix position`）・`6.c/MISC/bug-coverage.t`(:287 `subtest … => {`)・`6.c/APPENDICES/A04-experimental/01-misc.t` | 個別の構文が未対応。1 本ずつ潰す（安い ★ が混じっている可能性が高い） |
+| **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
+| **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
+| **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張）・`advent2010-day14.t`（`nextsame` の継承/mixin）・`advent2010-day22.t`（`Rat` の `$!numerator`/`$!denominator` 属性）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2009-day20.t`（signature の introspection/stringification）・`advent2009-day18.t`（パラメタ化 role の mixin）・`advent2013-day10.t`（`:round` 等の演算子 adverb）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。★の近道はここ |
+
+**近道（1 subtest 差のファイル）**: `6.c/S04-declarations/my-6c.t` は **111/112**（唯一の失敗＝
+test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、`advent2009-day24.t` は 3/4。
+
+## S* 系の個別ファイル残件
 
 分類の定義:
 
@@ -75,11 +101,15 @@ roast の失敗を「テストファイル単位」ではなく**根本原因単
 
 ## 今のおすすめ着手順
 
-- 直前の ★ 消化: `S06-advanced/return-prioritization.t` は 2026-07-12 に whitelist 済み
-  （LEAVE phaser 内 `return` の優先規則を実装）。`S32-hash/perl.t` も同日 whitelist 済み #4452。
-- 現在、表に ★達成可能 の残件は無い。「次の 1 本」に適する残件も無く、**構造工事の選定は
-  [PLAN.md](../PLAN.md) を正とする。**
-- `S32-str/format.t`・`S02-types/generics.t` も raku 更新で oracle が得られたが、
-  必要基盤（RakuAST / 6.e generics）の大きさは変わらないため 基盤待ち のまま。
-- 非目標・oracle 不能の項目は、mutsu 側の一般改善のついでに前進させるのはよいが、
-  そのファイル単体の whitelist を目的にしない。
+1. **① 深い再帰の stack overflow**（4 本を一撃・かつ**プロセス abort という品質問題そのもの**）。
+   Raku の再帰が Rust スタックを食う構造が根本なので、単発 fix ではなく機構の話になる
+   （呼び出しフレームのヒープ化 / スタック拡張 / 明示的な深さ制御）。インパクト最大。
+2. **② パース不能 10 本を 1 本ずつ**。構文ごとに独立で、安い ★ が混じっている見込み
+   （`q | … |` デリミタ・ユーザ定義 postfix `4.7k`・heredoc インデント等）。
+3. **近道**: `6.c/S04-declarations/my-6c.t` は `OUTER::<$x>` の 1 subtest だけ
+   （111/112）。`advent2011-day04.t` は 1/2。
+4. **④ エラーメッセージ品質**（`error-reporting.t` 4/33）は PLAN §6 の同名タスクと同じ的なので、
+   そちらを進めるときに roast の合否で駆動できる。
+- S\* 系の表（非目標・oracle 不能・基盤待ち）は、mutsu 側の一般改善のついでに前進させるのはよいが、
+  そのファイル単体の whitelist を目的にしない。`S32-str/format.t`・`S02-types/generics.t` は
+  raku 更新で oracle が得られたが、必要基盤（RakuAST / 6.e generics）の大きさは変わらない。
