@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.3.1](https://github.com/tokuhirom/mutsu/compare/v0.3.0...v0.3.1) - 2026-07-14
+
+- perf(vm): stop rebuilding per-variable metadata keys on every declaration/store by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4495
+- docs: correct the perf model — the prize was name-keyed metadata, not the env overlay by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4497
+- docs: re-audit PLAN/BLOCKERS — the roast frontier is integration/ (41 files, all raku-clean) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4498
+
 ## [v0.3.0](https://github.com/tokuhirom/mutsu/compare/v0.2.34...v0.3.0) - 2026-07-13
 
 - fix(dispatch): OTF-compile module subs with standard param traits by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4306
