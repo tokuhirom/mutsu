@@ -193,6 +193,13 @@ pub(super) fn parse_fused_adverbs_big_q<'a>(input: &'a str, flags: &mut QuoteFla
         flags.quotewords = true;
         return r;
     }
+    // Qto/.../ is the fused spelling of Q:to/.../
+    if let Some(r) = input.strip_prefix("to")
+        && not_alnum(r)
+    {
+        flags.heredoc = true;
+        return r;
+    }
     // Single-char fused adverbs
     type Setter = fn(&mut QuoteFlags);
     let fused: &[(char, Setter)] = &[
@@ -223,6 +230,13 @@ pub(super) fn parse_fused_adverbs_small_q<'a>(input: &'a str, flags: &mut QuoteF
         && not_alnum(r)
     {
         flags.quotewords = true;
+        return r;
+    }
+    // qto/.../ and qqto/.../ are the fused spellings of q:to/.../ and qq:to/.../
+    if let Some(r) = input.strip_prefix("to")
+        && not_alnum(r)
+    {
+        flags.heredoc = true;
         return r;
     }
     if let Some(r) = input.strip_prefix('w')

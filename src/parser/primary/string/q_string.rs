@@ -24,11 +24,11 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
 
     // Handle :to (heredoc)
     if flags.heredoc {
-        return parse_to_heredoc(rest, flags.has_interpolation() || flags.qq_mode);
+        return parse_to_heredoc_with_flags(rest, &flags, flags.qq_mode);
     }
 
     // `Q => ...` is the pair key `Q`, not a `Q`-quote with `=` as its delimiter.
-    if rest.trim_start_matches(' ').starts_with("=>") {
+    if rest.trim_start().starts_with("=>") {
         return Err(PError::expected("Q string"));
     }
 
@@ -178,22 +178,21 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // Check for qq first (before fused adverbs, since qqww = qq + ww)
     if after_q.starts_with('q') {
         let after_qq = &after_q[1..];
-        // qq is valid if followed by delimiter, colon adverb, or known fused adverb
+        // A fused adverb is only an adverb if a delimiter (not another letter) follows it.
+        let fused = |word: &str| {
+            after_qq
+                .strip_prefix(word)
+                .is_some_and(|r| r.chars().next().is_some_and(|c| !c.is_alphanumeric()))
+        };
+        // qq is valid if followed by a delimiter, a colon adverb, or a known fused adverb.
+        // Whitespace counts: Raku allows `qq /.../` and even a newline before the delimiter.
         let qq_valid = after_qq
             .chars()
             .next()
-            .is_some_and(|c| !c.is_alphanumeric() && !c.is_whitespace())
-            || after_qq.starts_with("ww")
-                && after_qq[2..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| !c.is_alphanumeric())
-            || after_qq.starts_with('w')
-                && !after_qq.starts_with("ww")
-                && after_qq[1..]
-                    .chars()
-                    .next()
-                    .is_some_and(|c| !c.is_alphanumeric());
+            .is_some_and(|c| !c.is_alphanumeric())
+            || fused("ww")
+            || fused("w")
+            || fused("to");
         if qq_valid {
             flags.q_mode = false;
             flags.qq_mode = true;
@@ -208,13 +207,14 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     after_q = parse_colon_adverbs(after_q, &mut flags);
 
     // Handle :to (heredoc)
+    // Only qq semantics interpolate everything; a selective adverb such as `:c` must
+    // interpolate closures alone, so it goes through the flag-driven path instead.
     if flags.heredoc {
-        let interpolate = flags.has_interpolation() || flags.qq_mode;
-        return parse_to_heredoc_with_flags(after_q, &flags, interpolate);
+        return parse_to_heredoc_with_flags(after_q, &flags, flags.qq_mode);
     }
 
     // `#` cannot be used as a quoting delimiter (it starts a comment).
-    let trimmed_after_q = after_q.trim_start_matches(' ');
+    let trimmed_after_q = after_q.trim_start();
     if trimmed_after_q.starts_with('#') {
         return Err(PError::fatal(
             "# cannot be used as a quote delimiter".to_string(),

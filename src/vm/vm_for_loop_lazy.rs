@@ -51,20 +51,30 @@ impl Interpreter {
                 if !name.starts_with('@') && !name.starts_with('%') {
                     self.mark_readonly(name);
                 }
-            } else {
+            } else if spec.multi_param_names.is_empty() {
+                // A multi-param loop binds through `$_`; the body's bind statements
+                // must stay writable, so `$_` is not the read-only topic here.
                 self.mark_readonly("_");
             }
         }
 
+        // `for $lazy -> $a, $b, $c` consumes `arity` elements per iteration and binds
+        // them as one chunk, exactly as the eager path does.
+        let arity = spec.arity.max(1) as usize;
         let mut idx: usize = start_idx;
         'for_loop: loop {
-            // Force one more element from the lazy list
-            let items = self.force_lazy_list_vm_n(ll, idx + 1)?;
+            // Force enough elements for one iteration's chunk
+            let items = self.force_lazy_list_vm_n(ll, idx + arity)?;
             if idx >= items.len() {
                 break; // No more elements
             }
-            let item = items[idx].clone();
-            idx += 1;
+            let item = if arity > 1 {
+                let end = (idx + arity).min(items.len());
+                Value::array(items[idx..end].to_vec())
+            } else {
+                items[idx].clone()
+            };
+            idx += arity;
 
             self.topic_source_var = None;
             if param_name.is_none() {
@@ -75,6 +85,13 @@ impl Interpreter {
             }
             if let Some(slot) = spec.param_local {
                 self.locals[slot as usize] = item.clone();
+            }
+            // The body of a multi-param loop starts with bind statements that assign
+            // into the params, so they must not stay read-only from an outer scope.
+            for mp_name in &spec.multi_param_names {
+                self.unmark_readonly(mp_name);
+                let key = format!("__mutsu_sigilless_readonly::{}", mp_name);
+                self.env_mut().insert(key, Value::FALSE);
             }
             'body_redo: loop {
                 match self.run_range(code, body_start, loop_end, compiled_fns) {

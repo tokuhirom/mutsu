@@ -273,7 +273,7 @@ pub(crate) fn read_delimited_content<'a>(
     input: &'a str,
     escape_backslash: bool,
 ) -> PResult<'a, &'a str> {
-    let rest = input.trim_start_matches(' ');
+    let rest = input.trim_start();
     let delim_char = rest
         .chars()
         .next()
@@ -311,7 +311,7 @@ pub(crate) fn read_delimited_content<'a>(
 }
 
 pub(crate) fn quote_delimiters(input: &str) -> Option<(char, char)> {
-    let rest = input.trim_start_matches(' ');
+    let rest = input.trim_start();
     let open = rest.chars().next()?;
     let close = match open {
         '{' => '}',

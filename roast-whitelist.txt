@@ -1327,6 +1327,7 @@ roast/integration/advent2010-day06.t
 roast/integration/advent2010-day07.t
 roast/integration/advent2010-day08.t
 roast/integration/advent2010-day10.t
+roast/integration/advent2010-day11.t
 roast/integration/advent2010-day12.t
 roast/integration/advent2010-day19.t
 roast/integration/advent2010-day21.t
@@ -1350,6 +1351,7 @@ roast/integration/advent2012-day20.t
 roast/integration/advent2012-day22.t
 roast/integration/advent2012-day24.t
 roast/integration/advent2013-day02.t
+roast/integration/advent2013-day04.t
 roast/integration/advent2013-day06.t
 roast/integration/advent2013-day07.t
 roast/integration/advent2013-day09.t
@@ -1361,6 +1363,7 @@ roast/integration/advent2013-day22.t
 roast/integration/advent2013-day23.t
 roast/integration/advent2014-day05.t
 roast/integration/advent2014-day13.t
+roast/integration/advent2014-day16.t
 roast/integration/code-blocks-as-sub-args.t
 roast/integration/diamond.t
 roast/integration/eval-and-threads.t
