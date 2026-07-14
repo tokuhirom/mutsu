@@ -385,11 +385,16 @@ pub(crate) type ClassAttributeDef = (
 /// hasher's SipHash-over-the-name with a `u32` hash.
 pub(crate) type ReadonlySet = Arc<rustc_hash::FxHashSet<Symbol>>;
 
-/// A set of variable names (`block_declared_vars` / `loop_local_vars`). Every
-/// `my` declaration probes both, so they use the same non-cryptographic hasher
-/// as the env rather than std's SipHash — the keys are short lexical names and
-/// the maps are process-internal, never fed untrusted input.
-pub(crate) type NameSet = rustc_hash::FxHashSet<String>;
+/// A set of variable names (`block_declared_vars` / `loop_local_vars`), keyed by
+/// the interned `Symbol` rather than an owned `String`.
+///
+/// Every `my` declaration probes both sets, and every consumer already holds the
+/// name's `Symbol` (env keys, `CompiledCode::locals_sym`, closure free vars) —
+/// the String keying made each probe hash the name's bytes and `memcmp` them on
+/// a hit, and each insert allocate. A `Symbol` is a `Copy` u32: the hash is
+/// free, the compare is an integer compare, and the (cold) consumers that need
+/// text call `resolve()`.
+pub(crate) type NameSet = rustc_hash::FxHashSet<Symbol>;
 
 /// Per-class plan for the native default constructor
 /// (`try_native_default_construct`): everything about the class shape that the

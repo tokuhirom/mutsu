@@ -1728,7 +1728,7 @@ impl Interpreter {
         let already_loop_local = self
             .loop_local_vars
             .last()
-            .is_some_and(|s| s.contains(name));
+            .is_some_and(|s| s.contains(&name_sym));
         if !self.loop_cond_active
             && !already_loop_local
             && let Some(prev) = self.env().get_sym(name_sym).cloned()
@@ -1786,21 +1786,13 @@ impl Interpreter {
         // Track this variable as declared within the current block scope.
         // BlockScope restoration uses this to avoid propagating block-local
         // variable values back to the outer scope.
-        //
-        // Both sets are keyed by owned `String`s and both survive across loop
-        // iterations, so the `contains` probe (which borrows `name`) keeps a
-        // re-executed declaration from allocating a fresh key per iteration.
-        if let Some(set) = self.block_declared_vars.last_mut()
-            && !set.contains(name)
-        {
-            set.insert(name.to_string());
+        if let Some(set) = self.block_declared_vars.last_mut() {
+            set.insert(name_sym);
         }
         // Track loop-body declarations so a closure created in the body can mark
         // this name as a per-iteration `owned_capture` (see Interpreter::loop_local_vars).
-        if let Some(set) = self.loop_local_vars.last_mut()
-            && !set.contains(name)
-        {
-            set.insert(name.to_string());
+        if let Some(set) = self.loop_local_vars.last_mut() {
+            set.insert(name_sym);
         }
     }
 

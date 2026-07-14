@@ -367,7 +367,7 @@ impl Interpreter {
                 // Variables declared with `my` inside this block should not
                 // propagate their values to the outer scope. Restore the outer
                 // scope's original value instead.
-                if k.with_str(|s| block_declared.contains(s)) {
+                if block_declared.contains(&k) {
                     continue;
                 }
                 restored_env.insert_sym(k, v);
@@ -430,8 +430,8 @@ impl Interpreter {
         // `my` redeclaration of the same name is not marked as readonly by
         // the now-gone binding (`my %h := SetHash.new(...)` inside a block
         // must not leave `%h` readonly in the outer scope).
-        for name in &block_declared {
-            self.unmark_readonly(name);
+        for sym in &block_declared {
+            self.unmark_readonly_sym(*sym);
         }
         // Note: `our`-scoped variables persist in our_vars and are accessible
         // via package-qualified names (e.g., $Pkg::var) after block exit.

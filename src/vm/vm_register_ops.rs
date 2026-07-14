@@ -308,7 +308,7 @@ impl Interpreter {
         };
         cc.free_var_syms
             .iter()
-            .filter(|sym| sym.with_str(|s| self.loop_local_vars.iter().any(|set| set.contains(s))))
+            .filter(|sym| self.loop_local_vars.iter().any(|set| set.contains(*sym)))
             .copied()
             .collect()
     }
@@ -574,10 +574,7 @@ impl Interpreter {
             if s.starts_with('@') || s.starts_with('%') || s.starts_with('&') {
                 continue;
             }
-            let is_loop_local = self
-                .loop_local_vars
-                .iter()
-                .any(|set| set.contains(s.as_str()));
+            let is_loop_local = self.loop_local_vars.iter().any(|set| set.contains(sym));
             // Emit-point slot (§1.3 slot bake, gated): the creator slot this
             // closure actually captures. Falls back to the rposition name
             // search (byte-identical with the gate off / for hand-built cc).

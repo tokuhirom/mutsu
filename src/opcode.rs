@@ -2065,6 +2065,16 @@ impl CompiledCode {
         }
     }
 
+    /// The interned name of local `idx`. Served from the pre-interned table; a
+    /// hand-built chunk that never ran `compute_locals_sym` falls back to
+    /// interning on the spot, so a by-Symbol slot match is never silently missed.
+    pub(crate) fn local_sym(&self, idx: usize) -> Option<Symbol> {
+        match self.locals_sym.get(idx) {
+            Some(sym) => Some(*sym),
+            None => self.locals.get(idx).map(|n| Symbol::intern(n)),
+        }
+    }
+
     /// Pre-intern all local names as Symbols.
     /// The interned `__mutsu_sigilless_alias::<name>` env key of local `idx`.
     /// Served from the pre-interned table; a hand-built chunk that never ran
