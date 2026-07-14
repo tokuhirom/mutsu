@@ -217,6 +217,9 @@ impl Interpreter {
         let idx = stack_len - depth;
         self.caller_env_stack[idx].insert(target_name.to_string(), source_val.clone());
         // Set up binding alias so reads of target_name resolve to source_name
+        // (latched process-wide: the Tier B inline GetLocal fast path relies
+        // on a zero counter to skip resolve_binding — see CALLER_VAR_BINDS).
+        crate::vm::vm_jit::note_caller_var_binding();
         self.var_bindings
             .insert(target_name.to_string(), source_name.to_string());
         // Also update current env

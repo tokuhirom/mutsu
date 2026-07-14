@@ -490,6 +490,14 @@ pub(crate) mod jit_words {
     pub(crate) const KIND_MASK: u64 = (0xFFFF << TAG_SHIFT) | SUB_MASK;
     /// `Kind::Pair` probe pattern (for the `ContainerizePair` fast skip).
     pub(crate) const PAIR_PATTERN: u64 = word_for_kind(Kind::Pair, 0).get();
+    /// `Kind::Bool` probe pattern (payload = 0/1 in the inline bits, outside
+    /// `KIND_MASK`, so one probe covers True and False).
+    pub(crate) const BOOL_PATTERN: u64 = word_for_kind(Kind::Bool, 0).get();
+    /// `Kind::Package` probe pattern (payload = `Symbol` id in the inline
+    /// bits). Package words are payload-free for ownership purposes (the
+    /// symbol id is not refcounted), so the Tier B GetLocal fast path may
+    /// duplicate them as raw bits.
+    pub(crate) const PACKAGE_PATTERN: u64 = word_for_kind(Kind::Package, 0).get();
 
     /// True when duplicating/discarding this word needs no refcount or GC
     /// bookkeeping: small Int, Num, or a payload-free inline kind. The Tier B

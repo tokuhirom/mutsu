@@ -15,6 +15,13 @@ use super::*;
 pub(super) struct JitLayout {
     /// Byte offset of `Interpreter::stack` (a `Vec<Value>`).
     pub(super) stack: i32,
+    /// Byte offset of `Interpreter::locals` (a `Vec<Value>`) — the Tier B
+    /// GetLocal fast path reads slot words in place (ADR-0004 J4d).
+    pub(super) locals: i32,
+    /// Byte offsets of the per-Interpreter gate flags the GetLocal fast path
+    /// loads (both plain `bool` fields).
+    pub(super) atomic_var_seen: i32,
+    pub(super) sigilless_attrs_active: i32,
     /// Byte offsets of the data pointer / length / capacity words inside
     /// `Vec<Value>` (relative to the start of the `Vec`).
     pub(super) vec_ptr: i32,
@@ -60,6 +67,10 @@ pub(super) fn layout() -> Option<&'static JitLayout> {
             let (vec_ptr, vec_len, vec_cap) = probe_vec_layout()?;
             Some(JitLayout {
                 stack: std::mem::offset_of!(Interpreter, stack) as i32,
+                locals: std::mem::offset_of!(Interpreter, locals) as i32,
+                atomic_var_seen: std::mem::offset_of!(Interpreter, atomic_var_seen) as i32,
+                sigilless_attrs_active: std::mem::offset_of!(Interpreter, sigilless_attrs_active)
+                    as i32,
                 vec_ptr,
                 vec_len,
                 vec_cap,

@@ -44,6 +44,37 @@ pub(crate) fn note_user_infix_decl() {
     USER_INFIX_DECLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Process-wide, monotonic count of `ContainerRef` cell words ever packed
+/// (bumped at the single NaN-box encode chokepoint for `Kind::ContainerRef`).
+/// Zero proves no shared `:=`/capture cell exists anywhere in the process, so
+/// the Tier B inline `GetLocal` fast path (vm_jit_tier_b.rs) can skip the
+/// env cell-adoption probe (`exec_get_local_op`'s per-read `env().get_sym`)
+/// outright; nonzero conservatively routes every inline read through the
+/// helper, which re-runs the full interpreter arm. Never decremented — a
+/// program that stops using cells only loses speed, never correctness.
+pub(crate) static CONTAINER_CELLS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Record one `ContainerRef` cell creation (see `CONTAINER_CELLS`).
+#[inline]
+pub(crate) fn note_container_cell() {
+    CONTAINER_CELLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Process-wide, monotonic count of `$CALLER::x := ...` variable-binding
+/// aliases ever created (`Interpreter::var_bindings` inserts). Zero proves
+/// `resolve_binding` is a no-op everywhere, letting the Tier B inline
+/// `GetLocal` fast path skip it; same conservative monotonic contract as
+/// [`CONTAINER_CELLS`].
+pub(crate) static CALLER_VAR_BINDS: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Record one caller-variable binding registration (see `CALLER_VAR_BINDS`).
+#[inline]
+pub(crate) fn note_caller_var_binding() {
+    CALLER_VAR_BINDS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Native entry signature: `(interp, code, compiled_fns) -> status`.
 #[cfg(feature = "jit")]
 pub(crate) type JitEntryFn = unsafe extern "C" fn(
@@ -167,40 +198,66 @@ pub(crate) fn try_enter_range(
     if !jit_enabled() || start >= end || end > code.ops.len() {
         return None;
     }
-    let st = {
-        let mut ranges = code.jit.ranges.lock().unwrap();
-        let key = (start as u32, end as u32);
-        match ranges.iter().find(|(k, _)| *k == key) {
-            Some((_, s)) => s.clone(),
-            None => {
-                let s = std::sync::Arc::new(crate::opcode::JitRangeState::default());
-                ranges.push((key, s.clone()));
-                s
-            }
+    // Settled-range fast path (ADR-0004 J4d): a range whose entry word is
+    // final is published in the lock-free `range_cache`, so the steady state
+    // of a hot loop pays a couple of atomic loads here instead of the mutex +
+    // linear scan below (which profiled at ~12% of a hot numeric loop).
+    let cache_key = (((start as u64) << 32) | end as u64).wrapping_add(1);
+    let mut entry = 0u64;
+    for (k, e) in &code.jit.range_cache {
+        // Acquire pairs with the publishing store: a visible key implies the
+        // entry word (stored before the key) is visible too.
+        if k.load(Ordering::Acquire) == cache_key {
+            entry = e.load(Ordering::Relaxed);
+            break;
         }
-    };
-    let entry = st.entry.load(Ordering::Acquire);
-    let f: JitEntryFn = if entry == 0 {
-        let calls = st.calls.fetch_add(1, Ordering::Relaxed) + 1;
-        if calls < jit_threshold() {
-            return None;
-        }
-        match super::vm_jit_compile::compile_range(code, start, end) {
-            Some(f) => {
-                st.entry.store(f as usize as u64, Ordering::Release);
-                crate::vm::vm_stats::record_jit_compile();
-                f
-            }
-            None => {
-                st.entry.store(JIT_ENTRY_BAILOUT, Ordering::Release);
-                return None;
-            }
-        }
-    } else if entry == JIT_ENTRY_BAILOUT {
+    }
+    if entry == JIT_ENTRY_BAILOUT {
         return None;
-    } else {
+    }
+    let f: JitEntryFn = if entry != 0 {
         // Same soundness argument as `try_enter`: 0 -> fn-pointer only.
         unsafe { std::mem::transmute::<usize, JitEntryFn>(entry as usize) }
+    } else {
+        let st = {
+            let mut ranges = code.jit.ranges.lock().unwrap();
+            let key = (start as u32, end as u32);
+            match ranges.iter().find(|(k, _)| *k == key) {
+                Some((_, s)) => s.clone(),
+                None => {
+                    let s = std::sync::Arc::new(crate::opcode::JitRangeState::default());
+                    ranges.push((key, s.clone()));
+                    s
+                }
+            }
+        };
+        let entry = st.entry.load(Ordering::Acquire);
+        if entry == 0 {
+            let calls = st.calls.fetch_add(1, Ordering::Relaxed) + 1;
+            if calls < jit_threshold() {
+                return None;
+            }
+            match super::vm_jit_compile::compile_range(code, start, end) {
+                Some(f) => {
+                    st.entry.store(f as usize as u64, Ordering::Release);
+                    crate::vm::vm_stats::record_jit_compile();
+                    publish_range_entry(code, cache_key, f as usize as u64);
+                    f
+                }
+                None => {
+                    st.entry.store(JIT_ENTRY_BAILOUT, Ordering::Release);
+                    publish_range_entry(code, cache_key, JIT_ENTRY_BAILOUT);
+                    return None;
+                }
+            }
+        } else if entry == JIT_ENTRY_BAILOUT {
+            publish_range_entry(code, cache_key, JIT_ENTRY_BAILOUT);
+            return None;
+        } else {
+            publish_range_entry(code, cache_key, entry);
+            // Same soundness argument as `try_enter`: 0 -> fn-pointer only.
+            unsafe { std::mem::transmute::<usize, JitEntryFn>(entry as usize) }
+        }
     };
     crate::vm::vm_stats::record_jit_entry();
     // The interpreter loop polls the GC safepoint once per opcode; a native
@@ -218,6 +275,29 @@ pub(crate) fn try_enter_range(
             Some(Err(e))
         }
         _ => Some(Ok(())),
+    }
+}
+
+/// Publish a settled range entry (compiled fn pointer or `JIT_ENTRY_BAILOUT`)
+/// into the chunk's lock-free `range_cache`. Slot claiming is serialized by
+/// taking the `ranges` mutex; the entry word is stored *before* the key is
+/// released so a reader that acquires the key always sees the entry. A full
+/// cache (more settled ranges than slots) or an already-published key is
+/// fine — the range just keeps resolving through the mutex path.
+#[cfg(feature = "jit")]
+fn publish_range_entry(code: &CompiledCode, cache_key: u64, entry: u64) {
+    use std::sync::atomic::Ordering;
+    let _guard = code.jit.ranges.lock().unwrap();
+    for (k, e) in &code.jit.range_cache {
+        let cur = k.load(Ordering::Relaxed);
+        if cur == cache_key {
+            return; // another thread already published it
+        }
+        if cur == 0 {
+            e.store(entry, Ordering::Relaxed);
+            k.store(cache_key, Ordering::Release);
+            return;
+        }
     }
 }
 
