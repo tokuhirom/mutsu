@@ -180,16 +180,13 @@ impl Interpreter {
             // writes through. Box the named local into a shared `ContainerRef`
             // cell (same scope as `$c`, so sharing the slot's cell suffices) and
             // store that cell as the positional element.
-            if let ValueView::Capture {
-                positional: p,
-                named: nm,
+            if let ValueView::VarRef {
+                name: source_name,
+                value: inner,
+                ..
             } = val.view()
-                && p.is_empty()
-                && let Some(ValueView::Str(source_name)) =
-                    nm.get("__mutsu_varref_name").map(Value::view)
-                && let Some(inner) = nm.get("__mutsu_varref_value")
             {
-                let source_name = source_name.to_string();
+                let source_name = source_name.resolve();
                 let inner = inner.clone();
                 positional.push(self.capture_var_cell(code, &source_name, inner));
                 continue;
@@ -199,16 +196,13 @@ impl Interpreter {
                     // A named scalar-var element (`\(:$a)`): the value is a
                     // WrapVarRef-tagged capture — box the named local so `$c<a>`
                     // aliases `$a` and `$c<a>++` writes through.
-                    if let ValueView::Capture {
-                        positional: p,
-                        named: nm,
+                    if let ValueView::VarRef {
+                        name: source_name,
+                        value: inner,
+                        ..
                     } = v.view()
-                        && p.is_empty()
-                        && let Some(ValueView::Str(source_name)) =
-                            nm.get("__mutsu_varref_name").map(Value::view)
-                        && let Some(inner) = nm.get("__mutsu_varref_value")
                     {
-                        let source_name = source_name.to_string();
+                        let source_name = source_name.resolve();
                         let inner = inner.clone();
                         let cell = self.capture_var_cell(code, &source_name, inner);
                         named.insert(k.clone(), cell);

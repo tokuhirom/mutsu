@@ -768,9 +768,14 @@ impl Interpreter {
                     && !self.fatal_mode
                     && self.var_type_constraint_fast(name_str).is_none()
                     && !self.is_readonly(name_str)
+                    // A `VarRef` RHS (a `:=` bind of `$` to a variable) must reach
+                    // the general path, which is where the wrapper is unwrapped and
+                    // its `bind_source` recorded; storing the wrapper itself into the
+                    // env slot would corrupt `$`. It used to be caught by the
+                    // `Capture` arm here, back when a varref *was* a `Capture`.
                     && !matches!(
                         self.stack.last().map(Value::view),
-                        Some(ValueView::Capture { .. })
+                        Some(ValueView::Capture { .. } | ValueView::VarRef { .. })
                     )
                     && !matches!(
                         self.env().get(name_str).map(Value::view),
@@ -965,23 +970,10 @@ impl Interpreter {
                     )));
                 }
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
-                let (raw_val, bind_source) =
-                    if let ValueView::Capture { positional, named } = raw_val.view() {
-                        if positional.is_empty() {
-                            if let (Some(ValueView::Str(source_name)), Some(inner)) = (
-                                named.get("__mutsu_varref_name").map(Value::view),
-                                named.get("__mutsu_varref_value"),
-                            ) {
-                                (inner.clone(), Some(source_name.to_string()))
-                            } else {
-                                (raw_val, None)
-                            }
-                        } else {
-                            (raw_val, None)
-                        }
-                    } else {
-                        (raw_val, None)
-                    };
+                let (raw_val, bind_source) = match raw_val.as_varref() {
+                    Some((source_name, inner, _)) => (inner.clone(), Some(source_name.resolve())),
+                    None => (raw_val, None),
+                };
                 let mut val = if raw_mode && name.starts_with('@') {
                     // Constants with @ sigil coerce to List (not Array).
                     // `constant @x = 42` gives `(42,)`, not `[42]`.

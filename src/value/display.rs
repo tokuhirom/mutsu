@@ -353,6 +353,9 @@ fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
 impl Value {
     pub(crate) fn to_string_value(&self) -> String {
         match self.view() {
+            // A `VarRef` is a transient binder wrapper: it stringifies as the
+            // variable's value.
+            ValueView::VarRef { value, .. } => value.to_string_value(),
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
             ValueView::Num(f) => {

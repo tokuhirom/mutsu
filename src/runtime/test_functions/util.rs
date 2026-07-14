@@ -16,6 +16,9 @@ impl Interpreter {
         // Two calling conventions:
         //   1. doesn't-hang("code", $desc, ...)    -- Str first arg
         //   2. doesn't-hang(\($exe, '-e', $code), $desc, ...)  -- Capture first arg
+        // A variable argument (`doesn't-hang($capture, ...)`) arrives wrapped in a
+        // `VarRef`; the calling convention is decided by the value it wraps.
+        let first_arg = first_arg.unwrap_varref().clone();
         let (exe, cmd_args) = if let ValueView::Capture { positional, .. } = first_arg.view() {
             // Capture form: first element is exe, rest are args
             let exe_val = positional.first().cloned().unwrap_or(Value::NIL);

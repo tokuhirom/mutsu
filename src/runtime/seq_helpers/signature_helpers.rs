@@ -76,6 +76,9 @@ impl Interpreter {
     pub(in crate::runtime) fn signature_capture_like(
         value: &Value,
     ) -> Option<(Vec<Value>, HashMap<String, Value>)> {
+        // A variable argument arrives wrapped in a `VarRef` (see `Value::varref`);
+        // the signature is matched against the *value*, not the wrapper.
+        let value = value.unwrap_varref();
         match value.view() {
             ValueView::Capture { positional, named } => {
                 Some(((*positional).clone(), (*named).clone()))

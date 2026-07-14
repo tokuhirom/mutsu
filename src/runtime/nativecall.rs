@@ -298,12 +298,9 @@ fn pointer_address(v: &Value) -> usize {
         }
         ValueView::Scalar(inner) => pointer_address(inner),
         ValueView::ContainerRef(cell) => cell.lock().ok().map(|g| pointer_address(&g)).unwrap_or(0),
-        // An `is rw` argument arrives as a varref Capture carrying the bound
+        // An `is rw` argument arrives as a `VarRef` carrying the bound
         // variable's current value.
-        ValueView::Capture { named, .. } => match named.get("__mutsu_varref_value") {
-            Some(inner) => pointer_address(inner),
-            None => 0,
-        },
+        ValueView::VarRef { value, .. } => pointer_address(value),
         _ => 0,
     }
 }
@@ -324,11 +321,7 @@ fn write_pointer_address(v: &Value, addr: usize) {
                 write_pointer_address(&g, addr);
             }
         }
-        ValueView::Capture { named, .. } => {
-            if let Some(inner) = named.get("__mutsu_varref_value") {
-                write_pointer_address(inner, addr);
-            }
-        }
+        ValueView::VarRef { value, .. } => write_pointer_address(value, addr),
         _ => {}
     }
 }
@@ -404,10 +397,7 @@ fn resolve_arg(v: &Value) -> Value {
     match v.view() {
         ValueView::Scalar(inner) => resolve_arg(inner),
         ValueView::ContainerRef(cell) => cell.lock().map(|g| resolve_arg(&g)).unwrap_or(Value::NIL),
-        ValueView::Capture { named, .. } => match named.get("__mutsu_varref_value") {
-            Some(inner) => resolve_arg(inner),
-            None => v.clone(),
-        },
+        ValueView::VarRef { value, .. } => resolve_arg(value),
         _ => v.clone(),
     }
 }

@@ -97,6 +97,13 @@ pub enum ValueView<'a> {
         positional: &'a Vec<Value>,
         named: &'a HashMap<String, Value>,
     },
+    /// See [`ValueRepr::VarRef`]: a transient argument wrapper carrying the name
+    /// of the variable the value was read from.
+    VarRef {
+        name: Symbol,
+        value: &'a Value,
+        index: Option<u32>,
+    },
     Uni(&'a UniData),
     Proxy {
         fetcher: &'a Value,

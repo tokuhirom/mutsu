@@ -18,17 +18,7 @@ impl Interpreter {
         let mut positional: Vec<String> = Vec::new();
         let mut first_arg_io_path = false;
         for (idx, arg) in args.iter().enumerate() {
-            let arg = match arg.view() {
-                ValueView::Capture { named, .. }
-                    if matches!(
-                        named.get("__mutsu_varref_name").map(Value::view),
-                        Some(ValueView::Str(_))
-                    ) && named.contains_key("__mutsu_varref_value") =>
-                {
-                    named.get("__mutsu_varref_value").unwrap_or(arg)
-                }
-                _ => arg,
-            };
+            let arg = arg.unwrap_varref();
             match arg.view() {
                 ValueView::Hash(_) | ValueView::Pair(_, _) => {}
                 ValueView::Instance {

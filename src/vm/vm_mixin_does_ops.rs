@@ -418,13 +418,13 @@ impl Interpreter {
         // with `$var`, giving Raku's write-through semantics: `$pair.value = X`
         // updates `$var`, and `$pair.value<k> = v` writes through to `$var`'s
         // backing Array/Hash. (See S02:1704 / roast S02-types/pair.t.)
-        if let ValueView::Capture { positional, named } = right.view()
-            && positional.is_empty()
-            && let Some(ValueView::Str(source_name)) =
-                named.get("__mutsu_varref_name").map(Value::view)
-            && let Some(inner) = named.get("__mutsu_varref_value")
+        if let ValueView::VarRef {
+            name: source_name,
+            value: inner,
+            ..
+        } = right.view()
         {
-            let source_name = source_name.to_string();
+            let source_name = source_name.resolve();
             let inner = inner.clone();
             right = self.capture_var_cell(code, &source_name, inner);
         }

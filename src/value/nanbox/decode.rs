@@ -136,6 +136,14 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 named: c.named,
             }
         }
+        Kind::VarRef => {
+            let r = Arc::unwrap_or_clone(unsafe { take_arc::<VarRefBox>(bits) });
+            ValueRepr::VarRef {
+                name: r.name,
+                value: Box::new(r.value),
+                index: r.index,
+            }
+        }
         Kind::Proxy => {
             let p = Arc::unwrap_or_clone(unsafe { take_arc::<ProxyBox>(bits) });
             ValueRepr::Proxy {

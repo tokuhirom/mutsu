@@ -3176,10 +3176,11 @@ impl Interpreter {
             && let Some(source_name) = Self::var_target_from_meta_value(&target)
         {
             let source_value = self.env.get(&source_name).cloned().unwrap_or(Value::NIL);
-            let mut named = std::collections::HashMap::new();
-            named.insert("__mutsu_varref_name".to_string(), Value::str(source_name));
-            named.insert("__mutsu_varref_value".to_string(), source_value);
-            return Ok(Value::capture(Vec::new(), named));
+            return Ok(Value::varref(
+                Symbol::intern(&source_name),
+                source_value,
+                None,
+            ));
         }
 
         // .join on LazyList

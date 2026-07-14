@@ -36,6 +36,9 @@ impl Value {
 
     pub(crate) fn truthy(&self) -> bool {
         match self.view() {
+            // A `VarRef` is a transient binder wrapper: it is as true as the
+            // variable's value.
+            ValueView::VarRef { value, .. } => value.truthy(),
             ValueView::Bool(b) => b,
             ValueView::Int(i) => i != 0,
             ValueView::BigInt(n) => !n.is_zero(),

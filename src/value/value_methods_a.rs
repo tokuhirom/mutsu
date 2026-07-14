@@ -55,6 +55,31 @@ impl Value {
             named: Box::new(named),
         })
     }
+    /// A named variable reference (see [`ValueRepr::VarRef`]): the value `value`
+    /// tagged with the name of the variable it was read from, so the binder can
+    /// alias the caller's container for an `is rw` / `is raw` / `:=` target.
+    pub fn varref(name: Symbol, value: Value, index: Option<u32>) -> Self {
+        Value::from_repr(ValueRepr::VarRef {
+            name,
+            value: Box::new(value),
+            index,
+        })
+    }
+    /// The `(name, value, index)` of a [`ValueRepr::VarRef`], or `None`.
+    pub fn as_varref(&self) -> Option<(Symbol, &Value, Option<u32>)> {
+        match self.view() {
+            ValueView::VarRef { name, value, index } => Some((name, value, index)),
+            _ => None,
+        }
+    }
+    /// The value a [`ValueRepr::VarRef`] wraps, or `self` when it is not one.
+    /// The binder strips the wrapper here once it has taken the name it needs.
+    pub fn unwrap_varref(&self) -> &Value {
+        match self.view() {
+            ValueView::VarRef { value, .. } => value,
+            _ => self,
+        }
+    }
     /// Create a BigRat value. The numerator/denominator are boxed (the variant
     /// stores them behind `Box` to keep `Value` small).
     pub fn bigrat(num: NumBigInt, den: NumBigInt) -> Self {

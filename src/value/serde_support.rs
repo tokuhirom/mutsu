@@ -117,6 +117,10 @@ enum SerJunctionKind {
 
 fn value_to_ser(v: &Value) -> Result<SerValue, String> {
     match v.view() {
+        // A `VarRef` is a transient binder wrapper that never reaches a
+        // long-lived value (a thread payload, a phaser capture): if one somehow
+        // does, serialize the variable's value.
+        ValueView::VarRef { value, .. } => value_to_ser(value),
         ValueView::Int(n) => Ok(SerValue::Int(n)),
         ValueView::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
         ValueView::Num(n) => Ok(SerValue::Num(n)),

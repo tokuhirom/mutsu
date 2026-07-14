@@ -1109,6 +1109,18 @@ pub(in crate::value) enum ValueRepr {
         #[allow(clippy::box_collection)]
         named: Box<HashMap<String, Value>>,
     },
+    /// A *named variable reference*: an argument (or pair value, or `:=` RHS)
+    /// tagged with the name of the variable it was read from, so that `is rw` /
+    /// `is raw` binding, `:=` and `\($a)` can alias the caller's container
+    /// rather than snapshot its value. Produced by `OpCode::WrapVarRef`, and
+    /// stripped again by the binder (`unwrap_varref_value`) — so it is a
+    /// *transient* wrapper that never reaches user-visible value space.
+    VarRef {
+        name: Symbol,
+        value: Box<Value>,
+        /// Source-element index, for a reference into a slurpy's element.
+        index: Option<u32>,
+    },
     /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
     /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".
     /// `text` is the normalized string. Boxed to keep `Value` small.

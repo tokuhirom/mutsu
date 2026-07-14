@@ -116,6 +116,7 @@ impl Value {
                     v.gc_trace(visit);
                 }
             }
+            ValueView::VarRef { value, .. } => value.gc_trace(visit),
             ValueView::Seq(items)
             | ValueView::HyperSeq(items)
             | ValueView::RaceSeq(items)

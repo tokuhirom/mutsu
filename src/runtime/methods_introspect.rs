@@ -8,6 +8,12 @@ impl Interpreter {
         target: &Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // A `VarRef` is a transient binder wrapper, not a type of its own:
+        // introspect the variable's value.
+        if let ValueView::VarRef { value, .. } = target.view() {
+            let inner = value.clone();
+            return self.dispatch_what(&inner, args);
+        }
         if let Some(info) = self.container_type_metadata(target) {
             if let Some(declared) = info.declared_type {
                 return Ok(Value::package(Symbol::intern(&declared)));
@@ -31,6 +37,7 @@ impl Interpreter {
             }
         }
         let type_name: &str = match target.view() {
+            ValueView::VarRef { .. } => unreachable!("unwrapped above"),
             ValueView::Int(_) => "Int",
             ValueView::BigInt(_) => "Int",
             ValueView::Num(_) => "Num",

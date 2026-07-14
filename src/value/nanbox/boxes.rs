@@ -64,6 +64,25 @@ pub(in crate::value) struct CaptureBox {
     pub(in crate::value) named: Box<HashMap<String, Value>>,
 }
 
+/// Payload of `VarRef`: a call argument (or pair value / bind RHS) that carries
+/// the *name* of the variable it came from, so `is rw` / `is raw` binding, `:=`,
+/// and `\($a)` can alias the caller's container instead of copying its value.
+///
+/// This was previously encoded as a `Capture` whose `named` map held the magic
+/// keys `__mutsu_varref_{name,value,index}` — which cost four `String`
+/// allocations, a `HashMap` + `RawTable`, an empty positional `Vec` and two
+/// SipHashes on *every* variable passed as an argument (~28% of `bench-tak`'s
+/// allocator traffic). A named variable reference is a first-class concept in
+/// Raku's binder, so it gets a first-class representation.
+#[derive(Debug, Clone)]
+pub(in crate::value) struct VarRefBox {
+    pub(in crate::value) name: Symbol,
+    pub(in crate::value) value: Value,
+    /// Index of the caller argument this reference came from, when the source is
+    /// an element of a slurpy (`*@v is rw`) rather than a plain variable.
+    pub(in crate::value) index: Option<u32>,
+}
+
 #[derive(Debug, Clone)]
 pub(in crate::value) struct ProxyBox {
     pub(in crate::value) fetcher: Box<Value>,
@@ -138,6 +157,7 @@ const _: () = {
         GenericRangeBox,
         VersionBox,
         CaptureBox,
+        VarRefBox,
         ProxyBox,
         ParametricRoleBox,
         RoutineBox,

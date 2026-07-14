@@ -161,21 +161,14 @@ impl Interpreter {
     /// and detach it. A `$`-scalar source (`my $aref = [0]; f($aref)`) already
     /// shares the array by reference (`$aref[0]++` propagates without promotion),
     /// and a non-variable literal (`f([1,2])`) has no caller to share with — both
-    /// must keep the fast path. A variable arg reaches the binder as a
-    /// `__mutsu_varref_*` capture, so peek inside without cloning.
+    /// must keep the fast path. A variable arg reaches the binder as a `VarRef`,
+    /// so peek inside without cloning.
     pub(super) fn arg_is_container_value(arg: &Value) -> bool {
-        let ValueView::Capture { positional, named } = arg.view() else {
+        let ValueView::VarRef { name, value, .. } = arg.view() else {
             return false;
         };
-        positional.is_empty()
-            && matches!(
-                named.get("__mutsu_varref_name").map(Value::view),
-                Some(ValueView::Str(name)) if name.starts_with('@') || name.starts_with('%')
-            )
-            && matches!(
-                named.get("__mutsu_varref_value").map(Value::view),
-                Some(ValueView::Array(..)) | Some(ValueView::Hash(..))
-            )
+        (name.starts_with("@") || name.starts_with("%"))
+            && matches!(value.view(), ValueView::Array(..) | ValueView::Hash(..))
     }
 
     /// Method analogue of `call_shares_container_into_scalar_param`: true when
