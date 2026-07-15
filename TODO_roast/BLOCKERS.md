@@ -48,7 +48,7 @@ Definitions of the classifications:
 
 ## Current assumptions
 
-- The whitelist stands at **1412 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **51** files not whitelisted.
+- The whitelist stands at **1413 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **50** files not whitelisted.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -71,7 +71,6 @@ noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `integration/advent2012-day15.t` | 9/11 | PASS ★ | statement-form phasers create their own scope (`$best` in `NEXT (state $best) max= $_;` is not visible from `LAST`) / `INIT` runs after the mainline |
 | `integration/99problems-21-to-30.t` | aborts at 6/15 | PASS ★ | not yet root-caused (post-#4510/#4516 re-measure) |
 | `integration/99problems-31-to-40.t` | aborts at 44/67 | PASS ★ | not yet root-caused |
 | `integration/99problems-41-to-50.t` | fails | PASS ★ | P47 needs parameterized `multi rule expr($p)` (grammar rules taking arguments); P41/P46 fixed in #4510 |

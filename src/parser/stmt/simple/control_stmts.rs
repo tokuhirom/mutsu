@@ -214,7 +214,21 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
         block(rest)?
     } else {
         let (r, s) = statement(rest)?;
-        (r, vec![s])
+        // A statement-form LOOP phaser shares the enclosing block's lexical
+        // scope: `NEXT (state $best) max= $_;` declares `$best` in the loop
+        // body, visible to a `LAST` in the same block (advent2012-day15.t).
+        // Mark the form by wrapping in SyntheticBlock (which compiles
+        // scope-less); `expand_loop_phasers` splices it inline instead of
+        // wrapping it in a scoped Block. Other phaser kinds keep the plain
+        // single-statement body (their consumers pattern-match its shape).
+        if matches!(
+            kind,
+            PhaserKind::First | PhaserKind::Next | PhaserKind::Last
+        ) {
+            (r, vec![Stmt::SyntheticBlock(vec![s])])
+        } else {
+            (r, vec![s])
+        }
     };
     // `BEGIN $*RAKU.version` (and `$*PERL.version`) is a compile-time constant
     // equal to the language version of the current compilation unit. The parser
