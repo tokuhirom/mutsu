@@ -162,7 +162,7 @@ impl Interpreter {
             let v = cur.as_ref().unwrap_or(val);
             let next = match v.view() {
                 ValueView::Instance { attributes, .. } => return Some(attributes.clone()),
-                ValueView::Mixin(inner, _) => Value::clone(&inner),
+                ValueView::Mixin(inner, _) => Value::clone(inner),
                 ValueView::ContainerRef(_) => v.deref_container(),
                 _ => return None,
             };
