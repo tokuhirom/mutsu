@@ -278,8 +278,11 @@ impl Interpreter {
         // (shape-only data, invalidated with the dispatch caches) instead of
         // being re-collected on every bless.
         let plan = self.native_ctor_plan(class_name);
+        let cn_resolved = class_name.as_str();
         let mut attributes = AttrMap::new();
-        for (attr_name, _is_public, default, _is_rw, _, sigil, _) in plan.class_attrs.iter() {
+        for ((attr_name, _is_public, default, _is_rw, _, sigil, _), &attr_sym) in
+            plan.class_attrs.iter().zip(plan.attr_syms.iter())
+        {
             let val = if let Some(Expr::Literal(lit_val)) = default {
                 // Fast path: simple literal defaults (e.g. native type
                 // defaults like Int(0)) don't need interpretation.
@@ -291,13 +294,7 @@ impl Interpreter {
                 // not Nil (matches `dispatch_new`). Leaving it Nil makes
                 // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
                 let mut arr = Value::real_array(Vec::new());
-                let tc = self
-                    .registry()
-                    .classes
-                    .get(&class_name.resolve())
-                    .and_then(|cd| cd.attribute_types.get(attr_name))
-                    .cloned();
-                if let Some(tc) = tc {
+                if let Some(tc) = plan.type_constraints.get(attr_name).cloned() {
                     arr = self.tag_container_metadata(
                         arr,
                         super::ContainerTypeInfo {
@@ -312,10 +309,10 @@ impl Interpreter {
                 // A `%`-sigil attribute with no default is an empty Hash.
                 Value::hash(HashMap::new())
             } else {
-                // Native types have zero/empty defaults instead of Nil
-                let type_constraint =
-                    self.get_attr_type_constraint(&class_name.resolve(), attr_name);
-                match type_constraint.as_deref() {
+                // Native types have zero/empty defaults instead of Nil.
+                // The plan's type_constraints carry the same MRO-wide map
+                // `get_attr_type_constraint` would walk per attribute.
+                match plan.type_constraints.get(attr_name).map(String::as_str) {
                     Some(
                         "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
                         | "uint32" | "uint64" | "byte" | "atomicint",
@@ -325,16 +322,25 @@ impl Interpreter {
                     _ => Value::NIL,
                 }
             };
-            attributes.insert(attr_name.clone(), val);
+            attributes.insert(attr_sym, val);
         }
-        // Override with named args from bless call
+        // Override with named args from bless call. A key that names a declared
+        // attribute reuses its pre-interned Symbol (the common case — `|%_`
+        // passthrough in a user `new`); anything else interns as before.
         for arg in &args {
             if let ValueView::Pair(key, value) = arg.view() {
-                attributes.insert(key.clone(), value.clone());
+                match plan
+                    .class_attrs
+                    .iter()
+                    .position(|(n, ..)| n.as_str() == &**key)
+                {
+                    Some(i) => attributes.insert(plan.attr_syms[i], value.clone()),
+                    None => attributes.insert(key.clone(), value.clone()),
+                };
             }
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
-        self.apply_container_attribute_defaults(&class_name.resolve(), &mut attributes);
+        self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
         // Build the instance BEFORE the BUILD/TWEAK phases and thread its shared
         // attribute cell through them (raku semantics: `self` inside BUILD/TWEAK
         // IS the constructed object — same identity, mutations through a stored
