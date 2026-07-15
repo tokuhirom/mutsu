@@ -154,7 +154,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::trace::trace_log!(
             "vm",
