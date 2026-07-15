@@ -147,10 +147,11 @@ impl Interpreter {
         if local_name.starts_with('!')
             && local_name.len() > 1
             && let Some(self_val) = self.get_env_with_main_alias("self")
-            && !matches!(
-                self_val.view(),
-                ValueView::Instance { .. } | ValueView::Mixin(..)
-            )
+            // Read through a ContainerRef: `$outer := self` rewrites the frame's
+            // `self` into the bind's shared cell, but it still holds the instance.
+            && !self_val.with_deref(|v| {
+                matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
+            })
         {
             // self is a type object - determine class name for error message
             let class_name = match self_val.view() {
