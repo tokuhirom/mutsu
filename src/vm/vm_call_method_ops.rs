@@ -123,20 +123,20 @@ impl Interpreter {
             return None;
         }
         let cn = class_name.resolve();
-        // A class-locally-defined method of this name overrides the accessor, so
-        // bail to full dispatch. A method that comes ONLY from a composed role
-        // does NOT: class entities (here, the public attribute accessor) are
-        // prioritized over role entities, so the fast accessor read proceeds
-        // (6.c S14-roles/attributes.t "Class prioritization").
-        if self.has_class_local_method(&cn, method) {
-            return None;
-        }
-        // Only a *public* accessor reads through the fast path. Gating on this
-        // first is essential: a private attribute (`has $!secret`) is stored
-        // under the `secret!` key, so reading it by the bare name must fall
-        // through to the interpreter (which denies the access) rather than
-        // leaking the private value.
-        if !self.has_public_accessor(&cn, method) {
+        // The fast accessor read proceeds only when the public attribute
+        // accessor wins the per-MRO-level race against user methods of the
+        // same name: an explicit method at the same or a more-derived level
+        // overrides the accessor (bail to full dispatch), while a child's
+        // accessor shadows a parent's method and a class accessor beats a
+        // role-composed method at its own level (6.c S14-roles/attributes.t
+        // "Class prioritization"). This gate also keeps private attributes
+        // private: `has $!secret` is stored under the `secret!` key and never
+        // reports as a public accessor, so reading it by the bare name falls
+        // through to the interpreter (which denies the access).
+        if !matches!(
+            self.resolve_user_method_or_accessor(&cn, method),
+            Some(crate::runtime::UserMethodOrAccessor::Accessor)
+        ) {
             return None;
         }
         // Public accessor confirmed. Read its backing value, stored under the

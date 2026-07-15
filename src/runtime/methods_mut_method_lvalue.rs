@@ -876,8 +876,19 @@ impl Interpreter {
             }
         };
 
-        let method_def = if let Some(def) =
-            self.resolve_method(&class_name.resolve(), method, &method_args)
+        // When the public attribute accessor wins the per-MRO-level race
+        // against user methods of this name (a child's accessor shadows a
+        // parent's explicit method), assignment must go through the accessor
+        // branch below, not the shadowed method (which would reject with
+        // "not rw" when the parent method lacks `is rw`).
+        let accessor_wins = method_args.is_empty()
+            && matches!(
+                self.resolve_user_method_or_accessor(&class_name.resolve(), method),
+                Some(UserMethodOrAccessor::Accessor)
+            );
+        let method_def = if let Some(def) = (!accessor_wins)
+            .then(|| self.resolve_method(&class_name.resolve(), method, &method_args))
+            .flatten()
         {
             def
         } else if method_args.is_empty() {
