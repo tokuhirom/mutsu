@@ -295,8 +295,19 @@ impl Interpreter {
                             decoded.as_deref(),
                         )
                     };
+                    // Junction autothreading happens in the slow dispatch
+                    // (maybe_autothread_func_call), which this cache hit
+                    // bypasses. A Junction in a positional slot of a mixed
+                    // signature must still thread, so skip the fast path
+                    // (named-only signatures never autothread, but the scan
+                    // is one view check per arg either way).
+                    let has_junction = self.stack.len() >= arity_usize
+                        && self.stack[self.stack.len() - arity_usize..]
+                            .iter()
+                            .any(|v| matches!(v.view(), ValueView::Junction { .. }));
                     if self.stack.len() >= arity_usize
                         && !named_share
+                        && !has_junction
                         && !Self::call_shares_container_into_scalar_param(
                             cf,
                             &self.stack[self.stack.len() - arity_usize..],
@@ -313,7 +324,9 @@ impl Interpreter {
                         if cl.is_some() {
                             loan_env!(self, set_pending_callsite_line(cl));
                         }
-                        let result = self.call_compiled_function_light(cf, &args, compiled_fns);
+                        let name_str = Self::const_str(code, name_idx);
+                        let result =
+                            self.call_compiled_function_light(cf, &args, compiled_fns, name_str);
                         self.recycle_locals(args);
                         self.stack.push(result?);
                         // Slice F: drain captured-outer writes through to this
@@ -374,11 +387,17 @@ impl Interpreter {
                             &args,
                             decoded_sources.as_deref(),
                         );
+                        // A Junction arg must reach the slow dispatch, which
+                        // autothreads it (this cache hit bypasses that check).
+                        let has_junction = args
+                            .iter()
+                            .any(|v| matches!(v.view(), ValueView::Junction { .. }));
                         let result = if !share_into_scalar
                             && !named_share
+                            && !has_junction
                             && Self::is_light_call_eligible(&cf, name_str)
                         {
-                            self.call_compiled_function_light(&cf, &args, compiled_fns)
+                            self.call_compiled_function_light(&cf, &args, compiled_fns, name_str)
                         } else if !share_into_scalar
                             && !named_share
                             && Self::is_positional_light_call_eligible(&cf, name_str)
@@ -1103,7 +1122,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result = self.call_compiled_function_light(cf, &args, compiled_fns);
+                    let result = self.call_compiled_function_light(cf, &args, compiled_fns, name);
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }

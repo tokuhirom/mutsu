@@ -3690,14 +3690,35 @@ pub(crate) type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>;
 /// Precomputed bind plan for the light named-call path: what
 /// `call_compiled_function_light`'s binding loop needs per call, derived once
 /// per `CompiledFunction` instead of re-deriving match keys / locals slots /
-/// env-mirror gates from strings on every call.
+/// env-mirror gates from strings on every call. Built whenever the signature
+/// has at least one named parameter (all-named or mixed positional+named).
 #[derive(Clone, Debug)]
 pub(crate) struct NamedCallPlan {
-    /// One entry per (named) parameter, in `param_defs` order.
-    pub(crate) params: Vec<NamedParamBind>,
+    /// One entry per parameter, in `param_defs` order.
+    pub(crate) params: Vec<LightParamBind>,
     /// Whether the body reads `@_` (has a `@_` local), so the caller's
     /// positional args must be materialized into it.
     pub(crate) uses_arg_array: bool,
+    /// Number of positional (non-named) parameters, for arity errors.
+    pub(crate) positional_count: usize,
+}
+
+/// One parameter's bind entry in a [`NamedCallPlan`].
+#[derive(Clone, Debug)]
+pub(crate) enum LightParamBind {
+    Positional(PositionalParamBind),
+    Named(NamedParamBind),
+}
+
+/// Per-positional-parameter entry of a [`NamedCallPlan`] (mixed signatures).
+#[derive(Clone, Debug)]
+pub(crate) struct PositionalParamBind {
+    /// The parameter's locals slot (by `pd.name`), when it has one.
+    pub(crate) slot: Option<usize>,
+    /// Whether the bound value must also be written into the overlay env.
+    pub(crate) needs_env: bool,
+    /// Whether the parameter is required (missing => arity error).
+    pub(crate) required: bool,
 }
 
 /// Per-parameter entry of a [`NamedCallPlan`].
@@ -3830,7 +3851,7 @@ impl CompiledFunction {
 
     /// Pre-compute the light named-call bind plan (see [`NamedCallPlan`]).
     pub(crate) fn precompute_named_call_plan(&mut self) {
-        if self.param_defs.is_empty() || !self.param_defs.iter().all(|pd| pd.named) {
+        if self.param_defs.is_empty() || !self.param_defs.iter().any(|pd| pd.named) {
             return;
         }
         let slot_of = |name: &str| self.code.locals.iter().position(|n| n == name);
@@ -3842,7 +3863,21 @@ impl CompiledFunction {
             None => true,
         };
         let mut params = Vec::with_capacity(self.param_defs.len());
+        let mut positional_count = 0usize;
         for pd in &self.param_defs {
+            if !pd.named {
+                positional_count += 1;
+                let slot = slot_of(&pd.name);
+                params.push(LightParamBind::Positional(PositionalParamBind {
+                    slot,
+                    needs_env: needs_env_of(slot),
+                    // A positional is required unless explicitly optional
+                    // (`$x?`) or defaulted (`pd.required` is the NAMED `!`
+                    // marker and is false for a plain `$x`).
+                    required: !pd.optional_marker && pd.default.is_none(),
+                }));
+                continue;
+            }
             let match_key = pd
                 .name
                 .strip_prefix('@')
@@ -3883,7 +3918,7 @@ impl CompiledFunction {
                     );
                 }
             }
-            params.push(NamedParamBind {
+            params.push(LightParamBind::Named(NamedParamBind {
                 match_key,
                 slot,
                 needs_env: needs_env_of(slot),
@@ -3891,11 +3926,12 @@ impl CompiledFunction {
                 alias_keys,
                 alias_binds,
                 outer_alias_keys,
-            });
+            }));
         }
         self.named_call_plan = Some(Box::new(NamedCallPlan {
             params,
             uses_arg_array: self.code.locals.iter().any(|n| n == "@_"),
+            positional_count,
         }));
     }
 

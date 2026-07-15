@@ -10,18 +10,24 @@ impl Interpreter {
         cf: &CompiledFunction,
         args: &[Value],
         compiled_fns: &CompiledFns,
+        func_name: &str,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): the light-call boundary skips
         // push_call_frame, so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
-        // Eligibility (`is_light_call_eligible`) guarantees every param is
-        // named, which is exactly when the plan is precomputed. A hand-built
+        // Eligibility (`is_light_call_eligible`) guarantees at least one named
+        // param, which is exactly when the plan is precomputed. A hand-built
         // chunk without one takes the full named dispatch instead.
         let Some(plan) = cf.named_call_plan.as_deref() else {
             let pkg = self.current_package().to_string();
-            let name = String::new();
-            return self.call_compiled_function_named(cf, args.to_vec(), compiled_fns, &pkg, &name);
+            return self.call_compiled_function_named(
+                cf,
+                args.to_vec(),
+                compiled_fns,
+                &pkg,
+                func_name,
+            );
         };
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
@@ -82,13 +88,95 @@ impl Interpreter {
                 })
         }
 
-        // Bind named parameters to their precomputed locals slots; mirror into
+        // Bind parameters to their precomputed locals slots; mirror into
         // the overlay env only when a name-based reader needs it (reflective
         // access anywhere / closure capture via needs_env_sync) or when the
         // value is `Nil` (the GetLocal handler treats a `Nil` slot as
         // possibly-undeclared and verifies via env.contains_key).
         let write_all_params = crate::opcode::reflective_name_access_possible();
-        for (i, npb) in plan.params.iter().enumerate() {
+        let mut positional_idx = 0usize;
+        let mut bind_err: Option<RuntimeError> = None;
+        'bind: for (i, pb) in plan.params.iter().enumerate() {
+            // Bind this param's value into slot + (gated) env under its name.
+            macro_rules! bind_value {
+                ($slot:expr, $needs_env:expr, $v:expr) => {{
+                    let v: Value = $v;
+                    if let Some(slot) = $slot {
+                        self.locals[slot] = v.clone();
+                    }
+                    if write_all_params || $needs_env || v.is_nil() {
+                        match cf.param_name_syms.get(i) {
+                            Some(sym) => {
+                                self.env_mut().insert_sym(*sym, v);
+                            }
+                            None => {
+                                self.env_mut().insert(cf.param_defs[i].name.clone(), v);
+                            }
+                        }
+                    }
+                }};
+            }
+            let npb = match pb {
+                crate::opcode::LightParamBind::Named(npb) => npb,
+                crate::opcode::LightParamBind::Positional(ppb) => {
+                    // Advance past named-syntax Pair args (a parenthesized
+                    // Pair compiles to ValuePair and stays positional) and
+                    // the synthetic callsite-line marker (which can be a
+                    // ValuePair).
+                    while positional_idx < args.len()
+                        && (matches!(deref_arg(&args[positional_idx]).view(), ValueView::Pair(..))
+                            || Self::is_callsite_line_marker(&args[positional_idx]))
+                    {
+                        positional_idx += 1;
+                    }
+                    if positional_idx < args.len() {
+                        let val = deref_arg(&args[positional_idx]).clone();
+                        positional_idx += 1;
+                        if let Some(ref tc) = cf.param_defs[i].type_constraint
+                            && !Self::fast_type_check(&val, tc)
+                        {
+                            let got = runtime::value_type_name(&val);
+                            let msg = format!(
+                                "Type check failed in binding ${}: expected {}, got {}",
+                                cf.param_defs[i].name, tc, got
+                            );
+                            let mut attrs = Self::type_check_argument_attrs(
+                                func_name,
+                                &cf.param_defs,
+                                args,
+                                msg,
+                            );
+                            attrs.insert("expected".to_string(), Value::str(tc.to_string()));
+                            attrs.insert("got".to_string(), Value::str(got.to_string()));
+                            bind_err = Some(RuntimeError::typed("X::TypeCheck::Argument", attrs));
+                            break 'bind;
+                        }
+                        bind_value!(ppb.slot, ppb.needs_env, val);
+                    } else if ppb.required {
+                        let got = args
+                            .iter()
+                            .filter(|a| {
+                                !matches!(deref_arg(a).view(), ValueView::Pair(..))
+                                    && !Self::is_callsite_line_marker(a)
+                            })
+                            .count();
+                        let msg = format!(
+                            "Too few positionals passed; expected {} arguments but got {}",
+                            plan.positional_count, got
+                        );
+                        bind_err = Some(RuntimeError::typed(
+                            "X::TypeCheck::Argument",
+                            Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
+                        ));
+                        break 'bind;
+                    } else {
+                        // Missing optional positional: shadow like the named
+                        // case below.
+                        bind_value!(ppb.slot, true, Value::NIL);
+                    }
+                    continue;
+                }
+            };
             let mut found_val: Option<&Value> = find_named(args, &npb.match_key);
             if found_val.is_none() {
                 for key in &npb.alias_keys {
@@ -108,27 +196,15 @@ impl Interpreter {
             }
             let Some(v) = found_val else {
                 if npb.required {
-                    // Unwind (missing required named param => runtime X::AdHoc).
-                    match caller_env {
-                        Some(caller_env) => self.set_env(caller_env),
-                        None => {
-                            if !self.env().overlay_is_shared_empty() {
-                                self.env_mut().retain_overlay(|_, _| false);
-                            }
-                        }
-                    }
-                    let used = std::mem::replace(&mut self.locals, saved_locals);
-                    self.recycle_locals(used);
-                    self.loop_local_vars = saved_loop_local_vars;
-                    self.loop_local_saved_env = saved_loop_local_saved_env;
-                    self.block_declared_vars = saved_block_declared_vars;
-                    return Err(RuntimeError::typed_msg(
+                    // Missing required named param => runtime X::AdHoc.
+                    bind_err = Some(RuntimeError::typed_msg(
                         "X::AdHoc",
                         format!(
                             "Required named parameter '{}' not passed",
                             cf.param_defs[i].name
                         ),
                     ));
+                    break 'bind;
                 }
                 // Missing optional named param: bind `Nil` into the overlay
                 // env so the param SHADOWS a same-named caller lexical (the
@@ -154,19 +230,54 @@ impl Interpreter {
                 }
                 self.env_mut().insert(alias_name.clone(), v.clone());
             }
-            if let Some(slot) = npb.slot {
-                self.locals[slot] = v.clone();
+            bind_value!(npb.slot, npb.needs_env, v);
+        }
+        // Surplus positional args are an arity error (mixed signatures only —
+        // all-named signatures keep their historical lax behavior for a stray
+        // positional; the full dispatch path is just as lax there).
+        if bind_err.is_none() && plan.positional_count > 0 {
+            let mut idx = positional_idx;
+            while idx < args.len() {
+                let is_named_or_marker =
+                    matches!(deref_arg(&args[idx]).view(), ValueView::Pair(..))
+                        || Self::is_callsite_line_marker(&args[idx]);
+                if !is_named_or_marker {
+                    let got = args
+                        .iter()
+                        .filter(|a| {
+                            !matches!(deref_arg(a).view(), ValueView::Pair(..))
+                                && !Self::is_callsite_line_marker(a)
+                        })
+                        .count();
+                    let msg = format!(
+                        "Too many positionals passed; expected {} arguments but got {}",
+                        plan.positional_count, got
+                    );
+                    bind_err = Some(RuntimeError::typed(
+                        "X::TypeCheck::Argument",
+                        Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
+                    ));
+                    break;
+                }
+                idx += 1;
             }
-            if write_all_params || npb.needs_env || v.is_nil() {
-                match cf.param_name_syms.get(i) {
-                    Some(sym) => {
-                        self.env_mut().insert_sym(*sym, v);
-                    }
-                    None => {
-                        self.env_mut().insert(cf.param_defs[i].name.clone(), v);
+        }
+        if let Some(e) = bind_err {
+            // Unwind: restore the caller frame exactly as the success path does.
+            match caller_env {
+                Some(caller_env) => self.set_env(caller_env),
+                None => {
+                    if !self.env().overlay_is_shared_empty() {
+                        self.env_mut().retain_overlay(|_, _| false);
                     }
                 }
             }
+            let used = std::mem::replace(&mut self.locals, saved_locals);
+            self.recycle_locals(used);
+            self.loop_local_vars = saved_loop_local_vars;
+            self.loop_local_saved_env = saved_loop_local_saved_env;
+            self.block_declared_vars = saved_block_declared_vars;
+            return Err(e);
         }
 
         // Mark parameters as readonly (eligibility excludes `is rw/copy/raw`
