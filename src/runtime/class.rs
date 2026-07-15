@@ -64,16 +64,16 @@ impl Interpreter {
             // class declaration revision, not the globally-current version.
             let is_6e = self.type_decl_is_6e(&instance_class);
             // Collect the MRO so we call DESTROY on each class in order (child → parent).
-            let mro: Vec<String> = self
+            let mro: std::sync::Arc<[crate::symbol::Symbol]> = self
                 .registry()
                 .classes
                 .get(&instance_class)
                 .map(|cd| cd.mro.clone())
-                .unwrap_or_default();
+                .unwrap_or_else(|| [].into());
             // Track attributes across DESTROY calls so mutations are visible
             let mut current_attrs = item.attributes.clone();
             // Walk the MRO; submethods are per-class, not inherited.
-            for mro_class in &mro {
+            for mro_class in mro.iter().map(|s| s.as_str()) {
                 // Skip role entries in MRO
                 if self.registry().roles.contains_key(mro_class)
                     && !self.registry().classes.contains_key(mro_class)

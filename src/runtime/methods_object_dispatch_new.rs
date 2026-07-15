@@ -414,7 +414,7 @@ impl Interpreter {
                         attributes: Vec::new(),
                         methods: HashMap::new(),
                         native_methods: std::collections::HashSet::new(),
-                        mro: Vec::new(),
+                        mro: [].into(),
                         attribute_types: HashMap::new(),
                         attribute_smileys: HashMap::new(),
                         attribute_built: HashMap::new(),
@@ -1443,7 +1443,7 @@ impl Interpreter {
                 let class_mro = self.class_mro(class_key);
                 // When BUILD is defined, it controls attribute initialization,
                 // so we skip automatic named-arg-to-attribute mapping.
-                let any_build = class_mro.iter().any(|cn| {
+                let any_build = class_mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && self
@@ -1500,7 +1500,7 @@ impl Interpreter {
                             class_name: src_class,
                             attributes: src_attrs,
                             ..
-                        } if class_mro.iter().any(|name| name == &src_class.resolve()) => {
+                        } if class_mro.contains(&src_class) => {
                             for (attr, value) in src_attrs.as_map().iter() {
                                 attrs.insert(*attr, value.clone());
                             }
@@ -1838,7 +1838,7 @@ impl Interpreter {
                     Err(failure) => return Ok(failure),
                 }
                 // Check required attributes after all BUILDs have run
-                let any_build = mro.iter().any(|cn| {
+                let any_build = mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && self
@@ -1849,7 +1849,7 @@ impl Interpreter {
                             .is_some()
                 });
                 // Also check role BUILD submethods for required attribute enforcement
-                let any_role_build = mro.iter().any(|cn| {
+                let any_role_build = mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && !self
@@ -1877,7 +1877,7 @@ impl Interpreter {
                     self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                     self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
                 }
-                let any_tweak = mro.iter().any(|cn| {
+                let any_tweak = mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
                         && (self

@@ -74,7 +74,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Mu".to_string()],
+                mro: sym_mro(&["Mu"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -90,7 +90,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Any".to_string(), "Mu".to_string()],
+                mro: sym_mro(&["Any", "Mu"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -106,11 +106,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "IterationBuffer".to_string(),
-                    "Any".to_string(),
-                    "Mu".to_string(),
-                ],
+                mro: sym_mro(&["IterationBuffer", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -129,7 +125,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Promise".to_string()],
+                mro: sym_mro(&["Promise"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -145,7 +141,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["keep", "break"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["Promise::Vow".to_string()],
+                mro: sym_mro(&["Promise::Vow"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -164,7 +160,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Channel".to_string()],
+                mro: sym_mro(&["Channel"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -180,7 +176,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Collation".to_string()],
+                mro: sym_mro(&["Collation"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -196,7 +192,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["finish", "id"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["Thread".to_string()],
+                mro: sym_mro(&["Thread"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -243,7 +239,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Supply".to_string()],
+                mro: sym_mro(&["Supply"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -259,7 +255,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["utf8".to_string()],
+                mro: sym_mro(&["utf8"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -275,7 +271,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["utf16".to_string()],
+                mro: sym_mro(&["utf16"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -291,7 +287,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Blob".to_string(), "Any".to_string(), "Mu".to_string()],
+                mro: sym_mro(&["Blob", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -307,12 +303,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "Buf".to_string(),
-                    "Blob".to_string(),
-                    "Any".to_string(),
-                    "Mu".to_string(),
-                ],
+                mro: sym_mro(&["Buf", "Blob", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -337,7 +328,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Supplier".to_string()],
+                mro: sym_mro(&["Supplier"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -353,7 +344,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Supplier::Preserving".to_string(), "Supplier".to_string()],
+                mro: sym_mro(&["Supplier::Preserving", "Supplier"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -391,7 +382,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Proc::Async".to_string()],
+                mro: sym_mro(&["Proc::Async"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -413,7 +404,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Proc".to_string()],
+                mro: sym_mro(&["Proc"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -432,7 +423,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Tap".to_string()],
+                mro: sym_mro(&["Tap"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -448,7 +439,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["cue"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["Scheduler".to_string()],
+                mro: sym_mro(&["Scheduler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -467,7 +458,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["ThreadPoolScheduler".to_string()],
+                mro: sym_mro(&["ThreadPoolScheduler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -486,7 +477,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["CurrentThreadScheduler".to_string()],
+                mro: sym_mro(&["CurrentThreadScheduler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -505,7 +496,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["FakeScheduler".to_string(), "Scheduler".to_string()],
+                mro: sym_mro(&["FakeScheduler", "Scheduler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -521,7 +512,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["Cancellation".to_string()],
+                mro: sym_mro(&["Cancellation"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -540,7 +531,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Lock".to_string()],
+                mro: sym_mro(&["Lock"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -556,7 +547,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Lock::Async".to_string(), "Lock".to_string()],
+                mro: sym_mro(&["Lock::Async", "Lock"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -572,7 +563,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Lock::Soft".to_string(), "Lock".to_string()],
+                mro: sym_mro(&["Lock::Soft", "Lock"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -591,7 +582,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Lock::ConditionVariable".to_string()],
+                mro: sym_mro(&["Lock::ConditionVariable"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -610,7 +601,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Semaphore".to_string()],
+                mro: sym_mro(&["Semaphore"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -693,7 +684,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["IO::Path".to_string()],
+                mro: sym_mro(&["IO::Path"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -743,7 +734,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["IO::Handle".to_string()],
+                mro: sym_mro(&["IO::Handle"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -811,7 +802,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["IO::CatHandle".to_string()],
+                mro: sym_mro(&["IO::CatHandle"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -827,7 +818,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Backtrace".to_string()],
+                mro: sym_mro(&["Backtrace"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -843,7 +834,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["CompUnit::Repository::FileSystem".to_string()],
+                mro: sym_mro(&["CompUnit::Repository::FileSystem"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -862,7 +853,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["IO::Pipe".to_string()],
+                mro: sym_mro(&["IO::Pipe"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -895,7 +886,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["IO::Socket::INET".to_string()],
+                mro: sym_mro(&["IO::Socket::INET"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -925,7 +916,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["IO::Socket::Async".to_string()],
+                mro: sym_mro(&["IO::Socket::Async"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -941,7 +932,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["IO::Socket::Async::Listener".to_string()],
+                mro: sym_mro(&["IO::Socket::Async::Listener"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -973,7 +964,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Distro".to_string()],
+                mro: sym_mro(&["Distro"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1008,7 +999,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Perl".to_string()],
+                mro: sym_mro(&["Perl"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1045,7 +1036,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Kernel".to_string()],
+                mro: sym_mro(&["Kernel"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1074,7 +1065,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["VM".to_string()],
+                mro: sym_mro(&["VM"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1106,7 +1097,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Compiler".to_string()],
+                mro: sym_mro(&["Compiler"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1125,7 +1116,7 @@ impl Interpreter {
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
-                mro: vec!["Encoding::Builtin".to_string()],
+                mro: sym_mro(&["Encoding::Builtin"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1141,7 +1132,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["Encoding::Encoder".to_string()],
+                mro: sym_mro(&["Encoding::Encoder"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1168,7 +1159,7 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: vec!["Encoding::Decoder".to_string()],
+                mro: sym_mro(&["Encoding::Decoder"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1184,7 +1175,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: ["find", "register"].iter().map(|s| s.to_string()).collect(),
-                mro: vec!["Encoding::Registry".to_string()],
+                mro: sym_mro(&["Encoding::Registry"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1200,7 +1191,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1216,7 +1207,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Block::Code".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Block::Code", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1232,7 +1223,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::FormattingCode".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::FormattingCode", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1248,7 +1239,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Block::Comment".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Block::Comment", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1264,7 +1255,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Block::Para".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Block::Para", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1280,7 +1271,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Block::Named".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Block::Named", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1296,7 +1287,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Heading".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Heading", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1312,7 +1303,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Block::Table".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Block::Table", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1328,7 +1319,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Config".to_string()],
+                mro: sym_mro(&["Pod::Config"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1344,7 +1335,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Pod::Item".to_string(), "Pod::Block".to_string()],
+                mro: sym_mro(&["Pod::Item", "Pod::Block"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1360,7 +1351,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["Exception".to_string()],
+                mro: sym_mro(&["Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1376,7 +1367,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::AdHoc".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::AdHoc", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1392,7 +1383,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::TypeCheck".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1408,11 +1399,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "X::TypeCheck::Binding".to_string(),
-                    "X::TypeCheck".to_string(),
-                    "Exception".to_string(),
-                ],
+                mro: sym_mro(&["X::TypeCheck::Binding", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1428,12 +1415,12 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "X::TypeCheck::Binding::Parameter".to_string(),
-                    "X::TypeCheck::Binding".to_string(),
-                    "X::TypeCheck".to_string(),
-                    "Exception".to_string(),
-                ],
+                mro: sym_mro(&[
+                    "X::TypeCheck::Binding::Parameter",
+                    "X::TypeCheck::Binding",
+                    "X::TypeCheck",
+                    "Exception",
+                ]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1449,7 +1436,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::Parameter".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::Parameter", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1465,11 +1452,11 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "X::Parameter::InvalidConcreteness".to_string(),
-                    "X::Parameter".to_string(),
-                    "Exception".to_string(),
-                ],
+                mro: sym_mro(&[
+                    "X::Parameter::InvalidConcreteness",
+                    "X::Parameter",
+                    "Exception",
+                ]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1485,7 +1472,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::Supply::Combinator".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::Supply::Combinator", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1501,11 +1488,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "X::TypeCheck::Argument".to_string(),
-                    "X::TypeCheck".to_string(),
-                    "Exception".to_string(),
-                ],
+                mro: sym_mro(&["X::TypeCheck::Argument", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1521,11 +1504,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec![
-                    "X::TypeCheck::Assignment".to_string(),
-                    "X::TypeCheck".to_string(),
-                    "Exception".to_string(),
-                ],
+                mro: sym_mro(&["X::TypeCheck::Assignment", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1541,7 +1520,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::Numeric::Real".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::Numeric::Real", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1557,7 +1536,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::TypeCheck::Return".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::TypeCheck::Return", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1573,7 +1552,7 @@ impl Interpreter {
                 attributes: Vec::new(),
                 methods: HashMap::new(),
                 native_methods: HashSet::new(),
-                mro: vec!["X::Coerce::Impossible".to_string(), "Exception".to_string()],
+                mro: sym_mro(&["X::Coerce::Impossible", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1603,6 +1582,7 @@ impl Interpreter {
             if !mro.contains(&"Exception".to_string()) {
                 mro.push("Exception".to_string());
             }
+            let mro: std::sync::Arc<[Symbol]> = mro.iter().map(|s| Symbol::intern(s)).collect();
             classes.insert(
                 name.to_string(),
                 ClassDef {
@@ -1767,9 +1747,12 @@ impl Interpreter {
             if !def.parents.iter().any(|p| p == "X::AdHoc") {
                 def.parents.push("X::AdHoc".to_string());
             }
-            if !def.mro.iter().any(|m| m == "X::AdHoc") {
+            let x_adhoc = Symbol::intern("X::AdHoc");
+            if !def.mro.contains(&x_adhoc) {
                 let insert_at = def.mro.len().saturating_sub(1);
-                def.mro.insert(insert_at, "X::AdHoc".to_string());
+                let mut mro: Vec<Symbol> = def.mro.to_vec();
+                mro.insert(insert_at, x_adhoc);
+                def.mro = mro.into();
             }
         }
 

@@ -474,8 +474,8 @@ impl Interpreter {
         }
         let mro = self.class_mro(class_name);
         let mut count = 0usize;
-        'outer: for cn in &mro {
-            let is_ancestor = cn != class_name;
+        'outer: for cn in mro.iter() {
+            let is_ancestor = cn.as_str() != class_name;
             let registry = self.registry();
             let overloads = registry
                 .classes
@@ -646,7 +646,9 @@ impl Interpreter {
             return false;
         }
         reg.classes.get(class_name).is_some_and(|cd| {
-            cd.mro.iter().any(|c| Self::is_metamodel_class_name(c))
+            cd.mro
+                .iter()
+                .any(|c| Self::is_metamodel_class_name(c.as_str()))
                 || cd.parents.iter().any(|c| Self::is_metamodel_class_name(c))
         })
     }

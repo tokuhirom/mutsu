@@ -223,7 +223,7 @@ impl Interpreter {
             return None;
         }
         let mro = self.class_mro(class_name);
-        for cn in mro {
+        for cn in mro.iter().map(|s| s.resolve()) {
             if let Some(f) = self
                 .registry()
                 .proto_methods

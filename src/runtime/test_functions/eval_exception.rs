@@ -92,7 +92,7 @@ impl Interpreter {
         // For Package values, also check full MRO (handles grammar/class inheritance)
         if !ok && let ValueView::Package(name) = value.view() {
             let mro = self.class_mro(&name.resolve());
-            ok = mro.contains(&type_name);
+            ok = mro.contains(&crate::symbol::Symbol::intern(&type_name));
         }
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::truth(ok))

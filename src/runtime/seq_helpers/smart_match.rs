@@ -1092,7 +1092,7 @@ impl Interpreter {
                         let parent_mro = self.class_mro(&parent);
                         if parent_mro
                             .iter()
-                            .any(|p| Self::type_matches(&rhs_resolved, p))
+                            .any(|p| Self::type_matches(&rhs_resolved, p.as_str()))
                         {
                             return true;
                         }

@@ -10,6 +10,9 @@ impl Interpreter {
         };
         let mut mro = if self.registry().classes.contains_key(&class_name) {
             self.class_mro(&class_name)
+                .iter()
+                .map(|s| s.resolve())
+                .collect()
         } else {
             // Built-in type hierarchies for types that are not user-defined classes.
             // Any/Mu are appended unconditionally below, so the table lists the

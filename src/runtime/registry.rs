@@ -209,7 +209,7 @@ impl Registry {
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
         {
-            return Ok(class_def.mro.clone());
+            return Ok(class_def.mro.iter().map(|s| s.resolve()).collect());
         }
         stack.push(class_name.to_string());
         let explicit_parents = self
@@ -314,58 +314,43 @@ impl Registry {
     /// when present, the hardcoded hierarchy for built-in types that are not
     /// user-defined classes, and otherwise computing + caching via
     /// [`Registry::compute_class_mro`]. Single write guard for the whole op.
-    pub(crate) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+    pub(crate) fn class_mro(&mut self, class_name: &str) -> std::sync::Arc<[Symbol]> {
         // Built-in type hierarchies for types that are not user-defined classes
         if !self.classes.contains_key(class_name) {
-            let builtin_mro: Option<Vec<&str>> = match class_name {
-                "Match" => Some(vec!["Match", "Capture", "Cool", "Any", "Mu"]),
-                "Capture" => Some(vec!["Capture", "Any", "Mu"]),
-                "IO::Spec" => Some(vec!["IO::Spec", "Any", "Mu"]),
-                "IO::Spec::Unix" => Some(vec!["IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
+            let builtin_mro: Option<&[&str]> = match class_name {
+                "Match" => Some(&["Match", "Capture", "Cool", "Any", "Mu"]),
+                "Capture" => Some(&["Capture", "Any", "Mu"]),
+                "IO::Spec" => Some(&["IO::Spec", "Any", "Mu"]),
+                "IO::Spec::Unix" => Some(&["IO::Spec::Unix", "IO::Spec", "Any", "Mu"]),
                 // Win32/Cygwin/QNX specialize the Unix spec (Raku MRO).
-                "IO::Spec::Win32" => Some(vec![
-                    "IO::Spec::Win32",
-                    "IO::Spec::Unix",
-                    "IO::Spec",
-                    "Any",
-                    "Mu",
-                ]),
-                "IO::Spec::Cygwin" => Some(vec![
+                "IO::Spec::Win32" => {
+                    Some(&["IO::Spec::Win32", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"])
+                }
+                "IO::Spec::Cygwin" => Some(&[
                     "IO::Spec::Cygwin",
                     "IO::Spec::Unix",
                     "IO::Spec",
                     "Any",
                     "Mu",
                 ]),
-                "IO::Spec::QNX" => Some(vec![
-                    "IO::Spec::QNX",
-                    "IO::Spec::Unix",
-                    "IO::Spec",
-                    "Any",
-                    "Mu",
-                ]),
-                "Distribution::Path" => {
-                    Some(vec!["Distribution::Path", "Distribution", "Any", "Mu"])
+                "IO::Spec::QNX" => {
+                    Some(&["IO::Spec::QNX", "IO::Spec::Unix", "IO::Spec", "Any", "Mu"])
                 }
-                "Distribution::Hash" => {
-                    Some(vec!["Distribution::Hash", "Distribution", "Any", "Mu"])
+                "Distribution::Path" => Some(&["Distribution::Path", "Distribution", "Any", "Mu"]),
+                "Distribution::Hash" => Some(&["Distribution::Hash", "Distribution", "Any", "Mu"]),
+                "Distribution::Installation" => {
+                    Some(&["Distribution::Installation", "Distribution", "Any", "Mu"])
                 }
-                "Distribution::Installation" => Some(vec![
-                    "Distribution::Installation",
-                    "Distribution",
-                    "Any",
-                    "Mu",
-                ]),
                 "CompUnit::DependencySpecification" => {
-                    Some(vec!["CompUnit::DependencySpecification", "Any", "Mu"])
+                    Some(&["CompUnit::DependencySpecification", "Any", "Mu"])
                 }
-                "CompUnit::Repository::FileSystem" => Some(vec![
+                "CompUnit::Repository::FileSystem" => Some(&[
                     "CompUnit::Repository::FileSystem",
                     "CompUnit::Repository",
                     "Any",
                     "Mu",
                 ]),
-                "CompUnit::Repository::Installation" => Some(vec![
+                "CompUnit::Repository::Installation" => Some(&[
                     "CompUnit::Repository::Installation",
                     "CompUnit::Repository::Installable",
                     "CompUnit::Repository::Locally",
@@ -376,7 +361,7 @@ impl Registry {
                 _ => None,
             };
             if let Some(mro) = builtin_mro {
-                return mro.into_iter().map(String::from).collect();
+                return mro.iter().map(|s| Symbol::intern(s)).collect();
             }
         }
         if !self.classes.contains_key(class_name)
@@ -384,9 +369,9 @@ impl Registry {
             && class_name.ends_with(']')
             && self.classes.contains_key(base)
         {
-            let mut mro = vec![class_name.to_string()];
-            mro.extend(self.class_mro(base));
-            return mro;
+            let mut mro = vec![Symbol::intern(class_name)];
+            mro.extend(self.class_mro(base).iter().copied());
+            return mro.into();
         }
         if let Some(class_def) = self.classes.get(class_name)
             && !class_def.mro.is_empty()
@@ -396,32 +381,33 @@ impl Registry {
         let mut stack = Vec::new();
         match self.compute_class_mro(class_name, &mut stack) {
             Ok(mro) => {
+                let mro: std::sync::Arc<[Symbol]> = mro.iter().map(|s| Symbol::intern(s)).collect();
                 if let Some(class_def) = self.classes.get_mut(class_name) {
                     class_def.mro = mro.clone();
                 }
                 mro
             }
-            Err(_) => vec![class_name.to_string()],
+            Err(_) => [Symbol::intern(class_name)].into(),
         }
     }
 
     /// Read-only MRO lookup: the cached `ClassDef::mro` when present, otherwise a
     /// single-element MRO `[class_name]`. Returns `None` when the class is not
     /// registered. Used by non-`&mut` helpers that must not trigger computation.
-    pub(crate) fn class_mro_cached(&self, class_name: &str) -> Option<Vec<String>> {
+    pub(crate) fn class_mro_cached(&self, class_name: &str) -> Option<std::sync::Arc<[Symbol]>> {
         let class_def = self.classes.get(class_name)?;
         if !class_def.mro.is_empty() {
             return Some(class_def.mro.clone());
         }
-        Some(vec![class_name.to_string()])
+        Some([Symbol::intern(class_name)].into())
     }
 
     /// Whether `class_name` (or any class in its MRO) defines `method_name`
     /// either as a user method or a native method. Pure registry MRO walk.
     pub(crate) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
-        for cn in mro {
-            if let Some(class_def) = self.classes.get(&cn)
+        for cn in mro.iter() {
+            if let Some(class_def) = self.classes.get(cn.as_str())
                 && (class_def.methods.contains_key(method_name)
                     || class_def.native_methods.contains(method_name))
             {
@@ -522,7 +508,7 @@ impl Registry {
     /// parametric suffix is stripped (`R[Int]` -> `R`). Push order is load-bearing
     /// — the caller consumes this LIFO via `.pop()` and relies on first-match-wins,
     /// so this method MUST NOT dedup or sort (dedup happens during the walk).
-    pub(crate) fn composed_roles_seed(&self, mro: &[String]) -> Vec<String> {
+    pub(crate) fn composed_roles_seed(&self, mro: &[Symbol]) -> Vec<String> {
         let mut seed = Vec::new();
         for cn in mro {
             if let Some(composed) = self.class_composed_roles.get(cn.as_str()) {

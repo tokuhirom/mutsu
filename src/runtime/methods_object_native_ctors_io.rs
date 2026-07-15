@@ -24,7 +24,7 @@ impl Interpreter {
                     attributes: Vec::new(),
                     methods: HashMap::new(),
                     native_methods: std::collections::HashSet::new(),
-                    mro: Vec::new(),
+                    mro: [].into(),
                     attribute_types: HashMap::new(),
                     attribute_smileys: HashMap::new(),
                     attribute_built: HashMap::new(),

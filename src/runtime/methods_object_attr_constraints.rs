@@ -100,8 +100,9 @@ impl Interpreter {
         class_name: &str,
     ) -> HashMap<String, String> {
         let mut constraints = HashMap::new();
-        for owner in self.class_mro(class_name) {
-            if let Some(class_def) = self.registry().classes.get(&owner) {
+        let mro = self.class_mro(class_name);
+        for owner in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(owner.as_str()) {
                 for (attr_name, tc) in &class_def.attribute_types {
                     constraints
                         .entry(attr_name.clone())
@@ -173,7 +174,7 @@ impl Interpreter {
         let mut required_attrs: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         let mro = self.class_mro(class_name);
-        for mro_class in &mro {
+        for mro_class in mro.iter().map(|s| s.as_str()) {
             if let Some(class_def) = self.registry().classes.get(mro_class) {
                 for (attr_name, smiley) in &class_def.attribute_smileys {
                     smileys

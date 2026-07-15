@@ -79,11 +79,12 @@ impl Interpreter {
     /// the child; the instance's bare attribute key mirrors this class's value
     /// (what a public `$.attr` accessor reads). Returns `None` if undeclared.
     fn most_derived_attr_declarer(&mut self, class_name: &str, attr: &str) -> Option<String> {
-        for cn in self.class_mro(class_name) {
-            if let Some(cd) = self.registry().classes.get(&cn)
+        let mro = self.class_mro(class_name);
+        for cn in mro.iter() {
+            if let Some(cd) = self.registry().classes.get(cn.as_str())
                 && cd.attributes.iter().any(|a| a.0 == attr)
             {
-                return Some(cn);
+                return Some(cn.resolve());
             }
         }
         None

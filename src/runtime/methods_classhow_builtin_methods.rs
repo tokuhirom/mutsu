@@ -64,7 +64,7 @@ impl Interpreter {
             // Walk MRO (already includes the class itself)
             let mro = self.class_mro(&class_name);
 
-            for cn in &mro {
+            for cn in mro.iter().map(|s| s.as_str()) {
                 if !all && (cn == "Any" || cn == "Mu") {
                     continue;
                 }

@@ -290,7 +290,9 @@ impl Interpreter {
                     || target_name == "Promise"
                     || target_name == "Any"
                     || target_name == "Mu"
-                    || self.class_mro(&cn).contains(&target_name);
+                    || self
+                        .class_mro(&cn)
+                        .contains(&crate::symbol::Symbol::intern(&target_name));
                 Ok(Value::truth(is_match))
             }
             _ => Err(RuntimeError::new(format!(

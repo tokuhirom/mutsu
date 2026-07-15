@@ -22,12 +22,12 @@ impl Interpreter {
     ) -> Option<(String, MethodDef)> {
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
-        for cn in mro {
+        for cn in mro.iter().map(|s| s.as_str()) {
             if cn != owner_class {
                 continue;
             }
             // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
-            let overloads = self.registry().get_method_overloads(&cn, method_name);
+            let overloads = self.registry().get_method_overloads(cn, method_name);
             if let Some(overloads) = overloads {
                 for def in overloads {
                     if !def.is_private {
@@ -40,7 +40,7 @@ impl Interpreter {
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        return Some((cn.clone(), def));
+                        return Some((cn.to_string(), def));
                     }
                 }
             }
@@ -71,11 +71,11 @@ impl Interpreter {
             // overloads Vec — only the single matched def is cloned), find the
             // candidate, then drop the guard before mutating the cache.
             let mut resolved: Option<(String, MethodDef)> = None;
-            'scan: for cn in &mro {
+            'scan: for cn in mro.iter() {
                 let registry = self.registry();
                 if let Some(overloads) = registry
                     .classes
-                    .get(cn)
+                    .get(cn.as_str())
                     .and_then(|c| c.methods.get(method_name))
                 {
                     // First pass: skip stubs
@@ -91,7 +91,7 @@ impl Interpreter {
                             .iter()
                             .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
                         {
-                            resolved = Some((cn.clone(), def.clone()));
+                            resolved = Some((cn.resolve(), def.clone()));
                             break 'scan;
                         }
                     }
@@ -105,7 +105,7 @@ impl Interpreter {
                             .iter()
                             .all(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
                         {
-                            resolved = Some((cn.clone(), def.clone()));
+                            resolved = Some((cn.resolve(), def.clone()));
                             break 'scan;
                         }
                     }
@@ -119,9 +119,9 @@ impl Interpreter {
                 return Some(resolved);
             }
         }
-        for cn in mro {
+        for cn in mro.iter().map(|s| s.as_str()) {
             // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
-            let overloads = self.registry().get_method_overloads(&cn, method_name);
+            let overloads = self.registry().get_method_overloads(cn, method_name);
             if let Some(overloads) = overloads {
                 for def in &overloads {
                     if !def.is_private {
@@ -137,7 +137,7 @@ impl Interpreter {
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        return Some((cn.clone(), def.clone()));
+                        return Some((cn.to_string(), def.clone()));
                     }
                 }
                 for def in overloads {
@@ -151,7 +151,7 @@ impl Interpreter {
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        return Some((cn.clone(), def));
+                        return Some((cn.to_string(), def));
                     }
                 }
             }
@@ -181,7 +181,10 @@ impl Interpreter {
 
     /// Resolve the MRO for `class_name`. Delegates to [`Registry::class_mro`],
     /// which holds a single write guard for the whole compute-and-cache op.
-    pub(crate) fn class_mro(&mut self, class_name: &str) -> Vec<String> {
+    /// Returns the cached interned-symbol MRO — an `Arc` clone, no per-call
+    /// `String` allocations (the old `Vec<String>` clone was a per-dispatch
+    /// allocation hot spot).
+    pub(crate) fn class_mro(&mut self, class_name: &str) -> std::sync::Arc<[Symbol]> {
         self.registry_mut().class_mro(class_name)
     }
 }

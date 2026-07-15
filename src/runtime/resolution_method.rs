@@ -118,7 +118,7 @@ impl Interpreter {
         // (submethods block MRO search for their class but not for
         // descendants).
         let mut submethod_blocks = false;
-        for cn in &mro {
+        for cn in mro.iter() {
             // Hoist the clone to a `let` so the registry read guard drops here,
             // before method_args_match_for_invocant re-enters (&mut self). An
             // `if let` scrutinee would otherwise keep the temporary guard alive
@@ -131,7 +131,7 @@ impl Interpreter {
                 let mut first_visible_non_multi: Option<MethodDef> = None;
                 // Check if all overloads are submethods on an ancestor class
                 let all_submethods = overloads.iter().all(|d| d.is_my);
-                let is_ancestor = cn != class_name;
+                let is_ancestor = cn.as_str() != class_name;
                 // Single-visible-candidate fast return: with exactly one visible
                 // non-multi candidate (and no multi collected from a more-derived
                 // class), the outcome is invariant to the speculative argument
@@ -155,7 +155,7 @@ impl Interpreter {
                                 && pd.sub_signature.is_none()
                         })
                     {
-                        return Some((cn.clone(), only.clone()));
+                        return Some((cn.resolve(), only.clone()));
                     }
                 }
                 for def in overloads {
@@ -182,9 +182,9 @@ impl Interpreter {
                             // Non-multi: return the first match immediately,
                             // but only if no multi candidates were already
                             // collected from a child class in the MRO.
-                            return Some((cn.clone(), def));
+                            return Some((cn.resolve(), def));
                         }
-                        all_matches.push((cn.clone(), def));
+                        all_matches.push((cn.resolve(), def));
                     }
                 }
                 // A non-multi submethod on an ancestor blocks the MRO search
@@ -198,7 +198,7 @@ impl Interpreter {
                 // For non-multi methods, stop here — a subclass override
                 // hides the parent's version.
                 if !any_multi && all_matches.is_empty() {
-                    return first_visible_non_multi.map(|def| (cn.clone(), def));
+                    return first_visible_non_multi.map(|def| (cn.resolve(), def));
                 }
             }
         }
@@ -414,8 +414,8 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let registry = self.registry();
         let mut count = 0usize;
-        for cn in &mro {
-            let is_ancestor = cn != class_name;
+        for cn in mro.iter() {
+            let is_ancestor = cn.as_str() != class_name;
             let overloads = registry
                 .classes
                 .get(cn.as_str())
@@ -448,7 +448,7 @@ impl Interpreter {
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
-        for cn in &mro {
+        for cn in mro.iter() {
             // An MRO entry may be a regular class or a punned role used as a
             // parent (`class Foo is R1 { ... }`). Role methods are stored in
             // `self.registry().roles`, so fall back there when the entry is not a class.
@@ -469,7 +469,7 @@ impl Interpreter {
                     .cloned()
             };
             if let Some(overloads) = overloads {
-                let is_ancestor = cn != class_name;
+                let is_ancestor = cn.as_str() != class_name;
                 for def in overloads {
                     if def.is_private {
                         continue;
@@ -485,7 +485,7 @@ impl Interpreter {
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        matches.push((cn.clone(), def));
+                        matches.push((cn.resolve(), def));
                     }
                 }
             }
@@ -504,8 +504,8 @@ impl Interpreter {
     ) -> Vec<(String, MethodDef)> {
         let mro = self.class_mro(class_name);
         let mut defining_levels: Vec<String> = Vec::new();
-        for cn in &mro {
-            let is_ancestor = cn != class_name;
+        for cn in mro.iter() {
+            let is_ancestor = cn.as_str() != class_name;
             if let Some(overloads) = self
                 .registry()
                 .get_method_overloads(cn.as_str(), method_name)
@@ -514,7 +514,7 @@ impl Interpreter {
                     .iter()
                     .any(|d| !d.is_private && (!d.is_my || !is_ancestor));
                 if has_visible {
-                    defining_levels.push(cn.clone());
+                    defining_levels.push(cn.resolve());
                 }
             }
         }

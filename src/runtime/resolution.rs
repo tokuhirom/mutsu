@@ -176,7 +176,7 @@ impl Interpreter {
     pub(crate) fn class_parents_readonly(&self, class_name: &str) -> Vec<String> {
         if let Some(class_def) = self.registry().classes.get(class_name) {
             if !class_def.mro.is_empty() {
-                return class_def.mro.clone();
+                return class_def.mro.iter().map(|s| s.resolve()).collect();
             }
             return class_def.parents.clone();
         }
@@ -199,7 +199,7 @@ impl Interpreter {
         if let Some(class_def) = self.registry().classes.get(class_name)
             && !class_def.mro.is_empty()
         {
-            return class_def.mro.clone();
+            return class_def.mro.iter().map(|s| s.resolve()).collect();
         }
         // Fallback: built-in/unregistered classes, or a registered class whose
         // MRO has not been computed yet (parents-only walk).

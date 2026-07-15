@@ -483,7 +483,9 @@ impl Interpreter {
 
     /// Read-only variant of class_mro for use from non-mut helpers.
     fn class_mro_readonly(&self, class_name: &str) -> Option<Vec<String>> {
-        self.registry().class_mro_cached(class_name)
+        self.registry()
+            .class_mro_cached(class_name)
+            .map(|mro| mro.iter().map(|s| s.resolve()).collect())
     }
 
     /// Direct (declared) parent classes of `class_name`, in declaration order,

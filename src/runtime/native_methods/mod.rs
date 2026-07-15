@@ -284,20 +284,23 @@ impl Interpreter {
         ) {
             Some(class_name.to_string())
         } else {
-            self.class_mro(class_name).into_iter().find(|candidate| {
-                matches!(
-                    candidate.as_str(),
-                    "Promise"
-                        | "Channel"
-                        | "Supply"
-                        | "Supplier"
-                        | "Proc"
-                        | "Proc::Async"
-                        | "Encoding::Decoder"
-                        | "ThreadPoolScheduler"
-                        | "CurrentThreadScheduler"
-                )
-            })
+            self.class_mro(class_name)
+                .iter()
+                .map(|s| s.resolve())
+                .find(|candidate| {
+                    matches!(
+                        candidate.as_str(),
+                        "Promise"
+                            | "Channel"
+                            | "Supply"
+                            | "Supplier"
+                            | "Proc"
+                            | "Proc::Async"
+                            | "Encoding::Decoder"
+                            | "ThreadPoolScheduler"
+                            | "CurrentThreadScheduler"
+                    )
+                })
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Handle" => self.native_io_handle_mut(attributes, method, args),
@@ -368,42 +371,45 @@ impl Interpreter {
         ) {
             Some(class_name.to_string())
         } else {
-            self.class_mro(class_name).into_iter().find(|candidate| {
-                matches!(
-                    candidate.as_str(),
-                    "IO::Path"
-                        | "IO::Handle"
-                        | "IO::Special"
-                        | "IO::Socket::INET"
-                        | "IO::Socket::Async"
-                        | "IO::Socket::Async::Listener"
-                        | "IO::Pipe"
-                        | "Lock"
-                        | "Lock::Async"
-                        | "Lock::ConditionVariable"
-                        | "Distro"
-                        | "Kernel"
-                        | "Perl"
-                        | "Compiler"
-                        | "Promise"
-                        | "Promise::Vow"
-                        | "Channel"
-                        | "Thread"
-                        | "Proc::Async"
-                        | "Proc"
-                        | "Supply"
-                        | "Supplier"
-                        | "Tap"
-                        | "ThreadPoolScheduler"
-                        | "CurrentThreadScheduler"
-                        | "FakeScheduler"
-                        | "Cancellation"
-                        | "Encoding::Builtin"
-                        | "Encoding::Encoder"
-                        | "Encoding::Decoder"
-                        | "VM"
-                )
-            })
+            self.class_mro(class_name)
+                .iter()
+                .map(|s| s.resolve())
+                .find(|candidate| {
+                    matches!(
+                        candidate.as_str(),
+                        "IO::Path"
+                            | "IO::Handle"
+                            | "IO::Special"
+                            | "IO::Socket::INET"
+                            | "IO::Socket::Async"
+                            | "IO::Socket::Async::Listener"
+                            | "IO::Pipe"
+                            | "Lock"
+                            | "Lock::Async"
+                            | "Lock::ConditionVariable"
+                            | "Distro"
+                            | "Kernel"
+                            | "Perl"
+                            | "Compiler"
+                            | "Promise"
+                            | "Promise::Vow"
+                            | "Channel"
+                            | "Thread"
+                            | "Proc::Async"
+                            | "Proc"
+                            | "Supply"
+                            | "Supplier"
+                            | "Tap"
+                            | "ThreadPoolScheduler"
+                            | "CurrentThreadScheduler"
+                            | "FakeScheduler"
+                            | "Cancellation"
+                            | "Encoding::Builtin"
+                            | "Encoding::Encoder"
+                            | "Encoding::Decoder"
+                            | "VM"
+                    )
+                })
         };
         match dispatch_class.as_deref().unwrap_or(class_name) {
             "IO::Path" => self.native_io_path(attributes, class_name, method, args),

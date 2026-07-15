@@ -114,11 +114,11 @@ impl Interpreter {
     ) -> usize {
         let mut count = 0usize;
         let mro = self.class_mro(class_name);
-        for parent in mro.into_iter().skip(1) {
+        for parent in mro.iter().skip(1) {
             // No user-code re-entry in this loop body (only static helpers), so a
             // let-bound guard is safe.
             let registry = self.registry();
-            let Some(class_def) = registry.classes.get(&parent) else {
+            let Some(class_def) = registry.classes.get(parent.as_str()) else {
                 continue;
             };
             let Some(defs) = class_def.methods.get(method_name) else {

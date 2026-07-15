@@ -307,9 +307,9 @@ impl Interpreter {
             }
             // Delegate to inner value's isa check using class MRO
             let result = match inner.as_ref().view() {
-                ValueView::Instance { class_name, .. } => {
-                    self.class_mro(&class_name.resolve()).contains(&target_name)
-                }
+                ValueView::Instance { class_name, .. } => self
+                    .class_mro(&class_name.resolve())
+                    .contains(&crate::symbol::Symbol::intern(&target_name)),
                 _ => inner.isa_check(&target_name),
             };
             return Some(Ok(Value::truth(result)));

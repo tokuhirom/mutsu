@@ -474,6 +474,15 @@ impl DocComment {
     }
 }
 
+/// Intern a static name list into the `Arc<[Symbol]>` shape used by
+/// [`ClassDef::mro`]. Registration-time helper (not a dispatch hot path).
+pub(crate) fn sym_mro(names: &[&str]) -> std::sync::Arc<[crate::symbol::Symbol]> {
+    names
+        .iter()
+        .map(|s| crate::symbol::Symbol::intern(s))
+        .collect()
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct ClassDef {
     parents: Vec<String>,
@@ -487,7 +496,7 @@ pub(crate) struct ClassDef {
     alias_attributes: HashSet<String>,
     methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
     native_methods: HashSet<String>,
-    mro: Vec<String>,
+    mro: std::sync::Arc<[crate::symbol::Symbol]>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
     wildcard_handles: Vec<String>,
     /// Class-level attributes declared with `our $.x` or `my $.x` (shared across instances).

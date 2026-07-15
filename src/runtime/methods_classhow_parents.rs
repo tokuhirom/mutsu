@@ -184,9 +184,9 @@ impl Interpreter {
             {
                 cd.mro.clone()
             } else {
-                vec![class_name.to_string()]
+                [crate::symbol::Symbol::intern(class_name)].into()
             };
-            for cn in &mro {
+            for cn in mro.iter().map(|s| s.as_str()) {
                 if cn == "Any" || cn == "Mu" {
                     continue;
                 }

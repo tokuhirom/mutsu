@@ -595,35 +595,34 @@ impl Interpreter {
         };
 
         // Check if the exception matches any of the provided types
-        let type_ok =
-            match &result {
-                Ok(_) => false,
-                Err(err) => {
-                    let ex_class = err.exception.as_ref().and_then(|ex| {
-                        if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
-                            Some(class_name.resolve().to_string())
-                        } else {
-                            None
-                        }
-                    });
-                    type_names.iter().any(|expected: &String| -> bool {
-                        if expected.is_empty() || expected == "Exception" {
-                            return true;
-                        }
-                        if let Some(cls) = &ex_class
-                            && (cls == expected
-                                || cls.starts_with(&format!("{}::", expected))
-                                || self.registry().classes.get(cls).is_some_and(|def| {
-                                    def.mro.iter().any(|parent| parent == expected)
-                                }))
-                        {
-                            return true;
-                        }
-                        // Fallback: message-based matching
-                        err.message.contains(expected.as_str())
-                    })
-                }
-            };
+        let type_ok = match &result {
+            Ok(_) => false,
+            Err(err) => {
+                let ex_class = err.exception.as_ref().and_then(|ex| {
+                    if let ValueView::Instance { class_name, .. } = ex.as_ref().view() {
+                        Some(class_name.resolve().to_string())
+                    } else {
+                        None
+                    }
+                });
+                type_names.iter().any(|expected: &String| -> bool {
+                    if expected.is_empty() || expected == "Exception" {
+                        return true;
+                    }
+                    if let Some(cls) = &ex_class
+                        && (cls == expected
+                            || cls.starts_with(&format!("{}::", expected))
+                            || self.registry().classes.get(cls).is_some_and(|def| {
+                                def.mro.iter().any(|parent| parent.as_str() == expected)
+                            }))
+                    {
+                        return true;
+                    }
+                    // Fallback: message-based matching
+                    err.message.contains(expected.as_str())
+                })
+            }
+        };
 
         let type_display = type_names.join(", ");
 
