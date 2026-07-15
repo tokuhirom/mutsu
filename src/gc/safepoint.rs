@@ -370,10 +370,16 @@ pub(crate) fn gc_safepoint(kind: SafepointKind) {
     let t = triggers();
     // `every_safepoint` / the `MUTSU_GC_AT` kind list / the random draw fire
     // directly; otherwise consume a pending arming from the candidate counter.
+    // Test-and-test-and-set: the unconditional `swap` was a locked RMW on a
+    // process-shared cache line executed once per call safepoint (~4% of a
+    // recursion-heavy workload's hottest function); the plain load short-cuts
+    // the common not-pending case. A pending flag set between the load and a
+    // racing consumer's swap is simply consumed at the next safepoint — same
+    // deferral the arming already tolerates.
     let fire = t.every_safepoint
         || t.at_mask & kind.bit() != 0
         || (t.random_rate_bits != 0 && random_fires(t.random_rate_bits))
-        || PENDING.swap(false, Ordering::Relaxed);
+        || (PENDING.load(Ordering::Relaxed) && PENDING.swap(false, Ordering::Relaxed));
     if fire {
         collect_cycles_at(kind.name());
     }
