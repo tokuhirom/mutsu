@@ -115,7 +115,7 @@ impl Interpreter {
             }
         }
 
-        let saved_readonly = self.save_readonly_vars();
+        let saved_readonly = self.enter_readonly_frame();
         // Bind params to slots. Also write the param into the overlay when a
         // name-based reader needs it (reflective access anywhere / GetGlobal /
         // closure capture via needs_env_sync), or when it is `Nil` (the GetLocal
@@ -129,7 +129,7 @@ impl Interpreter {
                 if let Some(ref tc) = cf.param_defs[param_idx].type_constraint
                     && !Self::fast_type_check(&val, tc)
                 {
-                    self.restore_readonly_vars(saved_readonly);
+                    self.exit_readonly_frame(saved_readonly);
                     match caller_env {
                         Some(caller_env) => self.set_env(caller_env),
                         // Reused frame: drop every by-name write made since
@@ -269,7 +269,7 @@ impl Interpreter {
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.block_declared_vars = saved_block_declared_vars;
-        self.restore_readonly_vars(saved_readonly);
+        self.exit_readonly_frame(saved_readonly);
 
         // Restore the caller env and merge the overlay (the callee's own writes)
         // back: a write to a captured outer variable (not a declared local of

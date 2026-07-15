@@ -332,12 +332,12 @@ impl Interpreter {
                 unreachable!()
             };
             let saved_env = self.env().clone();
-            let saved_readonly = self.save_readonly_vars();
+            let saved_readonly = self.enter_readonly_frame();
             let rendered = self
                 .eval_call_on_value(formatter_value, vec![date.clone()])?
                 .to_string_value();
             *self.env_mut() = saved_env;
-            self.restore_readonly_vars(saved_readonly);
+            self.exit_readonly_frame(saved_readonly);
             let mut updated = attributes.to_map();
             updated.insert("__formatter_rendered".to_string(), Value::str(rendered));
             Ok(Value::write_back_sharing(

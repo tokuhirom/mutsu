@@ -989,20 +989,17 @@ impl Interpreter {
                 // frames). Drop the mark and record it so `pop_call_frame`
                 // restores the caller's state.
                 if self.is_readonly(&pd.name) {
+                    // The frame's readonly journal records the removal, so
+                    // `pop_call_frame` restores the caller's mark.
                     self.unmark_readonly(&pd.name);
-                    if let Some(frame) = self.call_frames.last_mut() {
-                        frame.readonly_removed.push(pd.name.clone());
-                    }
                 }
                 continue;
             }
             if self.is_readonly(&pd.name) {
                 continue; // already read-only (e.g. caller-owned same name)
             }
+            // Journaled — dropped again at `pop_call_frame`.
             self.mark_readonly(&pd.name);
-            if let Some(frame) = self.call_frames.last_mut() {
-                frame.readonly_added.push(pd.name.clone());
-            }
         }
     }
 

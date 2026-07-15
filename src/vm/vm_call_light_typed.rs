@@ -192,7 +192,7 @@ impl Interpreter {
 
         // Mark parameters as readonly (by default, params are immutable in Raku).
         // Save existing readonly state so we can restore it after the call.
-        let saved_readonly = self.save_readonly_vars();
+        let saved_readonly = self.enter_readonly_frame();
         for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()
                 && !pd.sigilless
@@ -372,7 +372,7 @@ impl Interpreter {
         self.block_declared_vars = saved_block_declared_vars;
 
         // Restore readonly vars
-        self.restore_readonly_vars(saved_readonly);
+        self.exit_readonly_frame(saved_readonly);
 
         // Restore the caller env, merging the overlay (the callee's own writes)
         // back: a write to a captured outer variable (not a declared local /

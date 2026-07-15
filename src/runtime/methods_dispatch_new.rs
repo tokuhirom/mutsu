@@ -811,14 +811,14 @@ impl Interpreter {
             attrs.insert("formatter".to_string(), formatter_value.clone());
             let dt_with_formatter = Value::write_back_sharing(&attributes, class_name, attrs, id);
             let saved_env = self.env().clone();
-            let saved_readonly = self.save_readonly_vars();
+            let saved_readonly = self.enter_readonly_frame();
             let rendered =
                 match self.eval_call_on_value(formatter_value, vec![dt_with_formatter.clone()]) {
                     Ok(v) => v.to_string_value(),
                     Err(e) => return Some(Err(e)),
                 };
             *self.env_mut() = saved_env;
-            self.restore_readonly_vars(saved_readonly);
+            self.exit_readonly_frame(saved_readonly);
             if let ValueView::Instance {
                 class_name,
                 attributes,

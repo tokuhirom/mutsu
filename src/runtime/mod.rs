@@ -383,7 +383,17 @@ pub(crate) type ClassAttributeDef = (
 /// `unmark_readonly`) pays a `memcpy` of `u32`s only when it actually changes
 /// the set while a snapshot is alive. `Symbol` keys also replace the default
 /// hasher's SipHash-over-the-name with a `u32` hash.
-pub(crate) type ReadonlySet = Arc<rustc_hash::FxHashSet<Symbol>>;
+pub(crate) type ReadonlySet = rustc_hash::FxHashSet<Symbol>;
+
+/// One journaled readonly-set mutation (see `Interpreter::enter_readonly_frame`):
+/// the inverse to replay on scope exit, or a `Scope` sentinel marking a frame
+/// boundary (bounds the unmark/mark cancellation peephole).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ReadonlyUndo {
+    Marked(Symbol),
+    Unmarked(Symbol),
+    Scope,
+}
 
 /// A set of variable names (`block_declared_vars` / `loop_local_vars`), keyed by
 /// the interned `Symbol` rather than an owned `String`.
@@ -1586,6 +1596,15 @@ pub struct Interpreter {
     /// Set of variable names that are readonly (default parameter binding).
     /// Copy-on-write and `Symbol`-keyed — see [`ReadonlySet`].
     readonly_vars: ReadonlySet,
+    /// Journal of readonly-set mutations made while at least one readonly
+    /// scope is open (newest last); `exit_readonly_frame` replays the
+    /// inverses back to its scope's mark. `Scope` sentinels bound each open
+    /// frame's entries (see `enter_readonly_frame`). Journaling is off at top
+    /// level (`readonly_frames == 0`), so the journal cannot grow across a
+    /// program's lifetime.
+    readonly_undo: Vec<ReadonlyUndo>,
+    /// Number of currently-open readonly scopes (see `enter_readonly_frame`).
+    readonly_frames: u32,
     /// Metadata for Seq values produced by `squish` with callbacks, used to
     /// provide callback-aware iterator behavior.
     pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,

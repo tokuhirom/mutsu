@@ -113,7 +113,7 @@ impl Interpreter {
             return Err(Self::reject_args_for_empty_sig(&args));
         }
         let saved_env = self.env.clone();
-        let saved_readonly = self.save_readonly_vars();
+        let saved_readonly = self.enter_readonly_frame();
         if let Some(line) = self.test_pending_callsite_line {
             self.cur_source_line = line;
         }
@@ -133,7 +133,7 @@ impl Interpreter {
                 self.set_current_package(saved_package);
                 self.pop_caller_env();
                 self.env = saved_env;
-                self.restore_readonly_vars(saved_readonly);
+                self.exit_readonly_frame(saved_readonly);
                 return Err(Self::enhance_binding_error(
                     e,
                     &def.name.resolve(),
@@ -247,7 +247,7 @@ impl Interpreter {
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
-        self.restore_readonly_vars(saved_readonly);
+        self.exit_readonly_frame(saved_readonly);
         let call_result = match result {
             Ok(()) => Ok(implicit_return),
             Err(e) => Err(e),
@@ -309,7 +309,7 @@ impl Interpreter {
                         return Err(Self::reject_args_for_empty_sig(&args));
                     }
                     let saved_env = self.env.clone();
-                    let saved_readonly = self.save_readonly_vars();
+                    let saved_readonly = self.enter_readonly_frame();
                     if let Some(line) = self.test_pending_callsite_line {
                         self.cur_source_line = line;
                     }
@@ -327,7 +327,7 @@ impl Interpreter {
                                 self.set_current_package(saved_package);
                                 self.pop_caller_env();
                                 self.env = saved_env;
-                                self.restore_readonly_vars(saved_readonly);
+                                self.exit_readonly_frame(saved_readonly);
                                 return Err(Self::enhance_binding_error(
                                     e,
                                     &def.name.resolve(),
@@ -394,7 +394,7 @@ impl Interpreter {
                         .as_deref()
                         .map(|spec| self.resolved_type_capture_name(spec));
                     self.env = restored_env;
-                    self.restore_readonly_vars(saved_readonly);
+                    self.exit_readonly_frame(saved_readonly);
                     let call_result = match result {
                         Ok(()) => Ok(implicit_return),
                         Err(e) => Err(e),

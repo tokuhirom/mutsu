@@ -288,18 +288,13 @@ pub(crate) struct VmCallFrame {
     pub saved_locals: Vec<Value>,
     pub saved_upvalues: Vec<Option<Value>>,
     pub saved_stack_depth: usize,
-    /// None when using light call frame (simple methods that don't use `:=` binding).
-    pub saved_readonly: Option<crate::runtime::ReadonlySet>,
-    /// Read-only var names this frame *newly* added to `readonly_vars` (used by
-    /// the light-frame method path, which marks `$` scalar params read-only
-    /// without cloning the whole set). Removed on `pop_call_frame`. Empty for the
-    /// slow path, which restores the full set via `saved_readonly` instead.
-    pub readonly_added: Vec<String>,
-    /// Read-only var names this frame *removed* from `readonly_vars` because a
-    /// writable (`is copy`/`is rw`/`is raw`) param shadows a caller's same-named
-    /// read-only variable. Re-added on `pop_call_frame` to restore the caller's
-    /// state. Light-frame method path counterpart to `readonly_added`.
-    pub readonly_removed: Vec<String>,
+    /// Rollback mark of this frame's readonly scope (see
+    /// `enter_readonly_frame`): `pop_call_frame` replays the readonly-set
+    /// mutations journaled since the frame was pushed. Replaces both the old
+    /// whole-set `Arc` snapshot and the light-frame `readonly_added`/
+    /// `readonly_removed` delta lists — the journal records exactly the
+    /// mutations either mechanism would have to undo.
+    pub readonly_mark: usize,
     pub saved_local_bind_pairs: Vec<(usize, usize)>,
     /// The caller's loop-body-local declaration scopes. These VM fields track
     /// which `my` names a `for`/`while` body declared so they can be restored at

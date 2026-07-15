@@ -154,13 +154,13 @@ impl Interpreter {
             return Err(Self::reject_args_for_empty_sig(arg_values));
         }
         let saved_env = self.env.clone();
-        let saved_readonly = self.save_readonly_vars();
+        let saved_readonly = self.enter_readonly_frame();
         let rw_bindings =
             match self.bind_function_args_values(&def.param_defs, &def.params, arg_values) {
                 Ok(bindings) => bindings,
                 Err(e) => {
                     self.env = saved_env;
-                    self.restore_readonly_vars(saved_readonly);
+                    self.exit_readonly_frame(saved_readonly);
                     return Err(e);
                 }
             };
@@ -222,7 +222,7 @@ impl Interpreter {
         self.apply_rw_bindings_to_env(&rw_bindings, &mut restored_env);
         self.merge_sigilless_alias_writes(&mut restored_env, &self.env);
         self.env = restored_env;
-        self.restore_readonly_vars(saved_readonly);
+        self.exit_readonly_frame(saved_readonly);
         rendered
     }
 }
