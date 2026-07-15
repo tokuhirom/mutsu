@@ -366,18 +366,31 @@ impl Interpreter {
     /// `op_ip`. The key combines the enclosing code-object *clone* identity with
     /// the op position, so a `once` fires once per clone (Raku semantics):
     ///
-    /// - `__mutsu_callable_id` (set per-clone by the call dispatch) identifies a
-    ///   specific routine/closure clone and takes priority — this is what makes a
+    /// - Inside a **method**, the clone is identified by `(owning class, method)`
+    ///   — a stable, per-clone key (unlike the method's per-*call*
+    ///   `__mutsu_callable_id`, which is a fresh id every invocation). A method
+    ///   fires once per clone: once total for a normal/inherited method (the
+    ///   defining class's single clone), and once per composing class for a role
+    ///   method (`owner_class` is the composing class there). The innermost
+    ///   routine frame is consulted, so a `once` in a closure/sub *nested* in a
+    ///   method still keys on that inner clone, not the method's.
+    /// - Otherwise `__mutsu_callable_id` (set per-clone by the sub/closure call
+    ///   dispatch) identifies a specific routine/closure clone — this makes a
     ///   fresh `my sub` clone per loop iteration re-fire, and (being stable across
-    ///   a routine's OTF recompiles on worker threads) what makes a sub's `once`
-    ///   agree across threads.
+    ///   a routine's OTF recompiles on worker threads) makes a sub's `once` agree
+    ///   across threads.
     /// - Otherwise the innermost block/once scope (top-level / bare-block `once`).
     ///
-    /// The `c`/`r` tag keeps the two id spaces from colliding numerically, and
+    /// The `m`/`c`/`r` tag keeps the id spaces from colliding numerically, and
     /// `op_ip` is unique per `once` site within a single code object, so the key
     /// is collision-free. Unlike the old global compile-time counter it is
     /// deterministic across every recompilation of the same source.
     pub(crate) fn once_scope_key(&self, op_ip: usize) -> String {
+        if let Some(frame) = self.routine_stack.last()
+            && frame.is_method
+        {
+            return format!("m{}::{}::{op_ip}", frame.package, frame.name);
+        }
         match self.env.get("__mutsu_callable_id").map(Value::view) {
             Some(ValueView::Int(id)) if id >= 0 => format!("c{id}::{op_ip}"),
             _ => format!(
