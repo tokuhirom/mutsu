@@ -586,6 +586,16 @@ impl Interpreter {
             }
             if class_name == "CompUnit::Repository::FileSystem" {
                 match method {
+                    // mutsu loads modules from source (precompilation is a
+                    // parse-cache detail); expose the repository object the
+                    // CompUnit API promises so precomp-aware callers
+                    // (roast's Test::Compile) can thread it through `need`.
+                    "precomp-repository" => {
+                        return Ok(Value::make_instance(
+                            Symbol::intern("CompUnit::PrecompilationRepository::Default"),
+                            HashMap::new(),
+                        ));
+                    }
                     "candidates" => {
                         let prefix = attributes
                             .as_map()
