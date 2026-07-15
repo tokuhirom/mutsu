@@ -239,6 +239,16 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // Rakudo parity: a private-attribute read on a concrete invocant
+                // whose class does not carry the attribute throws (P6opaque
+                // no-such-attribute) instead of yielding Nil.
+                if name.starts_with('!')
+                    && name.len() > 1
+                    && !name.starts_with("__")
+                    && let Some(err) = self.missing_private_attr_read_error(name)
+                {
+                    return Err(err);
+                }
                 // Fast scalar read (J4 helper hot path): the dominant GetGlobal
                 // shape is a plain env hit (topic `$_` reads in loop bodies,
                 // dynamic vars). Serve it through the memoized per-slot Symbol —

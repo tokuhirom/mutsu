@@ -212,6 +212,12 @@ impl Interpreter {
             // in the env (when skip_env_setup is active) but are still valid.
             let is_private_attr =
                 name.starts_with('!') && name.len() > 1 && !name.starts_with("__");
+            // Rakudo parity: a private-attribute read on a concrete invocant
+            // whose class does not carry the attribute throws (P6opaque
+            // no-such-attribute) instead of yielding Nil.
+            if is_private_attr && let Some(err) = self.missing_private_attr_read_error(name) {
+                return Err(err);
+            }
             if !is_internal && !is_special && !is_private_attr && !self.env().contains_key(name) {
                 return Err(RuntimeError::new(format!(
                     "X::Undeclared::Symbols: Variable '{name}' is not declared"

@@ -199,6 +199,64 @@ impl Interpreter {
         map.get(key).cloned()
     }
 
+    /// The instance class `Symbol` and shared attribute cell for a `self` value,
+    /// unwrapping a `Mixin` like [`Self::self_instance_attrs`]. `None` for a
+    /// type object / non-instance.
+    fn instance_class_and_attrs(
+        val: &Value,
+    ) -> Option<(
+        crate::symbol::Symbol,
+        crate::gc::Gc<crate::value::InstanceAttrs>,
+    )> {
+        match val.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } => Some((class_name, attributes.clone())),
+            ValueView::Mixin(inner, _) => Self::instance_class_and_attrs(inner),
+            _ => None,
+        }
+    }
+
+    /// Rakudo parity (weird-errors.t test 29): reading a private attribute
+    /// (`$!x`) on a concrete invocant whose class neither carries the attribute
+    /// in its cell nor declares it anywhere in its MRO throws the P6opaque
+    /// no-such-attribute error instead of yielding Nil — e.g. an
+    /// `our method foo(Parent:)` reading a Child-only `$!x`, called with a
+    /// Parent instance. `None` when the read may legally fall through: no
+    /// `self` in scope, a type-object invocant, the attribute present in the
+    /// cell, or declared on the instance's class (a seeding gap must not turn
+    /// into a spurious throw).
+    pub(super) fn missing_private_attr_read_error(&mut self, name: &str) -> Option<RuntimeError> {
+        let (bare, is_private) = Self::attr_twigil_base(name)?;
+        if !is_private {
+            return None;
+        }
+        let self_val = self.get_env_with_main_alias("self")?;
+        let (class_sym, attributes) = Self::instance_class_and_attrs(&self_val)?;
+        {
+            let map = attributes.as_map();
+            if self
+                .attr_key_in_map(crate::symbol::Symbol::intern(bare), true, &map)
+                .is_some()
+            {
+                return None;
+            }
+        }
+        let class_name = class_sym.as_str();
+        if self.class_declares_attribute(class_name, bare) {
+            return None;
+        }
+        let owner = self
+            .method_class_stack_top_str()
+            .unwrap_or(class_name)
+            .to_string();
+        Some(RuntimeError::new(format!(
+            "P6opaque: no such attribute '$!{bare}' on type {owner} in a {class_name} when trying to get a value"
+        )))
+    }
+
     /// Map a variable name to its canonical attribute-twigil form for cell access:
     /// a direct twigil (`!x`/`@.y`/…) maps to itself; a bare sigilless name
     /// (`has $x` → `Var("x")`) resolves through the runtime alias table to its
