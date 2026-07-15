@@ -139,6 +139,10 @@ impl Interpreter {
         pkg: &str,
         pattern: &RegexPattern,
     ) -> Vec<(usize, RegexCaptures)> {
+        if token.ratchet {
+            return self
+                .match_separated_quantifier_ratchet(token, chars, start, base_caps, pkg, pattern);
+        }
         let sep = token.separator.as_ref().expect("separator present");
         let (min, max) = match &token.quant {
             RegexQuant::OneOrMore => (1usize, None),
@@ -218,6 +222,135 @@ impl Interpreter {
         }
         out.reverse();
         out
+    }
+
+    /// Ratcheted (`token`/`rule`) separated quantifier: possessive linear scan.
+    /// Ratchet forbids backtracking into the quantifier, so each step commits
+    /// to the separator's and the atom's single highest-priority match and the
+    /// whole quantifier yields at most one candidate. This matches Rakudo:
+    /// `my token T { <[ab]>+ % ',' ',b' }` does NOT match "a,b" (the chain
+    /// possessively consumes all of it) while the backtracking `regex` variant
+    /// does. It is also what keeps grammar rules linear: the general DFS in
+    /// `enumerate_separated_chains` goes exponential when sigspace turns the
+    /// atom/separator into groups with several same-end candidates (a 6-pair
+    /// JSON object under `rule pairlist { <pair> * % \, }` took ~8s to parse;
+    /// this scan parses it in microseconds).
+    fn match_separated_quantifier_ratchet(
+        &self,
+        token: &RegexToken,
+        chars: &[char],
+        start: usize,
+        base_caps: &RegexCaptures,
+        pkg: &str,
+        pattern: &RegexPattern,
+    ) -> Vec<(usize, RegexCaptures)> {
+        let sep = token.separator.as_ref().expect("separator present");
+        let (min, max) = match &token.quant {
+            RegexQuant::OneOrMore => (1usize, None),
+            RegexQuant::ZeroOrMore => (0usize, None),
+            RegexQuant::Repeat(lo, hi) => (*lo, *hi),
+            // `?` / exact-one don't form a separator list; treat as one.
+            _ => (1usize, Some(1usize)),
+        };
+        // Frugal (`*? %`) under ratchet commits to the minimal count; greedy
+        // extends to `max` (or as far as the input allows).
+        let limit = if token.frugal { Some(min) } else { max };
+        let can_extend = |count: usize| limit.is_none_or(|m| count < m);
+
+        let empty = RegexCaptures::default();
+        let mut atom_caps: Vec<RegexCaptures> = Vec::new();
+        let mut sep_caps: Vec<RegexCaptures> = Vec::new();
+        let mut cur = start;
+        // Highest-priority atom match = the LAST candidate (the atom
+        // enumeration returns lowest priority first), mirroring the
+        // `RegexQuant::One` ratchet case. Deliberately the `_all_` enumeration
+        // and NOT the singular `regex_match_atom_with_capture_in_pkg`: the
+        // singular matcher's Named-atom path spawns a scratch sub-interpreter
+        // (plus a tail-text copy) per candidate per call, which is ~300x
+        // slower on nested grammar rules like `rule arraylist { <value> * %
+        // [\,] }` over `[[1,2,3],[4,5,6],[7,8,9]]`. A zero-width first atom
+        // means zero iterations (same zero-progress guard as the general
+        // path).
+        if can_extend(0)
+            && let Some((end, caps)) = self
+                .regex_match_atom_all_with_capture_in_pkg(
+                    &token.atom,
+                    chars,
+                    start,
+                    &empty,
+                    pkg,
+                    pattern.ignore_case,
+                )
+                .pop()
+            && end > start
+        {
+            atom_caps.push(caps);
+            cur = end;
+            while can_extend(atom_caps.len()) {
+                let Some((sep_end, scaps)) =
+                    self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, cur, pkg)
+                else {
+                    break;
+                };
+                let Some((atom_end, acaps)) = self
+                    .regex_match_atom_all_with_capture_in_pkg(
+                        &token.atom,
+                        chars,
+                        sep_end,
+                        &empty,
+                        pkg,
+                        pattern.ignore_case,
+                    )
+                    .pop()
+                else {
+                    break;
+                };
+                if atom_end <= cur {
+                    break;
+                }
+                sep_caps.push(scaps);
+                atom_caps.push(acaps);
+                cur = atom_end;
+            }
+        }
+        if atom_caps.len() < min {
+            // Ratchet cannot backtrack to satisfy `min`: the quantifier fails.
+            return Vec::new();
+        }
+        if atom_caps.is_empty() {
+            return vec![(start, base_caps.clone())];
+        }
+        let atom_stride = count_capture_groups(&token.atom);
+        let sep_stride: usize = sep
+            .pattern
+            .tokens
+            .iter()
+            .map(|t| count_capture_groups(&t.atom))
+            .sum();
+        let names = Self::collect_quantified_names_for_token(token);
+        let mut caps = base_caps.clone();
+        caps.named_quantified.extend(names.iter().cloned());
+        // Trailing separator for `%%`: Rakudo consumes it greedily, and
+        // ratchet commits to that single choice.
+        let mut end = cur;
+        let mut trailing: Option<RegexCaptures> = None;
+        if sep.allow_trailing
+            && let Some((ts_end, ts_caps)) =
+                self.regex_match_end_from_caps_in_pkg(&sep.pattern, chars, cur, pkg)
+            && ts_end >= cur
+        {
+            end = ts_end;
+            trailing = Some(ts_caps);
+        }
+        Self::append_separated_captures(
+            &mut caps,
+            &atom_caps,
+            &sep_caps,
+            trailing.as_ref(),
+            atom_stride,
+            sep_stride,
+        );
+        vec![(end, caps)]
     }
 
     /// Enumerate every `atom (sep atom)*` chain rooted at `start`, backtracking
@@ -901,9 +1034,13 @@ impl Interpreter {
                         let mut positions = Vec::new();
                         // Zero-match candidate (lowest priority for greedy `*`).
                         positions.push((pos, caps.clone()));
-                        if atom_contains_alternation(&token.atom) {
+                        if !token.ratchet && atom_contains_alternation(&token.atom) {
                             // Full greedy backtracking so a later constraint can
-                            // force a shorter per-iteration alternative.
+                            // force a shorter per-iteration alternative. Ratchet
+                            // skips this: it commits to the per-iteration
+                            // highest-priority choice, which is exactly the linear
+                            // chain below (the expansion would enumerate an
+                            // exponential tree only to keep its first leaf).
                             let mut hi_first = Vec::new();
                             self.quant_expand_greedy(
                                 token,
@@ -1119,10 +1256,12 @@ impl Interpreter {
                         caps.named_quantified
                             .extend(Self::collect_quantified_names_for_token(token));
                         let mut positions = Vec::new();
-                        if atom_contains_alternation(&token.atom) {
+                        if !token.ratchet && atom_contains_alternation(&token.atom) {
                             // Full greedy backtracking (`+` of a variable-length
                             // alternation): explore every per-iteration choice so a
-                            // later constraint can force a shorter one.
+                            // later constraint can force a shorter one. Ratchet
+                            // commits to the per-iteration highest-priority choice
+                            // instead — the linear chain below (see the `*` case).
                             let mut hi_first = Vec::new();
                             self.quant_expand_greedy(
                                 token,
