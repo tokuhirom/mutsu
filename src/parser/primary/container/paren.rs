@@ -53,6 +53,12 @@ fn is_single_paren_group(s: &str) -> bool {
 
 /// Parse a parenthesized expression or list.
 pub(crate) fn paren_expr(input: &str) -> PResult<'_, Expr> {
+    // Parens open a fresh nesting context: nothing inside binds to a prefix
+    // operator waiting outside the group.
+    crate::parser::expr::without_pending_prefix(|| paren_expr_inner(input))
+}
+
+fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     // Try the comprehensive parenthesized assignment parser first.
     // This handles complex LHS forms like %hash{...}, @arr[...], method calls, etc.
     if let Ok((rest, assign_expr)) = crate::parser::stmt::assign::try_parse_assign_expr(input) {

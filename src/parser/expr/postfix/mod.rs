@@ -18,3 +18,4 @@ pub(in crate::parser::expr) use loop_::{postfix_expr_tight_pub, prefix_expr};
 
 pub(crate) use call_method::{QuotedMethodName, parse_quoted_method_name};
 pub(in crate::parser) use loop_::postfix_expr_continue;
+pub(crate) use loop_::without_pending_prefix;

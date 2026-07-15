@@ -51,6 +51,14 @@ fn with_pending_prefix_level<T>(level: Option<i32>, f: impl FnOnce() -> T) -> T 
     out
 }
 
+/// Run `f` with no pending prefix context. Parens/brackets open a fresh
+/// nesting context: a postfix or adverb inside them binds within the group,
+/// never to a prefix operator waiting outside (`!($foo.bar() :adv)` adverbs
+/// `.bar()`, not `prefix:<!>`).
+pub(crate) fn without_pending_prefix<T>(f: impl FnOnce() -> T) -> T {
+    with_pending_prefix_level(None, f)
+}
+
 /// Parse the operand of a `lazy`/`eager`/`hyper` statement prefix: like
 /// `return`'s `parse_comma_or_expr`, these bind looser than the comma
 /// operator, so `lazy 3,4,5` must wrap the *entire* list `(3,4,5)` rather
@@ -222,6 +230,22 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                     }
                 }
                 break;
+            }
+            // Trailing colonpair adverbs bind to the whole prefix call
+            // (`!$foo.bar() :adv` passes `:adv` to `prefix:<!>`); the operand's
+            // postfix loop deferred them here via PENDING_PREFIX_LEVEL.
+            loop {
+                let (r_ws, _) = ws(rest)?;
+                if r_ws.starts_with(':')
+                    && !r_ws.starts_with("::")
+                    && let Ok((r_next, adverb)) = colonpair_expr(r_ws)
+                    && let Expr::Call { args, .. } = &mut result
+                {
+                    args.push(adverb);
+                    rest = r_next;
+                } else {
+                    break;
+                }
             }
             return Ok((rest, result));
         } // end of !is_hyper else block
@@ -2790,7 +2814,12 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
         // Postfix call adverbs: call():k, call():x(42), call():{ ... }
         // Parse as additional arguments on the preceding call/method-call expression.
-        if supports_postfix_call_adverbs(&expr) {
+        // Inside a user-defined prefix operator's operand the adverb belongs to
+        // the *whole* prefix call (`!$foo.bar() :adv` adverbs `prefix:<!>`, while
+        // `!($foo.bar() :adv)` adverbs `.bar()`), so leave it for the prefix
+        // branch to collect after it has built its call.
+        if PENDING_PREFIX_LEVEL.with(|c| c.get()).is_none() && supports_postfix_call_adverbs(&expr)
+        {
             let (r_adv, _) = ws(rest)?;
             if r_adv.starts_with(':') && !r_adv.starts_with("::") {
                 let after_colon = &r_adv[1..];
