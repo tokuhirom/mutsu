@@ -2,7 +2,8 @@
 
 > **Status:** DESIGN (2026-06-17). No code yet. This document reopens the
 > dual-store question from the design level, as a *single authoritative store*
-> redesign, per the user directive ("単一権威ストア再設計として設計から問い直す").
+> redesign, per the user directive ("re-examine from the design level, as a
+> single-authoritative-store redesign").
 > It supersedes the **footprint-reduction-only** framing of
 > [docs/vm-dual-store.md](vm-dual-store.md) — read that file first for the full
 > mechanism map, the 151 `env_dirty` setters, and the slice history. This file is

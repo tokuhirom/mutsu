@@ -1,4 +1,4 @@
-# `Value::Hash` → `Arc<HashData>` migration (stable-container-ID, PLAN Q2 本筋)
+# `Value::Hash` → `Arc<HashData>` migration (stable-container-ID, PLAN Q2 mainline)
 
 > Goal: kill the `Arc::as_ptr`-keyed side tables (`hash_type_metadata`,
 > `register_hash_original_keys`, …) — the root of the intermittent typed-hash /

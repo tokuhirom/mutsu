@@ -1,834 +1,838 @@
-# VM → Interpreter フォールバック台帳
+# VM → Interpreter fallback ledger
 
-最終ゴール「tree-walking Interpreter 実行パスの撤去 → dual-store 削除」（[PLAN.md](../PLAN.md) ①〜⑤）の
-**進捗台帳**。VM (`src/vm/`) が今も Interpreter (`src/runtime/`) に委譲しているサイトを 1 箇所ずつ列挙し、
-撲滅のたびに行を消す。関連: [vm-interpreter-dedup.md](vm-interpreter-dedup.md)（重複削除）、
-[vm-single-store.md](vm-single-store.md)（locals↔env 一本化の**現行設計** = Slice F）、
-[vm-dual-store.md](vm-dual-store.md)（同・撤回試行の履歴）、[vm-decoupling.md](vm-decoupling.md)（dispatch）。
-個々のフォールバック撲滅は今や Slice F（単一ストア収束）の前段ステップとして理解する。
+**Progress ledger** for the final goal "remove the tree-walking Interpreter execution path → delete the dual store"
+([PLAN.md](../PLAN.md) ①–⑤). It enumerates, one by one, the sites where the VM (`src/vm/`) still delegates
+to the Interpreter (`src/runtime/`), and deletes a row each time one is eliminated. Related:
+[vm-interpreter-dedup.md](vm-interpreter-dedup.md) (duplicate removal),
+[vm-single-store.md](vm-single-store.md) (the **current design** for unifying locals↔env = Slice F),
+[vm-dual-store.md](vm-dual-store.md) (history of the withdrawn attempts at the same), [vm-decoupling.md](vm-decoupling.md) (dispatch).
+Individual fallback eliminations are now understood as preliminary steps toward Slice F (single-store convergence).
 
-## 用語
+## Terminology
 
-- **真フォールバック** = 本来 bytecode で実行すべきだが今は tree-walk Interpreter に委譲しているもの。
-  コードに `// TODO: compile to bytecode` を付与。これらを撲滅するのが ①。
-- **CARRIER** = 撲滅対象ではない本質的委譲（reflection / MOP / EVAL サブ VM / メタプロ hook / mode 状態）。
-  Interpreter が共有レジストリ・実行状態を所有するための参照であって tree-walk ではない（④ で「分離 or 明示」）。
-  コードに `// CARRIER:` を付与。③で env/レジストリ所有が VM に移れば単なる共有参照になる。
+- **True fallback** = something that should be executed as bytecode but is currently delegated to the tree-walk Interpreter.
+  Marked in code with `// TODO: compile to bytecode`. Eliminating these is ①.
+- **CARRIER** = essential delegation that is not an elimination target (reflection / MOP / EVAL sub-VM / metaprogramming hooks / mode state).
+  It is a reference through which the Interpreter owns shared registries and execution state, not a tree-walk
+  (to be "separated or made explicit" in ④). Marked in code with `// CARRIER:`. Once env/registry ownership moves to the VM in ③, these become mere shared references.
 
-可視化の現状: `grep -rn "TODO: compile to bytecode" src/vm/` = 18 マーカー、`grep -rn "// CARRIER:" src/vm/` = 8 マーカー。
-（1 マーカーが近接する複数サイトを束ねる箇所あり。下表が正準。）
+Current state of the visualization: `grep -rn "TODO: compile to bytecode" src/vm/` = 18 markers, `grep -rn "// CARRIER:" src/vm/` = 8 markers.
+(Some markers bundle multiple adjacent sites. The tables below are canonical.)
 
-## §1 — メソッドディスパッチの真フォールバック（`call_method_with_values` / `_mut_`）
+## §1 — True fallbacks in method dispatch (`call_method_with_values` / `_mut_`)
 
-| file:line | 受け手 / メソッド | 難易度 | ブロッカー / 依存 |
+| file:line | receiver / method | difficulty | blocker / dependency |
 |---|---|---|---|
-| `vm_call_method_compiled.rs` native-method (非mut) | IO::Pipe/IO::Handle 等の組み込みクラスメソッド | HARD | ③（実装 `native_io_*` がファイルハンドル等の interpreter 所有状態を要求。当初「個別可」は誤り） |
-| `vm_call_method_compiled.rs` catch-all (非mut) | **native/Buf/Failure/MOP のみ**（ユーザーメソッドは全て bytecode 化済） | HARD | ③ state 所有移管。**③ PR-3 で実測訂正**: ここはユーザーメソッド tree-walk では**なかった** |
-| `vm_call_method_compiled.rs` native-method (mut) | 同上 mut | HARD | ③（同上） |
-| `vm_call_method_compiled.rs` catch-all (mut) | 同上 mut（native/Buf/Failure/MOP のみ） | HARD | ③ |
-| `vm_call_method_mut_ops.rs` catch-all | generic mut メソッド（plain untyped `@`-array mutators ＋ mutable Buf write methods は除く） | HARD | ③ |
-| ~~`vm_call_method_mut_ops.rs` plain `@`-array mutators~~ | ~~append/prepend/unshift/pop/shift~~ | — | **✅消化 (③ PR-5)**: `try_native_array_mut` で VM ネイティブ。typed/shaped/lazy/shared/constrained は interpreter 維持 |
-| ~~`vm_call_method_mut_ops.rs` mutable Buf write methods~~ | ~~write-bits/write-ubits/write-num*/write-int*/write-uint*~~ | — | **✅消化 (③ PR-7)**: `try_native_buf_mut` で VM ネイティブ。pure 変換は `builtins/{buf_bits,buf_write_num,buf_write_int}` に一本化。type-object/Blob/malformed-arity は interpreter 維持 |
-| ~~`vm_call_method_mut_ops.rs` 単純 array-backed Iterator~~ | ~~pull-one/skip-one/skip-at-least/skip-at-least-pull-one/sink-all~~ | — | **✅消化 (③ PR-9)**: `try_native_iterator` で VM ネイティブ（`$it.pull-one` は CallMethodMut＝mut パス）。`items`+`index` 自己完結のみ。squish（コールバック）/ lazy（gather/coroutine, `is_lazy`）/ push-*（外部バッファ）/ count-only/bool-only は interpreter 維持 |
-| ~~`vm_call_method_mut_ops.rs` array-backed instance~~ | ~~`is Array` storage の push/pop/shift~~ | — | **✅消化 (#3058)**: `native_array_storage_mut` で `is Array`-backed instance の backing storage への push/pop/shift/unshift/append/prepend を VM ネイティブ化。`write_back_array_storage_instance` で instance 再構築。richer メソッド（join/sort/map/splice/AT-POS 等）は interpreter 維持 |
-| `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B（共有セル所有） |
-| `vm_data_ops.rs` shaped push | shaped 配列 push | MEDIUM | shaped 次元メタ検査の VM 化 |
-| `vm_data_ops.rs` non-simple push | 非Array/非ContainerRef な ArrayPush ターゲット（cold） | LOW | **probe で cold 確認 (2026-06-14)**: ArrayPush opcode は単一引数 push かつ *local* array 限定で emit。closure-captured / multi-arg push は CallMethodMut へ流れ **#3060 で native 化済**（下記）。残る ArrayPush 非Array 分岐は whitelist で発火例ゼロ＝cold |
-| ~~`vm_call_method_mut_ops.rs` CallMethodMut push~~ | ~~closure-captured / multi-arg `@a.push`~~ | — | **✅消化 (#3060)**: `try_native_array_mut` に `push` arm を追加。`@a.push(x)` は単一引数 local のみ ArrayPush opcode、それ以外（captured / multi-arg）は CallMethodMut で来るのを VM ネイティブ化。typed/shaped/lazy/shared/constrained は interpreter 維持 |
-| ~~`vm_smart_match.rs` key-method~~ | ~~smartmatch のキーメソッド抽出~~ | — | **✅消化 (PR2)**: 統一 compiled-first へ |
-| ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`（list-like 受け手）~~ | — | **✅消化 (③ PR-8 + MixHash slice)**: `try_native_quanthash_coerce` で VM ネイティブ。pure 折り畳みは `builtins/quanthash_coerce` に一本化。**`.MixHash` も追加**（旧除外理由「型メタ登録＝interpreter 所有 state」は #2952 のコンテナ値埋め込み化で stale＝`Value::Mix` の Arc にメタ埋め込みで pure value op・新 `to_mixhash`）。Instance/Package 受け手のみ interpreter 維持 |
-| `vm_call_helpers.rs` hyper temp | temp-bind した item への hyper メソッド | MEDIUM | 第一級コンテナ Phase 2 |
-| ~~`vm_register_ops.rs` react loop~~ | ~~`run_react_event_loop[_drain]` / `run_whenever_with_value`~~ | — | **✅消化 (Stage 1+2, #3010/#3027/#3029/#3031/#3038/#3039)**: 駆動ループの **4 箇所二重化**（react/await-promise/tap×2）を単一エンジンへ統合（tap×2→1 #3010、react↔await-promise を `SupplyDrivePolicy { React, Promise }` + `drive_react_subscriptions` へ #3027）。**Stage 2 = ループ所有権の逆転完了**: `run_react_event_loop`/`drive_react_subscriptions`/`run_react_consumer`/`replay_static_supply` を `impl Interpreter`→`impl VM`（新 `vm/vm_react_loop.rs`）へ移設 #3038、whenever body/LAST/CLOSE callback を `call_sub_value`(tree-walk)→`VM::call_react_callback`（`vm_call_map_block` でトピック束縛しつつコンパイル済みバイトコード実行）へ #3039。await/Promise 経路は薄い `Interpreter::drive_react_subscriptions` ブリッジ（mem::take/VM/restore）で到達。**Stage 3 follow-up = supply `QUIT` handler も VM ネイティブ化**: VM 駆動ループ内の 2 箇所（`vm_react_loop.rs` の React/Channel quit 経路）が `self.interpreter.call_supply_quit_handler`（tree-walk `call_sub_value`）へ戻っていたのを、`VM::call_supply_quit_handler`（`call_react_callback` 経由でコンパイル済みバイトコード実行）へ差し替え。**これで駆動ループのどのコールバックも tree-walk へ戻らない**。`Interpreter::call_supply_quit_handler` は Interpreter 単独の on-demand/tap supply 経路（`native_supplier_methods`/`native_supply_mut_methods`）からのみ使用（それ自体が別系の tree-walk runtime で、ここは対象外）。`supply_emit_buffer` は Interpreter field のまま（`self.interpreter.` 経由で VM から到達でき、global 化は不要）。 |
+| `vm_call_method_compiled.rs` native-method (non-mut) | built-in class methods such as IO::Pipe/IO::Handle | HARD | ③ (the implementations `native_io_*` require interpreter-owned state such as file handles. The initial "can be done individually" assessment was wrong) |
+| `vm_call_method_compiled.rs` catch-all (non-mut) | **native/Buf/Failure/MOP only** (user methods are all bytecode-compiled already) | HARD | ③ state ownership transfer. **Corrected by measurement in ③ PR-3**: this was **not** a user-method tree-walk after all |
+| `vm_call_method_compiled.rs` native-method (mut) | same as above, mut | HARD | ③ (same as above) |
+| `vm_call_method_compiled.rs` catch-all (mut) | same as above, mut (native/Buf/Failure/MOP only) | HARD | ③ |
+| `vm_call_method_mut_ops.rs` catch-all | generic mut methods (excluding plain untyped `@`-array mutators and mutable Buf write methods) | HARD | ③ |
+| ~~`vm_call_method_mut_ops.rs` plain `@`-array mutators~~ | ~~append/prepend/unshift/pop/shift~~ | — | **✅ Eliminated (③ PR-5)**: VM-native via `try_native_array_mut`. typed/shaped/lazy/shared/constrained stay on the interpreter |
+| ~~`vm_call_method_mut_ops.rs` mutable Buf write methods~~ | ~~write-bits/write-ubits/write-num*/write-int*/write-uint*~~ | — | **✅ Eliminated (③ PR-7)**: VM-native via `try_native_buf_mut`. Pure conversions unified into `builtins/{buf_bits,buf_write_num,buf_write_int}`. type-object/Blob/malformed-arity stay on the interpreter |
+| ~~`vm_call_method_mut_ops.rs` simple array-backed Iterator~~ | ~~pull-one/skip-one/skip-at-least/skip-at-least-pull-one/sink-all~~ | — | **✅ Eliminated (③ PR-9)**: VM-native via `try_native_iterator` (`$it.pull-one` is the CallMethodMut = mut path). Only self-contained `items`+`index` iterators. squish (callback) / lazy (gather/coroutine, `is_lazy`) / push-* (external buffer) / count-only/bool-only stay on the interpreter |
+| ~~`vm_call_method_mut_ops.rs` array-backed instance~~ | ~~push/pop/shift on `is Array` storage~~ | — | **✅ Eliminated (#3058)**: `native_array_storage_mut` makes push/pop/shift/unshift/append/prepend against the backing storage of an `is Array`-backed instance VM-native. Instance rebuilt via `write_back_array_storage_instance`. Richer methods (join/sort/map/splice/AT-POS etc.) stay on the interpreter |
+| `vm_data_ops.rs` shared push | `@a.push` (threaded) | HARD | lever B (shared cell ownership) |
+| `vm_data_ops.rs` shaped push | shaped array push | MEDIUM | VM-ify shaped dimension metadata checks |
+| `vm_data_ops.rs` non-simple push | ArrayPush targets that are neither Array nor ContainerRef (cold) | LOW | **Confirmed cold by probe (2026-06-14)**: the ArrayPush opcode is only emitted for single-argument push on a *local* array. Closure-captured / multi-arg push flows to CallMethodMut and **was made native in #3060** (below). The remaining ArrayPush non-Array branch has zero firing examples across the whitelist = cold |
+| ~~`vm_call_method_mut_ops.rs` CallMethodMut push~~ | ~~closure-captured / multi-arg `@a.push`~~ | — | **✅ Eliminated (#3060)**: added a `push` arm to `try_native_array_mut`. `@a.push(x)` uses the ArrayPush opcode only for single-argument local; everything else (captured / multi-arg) arrives via CallMethodMut and is now VM-native. typed/shaped/lazy/shared/constrained stay on the interpreter |
+| ~~`vm_smart_match.rs` key-method~~ | ~~key-method extraction for smartmatch~~ | — | **✅ Eliminated (PR2)**: moved to unified compiled-first |
+| ~~`vm_call_method_compiled.rs` QuantHash coercion~~ | ~~`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash` (list-like receivers)~~ | — | **✅ Eliminated (③ PR-8 + MixHash slice)**: VM-native via `try_native_quanthash_coerce`. Pure folding unified into `builtins/quanthash_coerce`. **`.MixHash` also added** (the old exclusion reason "type metadata registration = interpreter-owned state" became stale with #2952's embedding of container values = metadata embedded in `Value::Mix`'s Arc makes it a pure value op; new `to_mixhash`). Only Instance/Package receivers stay on the interpreter |
+| `vm_call_helpers.rs` hyper temp | hyper method on a temp-bound item | MEDIUM | first-class containers Phase 2 |
+| ~~`vm_register_ops.rs` react loop~~ | ~~`run_react_event_loop[_drain]` / `run_whenever_with_value`~~ | — | **✅ Eliminated (Stage 1+2, #3010/#3027/#3029/#3031/#3038/#3039)**: unified the **4-way duplication** of the drive loop (react/await-promise/tap×2) into a single engine (tap×2→1 #3010; react↔await-promise into `SupplyDrivePolicy { React, Promise }` + `drive_react_subscriptions` #3027). **Stage 2 = loop ownership inversion complete**: moved `run_react_event_loop`/`drive_react_subscriptions`/`run_react_consumer`/`replay_static_supply` from `impl Interpreter` → `impl VM` (new `vm/vm_react_loop.rs`) #3038; switched whenever body/LAST/CLOSE callbacks from `call_sub_value` (tree-walk) → `VM::call_react_callback` (executing compiled bytecode while binding the topic via `vm_call_map_block`) #3039. The await/Promise path is reached via a thin `Interpreter::drive_react_subscriptions` bridge (mem::take/VM/restore). **Stage 3 follow-up = the supply `QUIT` handler is also now VM-native**: the 2 sites inside the VM drive loop (the React/Channel quit paths in `vm_react_loop.rs`) that fell back to `self.interpreter.call_supply_quit_handler` (tree-walk `call_sub_value`) were replaced with `VM::call_supply_quit_handler` (executing compiled bytecode via `call_react_callback`). **With this, no callback in the drive loop ever returns to tree-walk.** `Interpreter::call_supply_quit_handler` is used only from the Interpreter's standalone on-demand/tap supply path (`native_supplier_methods`/`native_supply_mut_methods`), which is itself a separate tree-walk runtime and out of scope here. `supply_emit_buffer` remains an Interpreter field (reachable from the VM via `self.interpreter.`; making it global is unnecessary). |
 
-## §2 — 関数ディスパッチの真フォールバック（`call_function` / `call_function_fallback`）
+## §2 — True fallbacks in function dispatch (`call_function` / `call_function_fallback`)
 
-| file:line | 文脈 | 難易度 | ブロッカー / 依存 |
+| file:line | context | difficulty | blocker / dependency |
 |---|---|---|---|
-| ~~`vm_var_get_ops.rs` 0-arg term~~ | ~~0引数のユーザ/multi 関数 term~~ | — | **✅消化 (PR3)**: cold fallback を統一 compiled-first へ（OTF compile 追加） |
-| ~~`vm_var_get_ops.rs` pkg-qualified~~ | ~~`Module::func` を term 位置で~~ | — | **✅消化 (PR3)**: 同上 |
-| `vm_call_func_ops.rs` builtin-shadow（slip + 通常 2 サイト） | ユーザ sub が同名 builtin を shadow / **非builtin モジュール/動的 single sub** | 部分消化 | **✅単一候補の compilable 分は ③ PR-2 で OTF compile 化**（builtin-shadow は `def_is_otf_compilable` strict）。**✅非builtin single も OTF 化（§D, #TBD）**: 新 `def_is_otf_compilable_module_single`（default 許可・name-cache 安全＝同名 builtin 無し）＋保守ゲート（state/sigilless/rw/raw/nested-routine/subtest/CATCH/CONTROL/phaser/start/EVAL/test-assertion を `module_otf_body_needs_interpreter` で除外）。module sub 100%→0%。pin `t/module-sub-otf-dispatch.t`(14)。proto/multi/複雑 sig は fallback 維持 |
-| `vm_call_func_ops.rs` multi-dispatch fork / final else | 非proto multi / `call_function` 末端 | 部分消化 | **✅非proto multi の unambiguous/OTF-compilable/非state 候補は ③ PR-4 で OTF compile 化＋where 候補も §D で OTF 化**（ambiguity/state-alternate/proto-body/末端は fallback 維持） |
-| `vm_call_func_ops.rs` proto sub dispatch（trivial body） | `proto foo {*}` / bodyless proto の `{*}` ディスパッチ | 部分消化 | **✅消化 (#3541)**: VM call site で `vm_resolve_trivial_proto_candidate`→`compile_and_call_function_def`。tree-walk proto body＋`__PROTO_DISPATCH__`＋候補 `run_block` を全バイパス。proto sig は `method_args_match` で gate。非trivial body / 非OTF候補 は fallback 維持 |
-| ~~`def_is_otf_compilable` の where 除外~~ | ~~where 制約付き multi/proto/single 候補~~ | — | **✅消化 (§D, #3543)**: `def_is_otf_compilable` から `where_constraint.is_none()` を撤去し where 候補も OTF compile 化。winner は resolve 時に `args_match_param_types` 経由で where 評価済＝解決 def は where を満たす。compiled binding が where 再検証＋`&name` captured env merge で byte-identical。light-call fast path は where 除外維持。fallback 77.8%→0%。**同 PR で `resolve_all_multi_candidates` を specificity 順ソート**（nextsame/callsame が複数マッチ候補で広い候補を先に拾う hash-seed flake を修正・defer-next.t）。pin `t/multi-where-otf-dispatch.t`(20) |
-| `def_is_otf_compilable` の default 除外 | default param 値を持つ multi/proto/single 候補 | DEFERRED | **PR #3546 close**: `default.is_none()` 単純撤去は make test + S06/S12 全緑だが release make roast で env.t/system.t/cur-current-distribution.t を回帰。root cause=builtin `run` を Test::Util の `our sub run(Str $code, Str $input='', *%o)` が shadow→builtin-shadow パスで OTF compile + name-cache 汚染→subtest 等 stateful 文脈で後続 core `run` を mis-bind。PR-2 builtin-shadow hazard の default-param 版。安全実装＝builtin-shadow 単一候補パスは default-param 除外維持・multi/非builtin 単一だけ許可（要 full roast 検証）。fallback 85.7%。impl+pin 保存=branch multi-dispatch-default-otf |
-| `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` 末端（実測でほぼ枯渇＝下記 PR-6 注記） | HARD | ③（残=lexical-alias-to-builtin / `__mutsu_*` 内部 / 並行〔lever B〕/ no-match エラー生成） |
-| ~~`vm_dispatch_helpers.rs` Routine call_function~~ | ~~Routine 値の関数解決~~ | — | **✅消化 (③ PR-1)**: 3 サイトを統一 compiled-first へ（builtin 名 Routine は builtin 優先維持） |
+| ~~`vm_var_get_ops.rs` 0-arg term~~ | ~~0-argument user/multi function term~~ | — | **✅ Eliminated (PR3)**: cold fallback moved to unified compiled-first (added OTF compile) |
+| ~~`vm_var_get_ops.rs` pkg-qualified~~ | ~~`Module::func` in term position~~ | — | **✅ Eliminated (PR3)**: same as above |
+| `vm_call_func_ops.rs` builtin-shadow (slip + normal, 2 sites) | user sub shadows a same-named builtin / **non-builtin module / dynamically registered single sub** | partially eliminated | **✅ The compilable single-candidate portion was OTF-compiled in ③ PR-2** (builtin-shadow uses strict `def_is_otf_compilable`). **✅ Non-builtin singles also OTF'd (§D, #TBD)**: new `def_is_otf_compilable_module_single` (default-allow, name-cache safe = no same-named builtin) plus a conservative gate (`module_otf_body_needs_interpreter` excludes state/sigilless/rw/raw/nested-routine/subtest/CATCH/CONTROL/phaser/start/EVAL/test-assertion). module sub 100%→0%. pin `t/module-sub-otf-dispatch.t`(14). proto/multi/complex sigs keep the fallback |
+| `vm_call_func_ops.rs` multi-dispatch fork / final else | non-proto multi / `call_function` terminal | partially eliminated | **✅ Unambiguous/OTF-compilable/non-state candidates of non-proto multis were OTF-compiled in ③ PR-4, and where-constrained candidates were also OTF'd in §D** (ambiguity/state-alternate/proto-body/terminal keep the fallback) |
+| `vm_call_func_ops.rs` proto sub dispatch (trivial body) | `{*}` dispatch of `proto foo {*}` / bodyless proto | partially eliminated | **✅ Eliminated (#3541)**: at the VM call site, `vm_resolve_trivial_proto_candidate`→`compile_and_call_function_def`. Fully bypasses the tree-walk proto body + `__PROTO_DISPATCH__` + candidate `run_block`. Proto sigs are gated via `method_args_match`. Non-trivial bodies / non-OTF candidates keep the fallback |
+| ~~`def_is_otf_compilable` where exclusion~~ | ~~multi/proto/single candidates with where constraints~~ | — | **✅ Eliminated (§D, #3543)**: removed `where_constraint.is_none()` from `def_is_otf_compilable`, so where-constrained candidates are OTF-compiled too. The winner has already had its where evaluated via `args_match_param_types` at resolve time = the resolved def satisfies the where. Compiled binding re-validates where + merges the `&name` captured env, byte-identical. The light-call fast path keeps the where exclusion. fallback 77.8%→0%. **The same PR sorts `resolve_all_multi_candidates` in specificity order** (fixes the hash-seed flake where nextsame/callsame picked a broader candidate first among multiple matching candidates; defer-next.t). pin `t/multi-where-otf-dispatch.t`(20) |
+| `def_is_otf_compilable` default exclusion | multi/proto/single candidates with default param values | DEFERRED | **PR #3546 closed**: plainly removing `default.is_none()` is green on make test + all of S06/S12, but the release make roast regressed env.t/system.t/cur-current-distribution.t. Root cause = Test::Util's `our sub run(Str $code, Str $input='', *%o)` shadows the builtin `run` → OTF compile on the builtin-shadow path + name-cache pollution → in stateful contexts like subtest, subsequent core `run` calls get mis-bound. A default-param variant of the PR-2 builtin-shadow hazard. Safe implementation = keep the default-param exclusion on the builtin-shadow single-candidate path and allow only multi / non-builtin singles (needs full roast validation). fallback 85.7%. impl+pin preserved = branch multi-dispatch-default-otf |
+| `vm_call_dispatch.rs` catch-all | `call_function_compiled_first` terminal (nearly exhausted by measurement = see PR-6 note below) | HARD | ③ (remaining = lexical-alias-to-builtin / `__mutsu_*` internal / concurrency [lever B] / no-match error generation) |
+| ~~`vm_dispatch_helpers.rs` Routine call_function~~ | ~~function resolution of Routine values~~ | — | **✅ Eliminated (③ PR-1)**: 3 sites moved to unified compiled-first (Routines with builtin names keep builtin priority) |
 
-## §C — CARRIER（撲滅対象外・文書化して残す。④で確定）
+## §C — CARRIER (not elimination targets; documented and kept. Finalized in ④)
 
-| file:line | 種別 | 理由 |
+| file:line | kind | reason |
 |---|---|---|
-| `vm_call_method_compiled.rs` pseudo-method (非mut/mut) | MOP reflection | DEFINITE/WHAT/WHO/HOW/WHY/WHICH/WHERE/VAR は反射、bytecode 形なし |
-| `vm_call_method_compiled.rs` ^metamethod (非mut/mut) | MOP | `Foo.^bar` メタメソッドは MOP 所有 |
-| `vm_register_ops.rs` `.VAR` + `trait_mod:<is>` | コンテナ反射 + メタプロ hook | `.VAR` 反射 + ユーザ trait ハンドラ |
-| `vm_register_ops.rs` `trait_mod:<is>` 各サイト | メタプロ hook | sub/型/変数への is トレイト適用（複数箇所） |
-| `vm_var_get_ops.rs` pseudo-package | 反射スコープ解決 | `SETTING::`/`OUTER::`/`CALLER::`/`DYNAMIC::` |
-| `vm_var_get_ops.rs` test-function | mode 状態 | `make-temp-dir` 等の Test ハーネス dispatch |
+| `vm_call_method_compiled.rs` pseudo-method (non-mut/mut) | MOP reflection | DEFINITE/WHAT/WHO/HOW/WHY/WHICH/WHERE/VAR are reflection; no bytecode form |
+| `vm_call_method_compiled.rs` ^metamethod (non-mut/mut) | MOP | `Foo.^bar` metamethods are MOP-owned |
+| `vm_register_ops.rs` `.VAR` + `trait_mod:<is>` | container reflection + metaprogramming hook | `.VAR` reflection + user trait handlers |
+| `vm_register_ops.rs` `trait_mod:<is>` sites | metaprogramming hook | applying is traits to subs/types/variables (multiple sites) |
+| `vm_var_get_ops.rs` pseudo-package | reflective scope resolution | `SETTING::`/`OUTER::`/`CALLER::`/`DYNAMIC::` |
+| `vm_var_get_ops.rs` test-function | mode state | Test harness dispatch for `make-temp-dir` etc. |
 | `vm_var_get_ops.rs` call-chain | MOP dispatch stack | `callsame`/`nextsame`/`callwith`/`nextwith`/`nextcallee`/`lastcall` |
-| `vm_call_func_ops.rs` / `vm_call_dispatch.rs` carrier 分岐 | EVAL サブ VM | `EVAL`/`EVALFILE` は compile→サブ VM 実行。`is_interpreter_carrier_function` で runtime 判定済み |
+| `vm_call_func_ops.rs` / `vm_call_dispatch.rs` carrier branches | EVAL sub-VM | `EVAL`/`EVALFILE` are compile→sub-VM execution. Already runtime-detected via `is_interpreter_carrier_function` |
 
-## 進捗ログ
+## Progress log
 
-- **2026-06-08 (PR-1, #2755 merged)**: ① の起点。全フォールバックを `// TODO: compile to bytecode` / `// CARRIER:`
-  で可視化し本台帳を新設。併せて EASY 撲滅 1 件: `succ`/`pred`（`vm_var_assign_ops.rs` の `increment_value_smart`/
-  `decrement_value_smart`）の生 `interpreter.call_method_with_values` を統一 compiled-first ディスパッチ
-  `try_compiled_method_or_interpret` に差し替え（§1 から 2 サイト消化）。
-- **2026-06-08 (PR-2)**: 同手法で value-receiver の生 `call_method_with_values` をさらに 2 サイト消化 →
-  `vm_smart_match.rs` smartmatch キーメソッド、`vm_dispatch_helpers.rs` Routine の method-dispatch 分岐
-  （`&?ROUTINE.dispatcher()(self,…)`）を統一 compiled-first ディスパッチへ。ユーザ定義メソッドは compiled bytecode
-  実行になり、native/reflective のみが共有末端へ。t/smartmatch-method-dispatch.t 追加。S03-smartmatch 全 pass。
-  （補足: fat-arrow `$o ~~ (k => v)` が False を返すのは Pair 分岐到達前の別パースバグで本作業の対象外。コロンペアは正常。）
-- **2026-06-08 (PR-3)**: §2 の cold な term 位置フォールバック 2 件（`vm_var_get_ops.rs` の 0-arg term /
-  pkg-qualified）を生 `interpreter.call_function` から統一エントリ `call_function_compiled_first` へ寄せ、
-  単純ユーザ sub の OTF compile を追加（interpreter は終端のみ）。あわせて native-method 行を **③-blocked** に訂正
-  （`native_io_*` がファイルハンドル等の interpreter 所有状態を要求するため「個別可」は誤りだった）。
+- **2026-06-08 (PR-1, #2755 merged)**: starting point of ①. Made all fallbacks visible with `// TODO: compile to bytecode` / `// CARRIER:`
+  and created this ledger. Also one EASY elimination: replaced the raw `interpreter.call_method_with_values` for `succ`/`pred`
+  (`increment_value_smart`/`decrement_value_smart` in `vm_var_assign_ops.rs`) with the unified compiled-first dispatch
+  `try_compiled_method_or_interpret` (2 sites eliminated from §1).
+- **2026-06-08 (PR-2)**: eliminated 2 more value-receiver raw `call_method_with_values` sites with the same technique →
+  the `vm_smart_match.rs` smartmatch key-method and the `vm_dispatch_helpers.rs` Routine method-dispatch branch
+  (`&?ROUTINE.dispatcher()(self,…)`) now go through unified compiled-first dispatch. User-defined methods run as compiled
+  bytecode; only native/reflective reach the shared terminal. Added t/smartmatch-method-dispatch.t. All S03-smartmatch pass.
+  (Note: fat-arrow `$o ~~ (k => v)` returning False is a separate parse bug hit before the Pair branch is reached, out of scope for this work. Colon pairs are fine.)
+- **2026-06-08 (PR-3)**: moved the 2 cold term-position fallbacks of §2 (0-arg term / pkg-qualified in `vm_var_get_ops.rs`)
+  from raw `interpreter.call_function` to the unified entry `call_function_compiled_first`, and added OTF compile for
+  simple user subs (interpreter is terminal only). Also corrected the native-method row to **③-blocked**
+  (the "can be done individually" assessment was wrong because `native_io_*` requires interpreter-owned state such as file handles).
 
-- **2026-06-08 (② 抽出/read/write-through 完了, #2760-2772 + 本 PR)**: 宣言レジストリの VM 所有化（phase ②）が
-  PR-A（抽出・全フィールドを `Registry` へ）→ PR-B（lookup/MRO/型マッチを `impl Registry` メソッド化）→ PR-C
-  （`register_*_decl` の write-through 整理）まで完了。一次情報は `docs/vm-registry-ownership.md`。PR-C は
-  **登録パス＝CARRIER 性**（`register_class_decl`/`register_sub_decl`/`register_enum_decl`/`register_role_decl` は
-  登録中に `eval_block_value`/`run_block_raw`/`call_function`＝クラス本体・trait ハンドラ・属性デフォルト・enum 変種値・
-  パラメタ化 role 本体を実行する＝実行トリガ）を確認し、`registry()`/`registry_mut()` を**再入検出ラッパ guard**へ
-  差し替えて「RwLock ガードを再入を跨いで保持しない」規律を **debug ビルドで実行時に強制**（同一ロック再取得を
-  ブロッキング呼び出し手前で位置付き panic、ロックアドレスでキー付けして別 registry 同時保持の正当ケースは許容）。
-  これで §2 の関数 dispatch fallback（`vm_call_func_ops.rs` multi/sub 解決, `vm_dispatch_helpers.rs` Routine）撲滅の
-  構造前提（②）が整った。残る §1/§2 は ③（state 所有移管）が前提。
+- **2026-06-08 (② extraction/read/write-through complete, #2760-2772 + this PR)**: VM ownership of the declaration registries (phase ②)
+  completed through PR-A (extraction; all fields into `Registry`) → PR-B (lookup/MRO/type matching as `impl Registry` methods) → PR-C
+  (cleanup of the `register_*_decl` write-through). Primary source: `docs/vm-registry-ownership.md`. PR-C confirmed the
+  **registration path = CARRIER nature** (`register_class_decl`/`register_sub_decl`/`register_enum_decl`/`register_role_decl` execute
+  `eval_block_value`/`run_block_raw`/`call_function` during registration = class bodies, trait handlers, attribute defaults, enum variant values,
+  and parameterized role bodies = execution triggers), and replaced `registry()`/`registry_mut()` with a **re-entrancy-detecting wrapper guard**
+  enforcing at runtime, in debug builds, the discipline "never hold an RwLock guard across re-entry" (panics with position info right before a
+  blocking call on same-lock reacquisition; keyed by lock address so the legitimate case of holding a different registry concurrently is allowed).
+  This puts in place the structural prerequisite (②) for eliminating the §2 function dispatch fallbacks
+  (`vm_call_func_ops.rs` multi/sub resolution, `vm_dispatch_helpers.rs` Routine). The remaining §1/§2 require ③ (state ownership transfer).
 
-- **2026-06-08 (③ PR-1, Routine dispatch)**: ③設計を `docs/vm-state-ownership.md` に確定（③は②と異なり
-  **フォールバック撲滅駆動**＝共有ハンドル方式不可・env は plain field 終状態。状態×結合度マップ作成）。最初の
-  スライスとして `vm_dispatch_helpers.rs` の Routine 値 dispatch（vm_call_on_value）の 3 つの生
-  `interpreter.call_function`（qualified / bare / 末端）を統一エントリ `call_function_compiled_first` へ寄せ、
-  ユーザ定義 sub/multi/proto を compiled bytecode 実行に。**builtin 優先の保全**: `&SETTING::...::not` は
-  `Routine{GLOBAL, "not"}` に解決される（accessors.rs）＝ユーザ `sub not` が名前を shadow していても builtin を
-  指す意図。`Interpreter::is_builtin_function` ガードで、builtin 名を持つ Routine のみ `call_function` の
-  builtin 優先を維持（平の user `&not` は `Value::Sub` で Routine 枝に来ない）。最初の naive 変換で
-  `S02-names/SETTING-6e.t` が回帰（user `sub not` + `&SETTING::not`）し実証。pin = `t/routine-value-dispatch.t`(10)。
-  S06/S02-magicals/S02-names/S03-smartmatch whitelist 137 件緑。
+- **2026-06-08 (③ PR-1, Routine dispatch)**: finalized the ③ design in `docs/vm-state-ownership.md` (unlike ②, ③ is
+  **fallback-elimination-driven** = the shared-handle approach is not viable; env's terminal state is a plain field. Built the state×coupling map). As the first
+  slice, moved the 3 raw `interpreter.call_function` calls (qualified / bare / terminal) of the Routine value dispatch (vm_call_on_value)
+  in `vm_dispatch_helpers.rs` to the unified entry `call_function_compiled_first`, so user-defined sub/multi/proto run as compiled bytecode.
+  **Preserving builtin priority**: `&SETTING::...::not` resolves to `Routine{GLOBAL, "not"}` (accessors.rs) = it intends the builtin even when a
+  user `sub not` shadows the name. With the `Interpreter::is_builtin_function` guard, only Routines bearing builtin names keep `call_function`'s
+  builtin priority (a plain user `&not` is a `Value::Sub` and does not reach the Routine branch). The first naive conversion regressed
+  `S02-names/SETTING-6e.t` (user `sub not` + `&SETTING::not`), which proved the point. pin = `t/routine-value-dispatch.t`(10).
+  S06/S02-magicals/S02-names/S03-smartmatch whitelist 137 files green.
 
-- **2026-06-08 (③ PR-2, builtin-shadow fork)**: ユーザ定義 sub が同名 builtin を shadow する関数 dispatch
-  fork（`vm_call_func_ops.rs` の `exec_call_func_op` 通常パス + `exec_call_func_slip_op` の 2 サイト、
-  `user_function_matches_call` 枝）を、解決した def が **plain 単一候補かつ compilable** な場合のみ OTF compile
-  （`compile_and_call_function_def`）へ降ろし bytecode 実行に。native arm へは落とさない（shadow された builtin を
-  拾わないため）。compilable 判定は新ヘルパ `def_is_otf_compilable`（既存 OTF 枝のガードを集約）。**回帰を 2 段で発見・修正**:
-  ① 当初 proto/multi も `resolve_function_with_types` の単一候補を OTF compile してしまい、proto'd multi の候補
-  dispatch が壊れた（whitelisted S06-multi/proto・subsignature・type-based が mid-file abort = exit 255/Failed:0）→
-  `!has_proto && !has_multi_candidates` ガード追加。② **`user_function_matches_call` 枝は builtin-shadow 専用ではなく
-  「compiled_fns に無い（モジュール/動的登録）args 一致ユーザ sub」全般**が来る。`def_is_otf_compilable` は nested
-  `sub` 宣言内の `when` 制御フロー等を捕捉できず、Test::Util `is-deeply-junction`（nested `junction-guts` + `when`）が
-  OTF compile されると `when`-succeed が関数全体を脱出し eigenstate を取りこぼした（`t/test-util-is-deeply-junction.t`
-  / `throws-like-any` 回帰）→ **`Interpreter::is_builtin_function(name)` ガードで実際の builtin shadow に限定**
-  （非builtin のモジュール sub は従来通り tree-walk）。pin = `t/builtin-shadow-dispatch.t`(9)。S06 whitelist 86 件緑
-  （S32-str gb2312/shiftjis は main でも落ちる既存環境依存）。残: 非proto multi fork（VM 側 multi 候補解決が前提）、
-  catch-all 末端（③）、非builtin モジュール sub の tree-walk（compiled_fns 拡充 or 安全な汎用 OTF gate が前提）。
+- **2026-06-08 (③ PR-2, builtin-shadow fork)**: for the function dispatch fork where a user-defined sub shadows a same-named builtin
+  (2 sites: the `exec_call_func_op` normal path + `exec_call_func_slip_op` in `vm_call_func_ops.rs`,
+  `user_function_matches_call` branch), lowered to OTF compile (`compile_and_call_function_def`) and bytecode execution only when the resolved
+  def is a **plain single candidate and compilable**. It does not fall to the native arm (so as not to pick up the shadowed builtin).
+  Compilability is judged by the new helper `def_is_otf_compilable` (consolidating the guards of the existing OTF branches). **Found and fixed regressions in 2 stages**:
+  ① initially, proto/multi also got their single `resolve_function_with_types` candidate OTF-compiled, breaking candidate dispatch of proto'd multis
+  (whitelisted S06-multi/proto, subsignature, type-based went mid-file abort = exit 255/Failed:0) →
+  added the `!has_proto && !has_multi_candidates` guard. ② **the `user_function_matches_call` branch is not builtin-shadow-only: it receives
+  all "args-matching user subs absent from compiled_fns (module/dynamically registered)"**. `def_is_otf_compilable` cannot capture `when` control
+  flow etc. inside nested `sub` declarations, and when Test::Util's `is-deeply-junction` (nested `junction-guts` + `when`) was
+  OTF-compiled, the `when`-succeed escaped the whole function and dropped the eigenstates (`t/test-util-is-deeply-junction.t`
+  / `throws-like-any` regressions) → **limited to actual builtin shadows via the `Interpreter::is_builtin_function(name)` guard**
+  (non-builtin module subs stay tree-walk as before). pin = `t/builtin-shadow-dispatch.t`(9). S06 whitelist 86 files green
+  (S32-str gb2312/shiftjis also fail on main = pre-existing environment-dependent). Remaining: the non-proto multi fork (requires VM-side multi candidate resolution),
+  the catch-all terminal (③), tree-walk of non-builtin module subs (requires expanding compiled_fns or a safe generic OTF gate).
 
-- **2026-06-09 (③ PR-3, §1 catch-all = ユーザーメソッド compile-on-demand + 実態訂正)**: §1 catch-all
-  （`vm_call_method_compiled.rs` の `try_compiled_method_or_interpret` line 457 / `try_compiled_method_mut_or_interpret`
-  line ~919）の dispatch チョークポイントに、**解決済みユーザーメソッド def が `compiled_code == None` の場合の
-  compile-on-demand** を追加（新ヘルパ `populate_uncompiled_method`: `compile_class_methods`/`compile_role_methods`
-  で canonical registry を冪等に compile→再解決→`dispatch_compiled_method` で bytecode 実行。owner が user
-  class/role でない or 空ボディなら `None` で interpreter フォールバック温存）。pin `t/method-otf-dispatch.t`(14)。
-  **最大の収穫は実態の実測訂正**: `MUTSU_VM_STATS=1` + プローブで catch-all 到達集合を計測した結果、台帳が
-  「catch-all = 残る主 tree-walk（ユーザーメソッド）」としていたのは**誤りだった**。実際は:
-  ① **通常宣言メソッド（multi method 含む）・submethod・role 合成・継承・`.^add_method` は全て登録時に
-  `compile_class_methods` で bytecode 化済**（`.^add_method` は method リテラル Sub の `compiled_code` を引き継ぐ、
-  `methods_classhow.rs:640`）。② catch-all に来る Instance トラフィックは **native coercion（`Exception.Stringy`）/
-  MOP（`.does`/`.^does`）/ role-qualified（`WithAttr.AccessesAttr::meth` は resolve=None で resolved ブロックに
-  入らない）** のみ＝③/builtins/別解決バグ依存。③ `populate_uncompiled_method` が実際に発火する唯一の compile-gap は
-  **`.^add_multi_method`**（`compiled_code: None` 固定, `methods_classhow.rs:702`）＋将来の同種サイトの defensive
-  カバー。よって本 PR は §1 catch-all の**ユーザーメソッド分を確実に bytecode 化**（残りは native/MOP/別解決バグ）。
-  S12/S14/S06-multi/metamodel whitelist 全緑、make test PASS。**教訓: フォールバックカウンタは「tree-walk」ではなく
-  「interpreter ブリッジ経由」を数える**（ブリッジ先の `run_block_raw` 自体は VM compile ping-pong で実は bytecode）。
+- **2026-06-09 (③ PR-3, §1 catch-all = user-method compile-on-demand + correcting the actual picture)**: at the dispatch chokepoints of the §1 catch-all
+  (`try_compiled_method_or_interpret` line 457 / `try_compiled_method_mut_or_interpret` line ~919 in `vm_call_method_compiled.rs`), added
+  **compile-on-demand for resolved user method defs whose `compiled_code == None`** (new helper `populate_uncompiled_method`:
+  idempotently compiles the canonical registry via `compile_class_methods`/`compile_role_methods` → re-resolves → executes bytecode via `dispatch_compiled_method`.
+  If the owner is not a user class/role or the body is empty, returns `None` to preserve the interpreter fallback). pin `t/method-otf-dispatch.t`(14).
+  **The biggest yield was correcting the measured reality**: measuring the catch-all reach set with `MUTSU_VM_STATS=1` + a probe showed the ledger's claim that
+  "catch-all = the remaining primary tree-walk (user methods)" was **wrong**. In reality:
+  ① **normally declared methods (including multi methods), submethods, role composition, inheritance, and `.^add_method` are all bytecode-compiled at
+  registration time via `compile_class_methods`** (`.^add_method` inherits the `compiled_code` of the method-literal Sub,
+  `methods_classhow.rs:640`). ② The Instance traffic reaching the catch-all is **only native coercion (`Exception.Stringy`) /
+  MOP (`.does`/`.^does`) / role-qualified (`WithAttr.AccessesAttr::meth` resolves to None and never enters the resolved block)** = dependent on ③/builtins/a separate resolution bug. ③ The only compile-gap where `populate_uncompiled_method` actually fires is
+  **`.^add_multi_method`** (`compiled_code: None` fixed, `methods_classhow.rs:702`) plus defensive coverage of future sites of the same kind.
+  So this PR **reliably bytecode-compiles the user-method portion of the §1 catch-all** (the remainder is native/MOP/separate resolution bugs).
+  S12/S14/S06-multi/metamodel whitelist all green, make test PASS. **Lesson: the fallback counters count "via the interpreter bridge",
+  not "tree-walk"** (the `run_block_raw` on the far side of the bridge is actually bytecode via the VM compile ping-pong).
 
-- **2026-06-09 (③ PR-4, §2 非proto multi fork)**: `vm_call_func_ops.rs::dispatch_func_call_inner` の
-  非proto multi fork（`has_multi_candidates && !has_proto`）を、PR-2 の builtin-shadow 型と同様に
-  `resolve_function_with_types`（②で VM アクセス可能）で winner を解決 →`def_is_otf_compilable` かつ非state body なら
-  `compile_and_call_function_def` で OTF compile/bytecode 実行に。**関数パスの ambiguity は `None`+`pending_dispatch_error`
-  で表現される**（`dispatch.rs` choose_best_matching_candidate）ため `Some(def)` = unambiguous winner（メソッド側の
-  `dispatch_ambiguous` フラグとは別機構）。resolve 前に stale `pending_dispatch_error` を `take` でクリア（interpreter の
-  `resolve_function_with_alias` と同じ作法）。ambiguity/where/default/code-param/no-match/proto/末端は従来どおり
-  `call_function_fallback`（正規の `X::Multi::Ambiguous`/`X::Multi::NoMatch` を投げる）。**nextsame/callsame/callwith は
-  compiled 候補からでも正しく機能**（`compile_and_call_function_def` が interpreter と同じ `push_multi_dispatch_frame` を
-  張るため。実測で確認＝redispatch 除外は不要だった）。**2 つの落とし穴を対処**: ① **otf_call_cache の name 汚染** —
-  `compile_and_call_function_def` の name-cache insert を `!has_multi_candidates_cached` で条件化＋lookup 側にも同ガード
-  （type-blind な name cache が `f(5)`→Int 候補を後続 `f("hi")` に誤再利用するのを防止。fingerprint キーの
-  `otf_compile_cache` は per-候補で安全なので維持）。② **signature alternates の共有 state**（`(A)|(B){ state $x }` が
-  compile 時 state_group で 1 セル共有するが、OTF は body fingerprint＝per-alternate-sig キーで別 state になる）→
-  **state 宣言を含む multi body は OTF 除外**（新ヘルパ `function_body_declares_state` 再帰スキャン。`t/multi-signature-alternates.t`
-  回帰を発見・修正）。slip 経路（`exec_call_func_slip_op`）の multi は **既存の別バグで `|ms()` が Nil を返す**ため
-  本 PR では対象外（follow-up）。**③ 既存 flaky バグも修正**: `push_multi_dispatch_frame`（`accessors.rs`）が
-  callsame/nextsame の「remaining 候補」frame の current を `resolve_all_matching_candidates().first()`＝**HashMap 順
-  first match**で決めていたため、最狭候補が後宣言だと callsame が誤候補（or 同一候補）へ再ディスパッチし、
-  プロセスのハッシュシードで ~50% flake（`roast/S06-advanced/callsame.t` 等 whitelist が間欠 fail。CI #2788 の
-  失敗の実体）。**interpreter の inline frame と同じ決定的 winner（`resolve_function_with_alias`）で current を特定**する
-  よう修正（全 VM 経路 = Path A / otf cache / compile_and_call を一括で決定化）。これで callsame は OTF 候補からでも
-  正しく動くため redispatch 除外は不要に。pin `t/multi-otf-dispatch.t`(25, callsame-when-winner-declared-last 含む)。
-  実測 multi-probe で fallback 5→2（残2=nextsame/callsame builtin 自体）。S06/S12/S14 whitelist 全緑（10x 決定的）、
-  make test PASS。**教訓: 「自分の PR の CI fail」が既存 flaky の顕在化のこともある — シード依存の非決定性を実測で確定せよ。**
-  **さらに回帰を1件発見・修正（PR-2 の轍）**: multi fork が **native Test ルーチン**（is-eqv/is-deeply 等。Rust 実装だが
-  multi stub が registry に登録されている）を OTF compile し、native handler を迂回して `S16-io/words.t`・`S32-io/slurp.t` を
-  決定的に破壊（is-eqv 経由）。非-builtin OTF パスと同じ `!is_interpreter_handled_function(name)` ガードを multi fork にも
-  追加して解消（is-eqv は call_function_fallback → native test handler へ正しく回る）。ローカル full make roast PASS で確認。
+- **2026-06-09 (③ PR-4, §2 non-proto multi fork)**: for the non-proto multi fork of `vm_call_func_ops.rs::dispatch_func_call_inner`
+  (`has_multi_candidates && !has_proto`), like PR-2's builtin-shadow style: resolve the winner via
+  `resolve_function_with_types` (VM-accessible thanks to ②) → if `def_is_otf_compilable` and the body is non-state,
+  OTF compile / bytecode-execute via `compile_and_call_function_def`. **On the function path, ambiguity is expressed as `None`+`pending_dispatch_error`**
+  (`dispatch.rs` choose_best_matching_candidate), so `Some(def)` = unambiguous winner (a separate mechanism from the method side's
+  `dispatch_ambiguous` flag). A stale `pending_dispatch_error` is cleared with `take` before resolving (same etiquette as the interpreter's
+  `resolve_function_with_alias`). ambiguity/where/default/code-param/no-match/proto/terminal go through
+  `call_function_fallback` as before (throwing the canonical `X::Multi::Ambiguous`/`X::Multi::NoMatch`). **nextsame/callsame/callwith work correctly
+  even from compiled candidates** (because `compile_and_call_function_def` pushes the same `push_multi_dispatch_frame` as the interpreter;
+  confirmed by measurement = excluding redispatch was unnecessary). **Handled 2 pitfalls**: ① **name pollution of otf_call_cache** —
+  conditioned the name-cache insert of `compile_and_call_function_def` on `!has_multi_candidates_cached`, plus the same guard on the lookup side
+  (prevents the type-blind name cache from wrongly reusing `f(5)`→Int candidate for a subsequent `f("hi")`. The fingerprint-keyed
+  `otf_compile_cache` is per-candidate and safe, so it stays). ② **shared state of signature alternates** (`(A)|(B){ state $x }` shares
+  one cell via state_group at compile time, but OTF's body fingerprint = per-alternate-sig key would give separate states) →
+  **multi bodies containing state declarations are excluded from OTF** (new helper `function_body_declares_state` recursive scan. Found and fixed
+  the `t/multi-signature-alternates.t` regression). The slip path (`exec_call_func_slip_op`) multis are out of scope for this PR because
+  **an existing separate bug makes `|ms()` return Nil** (follow-up). **③ Also fixed an existing flaky bug**: `push_multi_dispatch_frame`
+  (`accessors.rs`) determined the current of the callsame/nextsame "remaining candidates" frame via `resolve_all_matching_candidates().first()` =
+  **HashMap-order first match**, so when the narrowest candidate was declared later, callsame redispatched to the wrong (or same) candidate,
+  flaking ~50% depending on the process hash seed (whitelisted files like `roast/S06-advanced/callsame.t` failed intermittently; the substance of the
+  CI #2788 failure). Fixed to **determine current with the same deterministic winner as the interpreter's inline frame (`resolve_function_with_alias`)**
+  (deterministic across all VM paths = Path A / otf cache / compile_and_call at once). callsame now works correctly even from OTF candidates,
+  so the redispatch exclusion became unnecessary. pin `t/multi-otf-dispatch.t`(25, including callsame-when-winner-declared-last).
+  Measured multi-probe fallback 5→2 (remaining 2 = the nextsame/callsame builtins themselves). S06/S12/S14 whitelist all green (10x deterministic),
+  make test PASS. **Lesson: "my PR's CI failure" can be an existing flake surfacing — pin down seed-dependent nondeterminism by measurement.**
+  **Also found and fixed 1 more regression (PR-2's rut)**: the multi fork OTF-compiled **native Test routines** (is-eqv/is-deeply etc. — Rust implementations,
+  but a multi stub is registered in the registry), bypassing the native handler and deterministically breaking `S16-io/words.t` and `S32-io/slurp.t`
+  (via is-eqv). Resolved by adding the same `!is_interpreter_handled_function(name)` guard as the non-builtin OTF path to the multi fork
+  (is-eqv correctly routes to call_function_fallback → the native test handler). Confirmed via local full make roast PASS.
 
-- **2026-06-09 (③ PR-5, §1 catch-all = plain `@`-array mutators の VM ネイティブ化)**: `MUTSU_VM_STATS` に
-  catch-all 受け手の型名（`Class.method`）を一時計測する計装を入れ、whitelist sample 全体で **catch-all 到達集合を実測**。
-  PR-3 が「残りは native/Buf/Failure」と推定していたが、**実態は Buf/Failure ではなく配列ミューテータ + iterator protocol + coercion**
-  だった（top: `Package.new`=38698〔③コンストラクタ・user BUILD/属性で③ブロック〕, `Array.append`=16721, `Array.shift`=5796,
-  `Any.AT-POS`=5795, iterator `pull-one`/`skip-one`/`push-exactly` 系, `Array.splice`=381, `List.Set/Bag/Mix` coercion …）。
-  `Package.new` を除く**最大の tractable カテゴリ＝配列ミューテータ**（append+shift+splice ≈ 22900）。本 PR は
-  `vm_call_method_mut_ops.rs::exec_call_method_mut_op` に `try_native_array_mut` を追加し、**plain untyped `@`-array
-  （`ArrayKind::Array`）への `append`/`prepend`/`unshift`/`pop`/`shift`** を VM ネイティブに（`env.get_mut` + `Arc::make_mut`
-  で interpreter の primary branch と同一セマンティクス、empty pop/shift は `make_empty_array_failure_what(..,"Array")`）。
-  **保守的フォールスルー**: typed（`var_type_constraint` Some）/ shaped / lazy（kind が `Array` 以外）/ shared
-  （`shared_vars_active`）/ metadata 持ち（`container_type_metadata` Some）/ 非env-bound receiver は interpreter 維持。
-  **落とし穴: type_metadata の Arc-ptr keying aliasing**（🟣第一級コンテナの既知ハザード）— `make_mut` 再確保で得た新 Arc
-  ポインタが、解放済み typed array の stale `array_type_metadata` エントリと衝突し untyped 配列が `Array[Int]` に誤型付け
-  （フルファイル文脈でのみ・アロケータ依存で間欠再現）。native path は untyped を保証済みなので、変異後の env 配列に対し
-  `unregister_container_type_metadata` で防御的に stale エントリを除去（安全＝生きた別配列が同ポインタを持つことは不可能）。
-  pin `t/native-array-mut.t`(31, aliasing ケース含む)。S32-array whitelist 全緑、make test PASS、array 系 whitelist 156/156。
-  **残る catch-all**: `Package.new`〔③〕, `Any.AT-POS`/iterator protocol〔値型/iterator state〕, coercion〔builtins 降ろし候補〕, splice。
+- **2026-06-09 (③ PR-5, §1 catch-all = making plain `@`-array mutators VM-native)**: added temporary instrumentation to `MUTSU_VM_STATS` recording the
+  catch-all receiver type names (`Class.method`), and **measured the catch-all reach set** over the whole whitelist sample.
+  PR-3 had estimated "the remainder is native/Buf/Failure", but **the reality was not Buf/Failure but array mutators + iterator protocol + coercion**
+  (top: `Package.new`=38698 [③ constructor; ③-blocked by user BUILD/attributes], `Array.append`=16721, `Array.shift`=5796,
+  `Any.AT-POS`=5795, iterator `pull-one`/`skip-one`/`push-exactly` family, `Array.splice`=381, `List.Set/Bag/Mix` coercion …).
+  Excluding `Package.new`, **the largest tractable category = array mutators** (append+shift+splice ≈ 22900). This PR adds
+  `try_native_array_mut` to `vm_call_method_mut_ops.rs::exec_call_method_mut_op`, making **`append`/`prepend`/`unshift`/`pop`/`shift` on plain
+  untyped `@`-arrays (`ArrayKind::Array`)** VM-native (`env.get_mut` + `Arc::make_mut`, identical semantics to the interpreter's primary branch;
+  empty pop/shift uses `make_empty_array_failure_what(..,"Array")`).
+  **Conservative fallthrough**: typed (`var_type_constraint` Some) / shaped / lazy (kind other than `Array`) / shared
+  (`shared_vars_active`) / metadata-bearing (`container_type_metadata` Some) / non-env-bound receivers stay on the interpreter.
+  **Pitfall: Arc-ptr keying aliasing of type_metadata** (🟣 a known first-class-container hazard) — a new Arc pointer obtained by a `make_mut` reallocation
+  collided with a stale `array_type_metadata` entry of a freed typed array, mis-typing an untyped array as `Array[Int]`
+  (reproduced only in full-file context, intermittently, allocator-dependent). Since the native path guarantees untyped, we defensively remove
+  the stale entry via `unregister_container_type_metadata` on the post-mutation env array (safe = no live other array can hold the same pointer).
+  pin `t/native-array-mut.t`(31, including the aliasing case). S32-array whitelist all green, make test PASS, array-related whitelist 156/156.
+  **Remaining catch-all**: `Package.new` [③], `Any.AT-POS`/iterator protocol [value types/iterator state], coercion [candidate for lowering to builtins], splice.
 
-- **2026-06-09 (③ PR-6, §2 catch-all 末端の実測 + junction constructor の builtins 降ろし)**: `vm_call_dispatch.rs:79`
-  の `call_function_compiled_first` 末端（`call_function` final else）に `END:` プレフィックス計装を入れ、whitelist sample
-  全体で**末端到達集合を実測**。結論: **末端はほぼ枯渇**（PR-1〜4 ＋ line 63-67 の「resolve できた def は全て OTF compile」
-  により、ユーザー関数はもう末端に来ない）。sample 全体で末端到達は diffuse で少量、内訳は ①`any`/`all`/`one`/`none`
-  junction constructor（pure builtin・本 PR で降ろし）, ②**lexical `&`-変数の名前経由呼び出し**（末端残余の*最大*カテゴリ。
-  `-> &op { … op(…) }` ＝S03-operators/set_*.t の `END:op`〔各348等〕で集合演算子 Callable をパラメータ束縛して呼ぶ、
-  および `my &junction = ::("&any"); junction(|$_)` ＝S03-junctions/autothreading.t の `END:junction=56`。束縛された Callable
-  〔user sub / 演算子 / builtin Routine〕を bareword 名で呼ぶため末端で lexical 解決＝正しく動作。将来スライス: VM 側で
-  lexical `&`-var 束縛を検出し既存 Routine/compiled dispatch へ寄せる）, ③`__mutsu_*` 内部（CAS 等・並行は lever B）,
-  ④no-match エラー生成（`notthere`＝末端で正規例外を投げるのが正しい）。
-  **高トラフィックの builtin は末端に残っていない**（`split`/`index`/`comb` 等は既に native か、他4サイト〔vm_call_func_ops〕
-  経由で Instance-guard fallback）。本 PR は唯一の pure-builtin カテゴリ＝**junction constructor を `builtins/functions.rs::build_junction`
-  へ降ろし**（one-arg flatten rule 込み・state 不使用）、`native_function` で any/all/one/none を全 arity ルート、interpreter の
-  `builtin_junction` も同 fn へ委譲して**重複実装を解消**（[[feedback_dedup_over_perf]]/[[feedback_placement_audit]]）。
-  junction 構築は型非依存で安全なので `try_native_function` の Instance-arg ガードを any/all/one/none に限り bypass
-  （`any($instance)` も native）。pin `t/native-junction-ctor.t`(24, Instance-arg 含む)。S03-junctions whitelist 全緑、make test PASS。
-  **結論: §2 末端は「高トラフィック撲滅」フェーズを終えた。残る最大カテゴリは lexical `&`-var の名前呼び出し（正しく動作・将来 VM 寄せ候補）、
-  他は③ state 所有〔並行 CAS〕/ エラー生成 carrier。**
+- **2026-06-09 (③ PR-6, §2 measuring the catch-all terminal + lowering the junction constructors to builtins)**: added `END:`-prefixed instrumentation to the
+  `call_function_compiled_first` terminal (`call_function` final else) at `vm_call_dispatch.rs:79` and **measured the terminal reach set** over the whole
+  whitelist sample. Conclusion: **the terminal is nearly exhausted** (thanks to PR-1..4 plus lines 63-67's "every resolvable def gets OTF-compiled",
+  user functions no longer reach the terminal). Across the sample, terminal reach is diffuse and small; the breakdown: ① the `any`/`all`/`one`/`none`
+  junction constructors (pure builtins; lowered in this PR), ② **name-based calls of lexical `&`-variables** (the *largest* terminal-residual category.
+  `-> &op { … op(…) }` = S03-operators/set_*.t's `END:op` [348 each etc.] binding set-operator Callables as parameters and calling them,
+  and `my &junction = ::("&any"); junction(|$_)` = S03-junctions/autothreading.t's `END:junction=56`. Since the bound Callable
+  [user sub / operator / builtin Routine] is called by bareword name, lexical resolution at the terminal = works correctly. Future slice: detect
+  lexical `&`-var bindings on the VM side and route to the existing Routine/compiled dispatch), ③ `__mutsu_*` internals (CAS etc.; concurrency is lever B),
+  ④ no-match error generation (`notthere` = throwing the canonical exception at the terminal is correct).
+  **No high-traffic builtins remain at the terminal** (`split`/`index`/`comb` etc. are already native or take the Instance-guard fallback via the other
+  4 sites [vm_call_func_ops]). This PR lowers the only pure-builtin category = **junction constructors into `builtins/functions.rs::build_junction`**
+  (including the one-arg flatten rule; no state used), routes any/all/one/none at all arities through `native_function`, and delegates the interpreter's
+  `builtin_junction` to the same fn, **resolving the duplicate implementation** ([[feedback_dedup_over_perf]]/[[feedback_placement_audit]]).
+  Junction construction is type-independent and safe, so the Instance-arg guard of `try_native_function` is bypassed for any/all/one/none only
+  (`any($instance)` is native too). pin `t/native-junction-ctor.t`(24, including Instance-arg). S03-junctions whitelist all green, make test PASS.
+  **Conclusion: the §2 terminal has finished its "high-traffic elimination" phase. The largest remaining category is name-based calls of lexical `&`-vars (works correctly; future candidate for moving into the VM);
+  the rest is ③ state ownership [concurrent CAS] / error-generation carrier.**
 
-- **2026-06-09 (③ PR-7, §1 catch-all = mutable Buf write methods の VM ネイティブ化 + builtins 降ろし)**: PR-5 と同型で
-  `vm_call_method_mut_ops.rs::exec_call_method_mut_op` に `try_native_buf_mut` を追加し、**mutable `Buf` インスタンスへの
-  `write-bits`/`write-ubits`/`write-num32|64`/`write-int8..128`/`write-uint8..128`** を VM ネイティブに（`overwrite_instance_bindings_by_identity`
-  ＋ `env.insert` ＝ interpreter の instance-mutate ブランチと同一 writeback。エイリアス〔同一 instance id を複数変数が保持〕も
-  正しく観測）。**保守的フォールスルー**: type-object 受け手（`buf8.write-...` は fresh buf を返す別経路）/ immutable `Blob`
-  （interpreter が "Cannot modify immutable Blob" を投げる）/ malformed arity・offset/bits parse 失敗は interpreter 維持＝
-  behavior-invariant。**dedup/placement（[[feedback_dedup_over_perf]]/[[feedback_placement_audit]]）**: 純粋バイト変換を
-  builtins へ一本化＝`src/builtins/buf_bits.rs` 新設（`read_bits`/`write_bits` を `impl Interpreter` から降ろし、methods_mut の
-  read-bits 重複も解消）＋ `buf_write_num.rs`/`buf_write_int.rs` を `runtime/` → `builtins/` へ移設（22 call-site path 更新）。
-  これで Buf バイナリ read/write 変換の authoritative home は `builtins/` に統一され、VM と interpreter が単一実装を共有。
-  実測: `read-write-bits.t` の write-bits/write-ubits fallback 3123→3（残3=type-object 形式）。pin `t/native-buf-mut.t`(23,
-  エイリアス/buf 伸長/Blob dies 含む)。S03-buf/S03-operators/S32-container/S02-types/signed-unsigned-native 全緑、cargo test 458/0。
-  （write-int.t は 128-bit 未対応の既知 pre-existing blocker＝非whitelist、本変更と無関係。）
+- **2026-06-09 (③ PR-7, §1 catch-all = making mutable Buf write methods VM-native + lowering to builtins)**: in the same shape as PR-5,
+  added `try_native_buf_mut` to `vm_call_method_mut_ops.rs::exec_call_method_mut_op`, making
+  **`write-bits`/`write-ubits`/`write-num32|64`/`write-int8..128`/`write-uint8..128` on mutable `Buf` instances** VM-native
+  (`overwrite_instance_bindings_by_identity` + `env.insert` = the same writeback as the interpreter's instance-mutate branch. Aliasing
+  [multiple variables holding the same instance id] is also observed correctly). **Conservative fallthrough**: type-object receivers
+  (`buf8.write-...` is a separate path returning a fresh buf) / immutable `Blob`
+  (the interpreter throws "Cannot modify immutable Blob") / malformed arity, offset/bits parse failures stay on the interpreter =
+  behavior-invariant. **dedup/placement ([[feedback_dedup_over_perf]]/[[feedback_placement_audit]])**: unified the pure byte transforms
+  into builtins = new `src/builtins/buf_bits.rs` (lowered `read_bits`/`write_bits` from `impl Interpreter`, also resolving the read-bits duplicate in
+  methods_mut) + moved `buf_write_num.rs`/`buf_write_int.rs` from `runtime/` → `builtins/` (22 call-site path updates).
+  The authoritative home of Buf binary read/write transforms is now unified under `builtins/`, and the VM and interpreter share a single implementation.
+  Measured: write-bits/write-ubits fallback of `read-write-bits.t` 3123→3 (remaining 3 = type-object form). pin `t/native-buf-mut.t`(23,
+  including aliasing / buf growth / Blob dies). S03-buf/S03-operators/S32-container/S02-types/signed-unsigned-native all green, cargo test 458/0.
+  (write-int.t is the known pre-existing 128-bit-unsupported blocker = non-whitelisted, unrelated to this change.)
 
-- **2026-06-09 (③ PR-8, §1 = QuantHash coercion の VM ネイティブ化 + builtins 降ろし)**: フォールバックの**広がり実測**
-  （whitelist 145 ファイル・distinct ファイル数）で `new`(63 files・③ ctor) に次ぐ tractable な pure カテゴリ＝
-  **`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`（~11 files）** を確認し着手。`vm_call_method_compiled.rs` の
-  catch-all 直前に `try_native_quanthash_coerce` を追加（PR-7/PR-5 と同位置＝ユーザーメソッド解決後なので shadow しない）。
-  **dedup/placement 降ろし**: `dispatch_to_set`/`dispatch_to_bag_with_what`/`dispatch_to_mix`（+ helpers `pair_weight`/
-  `mix_pair_weight`/`mix_add_item_with_keys`/nested `add_item`/`flatten_into`）を `impl Interpreter` の `&self` メソッド
-  （実体は self 非依存・相互再帰のみ）から **`src/builtins/quanthash_coerce.rs` の pure free fn** へ降ろし
-  （`to_set`/`to_bag`/`to_mix`）。interpreter の `dispatch_method_by_name_2` と `methods_dispatch_new`（mix_pair_weight）は
-  builtins へ委譲＝単一実装。`is_lazy_for_coerce`/`is_lazy_for_set_ops` は他 6 ファイルでも使うので runtime 据え置き
-  （`pub(crate)` 化して builtins から参照）。methods_collection.rs 961→315 行。**保守的フォールスルー**: `.MixHash`
-  （`register_container_type_metadata`＝interpreter 所有の型メタ登録が必要）/ Instance（`__baggy_data__`・user coercion）/
-  Package（型オブジェクト）受け手は interpreter 維持＝behavior-invariant。実測: set-op テストで Set/Bag/Mix fallback → 0。
-  pin `t/native-quanthash-coerce.t`(26)。whitelisted set/bag/mix 29 件全緑、cargo test 458/0。（set.t/bag.t の既知 fail は
-  BLOCKERS.md 記載の pre-existing〔bag.t 215=BigInt weight・252=Foo instance union, set.t 226=typed-hash bind〕で本変更と無関係。）
-  **次候補: iterator protocol（pull-one/skip-one/push-exactly）の VM ネイティブ化、または `AT-POS` native。本丸は `new`（③ ctor）。**
+- **2026-06-09 (③ PR-8, §1 = making QuantHash coercion VM-native + lowering to builtins)**: via **spread measurement of fallbacks**
+  (whitelist 145 files; distinct file counts), confirmed the next tractable pure category after `new` (63 files, ③ ctor) =
+  **`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash` (~11 files)** and started on it. Added `try_native_quanthash_coerce` just before
+  the catch-all in `vm_call_method_compiled.rs` (same position as PR-7/PR-5 = after user-method resolution, so no shadowing).
+  **dedup/placement lowering**: lowered `dispatch_to_set`/`dispatch_to_bag_with_what`/`dispatch_to_mix` (+ helpers `pair_weight`/
+  `mix_pair_weight`/`mix_add_item_with_keys`/nested `add_item`/`flatten_into`) from `&self` methods of `impl Interpreter`
+  (actually self-independent; only mutually recursive) into **pure free fns in `src/builtins/quanthash_coerce.rs`**
+  (`to_set`/`to_bag`/`to_mix`). The interpreter's `dispatch_method_by_name_2` and `methods_dispatch_new` (mix_pair_weight)
+  delegate to builtins = single implementation. `is_lazy_for_coerce`/`is_lazy_for_set_ops` are used in 6 other files, so they stay in runtime
+  (made `pub(crate)` and referenced from builtins). methods_collection.rs 961→315 lines. **Conservative fallthrough**: `.MixHash`
+  (requires `register_container_type_metadata` = interpreter-owned type metadata registration) / Instance (`__baggy_data__`, user coercion) /
+  Package (type object) receivers stay on the interpreter = behavior-invariant. Measured: Set/Bag/Mix fallback in set-op tests → 0.
+  pin `t/native-quanthash-coerce.t`(26). All 29 whitelisted set/bag/mix files green, cargo test 458/0. (The known fails in set.t/bag.t are the
+  pre-existing ones listed in BLOCKERS.md [bag.t 215=BigInt weight, 252=Foo instance union, set.t 226=typed-hash bind], unrelated to this change.)
+  **Next candidates: making the iterator protocol (pull-one/skip-one/push-exactly) VM-native, or native `AT-POS`. The main prize is `new` (③ ctor).**
 
-- **2026-06-09 (③ PR-9, §1 = 単純 array-backed Iterator protocol の VM ネイティブ化)**: PR-8 の広がり実測で次点だった
-  iterator protocol（pull-one=2466/skip-one=2130 等、4-5 files・高カウント）を着手。`vm_call_method_mut_ops.rs` の
-  `try_native_buf_mut` の隣に `try_native_iterator` を追加し、**`items`(Array)+`index`(Int) 自己完結な `Iterator` インスタンス**への
-  `pull-one`/`skip-one`/`skip-at-least`/`skip-at-least-pull-one`/`sink-all` を VM ネイティブに（index 前進 →
-  `overwrite_instance_bindings_by_identity`(env) + `overwrite_instance_in_locals`(locals) で identity writeback＝interpreter の
-  mutating iterator dispatch と同一。エイリアス・sub ローカルスロットも正しく前進）。**重要な発見**: `$it.pull-one` は
-  **CallMethodMut にコンパイルされる**（`expr_method.rs:110` 変数受け手は全て CallMethodMut）＝当初 non-mut パスに置いて発火せず、
-  mut パスへ移して解決。**保守的フォールスルー**: squish iterator（`squish_source`＝ユーザー `as`/`with` コールバック）/ lazy
-  iterator（gather/coroutine＝`is_lazy` 属性、materialized items snapshot でなく interpreter コルーチン pull）/ push-*（外部
-  バッファ arg へ array-identity writeback が必要）/ count-only/bool-only（predictive 扱い）は interpreter 維持＝behavior-invariant。
-  **gather 回帰を1件発見・修正**: 初版が `is_lazy` 付き iterator も掴み `gather{...}.iterator.pull-one` が IterationEnd 即返し →
-  `is_lazy` 除外で解消（除外後は interpreter フォールスルー＝pre-existing 動作）。実測: List/Array/finite-Range iterator の pull-one
-  fallback → 0。pin `t/native-iterator.t`(18, エイリアス/sub ローカル/Range 含む)。S07-iterationbuffer/*-iterator 全緑、cargo test 458/0。
-  （gather.t の Failed:1 は BLOCKERS.md 記載の pre-existing take-rw〔test 38〕で本変更と無関係。）
-  **次候補: `AT-POS` native、coercion 以外の broad な §1、または本丸 `new`（③ ctor）の設計。**
+- **2026-06-09 (③ PR-9, §1 = making the simple array-backed Iterator protocol VM-native)**: started on the iterator protocol, the runner-up in PR-8's spread
+  measurement (pull-one=2466/skip-one=2130 etc., 4-5 files, high counts). Added `try_native_iterator` next to
+  `try_native_buf_mut` in `vm_call_method_mut_ops.rs`, making `pull-one`/`skip-one`/`skip-at-least`/`skip-at-least-pull-one`/`sink-all` on
+  **self-contained `Iterator` instances of `items`(Array)+`index`(Int)** VM-native (advance index →
+  identity writeback via `overwrite_instance_bindings_by_identity`(env) + `overwrite_instance_in_locals`(locals) = identical to the interpreter's
+  mutating iterator dispatch. Aliases and sub local slots also advance correctly). **Key discovery**: `$it.pull-one`
+  **compiles to CallMethodMut** (`expr_method.rs:110`: variable receivers are all CallMethodMut) = initially placed on the non-mut path it never fired;
+  moving it to the mut path resolved this. **Conservative fallthrough**: squish iterators (`squish_source` = user `as`/`with` callbacks) / lazy
+  iterators (gather/coroutine = `is_lazy` attribute; interpreter coroutine pull rather than a materialized items snapshot) / push-* (needs array-identity
+  writeback to an external buffer arg) / count-only/bool-only (treated as predictive) stay on the interpreter = behavior-invariant.
+  **Found and fixed 1 gather regression**: the first version also grabbed `is_lazy` iterators, making `gather{...}.iterator.pull-one` return IterationEnd immediately →
+  resolved with the `is_lazy` exclusion (after exclusion, interpreter fallthrough = pre-existing behavior). Measured: pull-one fallback of List/Array/finite-Range
+  iterators → 0. pin `t/native-iterator.t`(18, including aliases/sub locals/Range). S07-iterationbuffer/*-iterator all green, cargo test 458/0.
+  (gather.t's Failed:1 is the pre-existing take-rw [test 38] listed in BLOCKERS.md, unrelated to this change.)
+  **Next candidates: native `AT-POS`, broad §1 beyond coercion, or design of the main prize `new` (③ ctor).**
 
-- **2026-06-09 (③ PR-10, §1 catch-all = plain `@`-array `splice` の VM ネイティブ化)**: PR-5 の
-  `try_native_array_mut`（append/prepend/unshift/pop/shift）の姉妹として `vm_call_method_mut_ops.rs` に
-  `try_native_array_splice` を追加し、**plain untyped `@`-array（`ArrayKind::Array`）への `splice` の単純形**を VM
-  ネイティブに。interpreter の `methods_mut.rs` の `splice` 枝と同一の `drain`+`insert`（削除要素を `Value::real_array`
-  で返す）＋ `Arc::make_mut` writeback＋make_mut 再確保後の stale type-metadata 防御除去で behavior-invariant。
-  **保守的フォールスルー**（`None`→interpreter）: offset/count が plain 非負 `Int` 以外（WhateverCode/`Whatever`/
-  `Str`/`Num`）・offset 範囲外（`X::OutOfRange`）・count 負（`X::OutOfRange`）・lazy 置換（`X::Cannot::Lazy`）・
-  typed（`var_type_constraint` Some）/ shaped / shared（`shared_vars_active`）/ metadata 持ち配列。**実証**:
-  splice_check で 16 形全て raku 一致、`@j := @i` エイリアスは **interpreter splice 経路（WhateverCode offset で
-  fallthrough）も同じく `[1 2 3 4]`** ＝ pre-existing な container-identity ギャップ（🟣第一級コンテナ Phase 2）で
-  splice 固有でなく挙動不変。pin `t/native-array-splice.t`(28, 置換平坦化・末尾 splice・count クランプ・独立 removed
-  list・fallthrough X::OutOfRange/X::Cannot::Lazy 含む)。`S32-array/splice.t` の untyped 領域（最初60サブテスト）
-  not-ok ゼロ・push/pop/shift/unshift/S03-binding/arrays/S09-multidim/methods 全緑、cargo test 458/0、make test PASS。
-  （splice.t 全体は非whitelist の pre-existing fail＝`array[int]`/`array[int8]` typed-array メタデータ問題で、native
-  経路は typed array で必ず bail＝interpreter 維持のためカウント不変。）
+- **2026-06-09 (③ PR-10, §1 catch-all = making plain `@`-array `splice` VM-native)**: as a sister to PR-5's
+  `try_native_array_mut` (append/prepend/unshift/pop/shift), added `try_native_array_splice` to `vm_call_method_mut_ops.rs`,
+  making **the simple form of `splice` on plain untyped `@`-arrays (`ArrayKind::Array`)** VM-native.
+  Behavior-invariant with the same `drain`+`insert` as the `splice` branch of the interpreter's `methods_mut.rs` (returning removed elements via
+  `Value::real_array`) + `Arc::make_mut` writeback + defensive removal of stale type-metadata after make_mut reallocation.
+  **Conservative fallthrough** (`None`→interpreter): offset/count other than plain non-negative `Int` (WhateverCode/`Whatever`/
+  `Str`/`Num`), offset out of range (`X::OutOfRange`), negative count (`X::OutOfRange`), lazy replacement (`X::Cannot::Lazy`),
+  typed (`var_type_constraint` Some) / shaped / shared (`shared_vars_active`) / metadata-bearing arrays. **Verified**:
+  all 16 forms of splice_check match raku; the `@j := @i` alias case gives **`[1 2 3 4]` on the interpreter splice path too (fallthrough via
+  WhateverCode offset)** = a pre-existing container-identity gap (🟣 first-class containers Phase 2), not splice-specific, so behavior unchanged.
+  pin `t/native-array-splice.t`(28, including replacement flattening, tail splice, count clamping, independent removed
+  list, fallthrough X::OutOfRange/X::Cannot::Lazy). Zero not-oks in the untyped region of `S32-array/splice.t` (first 60 subtests);
+  push/pop/shift/unshift/S03-binding/arrays/S09-multidim/methods all green, cargo test 458/0, make test PASS.
+  (splice.t as a whole is a non-whitelisted pre-existing fail = the `array[int]`/`array[int8]` typed-array metadata problem; the native
+  path always bails on typed arrays = interpreter kept, so the count is unchanged.)
 
-- **2026-06-10 (③ PR-11, §1 = native default construction を typed `$` 属性へ拡張)**: §1 catch-all 最大カテゴリ
-  `Package.new`（コンストラクタ）の native 化範囲を拡張。`is_native_default_constructible`/`build_native_default_instance`
-  （`methods_object.rs`、VM の `try_compiled_method_or_interpret` と interpreter の `dispatch_new` が共有）が従来
-  **untyped `$` 属性のみ**だったのを、**simple class 制約付き `$` 属性**（`has Int $.x` 等）へ拡張。**保守的フォールスルー**で
-  divergence を全て interpreter に委ね behavior-invariant に保つ: ① 提供値が型不一致（`!type_matches_value`）→ None
-  （interpreter が `X::TypeCheck::Assignment`／coercion）、② arg も default も無い typed 属性 → None（未初期化 typed 属性は
-  **型オブジェクト**＝`Int` であり Nil でない。合成は interpreter）、③ typed default の値が型不一致 → None。ゲートは
-  **native/coercion/parametric 型を除外**（`is_simple_native_ctor_constraint`＝大文字始まり・`(` `[` なし）し、native
-  lowercase（`int`/`num`/`str`、default 0/""）は interpreter 維持。**重要な落とし穴を roast が捕捉**: 型制約の source of truth は
-  `ClassAttributeDef` tuple の制約スロットではなく `attribute_types` map（tuple 側は None）＝当初 tuple を読んで型チェックが
-  効かず `Int $.x = "str"` を受理する回帰 → `collect_attribute_type_constraints` 由来に修正。さらに **`is built` トレイト／MOP
-  `Attribute.set_build`**（カスタム build closure。`attribute_built` map ＋ registry `attribute_build_overrides`）を持つクラスは
-  pure-data 構築不可なのでゲートで除外（`S12-attributes/defaults.t` の set_build 実行時型チェック回帰を捕捉・修正）。
-  pin `t/native-ctor-typed-attrs.t`(30, 提供値/型オブジェクト未初期化/Str/Real/mixed/継承/相互参照 default/subset 型/
-  型不一致 dies/native int は interpreter/ループ構築)。S12/S14/S03-binding/roles whitelist 184 件全緑、cargo test 458/0。
-  **残: typed `@`/`%` 属性・required・where・coercion 型・native 型は依然 interpreter（本丸 ③ env 実行の手前で止める保守設計）。**
+- **2026-06-10 (③ PR-11, §1 = extending native default construction to typed `$` attributes)**: extending the native-construction coverage of the largest §1
+  catch-all category, `Package.new` (constructors). `is_native_default_constructible`/`build_native_default_instance`
+  (`methods_object.rs`; shared by the VM's `try_compiled_method_or_interpret` and the interpreter's `dispatch_new`), which previously covered
+  **only untyped `$` attributes**, was extended to **`$` attributes with simple class constraints** (`has Int $.x` etc.). All divergences are delegated
+  to the interpreter via **conservative fallthrough**, keeping it behavior-invariant: ① provided value fails the type check (`!type_matches_value`) → None
+  (interpreter does `X::TypeCheck::Assignment`/coercion), ② typed attribute with neither arg nor default → None (an uninitialized typed attribute is the
+  **type object** = `Int`, not Nil. Synthesis is left to the interpreter), ③ typed default value fails the type check → None. The gate
+  **excludes native/coercion/parametric types** (`is_simple_native_ctor_constraint` = starts uppercase, no `(` `[`); native
+  lowercase (`int`/`num`/`str`, defaults 0/"") stays on the interpreter. **An important pitfall caught by roast**: the source of truth for type constraints is
+  the `attribute_types` map, not the constraint slot of the `ClassAttributeDef` tuple (the tuple side is None) = reading the tuple initially meant the type check
+  didn't apply and `Int $.x = "str"` was accepted (regression) → fixed to derive from `collect_attribute_type_constraints`. In addition, classes with the
+  **`is built` trait / MOP `Attribute.set_build`** (custom build closures; the `attribute_built` map + registry `attribute_build_overrides`) cannot be
+  pure-data constructed, so they are excluded by the gate (caught and fixed the set_build runtime type-check regression in `S12-attributes/defaults.t`).
+  pin `t/native-ctor-typed-attrs.t`(30: provided values / type-object uninitialized / Str/Real/mixed / inheritance / mutually-referencing defaults / subset types /
+  type-mismatch dies / native int stays interpreter / loop construction). S12/S14/S03-binding/roles whitelist 184 files all green, cargo test 458/0.
+  **Remaining: typed `@`/`%` attributes, required, where, coercion types, native types still on the interpreter (a conservative design that stops short of the main prize, ③ env execution).**
 
-- **2026-06-10 (③ PR-12, §1 = native construction を untyped `@`/`%` 属性へ拡張)**: PR-11 の続きで native default
-  構築を **untyped `@`/`%`-sigil 属性**（`has @.items`/`has %.map`）へ拡張。**behavior-invariance の対象は raku ではなく
-  現 interpreter**（実測で `items => 5`→`5`〔scalar を wrap せず〕、typed `@.nums` の不正要素→NODIE〔構築時に要素型
-  チェックしない〕＝raku と異なる pre-existing 挙動）。interpreter 共有の `coerce_attr_value_by_sigil` を再利用するので
-  提供値 coercion（List/Range→Array, array-of-Pairs→Hash）が完全一致。未提供 default = 空 Array/Hash（型オブジェクト
-  合成不要＝`$` typed より単純）。**保守的フォールスルー**: typed 要素（`Int @.nums`＝container type metadata 登録が
-  必要・Arc-keying ハザード）/ `is Type` トレイト（`class_attribute_is_types`）/ **default_expr を持つ `@`/`%`**（shape は
-  default に encode＝`has @.a[2]`、提供有無に関わらず fallthrough）は interpreter 維持。**roast が shaped 落とし穴を捕捉**:
-  当初「default 持ち＋未提供」のみ fallthrough としたが、shaped `@.a[2]` が**提供された**場合 coerce で shape 喪失
-  （`S12-introspection/attributes.t` の `.a.shape`=(2,) 回帰）→「`@`/`%` が default_expr 持ちなら無条件 fallthrough」へ修正。
-  pin `t/native-ctor-array-attrs.t`(27, 空 default/list・array・range 提供/hash・pairs 提供/mixed typed-$/継承/defaulted
-  fallthrough/typed-element fallthrough/ループ構築)。S12/S14/binding/roles 184 件全緑、cargo test 458/0、make test PASS。
-  **残: typed `@`/`%`・`is Type`・shaped・required・where・coercion 型・native 型は依然 interpreter。**
+- **2026-06-10 (③ PR-12, §1 = extending native construction to untyped `@`/`%` attributes)**: continuing PR-11, extended native default
+  construction to **untyped `@`/`%`-sigil attributes** (`has @.items`/`has %.map`). **The target of behavior-invariance is the current interpreter,
+  not raku** (measured: `items => 5`→`5` [doesn't wrap the scalar]; invalid elements of typed `@.nums`→NODIE [no element type
+  check at construction] = pre-existing behavior differing from raku). Reuses the interpreter-shared `coerce_attr_value_by_sigil`, so
+  provided-value coercion (List/Range→Array, array-of-Pairs→Hash) matches exactly. Unprovided default = empty Array/Hash (no type-object
+  synthesis needed = simpler than typed `$`). **Conservative fallthrough**: typed elements (`Int @.nums` = requires container type metadata registration;
+  the Arc-keying hazard) / the `is Type` trait (`class_attribute_is_types`) / **`@`/`%` with a default_expr** (shape is
+  encoded in the default = `has @.a[2]`; falls through regardless of whether a value is provided) stay on the interpreter. **roast caught a shaped pitfall**:
+  initially only "has default + unprovided" fell through, but when a shaped `@.a[2]` **was provided**, coercion lost the shape
+  (regression of `.a.shape`=(2,) in `S12-introspection/attributes.t`) → fixed to "if `@`/`%` has a default_expr, fall through unconditionally".
+  pin `t/native-ctor-array-attrs.t`(27: empty default / list, array, range provided / hash, pairs provided / mixed typed-$ / inheritance / defaulted
+  fallthrough / typed-element fallthrough / loop construction). S12/S14/binding/roles 184 files all green, cargo test 458/0, make test PASS.
+  **Remaining: typed `@`/`%`, `is Type`, shaped, required, where, coercion types, native types still on the interpreter.**
 
-- **2026-06-10 (③ PR-13, §1 = native construction を `is required` 属性へ拡張)**: PR-11/12 の続きで native default
-  構築を **`is required` 属性**へ拡張（従来ゲートが `!is_required` で reject）。提供された required 属性は native 構築
-  （`$` typed は型チェック込み）、**未提供の required 属性は fallthrough**（interpreter が `X::Attribute::Required`）。
-  ゲートから `!is_required` を外し、build 先頭に「required かつ未 provided → None」検査を追加。**behavior-invariant**:
-  required `$` 未提供は interpreter が die（raku 一致）、required `@`/`%` 未提供は interpreter が **enforce しない**
-  （NODIE＝raku と異なる pre-existing ギャップだが native は fallthrough で interpreter 挙動に一致）。pin
-  `t/native-ctor-required-attrs.t`(14, 全 required 提供→build / 未提供 `$`→dies / 型不一致→dies / required `@`/`%`
-  提供→build / 継承 required)。S12/S14/binding/roles 184 件全緑、cargo test 458/0、make test PASS。
-  （pin 作成中に **連続 bare block `} { ` のパース不可**と **クラス名 `Q` のクォート演算子衝突**という 2 つの
-  pre-existing パーサ制約に遭遇＝テストをトップレベル構造＋非衝突名に変更して回避。本 slice とは無関係。）
-  **残: where・coercion 型・native 型・typed `@`/`%`・`is Type`・shaped は依然 interpreter。**
-- **2026-06-14 (③ ctor, §1 = native construction を定義性 smiley `:D`/`:U`/`:_` 属性へ拡張)**: TWEAK(#3028)/
-  where(#3030)/BUILD(#3032) に続く ctor slice。従来ゲートが `attribute_smileys.is_empty()` で reject していた
-  `has Int:D $.x` 等を native 構築。ゲートから smiley 検査を外し、build path で `enforce_attribute_smiley_constraints`
-  （full path と同一ヘルパ）を **where と同じ位置＝post-assembly/pre-BUILD で 1 回 + post-BUILD で再チェック**。
-  **interpreter baseline に厳密一致（raku ではなく）**: ① `:U` 提供 defined / `:D` 提供 undefined は die
-  （"default value of attribute" メッセージ＝interpreter の既存挙動。raku は "assignment to" だが本 slice の対象外の
-  pre-existing 差）、② **BUILD が smiley 違反 → die（post-BUILD 再チェック、full path 3929 に一致）**、
-  ③ **TWEAK が smiley 違反 → die しない**（interpreter は post-TWEAK で smiley を再チェックせず代入時チェックも
-  しないため、native も再チェックしない＝baseline 一致。raku は die）。bare `:D`（default 無し・required 無し）は
-  parse time に `X::Syntax::Variable::MissingInitializer` で弾かれ構築に到達しない。pin
-  `t/native-ctor-smiley-attrs.t`(21, `:D`/`:U`/`:_` × default/required/provided/継承/mixed/BUILD-dies/TWEAK-lives/
-  Str:D)。S12-attributes/smiley.t(54) + S12-class/attributes-required.t(11) 含む構築系 whitelist 118 件全緑、
-  cargo test 461/0、make test PASS。**残: coercion 型・native 型・typed `@`/`%`・`is Type`・shaped・同名再宣言・
-  does-Role 属性・CUnion・custom BUILDALL/new は依然 interpreter。**
+- **2026-06-10 (③ PR-13, §1 = extending native construction to `is required` attributes)**: continuing PR-11/12, extended native default
+  construction to **`is required` attributes** (the previous gate rejected with `!is_required`). Provided required attributes are built natively
+  (typed `$` with type check included); **unprovided required attributes fall through** (interpreter raises `X::Attribute::Required`).
+  Removed `!is_required` from the gate and added a "required and not provided → None" check at the start of build. **Behavior-invariant**:
+  unprovided required `$` dies in the interpreter (matches raku); unprovided required `@`/`%` is **not enforced** by the interpreter
+  (NODIE = a pre-existing gap differing from raku, but native falls through and matches interpreter behavior). pin
+  `t/native-ctor-required-attrs.t`(14: all required provided→build / unprovided `$`→dies / type mismatch→dies / required `@`/`%`
+  provided→build / inherited required). S12/S14/binding/roles 184 files all green, cargo test 458/0, make test PASS.
+  (While writing the pin, hit 2 pre-existing parser limitations: **consecutive bare blocks `} { ` unparseable** and **class name `Q` colliding with the quote operator**
+  = worked around by restructuring the test to top-level structure + non-colliding names. Unrelated to this slice.)
+  **Remaining: where, coercion types, native types, typed `@`/`%`, `is Type`, shaped still on the interpreter.**
+- **2026-06-14 (③ ctor, §1 = extending native construction to definedness smiley `:D`/`:U`/`:_` attributes)**: the ctor slice following TWEAK(#3028)/
+  where(#3030)/BUILD(#3032). Attributes like `has Int:D $.x`, previously rejected by the gate's `attribute_smileys.is_empty()`, are now built natively.
+  Removed the smiley check from the gate; on the build path, `enforce_attribute_smiley_constraints`
+  (the same helper as the full path) runs **at the same position as where = once post-assembly/pre-BUILD + a recheck post-BUILD**.
+  **Strictly matches the interpreter baseline (not raku)**: ① `:U` provided defined / `:D` provided undefined dies
+  (the "default value of attribute" message = the interpreter's existing behavior. raku says "assignment to", but that pre-existing difference is out of
+  scope for this slice), ② **BUILD violating the smiley → dies (post-BUILD recheck, matching full path 3929)**,
+  ③ **TWEAK violating the smiley → does not die** (the interpreter does not recheck smileys post-TWEAK nor check on assignment,
+  so native does not recheck either = baseline match. raku dies). A bare `:D` (no default, no required) is rejected at
+  parse time with `X::Syntax::Variable::MissingInitializer` and never reaches construction. pin
+  `t/native-ctor-smiley-attrs.t`(21: `:D`/`:U`/`:_` × default/required/provided/inheritance/mixed/BUILD-dies/TWEAK-lives/
+  Str:D). Construction-related whitelist 118 files all green including S12-attributes/smiley.t(54) + S12-class/attributes-required.t(11),
+  cargo test 461/0, make test PASS. **Remaining: coercion types, native types, typed `@`/`%`, `is Type`, shaped, same-name redeclaration,
+  does-Role attributes, CUnion, custom BUILDALL/new still on the interpreter.**
 
-- **2026-06-14 (③ ctor 第2波 = post-assembly フェーズ方式, #3028〜3036)**: 「pure-data only」原則を破り、pure-data
-  組み立て後に **submethod 実行 / 制約検証 / role mixin を post-assembly フェーズ**として走らせて user-code-running shape も
-  native 化。`.new` 本経路の各フェーズを共有ヘルパに抽出（`run_tweak_phase`/`run_build_phase`/`enforce_attribute_where_constraints`/
-  `apply_attribute_does_role_mixins`）し interpreter/native 両方から呼んで byte-identical 保証。**TWEAK(#3028)**（`TWEAK(:$y)`
-  引数渡し＝コンストラクタ2系統で扱い違い）→ **where(#3030)**（TWEAK 前後両方で enforce＝assignment-time セマンティクス）→
-  **BUILD(#3032)**（`fail`→Failure / カスタム BUILD で named-arg 自動代入抑制 / positional 拒否＝`S.new("pos")` pre-existing バグ
-  も修正）→ **is-rw(#3034)**（`ClassAttributeDef` pos3=is_rw を is_required と誤読していたバグ修正、未提供 is-rw が native 化＋
-  `@`/`%` required 強制も正しく）→ **does-Role(#3036)**（role を属性値に mixin、raku 非準拠の文書化済み近似なので native==interpreter
-  で検証）。各 pin テスト（`t/native-{tweak,where,build,isrw,doesrole}-construct.t`）。S12/S14 whitelist 全緑、make test PASS。
-  **★再計測（重要）**: ctor 5スライス後も whitelist sample の `new` method fallback はほぼ不変（5230→5225）。**大半（4686）は
-  単一テスト `S03-buf/read-write-bits.t` の `Buf.new`＝組み込み型コンストラクタ**（`is_native_default_constructible` は user 定義
-  `registry().classes` のみ対象なので正しく対象外）。**＝ユーザークラス ctor native 化は完遂。これ以上 ctor を削っても `new`
-  fallback 数は動かない。** 次の実質ターゲットは別カテゴリ: **組み込み型 `.new`**（Buf.new 等）/ **`name`=3257（MOP）** /
-  **`op`=1418（Routine 値 lexical &-var `&infix:<(|)>` 束縛、今回の Sub/WeakSub 限定 fix の除外分）** / iterator push-* protocol
-  （Track B）/ coercion（builtins 降ろし）。残る ctor 難ケース: required-after-BUILD / 未設定 class-typed + BUILD / `is built`/
-  MOP set_build / BUILDALL / custom new / CUnion。
-- **2026-06-23 (§1 = `.MixHash` coercion の VM ネイティブ化)**: §D（状態所有）の実測駆動スライス。`MUTSU_VM_STATS` で
-  catch-all の支配カテゴリを計測したところ、PR-8 が **明示的に除外**していた `.MixHash`（QuantHash coercion の唯一の
-  残り）が最頻だった。PR-8 の除外理由は「`.MixHash` は container type metadata を登録＝interpreter 所有 state」だったが、
-  **これは #2952〜2985 のコンテナ値メタ埋め込み化で stale**＝`.MixHash` が生む `Value::Mix` の型メタ（`value_type=Real`/
-  `declared_type=MixHash`）は **interpreter 副テーブルでなく Mix の `Arc<MixData>` に埋め込まれる**（`tag_container_metadata`
-  の `embed_type_info!` 経路。副テーブル `register_container_type_metadata` を踏むのは Instance 等の `other =>` 枝のみ）。
-  ∴ `.MixHash` は env/state を一切触らない pure value op で、`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash` と同型に native 化可能。
-  新 pure fn `builtins::quanthash_coerce::to_mixhash`（`to_mix(_, "MixHash")` → mutable flip + メタ埋め込み）を VM の
-  `try_native_quanthash_coerce` に追加（method match に `"MixHash"` 追加）。**dedup**: interpreter の `dispatch_method_by_name_2`
-  の `Mix|MixHash` 分岐を `to_mixhash` 委譲へ（`tag_container_metadata` 直書きを撤去）＝**1 操作 = 1 実装**。受け手ゲートは
-  既存 5 兄弟と同一（list-like のみ native、Instance/Package は interpreter 維持）。変数受け手（`%h.MixHash`）は
-  `CallMethodMut` ルーティングで mut パスに行き 6 兄弟全て一律 fallback＝**既存挙動と完全 parity**（将来 mut パスへ
-  まとめて降ろす別スライス候補）。挙動不変（native==interpreter＝同一 `to_mixhash`）。pin `t/native-mixhash-coerce.t`(22,
-  raku/mutsu 双方 PASS・Str 要素で `.WHICH` キー差を回避)。mix.t 244/244・set.t・categorize 緑。
-  （bag.t 625 "Foo instance union" は BLOCKERS.md 記載の pre-existing で本変更と無関係。）
-- **2026-06-23 (§1 = QuantHash coercion を mut パスでも VM ネイティブ化)**: 上記 MixHash slice の follow-up。**変数受け手**
-  （`@a.Set`/`%h.MixHash`）は `CallMethodMut` にコンパイルされ非mut パスの `try_native_quanthash_coerce` を踏まず、
-  6 兄弟（`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`）が一律 mut catch-all で interpreter fallback していた
-  （MixHash slice の「parity」注記参照）。`vm_call_method_compiled.rs` の **mut catch-all**（`try_compiled_method_mut_or_interpret`
-  末尾・`try_native_first` の後）に同じ `Self::try_native_quanthash_coerce` を追加。coercion は**新しい** Set/Bag/Mix 値を返し
-  受け手変数を変異させない（writeback 不要）ので非mut パスと完全同型＝挙動不変。Instance/Package 受け手は fall through。
-  実測: `@a.{Set,Bag,Mix,SetHash,BagHash,MixHash}` の fallback 6→0（残 `^name` は MOP）。pin
-  `t/native-quanthash-coerce-mut-path.t`(19, raku/mutsu 双方 PASS)。mix.t 244/244・set.t・categorize 緑。
-  （bag.t 252 / classify.t 40〔junction classify・非whitelist〕は stash 確認で main でも fail＝pre-existing・本変更と無関係。）
-- **2026-06-23 (§1 = `.Map`/`.Hash` coercion の VM ネイティブ化 + builtins 降ろし)**: QuantHash coercion と同型の続き。
-  `.Map`/`.Hash` は **pure value op**（`dispatch_to_hash_impl`/`dispatch_to_map` は完全に `&self` 非依存＝env/registry/
-  state を触らず `Self::` 静的ヘルパー + `super::utils::` のみ・`.Map` の declared-type は `Value::Hash` の `Arc<HashData>`
-  に埋め込まれ #2952 以降副テーブル不使用）。**dedup 降ろし**: `dispatch_to_hash_impl`/`dispatch_to_map`/`items_to_hash`/
-  `make_odd_number_error` を新 `src/builtins/map_hash_coerce.rs`（pure free fn `to_hash(target, check_odd)`/`to_map(target)`）
-  へ移設。interpreter の `dispatch_to_hash` は委譲、`dispatch_to_map` は撤去（`dispatch_method_by_name_2` の `Map|Hash`
-  分岐が `to_map`/`to_hash` を直接呼び `tag_container_metadata` 直書きも撤去）＝**1 操作 = 1 実装**。VM に
-  `try_native_map_hash_coerce`（非mut + mut 両 catch-all）。受け手ゲートは list-like / Hash / QuantHash のみ native、
-  Instance（Match の named captures / `__baggy_data__`）/ Package（型オブジェクト）/ lowercase `.hash` は interpreter 維持。
-  挙動不変（`to_map` は embed して identity 保持＝`Map.Map === Map`、odd-count は `X::Hash::Store::OddNumber`）。pin
-  `t/native-map-hash-coerce.t`(21, raku/mutsu 双方 PASS)。mix.t 244/244・set.t・hash.t・categorize・classify-list 緑。
-- **2026-06-23 (§1 = `.Seq` coercion の structural 分岐を VM ネイティブ化)**: coercion drainage の締め。`.Seq` は
-  `dispatch_seq_coercion`（`&mut self`）だが **structural 分岐（Seq/Array/Slip/Range/bare scalar）は pure**、
-  Supply（on-demand callback 駆動）/ LazyList（lazy bridge force）/ Instance（Buf/Blob byte 読み・generic wrap）のみ
-  carrier/state 依存。pure 分岐を新 `src/builtins/seq_coerce.rs::to_seq_structural(target) -> Option<Value>` へ抽出
-  （Supply/LazyList/**全 Instance** は `None` で interpreter へ）。interpreter の `dispatch_seq_coercion` は冒頭で委譲、
-  VM は非mut + mut 両 catch-all で `method == "Seq"` 時に呼ぶ＝**1 操作 = 1 実装**。gather/lazy の `.Seq` は引き続き
-  interpreter carrier で正しく drain。pin `t/native-seq-coerce.t`(16, raku/mutsu 双方 PASS)。S32-list/seq.t・S17-supply/Seq.t・
-  integration/sequence.t 緑。**これで pure-coercion fallback カテゴリ（Set/Bag/Mix/MixHash/Map/Hash/List/Array/Slip/Seq）は
-  実測ドレイン完了**＝残る coercion fallback は `.Setty`/`.Baggy`/`.Mixy`（型オブジェクト返し・niche）のみ。
-- **2026-06-23 (§D = 純 lexical `IO::Path` メソッドの VM ネイティブ化)**: coercion ドレイン後の実測駆動スライス。
-  `MUTSU_VM_STATS` の **広がり計測（distinct ファイル数）** で method-fallback の最大カテゴリが `parent`(66 file)/
-  `add`(65 file)＝temp-file/dir ヘルパー（`make-temp-dir`/`make-temp-file`）経由で 60+ ファイルに分散する **IO::Path の
-  パス操作メソッド**と判明（カウント最大の `AT-POS`=5816 は単一 `read-int.t` の Buf 受け手に集中＝広がり 7 file のみで不適）。
-  `IO::Path` の `native_io_path`（`&mut self`・FS/cwd 依存）のうち **パス文字列だけを操作する純 lexical メソッド**
-  （`parent`/`add`/`child`(非secure)/`sibling`/`basename`/`dirname`/`volume`/`cleanup`/`parts`/`extension`/`succ`/`pred`/
-  `starts-with`/`is-absolute`/`is-relative`/`Str`/`gist`/`IO`/`SPEC`）を新 associated fn `Interpreter::try_io_path_lexical`
-  （`&self` 不要＝FS/cwd/env を一切触らない・static `Self::io_path_*` ヘルパーのみ使用）へ抽出。**dedup**: `native_io_path`
-  は冒頭でこれに委譲し移動済み arm を削除＝**1 操作 = 1 実装**（`child`/`add` の join は共有ヘルパー `io_path_join_child`
-  に切り出し、`child :secure` の FS-resolve のみ `native_io_path` に残す）。VM は **非mut + mut 両方**の `is_native_method`
-  バウンス**直前**で `Self::is_io_path_lexical_class`（組込 `IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX` 限定）＋
-  `try_io_path_lexical` を呼ぶ（fallback 記録は `is_native_method` バウンス〔vm_call_method_compiled.rs:201/1652〕で起きていた
-  ため catch-all でなくここに配置）。coercion 同様 **新しい IO::Path/string/bool を返し受け手を変異しない**＝writeback 不要。
-  FS/cwd 依存（`e`/`f`/`slurp`/`spurt`/`absolute`/`relative`/`resolve`/`CWD`/`raku`）と numeric coercion・`child :secure` は
-  `None` で interpreter 維持＝behavior-invariant。実測: `$p.{parent,add,basename,dirname,sibling,…}` の fallback → 0
-  （残るのは `Str.IO` coercion〔別操作・Str 受け手〕と `IO::Path::*.new`〔③ ctor〕）。pin `t/native-io-path-lexical.t`(40,
-  literal `.IO` + 変数受け手〔mut path〕+ Win32 subclass round-trip・raku/mutsu 双方 PASS)。io-path.t の既存 fail 2
-  （`.SPEC`/`.CWD` attribute）は main でも fail＝本変更と無関係。S16-io/S32-io/tmpdir/cwd/dir whitelist 全緑。
-- **2026-06-23 (§D = Cool scalar `.IO` coercion の VM ネイティブ化)**: IO::Path lexical スライス（上）の follow-up。
-  実測広がりで次点だった `.IO`(14 file・`"path".IO`/`$s.IO`/`42.IO`)＝Str/numeric を IO::Path へ coerce する fallback を
-  ドレイン。`.IO` は `dispatch_method_by_name` の arm（`make_io_path_instance(target.to_string_value())`＋null-byte check、
-  IO::Path 型オブジェクトは identity）で **`&self`＝`$*SPEC`/`$*CWD` を env から読む**＝pure ではないが VM は env を所有する
-  ので native 読み可。VM の非mut/mut 両 catch-all（iterator construct の後・最終 fallback 直前）に `try_native_io_coercion`
-  を追加し、**Str/Int/BigInt/Num/Rat/FatRat/Complex/Bool 受け手 + IO::Path(-subclass) 型オブジェクト identity** を native 化、
-  **同じ `make_io_path_instance` を呼ぶ**＝1 操作 = 1 実装（interpreter dispatch は無改修・同 fn 共有）。Instance（user `.IO`/
-  IO::Path/IO::Handle）/ 非IO Package / aggregate / **Junction（autothread）** は `None` で interpreter 維持＝behavior-invariant
-  （`("a"|"b").IO` は Junction を返し parity 確認）。新 IO::Path を返し受け手を変異しない＝writeback 不要。実測:
-  `$s.IO`/`42.IO` の fallback → 0。pin `t/native-io-coercion.t`(18, literal/変数/numeric/型オブジェクト identity/null-byte
-  dies/Junction autothread/`$*CWD` 継承・raku/mutsu 双方 PASS)。S16-io/S32-io/tmpdir/cwd whitelist 全緑。
-- **2026-06-23 (§D = `IO::Path.absolute`/`.relative` の VM ネイティブ化)**: IO::Path lexical スライスの cwd 依存 follow-up。
-  `.absolute`/`.relative` は path 文字列に **cwd**（`$*CWD`/instance `cwd` 属性/プロセス cwd）を組み合わせて文字列を導出するが、
-  cwd は `&self` の `resolve_path`/`get_cwd_path`/`apply_chroot` 経由で読み、これらは **純 lexical（FS stat なし）**＝`.IO` 同様
-  VM が env/cwd を所有するので native dispatch 可。新 `&self` メソッド `try_io_path_cwd_method`（win32/cygwin/posix の base 引数・
-  `$*CWD` fallback 全分岐を保持）へ抽出し、`native_io_path` は `try_io_path_lexical` の直後で委譲＝**1 操作 = 1 実装**（`absolute`/
-  `relative` arm を削除）。VM は IO::Path lexical dispatch の隣（`is_native_method` バウンス直前・非mut/mut 両 path）で呼ぶ。
-  `.resolve`（実 FS canonicalize）は `None` で `native_io_path` 維持。新 string を返し受け手非変異＝writeback 不要・behavior-invariant。
-  実測: `$p.absolute`/`.relative` の fallback → 0。pin `t/native-io-path-cwd.t`(14, `$*CWD`/instance cwd/explicit base/変数受け手/
-  round-trip・raku/mutsu 双方 PASS)。io-path.t の既存 fail 2（`.SPEC`/`.CWD`）は不変。S16-io/S32-io/tmpdir/cwd whitelist 全緑。
-- **2026-06-23 (§D = QuantHash / Map / Hash coercion を plain `Cool` scalar 受け手でも VM ネイティブ化)**: coercion ドレインの
-  残差掃除。method-fallback の広がり再計測（全 whitelist・distinct ファイル数）で **`Set`/`Bag`/`Mix`/`SetHash`/`BagHash`/
-  `MixHash` が各 8-11 file でまだ fallback** していたのを確認し受け手を特定＝`"a".Set`/`42.Set`/`"blue".Set` 等の **plain
-  scalar 受け手**（list-like aggregate でないため VM gate の `list_like` チェックで除外され interpreter に落ちていた）。
-  interpreter は scalar `.Set` を `dispatch_to_set_with_what`＝**`to_set` そのもの**（Set/Bag/Mix arm に Package 特別扱いすら無く
-  scalar を `other =>` catch-all で単一要素化）で処理する＝native gate を広げても **完全に同一実装で behavior-invariant**。
-  `try_native_quanthash_coerce`/`try_native_map_hash_coerce` 共通の `list_like` 判定を新ヘルパー
-  `coerce_receiver_native_eligible` に集約し、list-like aggregate に **Str/Int/BigInt/Num/Rat/FatRat/Complex/Bool** を追加
-  （非mut + mut 両 catch-all が共有）。`.Map`/`.Hash` の scalar（`42.Hash`）は同じ `to_hash`/`to_map` で `X::Hash::Store::OddNumber`
-  ＝raku/interpreter と一致（odd number）。**Instance（`__baggy_data__`/Match captures/user coercion）/ Package（型オブジェクト・
-  `.Map`/`.Hash` は型オブジェクト返し）/ Nil / Junction（autothread）は `None` で interpreter 維持**＝挙動不変。新しい
-  Set/Bag/Mix/Map/Hash 値を返し受け手を変異しない＝writeback 不要。実測: set.t/bag.t/mix.t の Set/Bag/Mix fallback
-  11/10/10 → 2/2/2（残 2 は `__baggy_data__` Instance / 型オブジェクト＝設計通り fall through）。pin
-  `t/native-scalar-quanthash-coerce.t`(39, literal/変数受け手 × Set/Bag/Mix/SetHash/BagHash/MixHash/Map/Hash・raku/mutsu
-  双方 PASS)。set.t 248/248・mix.t 244/244・categorize 28/28・hash.t 緑。（bag.t 252 "Foo instance union"・classify.t 40
-  "junction classify" は BLOCKERS.md 記載の pre-existing〔いずれも非whitelist〕で本変更と無関係。`(a=>1).Map` の odd-number
-  は Pair 受け手〔元から native gate 内〕の別 pre-existing バグで本スライス対象外。）
-- **2026-06-23 (§D = `IO::Path` の FS `stat`-only file test / accessor を VM ネイティブ化)**: coercion ドレイン枯渇後、③ IO
-  native メソッド**本丸**への最初の一歩。IO::Path lexical/cwd スライスが `None` で interpreter 維持していた **FS 接触メソッドの
-  うち `stat` 読みだけで完結する群**＝`e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z` の file test と `mode`/`s`/`created`/`modified`/
-  `accessed`/`changed` の stat accessor を native 化（広がり計測で `e`=15/`d`=11 file 等・temp-file ヘルパー経由で分散）。これらは
-  **`io_handles` を一切確保せず content 読みも emit もしない**＝path を VM 所有 cwd（`resolve_path`/`apply_chroot`/`get_cwd_path`・
-  純 lexical）に対して解決した後 `fs::metadata`/`exists` を呼ぶだけ。新 `&self` メソッド `try_io_path_fs_stat`（path_buf 解決）＋
-  static `io_path_stat_result`（path_buf+p から全 16 arm の stat + Failure 整形）へ抽出し、`native_io_path` は `try_io_path_cwd_method`
-  の直後で委譲＝**1 操作 = 1 実装**（16 arm を match から削除）。VM は IO::Path lexical/cwd dispatch の隣（`is_native_method`
-  バウンス直前・非mut/mut 両 path）で呼ぶ。`slurp`/`lines`/`words`/`comb`（content 読み・encoding flag）/ `open`/`spurt`（`io_handles`
-  確保・FS write）は `None` で `native_io_path` 維持＝次スライス候補。新しい Bool/Int/Str/Failure を返し受け手非変異＝writeback 不要・
-  behavior-invariant（同一 stat ロジック）。実測: `$p.{e,f,d,s,modified,…}` の fallback → 0。pin `t/native-io-path-fs-stat.t`(30,
-  literal + 変数受け手〔mut path〕× 全 file test/accessor・missing-path Failure・raku/mutsu 双方 PASS。`.modified`/`.accessed`/
-  `.changed` は mutsu=Int / raku=Instant の別 pre-existing 型差を避け `> 0`/`.defined` で検証)。S16-io/S32-io/slurp/spurt whitelist
-  全緑（io-path.t の `.SPEC`/`.CWD` 既存 fail は非whitelist・不変）。**残る IO native = content 読み（slurp/lines）と handle 確保
-  （open/spurt）＝③ の `io_handles` 所有を直接触る本丸。**
-- **2026-06-23 (§D = `IO::Path` の whole-file content 読み `slurp`/`lines`/`words` を VM ネイティブ化)**: FS stat-only スライス
-  （上）の content-read follow-up。`slurp`(広がり 26 file)/`lines`(13)/`words` は **ファイル全体を読む**が、`io_handles` を一切
-  確保せず emit もしない＝path を VM 所有 cwd へ解決後 `fs::read[_to_string]` し、bytes を split/decode するだけ。flag 解析
-  （`parse_io_flags_values`）と encoding lookup（`decode_with_encoding`＝VM 所有の `encoding_registry` を読む）は全て `&self`
-  read なので native dispatch 可。新 `&self` ゲート `try_io_path_content_read`（`Option` 返し）＋ fallible 本体 `io_path_content_read`
-  （`?` を使うため分離）へ抽出。path_buf 解決は 3 サイト目になったので `resolve_io_path_buf` ヘルパーに集約し `try_io_path_fs_stat`
-  も委譲化（dedup）。`native_io_path` は stat 委譲の直後で content 委譲＝**1 操作 = 1 実装**（slurp/lines/words arm を match から削除）。
-  VM は stat dispatch の隣（非mut/mut 両 path）で呼ぶ。**`comb`（regex/closure dispatch が `&mut self` 必要）/ `open`/`spurt`
-  （`io_handles` 確保・FS write）は `None` で `native_io_path` 維持**＝次スライス（③ io_handles 本丸）。新しい Str/Buf/Seq を返し
-  受け手非変異＝writeback 不要・behavior-invariant（同一 read + split/decode、`:bin`/limit/`:!chomp`/非utf-8 decode 全分岐保持）。
-  実測: `$p.{slurp,lines,words}` の fallback → 0。pin `t/native-io-path-content-read.t`(24, literal + 変数受け手〔mut path〕×
-  slurp/lines/words・`:bin` Blob・utf-8 decode・limit・`:!chomp`・missing-path dies・raku/mutsu 双方 PASS)。S16-io/S32-io/slurp/
-  lines whitelist 全緑（io-path.t `.SPEC`/`.CWD` 既存 fail は非whitelist・不変）。**残る IO native = `comb`（&mut）と handle 確保
-  open/spurt＝③ の `io_handles` 所有本丸。**
-- **2026-06-23 (§D = `IO::Path` の単一パス FS 変異 `spurt`/`mkdir`/`rmdir`/`unlink`/`chmod` を VM ネイティブ化)**: content-read
-  スライスの **write 系 follow-up**（spurt 広がり 18 file）。これら 5 op は FS を**変異**するが `io_handles` を一切確保しない＝
-  path を VM 所有 cwd へ解決後 **一回限りの syscall**（`fs::write`/`create_dir_all`/`remove_dir`/`remove_file`/`set_permissions`）
-  を呼ぶだけ（`spurt` は open→write→即 drop でハンドルを残さない）。encoding lookup（`encode_with_encoding`＝VM 所有 registry
-  読み）は `&self`。新 `&self` ゲート `try_io_path_fs_mutate`（`Option` 返し）＋ fallible 本体 `io_path_fs_mutate`（`?` 用に分離・
-  `mkdir` は `class_name` で IO::Path を round-trip 返し）へ抽出。`native_io_path` は content 委譲の直後で委譲＝**1 操作 = 1 実装**
-  （5 arm を match から削除）。VM は content dispatch の隣（非mut/mut 両 path）で呼ぶ。**2-path op（`copy`/`rename`/`move`/`symlink`/
-  `link`・宛先 path 解決が必要）と handle-opening `open`（`io_handles` 確保＝`&mut self`）は `None` で `native_io_path` 維持**＝次の
-  ③ io_handles 本丸 capstone。新しい Bool/IO::Path/Failure を返し受け手非変異＝writeback 不要・behavior-invariant（同一 syscall +
-  `:append`/`:createonly`/`:enc`+BOM/Buf 全分岐保持）。実測: `$p.{spurt,mkdir,rmdir,unlink,chmod}` の fallback → 0。pin
-  `t/native-io-path-fs-mutate.t`(22, literal + 変数受け手〔mut path〕× 5 op・`:append`/`:createonly` Failure・Buf spurt・mkdir
-  recursive・非空 rmdir Failure・chmod mode・raku/mutsu 双方 PASS)。S16-io/S32-io/spurt/dir whitelist 全緑。（`.unlink` of missing
-  は mutsu=False/raku=True の別 pre-existing 差〔移動前 interpreter も `Err(NotFound)=>Bool(false)`〕で本スライス対象外＝pin 非対象。）
-  **残る IO native = `comb`（&mut）と `open`（`io_handles` 確保）＝③ の `io_handles` 所有 capstone。**
-- **2026-06-23 (§D ③ capstone = `IO::Path.open` を VM ネイティブ化＝VM が `io_handles` を直接確保)**: ③（state 所有）の
-  **象徴的マイルストーン**。`open` は IO::Path FS メソッドの中で唯一 **`io_handles` テーブルを変異**する（`open_file_handle`→
-  `insert_handle_state` で handle id 確保＝`&mut self`）。台帳が当初「native-method（IO 系）は ③ がブロック」としていた根拠が
-  まさにこれ＝`io_handles` が interpreter 所有 state だから、だった。だが #2760-2772 以降 `io_handles` は **`Arc<RwLock>` 共有
-  フィールドで VM が所有**＝unified struct の `self` から `open_file_handle` を直接呼べる。新 `&mut self` ゲート `try_io_path_open`
-  を抽出（`resolve_io_path_buf`(&self)/`parse_io_flags_values`(&self) は owned 値を返すので後続 `&mut self` `open_file_handle` と
-  借用衝突なし）し、`native_io_path` は fs_mutate 委譲の直後で委譲＝**1 操作 = 1 実装**（open arm を match から削除）。VM の
-  **非mut/mut 両 dispatch 関数はどちらも `&mut self`** なので（`try_compiled_method_or_interpret_inner`/
-  `try_compiled_method_mut_or_interpret`）、`"x".IO.open`（非mut）も `$p.open`（mut）も native 化。`:r`/`:w`/`:a`/`:rw`/`:bin`/
-  `:enc`/`:create`/`:exclusive` 全 flag と Failure-on-error 整形を保持＝behavior-invariant（同一 `open_file_handle`）。実測:
-  `$p.open` の fallback → 0。**∴ open→read/write→close の全ライフサイクルが catch-all バウンス無しで VM ネイティブに走る**
-  （handle メソッド get/lines/print/say/close/tell/eof/seek/flush 等は既に native）。pin `t/native-io-path-open.t`(20, literal +
-  変数受け手〔mut path〕× :r/:w/:a/:exclusive/:bin・missing/directory Failure・opened state・raku/mutsu 双方 PASS)。S16-io/S32-io/
-  open whitelist 全緑（io-handle.t `.say` 既存 fail は main でも fail＝非whitelist・本変更と無関係）。**残る IO native = `comb`
-  （regex/closure dispatch が `&mut self`）と 2-path op（copy/rename/move/symlink/link）のみ＝③ の IO native はほぼ完遂。**
-- **2026-06-23 (§D = `IO::Path` の 2-path FS ops `copy`/`rename`/`move`/`symlink`/`link` を VM ネイティブ化＝IO::Path FS 族の完結)**:
-  open capstone の follow-up＝IO::Path FS メソッド族の**最後の未 native**。これら 5 op は受け手 path と**宛先/リンク名 path の両方**を
-  VM 所有 cwd へ解決（`resolve_path`/`resolve_io_path_buf`・`&self`）後、一回限りの syscall（`fs::copy`/`fs::rename`/`unix_fs::symlink`/
-  `fs::hard_link`）を呼ぶだけ＝`io_handles` 不要・全 `&self`。新 `&self` ゲート `try_io_path_two_path_op`（`Option` 返し）＋ fallible
-  本体 `io_path_two_path_op`（`?` 用に分離）へ抽出。`native_io_path` は open 委譲の直後で委譲＝**1 操作 = 1 実装**（copy/rename|move/
-  symlink/link arm を match から削除・間の `dir`/`watch` は維持）。VM は open dispatch の隣（非mut/mut 両 path）で呼ぶ。同一/createonly
-  チェック・`X::IO::Copy`/`Rename`/`Move` Failure 整形・`:absolute` symlink・hard link 全分岐保持＝behavior-invariant。実測:
-  `$p.{copy,rename,move,symlink,link}` の fallback → 0。pin `t/native-io-path-two-path.t`(18, literal + 変数受け手〔mut path〕×
-  5 op・copy-onto-self/createonly Failure・symlink resolve・hard link・raku/mutsu 双方 PASS。stale ファイル混入を防ぐため毎回 dir を
-  クリーンに再生成)。S16-io/S32-io/copy/rename whitelist 全緑。**∴ IO::Path FS メソッド族（stat/content-read/fs-mutate/open/2-path）が
-  全て VM ネイティブ化完了＝§D ③ の IO native はほぼ完遂。残るは `comb`（regex/closure dispatch が `&mut self`・別軸）のみ。**
-- **2026-06-23 (§D = `.encode`/`.decode`（Str↔Buf 変換）を VM ネイティブ化)**: IO::Path 族の次の clean な native-method ドレイン
-  （広がり `encode`=16 file）。**明示エンコーディング形**（`"x".encode("utf-16")`/`$buf.decode("ascii")`）は `dispatch_method_by_name`
-  catch-all で interpreter にバウンスしていた（0-arg `.encode` は `methods_0arg` で既に native）。これらは VM 所有の `encoding_registry`
-  を読む（`find_encoding`/`encode_with_encoding`/`decode_with_encoding`＝全 `&self`）pure な Str↔Buf 変換で `io_handles` 不要。新
-  `pub(crate)` ヘルパー `try_native_encode_decode` を **`crate::runtime`（methods_io_dispatch.rs）側に**置き（`dispatch_encode`/
-  `dispatch_decode` が `pub(super)` なので同 crate::runtime から呼ぶ・IO::Path と同パターン）、VM の非mut/mut 両 catch-all（`try_native_io_coercion`
-  の直後・最終バウンス直前）から呼ぶ＝**1 操作 = 1 実装**。**保守的ゲート**: `.encode` は plain Cool scalar（Str/Int/BigInt/Num/Rat/
-  FatRat/Complex/Bool）のみ、`.decode` は `dispatch_decode` 自身が Buf/Blob Instance にゲート（それ以外 `None`）。user Instance（custom
-  `.encode`/`.decode` は compiled method で先に解決）・Supply（独自 chunk-encode・interpreter arm が除外）・Buf 受け手の `.encode` は
-  fall through＝behavior-invariant。新しい Buf/Str を返し受け手非変異＝writeback 不要。実測: `"x".encode("utf-16")`/`$buf.decode` の
-  fallback → 0。pin `t/native-encode-decode.t`(23, literal + 変数受け手〔mut path〕× encode utf-8/utf-16/ascii/latin-1・Int/Bool/Rat
-  encode・Buf/Blob decode・round-trip・raku/mutsu 双方 PASS。utf-16 `.elems`=16-bit ユニット数の注意込み)。encoding/buf/S32-str/encode
-  whitelist 全緑。
-- **2026-06-23 (§D = `IO::Path.comb` を VM ネイティブ化＝IO::Path FS 族 100% 完結 ＋ no-arg comb バグ修正)**: IO::Path FS メソッド
-  族の**最後の 1 メソッド**。`comb` はファイル全体を読んで content を comb するが、matcher dispatch（`dispatch_comb_with_args`）は
-  regex/closure matcher が match エンジンを走らせるため `&mut self`＝ただし `io_handles` は触らない。新 `&mut self` ヘルパー
-  `try_io_path_comb`（read→`?` 用に `match` で error 整形）へ抽出し `native_io_path` は two-path 委譲の直後で委譲＝**1 操作 = 1 実装**
-  （comb arm を match から削除）。VM は two-path dispatch の隣（非mut/mut 両 path）で呼ぶ。**同時に pre-existing バグも修正**: 引数なし
-  `$path.IO.comb`（matcher 無し）が空 Seq を返していた（旧 arm が `dispatch_comb_with_args` の `None` を空にマップ）→ content を
-  grapheme 分割（`Str.comb` no-arg / Rakudo と一致）。`dispatch_comb_with_args` の `None`-no-arg セマンティクスは generic caller
-  （methods_dispatch_match.rs:187）と共有なので**修正は IO::Path comb helper にローカル**に留めた（None→grapheme）。実測:
-  `$p.comb`/`$p.comb(/re/)`/`$p.comb(N)` の fallback → 0。pin `t/native-io-path-comb.t`(17, literal + 変数受け手〔mut path〕× no-arg
-  grapheme・regex・Int chunk・Str fixed・limit・empty file・unicode・raku/mutsu 双方 PASS)。S16-io/S32-io/comb whitelist 全緑。
-  **★∴ IO::Path FS メソッド族（stat/content-read/fs-mutate/open/2-path/comb）が 100% VM ネイティブ化完了＝§D ③ の IO native 完遂。**
-  **clean な pure-value native-method ドレインも枯渇**（残カテゴリ＝③ 組込型 ctor〔Buf.new 等〕/ MOP carrier〔WHAT/name/can〕/
-  landmine〔Instance.Str/.Stringy/.raku/.gist〕/ block-exec slow path〔map/grep〕/ concurrency〔Supply/tap〕/ typed-array mutator・
-  いずれも別軸 or 構造的ブロッカー前提）。次の §D は ③ 組込型 ctor か tree-walk dispatch chain 削除の substrate（要設計・大）。
-- **2026-06-23 (§D ③ = `::`-namespaced クラス／組込例外型の `.new` を VM ネイティブ化)**: ③ 組込型 ctor フォークの初スライス。
-  `is_native_default_constructible` の `cn_resolved.contains("::")` ガードが **全ての `::` namespaced クラス**（ユーザ `A::B`／
-  組込例外型 `X::AdHoc`・`X::TypeCheck::Binding` …）を native 構築から除外していた＝唯一のブロッカー。`[`（parametric）ガードは維持し
-  `::` ガードを削除。さらに組込例外型は registry に `attributes: Vec::new()`（宣言属性ゼロ・named args は `is_attribute_buildable` の
-  未宣言名 `true` フォールバックで attribute-bag 化）で登録されるため `has_attribute` が false → 末尾返却で除外されていた。MRO に
-  `Exception` を含むなら native 可（`build_native_default_instance` は同じ `is_attribute_buildable` で named args を格納＝interpreter と
-  byte-identical）として `has_attribute || is_exception` に変更。**VM call site（vm_call_method_compiled.rs:127）に
-  `materialize_exception_message_in_result` を追加**＝interpreter slow path（methods.rs:3369 が `dispatch_new` 後に呼ぶ）と等価に、
-  user `message` メソッドを構築時に1回走らせ `message` 属性へキャッシュ（built-in 例外・非例外は no-op）。user `message` を走らせる場合は
-  `method_dispatch_pure=false`（caller slot reconcile 保全）。`materialize_…` の可視性を `pub(super)`→`pub(crate)`。実測: `X::AdHoc.new`/
-  `X::TypeCheck::Binding.new`/`A::B.new`/`P::Q::R.new` の `new` fallback → 0。stash 比較で native==interpreter 出力完全一致を確認
-  （`message`/no-arg の raku 差異は変更前から存在する F-track `.message` 未実装ギャップで本変更と無関係）。pin
-  `t/native-namespaced-and-exception-ctor.t`(16)。make test 10971・S04/S12/S32 construction whitelist 全緑。**残 ③ ctor 候補＝
-  Promise 等並行型・misc 組込型（is_attribute_buildable で attribute-bag 化できない special 構築のもの）。**
-- **2026-06-23 (§D ③ = `Lock` 族（`Lock`/`Lock::Async`/`Lock::Soft`）の `.new` を VM ネイティブ化)**: ③ ctor フォークの 2 スライス目。
-  lock 構築は pure data（`next_lock_id()` の process-global カウンタ bump ＋ `Lock::Async` の `async` フラグ・env/registry/user code 不要）。
-  static `try_native_builtin_construct`（VM call site vm_call_method_compiled.rs:145 が呼び `method_dispatch_pure=true`）に Lock arm を追加し、
-  interpreter dispatch_new の既存 arm（`match base_class_name` 内）は `Slip`/`IterationBuffer` 等と同じ「Shared with the VM's native fast
-  path」二重実装の慣習に倣ってコメントのみ追加で残置（4 行・byte-identical）。実測 `Lock.new`/`Lock::Async.new`/`Lock::Soft.new` の `new`
-  fallback → 0。stash 比較で native==interpreter 一致確認。pin `t/native-lock-ctor.t`(9)。make test 10964。**★既知の別軸バグ（本変更と無関係・
-  main でも再現）: `$lock.protect({ $n++ })` の captured-outer `$n` writeback 落ち（`.protect` の closure capture writeback・ctor とは無関係）。**
-  **残 ③ ctor 候補＝Promise/Channel（SharedPromise/channel state）・QuantHash 族（Bag/Set/Mix/SetHash・element 計数）・Capture・misc。**
-- **2026-06-23 (§D ③ = `Promise`/`Channel`/`Supplier`/`Supplier::Preserving` の `.new` を VM ネイティブ化)**: ③ ctor フォークの 3 スライス目
-  ＝simple concurrency primitive。`Promise.new`=`Value::Promise(SharedPromise::new())`（空の planned promise・pure shared state）、
-  `Channel.new`=`Value::Channel(SharedChannel::new())`（空 channel）、`Supplier`/`Supplier::Preserving`=`{emitted:[], done:False,
-  supplier_id:next_supplier_id()}`（emission log ＋ process-global id）＝いずれも env/registry/user code 不要。static
-  `try_native_builtin_construct` に 3 arm 追加、interpreter dispatch_new の既存 arm はコメントのみ残置（byte-identical 二重実装の慣習）。
-  実測 4 種とも `new` fallback → 0。`$p.keep(42)`/`$c.send.list`/`$s.Supply.tap` 機能 raku 一致。pin `t/native-concurrency-ctor.t`(10)。
-  make test 10984。**★既知の別軸ギャップ（本変更と無関係）: `Supplier::Preserving` の tap 前 emit の late-tap replay 未実装（mutsu は
-  buffer/replay しない・construction とは無関係）。** **残 ③ ctor 候補＝QuantHash 族（Bag/Set/Mix/SetHash・element 計数＝`&mut self` type
-  check 要・static 不可）・Capture・Proxy（FETCH/STORE closure）・misc。** **★perf 注意=`SharedPromise::new()` 等の `pub(crate)` ctor を
-  VM static path から直接呼ぶ＝interpreter 委譲より 1 ホップ短い。**
-- **2026-06-24 (§D ③ = QuantHash 族（`Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/`MixHash`）の `.new` を VM ネイティブ化)**: ③ ctor フォークの
-  4 スライス目。前 3 つと違い QuantHash 構築は **`&mut self`**（element 計数＋parameterized 型 check `type_matches_value`＋container metadata
-  `tag_container_metadata`）で static `try_native_builtin_construct` には載らない＝**dispatch_new の 3 arm（414 行）を新モジュール
-  `methods_quanthash_ctor.rs` の `&mut self` helper `try_native_quanthash_construct` に丸ごと抽出**（IO::Path family と同パターン・「1 操作 =
-  1 実装」）。dispatch_new の 3 arm は helper への delegation（`return self.try_native_quanthash_construct(*class_name, base_class_name,
-  &type_args, args)`）に置換＝**byte-identical な丸ごと移動でコピー無し**（前 3 スライスの「コメント残置二重実装」と異なり真の単一 impl）。VM
-  call site は新 wrapper `try_native_quanthash_construct_for_package(&[Value])`（parametric 名 strip → `is_quanthash_ctor_type` gate → match
-  時のみ args clone）を非mut/mut 両 path に追加（`Set[Int].new` の parametric も `parse_parametric_type_name` で base 解決）。env-pure
-  （値構築＋container metadata tag のみ）＝`method_dispatch_pure=true`。可視性: `strip_named_pair_args` を `pub(super)` に拡大（他の
-  `value_to_list`/`is_lazy_*`/`type_matches_value`/`tag_container_metadata`/`parse_parametric_type_name` は既に pub(super)/pub(crate)）。
-  実測 6 種とも `new` fallback → 0、parametric（`Bag[Int]`/`Set[Int]`）・type-check 失敗（`X::TypeCheck::Binding`）も raku 一致。pin
-  `t/native-quanthash-ctor.t`(18)。make test 11018・setbagmix/baggy/mix whitelist 全緑。**★残 ③ ctor 候補＝`Capture.new`（mutsu 未実装＝
-  別途実装要）・`Proxy`（FETCH/STORE closure）・`Match`/`FakeScheduler` 等の low-traffic static 候補・`Array`/`Hash`（shaped/container
-  metadata でより複雑）。clean な大物 QuantHash を消化したので、残りは小粒 or 未実装機能。**
-- **見送り（2026-06-23）: generic `Instance.Str`/`.Stringy` coercion**。広がり次点（`Stringy`=22/`Str`=11 file）だが、VM catch-all に
-  到達する Instance.Str は **generic object（`to_string_value()`）に限らず** built-in 型の特殊 stringification を含む（`Buf.Str`→
-  `X::Buf::AsStr` throw・`Attribute/BOOTSTRAPATTR.Str`→名前・`has $.Str` の public アクセサ→属性値）。これらは `is_native_method`
-  でゲートされず arm 1499 より前で interpreter 特殊処理されるため、`to_string_value()` で native 化すると壊れる（say.t/buf.t/
-  attributes.t で回帰確認）。`has_user_method`/`has_public_accessor`/built-in 型除外を足しても landmine が次々顕在化＝列挙不能で
-  安全に分離できないため見送り。clean な §D coercion 成果は IO::Path family（lexical/`.IO`/absolute-relative）で確定。
-- **2026-06-24 (§D ③ = `FakeScheduler`/`Proxy`/`Match` の `.new` を VM ネイティブ化)**: ③ ctor フォークの clean static 残掃き。3 つは
-  pure data assembly（`FakeScheduler` は process-global counter ＋ virtual-time 0.0 seed、`Proxy` は評価済み FETCH/STORE callable を包む、
-  `Match` は `orig[from..to]` を slice して positional/named captures を attribute 格納）＝env/registry/user code 不要。各構築を per-type
-  helper（`build_native_fakescheduler_value`/`build_native_proxy_value`/`build_native_match_value`）に抽出し、`try_native_builtin_construct`
-  と interpreter の `dispatch_new` arm の**両方が同 helper を呼ぶ**（true single impl・byte-identical）。実測 3 種とも `new` fallback → 0。
-  pin `t/native-misc-ctor.t`(14・Proxy/Match は raku parity 確認)。
-- **2026-06-24 (§D ③ = `Capture.new` を実装)**: `Capture` はそもそも constructor が無く `Capture.new` がエラーだった。raku セマンティクス
-  （検証済）＝default `Capture.new` は **empty Capture**。named arg は drop（Capture に buildable public 属性が無く `bless` が無視）、positional
-  arg は reject（named-only `Mu.new`＝"Default constructor for 'Capture' only takes named arguments"）。populated Capture は `\(...)` で作る。
-  named arg は `Value::Pair`、それ以外（リテラル・positional `"a" => 1` `ValuePair`）は positional で die。pure data ＝
-  `try_native_builtin_construct`。既知の不変ギャップ（非回帰）＝Capture **instance** 受け手の `.new`（`\(1).new`）は依然エラー＝built-in value
-  variant の instance `.new` 委譲という別軸の広いギャップ。pin `t/native-capture-ctor.t`(9・raku 双方 PASS)。
-- **2026-06-24 (§D ③ = `Array`/`List`/`Positional`/`array`/`Hash`/`Map` の `.new` を VM ネイティブ化)**: aggregate ctor のドレイン。pure-data
-  static と違い `&mut self`（shaped-dim 解析 `:shape(...)`＋`:data`/positional 投入＋X::Assignment shape エラー、Slip/Range/Seq flatten、
-  parameterized 型 check `Array[Int].new`/`Hash[Int].new`→`X::TypeCheck::Assignment`、container metadata tag）。QuantHash 同様、2 arm（~310 行）を
-  新モジュール `methods_aggregate_ctor.rs`（`try_native_array_construct`/`try_native_hash_construct`）に**丸ごと抽出**し、interpreter の
-  `dispatch_new` arm は delegation・VM は `try_native_aggregate_construct_for_package`（parametric 名→base+type_args 解決）経由で呼ぶ＝true single
-  impl・byte-identical。実測 6 種とも `new` fallback → 0。pin `t/native-aggregate-ctor.t`(16・raku parity subset。shaped/Hash-named-data の
-  mutsu 固有挙動は roast S02-types/array.t・hash.t・S09-typed-arrays/* がカバー)。**★これで `dispatch_new` の built-in 型 ctor のうち native 化
-  可能な clean 候補は枯渇。残る arm は state/FS/process 依存（IO::Socket::INET〔socket〕・Distribution/CompUnit::Repository〔FS〕・Proc::Async
-  〔process〕・Backtrace〔call stack〕・Seq〔predictive iterator carrier〕）か error-only（HyperWhatever/Whatever/Instant）。**
-- **2026-06-24 (§D ③ = allomorph〔`IntStr`/`NumStr`/`RatStr`/`ComplexStr`〕＋`ObjAt`/`ValueObjAt` の `.new` を VM ネイティブ化)**: ③ ctor フォークの
-  再計測（全 whitelist の `new` fallback receiver を一時プローブで実測）で、aggregate 後も残る最頻 receiver が **`dispatch_new` ではなく
-  `dispatch_new_and_constructors`（slow-path method dispatch）に在る**ことが判明: `RatStr`(892)/`IntStr`(306)/`ComplexStr`(176)/`NumStr`(125)
-  ＝allomorph、`ObjAt`/`ValueObjAt`(計18)。これらは完全 **pure-static**（args→instance・`&self` 一切不要＝registry/env/FS も触らない）。
-  allomorph `.new(numeric, string)` は inner numeric（allomorphic `Mixin` 引数なら unwrap）を `Str` override 付き `Value::mixin` に、`ObjAt`/
-  `ValueObjAt` `.new(which)` は first positional の stringify を `WHICH` 属性に格納するだけ。**static `try_native_builtin_construct`（VM call site
-  vm_call_method_compiled.rs:160/1788 が呼び `method_dispatch_pure=true`）に 2 arm 追加**し、新 static helper `build_native_allomorph_value`/
-  `build_native_objat_value` を `dispatch_new_and_constructors`（インライン実装を撤去）と両方が呼ぶ＝**1 操作 = 1 実装**（FakeScheduler/Proxy/Match
-  と同パターン）。arity エラー文言は mutsu 固有（"requires two arguments" / "Too few positionals"＝raku と異なる pre-existing 差）を抽出時に保持＝
-  byte-identical。実測 `IntStr.new`/`RatStr.new`/`ObjAt.new` 等の `new` fallback → 0（val.t の `new` が histogram から消失）。pin
-  `t/native-allomorph-objat-ctor.t`(23・raku/mutsu 双方 PASS)。S32-str/val.t・S03-operators/set_union.t・S32-num/rounders.t・rat.t・S02-types/num.t
-  whitelist 全緑。（allomorphic.t 107/113 の既存 fail は main でも同一＝`.ACCEPTS`/`.Numeric` の別軸ギャップで本変更と無関係。）**残 `new` fallback receiver
-  ＝Proc::Async〔process〕/Failure〔`$!` env 読み〕/IO::Socket::INET〔socket〕/IO::Path family〔registry・別スライス候補〕/CallFrame〔call stack〕/
-  Seq〔iterator carrier〕＝いずれも state 依存 or 別軸。**
-- **2026-06-24 (§D ③ = `IO::Path` family〔`IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX`〕の `.new` を VM ネイティブ化＝IO::Path ctor capstone)**:
-  IO::Path native 化テーマの締め＝メソッド族（stat/content-read/fs-mutate/open/2-path/comb・#3499〜3511）は 100% native 化済だが **ctor だけ
-  catch-all バウンス**していた（プローブ実測で `IO::Path::Win32`/`::Cygwin`/`::Unix`/`IO::Path` 計~112 occ）。`.new` は **pure path-string assembly**
-  ＝positional path / IO::Path instance（`path` 再利用）/ basename+dirname+volume の三つ組を SPEC 由来セパレータで join し、CWD/SPEC 属性を付与する
-  だけ。`&self` 依存は **registry 読み**（`class_mro`＝IO::Path-instance 引数判定）のみ＝VM 所有（phase ②）＝FS/cwd/env/user code 不要。`dispatch_new`
-  の IO::Path arm（~117 行）を新 `&mut self` helper `build_io_path_instance` に**丸ごと抽出**（interpreter arm は delegation・SPEC-variant subclass の
-  一回限り registry 登録も保持）。VM ゲート `try_native_io_path_construct` は **built-in IO::Path family のみ**（`is_io_path_lexical_class`＝lexical method
-  スライスと同一ゲート＝user subclass の custom new を侵さない）に絞り、非mut/mut 両 call site（aggregate ctor arm の直後・`method_dispatch_pure=true`）から
-  呼ぶ＝**1 操作 = 1 実装**・byte-identical。実測 `IO::Path.new`/`IO::Path::Win32.new` 等の `new` fallback → 0。pin `t/native-io-path-ctor.t`(19・
-  positional/triple/instance-arg/Win32-Unix-Cygwin subclass/CWD/empty-null dies・raku/mutsu 双方 PASS)。S32-io/S16-io/tmpdir/cwd/S11-compunit whitelist
-  全緑（io-path.t 34/35 の `.SPEC`/`.CWD` attribute 既存 fail は main でも同一＝非whitelist・本変更と無関係）。**残 `new` fallback＝Proc::Async/Failure
-  〔`$!` env〕/IO::Socket::INET/CallFrame/Seq＝state 依存 or 別軸。**
-- **2026-06-24 (§D ③ = `Failure.new($exception?)` を VM ネイティブ化)**: 残 `new` fallback の**最大カウント**（プローブ実測 2593・`fail`/明示構築駆動）。
-  `Failure.new` は **VM 所有 state のみ読む pure data assembly**＝明示 exception 引数（無ければ `$!` を env から、それも無ければ `X::AdHoc("Failed")`
-  デフォルト）を、既に `Exception`/`X::`/`CX::`（MRO 読み `mro_readonly`）でなければ `X::AdHoc` に wrap して `{exception, handled:false}` instance を作るだけ。
-  `&self` 依存は **env 読み（`$!`）＋ registry 読み（`mro_readonly`）**＝VM 所有（単一ストア化後 `self.env` は VM/interpreter で同一）＝FS/process/socket/
-  user code 不要。`dispatch_new_and_constructors` の Failure arm（~52 行）を新 `&self` helper `build_native_failure_value` に**丸ごと抽出**（interpreter arm は
-  delegation）。VM は非mut/mut 両 catch dispatch（IO::Path ctor arm の直後・`class_name=="Failure"` gate・`method_dispatch_pure=true`）から呼ぶ＝**1 操作 =
-  1 実装**・byte-identical。実測 `Failure.new`（明示/string-wrap/`$!`/argless 全パス）の `new` fallback → 0。pin `t/native-failure-ctor.t`(11・raku/mutsu
-  双方 PASS。`X::AdHoc` は `:payload` で構築＝`.message` が payload を読む pre-existing detail を回避)。S04-exceptions/S04-statement-modifiers/
-  S05-capture/named/S06-advanced whitelist 全緑。**残 `new` fallback の次スライス候補（2026-06-24 実測訂正・「state 依存」分類を訂正）**:
-  ① **`Proc::Async.new`＝実は完全 pure data**（プロセス spawn は `.start`・ctor は引数パース＋`next_supply_id()` free fn＋`SharedPromise::new()`＋
-  Supply 属性構築のみ・`&self` 依存ゼロ）＝`build_native_proc_async_value` static helper を `try_native_builtin_construct` に wire（Promise/Channel と同型・最易）。
-  ② **`IO::Socket::INET.new`＝io_handles 依存だが `IO::Path.open`（#3507）と同型**（`dispatch_socket_inet_new` が `insert_handle_state` で VM 所有 io_handle 確保）
-  ＝`try_native_socket_inet_construct` で既存 helper へ委譲。**真に構造ブロック（②まで land 後に ctor-fork 完了）**: `CallFrame`〔call stack carrier〕＝別軸。
-  （`Seq.new` は #3533 で native 化済＝下記。）**∴ ctor-fork 残=Proc::Async（pure）＋IO::Socket::INET（io_handles）の 2 件のみ。**
-- **2026-06-24 (§D ③ = `Seq.new($iterator?)` を VM ネイティブ化, #3533)**: 前エントリで「iterator carrier＝別軸（impure）」と保守的に分類していた `Seq.new` を再評価し
-  native 化。**carrier state 自体が VM 所有**（`predictive_seq_iters` フィールド ＋ env の `__mutsu_predictive_seq_iter::` 内部キー ＋ Seq の Arc を
-  キーにしたグローバル deferred-iter 副表）＝単一ストア化後 `self` は VM/interpreter 同一なので native gate から同じ書き込みができる。**構築は eager pull
-  しない**（PredictiveIterator は carrier に stash、materialized `items`/`stuff` instance は要素コピー、その他 iterator は deferred 登録、no-arg は
-  pre-consumed Seq）＝iterator 消費は後の consumption 時で構築とは別＝FS/process/user code 不要。`dispatch_new` の Seq arm（~46 行）を新 `&mut self`
-  helper `try_native_seq_construct` に**丸ごと抽出**（interpreter arm は delegation）。VM は非mut/mut 両 catch dispatch（Failure ctor arm の直後・
-  `class_name=="Seq"` gate・`method_dispatch_pure=true`）から呼ぶ＝**1 操作 = 1 実装**・byte-identical。user subclass（`class S is Seq`）は class_name が
-  自名に解決され gate に掛からず interpreter 維持。pin `t/native-seq-ctor.t`(11・raku/mutsu 双方 PASS。`.raku` の `$(...)` itemization 差は pre-existing・
-  無関係)。S32-list/seq.t(50)/skip.t/tail.t/rotor.t・S07-iterators/range-iterator.t(103) 全緑。**残 `new` fallback＝Proc::Async（pure・次）/
-  IO::Socket::INET（io_handles・次）/CallFrame〔call stack carrier・別軸〕。**
-- **2026-06-24 (§D ③ = `Proc::Async.new(@cmd, :w, :enc)` を VM ネイティブ化, #3535)**: 前々エントリで「state 依存」と保守分類していた
-  `Proc::Async.new` を再評価し native 化。**ctor は完全 pure data**＝引数パース（positional command ＋ `:w`/`:enc` flag）＋3 本の
-  process-global supply id（`next_supply_id`＝bare global counter）＋空の stdout/stderr/merged `Supply` instance 構築のみ。**実プロセス spawn は
-  `.start` 側**＝ctor 時は env/registry/io_handles/user code を一切触らない（`&self` 依存ゼロ）。`dispatch_new` の Proc::Async arm（~66 行）を新 static
-  helper `build_native_proc_async_value(class_name, args)` に**丸ごと抽出**（interpreter arm は delegation）し、VM は既存の `try_native_builtin_construct`
-  に `cn=="Proc::Async"` arm を `Promise`/`Channel`/`Supplier` と同型で wire＝**1 操作 = 1 実装**・byte-identical。pin `t/native-proc-async-ctor.t`(8・
-  raku/mutsu 双方 PASS。実 echo/cat round-trip ＋ exit code ＋ `:w` stdin 込み)。t/proc-async.t(23)・roast/S17-procasync/basic.t(47)/print.t(16) 全緑。
-  **残 `new` fallback＝IO::Socket::INET（io_handles・次・`IO::Path.open` と同型）/CallFrame〔call stack carrier・別軸〕。**
-- **2026-06-24 (§D ③ = `IO::Socket::INET.new(...)` を VM ネイティブ化, #3536)**: ③ ctor フォークの clean ラスト。`IO::Socket::INET.new`（`:listen`
-  server / client 両モード）の ctor は実 bind/connect を行うが、**書き込み先は VM 所有の `io_handles`**（`insert_handle_state`＝既に native 化済の
-  `IO::Path.open`〔#3507〕と同型）＝env/registry/user code は触らない。既存の `&mut self` helper `dispatch_socket_inet_new`（interpreter の `dispatch_new`
-  arm が呼んでいた単一 impl）を `pub(in crate::runtime)`→`pub(crate)` に広げ、VM の非mut/mut 両 catch dispatch（Seq ctor arm の直後・
-  `class_name=="IO::Socket::INET"` gate・`method_dispatch_pure=true`）から**同じ helper を直接呼ぶ**＝**1 操作 = 1 実装**・byte-identical（新規コピー無し）。
-  user subclass は class_name が自名に解決され gate に掛からず interpreter 維持。pin `t/native-socket-inet-ctor.t`(7・raku/mutsu 双方 PASS。実 loopback
-  client/server round-trip ＋ invalid port/family dies ＋ 独立 listener)。t/socket.t(3)・roast/S32-io/IO-Socket-INET.t(32)/IO-Socket-INET-UNIX.t(8)/
-  socket-accept-and-working-threads.t(15)/socket-fail-invalid-values.t(4)/socket-host-port-split.t(2) 全緑。**∴ ③ ctor フォーク完了**＝pure-value/
-  VM-owned-state な built-in ctor は全て native 化済。**残 `new` fallback＝CallFrame〔call stack carrier〕・error-only（HyperWhatever/Whatever/Instant）＝
-  別軸 or 構造ブロック。** 次は §D の本丸＝(b) tree-walk dispatch-chain 削除 substrate or multi-dispatch VM 化。
-- **2026-06-24 (§D multi-dispatch = proto sub dispatch（trivial body）の VM 化, #3541)**: ③ ctor 完了後の §D 次本丸＝multi-dispatch VM 化に着手。
-  実測（S06 sample・`MUTSU_VM_STATS`）で **bare multi は 0 fallback**（PR-4 で OTF 化済）だが **proto multi は 100% fallback**（2 層: proto sub 呼び出し自体
-  ＋内部 `__PROTO_DISPATCH__`、各候補 body は `call_proto_dispatch`→`run_block` で tree-walk）と判明。**trivial-body proto（`proto foo {*}` / bodyless）を
-  VM call site で直接ディスパッチ**: `dispatch_func_call_inner` の else ブロック先頭に proto fast-path を追加し、新ヘルパー `vm_resolve_trivial_proto_candidate`
-  が ① interpreter-handled 名を除外 ② proto def を `resolve_proto_function` で取得し body が trivial（`SetLine` marker 除外後に空 or `[Expr(Whatever)]`）か検証
-  ③ **proto 自身の sig を `method_args_match` で gate**（`proto f(Int) {*}` が Str を弾く・S06-multi/proto.t subtest 26 が捕捉した回帰を修正）④ `resolve_proto_candidate_with_types`
-  で winner 候補を解決（VM 所有レジストリ＝phase ②）⑤ OTF-compilable かつ非state なら返す。返れば `compile_and_call_function_def` で **候補 body を compiled 実行**
-  （tree-walk proto body＋`__PROTO_DISPATCH__` round-trip＋候補 `run_block` を全バイパス）。`nextsame`/`samewith`/`callwith` は同関数の `push_multi_dispatch_frame`＋
-  samewith context で動作（PR-4 で検証済の機構）。非trivial body / 非OTF候補 / where候補 / sig 不一致は `None` で従来の interpreter fallback 維持＝byte-identical。
-  可視性: `resolve_proto_candidate_with_types`/`resolve_proto_function`/`method_args_match` を `pub(crate)` に拡大。実測 `proto factorial` で fallback 100%→0%、
-  S06 sample の `__PROTO_DISPATCH__` 50→30（残 30 は where候補/非trivial body/非OTF候補で正しく fallback）。pin `t/proto-vm-dispatch.t`(12・raku/mutsu 双方 PASS=
-  recursion/型別候補/samewith/nextsame/proto-sig gate〔EVAL ラップ〕/非trivial body guard)。whitelisted S06 全 87 件＋roast/S06-multi/proto.t(27) 全緑、make test 11202。
-  **残 multi-dispatch fallback**: where 制約付き候補の OTF 化（候補側 `def_is_otf_compilable` が where 除外）/ 非trivial proto body の VM 化 / `@_` slurpy recursive
-  plain sub（別カテゴリ）。**★教訓: `{*}` proto body は登録時に `SetLine` marker が前置され body.len=2 になる＝trivial 判定は marker 除外が必須。proto 自身の sig は
-  候補 sig と独立の gate＝バイパス時は `method_args_match` で必ず検証（さもないと `proto f(Int)` の型検査が抜ける）。**
-- **2026-06-25 (§D = imported `is test-assertion` sub の OTF 化)**: `def_is_otf_compilable_module_single` の `!def.is_test_assertion` 除外を撤去
-  （`call_compiled_function_named` が test-assertion line context を push するので OTF compile しても assertion 失敗の caller 行報告は interpreter と同一）。
-  **ただし除外撤去だけでは効果ゼロ**: Test::Assuming/Test::Util の `is-primed-sig` 等は imported function として `Expr::Call` 経由で parse され、`Capture |cap` の
-  sub_signature で OTF ゲートに弾かれ続けていた。**鍵＝imported `is test-assertion` sub を using scope に再登録**（新 `InlineModuleExport.is_test_assertion`
-  フィールド・SubDecl から伝播・fallback regex も `is test-assertion` 検出）し、ローカル宣言の assertion helper と同じ parse 経路（`known_call_stmt`→`Stmt::Call`）に
-  載せる＝OTF-compilable dispatch に到達。実測 S06-currying の function-fallback 195（is-primed-sig=171/is-primed-call=21/priming-fails-bind-ok=3）→2。
-  `priming-fails-bind-ok`（body の `try`/`CATCH`）は保守ゲートに正しく残り byte-identical。pin `t/test-assertion-module-otf.t`(7)。make test 11471 PASS。
-  **★分離した別バグ（本 PR に含めず・要別作業）= `use` の export スキャン（`extract_exported_names`→`parse_program_partial`→`set_original_source(module_src)`）が
-  parser の `ORIGINAL_SOURCE` を module 一時 String（直後 drop）に上書き→dangling 化→以後 using ファイルの `current_line_number` が全 1 に潰れる汎用バグ。**
-  これを `snapshot_source_state`/`restore_source_state` で直すと caller 行は raku 一致になるが、**行番号正常化が「clobber 由来の行 1 で偶然 PASS していた」既存の
-  潜在バグを露出させる**（実測 2 件: S04-phasers/enter-leave.t#28〔`sub f(){ ENTER 'X' }` の ENTER-rvalue が Nil〕・keep-undo.t#10〔UNDO〕。standalone repro でも
-  Nil＝行番号非依存の真の phaser バグだが、テストは clobber された行 1 でだけ PASS していた）。blast-radius 不明（roast 全体に calibration-by-clobber が潜む可能性）なので
-  ORIGINAL_SOURCE 修正＋露出 phaser バグ群は本 PR から分離して別途対応。**★教訓: nested parse は SCOPES だけでなく `ORIGINAL_SOURCE` も clobber する。修正自体は正しいが、
-  長年 clobber に calibrate された「偶然 PASS」テスト群を露出させるので段階的に。**
-- **2026-06-25 (§D = `ORIGINAL_SOURCE` clobber 修正 ＋ 露出 phaser ブロック値バグの一般修正)**: 前エントリで分離した別バグを解消。
-  **(1)** `parse_program_partial`（module export スキャン / EVAL / pseudo-package の best-effort nested parse）が `primary::snapshot_source_state`/
-  `restore_source_state`（`ORIGINAL_SOURCE` + heredoc `LEAKED_REGIONS`）で caller の source state を save/restore するよう変更＝clobber 解消・
-  using ファイルの `current_line_number` が raku 一致に。**(2)** 露出した phaser バグ（**行番号非依存の真のバグ**）を一般修正: ①trailing ENTER phaser
-  がブロック/サブ/クロージャ/do-block の値になる（新 OpCode `PushEnterResult`/`LoadEnterResult` + VM `enter_result_stack`＝ENTER section の値を body
-  末尾に橋渡し。ENTER は value-result baseline 記録前に走るのでスタック直置きでは検出されない）②値決定文を「最後の非 `SetLine` 文」に変更（行番号正常化で
-  文間 `SetLine` が入り phaser-only ブロックの末尾 `SetLine` が偽 `True`→KEEP 誤発火していたのを UNDO に修正）。**(3)** 5 重複していた BlockScope phaser
-  圧縮（top-level / `Stmt::Block` / do-block / sub body / closure）を共有 `compile_phaser_block_scope(stmts, result_on_stack)` に集約（statement=topic /
-  do-block=stack の 2 モード）。pin `t/enter-phaser-rvalue.t`(18)。全 t/(11502)・S04-phasers whitelist(17)・`use Test::Util` whitelist 270 本・roast 1/3
-  サンプル 428 本いずれも回帰ゼロ。**★教訓: phaser ブロックの値は ENTER section とは別フェーズで実体化が要る（専用スタックで body 末尾に橋渡し）。do-block は
-  値をスタックで返す（`DoBlockExpr` が pop）が statement 文脈は topic 経由＝同じヘルパーをモードで分岐。**
-- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `.starts-with`/`.ends-with`〔無印形〕の VM ネイティブ化)**: method-fallback の名前別実測で
-  `starts-with`(513) が catch-all バウンス上位（`name`/`WHAT`/`WHY`/`can`=MOP 反射・撲滅対象外、`tap`/`stdout`=concurrency 別軸、iterator protocol 群=lazy 別軸を除く）。
-  原因＝`starts-with`/`ends-with` は named-arg（`:i`/`:ignorecase`/`:m`/`:ignoremark`）対応のため slow path（`dispatch_prefix_suffix_check`）に置かれ、**named arg を持たない
-  `.starts-with($needle)` 一般形まで interpreter にバウンス**していた。`(false,false)` ケースは純 prefix/suffix 判定なので `native_method_1arg`（methods_narg.rs）に
-  Str-receiver gated arm を追加。named-arg 形は **2 引数（positional + Pair）なので 1-arg native path に到達せず**自然に slow path へフォールスルー＝byte-identical。
-  user 定義 `.starts-with` は VM が native 前に解決するため非shadow（既存 `contains` arm と同保証）。実測 `$s.starts-with` fallback 2→0。pin `t/starts-ends-with-native.t`(22)。
-  全 t/(11572)・S32-str/starts-with.t・ends-with.t・文字列 roast 70・1/5 roast サンプル 257 回帰ゼロ。**★教訓: named-arg 対応で slow path に置かれた純メソッドは、
-  named-arg が arity を増やして別 path に行くので「無印 1-arg ケースだけ」を native gate（受け手型で限定）すれば安全に drain できる。`substr-eq`(87・位置解決 Whatever/負数/Failure で複雑)
-  は次スライス候補。**
-- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `.substr-eq($needle, Int $pos)` の VM ネイティブ化)**: starts-with と同パターンの 2 スライス目。`.substr-eq` は
-  named-arg（`:i`/`:m`）と Whatever/負数/範囲外の位置解決（Failure 生成）対応のため slow path（`dispatch_substr_eq`）に在った。**plain 2 引数形＋非負 in-bounds Int 位置＋Str
-  受け手**は純 substring 比較なので `native_method_2arg` に arm 追加。それ以外は全てフォールスルー: Whatever/非Int 位置（`arg2` が `Int` でない）→ interpreter 解決／負数・範囲外 →
-  interpreter Failure／named-arg 形（Pair 追加で arity 3）→ 2-arg native path 不到達／user 定義 `.substr-eq` は native 前に解決＝非shadow。1 引数形（位置 0 デフォルト）は稀でフォールスルー維持。
-  pin `t/substr-eq-native.t`(16)。全 t/(11566)・S32-str/substr-eq.t・indices.t・index.t 回帰ゼロ。**★残る clean な string drain は枯渇**: `comb` 単純形は既に native（survey の 93 は
-  regex/named-arg 形）、`trans`(65) は range（spec 文字列内 `a..z`）/list-pair/regex で複雑、`Int`/`Num`/`Str.new` は ctor 完了済み領域。残カテゴリ＝iterator protocol 群（lazy・別軸）/
-  MOP carrier（反射・撲滅対象外）/concurrency（tap/emit・別軸）で、いずれも §D(b) の純 drain でなく別 substrate 前提。**
-- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `Buf.write-int*`/`.write-uint*`/`.write-num*` 族の VM ネイティブ化)**: method-fallback 再計測（全1285 whitelist
-  集計）で string drain 枯渇後の **最頻 clean-drain カテゴリ**が判明＝`write-int8/16/32/64/128`(各 3852) ＋ `write-uint*`(各 2220) ＋ `write-num32/64`(各 492)＝計 ~3 万 fallback。
-  発生源は **S03-buf/write-int.t / write-num.t**（`existing."$write"($off,$val[,$endian])` の `\sigilless` instance 形と `buf8."$write"(...)` の type-object 形＝両方 `"$write"`
-  **動的メソッド名**）。既存 native 化は **mut-bound `$`-var の static 名**（`try_native_buf_mut`・CallMethodMut）のみで、(1) type-object 形（`Value::Package` 受け手＝fresh buf 返し）
-  (2) `\sigilless`/`BareWord` instance 形（non-mut 動的 op `exec_call_method_dynamic_op`→`try_native_method` 経由・writeback 先 var 無し）(3) `$`-var 動的名（mut 動的 op
-  `exec_call_method_dynamic_mut_op`＝native fast path を一切試さず直接 `vm_call_method_mut_with_values`）の 3 経路が全て interpreter にバウンスしていた。**修正**＝新 pure helper
-  `buf_write_int::try_native_buf_write(target, method, args)` が type-object（fresh `make_buf_value`）と instance（shared cell へ `write_back_sharing`→`commit_attrs` で in-place commit
-  →全 binding が観測）の両形を 1 impl で扱う（byte transform は既存共有 `apply_write_int`/`apply_write_num`）。これを **`try_native_method` 冒頭**に wire（arity-keyed `native_method_*arg` は
-  3 引数〔offset,value,endian〕を dispatch 不可なので専用分岐が必須）→ 経路(1)(2) を drain。経路(3) は `exec_call_method_dynamic_mut_op` で generic fork 前に `try_native_buf_mut` を呼んで drain。
-  **フォールスルー維持**＝`Blob`/`blob8`（type-object はメソッド無し・instance は immutable で interpreter が "Cannot modify immutable Blob" を raise・現挙動 byte-identical）/非Int offset
-  （Whatever 位置解決）/負数・範囲外（`apply_write_int` が Err→`dies-ok` 維持）/arity≠2,3。**実測 write-int.t fallback 20240→0・write-num.t 656→0**（両 method-call fallback 完全消滅）。
-  全 t/(11615 PASS)・S03-buf 全緑・roast 108 サンプル回帰ゼロ。pin `t/buf-write-native.t`(27・type-object/scalar/sigilless 動的名/round-trip/error 全形)。**★教訓: 動的メソッド名
-  （`."$name"()`）には 2 つの専用 opcode（`CallMethodDynamic`〔BareWord/literal target〕/`CallMethodDynamicMut`〔`$`/`@`/`%`-var target〕）があり、後者は native fast path を一切試さない
-  ＝static 名で native 化済のメソッドも動的名だと全バウンス。動的名で呼ばれる native メソッド族を drain するには両 dynamic op に fast-path 呼び出しを足す要あり。instance mutator の non-mut
-  動的形は writeback 先 var が無くても shared attribute cell（`commit_attrs`）への in-place commit で `\sigilless`-bound に伝播する（env insert 不要）。**
-- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `Str.contains($needle, $pos?, :i/:m?)` の named-arg/position 形の VM ネイティブ化)**: starts-with/substr-eq で
-  「named-arg 形は slow path 維持」と保守的に deferred していた string-method 族の **named-arg 形を初めて native 化**。`S32-str/contains.t`(survey 278) は全テストが
-  `invocant.contains(|c)` で **markings named-arg（`:i`/`:ignorecase`/`:!i`…）を必ず付ける**ため、無印 1-arg native 形（`native_method_1arg`）にほぼ到達せず、Pair 付き 2-arg or
-  position+Pair の 3-arg で arity-keyed dispatch（`native_method_2arg` 止まり・3arg path 無し）を素通りして 100% interpreter にバウンスしていた。**修正**＝新 variadic helper
-  `native_contains_with_options(target, args)` が positional/named を分離し、needle=positional[0]・start=positional[1]（Int/Num/Str-parse）・`i`/`ignorecase`/`m`/`ignoremark`
-  を全て lowercase 比較に畳む（`Interpreter::dispatch_contains` を厳密ミラー）。`try_native_method` の arity dispatch 直前に wire。**フォールスルー維持**＝非Str 受け手（**Match invocant** は
-  別軸の Match→Str coercion・instance-bypass 相互作用で defer）/Package needle/BigInt position（overflow→X::OutOfRange は interpreter）/負数・範囲外 position（X::OutOfRange Failure）/
-  未知 named arg。junction needle は `contains_value_recursive[_ci]` で thread。**実測 contains.t fallback 272→140**（残 140＝Match invocant・別軸）。全 t/(11610)・contains 11 形 byte-identical
-  （unicode CI・Str position 含む）・roast contains 系サンプル回帰ゼロ。pin `t/contains-options-native.t`(22)。**★教訓: starts-with/substr-eq で「named-arg は deferred」としたが、
-  named-arg 形こそが実テストの主トラフィックのことがある（contains.t は全形 markings 付き）。variadic helper（positional/named 分離→interpreter dispatch ミラー）を arity dispatch 前に
-  wire すれば named-arg 形も drain できる。受け手が Str 以外（Match 等 coercion 要）の半分は別軸で残る。**
-- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = `Str.starts-with`/`.ends-with`/`.substr-eq` の `:i` named-arg 形の VM ネイティブ化)**: contains slice で確立した
-  variadic-helper パターンを兄弟 string-method に横展開。`S32-str/{starts-with,ends-with,substr-eq}.t` も全形に markings named-arg を付ける（contains.t と同型）ため、無印
-  native 形（starts-with=1arg・substr-eq=2arg）が drain 済でも `:i` 付き形（Pair で arity 超過）は 100% interpreter にバウンスしていた。**修正**＝新ヘルパー `native_prefix_suffix_with_options`
-  （starts-with/ends-with）/ `native_substr_eq_with_options`（substr-eq）が共有 `split_string_match_args`（positional/named 分離・`i`/`ignorecase`=ci・`m`/`ignoremark`=mark・未知 named は
-  defer）で markings を解釈し、`dispatch_prefix_suffix_check`/`dispatch_substr_eq` を厳密ミラー。`try_native_method` の arity dispatch 直前（contains arm の隣）に wire。**フォールスルー維持**＝
-  非Str 受け手（**Match invocant**＝別軸）/Package needle/`:m`/`:ignoremark`（`strip_marks` decomposition は interpreter）/substr-eq の非Int-非Str position（Whatever resolution）・負数・範囲外
-  （X::OutOfRange Failure）/無印形（既存 1-/2-arg arm 維持）。**実測 starts-with.t 80→42・ends-with.t 80→42・substr-eq.t 86→48**（残＝Match invocant `:i` 形・別軸）。全 t/(11692)・
-  3 ファイル proper-harness PASS・10 named 形 byte-identical to raku（unicode CI・Str position 含む）・whitelist 回帰ゼロ。pin `t/starts-ends-substr-eq-named-native.t`(21)。**★教訓:
-  raku 参照実装は `"abc".ends-with("", :i)` で "Iteration past end of grapheme iterator" を投げる（空 needle+ci のバグ）が mutsu は正しく True を返す＝pin から該当形を除外（mutsu の方が正しい）。
-  ★string-method の `:m`/`:ignoremark` は `strip_marks`（NFD→combining-mark filter）で別処理だが、これらの roast テストは backend≠moar ゲートで `:m` 形を skip するので native 化不要・defer で十分。**
-- **2026-06-25 (§D(b) tree-walk dispatch chain 削除 = string-search 4 メソッドの Match invocant の VM ネイティブ化)**: 前 3 slice（contains/starts-with・ends-with・substr-eq）で
-  「Match invocant は別軸（Match→Str coercion・instance-bypass 相互作用）」と deferred していたが、精査で **低リスクな gate 緩和のみで解決可**と判明。①`is_native_method("Match", …)` は
-  **エントリ無し→false**＝Match.contains 等は instance-bypass block を通過し variadic helper（arity dispatch 直前）に到達する ②各 helper は既に `text = target.to_string_value()` で text を取得
-  ＝Match なら matched substring（`Cool.Str` と同一）。∴ 受け手 gate を `Value::Str(_)` のみ → 新述語 `is_str_or_match_receiver`（Str or `Instance{class_name=="Match"}`）に緩和するだけで
-  4 メソッド全形の Match invocant を drain。**失敗 match は `Any`/`Nil`（Match instance でない）→ gate 不通過→interpreter が "No such method" を raise**（byte-identical）。**実測 contains.t 140→6・
-  starts-with.t 42→8・ends-with.t 42→8・substr-eq.t 48→14**（残＝bare Match 形〔markings 無し・1-/2-arg arm が Str-gate〕＋テスト自身の `.match`/`$*PERL.compiler`）。全 t/(11710)・4 ファイル
-  proper-harness PASS・9 Match-invocant 形 byte-identical to raku（position・unicode CI 含む）・whitelist 回帰ゼロ。pin `t/str-search-match-invocant-native.t`(18)。**★教訓: 「別軸」と分類した
-  defer も、bypass 順序（`is_native_method` テーブルに対象クラスが無ければ通過）と既存の coercion（helper が `to_string_value` で text 取得）を精査すると 1 述語の gate 緩和に圧縮できることがある。
-  4 連続 string-search slice で `S32-str/{contains,starts-with,ends-with,substr-eq}.t` の method-fallback はほぼ枯渇（各 ≤14＝bare Match 形のみ）。**
-- **2026-06-25 (§D 状態所有 = atomic var/element RMW（`__mutsu_atomic_*`/`__mutsu_cas_*`）の VM ネイティブ dispatch)**: method-fallback の clean drain 枯渇後、**function-fallback** を全 whitelist 集計したところ
-  `__mutsu_atomic_add_var`(640001)/`__mutsu_atomic_post_inc_var`(320038)/`pre_inc`/`post_dec`/`pre_dec`(各 320001)/`__mutsu_cas_var`(282337)/`cas_hash_elem`(30000)/`cas_array_elem`(29420)＝
-  **計 ~250 万 fallback で function-fallback 全体を圧倒的に支配**（concurrency stress＝`⚛`-operators 駆動）。これは §D「状態所有」の直撃カテゴリ＝atomic op は VM 共有の `shared_vars`（`RwLock`）store と
-  per-attribute cell-CAS state（Phase 3）への RMW。既存 `builtin_atomic_*`/`builtin_cas_*` impl が既にその state を所有・操作しているが、**到達経路が generic な `call_function`（`vm_call_function`→`loan_env_for`→
-  ~数百 arm の名前 match）fallback だけ**だった（`try_native_function` は pure な `native_function` のみ呼ぶため `&mut self` の atomic op は素通り）。**修正**＝新 `try_native_atomic_function(name,args)`（`builtins_atomic.rs`・
-  `builtins.rs` の atomic arm 群を 1:1 ミラー・`cas_*` は `args.to_vec()`）を `try_native_function` 冒頭（Instance-arg bail より前＝`cas($x,$old,$obj)` の Instance 値も dispatch 可）で
-  `name.starts_with("__mutsu_atomic_"|"__mutsu_cas_")` 時に呼ぶ。`loan_env_for` は CP-3 collapse 後 `f(self)` の薄い passthrough＝env は両経路で同一 `self.env`・builtin は同一＝byte-identical。
-  **実測 atomic-ops.t/atomic.t の function-fallback：atomic markers が完全消滅**（cas.t stress=95003 opcodes 中 fallback 61＝残は `start`/`await`〔concurrency 別軸〕＋user-facing `cas`）。
-  全 t/(11725)・S17-lowlevel/{cas,cas-loop,cas-loop-int,atomic,atomic-ops}.t 全 PASS（atomic.t 34/34・atomic-ops.t 28/28＝debug は `for ^20000` stress で遅いが完走）・20 atomic 形 byte-identical to raku。
-  pin `t/atomic-ops-native-dispatch.t`(20)。**★教訓: method-fallback だけでなく function-fallback survey も §D の宝庫。`__mutsu_*` 内部マーカー（atomic/cas/hyper-prefix）は「pure でない（`&mut self`）」ため
-  `try_native_function`→`native_function`(pure) を素通りし generic `call_function` fallback に全部落ちていた。`try_native_function` 冒頭に `&mut self` builtin への直接 dispatch arm を足せば、巨大 stress 系の
-  fallback を一掃できる（state 所有は既に VM 側＝挙動不変の経路短絡）。**
-- **2026-06-25 (§D 状態所有 = builtin operator-as-function `infix:<op>(...)` の VM ネイティブ dispatch)**: atomic 後の function-fallback 集計で `infix:<op>` 族＝**44 演算子で計 ~5400 fallback**
-  （`&infix:<+>`・`[+]`/`[*]` reduce・`>>+>>` hyper・`reduce &infix:<…>` が lower する routine 形）。builtin operator は native Rust の `call_infix_routine`（`&mut self`・hyper/assignment-metaop/set-op/
-  全 binary op を dispatch）が impl だが、到達経路が `call_function_fallback` の infix arm 経由（tree-walk fallback 記録）だけだった。**修正**＝`dispatch_func_call_inner`（直接 Call 経路）と
-  `call_function_compiled_first`（hyper/reduce/string-regex 経路）の両方で、**全 user 演算子解決（compiled_fns / 非proto multi fork / `user_function_matches_call` / OTF）を試した後・terminal fallback の直前**に
-  `infix:<op>` を捕捉して `call_infix_routine(op,args)` を直接呼ぶ（U+2212 minus は `-` に正規化・arg_sources と `maybe_fetch_rw_proxy` は terminal else と同一処理＝byte-identical）。**user-override 厳守**＝
-  user `sub/multi infix:<…>` は上位ブランチで解決されるので native arm に到達せず（pin で `infix:<plus>`=103・`multi infix:<%%%>`=custom を検証）。**実測 直接 infix 呼び 100%→0**（user multi は正しく fallback 維持）。
-  全 t/(11765)・whitelist operator/metaops/junction 79 ファイル回帰ゼロ・20 infix 形 byte-identical to raku。pin `t/infix-function-native-dispatch.t`(22)。**★`call_infix_routine` を `pub(crate)` に拡大。
-  ★教訓: 直接 Call は `dispatch_func_call_inner`・hyper/reduce 等は `call_function_compiled_first` と fallback 記録サイトが 2 系統あるので、両方に同じ arm を置く要がある。user-override 系演算子の native 化は
-  「全 user 解決ブランチの後・fallback 記録の前」に挿入するのが鍵（先頭に置くと user 演算子を shadow する）。`<`/`>` を含む演算子名（`infix:«<»`）は別パーサ問題で CALL-ME エラー＝pin から除外。**
-- **2026-06-25 (§D 状態所有 ③ = file/FS builtin *関数* 形の VM ネイティブ dispatch)**: IO native **メソッド**族は drain 済（2026-06-23 群）だったが、**関数形**（`slurp($p)`/`open($p,:r)`/`unlink($p)`/
-  `spurt`/`close`/`dir`/`copy`/`rename`/`move`/`chmod`/`mkdir`/`rmdir`/`link`/`symlink`）は `call_function` fallback 経由のままだった（survey: unlink 1172/open 1017/slurp 569 他・計 ~3000）。これらは VM 所有
-  `io_handles` store ＋ filesystem への `&mut self`/`&self` 操作で、`builtin_*` impl が既に state を所有。**修正**＝新 `try_native_io_function(name,args)`（`builtins_io.rs`・`call_function` の IO arm を 1:1 ミラー）を
-  **infix と同じく user-override 安全な位置**で呼ぶ: `dispatch_func_call_inner` は全 user 解決後（lexical-amp の後・infix arm の前）の else-if、`call_function_compiled_first` は OTF 後・record 前。
-  **`try_native_function` には入れない**（call_function_compiled_first では user 解決〔OTF〕より前に走るので非compiled user `sub slurp` を shadow する＝atomic は `__mutsu_*` で user 定義不可だったので安全だった差）。
-  **除外**＝`indir`（callback block 実行）・`chdir`/`tmpdir`/`homedir`（process cwd/env 副状態）・`print`/`say`/`note`/`warn`/`sink`（出力/block）。FS 関数は rw param 無しなので arg_sources 不要・`maybe_fetch_rw_proxy(true)`
-  は terminal else と同一＝byte-identical。**実測 builtin IO 関数呼び 0 fallback**・user `sub slurp`/`sub unlink` は上位解決で正しく shadow（pin 検証）。全 t/(11806)・whitelist S32-io/S16-io 64 ファイル回帰ゼロ・
-  14 IO 形 byte-identical to raku。pin `t/io-function-native-dispatch.t`(14)。**★教訓: user-definable な builtin 名（IO/operator）の native 化は `try_native_function`（早すぎ）でなく、両 dispatch 経路の
-  「user 解決後・fallback record 前」に置く。`__mutsu_*` 内部マーカー（atomic）だけが `try_native_function` 先頭に置ける（user 定義不可ゆえ）。残 function-fallback＝concurrency（await/start・start は
-  `sync_env_from_locals` 要で別軸・flaky）/ MOP（samewith）/ heterogeneous 内部マーカー（feed/assign-lvalue・context-sensitive）＝clean homogeneous drain は枯渇。**
-- **2026-06-25 (§D(b) = 純 list/coercion builtin *関数* 形〔`val`/`list`/`slip`/`hash`〕の VM ネイティブ dispatch)**: IO 関数形と同パターンの follow-up。`val`(pure free-fn)/`list`/`slip`/`hash`(`&self`)は
-  collection constructor で、`call_function` fallback 経由のままだった（survey: slip 3824〔S07-hyperrace stress〕/val 1555/list 720/hash 336・計 ~6400）。新 `try_native_collection_function(name,args)`
-  （`builtins_collection.rs`・`call_function` arm を 1:1 ミラー）を **IO/infix と同じ user-override 安全位置**（`dispatch_func_call_inner` の IO arm の後・infix arm の前／`call_function_compiled_first` の IO arm の後）で呼ぶ。
-  pure/`&self` で rw param 無し＝byte-identical。**実測 builtin val/list/slip/hash 呼び 0 fallback**・user `sub list` は正しく shadow（pin 検証）。全 t/(11834)・whitelist S02/S07-slip/S32-list 132 ファイル回帰ゼロ・
-  raku byte-identical。pin `t/collection-function-native-dispatch.t`(14)。**★pin で判明した別軸（mutsu 既存挙動・本変更と無関係）: `list((1,2),3)` を mutsu の `builtin_list` は flatten するが raku は `((1,2),3)`（非flatten）/
-  block-scoped `sub list` が mutsu では outer に leak（raku は block-scope）＝両方 pin から除外。★function-fallback の clean drain（state-owning: atomic/IO ＋ pure dispatch: infix/collection）は実質枯渇。残＝concurrency
-  （await/start/Supply/tap・Promise/scheduler state・flaky）/ MOP（samewith・反射）/ user-class 構築（new/bless・構造 substrate 要設計）。**
+- **2026-06-14 (③ ctor 2nd wave = post-assembly phase approach, #3028–3036)**: broke the "pure-data only" principle and, after pure-data
+  assembly, ran **submethod execution / constraint validation / role mixin as post-assembly phases**, making user-code-running shapes
+  native too. Extracted each phase of the `.new` main path into shared helpers (`run_tweak_phase`/`run_build_phase`/`enforce_attribute_where_constraints`/
+  `apply_attribute_does_role_mixins`), called from both interpreter and native to guarantee byte-identical. **TWEAK(#3028)** (`TWEAK(:$y)`
+  argument passing = the two constructor lineages handled it differently) → **where(#3030)** (enforce both before and after TWEAK = assignment-time semantics) →
+  **BUILD(#3032)** (`fail`→Failure / custom BUILD suppresses named-arg auto-assignment / positional rejection = also fixed the pre-existing `S.new("pos")` bug) →
+  **is-rw(#3034)** (fixed the bug where `ClassAttributeDef` pos3=is_rw was misread as is_required; unprovided is-rw becomes native +
+  `@`/`%` required enforcement also correct) → **does-Role(#3036)** (mixin the role into the attribute value; a documented raku-non-compliant approximation, so
+  validated native==interpreter). Individual pin tests (`t/native-{tweak,where,build,isrw,doesrole}-construct.t`). S12/S14 whitelist all green, make test PASS.
+  **★ Re-measurement (important)**: after the 5 ctor slices, the whitelist sample's `new` method fallback is nearly unchanged (5230→5225). **Most (4686) is
+  `Buf.new` in a single test `S03-buf/read-write-bits.t` = a built-in type constructor** (`is_native_default_constructible` only targets user-defined
+  `registry().classes`, so it is correctly out of scope). **= User-class ctor native-ification is complete. Further ctor shaving will not move the `new`
+  fallback count.** The next real targets are other categories: **built-in type `.new`** (Buf.new etc.) / **`name`=3257 (MOP)** /
+  **`op`=1418 (Routine-value lexical &-var `&infix:<(|)>` binding, the exclusion from this round's Sub/WeakSub-limited fix)** / iterator push-* protocol
+  (Track B) / coercion (lowering to builtins). Remaining hard ctor cases: required-after-BUILD / unset class-typed + BUILD / `is built`/
+  MOP set_build / BUILDALL / custom new / CUnion.
+- **2026-06-23 (§1 = making `.MixHash` coercion VM-native)**: a measurement-driven slice of §D (state ownership). Measuring the dominant catch-all
+  categories with `MUTSU_VM_STATS` showed the most frequent was `.MixHash` (the only remainder of QuantHash coercion), which PR-8 had
+  **explicitly excluded**. PR-8's exclusion reason was "`.MixHash` registers container type metadata = interpreter-owned state", but
+  **this is stale since #2952–2985's embedding of container-value metadata** = the type metadata of the `Value::Mix` produced by `.MixHash`
+  (`value_type=Real`/`declared_type=MixHash`) is **embedded in the Mix's `Arc<MixData>`, not an interpreter side table** (the `embed_type_info!` path of
+  `tag_container_metadata`; only the `other =>` branch for Instance etc. hits the side table `register_container_type_metadata`).
+  ∴ `.MixHash` is a pure value op touching no env/state at all and can be made native in the same shape as `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`.
+  Added the new pure fn `builtins::quanthash_coerce::to_mixhash` (`to_mix(_, "MixHash")` → mutable flip + metadata embedding) to the VM's
+  `try_native_quanthash_coerce` (added `"MixHash"` to the method match). **dedup**: the `Mix|MixHash` branch of the interpreter's `dispatch_method_by_name_2`
+  now delegates to `to_mixhash` (removed the direct `tag_container_metadata` write) = **1 operation = 1 implementation**. The receiver gate is
+  identical to the 5 existing siblings (only list-like is native; Instance/Package stay on the interpreter). Variable receivers (`%h.MixHash`) go to the
+  mut path via `CallMethodMut` routing where all 6 siblings uniformly fall back = **exact parity with existing behavior** (a future slice candidate is
+  lowering them into the mut path all at once). Behavior-invariant (native==interpreter = same `to_mixhash`). pin `t/native-mixhash-coerce.t`(22,
+  PASSing on both raku and mutsu; avoids the `.WHICH` key difference by using Str elements). mix.t 244/244, set.t, categorize green.
+  (bag.t 625 "Foo instance union" is pre-existing per BLOCKERS.md and unrelated to this change.)
+- **2026-06-23 (§1 = making QuantHash coercion VM-native on the mut path too)**: follow-up to the MixHash slice above. **Variable receivers**
+  (`@a.Set`/`%h.MixHash`) compile to `CallMethodMut` and never hit the non-mut path's `try_native_quanthash_coerce`, so all 6
+  siblings (`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`) uniformly fell back to the interpreter at the mut catch-all
+  (see the "parity" note of the MixHash slice). Added the same `Self::try_native_quanthash_coerce` to the **mut catch-all** in `vm_call_method_compiled.rs`
+  (end of `try_compiled_method_mut_or_interpret`, after `try_native_first`). Coercion returns a **new** Set/Bag/Mix value and
+  does not mutate the receiver variable (no writeback needed), so it's exactly the same shape as the non-mut path = behavior unchanged. Instance/Package receivers fall through.
+  Measured: fallback of `@a.{Set,Bag,Mix,SetHash,BagHash,MixHash}` 6→0 (remaining `^name` is MOP). pin
+  `t/native-quanthash-coerce-mut-path.t`(19, PASSing on both raku and mutsu). mix.t 244/244, set.t, categorize green.
+  (bag.t 252 / classify.t 40 [junction classify, non-whitelisted]: confirmed via stash they also fail on main = pre-existing, unrelated to this change.)
+- **2026-06-23 (§1 = making `.Map`/`.Hash` coercion VM-native + lowering to builtins)**: continuation in the same shape as QuantHash coercion.
+  `.Map`/`.Hash` are **pure value ops** (`dispatch_to_hash_impl`/`dispatch_to_map` are entirely `&self`-independent = they touch no env/registry/
+  state, only `Self::` static helpers + `super::utils::`; `.Map`'s declared-type is embedded in the `Value::Hash`'s `Arc<HashData>`,
+  no side table used since #2952). **dedup lowering**: moved `dispatch_to_hash_impl`/`dispatch_to_map`/`items_to_hash`/
+  `make_odd_number_error` into the new `src/builtins/map_hash_coerce.rs` (pure free fns `to_hash(target, check_odd)`/`to_map(target)`).
+  The interpreter's `dispatch_to_hash` delegates; `dispatch_to_map` is removed (the `Map|Hash`
+  branch of `dispatch_method_by_name_2` calls `to_map`/`to_hash` directly and the direct `tag_container_metadata` write is removed too) = **1 operation = 1 implementation**. Added to the VM
+  `try_native_map_hash_coerce` (both non-mut + mut catch-alls). Receiver gate: only list-like / Hash / QuantHash are native;
+  Instance (Match's named captures / `__baggy_data__`) / Package (type objects) / lowercase `.hash` stay on the interpreter.
+  Behavior unchanged (`to_map` embeds and keeps identity = `Map.Map === Map`; odd count gives `X::Hash::Store::OddNumber`). pin
+  `t/native-map-hash-coerce.t`(21, PASSing on both raku and mutsu). mix.t 244/244, set.t, hash.t, categorize, classify-list green.
+- **2026-06-23 (§1 = making the structural branch of `.Seq` coercion VM-native)**: capping the coercion drainage. `.Seq` is
+  `dispatch_seq_coercion` (`&mut self`), but **the structural branch (Seq/Array/Slip/Range/bare scalar) is pure**; only
+  Supply (on-demand callback-driven) / LazyList (lazy bridge force) / Instance (Buf/Blob byte reads, generic wrap) depend on
+  carrier/state. Extracted the pure branch into the new `src/builtins/seq_coerce.rs::to_seq_structural(target) -> Option<Value>`
+  (Supply/LazyList/**all Instance** return `None` to the interpreter). The interpreter's `dispatch_seq_coercion` delegates at the top;
+  the VM calls it on both non-mut + mut catch-alls when `method == "Seq"` = **1 operation = 1 implementation**. `.Seq` of gather/lazy continues to
+  drain correctly via the interpreter carrier. pin `t/native-seq-coerce.t`(16, PASSing on both raku and mutsu). S32-list/seq.t, S17-supply/Seq.t,
+  integration/sequence.t green. **This completes the measured drain of the pure-coercion fallback category (Set/Bag/Mix/MixHash/Map/Hash/List/Array/Slip/Seq)**
+  = the only remaining coercion fallbacks are `.Setty`/`.Baggy`/`.Mixy` (return type objects; niche).
+- **2026-06-23 (§D = making pure lexical `IO::Path` methods VM-native)**: measurement-driven slice after the coercion drain.
+  `MUTSU_VM_STATS` **spread measurement (distinct file counts)** showed the largest method-fallback category was `parent`(66 files)/
+  `add`(65 files) = **IO::Path path-manipulation methods** spread across 60+ files via the temp-file/dir helpers (`make-temp-dir`/`make-temp-file`)
+  (the highest raw count, `AT-POS`=5816, concentrates on the Buf receiver of a single `read-int.t` = spread of only 7 files, so unsuitable).
+  Of `IO::Path`'s `native_io_path` (`&mut self`, FS/cwd-dependent), extracted the **pure lexical methods that only manipulate the path string**
+  (`parent`/`add`/`child`(non-secure)/`sibling`/`basename`/`dirname`/`volume`/`cleanup`/`parts`/`extension`/`succ`/`pred`/
+  `starts-with`/`is-absolute`/`is-relative`/`Str`/`gist`/`IO`/`SPEC`) into the new associated fn `Interpreter::try_io_path_lexical`
+  (no `&self` needed = touches no FS/cwd/env at all; uses only static `Self::io_path_*` helpers). **dedup**: `native_io_path`
+  delegates to it at the top and the moved arms are deleted = **1 operation = 1 implementation** (the join of `child`/`add` is factored into the shared helper
+  `io_path_join_child`; only `child :secure`'s FS-resolve stays in `native_io_path`). The VM calls `Self::is_io_path_lexical_class`
+  (limited to built-in `IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX`) + `try_io_path_lexical` **immediately before** the `is_native_method`
+  bounce on **both non-mut + mut** (placed here rather than the catch-all because the fallback recording happened at the `is_native_method` bounce
+  [vm_call_method_compiled.rs:201/1652]). Like coercion, **returns a new IO::Path/string/bool and does not mutate the receiver** = no writeback needed.
+  FS/cwd-dependent (`e`/`f`/`slurp`/`spurt`/`absolute`/`relative`/`resolve`/`CWD`/`raku`), numeric coercion, and `child :secure` return
+  `None` and stay on the interpreter = behavior-invariant. Measured: fallback of `$p.{parent,add,basename,dirname,sibling,…}` → 0
+  (what remains is `Str.IO` coercion [a different operation, Str receiver] and `IO::Path::*.new` [③ ctor]). pin `t/native-io-path-lexical.t`(40,
+  literal `.IO` + variable receiver [mut path] + Win32 subclass round-trip; PASSing on both raku and mutsu). The 2 existing fails of io-path.t
+  (`.SPEC`/`.CWD` attributes) also fail on main = unrelated to this change. S16-io/S32-io/tmpdir/cwd/dir whitelist all green.
+- **2026-06-23 (§D = making Cool scalar `.IO` coercion VM-native)**: follow-up to the IO::Path lexical slice (above).
+  Drained the runner-up by measured spread, `.IO` (14 files: `"path".IO`/`$s.IO`/`42.IO`) = the fallback coercing Str/numeric to IO::Path.
+  `.IO` is an arm of `dispatch_method_by_name` (`make_io_path_instance(target.to_string_value())` + null-byte check;
+  IO::Path type objects are identity), which **reads `&self` = `$*SPEC`/`$*CWD` from env** = not pure, but the VM owns env,
+  so a native read is possible. Added `try_native_io_coercion` to both non-mut/mut catch-alls (after the iterator construct, immediately before the final
+  fallback), making **Str/Int/BigInt/Num/Rat/FatRat/Complex/Bool receivers + IO::Path(-subclass) type-object identity** native,
+  **calling the same `make_io_path_instance`** = 1 operation = 1 implementation (interpreter dispatch untouched; same fn shared). Instance (user `.IO`/
+  IO::Path/IO::Handle) / non-IO Package / aggregates / **Junction (autothread)** return `None` and stay on the interpreter = behavior-invariant
+  (`("a"|"b").IO` returns a Junction; parity confirmed). Returns a new IO::Path, does not mutate the receiver = no writeback. Measured:
+  fallback of `$s.IO`/`42.IO` → 0. pin `t/native-io-coercion.t`(18: literal/variable/numeric/type-object identity/null-byte
+  dies/Junction autothread/`$*CWD` inheritance; PASSing on both raku and mutsu). S16-io/S32-io/tmpdir/cwd whitelist all green.
+- **2026-06-23 (§D = making `IO::Path.absolute`/`.relative` VM-native)**: the cwd-dependent follow-up to the IO::Path lexical slice.
+  `.absolute`/`.relative` derive a string by combining the path string with the **cwd** (`$*CWD` / the instance `cwd` attribute / process cwd), but
+  the cwd is read via `&self`'s `resolve_path`/`get_cwd_path`/`apply_chroot`, which are **purely lexical (no FS stat)** = like `.IO`,
+  the VM owns env/cwd so native dispatch is possible. Extracted into the new `&self` method `try_io_path_cwd_method` (keeping all branches for
+  win32/cygwin/posix base arguments and the `$*CWD` fallback); `native_io_path` delegates right after `try_io_path_lexical` = **1 operation = 1 implementation**
+  (deleted the `absolute`/`relative` arms). The VM calls it next to the IO::Path lexical dispatch (immediately before the `is_native_method` bounce, both non-mut/mut paths).
+  `.resolve` (real FS canonicalize) returns `None` and stays in `native_io_path`. Returns a new string, receiver not mutated = no writeback, behavior-invariant.
+  Measured: fallback of `$p.absolute`/`.relative` → 0. pin `t/native-io-path-cwd.t`(14: `$*CWD`/instance cwd/explicit base/variable receiver/
+  round-trip; PASSing on both raku and mutsu). The 2 existing fails of io-path.t (`.SPEC`/`.CWD`) unchanged. S16-io/S32-io/tmpdir/cwd whitelist all green.
+- **2026-06-23 (§D = making QuantHash / Map / Hash coercion VM-native for plain `Cool` scalar receivers too)**: residual sweep of the coercion
+  drain. Re-measuring the method-fallback spread (whole whitelist, distinct file counts) confirmed **`Set`/`Bag`/`Mix`/`SetHash`/`BagHash`/
+  `MixHash` still falling back in 8-11 files each**; identified the receivers = **plain scalar receivers** such as `"a".Set`/`42.Set`/`"blue".Set`
+  (not list-like aggregates, so excluded by the VM gate's `list_like` check and dropping to the interpreter).
+  The interpreter handles scalar `.Set` via `dispatch_to_set_with_what` = **`to_set` itself** (the Set/Bag/Mix arm has no Package special-casing even;
+  scalars are single-element-ized by the `other =>` catch-all), so widening the native gate is **behavior-invariant with exactly the same implementation**.
+  Consolidated the `list_like` judgment shared by `try_native_quanthash_coerce`/`try_native_map_hash_coerce` into the new helper
+  `coerce_receiver_native_eligible`, adding **Str/Int/BigInt/Num/Rat/FatRat/Complex/Bool** to list-like aggregates
+  (shared by both non-mut + mut catch-alls). Scalar `.Map`/`.Hash` (`42.Hash`) gives `X::Hash::Store::OddNumber` via the same `to_hash`/`to_map`
+  = matches raku/interpreter (odd number). **Instance (`__baggy_data__`/Match captures/user coercion) / Package (type objects;
+  `.Map`/`.Hash` return type objects) / Nil / Junction (autothread) return `None` and stay on the interpreter** = behavior unchanged. Returns new
+  Set/Bag/Mix/Map/Hash values, does not mutate the receiver = no writeback. Measured: Set/Bag/Mix fallback in set.t/bag.t/mix.t
+  11/10/10 → 2/2/2 (the remaining 2 are `__baggy_data__` Instance / type object = falling through by design). pin
+  `t/native-scalar-quanthash-coerce.t`(39: literal/variable receivers × Set/Bag/Mix/SetHash/BagHash/MixHash/Map/Hash; PASSing on both raku and
+  mutsu). set.t 248/248, mix.t 244/244, categorize 28/28, hash.t green. (bag.t 252 "Foo instance union" and classify.t 40
+  "junction classify" are pre-existing per BLOCKERS.md [both non-whitelisted], unrelated to this change. The odd-number case of `(a=>1).Map`
+  is a separate pre-existing bug of the Pair receiver [already inside the native gate], out of scope for this slice.)
+- **2026-06-23 (§D = making `IO::Path`'s FS `stat`-only file tests / accessors VM-native)**: after the coercion drain was exhausted, the first step
+  toward the **main prize** of ③ IO native methods. Of the FS-touching methods that the IO::Path lexical/cwd slices kept on the interpreter with `None`,
+  made native the **group that completes with just a `stat` read** = the file tests `e`/`f`/`d`/`l`/`r`/`w`/`x`/`rw`/`rwx`/`z` and the stat accessors
+  `mode`/`s`/`created`/`modified`/`accessed`/`changed` (spread measurement: `e`=15/`d`=11 files etc., spread via the temp-file helpers). These
+  **acquire no `io_handles` at all, read no content, and emit nothing** = they just call `fs::metadata`/`exists` after resolving the path against the
+  VM-owned cwd (`resolve_path`/`apply_chroot`/`get_cwd_path`, purely lexical). Extracted into the new `&self` method `try_io_path_fs_stat` (path_buf resolution) +
+  static `io_path_stat_result` (from path_buf+p, stat + Failure shaping for all 16 arms); `native_io_path` delegates right after `try_io_path_cwd_method`
+  = **1 operation = 1 implementation** (deleted the 16 arms from the match). The VM calls it next to the IO::Path lexical/cwd dispatch (immediately before the
+  `is_native_method` bounce, both non-mut/mut paths). `slurp`/`lines`/`words`/`comb` (content reads, encoding flags) / `open`/`spurt` (`io_handles`
+  acquisition, FS writes) return `None` and stay in `native_io_path` = next slice candidates. Returns new Bool/Int/Str/Failure, receiver not mutated = no writeback,
+  behavior-invariant (same stat logic). Measured: fallback of `$p.{e,f,d,s,modified,…}` → 0. pin `t/native-io-path-fs-stat.t`(30,
+  literal + variable receivers [mut path] × all file tests/accessors, missing-path Failure; PASSing on both raku and mutsu. `.modified`/`.accessed`/
+  `.changed` avoid the separate pre-existing type difference mutsu=Int / raku=Instant by verifying with `> 0`/`.defined`). S16-io/S32-io/slurp/spurt whitelist
+  all green (io-path.t's `.SPEC`/`.CWD` existing fails are non-whitelisted, unchanged). **Remaining IO native = content reads (slurp/lines) and handle
+  acquisition (open/spurt) = the main prize directly touching ③'s `io_handles` ownership.**
+- **2026-06-23 (§D = making `IO::Path`'s whole-file content reads `slurp`/`lines`/`words` VM-native)**: the content-read follow-up to the FS stat-only slice
+  (above). `slurp` (spread 26 files)/`lines`(13)/`words` **read the whole file**, but acquire no `io_handles`
+  and emit nothing = after resolving the path against the VM-owned cwd, just `fs::read[_to_string]` and split/decode the bytes. Flag parsing
+  (`parse_io_flags_values`) and encoding lookup (`decode_with_encoding` = reading the VM-owned `encoding_registry`) are all `&self`
+  reads, so native dispatch is possible. Extracted into the new `&self` gate `try_io_path_content_read` (returning `Option`) + the fallible body `io_path_content_read`
+  (separated to use `?`). path_buf resolution became a 3rd site, so consolidated into the `resolve_io_path_buf` helper and delegated `try_io_path_fs_stat`
+  to it too (dedup). `native_io_path` delegates to content right after the stat delegation = **1 operation = 1 implementation** (deleted the slurp/lines/words arms from the match).
+  The VM calls it next to the stat dispatch (both non-mut/mut paths). **`comb` (regex/closure dispatch needs `&mut self`) / `open`/`spurt`
+  (`io_handles` acquisition, FS writes) return `None` and stay in `native_io_path`** = the next slice (the ③ io_handles main prize). Returns new Str/Buf/Seq,
+  receiver not mutated = no writeback, behavior-invariant (same read + split/decode; all branches for `:bin`/limit/`:!chomp`/non-utf-8 decode preserved).
+  Measured: fallback of `$p.{slurp,lines,words}` → 0. pin `t/native-io-path-content-read.t`(24: literal + variable receivers [mut path] ×
+  slurp/lines/words, `:bin` Blob, utf-8 decode, limit, `:!chomp`, missing-path dies; PASSing on both raku and mutsu). S16-io/S32-io/slurp/
+  lines whitelist all green (io-path.t `.SPEC`/`.CWD` existing fails are non-whitelisted, unchanged). **Remaining IO native = `comb` (&mut) and handle-acquiring
+  open/spurt = the main prize of ③'s `io_handles` ownership.**
+- **2026-06-23 (§D = making `IO::Path`'s single-path FS mutations `spurt`/`mkdir`/`rmdir`/`unlink`/`chmod` VM-native)**: the **write-family follow-up** to the
+  content-read slice (spurt spread 18 files). These 5 ops **mutate** the FS but acquire no `io_handles` at all =
+  after resolving the path against the VM-owned cwd, they just make **a one-shot syscall** (`fs::write`/`create_dir_all`/`remove_dir`/`remove_file`/`set_permissions`)
+  (`spurt` is open→write→immediate drop, leaving no handle). Encoding lookup (`encode_with_encoding` = reading the VM-owned registry)
+  is `&self`. Extracted into the new `&self` gate `try_io_path_fs_mutate` (returning `Option`) + the fallible body `io_path_fs_mutate` (separated for `?`;
+  `mkdir` round-trips an IO::Path via `class_name`). `native_io_path` delegates right after the content delegation = **1 operation = 1 implementation**
+  (deleted the 5 arms from the match). The VM calls it next to the content dispatch (both non-mut/mut paths). **2-path ops (`copy`/`rename`/`move`/`symlink`/
+  `link`; need destination path resolution) and handle-opening `open` (`io_handles` acquisition = `&mut self`) return `None` and stay in `native_io_path`** = the next
+  ③ io_handles capstone. Returns new Bool/IO::Path/Failure, receiver not mutated = no writeback, behavior-invariant (same syscall +
+  all branches for `:append`/`:createonly`/`:enc`+BOM/Buf preserved). Measured: fallback of `$p.{spurt,mkdir,rmdir,unlink,chmod}` → 0. pin
+  `t/native-io-path-fs-mutate.t`(22: literal + variable receivers [mut path] × 5 ops, `:append`/`:createonly` Failure, Buf spurt, mkdir
+  recursive, non-empty rmdir Failure, chmod mode; PASSing on both raku and mutsu). S16-io/S32-io/spurt/dir whitelist all green. (`.unlink` of missing
+  is a separate pre-existing difference mutsu=False/raku=True [the pre-move interpreter also did `Err(NotFound)=>Bool(false)`], out of scope for this slice = not pinned.)
+  **Remaining IO native = `comb` (&mut) and `open` (`io_handles` acquisition) = the capstone of ③'s `io_handles` ownership.**
+- **2026-06-23 (§D ③ capstone = making `IO::Path.open` VM-native = the VM acquires `io_handles` directly)**: the **symbolic milestone** of ③ (state ownership).
+  `open` is the only IO::Path FS method that **mutates the `io_handles` table** (`open_file_handle`→
+  `insert_handle_state` acquires a handle id = `&mut self`). The ledger's original rationale for "native-method (IO family) is ③-blocked" was
+  exactly this = `io_handles` being interpreter-owned state. But since #2760-2772, `io_handles` is **an `Arc<RwLock>` shared
+  field owned by the VM** = `open_file_handle` can be called directly from the unified struct's `self`. Extracted the new `&mut self` gate `try_io_path_open`
+  (`resolve_io_path_buf`(&self)/`parse_io_flags_values`(&self) return owned values, so no borrow conflict with the subsequent `&mut self` `open_file_handle`);
+  `native_io_path` delegates right after the fs_mutate delegation = **1 operation = 1 implementation** (deleted the open arm from the match). Since **both of the VM's
+  non-mut/mut dispatch functions are `&mut self`** (`try_compiled_method_or_interpret_inner`/
+  `try_compiled_method_mut_or_interpret`), both `"x".IO.open` (non-mut) and `$p.open` (mut) are native. All flags `:r`/`:w`/`:a`/`:rw`/`:bin`/
+  `:enc`/`:create`/`:exclusive` and the Failure-on-error shaping are preserved = behavior-invariant (same `open_file_handle`). Measured:
+  fallback of `$p.open` → 0. **∴ The whole open→read/write→close lifecycle runs VM-native without a catch-all bounce**
+  (the handle methods get/lines/print/say/close/tell/eof/seek/flush etc. are already native). pin `t/native-io-path-open.t`(20: literal +
+  variable receivers [mut path] × :r/:w/:a/:exclusive/:bin, missing/directory Failure, opened state; PASSing on both raku and mutsu). S16-io/S32-io/
+  open whitelist all green (io-handle.t's `.say` existing fail also fails on main = non-whitelisted, unrelated to this change). **Remaining IO native = `comb`
+  (regex/closure dispatch is `&mut self`) and the 2-path ops (copy/rename/move/symlink/link) only = ③'s IO native is nearly complete.**
+- **2026-06-23 (§D = making `IO::Path`'s 2-path FS ops `copy`/`rename`/`move`/`symlink`/`link` VM-native = completing the IO::Path FS family)**:
+  follow-up to the open capstone = **the last non-native members** of the IO::Path FS method family. These 5 ops resolve **both the receiver path and
+  the destination/link-name path** against the VM-owned cwd (`resolve_path`/`resolve_io_path_buf`, `&self`), then just make a one-shot syscall (`fs::copy`/`fs::rename`/`unix_fs::symlink`/
+  `fs::hard_link`) = no `io_handles` needed, all `&self`. Extracted into the new `&self` gate `try_io_path_two_path_op` (returning `Option`) + the fallible
+  body `io_path_two_path_op` (separated for `?`). `native_io_path` delegates right after the open delegation = **1 operation = 1 implementation** (deleted the copy/rename|move/
+  symlink/link arms from the match; the `dir`/`watch` in between kept). The VM calls it next to the open dispatch (both non-mut/mut paths). Same-file/createonly
+  checks, `X::IO::Copy`/`Rename`/`Move` Failure shaping, `:absolute` symlink, and all hard-link branches preserved = behavior-invariant. Measured:
+  fallback of `$p.{copy,rename,move,symlink,link}` → 0. pin `t/native-io-path-two-path.t`(18: literal + variable receivers [mut path] ×
+  5 ops, copy-onto-self/createonly Failure, symlink resolve, hard link; PASSing on both raku and mutsu. The dir is cleanly regenerated each run to
+  prevent stale file contamination). S16-io/S32-io/copy/rename whitelist all green. **∴ The IO::Path FS method family (stat/content-read/fs-mutate/open/2-path)
+  is now fully VM-native = §D ③'s IO native is nearly complete. Only `comb` remains (regex/closure dispatch is `&mut self`; a separate axis).**
+- **2026-06-23 (§D = making `.encode`/`.decode` (Str↔Buf conversion) VM-native)**: the next clean native-method drain after the IO::Path family
+  (spread: `encode`=16 files). **The explicit-encoding forms** (`"x".encode("utf-16")`/`$buf.decode("ascii")`) bounced to the interpreter at the
+  `dispatch_method_by_name` catch-all (0-arg `.encode` is already native in `methods_0arg`). These are pure Str↔Buf conversions reading the VM-owned
+  `encoding_registry` (`find_encoding`/`encode_with_encoding`/`decode_with_encoding` = all `&self`), no `io_handles` needed. Placed the new
+  `pub(crate)` helper `try_native_encode_decode` **on the `crate::runtime` side (methods_io_dispatch.rs)** (`dispatch_encode`/
+  `dispatch_decode` are `pub(super)` so it is called from the same crate::runtime; same pattern as IO::Path), called from the VM's non-mut/mut catch-alls
+  (right after `try_native_io_coercion`, immediately before the final bounce) = **1 operation = 1 implementation**. **Conservative gate**: `.encode` only for plain Cool scalars (Str/Int/BigInt/Num/Rat/
+  FatRat/Complex/Bool); `.decode` is gated by `dispatch_decode` itself to Buf/Blob Instances (otherwise `None`). User Instances (custom
+  `.encode`/`.decode` resolve earlier as compiled methods), Supply (its own chunk-encode; the interpreter arm excludes it), and `.encode` on Buf receivers
+  fall through = behavior-invariant. Returns new Buf/Str, receiver not mutated = no writeback. Measured: fallback of `"x".encode("utf-16")`/`$buf.decode` → 0.
+  pin `t/native-encode-decode.t`(23: literal + variable receivers [mut path] × encode utf-8/utf-16/ascii/latin-1, Int/Bool/Rat
+  encode, Buf/Blob decode, round-trip; PASSing on both raku and mutsu. Including the caveat that utf-16 `.elems` = the number of 16-bit units). encoding/buf/S32-str/encode
+  whitelist all green.
+- **2026-06-23 (§D = making `IO::Path.comb` VM-native = 100% completion of the IO::Path FS family + fixing the no-arg comb bug)**: **the last method** of the
+  IO::Path FS method family. `comb` reads the whole file and combs the content, but the matcher dispatch (`dispatch_comb_with_args`) needs `&mut self`
+  because regex/closure matchers run the match engine — yet `io_handles` is untouched. Extracted into the new `&mut self` helper
+  `try_io_path_comb` (read → error shaping via `match` for `?`); `native_io_path` delegates right after the two-path delegation = **1 operation = 1 implementation**
+  (deleted the comb arm from the match). The VM calls it next to the two-path dispatch (both non-mut/mut paths). **Also fixed a pre-existing bug at the same time**: argumentless
+  `$path.IO.comb` (no matcher) returned an empty Seq (the old arm mapped `dispatch_comb_with_args`'s `None` to empty) → now splits the content into
+  graphemes (matching no-arg `Str.comb` / Rakudo). The `None`-no-arg semantics of `dispatch_comb_with_args` are shared with the generic caller
+  (methods_dispatch_match.rs:187), so **the fix was kept local to the IO::Path comb helper** (None→graphemes). Measured:
+  fallback of `$p.comb`/`$p.comb(/re/)`/`$p.comb(N)` → 0. pin `t/native-io-path-comb.t`(17: literal + variable receivers [mut path] × no-arg
+  graphemes, regex, Int chunk, Str fixed, limit, empty file, unicode; PASSing on both raku and mutsu). S16-io/S32-io/comb whitelist all green.
+  **★ ∴ The IO::Path FS method family (stat/content-read/fs-mutate/open/2-path/comb) is 100% VM-native = §D ③'s IO native is complete.**
+  **The clean pure-value native-method drain is also exhausted** (remaining categories = ③ built-in type ctors [Buf.new etc.] / MOP carrier [WHAT/name/can] /
+  landmines [Instance.Str/.Stringy/.raku/.gist] / block-exec slow path [map/grep] / concurrency [Supply/tap] / typed-array mutators —
+  all premised on a different axis or a structural blocker). The next §D is either ③ built-in type ctors or the substrate for deleting the tree-walk dispatch chain (needs design; large).
+- **2026-06-23 (§D ③ = making `.new` of `::`-namespaced classes / built-in exception types VM-native)**: first slice of the ③ built-in ctor fork.
+  The `cn_resolved.contains("::")` guard in `is_native_default_constructible` excluded **all `::`-namespaced classes** (user `A::B` /
+  built-in exception types `X::AdHoc`, `X::TypeCheck::Binding` …) from native construction = the only blocker. Kept the `[` (parametric) guard and
+  deleted the `::` guard. Furthermore, built-in exception types are registered in the registry with `attributes: Vec::new()` (zero declared attributes;
+  named args become an attribute bag via `is_attribute_buildable`'s undeclared-name `true` fallback), so `has_attribute` was false → excluded by the tail return. Changed to
+  `has_attribute || is_exception`, allowing native if the MRO contains `Exception` (`build_native_default_instance` stores named args via the same
+  `is_attribute_buildable` = byte-identical with the interpreter). **Added `materialize_exception_message_in_result` at the VM call site
+  (vm_call_method_compiled.rs:127)** = equivalent to the interpreter slow path (methods.rs:3369 calls it after `dispatch_new`):
+  runs the user `message` method once at construction and caches it into the `message` attribute (no-op for built-in exceptions / non-exceptions). When running a user `message`,
+  `method_dispatch_pure=false` (preserving caller slot reconcile). Widened the visibility of `materialize_…` from `pub(super)`→`pub(crate)`. Measured: the `new` fallback of `X::AdHoc.new`/
+  `X::TypeCheck::Binding.new`/`A::B.new`/`P::Q::R.new` → 0. Confirmed via stash comparison that native==interpreter output matches exactly
+  (the raku differences on `message`/no-arg are the F-track `.message` unimplemented gap that predates this change, unrelated). pin
+  `t/native-namespaced-and-exception-ctor.t`(16). make test 10971; S04/S12/S32 construction whitelist all green. **Remaining ③ ctor candidates =
+  concurrency types like Promise, misc built-in types (those with special construction that `is_attribute_buildable` cannot attribute-bag-ify).**
+- **2026-06-23 (§D ③ = making `.new` of the `Lock` family (`Lock`/`Lock::Async`/`Lock::Soft`) VM-native)**: 2nd slice of the ③ ctor fork.
+  Lock construction is pure data (a process-global counter bump via `next_lock_id()` + the `async` flag of `Lock::Async`; no env/registry/user code needed).
+  Added a Lock arm to the static `try_native_builtin_construct` (called by the VM call site vm_call_method_compiled.rs:145 with `method_dispatch_pure=true`);
+  the interpreter dispatch_new's existing arm (inside `match base_class_name`) is left in place with only a comment added, following the
+  "Shared with the VM's native fast path" duplicated-implementation convention like `Slip`/`IterationBuffer` (4 lines, byte-identical). Measured: the `new`
+  fallback of `Lock.new`/`Lock::Async.new`/`Lock::Soft.new` → 0. Confirmed native==interpreter via stash comparison. pin `t/native-lock-ctor.t`(9). make test 10964. **★ A known separate-axis bug (unrelated to this change;
+  reproduces on main too): the captured-outer `$n` writeback drop in `$lock.protect({ $n++ })` (`.protect`'s closure capture writeback; nothing to do with the ctor).**
+  **Remaining ③ ctor candidates = Promise/Channel (SharedPromise/channel state), the QuantHash family (Bag/Set/Mix/SetHash; element counting), Capture, misc.**
+- **2026-06-23 (§D ③ = making `.new` of `Promise`/`Channel`/`Supplier`/`Supplier::Preserving` VM-native)**: 3rd slice of the ③ ctor fork
+  = simple concurrency primitives. `Promise.new`=`Value::Promise(SharedPromise::new())` (an empty planned promise; pure shared state),
+  `Channel.new`=`Value::Channel(SharedChannel::new())` (empty channel), `Supplier`/`Supplier::Preserving`=`{emitted:[], done:False,
+  supplier_id:next_supplier_id()}` (emission log + process-global id) = none need env/registry/user code. Added 3 arms to the static
+  `try_native_builtin_construct`; the interpreter dispatch_new's existing arms are left with comments only (the byte-identical duplicated-implementation convention).
+  Measured: the `new` fallback of all 4 kinds → 0. `$p.keep(42)`/`$c.send.list`/`$s.Supply.tap` functionality matches raku. pin `t/native-concurrency-ctor.t`(10).
+  make test 10984. **★ A known separate-axis gap (unrelated to this change): late-tap replay of pre-tap emits for `Supplier::Preserving` is unimplemented (mutsu does not
+  buffer/replay; nothing to do with construction).** **Remaining ③ ctor candidates = the QuantHash family (Bag/Set/Mix/SetHash; element counting = needs `&mut self` type
+  checks, not static), Capture, Proxy (FETCH/STORE closures), misc.** **★ perf note = calling `pub(crate)` ctors like `SharedPromise::new()`
+  directly from the VM static path = one hop shorter than delegating to the interpreter.**
+- **2026-06-24 (§D ③ = making `.new` of the QuantHash family (`Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/`MixHash`) VM-native)**: 4th slice of the ③ ctor
+  fork. Unlike the previous 3, QuantHash construction is **`&mut self`** (element counting + parameterized type check `type_matches_value` + container metadata
+  `tag_container_metadata`), so it doesn't fit the static `try_native_builtin_construct` = **the 3 arms of dispatch_new (414 lines) were wholesale extracted into
+  the `&mut self` helper `try_native_quanthash_construct` of the new module `methods_quanthash_ctor.rs`** (same pattern as the IO::Path family; "1 operation =
+  1 implementation"). The 3 dispatch_new arms were replaced with a delegation to the helper (`return self.try_native_quanthash_construct(*class_name, base_class_name,
+  &type_args, args)`) = **a byte-identical wholesale move with no copy** (unlike the previous 3 slices' "comment-left duplicated implementation", a true single impl). The VM
+  call site adds the new wrapper `try_native_quanthash_construct_for_package(&[Value])` (parametric name strip → `is_quanthash_ctor_type` gate → clone args only on
+  match) to both non-mut/mut paths (the parametric `Set[Int].new` also resolves the base via `parse_parametric_type_name`). env-pure
+  (only value construction + container metadata tagging) = `method_dispatch_pure=true`. Visibility: widened `strip_named_pair_args` to `pub(super)` (the other
+  `value_to_list`/`is_lazy_*`/`type_matches_value`/`tag_container_metadata`/`parse_parametric_type_name` are already pub(super)/pub(crate)).
+  Measured: the `new` fallback of all 6 kinds → 0; parametric (`Bag[Int]`/`Set[Int]`) and type-check failure (`X::TypeCheck::Binding`) also match raku. pin
+  `t/native-quanthash-ctor.t`(18). make test 11018; setbagmix/baggy/mix whitelist all green. **★ Remaining ③ ctor candidates = `Capture.new` (unimplemented in mutsu =
+  needs separate implementation), `Proxy` (FETCH/STORE closures), low-traffic static candidates like `Match`/`FakeScheduler`, `Array`/`Hash` (more complex due to shaped/container
+  metadata). With the clean big fish QuantHash consumed, the remainder is small fry or unimplemented features.**
+- **Deferred (2026-06-23): generic `Instance.Str`/`.Stringy` coercion**. Runner-up by spread (`Stringy`=22/`Str`=11 files), but the Instance.Str reaching the VM
+  catch-all is **not limited to generic objects (`to_string_value()`)** — it includes special stringification of built-in types (`Buf.Str`→
+  `X::Buf::AsStr` throw, `Attribute/BOOTSTRAPATTR.Str`→name, `has $.Str`'s public accessor→attribute value). These are not gated by `is_native_method`
+  and get interpreter special-handling before arm 1499, so nativizing with `to_string_value()` breaks them (regressions confirmed in say.t/buf.t/
+  attributes.t). Even adding `has_user_method`/`has_public_accessor`/built-in type exclusions, landmines kept surfacing one after another = not enumerable and
+  cannot be safely separated, so deferred. The clean §D coercion results are settled with the IO::Path family (lexical/`.IO`/absolute-relative).
+- **2026-06-24 (§D ③ = making `.new` of `FakeScheduler`/`Proxy`/`Match` VM-native)**: the clean static leftover sweep of the ③ ctor fork. All 3 are
+  pure data assembly (`FakeScheduler` is a process-global counter + virtual-time 0.0 seed; `Proxy` wraps evaluated FETCH/STORE callables;
+  `Match` slices `orig[from..to]` and stores positional/named captures as attributes) = no env/registry/user code needed. Extracted each construction into per-type
+  helpers (`build_native_fakescheduler_value`/`build_native_proxy_value`/`build_native_match_value`), with **both** `try_native_builtin_construct`
+  and the interpreter's `dispatch_new` arm **calling the same helper** (true single impl, byte-identical). Measured: the `new` fallback of all 3 kinds → 0.
+  pin `t/native-misc-ctor.t`(14; Proxy/Match verified for raku parity).
+- **2026-06-24 (§D ③ = implementing `Capture.new`)**: `Capture` had no constructor at all and `Capture.new` was an error. raku semantics
+  (verified) = default `Capture.new` is an **empty Capture**. Named args are dropped (Capture has no buildable public attributes and `bless` ignores them); positional
+  args are rejected (named-only `Mu.new` = "Default constructor for 'Capture' only takes named arguments"). Populated Captures are made with `\(...)`.
+  Named args are `Value::Pair`; everything else (literals, positional `"a" => 1` `ValuePair`) dies as positional. Pure data =
+  `try_native_builtin_construct`. Known unchanged gap (not a regression) = `.new` on a Capture **instance** receiver (`\(1).new`) is still an error = a separate,
+  broader gap of instance `.new` delegation for built-in value variants. pin `t/native-capture-ctor.t`(9; PASSes on raku too).
+- **2026-06-24 (§D ③ = making `.new` of `Array`/`List`/`Positional`/`array`/`Hash`/`Map` VM-native)**: draining the aggregate ctors. Unlike the pure-data
+  statics, `&mut self` (shaped-dim parsing `:shape(...)` + `:data`/positional population + X::Assignment shape errors, Slip/Range/Seq flattening,
+  parameterized type check `Array[Int].new`/`Hash[Int].new`→`X::TypeCheck::Assignment`, container metadata tagging). Like QuantHash, the 2 arms (~310 lines) were
+  **wholesale extracted** into the new module `methods_aggregate_ctor.rs` (`try_native_array_construct`/`try_native_hash_construct`), the interpreter's
+  `dispatch_new` arms are delegations, and the VM calls via `try_native_aggregate_construct_for_package` (parametric name → base+type_args resolution) = true single
+  impl, byte-identical. Measured: the `new` fallback of all 6 kinds → 0. pin `t/native-aggregate-ctor.t`(16; raku parity subset. mutsu-specific behavior of
+  shaped/Hash-named-data is covered by roast S02-types/array.t, hash.t, S09-typed-arrays/*). **★ This exhausts the clean nativizable candidates among
+  `dispatch_new`'s built-in type ctors. The remaining arms are state/FS/process-dependent (IO::Socket::INET [socket], Distribution/CompUnit::Repository [FS], Proc::Async
+  [process], Backtrace [call stack], Seq [predictive iterator carrier]) or error-only (HyperWhatever/Whatever/Instant).**
+- **2026-06-24 (§D ③ = making `.new` of the allomorphs (`IntStr`/`NumStr`/`RatStr`/`ComplexStr`) + `ObjAt`/`ValueObjAt` VM-native)**: re-measuring the ③ ctor fork
+  (temporary probe of `new`-fallback receivers over the whole whitelist) revealed the most frequent receivers remaining after aggregate are
+  **in `dispatch_new_and_constructors` (slow-path method dispatch), not `dispatch_new`**: `RatStr`(892)/`IntStr`(306)/`ComplexStr`(176)/`NumStr`(125)
+  = allomorphs, `ObjAt`/`ValueObjAt` (18 total). These are fully **pure-static** (args→instance; no `&self` at all = touching no registry/env/FS either).
+  Allomorph `.new(numeric, string)` just makes the inner numeric (unwrapping if the arg is an allomorphic `Mixin`) into a `Value::mixin` with a `Str` override; `ObjAt`/
+  `ValueObjAt` `.new(which)` just stores the stringification of the first positional into the `WHICH` attribute. **Added 2 arms to the static `try_native_builtin_construct`
+  (called by VM call sites vm_call_method_compiled.rs:160/1788 with `method_dispatch_pure=true`)**, with the new static helpers `build_native_allomorph_value`/
+  `build_native_objat_value` called by both it and `dispatch_new_and_constructors` (inline implementation removed) = **1 operation = 1 implementation** (same pattern as FakeScheduler/Proxy/Match).
+  The arity error wording is mutsu-specific ("requires two arguments" / "Too few positionals" = a pre-existing difference from raku) and preserved during extraction =
+  byte-identical. Measured: the `new` fallback of `IntStr.new`/`RatStr.new`/`ObjAt.new` etc. → 0 (val.t's `new` vanished from the histogram). pin
+  `t/native-allomorph-objat-ctor.t`(23; PASSing on both raku and mutsu). S32-str/val.t, S03-operators/set_union.t, S32-num/rounders.t, rat.t, S02-types/num.t
+  whitelist all green. (The existing fails of allomorphic.t 107/113 are identical on main = a separate-axis gap in `.ACCEPTS`/`.Numeric`, unrelated to this change.) **Remaining `new` fallback receivers
+  = Proc::Async [process] / Failure [reads `$!` env] / IO::Socket::INET [socket] / IO::Path family [registry; separate slice candidate] / CallFrame [call stack] /
+  Seq [iterator carrier] = all state-dependent or a different axis.**
+- **2026-06-24 (§D ③ = making `.new` of the `IO::Path` family (`IO::Path`/`::Unix`/`::Win32`/`::Cygwin`/`::QNX`) VM-native = the IO::Path ctor capstone)**:
+  closing the IO::Path nativization theme = the method family (stat/content-read/fs-mutate/open/2-path/comb, #3499–3511) is 100% native, but **only the ctor
+  still bounced through the catch-all** (probe measured `IO::Path::Win32`/`::Cygwin`/`::Unix`/`IO::Path` ~112 occ total). `.new` is **pure path-string assembly**
+  = it joins the positional path / an IO::Path instance (reusing `path`) / the basename+dirname+volume triple with the SPEC-derived separator and attaches
+  CWD/SPEC attributes. The only `&self` dependency is a **registry read** (`class_mro` = detecting an IO::Path-instance argument) = VM-owned (phase ②) = no FS/cwd/env/user code.
+  The IO::Path arm of `dispatch_new` (~117 lines) was **wholesale extracted** into the new `&mut self` helper `build_io_path_instance` (the interpreter arm is a
+  delegation; the one-time registry registration of SPEC-variant subclasses is kept). The VM gate `try_native_io_path_construct` is restricted to **the built-in IO::Path family only**
+  (`is_io_path_lexical_class` = the same gate as the lexical method slice = does not intrude on user subclasses' custom new), called from both non-mut/mut call sites
+  (right after the aggregate ctor arm; `method_dispatch_pure=true`) = **1 operation = 1 implementation**, byte-identical. Measured: the `new` fallback of `IO::Path.new`/`IO::Path::Win32.new` etc. → 0. pin `t/native-io-path-ctor.t`(19;
+  positional/triple/instance-arg/Win32-Unix-Cygwin subclasses/CWD/empty-null dies; PASSing on both raku and mutsu). S32-io/S16-io/tmpdir/cwd/S11-compunit whitelist
+  all green (io-path.t 34/35's `.SPEC`/`.CWD` attribute existing fail is identical on main = non-whitelisted, unrelated to this change). **Remaining `new` fallback = Proc::Async/Failure
+  [`$!` env]/IO::Socket::INET/CallFrame/Seq = state-dependent or a different axis.**
+- **2026-06-24 (§D ③ = making `Failure.new($exception?)` VM-native)**: the **highest count** among the remaining `new` fallbacks (probe measured 2593; driven by `fail`/explicit construction).
+  `Failure.new` is **pure data assembly reading only VM-owned state** = it takes the explicit exception argument (else `$!` from env, else the default `X::AdHoc("Failed")`),
+  wraps it in `X::AdHoc` unless it's already `Exception`/`X::`/`CX::` (MRO read `mro_readonly`), and builds a `{exception, handled:false}` instance.
+  The `&self` dependencies are an **env read (`$!`) + a registry read (`mro_readonly`)** = VM-owned (after single-store-ification, `self.env` is identical for VM/interpreter) = no FS/process/socket/
+  user code. The Failure arm of `dispatch_new_and_constructors` (~52 lines) was **wholesale extracted** into the new `&self` helper `build_native_failure_value` (the interpreter arm is a
+  delegation). The VM calls it from both non-mut/mut catch dispatches (right after the IO::Path ctor arm; `class_name=="Failure"` gate; `method_dispatch_pure=true`) = **1 operation =
+  1 implementation**, byte-identical. Measured: the `new` fallback of `Failure.new` (explicit/string-wrap/`$!`/argless, all paths) → 0. pin `t/native-failure-ctor.t`(11; PASSing on both raku and
+  mutsu. `X::AdHoc` is constructed with `:payload` = avoiding the pre-existing detail that `.message` reads the payload). S04-exceptions/S04-statement-modifiers/
+  S05-capture/named/S06-advanced whitelist all green. **Next slice candidates among the remaining `new` fallbacks (2026-06-24 measured correction — correcting the "state-dependent" classification)**:
+  ① **`Proc::Async.new` = actually fully pure data** (process spawn is in `.start`; the ctor is just arg parsing + the `next_supply_id()` free fn + `SharedPromise::new()` +
+  Supply attribute construction; zero `&self` dependency) = wire a `build_native_proc_async_value` static helper into `try_native_builtin_construct` (same shape as Promise/Channel; easiest).
+  ② **`IO::Socket::INET.new` = io_handles-dependent but the same shape as `IO::Path.open` (#3507)** (`dispatch_socket_inet_new` acquires a VM-owned io_handle via `insert_handle_state`)
+  = delegate to the existing helper via `try_native_socket_inet_construct`. **Truly structurally blocked (ctor fork completes after ② lands)**: `CallFrame` [call stack carrier] = a different axis.
+  (`Seq.new` was made native in #3533 = below.) **∴ ctor-fork remainder = only 2 items: Proc::Async (pure) + IO::Socket::INET (io_handles).**
+- **2026-06-24 (§D ③ = making `Seq.new($iterator?)` VM-native, #3533)**: re-evaluated `Seq.new`, which the previous entry conservatively classified as "iterator carrier =
+  a different axis (impure)", and made it native. **The carrier state itself is VM-owned** (the `predictive_seq_iters` field + env's `__mutsu_predictive_seq_iter::` internal keys +
+  the global deferred-iter side table keyed by the Seq's Arc) = after single-store-ification `self` is identical for VM/interpreter, so the native gate can perform the same writes. **Construction does not
+  eagerly pull** (a PredictiveIterator is stashed in the carrier; materialized `items`/`stuff` instances are element copies; other iterators get deferred registration; no-arg is a
+  pre-consumed Seq) = iterator consumption happens later at consumption time, separate from construction = no FS/process/user code needed. The Seq arm of `dispatch_new` (~46 lines) was **wholesale extracted**
+  into the new `&mut self` helper `try_native_seq_construct` (the interpreter arm is a delegation). The VM calls it from both non-mut/mut catch dispatches (right after the Failure ctor arm;
+  `class_name=="Seq"` gate; `method_dispatch_pure=true`) = **1 operation = 1 implementation**, byte-identical. User subclasses (`class S is Seq`) resolve class_name to
+  their own name and miss the gate, staying on the interpreter. pin `t/native-seq-ctor.t`(11; PASSing on both raku and mutsu. The `.raku` `$(...)` itemization difference is pre-existing,
+  unrelated). S32-list/seq.t(50)/skip.t/tail.t/rotor.t, S07-iterators/range-iterator.t(103) all green. **Remaining `new` fallback = Proc::Async (pure; next) /
+  IO::Socket::INET (io_handles; next) / CallFrame [call stack carrier, a different axis].**
+- **2026-06-24 (§D ③ = making `Proc::Async.new(@cmd, :w, :enc)` VM-native, #3535)**: re-evaluated `Proc::Async.new`, conservatively classified as "state-dependent"
+  two entries earlier, and made it native. **The ctor is fully pure data** = arg parsing (positional command + `:w`/`:enc` flags) + 3
+  process-global supply ids (`next_supply_id` = a bare global counter) + construction of empty stdout/stderr/merged `Supply` instances only. **Actual process spawn is
+  on the `.start` side** = at ctor time env/registry/io_handles/user code are entirely untouched (zero `&self` dependency). The Proc::Async arm of `dispatch_new` (~66 lines) was
+  **wholesale extracted** into the new static helper `build_native_proc_async_value(class_name, args)` (the interpreter arm is a delegation), and the VM wires a
+  `cn=="Proc::Async"` arm into the existing `try_native_builtin_construct` in the same shape as `Promise`/`Channel`/`Supplier` = **1 operation = 1 implementation**, byte-identical.
+  pin `t/native-proc-async-ctor.t`(8; PASSing on both raku and mutsu. Includes a real echo/cat round-trip + exit code + `:w` stdin).
+  t/proc-async.t(23), roast/S17-procasync/basic.t(47)/print.t(16) all green.
+  **Remaining `new` fallback = IO::Socket::INET (io_handles; next; same shape as `IO::Path.open`) / CallFrame [call stack carrier, a different axis].**
+- **2026-06-24 (§D ③ = making `IO::Socket::INET.new(...)` VM-native, #3536)**: the clean finale of the ③ ctor fork. The ctor of `IO::Socket::INET.new` (both `:listen`
+  server and client modes) performs the real bind/connect, but **the write target is the VM-owned `io_handles`** (`insert_handle_state` = the same shape as the already-native
+  `IO::Path.open` [#3507]) = env/registry/user code untouched. Widened the existing `&mut self` helper `dispatch_socket_inet_new` (the single impl that the interpreter's `dispatch_new`
+  arm called) from `pub(in crate::runtime)`→`pub(crate)`, and the VM **calls the same helper directly** from both non-mut/mut catch dispatches (right after the Seq ctor arm;
+  `class_name=="IO::Socket::INET"` gate; `method_dispatch_pure=true`) = **1 operation = 1 implementation**, byte-identical (no new copy).
+  User subclasses resolve class_name to their own name and miss the gate, staying on the interpreter. pin `t/native-socket-inet-ctor.t`(7; PASSing on both raku and mutsu. Real loopback
+  client/server round-trip + invalid port/family dies + independent listener). t/socket.t(3), roast/S32-io/IO-Socket-INET.t(32)/IO-Socket-INET-UNIX.t(8)/
+  socket-accept-and-working-threads.t(15)/socket-fail-invalid-values.t(4)/socket-host-port-split.t(2) all green. **∴ The ③ ctor fork is complete** = every pure-value /
+  VM-owned-state built-in ctor is native. **Remaining `new` fallback = CallFrame [call stack carrier], error-only (HyperWhatever/Whatever/Instant) =
+  a different axis or structurally blocked.** Next is the §D main prize = (b) the tree-walk dispatch-chain removal substrate or VM-ification of multi-dispatch.
+- **2026-06-24 (§D multi-dispatch = VM-ification of proto sub dispatch (trivial body), #3541)**: started on the next §D main prize after ③ ctor completion = VM-ifying multi-dispatch.
+  Measurement (S06 sample, `MUTSU_VM_STATS`) showed **bare multis have 0 fallback** (OTF'd in PR-4) but **proto multis fall back 100%** (2 layers: the proto sub call itself
+  + the internal `__PROTO_DISPATCH__`; each candidate body tree-walks via `call_proto_dispatch`→`run_block`). **Trivial-body protos (`proto foo {*}` / bodyless) are
+  dispatched directly at the VM call site**: added a proto fast-path at the top of the else block of `dispatch_func_call_inner`; the new helper `vm_resolve_trivial_proto_candidate`
+  ① excludes interpreter-handled names ② fetches the proto def via `resolve_proto_function` and verifies the body is trivial (empty or `[Expr(Whatever)]` after excluding the `SetLine` marker)
+  ③ **gates on the proto's own sig via `method_args_match`** (`proto f(Int) {*}` rejects a Str — fixing the regression caught by S06-multi/proto.t subtest 26) ④ resolves the winner candidate via `resolve_proto_candidate_with_types`
+  (VM-owned registry = phase ②) ⑤ returns it if OTF-compilable and non-state. If returned, `compile_and_call_function_def` **executes the candidate body compiled**
+  (fully bypassing the tree-walk proto body + the `__PROTO_DISPATCH__` round-trip + the candidate `run_block`). `nextsame`/`samewith`/`callwith` work via the same function's `push_multi_dispatch_frame` +
+  samewith context (the mechanism verified in PR-4). Non-trivial bodies / non-OTF candidates / where candidates / sig mismatches return `None`, keeping the conventional interpreter fallback = byte-identical.
+  Visibility: widened `resolve_proto_candidate_with_types`/`resolve_proto_function`/`method_args_match` to `pub(crate)`. Measured: fallback of `proto factorial` 100%→0%,
+  `__PROTO_DISPATCH__` in the S06 sample 50→30 (the remaining 30 = where candidates / non-trivial bodies / non-OTF candidates, correctly falling back). pin `t/proto-vm-dispatch.t`(12; PASSing on both raku and mutsu =
+  recursion / per-type candidates / samewith / nextsame / proto-sig gate [EVAL-wrapped] / non-trivial body guard). All 87 whitelisted S06 files + roast/S06-multi/proto.t(27) green, make test 11202.
+  **Remaining multi-dispatch fallbacks**: OTF-ification of where-constrained candidates (the candidate-side `def_is_otf_compilable` excludes where) / VM-ification of non-trivial proto bodies / `@_` slurpy recursive
+  plain subs (a separate category). **★ Lesson: a `{*}` proto body gets a `SetLine` marker prepended at registration, making body.len=2 = the triviality check must exclude the marker. The proto's own sig is a
+  gate independent of the candidates' sigs = when bypassing, always validate with `method_args_match` (otherwise the type check of `proto f(Int)` is skipped).**
+- **2026-06-25 (§D = OTF-ification of imported `is test-assertion` subs)**: removed the `!def.is_test_assertion` exclusion from `def_is_otf_compilable_module_single`
+  (`call_compiled_function_named` pushes the test-assertion line context, so even when OTF-compiled, the caller-line reporting of assertion failures is identical to the interpreter).
+  **But removing the exclusion alone had zero effect**: Test::Assuming/Test::Util's `is-primed-sig` etc. are parsed via `Expr::Call` as imported functions, and kept being rejected by the OTF gate
+  due to the `Capture |cap` sub_signature. **The key = re-registering imported `is test-assertion` subs into the using scope** (new `InlineModuleExport.is_test_assertion`
+  field, propagated from SubDecl; the fallback regex also detects `is test-assertion`), putting them on the same parse path as locally declared assertion helpers (`known_call_stmt`→`Stmt::Call`)
+  = reaching OTF-compilable dispatch. Measured: the S06-currying function-fallback 195 (is-primed-sig=171/is-primed-call=21/priming-fails-bind-ok=3)→2.
+  `priming-fails-bind-ok` (the body's `try`/`CATCH`) correctly remains on the conservative gate, byte-identical. pin `t/test-assertion-module-otf.t`(7). make test 11471 PASS.
+  **★ A separate bug split off (not included in this PR; needs separate work) = `use`'s export scan (`extract_exported_names`→`parse_program_partial`→`set_original_source(module_src)`)
+  overwrites the parser's `ORIGINAL_SOURCE` with the module's temporary String (dropped immediately) → dangling → the using file's `current_line_number` collapses to all 1s — a general bug.**
+  Fixing this with `snapshot_source_state`/`restore_source_state` makes caller lines match raku, but **the line-number normalization exposes existing latent bugs that "accidentally PASSed
+  on the clobber-derived line 1"** (measured 2: S04-phasers/enter-leave.t#28 [the ENTER-rvalue of `sub f(){ ENTER 'X' }` is Nil] and keep-undo.t#10 [UNDO]. Standalone repros also give
+  Nil = genuine phaser bugs independent of line numbers, but the tests only PASSed on the clobbered line 1). Blast radius unknown (calibration-by-clobber may lurk throughout roast), so
+  the ORIGINAL_SOURCE fix + the exposed phaser bug group are split off from this PR to handle separately. **★ Lesson: nested parses clobber not just SCOPES but `ORIGINAL_SOURCE` too. The fix itself is correct, but
+  it exposes a group of "accidentally PASSing" tests calibrated to the clobber over the years, so proceed incrementally.**
+- **2026-06-25 (§D = fixing the `ORIGINAL_SOURCE` clobber + general fix for the exposed phaser block-value bugs)**: resolved the separate bug split off in the previous entry.
+  **(1)** `parse_program_partial` (best-effort nested parses for module export scanning / EVAL / pseudo-packages) now save/restores the caller's source state via
+  `primary::snapshot_source_state`/`restore_source_state` (`ORIGINAL_SOURCE` + heredoc `LEAKED_REGIONS`) = clobber resolved;
+  the using file's `current_line_number` now matches raku. **(2)** General fix for the exposed phaser bugs (**genuine bugs independent of line numbers**): ① a trailing ENTER phaser
+  becomes the value of a block/sub/closure/do-block (new OpCodes `PushEnterResult`/`LoadEnterResult` + VM `enter_result_stack` = bridging the ENTER section's value to the end of the
+  body. ENTER runs before the value-result baseline is recorded, so placing it directly on the stack is not detected) ② changed the value-determining statement to "the last non-`SetLine` statement" (line-number
+  normalization inserts `SetLine` between statements; the trailing `SetLine` of a phaser-only block was a spurious `True`→KEEP misfired, fixed to UNDO). **(3)** Consolidated the 5-fold duplicated BlockScope phaser
+  compression (top-level / `Stmt::Block` / do-block / sub body / closure) into the shared `compile_phaser_block_scope(stmts, result_on_stack)` (2 modes: statement=topic /
+  do-block=stack). pin `t/enter-phaser-rvalue.t`(18). All of t/ (11502), S04-phasers whitelist (17), the 270 `use Test::Util` whitelist files, and a 1/3 roast
+  sample of 428 files — zero regressions. **★ Lesson: the value of a phaser block needs materialization in a separate phase from the ENTER section (bridged to the end of the body via a dedicated stack). do-blocks
+  return the value on the stack (`DoBlockExpr` pops), but statement context goes via topic = the same helper branching on mode.**
+- **2026-06-25 (§D(b) tree-walk dispatch chain removal = making the unadorned forms of `.starts-with`/`.ends-with` VM-native)**: per-name measurement of method-fallbacks put
+  `starts-with`(513) high among catch-all bounces (excluding `name`/`WHAT`/`WHY`/`can`=MOP reflection — not elimination targets, `tap`/`stdout`=concurrency separate axis, the iterator-protocol group=lazy separate axis).
+  Cause = `starts-with`/`ends-with` sit on the slow path (`dispatch_prefix_suffix_check`) to support named args (`:i`/`:ignorecase`/`:m`/`:ignoremark`), so **even the general
+  `.starts-with($needle)` form without named args bounced to the interpreter**. The `(false,false)` case is a pure prefix/suffix check, so added a
+  Str-receiver-gated arm to `native_method_1arg` (methods_narg.rs). The named-arg form is **2 arguments (positional + Pair), so it never reaches the 1-arg native path**
+  and naturally falls through to the slow path = byte-identical. A user-defined `.starts-with` is resolved by the VM before native, so no shadowing (the same guarantee as the existing `contains` arm).
+  Measured: `$s.starts-with` fallback 2→0. pin `t/starts-ends-with-native.t`(22).
+  All of t/ (11572), S32-str/starts-with.t, ends-with.t, 70 string roast files, and a 1/5 roast sample of 257 — zero regressions. **★ Lesson: a pure method placed on the slow path for
+  named-arg support can be safely drained by native-gating "only the unadorned 1-arg case" (restricted by receiver type), since named args increase the arity and go down a different path. `substr-eq` (87; complex due to
+  Whatever/negative/Failure position resolution) is the next slice candidate.**
+- **2026-06-25 (§D(b) tree-walk dispatch chain removal = making `.substr-eq($needle, Int $pos)` VM-native)**: 2nd slice in the same pattern as starts-with. `.substr-eq` sat on the
+  slow path (`dispatch_substr_eq`) to support named args (`:i`/`:m`) and Whatever/negative/out-of-range position resolution (Failure generation). **The plain 2-argument form + a non-negative in-bounds Int position + a Str
+  receiver** is a pure substring comparison, so added an arm to `native_method_2arg`. Everything else falls through: Whatever/non-Int position (`arg2` not `Int`) → interpreter resolution / negative or out-of-range →
+  interpreter Failure / named-arg form (a Pair makes arity 3) → never reaches the 2-arg native path / user-defined `.substr-eq` resolves before native = no shadowing. The 1-argument form (position 0 default) is rare, fallthrough kept.
+  pin `t/substr-eq-native.t`(16). All of t/ (11566), S32-str/substr-eq.t, indices.t, index.t — zero regressions. **★ The clean string drains are exhausted**: the simple `comb` form is already native (the 93 in the survey are
+  regex/named-arg forms), `trans`(65) is complex (ranges in spec strings `a..z` / list-pair / regex), `Int`/`Num`/`Str.new` are in the completed ctor territory. Remaining categories = the iterator-protocol group (lazy, separate axis) /
+  MOP carrier (reflection, not elimination targets) / concurrency (tap/emit, separate axis) — all premised on a different substrate rather than a pure §D(b) drain.**
+- **2026-06-25 (§D(b) tree-walk dispatch chain removal = making the `Buf.write-int*`/`.write-uint*`/`.write-num*` family VM-native)**: re-measuring method-fallbacks (aggregated over all 1285 whitelist files)
+  revealed the **most frequent clean-drain category** after the string-drain exhaustion = `write-int8/16/32/64/128` (3852 each) + `write-uint*` (2220 each) + `write-num32/64` (492 each) = ~30k fallbacks total.
+  The source is **S03-buf/write-int.t / write-num.t** (the `\sigilless` instance form of `existing."$write"($off,$val[,$endian])` and the type-object form of `buf8."$write"(...)` = both **dynamic
+  method names** `"$write"`). The existing nativization covered only **static names on mut-bound `$`-vars** (`try_native_buf_mut`, CallMethodMut), so all 3 routes bounced to the interpreter:
+  (1) the type-object form (`Value::Package` receiver = returns a fresh buf),
+  (2) the `\sigilless`/`BareWord` instance form (via the non-mut dynamic op `exec_call_method_dynamic_op`→`try_native_method`; no writeback target var),
+  (3) the `$`-var dynamic-name form (the mut dynamic op `exec_call_method_dynamic_mut_op` = never tries the native fast path and goes straight to `vm_call_method_mut_with_values`). **Fix** = the new pure helper
+  `buf_write_int::try_native_buf_write(target, method, args)` handles both the type-object (fresh `make_buf_value`) and instance (in-place commit to the shared cell via `write_back_sharing`→`commit_attrs`
+  → observed by all bindings) forms in 1 impl (the byte transform is the existing shared `apply_write_int`/`apply_write_num`). Wired it into **the top of `try_native_method`** (the arity-keyed `native_method_*arg` cannot
+  dispatch 3 arguments [offset,value,endian], so a dedicated branch is required) → drains routes (1)(2). Route (3) is drained by calling `try_native_buf_mut` before the generic fork in `exec_call_method_dynamic_mut_op`.
+  **Fallthrough kept** = `Blob`/`blob8` (type-object has no such method; instances are immutable and the interpreter raises "Cannot modify immutable Blob"; current behavior byte-identical) / non-Int offsets
+  (Whatever position resolution) / negative or out-of-range (`apply_write_int` returns Err→`dies-ok` preserved) / arity≠2,3. **Measured: write-int.t fallback 20240→0, write-num.t 656→0**
+  (method-call fallbacks of both fully gone). All of t/ (11615 PASS), all S03-buf green, 108 roast samples zero regressions. pin `t/buf-write-native.t`(27: type-object/scalar/sigilless dynamic name/round-trip/error, all forms). **★ Lesson: dynamic method names
+  (`."$name"()`) have 2 dedicated opcodes (`CallMethodDynamic` [BareWord/literal target] / `CallMethodDynamicMut` [`$`/`@`/`%`-var target]), and the latter never tries the native fast path
+  = a method already nativized under a static name bounces entirely when called via a dynamic name. Draining a native-method family called via dynamic names requires adding fast-path calls to both dynamic ops. The non-mut
+  dynamic form of an instance mutator propagates to `\sigilless`-bound values via an in-place commit to the shared attribute cells (`commit_attrs`) even without a writeback target var (no env insert needed).**
+- **2026-06-25 (§D(b) tree-walk dispatch chain removal = making the named-arg/position forms of `Str.contains($needle, $pos?, :i/:m?)` VM-native)**: the first nativization of a
+  **named-arg form** of the string-method family that starts-with/substr-eq had conservatively deferred as "named-arg forms stay on the slow path". `S32-str/contains.t` (survey 278) has every test go through
+  `invocant.contains(|c)`, **always attaching markings named args (`:i`/`:ignorecase`/`:!i`…)**, so the unadorned 1-arg native form (`native_method_1arg`) is barely reached; the Pair-carrying 2-arg or
+  position+Pair 3-arg forms slipped past the arity-keyed dispatch (which stops at `native_method_2arg`, no 3-arg path) and bounced 100% to the interpreter. **Fix** = the new variadic helper
+  `native_contains_with_options(target, args)` separates positional/named, folding needle=positional[0], start=positional[1] (Int/Num/Str-parse), and `i`/`ignorecase`/`m`/`ignoremark`
+  all into a lowercase comparison (strictly mirroring `Interpreter::dispatch_contains`). Wired immediately before `try_native_method`'s arity dispatch. **Fallthrough kept** = non-Str receivers (**Match invocants** are
+  deferred over the separate-axis Match→Str coercion and instance-bypass interaction) / Package needle / BigInt position (overflow→X::OutOfRange goes to the interpreter) / negative or out-of-range positions (X::OutOfRange Failure) /
+  unknown named args. Junction needles thread via `contains_value_recursive[_ci]`. **Measured: contains.t fallback 272→140** (remaining 140 = Match invocants, separate axis). All of t/ (11610); 11 contains forms byte-identical
+  (including unicode CI and Str positions); roast contains-family samples zero regressions. pin `t/contains-options-native.t`(22). **★ Lesson: starts-with/substr-eq said "named args are deferred", but
+  the named-arg form can be the main traffic of real tests (contains.t attaches markings to every form). Wiring a variadic helper (positional/named separation → mirroring the interpreter dispatch) before the arity dispatch
+  drains the named-arg forms too. The half with non-Str receivers (Match etc., needing coercion) remains as a separate axis.**
+- **2026-06-25 (§D(b) tree-walk dispatch chain removal = making the `:i` named-arg forms of `Str.starts-with`/`.ends-with`/`.substr-eq` VM-native)**: rolling the
+  variadic-helper pattern established in the contains slice out to the sibling string methods. `S32-str/{starts-with,ends-with,substr-eq}.t` also attach markings named args to every form (same shape as contains.t), so
+  even with the unadorned native forms (starts-with=1arg, substr-eq=2arg) drained, the `:i` forms (arity exceeded by the Pair) bounced 100% to the interpreter. **Fix** = the new helpers `native_prefix_suffix_with_options`
+  (starts-with/ends-with) / `native_substr_eq_with_options` (substr-eq) interpret the markings via the shared `split_string_match_args` (positional/named separation; `i`/`ignorecase`=ci, `m`/`ignoremark`=mark; unknown named
+  = defer), strictly mirroring `dispatch_prefix_suffix_check`/`dispatch_substr_eq`. Wired immediately before `try_native_method`'s arity dispatch (next to the contains arm). **Fallthrough kept** =
+  non-Str receivers (**Match invocants** = separate axis) / Package needle / `:m`/`:ignoremark` (`strip_marks` decomposition is interpreter) / substr-eq's non-Int-non-Str positions (Whatever resolution), negative or out-of-range
+  (X::OutOfRange Failure) / unadorned forms (existing 1-/2-arg arms kept). **Measured: starts-with.t 80→42, ends-with.t 80→42, substr-eq.t 86→48** (remaining = Match-invocant `:i` forms, separate axis). All of t/ (11692);
+  3 files PASS under the proper harness; 10 named forms byte-identical to raku (including unicode CI and Str positions); whitelist zero regressions. pin `t/starts-ends-substr-eq-named-native.t`(21). **★ Lesson:
+  the raku reference implementation throws "Iteration past end of grapheme iterator" on `"abc".ends-with("", :i)` (an empty-needle+ci bug), while mutsu correctly returns True = excluded that form from the pin (mutsu is the correct one).
+  ★ The `:m`/`:ignoremark` of string methods is handled separately via `strip_marks` (NFD→combining-mark filter), but these roast tests skip the `:m` forms under a backend≠moar gate, so nativization is unnecessary — defer is sufficient.**
+- **2026-06-25 (§D(b) tree-walk dispatch chain removal = making the Match invocants of the 4 string-search methods VM-native)**: the previous 3 slices (contains / starts-with & ends-with / substr-eq) had
+  deferred "Match invocants are a separate axis (Match→Str coercion, instance-bypass interaction)", but closer inspection showed **it can be resolved with just a low-risk gate relaxation**: ① `is_native_method("Match", …)` has
+  **no entry → false** = Match.contains etc. pass through the instance-bypass block and reach the variadic helpers (immediately before the arity dispatch) ② each helper already obtains the text via `text = target.to_string_value()`
+  = for a Match that is the matched substring (identical to `Cool.Str`). ∴ Just relaxing the receiver gate from `Value::Str(_)` only → the new predicate `is_str_or_match_receiver` (Str or `Instance{class_name=="Match"}`) drains
+  the Match invocants of all forms of the 4 methods. **A failed match is `Any`/`Nil` (not a Match instance) → misses the gate → the interpreter raises "No such method"**
+  (byte-identical). **Measured: contains.t 140→6, starts-with.t 42→8, ends-with.t 42→8, substr-eq.t 48→14** (remaining = bare Match forms [no markings; the 1-/2-arg arms are Str-gated] + the tests' own `.match`/`$*PERL.compiler`).
+  All of t/ (11710); 4 files PASS under the proper harness; 9 Match-invocant forms byte-identical to raku (including positions and unicode CI); whitelist zero regressions. pin `t/str-search-match-invocant-native.t`(18). **★ Lesson: even a defer classified
+  as a "separate axis" can compress to a one-predicate gate relaxation when you scrutinize the bypass order (if the target class is absent from the `is_native_method` table, it passes through) and the existing coercion (the helper obtains text via `to_string_value`).
+  With 4 consecutive string-search slices, the method-fallbacks of `S32-str/{contains,starts-with,ends-with,substr-eq}.t` are nearly exhausted (≤14 each = bare Match forms only).**
+- **2026-06-25 (§D state ownership = VM-native dispatch of atomic var/element RMW (`__mutsu_atomic_*`/`__mutsu_cas_*`))**: after the exhaustion of clean method-fallback drains, aggregating
+  **function-fallbacks** over the whole whitelist showed
+  `__mutsu_atomic_add_var`(640001)/`__mutsu_atomic_post_inc_var`(320038)/`pre_inc`/`post_dec`/`pre_dec`(320001 each)/`__mutsu_cas_var`(282337)/`cas_hash_elem`(30000)/`cas_array_elem`(29420) =
+  **~2.5 million fallbacks in total, overwhelmingly dominating all function-fallbacks** (concurrency stress = driven by the `⚛` operators). This is the direct-hit category of §D "state ownership" = atomic ops are RMW against the
+  VM-shared `shared_vars` (`RwLock`) store and the per-attribute cell-CAS state (Phase 3). The existing `builtin_atomic_*`/`builtin_cas_*` impls already own and operate on that state, but **the only reach path was
+  the generic `call_function` fallback** (`vm_call_function`→`loan_env_for`→ a name match of ~hundreds of arms) (`try_native_function` only calls the pure `native_function`, so `&mut self` atomic ops slipped past). **Fix** = the new
+  `try_native_atomic_function(name,args)` (`builtins_atomic.rs`; a 1:1 mirror of the atomic arm group in `builtins.rs`; `cas_*` uses `args.to_vec()`) is called at the top of `try_native_function`
+  (before the Instance-arg bail = an Instance value in `cas($x,$old,$obj)` is dispatchable too) when `name.starts_with("__mutsu_atomic_"|"__mutsu_cas_")`.
+  `loan_env_for` after the CP-3 collapse is a thin `f(self)` passthrough = env is the same `self.env` on both paths, the builtin is identical = byte-identical.
+  **Measured: in atomic-ops.t/atomic.t, the atomic function-fallback markers vanished completely** (cas.t stress = 61 fallbacks out of 95003 opcodes = the remainder is `start`/`await` [concurrency, separate axis] + the user-facing `cas`).
+  All of t/ (11725); S17-lowlevel/{cas,cas-loop,cas-loop-int,atomic,atomic-ops}.t all PASS (atomic.t 34/34, atomic-ops.t 28/28 = debug is slow on the `for ^20000` stress but completes); 20 atomic forms byte-identical to raku.
+  pin `t/atomic-ops-native-dispatch.t`(20). **★ Lesson: not just method-fallbacks — the function-fallback survey is also a treasure trove for §D. The `__mutsu_*` internal markers (atomic/cas/hyper-prefix), being "not pure (`&mut self`)",
+  slipped past `try_native_function`→`native_function`(pure) and all fell into the generic `call_function` fallback. Adding a direct dispatch arm for `&mut self` builtins at the top of `try_native_function` can sweep away the fallbacks of
+  huge stress suites (state ownership is already on the VM side = a behavior-invariant path short-circuit).**
+- **2026-06-25 (§D state ownership = VM-native dispatch of builtin operator-as-function `infix:<op>(...)`)**: the function-fallback aggregation after atomic showed the `infix:<op>` family = **~5400 fallbacks across 44 operators**
+  (`&infix:<+>`, `[+]`/`[*]` reduce, `>>+>>` hyper, and the routine forms that `reduce &infix:<…>` lowers to). Builtin operators are implemented by the native Rust `call_infix_routine` (`&mut self`; dispatches hyper/assignment-metaop/set-op/
+  all binary ops), but the only reach path was via `call_function_fallback`'s infix arm (recorded as tree-walk fallback). **Fix** = in both `dispatch_func_call_inner` (the direct Call path) and
+  `call_function_compiled_first` (the hyper/reduce/string-regex path), **after trying all user operator resolution (compiled_fns / the non-proto multi fork / `user_function_matches_call` / OTF) and immediately before the terminal fallback**,
+  capture `infix:<op>` and call `call_infix_routine(op,args)` directly (U+2212 minus normalized to `-`; arg_sources and `maybe_fetch_rw_proxy` are the same handling as the terminal else = byte-identical). **User overrides strictly respected** =
+  user `sub/multi infix:<…>` resolve in the higher branches and never reach the native arm (the pin verifies `infix:<plus>`=103 and a custom `multi infix:<%%%>`). **Measured: direct infix calls 100%→0** (user multis correctly keep the fallback).
+  All of t/ (11765); 79 whitelist operator/metaops/junction files zero regressions; 20 infix forms byte-identical to raku. pin `t/infix-function-native-dispatch.t`(22). **★ Widened `call_infix_routine` to `pub(crate)`.
+  ★ Lesson: there are 2 fallback-recording lineages — direct Calls at `dispatch_func_call_inner`, hyper/reduce etc. at `call_function_compiled_first` — so the same arm must be placed in both. The key to nativizing user-overridable operators is
+  inserting "after all user resolution branches, before the fallback recording" (placing it at the top would shadow user operators). Operator names containing `<`/`>` (`infix:«<»`) hit a separate parser problem = CALL-ME error = excluded from the pin.**
+- **2026-06-25 (§D state ownership ③ = VM-native dispatch of the file/FS builtin *function* forms)**: the IO native **method** family was drained (the 2026-06-23 group), but the **function forms** (`slurp($p)`/`open($p,:r)`/`unlink($p)`/
+  `spurt`/`close`/`dir`/`copy`/`rename`/`move`/`chmod`/`mkdir`/`rmdir`/`link`/`symlink`) still went via the `call_function` fallback (survey: unlink 1172/open 1017/slurp 569 etc., ~3000 total). These are `&mut self`/`&self` operations against the
+  VM-owned `io_handles` store + the filesystem, and the `builtin_*` impls already own the state. **Fix** = the new `try_native_io_function(name,args)` (`builtins_io.rs`; a 1:1 mirror of `call_function`'s IO arms) is called
+  **at the same user-override-safe position as infix**: in `dispatch_func_call_inner`, the else-if after all user resolution (after lexical-amp, before the infix arm); in `call_function_compiled_first`, after OTF and before the record.
+  **Not placed in `try_native_function`** (in call_function_compiled_first it runs before user resolution [OTF], so it would shadow a non-compiled user `sub slurp` — the difference from atomic, which was safe because `__mutsu_*` cannot be user-defined).
+  **Exclusions** = `indir` (executes a callback block), `chdir`/`tmpdir`/`homedir` (process cwd/env side state), `print`/`say`/`note`/`warn`/`sink` (output/blocks). FS functions have no rw params so no arg_sources needed; `maybe_fetch_rw_proxy(true)`
+  is the same as the terminal else = byte-identical. **Measured: 0 fallbacks for builtin IO function calls**; user `sub slurp`/`sub unlink` are correctly shadowed by higher resolution (pin-verified). All of t/ (11806); 64 whitelist S32-io/S16-io files zero regressions;
+  14 IO forms byte-identical to raku. pin `t/io-function-native-dispatch.t`(14). **★ Lesson: nativization of user-definable builtin names (IO/operators) goes not in `try_native_function` (too early) but at
+  "after user resolution, before the fallback record" on both dispatch paths. Only the `__mutsu_*` internal markers (atomic) can sit at the top of `try_native_function` (because they cannot be user-defined). Remaining function-fallbacks = concurrency (await/start —
+  start needs `sync_env_from_locals`, separate axis, flaky) / MOP (samewith) / heterogeneous internal markers (feed/assign-lvalue, context-sensitive) = the clean homogeneous drains are exhausted.**
+- **2026-06-25 (§D(b) = VM-native dispatch of the pure list/coercion builtin *function* forms (`val`/`list`/`slip`/`hash`))**: a follow-up in the same pattern as the IO function forms. `val` (pure free-fn)/`list`/`slip`/`hash` (`&self`) are
+  collection constructors that still went via the `call_function` fallback (survey: slip 3824 [S07-hyperrace stress]/val 1555/list 720/hash 336, ~6400 total). The new `try_native_collection_function(name,args)`
+  (`builtins_collection.rs`; a 1:1 mirror of the `call_function` arms) is called at **the same user-override-safe position as IO/infix** (in `dispatch_func_call_inner` after the IO arm, before the infix arm / in `call_function_compiled_first` after the IO arm).
+  Pure/`&self` with no rw params = byte-identical. **Measured: 0 fallbacks for builtin val/list/slip/hash calls**; user `sub list` correctly shadowed (pin-verified). All of t/ (11834); 132 whitelist S02/S07-slip/S32-list files zero regressions;
+  byte-identical to raku. pin `t/collection-function-native-dispatch.t`(14). **★ Separate axes found via the pin (existing mutsu behavior, unrelated to this change): mutsu's `builtin_list` flattens `list((1,2),3)` but raku gives `((1,2),3)` (non-flattening) /
+  a block-scoped `sub list` leaks to the outer scope in mutsu (raku is block-scoped) = both excluded from the pin. ★ The clean function-fallback drains (state-owning: atomic/IO + pure dispatch: infix/collection) are effectively exhausted. Remaining = concurrency
+  (await/start/Supply/tap; Promise/scheduler state; flaky) / MOP (samewith; reflection) / user-class construction (new/bless; needs a structural substrate design).**
 
-### 重要な現状認識（2026-06-08, PR-3 時点）
-**「生ディスパッチを統一エントリへ降ろすだけ」で消せる安いサイトは枯渇した。** 残る §1/§2 のフォールバックは
-すべて構造的ブロッカー（②宣言レジストリ / ③state 所有移管 / 第一級コンテナ Phase 2 / lever B）が前提であり、
-個別の routing では消えない。とくに §1 の catch-all 群（残る主 tree-walk）と native-method（IO 系）は **③** が、
-mut 系 push/hyper/array-backed は **Phase 2** が、shared push/react は **lever B** が前提。
-**次の実質的進捗は ② または ③ の構造リファクタであり、設計を要する**（VM が `interpreter: Interpreter` を所有
-しつつ interpreter 側も同 state で tree-walk する双方向所有を解く必要がある）。
+### Important assessment of the current state (2026-06-08, as of PR-3)
+**The cheap sites removable by "just lowering raw dispatch into the unified entry" are exhausted.** The remaining §1/§2 fallbacks
+are all premised on structural blockers (② declaration registries / ③ state ownership transfer / first-class containers Phase 2 / lever B) and
+will not disappear through individual routing. In particular, the §1 catch-all group (the remaining primary tree-walk) and the native-methods (IO family) are premised on **③**,
+the mut-family push/hyper/array-backed on **Phase 2**, and shared push/react on **lever B**.
+**The next real progress is the structural refactor of ② or ③, which requires design** (the bidirectional ownership — the VM owning
+`interpreter: Interpreter` while the interpreter side also tree-walks over the same state — must be untangled).
 
-## 撲滅の順序（PLAN.md ①〜⑤ に対応）
+## Elimination order (corresponding to PLAN.md ①–⑤)
 
-1. ~~EASY/MEDIUM な §1/§2 の個別撲滅~~ — **枯渇（PR-1〜3 で消化）**。残りは下記の構造ブロッカー前提。
-2. ② 宣言レジストリ（class/role/enum/subset/sub/token）の VM 所有化。
-3. ③ env/型検査/readonly/let の VM 所有移管（最大の山。catch-all 群・native-method はここで消える）。
-4. ④ §C carrier の最終確定（所有が VM に移れば単なる共有参照）。
-5. ⑤ `env_dirty`/`saved_env_dirty`/`ensure_locals_synced`/`sync_locals_from_env` 削除。
+1. ~~Individual elimination of EASY/MEDIUM §1/§2~~ — **exhausted (consumed in PR-1..3)**. The remainder is premised on the structural blockers below.
+2. ② VM ownership of the declaration registries (class/role/enum/subset/sub/token).
+3. ③ Transferring ownership of env/type checks/readonly/let to the VM (the biggest mountain. The catch-all group and native-methods disappear here).
+4. ④ Final determination of the §C carriers (once ownership moves to the VM, they are mere shared references).
+5. ⑤ Deleting `env_dirty`/`saved_env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`.

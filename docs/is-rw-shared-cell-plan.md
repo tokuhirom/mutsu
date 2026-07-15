@@ -11,7 +11,7 @@
 > `docs/container-identity.md` and the memory `phase2-element-containers-progress`.
 >
 > ⚠️ **High-risk: touches the hot call path.** The PLAN flags this explicitly
-> ("hot な call path 全体に触れる高リスク改修"). Gate the change so the common
+> ("a high-risk change touching the entire hot call path"). Gate the change so the common
 > (non-rw) path is byte-identical and zero-cost. Lean on CI's release roast.
 
 ## Target tests (definition of done)

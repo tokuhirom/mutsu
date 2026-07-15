@@ -2,7 +2,7 @@
 
 > Prep for the next session. Phase 2 Stage 2, the **hardest** remaining slice
 > (binding to a *container-valued* element). Read alongside
-> `docs/container-identity.md` "調査記録 2026-06-11 (element-element …)".
+> `docs/container-identity.md` "Investigation record 2026-06-11 (element-element …)".
 >
 > The 2026-06-11 prototype got **single-level container binds fully working** but
 > was reverted because the deep cases need ContainerRef-descent across *all*
