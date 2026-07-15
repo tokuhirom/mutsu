@@ -132,6 +132,32 @@ impl Interpreter {
                 // Check if all overloads are submethods on an ancestor class
                 let all_submethods = overloads.iter().all(|d| d.is_my);
                 let is_ancestor = cn != class_name;
+                // Single-visible-candidate fast return: with exactly one visible
+                // non-multi candidate (and no multi collected from a more-derived
+                // class), the outcome is invariant to the speculative argument
+                // match — a successful match returns this def, and a failed match
+                // falls through to the same def via `first_visible_non_multi`.
+                // Skip the match (env snapshot + speculative binding) entirely.
+                // Excluded: params carrying a `where` clause (user code whose
+                // dynamic-variable writes are observable side effects of the
+                // match), a type constraint (a subset's predicate is user code
+                // too), or a sub-signature. This is the hot shape of every
+                // BUILD/TWEAK construction dispatch.
+                if !any_multi && all_matches.is_empty() {
+                    let mut visible = overloads
+                        .iter()
+                        .filter(|d| !(d.is_private || (d.is_my && is_ancestor)));
+                    if let Some(only) = visible.next()
+                        && visible.next().is_none()
+                        && only.param_defs.iter().all(|pd| {
+                            pd.where_constraint.is_none()
+                                && pd.type_constraint.is_none()
+                                && pd.sub_signature.is_none()
+                        })
+                    {
+                        return Some((cn.clone(), only.clone()));
+                    }
+                }
                 for def in overloads {
                     if def.is_private {
                         continue;
