@@ -157,11 +157,17 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
          `dispatch_bless`, which now reuses the cached per-class `NativeCtorPlan` (attribute
          defs + BUILD/TWEAK probes, incl. 6.e role submethods) instead of re-collecting the
          class shape per call; ctor microbench (benchmarks/bench-ctor.raku) 0.35 → 0.31s release,
-         **2.9x → 2.2x** vs raku. Remaining (per-dist): TWEAK x2 via the resolver path
-         (per-call `resolve_method_with_owner_invocant` + `build_remaining` fingerprints +
-         attributive-named-param full env path), allocation churn (~30% malloc/free in the
-         flat profile: AttrMap clones per phase, `!attr`/`.attr` env inserts) / Symbol intern
-         traffic.
+         **2.9x → 2.2x** vs raku. Fifth round (2026-07-15, #4571/#4573/#4575/#4576 —
+         see news/2026-07.md): single-visible-candidate fast return in method
+         resolution (skips the speculative match for the BUILD/TWEAK dispatch shape),
+         and the construction phases thread the constructed instance's shared
+         attribute cell (no more per-step AttrMap clones / phantom intermediate
+         instances; also a raku-compat fix — `self` inside BUILD/TWEAK IS the returned
+         object). bench-ctor 0.341 → 0.299s local. Remaining (per-dist): the
+         attributive-named-param full env path of TWEAK (`:%!meta` forces
+         `call_compiled_method`'s full env setup + merge — §5 item 0 / §1.5 territory),
+         MakePair/named-arg re-materialization (`|%_` slip), Symbol intern/as_str
+         traffic in dispatch signatures.
       2. Nested `.raku` rendering: an Instance inside a collection renders as `Sp()` (type-object
          style) (`(C.new,).raku` → raku gives `(C.new(...),)`). The value itself is fine
          (semantically harmless; display only).
