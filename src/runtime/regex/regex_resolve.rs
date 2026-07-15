@@ -501,9 +501,27 @@ impl Interpreter {
         let trimmed = expr_src.trim();
         if let Some(name) = trimmed.strip_prefix('$')
             && !name.is_empty()
-            && name
-                .chars()
-                .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+            && {
+                // A bare variable reference only — `$p-1` (kebab `-` followed
+                // by a digit is NOT part of a raku identifier) must fall to
+                // the general expression evaluator below.
+                let bytes: Vec<char> = name.chars().collect();
+                let mut ok = bytes[0].is_alphabetic() || bytes[0] == '_';
+                let mut k = 1;
+                while ok && k < bytes.len() {
+                    let c = bytes[k];
+                    let kebab = c == '-'
+                        && bytes
+                            .get(k + 1)
+                            .is_some_and(|n| n.is_alphabetic() || *n == '_');
+                    if c.is_alphanumeric() || c == '_' || kebab {
+                        k += 1;
+                    } else {
+                        ok = false;
+                    }
+                }
+                ok
+            }
         {
             let env = self.make_regex_eval_env(caps);
             return env

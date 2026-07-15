@@ -375,12 +375,25 @@ impl Interpreter {
                 super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.set(slice_prev));
                 let _restore_prev = super::regex_helpers::RegexPrecedingCharGuard(saved_prev);
 
-                // Left-recursion detection using (name, remaining_chars_count) as key.
-                // remaining = chars.len() - pos = tail.len().
+                // Left-recursion detection using (name+args, remaining_chars_count)
+                // as key. remaining = chars.len() - pos = tail.len().
                 // When rule r calls <&r> recursively at the same position, both calls
                 // will have the same remaining count, allowing us to detect and break
-                // the left-recursion cycle.
-                let lr_key = (spec.lookup_name.clone(), tail.len());
+                // the left-recursion cycle. The argument values are part of the rule
+                // identity: `multi rule expr($p)` calling `<expr($p-1)>` at the same
+                // position is ordinary recursion toward a base case, NOT left
+                // recursion (99problems-41-to-50.t P47).
+                let lr_name = if arg_values.is_empty() {
+                    spec.lookup_name.clone()
+                } else {
+                    let mut n = spec.lookup_name.clone();
+                    for v in &arg_values {
+                        n.push('\u{0}');
+                        n.push_str(&Self::format_named_regex_arg_value(v));
+                    }
+                    n
+                };
+                let lr_key = (lr_name, tail.len());
 
                 // Check if this call is currently active (left recursion detected).
                 let is_active = LR_ACTIVE.with(|a| a.borrow().contains_key(&lr_key));
