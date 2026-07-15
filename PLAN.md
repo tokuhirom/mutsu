@@ -144,11 +144,15 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
       1. populate performance: the former "3-5 min" was dominated by an MRO dispatch bug, fixed
          2026-07-15 (accessor-MRO-shadowing PR): `Zef::Distribution.name` dispatched to the parent
          DependencySpecification's `method name` (a full REQUIRE identity-grammar parse per call,
-         ~4ms) instead of the child's `has $.name` accessor. After the fix, full fez populate
-         (7648 dists) = 19.5s release (raku 2.8s, ~7x); warm `zef info Zef` end-to-end = ~50s
-         (raku warm ~3.8s, ~13x). Remaining hot spots (per-dist): `bless` runs on the
-         `run_instance_method` slow-path fallback, TWEAK x2 via the resolver path, and
-         allocation churn (~25% of flat profile in malloc/free/memmove).
+         ~4ms) instead of the child's `has $.name` accessor. Second fix same day
+         (definite-return-eval PR): every return from a `--> Nil` routine (e.g.
+         Zef::Distribution's TWEAK) paid a full string EVAL whose setup clones the entire class
+         registry twice; constant specs (Nil/True/False/Empty/pi/int) are now constructed
+         directly. Combined: full fez populate = **11.9s** release (raku ~1-2.8s); an 18-attr
+         ctor microbench (tmp/ctor-bench.raku) went 35x → 5.8x vs raku. Remaining hot spots
+         (per-dist): `bless` runs on the `run_instance_method` slow-path fallback, TWEAK x2 via
+         the resolver path, allocation churn (malloc/free/memmove still dominate the flat
+         profile).
       2. Nested `.raku` rendering: an Instance inside a collection renders as `Sp()` (type-object
          style) (`(C.new,).raku` → raku gives `(C.new(...),)`). The value itself is fine
          (semantically harmless; display only).
