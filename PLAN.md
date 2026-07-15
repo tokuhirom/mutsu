@@ -262,10 +262,23 @@ itself = `def_is_otf_compilable_module_single` (`vm/vm_call_func_ops.rs`). The f
 - [ ] **OTF for sigilless scalar (`\x`) params**: caller writeback of raw aliases across EVAL needs a
       mechanism equivalent to #4091 (`is rw` compile-time caller slot)
       (FAIL pin = `t/sigilless-params.t` "sigilless aliases are writable through EVAL calls").
-- [ ] **Cross-thread duplicate firing of `once` (a real bug with the same behavior even under
-      tree-walk)**: `once_values` gets value-copied on thread clone and re-fires on each thread (raku
-      fires once globally). Fix = turn `once_values` into a shared cell (same pattern as the #4312
-      state cells).
+- [x] **Cross-thread (and repeated single-thread) duplicate firing of `once`** — DONE. The root
+      cause was deeper than "value-copied `once_values`": each worker re-OTF-compiles the routine and
+      the compile-time `once` site key drew from a global counter, so keys never matched across
+      threads; and a named sub's second call took a light call path that skipped the clone-id setup,
+      giving it a different key from the first call. Fix (this PR): the site key is now the `OnceExpr`
+      op's bytecode position (deterministic across recompiles), the store is an `Arc`-shared
+      `OnceStore` with a claim/condvar protocol (fires once even under a race), and `once`-bearing
+      routines are kept off the fast/light call paths so every call runs the clone-id setup the key
+      uses. Pins: `t/once-clone-scope.t`, `t/once-phaser.t`.
+- [ ] **`once` in a *method* still fires per call** (pre-existing; separate root cause): a method's
+      `__mutsu_callable_id` is a fresh per-call id (`next_instance_id()`), not a per-clone id, so a
+      method's `once` has no stable clone key. raku fires once per method clone (once per composing
+      class for role methods; the defining class's single clone for inheritance). The fix needs a
+      stable `(owner_class, method)` clone marker that does NOT disturb the per-call id recursive
+      `return`-targeting relies on, plus preventing that marker leaking into `once`s in closures
+      nested in the method. FAIL repro: `class C { method m() { once { say 1 } } }; my $c = C.new;
+      $c.m; $c.m` prints `1` twice (raku: once).
 - Intentionally excluded (decided not to do): default-param builtin-shadow single candidate
   (name-cache pollution risk; user policy) / `is encoded(...)` (NativeCall; zero practical harm) /
   `state` sharing across signature alternates (kept as an interpreter boundary).

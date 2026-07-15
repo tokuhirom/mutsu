@@ -280,6 +280,7 @@ mod native_supply_methods;
 mod native_supply_mut_methods;
 pub(crate) mod native_types;
 pub(crate) mod nativecall;
+pub(crate) mod once_store;
 mod ops_bits;
 mod ops_compare;
 mod ops_reduction;
@@ -1393,7 +1394,11 @@ pub struct Interpreter {
     /// `format!("__mutsu_closure_cap::{id}::{name}")` String allocation and the
     /// String hashing that dominated the closure dispatch profile.
     closure_captured_state: HashMap<(u64, Symbol), Value>,
-    once_values: HashMap<String, Value>,
+    /// Fired `once { ... }` results, keyed by `(routine-clone-id, op-position)`.
+    /// Shared by `Arc` handle into every spawned thread's clone so a `once` in a
+    /// sub run from multiple `start` blocks fires exactly once across threads
+    /// (see [`once_store::OnceStore`]).
+    once_values: Arc<once_store::OnceStore>,
     once_scope_stack: Vec<u64>,
     next_once_scope_id: u64,
     /// Variable dynamic-scope metadata used by `.VAR.dynamic`.

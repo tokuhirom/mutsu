@@ -4069,9 +4069,9 @@ impl Interpreter {
                     compiled_fns,
                 )?;
             }
-            OpCode::OnceExpr { key_idx, body_end } => {
+            OpCode::OnceExpr { body_end } => {
                 self.sync_source_line(code, *ip);
-                self.exec_once_expr_op(code, *key_idx, *body_end, ip, compiled_fns)?;
+                self.exec_once_expr_op(code, *body_end, ip, compiled_fns)?;
             }
             OpCode::DoGivenExpr { body_end } => {
                 self.sync_source_line(code, *ip);

@@ -786,7 +786,6 @@ pub(crate) enum OpCode {
         isolate_decls_idx: u32,
     },
     OnceExpr {
-        key_idx: u32,
         body_end: u32,
     },
     DoGivenExpr {
@@ -1849,6 +1848,11 @@ pub(crate) struct CompiledCode {
     /// the caller writeback even when its own free variables are unchanged.
     /// Distinct from `has_env_writes`, which lists only *some* call opcodes.
     pub(crate) has_calls: bool,
+    /// True if this code object directly contains a `once { ... }` (`OnceExpr`).
+    /// Set during `emit()`. Callers use it to keep `once`-bearing routines off the
+    /// fast/light call paths, which skip the routine clone-id setup the `once`
+    /// store keys on (see `once_scope_key`).
+    pub(crate) has_once: bool,
     /// True if this code runs an inline body that reads the frame's lexicals *by
     /// name* through a path the `free_var_syms` op-scan cannot see: loop/block
     /// bodies that thread control temps through `env` by name (`ForLoop`,
@@ -2008,6 +2012,7 @@ impl CompiledCode {
             closure_compiled_codes: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
+            has_once: false,
             source_line: None,
             is_pointy_block: false,
             has_env_writes: false,
@@ -3256,6 +3261,9 @@ impl CompiledCode {
     }
 
     pub(crate) fn emit(&mut self, op: OpCode) -> usize {
+        if matches!(op, OpCode::OnceExpr { .. }) {
+            self.has_once = true;
+        }
         if !self.has_calls {
             // Every call opcode -- any of these can invoke a callee that writes
             // back an arbitrary captured variable into this frame's env. Keep

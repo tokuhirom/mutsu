@@ -185,7 +185,8 @@ impl Interpreter {
         visit_map_values(visitor, &self.escaped_our_lexical_cells);
         visit_map_values(visitor, &self.state_vars);
         visit_map_values(visitor, &self.closure_captured_state);
-        visit_map_values(visitor, &self.once_values);
+        self.once_values
+            .visit_done_values(|v| visitor.visit_value(v));
         visit_map_values(visitor, &self.var_defaults);
         for (_, v, _, _) in &self.let_saves {
             visitor.visit_value(v);
