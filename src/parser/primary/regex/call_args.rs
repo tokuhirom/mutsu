@@ -105,10 +105,22 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
-    let (input, first) = parse_call_arg_expr(input)?;
-    let mut current_group = vec![first];
+    // A LEADING semicolon starts with an empty group: `f(;x)` is the
+    // two-slice list ((), (x,)) — rakudo's LoL argument form
+    // (integration/weird-errors.t 11 EVALs `say(;:[])`).
+    let (input, first_group, leading_semicolon) = if let Some(after) = input.strip_prefix(';') {
+        let (after, _) = ws(after)?;
+        (after, Vec::new(), true)
+    } else {
+        let (input, first) = parse_call_arg_expr(input)?;
+        (input, vec![first], false)
+    };
+    let mut current_group = first_group;
     let mut groups: Vec<Vec<Expr>> = Vec::new();
-    let mut has_semicolon = false;
+    let mut has_semicolon = leading_semicolon;
+    if leading_semicolon {
+        groups.push(Vec::new());
+    }
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;

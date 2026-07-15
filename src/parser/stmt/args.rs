@@ -96,12 +96,60 @@ fn expand_call_arg(arg: CallArg) -> Vec<CallArg> {
 
 /// Parse call arguments for statement-level function calls.
 /// Handles positional args, named args (fat arrow and colon pairs).
+/// Semicolon-sliced parenthesized argument list (`f(;:[])`, `f(1,2;3)`): each
+/// `;`-separated slice becomes one List-valued positional argument (an empty
+/// slice is the empty List), mirroring rakudo's LoL argument semantics
+/// (`say(;:[])` == `say((), (:[],))`). Fails unless at least one top-level
+/// `;` is present, so the regular argument parser keeps handling plain calls.
+fn parse_semicolon_sliced_paren_args(input: &str) -> PResult<'_, Vec<CallArg>> {
+    let r = input
+        .strip_prefix('(')
+        .ok_or_else(|| PError::expected("'('"))?;
+    let mut slices: Vec<Vec<Expr>> = vec![Vec::new()];
+    let mut saw_semicolon = false;
+    let (mut rest, _) = ws(r)?;
+    loop {
+        if let Some(r2) = rest.strip_prefix(')') {
+            if !saw_semicolon {
+                return Err(PError::expected("semicolon-sliced argument list"));
+            }
+            let args = slices
+                .into_iter()
+                .map(|items| CallArg::Positional(Expr::ArrayLiteral(items)))
+                .collect();
+            return Ok((r2, args));
+        }
+        if let Some(r2) = rest.strip_prefix(';') {
+            saw_semicolon = true;
+            slices.push(Vec::new());
+            let (r2, _) = ws(r2)?;
+            rest = r2;
+            continue;
+        }
+        if let Some(r2) = rest.strip_prefix(',') {
+            let (r2, _) = ws(r2)?;
+            rest = r2;
+            continue;
+        }
+        let (r2, item) = crate::parser::expr::expression(rest)?;
+        slices.last_mut().unwrap().push(item);
+        let (r2, _) = ws(r2)?;
+        rest = r2;
+        if !(rest.starts_with(')') || rest.starts_with(';') || rest.starts_with(',')) {
+            return Err(PError::expected("',', ';' or ')' in argument list"));
+        }
+    }
+}
+
 pub(super) fn parse_stmt_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
     let rest = input;
 
     // Check for parens-style call
     if rest.starts_with('(') {
+        if let Ok(sliced) = parse_semicolon_sliced_paren_args(rest) {
+            return Ok(sliced);
+        }
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         if r.starts_with(')') {

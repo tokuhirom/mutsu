@@ -225,6 +225,7 @@ pub(crate) fn is_expr_listop(name: &str) -> bool {
             | "set"
             | "bag"
             | "mix"
+            | "hash"
             | "localtime"
             | "gmtime"
             | "times"

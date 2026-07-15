@@ -293,6 +293,10 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         // anonymous grammar: grammar { ... }
         try_primary!(misc::anon_grammar_expr(input));
 
+        // Indirect object notation (`new Foo:`): tried after every other
+        // primary form so it can never shadow labels/adverbs/method calls.
+        try_primary!(misc::indirect_method_call(input));
+
         match ident::identifier_or_call(input) {
             Ok(r) => Ok(r),
             Err(err) => {

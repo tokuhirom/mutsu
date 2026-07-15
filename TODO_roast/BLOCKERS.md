@@ -71,7 +71,7 @@ noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `integration/weird-errors.t` | 31/36 | PASS ★ | **④ error-message quality.** Remaining = `say(;:[])` (11), `::a`→X::NoSuchSymbol needs `::` info on BareWord (20), our method invocant type (29), `new Foo:` (32), `hash a=>1` (33) |
+| `integration/weird-errors.t` | 35/36 | PASS ★ | **④ error-message quality.** Remaining 1 = test 29: `&B114672::foo(A114672.new)` where `our method foo(A114672:)` reads `$!x` must THROW (rakudo: P6opaque no-such-attribute on the wrong-class invocant); mutsu reads the missing `!x` env key as Nil. Needs "private-attr read on an instance whose class does not carry the attribute throws" — touches attr seeding in `call_compiled_method`, deferred as its own slice. Tests 11/20/32/33 fixed 2026-07-15: `:[...]` itemized-array colonpair + leading-`;` LoL argument slices (`say(;:[])` prints `()([])` like rakudo), `::lowercase` → runtime symbol lookup (X::NoSuchSymbol), indirect object notation `new Foo: args`, `hash` listop. Pin: t/weird-errors-parse-forms.t |
 | `integration/advent2012-day15.t` | 9/11 | PASS ★ | statement-form phasers create their own scope (`$best` in `NEXT (state $best) max= $_;` is not visible from `LAST`) / `INIT` runs after the mainline |
 | `integration/99problems-21-to-30.t` | aborts at 6/15 | PASS ★ | not yet root-caused (post-#4510/#4516 re-measure) |
 | `integration/99problems-31-to-40.t` | aborts at 44/67 | PASS ★ | not yet root-caused |

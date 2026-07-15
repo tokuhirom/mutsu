@@ -190,6 +190,22 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
         full_name = format!("{}{}", full_name, smiley);
         r = &r[2..];
     }
+    // A simple lowercase `::name` is a runtime symbol lookup, not a type
+    // literal: `::a` must die with X::NoSuchSymbol (symbol => "a") when
+    // nothing named `a` exists — exactly like `::('a')`
+    // (integration/weird-errors.t 20). Uppercase names keep the BareWord
+    // path (static type-literal semantics, forward references).
+    if !full_name.contains("::")
+        && full_name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_lowercase() || c == '_')
+    {
+        return Ok((
+            r,
+            Expr::IndirectTypeLookup(Box::new(Expr::Literal(Value::str(full_name)))),
+        ));
+    }
     Ok((r, Expr::BareWord(full_name)))
 }
 

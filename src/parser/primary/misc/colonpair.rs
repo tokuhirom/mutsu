@@ -44,6 +44,41 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             return Err(PError::expected("generic radix literal"));
         }
     }
+    // :[ ... ]: itemized array literal — `:[]` is `$[]`, `:[1,2]` is `$[1,2]`
+    // (integration/weird-errors.t 11 EVALs `say(;:[])`).
+    if let Some(after_bracket) = r.strip_prefix('[') {
+        let (inner, _) = ws_inner(after_bracket);
+        if let Some(rest) = inner.strip_prefix(']') {
+            return Ok((
+                rest,
+                Expr::Itemize(Box::new(Expr::BracketArray(Vec::new(), false))),
+            ));
+        }
+        let mut items = Vec::new();
+        let mut rest = inner;
+        loop {
+            let (r2, item) = expression(rest)?;
+            items.push(item);
+            let (r2, _) = ws_inner(r2);
+            if let Some(r3) = r2.strip_prefix(',') {
+                let (r3, _) = ws_inner(r3);
+                if let Some(r4) = r3.strip_prefix(']') {
+                    rest = r4;
+                    break;
+                }
+                rest = r3;
+            } else if let Some(r3) = r2.strip_prefix(']') {
+                rest = r3;
+                break;
+            } else {
+                return Err(PError::expected("']' closing itemized array colonpair"));
+            }
+        }
+        return Ok((
+            rest,
+            Expr::Itemize(Box::new(Expr::BracketArray(items, false))),
+        ));
+    }
     // :{ ... }: typed hash literal (Hash[Mu,Any]).
     // Unlike bare { ... }, the colon prefix explicitly marks this as a hash,
     // so we always parse as a hash literal (never as a block).
