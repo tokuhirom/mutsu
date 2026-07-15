@@ -10,7 +10,7 @@ impl Interpreter {
         items: &[Value],
         body_start: usize,
         loop_end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         resume_index: usize,
     ) -> Result<bool, RuntimeError> {
         // `true`  = the loop ran every item to completion;

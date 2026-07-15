@@ -5,7 +5,7 @@ impl Interpreter {
         &mut self,
         cf: &CompiledFunction,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {

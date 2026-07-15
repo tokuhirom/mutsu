@@ -7,7 +7,7 @@ impl Interpreter {
         name_idx: u32,
         right_arity: u32,
         modifier_idx: &Option<u32>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let arity = right_arity as usize;
         let mut right_vals: Vec<Value> = Vec::with_capacity(arity);
@@ -157,7 +157,7 @@ impl Interpreter {
         code: &CompiledCode,
         start: usize,
         end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let saved_depth = self.stack.len();
         self.run_range(code, start, end, compiled_fns)?;
@@ -228,7 +228,7 @@ impl Interpreter {
         exclude_start: bool,
         exclude_end: bool,
         is_fff: bool,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let lhs_start = *ip + 1;
         let lhs_end = lhs_end as usize;
@@ -292,7 +292,7 @@ impl Interpreter {
         name: &str,
         infix_name: Option<&str>,
         call_args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // When an infix operator is called with a single Iterable argument,
         // flatten it into elements (like a +@foo slurpy) and reduce over them.

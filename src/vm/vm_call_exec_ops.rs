@@ -8,7 +8,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -109,7 +109,7 @@ impl Interpreter {
     pub(super) fn exec_exec_call_pairs_op(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         name_idx: u32,
         arity: u32,
     ) -> Result<(), RuntimeError> {
@@ -168,7 +168,7 @@ impl Interpreter {
     pub(super) fn exec_exec_call_slip_op(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         name_idx: u32,
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,

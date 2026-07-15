@@ -13,7 +13,7 @@ impl Interpreter {
     pub(super) fn call_compiled_function_fast(
         &mut self,
         cf: &CompiledFunction,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
         // so it emits the call safepoint itself.

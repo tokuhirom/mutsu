@@ -145,7 +145,7 @@ impl Interpreter {
         {
             let args = vec![val.clone()];
             if let Some(def) = loan_env!(self, resolve_function_with_types("prefix:<~>", &args)) {
-                let empty_fns = std::collections::HashMap::new();
+                let empty_fns = crate::opcode::CompiledFns::default();
                 let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
                 self.stack.push(result);
                 return Ok(());

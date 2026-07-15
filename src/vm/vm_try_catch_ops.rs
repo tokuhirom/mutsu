@@ -13,7 +13,7 @@ impl Interpreter {
         resume_safe: bool,
         is_bare_block: bool,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Reset any leftover resume_ip from previous exception handling so a
         // later .resume cannot accidentally jump into a sibling scope.
@@ -67,7 +67,7 @@ impl Interpreter {
         explicit_catch: bool,
         resume_safe: bool,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let saved_depth = self.stack.len();
         let let_mark = self.let_saves_len();

@@ -154,7 +154,7 @@ impl Interpreter {
         bounds: [u32; 7],
         is_bare_block: bool,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let [
             pre_end,

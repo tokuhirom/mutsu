@@ -320,7 +320,7 @@ impl Interpreter {
                 .last()
                 .map(|(n, _)| n.clone())
                 .unwrap_or_default();
-            let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
+            let empty_fns = crate::opcode::CompiledFns::default();
             let dispatch_result = match invocant.view() {
                 ValueView::Instance {
                     class_name,

@@ -439,7 +439,7 @@ impl Interpreter {
 
         // Check for user-defined override
         if let Some(def) = loan_env!(self, resolve_function_with_types(infix_name, &values)) {
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, values.clone(), &empty_fns)?;
             self.stack.push(result);
             return Ok(());

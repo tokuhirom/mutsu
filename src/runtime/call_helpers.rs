@@ -193,33 +193,34 @@ impl Interpreter {
 
     pub(crate) fn peek_callsite_line(args: &[Value]) -> Option<i64> {
         for arg in args {
-            match arg.view() {
-                ValueView::Pair(key, value) if key == TEST_CALLSITE_LINE_KEY => {
-                    return match value.view() {
-                        ValueView::Int(i) => Some(i),
-                        ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                        ValueView::Num(n) => Some(n as i64),
-                        ValueView::Str(s) => s.parse::<i64>().ok(),
-                        _ => None,
-                    };
-                }
-                ValueView::ValuePair(key, value) => {
-                    if let ValueView::Str(name) = key.view()
-                        && name.as_str() == TEST_CALLSITE_LINE_KEY
-                    {
-                        return match value.view() {
-                            ValueView::Int(i) => Some(i),
-                            ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
-                            ValueView::Num(n) => Some(n as i64),
-                            ValueView::Str(s) => s.parse::<i64>().ok(),
-                            _ => None,
-                        };
-                    }
-                }
-                _ => {}
+            if let Some(line) = Self::callsite_line_of_view(&arg.view()) {
+                return Some(line);
             }
         }
         None
+    }
+
+    /// Per-value half of `peek_callsite_line`: the callsite line carried by one
+    /// (already-decoded) arg view, `None` when the value is not the marker.
+    /// Takes the view so a caller that already matched on it (e.g. the fused
+    /// junction+marker scan on the light-call hit path, J4d) doesn't decode the
+    /// nanbox twice.
+    pub(crate) fn callsite_line_of_view(view: &ValueView) -> Option<i64> {
+        let value = match view {
+            ValueView::Pair(key, value) if *key == TEST_CALLSITE_LINE_KEY => value,
+            ValueView::ValuePair(key, value) => match key.view() {
+                ValueView::Str(name) if name.as_str() == TEST_CALLSITE_LINE_KEY => value,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        match value.view() {
+            ValueView::Int(i) => Some(i),
+            ValueView::BigInt(i) => i.to_string().parse::<i64>().ok(),
+            ValueView::Num(n) => Some(n as i64),
+            ValueView::Str(s) => s.parse::<i64>().ok(),
+            _ => None,
+        }
     }
 
     pub(crate) fn sanitize_call_args(&self, args: &[Value]) -> (Vec<Value>, Option<i64>) {

@@ -7,7 +7,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let end = body_end as usize;
         let body_start = *ip + 1;
@@ -26,7 +26,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let end = body_end as usize;
         let body_start = *ip + 1;

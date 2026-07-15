@@ -11,7 +11,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         arg_sources: &Option<Vec<Option<String>>>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
         // Skip auto-threading for internal functions and junction constructors
         if name.starts_with("__mutsu_")

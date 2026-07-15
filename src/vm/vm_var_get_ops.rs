@@ -5,7 +5,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let val = if name == "Bool::True" {

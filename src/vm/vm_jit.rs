@@ -77,11 +77,8 @@ pub(crate) fn note_caller_var_binding() {
 
 /// Native entry signature: `(interp, code, compiled_fns) -> status`.
 #[cfg(feature = "jit")]
-pub(crate) type JitEntryFn = unsafe extern "C" fn(
-    *mut Interpreter,
-    *const CompiledCode,
-    *const HashMap<String, CompiledFunction>,
-) -> u32;
+pub(crate) type JitEntryFn =
+    unsafe extern "C" fn(*mut Interpreter, *const CompiledCode, *const CompiledFns) -> u32;
 
 /// True when the JIT is switched on for this process. **Default ON** since
 /// the ADR-0004 J5 gates passed (2026-07-13): gc-stress × jit-stress green,
@@ -131,7 +128,7 @@ fn jit_threshold() -> u32 {
 pub(crate) fn try_enter(
     interp: &mut Interpreter,
     code: &CompiledCode,
-    compiled_fns: &HashMap<String, CompiledFunction>,
+    compiled_fns: &CompiledFns,
 ) -> Option<Result<(), RuntimeError>> {
     use std::sync::atomic::Ordering;
     if !jit_enabled() {
@@ -192,7 +189,7 @@ pub(crate) fn try_enter_range(
     code: &CompiledCode,
     start: usize,
     end: usize,
-    compiled_fns: &HashMap<String, CompiledFunction>,
+    compiled_fns: &CompiledFns,
 ) -> Option<Result<(), RuntimeError>> {
     use std::sync::atomic::Ordering;
     if !jit_enabled() || start >= end || end > code.ops.len() {
@@ -307,7 +304,7 @@ fn publish_range_entry(code: &CompiledCode, cache_key: u64, entry: u64) {
 pub(crate) fn try_enter(
     _interp: &mut Interpreter,
     _code: &CompiledCode,
-    _compiled_fns: &HashMap<String, CompiledFunction>,
+    _compiled_fns: &CompiledFns,
 ) -> Option<Result<(), RuntimeError>> {
     None
 }

@@ -200,7 +200,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let body_end = body_end as usize;
@@ -252,7 +252,7 @@ impl Interpreter {
         code: &CompiledCode,
         spec: &WhileLoopSpec,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let cond_start = *ip + 1;
         let body_start = spec.cond_end as usize;

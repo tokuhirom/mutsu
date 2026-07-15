@@ -313,7 +313,7 @@ impl Interpreter {
         } else {
             None
         };
-        let empty_fns: HashMap<String, crate::opcode::CompiledFunction> = HashMap::new();
+        let empty_fns = crate::opcode::CompiledFns::default();
         let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
         let call_result = self.call_compiled_method(
             receiver_class_name,

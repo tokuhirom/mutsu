@@ -5,7 +5,7 @@ impl Interpreter {
         &mut self,
         cf: &CompiledFunction,
         args: &[Value],
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         func_name: &str,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,

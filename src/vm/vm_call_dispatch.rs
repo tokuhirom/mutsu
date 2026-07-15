@@ -38,7 +38,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         if let Some(cf) = self.find_compiled_function(compiled_fns, name, &args) {
             let pkg = self.current_package().to_string();
@@ -183,7 +183,7 @@ impl Interpreter {
         &mut self,
         def: &crate::ast::FunctionDef,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // Use the pending callsite line for deprecation tracking,
         // since ?LINE in env may not reflect the call site yet.

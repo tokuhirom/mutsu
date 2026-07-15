@@ -24,7 +24,7 @@ impl Interpreter {
             && let Some(def) =
                 self.resolve_function_with_types(op_eq_name, &[left.clone(), right.clone()])
         {
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             return self.compile_and_call_function_def(&def, vec![left, right], &empty_fns);
         }
         self.stack.push(left);

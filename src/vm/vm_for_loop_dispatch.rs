@@ -7,7 +7,7 @@ impl Interpreter {
         code: &CompiledCode,
         spec: &ForLoopSpec,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Routine declarations inside a loop body are lexically scoped to that
         // body (Raku): snapshot the routine registry before the loop and restore
@@ -29,7 +29,7 @@ impl Interpreter {
         code: &CompiledCode,
         spec: &ForLoopSpec,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Check for gather coroutine resume state. A `CStyleLoop` marker belongs
         // to a `loop`/`while` opcode, not this for-loop, so leave it in place.

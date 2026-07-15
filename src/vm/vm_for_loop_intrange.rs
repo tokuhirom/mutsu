@@ -14,7 +14,7 @@ impl Interpreter {
         inclusive: bool,
         body_start: usize,
         loop_end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx

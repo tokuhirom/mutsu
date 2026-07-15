@@ -147,10 +147,7 @@ impl Interpreter {
         &mut self,
         generator: &Value,
         history: &[Value],
-        precompiled: Option<(
-            &crate::opcode::CompiledCode,
-            &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
-        )>,
+        precompiled: Option<(&crate::opcode::CompiledCode, &crate::opcode::CompiledFns)>,
         closure_env: &mut Option<crate::env::Env>,
         suppress_generator_error: bool,
     ) -> Result<Option<Value>, RuntimeError> {
@@ -973,34 +970,36 @@ impl Interpreter {
         };
 
         // Pre-compile the closure body once to avoid recompilation per iteration.
-        let precompiled_closure: Option<(
-            crate::opcode::CompiledCode,
-            std::collections::HashMap<String, crate::opcode::CompiledFunction>,
-        )> = if let SeqMode::Closure = &mode {
-            if let Some(ValueView::Sub(data)) = generator.as_ref().map(Value::view) {
-                if !self
-                    .sequence_has_registered_routine(&data.package.resolve(), &data.name.resolve())
-                    && !data.body.is_empty()
-                {
-                    let needs_full_binding = data.param_defs.iter().any(|pd| {
-                        pd.type_constraint.is_some()
-                            || pd.literal_value.is_some()
-                            || pd.shape_constraints.is_some()
-                            || pd.named
-                            || pd.slurpy
-                            || pd.double_slurpy
-                    });
-                    if !needs_full_binding {
-                        let mut compiler = crate::compiler::Compiler::new();
-                        compiler.is_routine = !self.routine_stack.is_empty();
-                        compiler.lexically_in_routine = !self.routine_stack.is_empty();
-                        let scope = if let Some(frame) = self.routine_stack.last() {
-                            format!("{}::&{}", frame.package, frame.name)
+        let precompiled_closure: Option<(crate::opcode::CompiledCode, crate::opcode::CompiledFns)> =
+            if let SeqMode::Closure = &mode {
+                if let Some(ValueView::Sub(data)) = generator.as_ref().map(Value::view) {
+                    if !self.sequence_has_registered_routine(
+                        &data.package.resolve(),
+                        &data.name.resolve(),
+                    ) && !data.body.is_empty()
+                    {
+                        let needs_full_binding = data.param_defs.iter().any(|pd| {
+                            pd.type_constraint.is_some()
+                                || pd.literal_value.is_some()
+                                || pd.shape_constraints.is_some()
+                                || pd.named
+                                || pd.slurpy
+                                || pd.double_slurpy
+                        });
+                        if !needs_full_binding {
+                            let mut compiler = crate::compiler::Compiler::new();
+                            compiler.is_routine = !self.routine_stack.is_empty();
+                            compiler.lexically_in_routine = !self.routine_stack.is_empty();
+                            let scope = if let Some(frame) = self.routine_stack.last() {
+                                format!("{}::&{}", frame.package, frame.name)
+                            } else {
+                                self.current_package()
+                            };
+                            compiler.set_current_package(scope);
+                            Some(compiler.compile(&data.body))
                         } else {
-                            self.current_package()
-                        };
-                        compiler.set_current_package(scope);
-                        Some(compiler.compile(&data.body))
+                            None
+                        }
                     } else {
                         None
                     }
@@ -1009,10 +1008,7 @@ impl Interpreter {
                 }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
 
         // Maintain a mutable copy of the generator closure's captured env so that
         // side-effects (e.g. `++$i`) persist across iterations instead of being reset

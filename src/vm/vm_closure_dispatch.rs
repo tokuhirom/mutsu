@@ -73,7 +73,7 @@ impl Interpreter {
         data: &crate::value::SubData,
         cc: &CompiledCode,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         self.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns)
     }
@@ -101,7 +101,7 @@ impl Interpreter {
         args: Vec<Value>,
         explicit_topic: Option<Value>,
         capture_rw_topic: bool,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let (mut args, callsite_line) = self.sanitize_call_args(&args);
         if callsite_line.is_some() {

@@ -225,7 +225,7 @@ impl Interpreter {
             {
                 let mut call_args = vec![item.clone()];
                 call_args.extend(args.clone());
-                let empty_fns = HashMap::new();
+                let empty_fns = CompiledFns::default();
                 let val = self.call_function_compiled_first(&method, call_args, &empty_fns)?;
                 results.push(val);
                 continue;

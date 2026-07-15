@@ -13,7 +13,7 @@ impl Interpreter {
         ll: &crate::gc::Gc<crate::value::LazyList>,
         body_start: usize,
         loop_end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         self.exec_for_loop_lazy_gather_from(code, spec, ll, 0, body_start, loop_end, compiled_fns)
     }
@@ -27,7 +27,7 @@ impl Interpreter {
         start_idx: usize,
         body_start: usize,
         loop_end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // The caller holds the `Gc<LazyList>` handle; clone it directly. (Pre-GC
         // this reconstructed an `Arc<LazyList>` from a `&LazyList` via
@@ -223,7 +223,7 @@ impl Interpreter {
         words: bool,
         body_start: usize,
         loop_end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let param_name = spec
             .param_idx
