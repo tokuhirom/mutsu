@@ -147,20 +147,28 @@ impl Interpreter {
     /// through: `$outer := self` rewrites the frame's `self` into the bind's shared
     /// cell, and attribute writes after that bind must still reach the instance
     /// (t/bind-self-attr-write.t). Returns `None` for a type object / non-instance.
+    ///
+    /// The unwrap is iterative and bounded, and each `ContainerRef` level is
+    /// cloned out via `deref_container` so NO cell lock is held while looking at
+    /// the next level — a recursive deref inside `with_deref` would hold the
+    /// Mutex across levels, turning a pathological cell cycle into a same-thread
+    /// re-lock (deadlock) or unbounded stack growth. A chain deeper than the cap
+    /// yields `None`, exactly like a non-instance.
     pub(crate) fn self_instance_attrs(
         val: &Value,
     ) -> Option<crate::gc::Gc<crate::value::InstanceAttrs>> {
-        match val.view() {
-            ValueView::Instance { attributes, .. } => Some(attributes.clone()),
-            ValueView::Mixin(inner, _) => Self::self_instance_attrs(inner),
-            ValueView::ContainerRef(_) => val.with_deref(|inner| {
-                // The deref'd borrow is a different value than `val` (the lock
-                // guard's target), so this recursion terminates: a cell holding
-                // another cell unwraps one level per call.
-                Self::self_instance_attrs(inner)
-            }),
-            _ => None,
+        let mut cur: Option<Value> = None;
+        for _ in 0..8 {
+            let v = cur.as_ref().unwrap_or(val);
+            let next = match v.view() {
+                ValueView::Instance { attributes, .. } => return Some(attributes.clone()),
+                ValueView::Mixin(inner, _) => Value::clone(&inner),
+                ValueView::ContainerRef(_) => v.deref_container(),
+                _ => return None,
+            };
+            cur = Some(next);
         }
+        None
     }
 
     /// Read a scalar attribute straight from `self`'s shared cell. `Some` only
