@@ -362,15 +362,34 @@ impl Interpreter {
             .retain(|(entry_id, _), _| *entry_id != id);
     }
 
-    pub(crate) fn current_once_scope(&self) -> Option<u64> {
-        // When inside a closure call, __mutsu_callable_id identifies the
-        // specific closure clone.  This must take priority over the
-        // once_scope_stack so that `once` blocks inside closures called from
-        // EVAL (where the stack depth > 1) still get a per-clone scope.
+    /// Build the shared-store key for a `once` site at bytecode position
+    /// `op_ip`. The key combines the enclosing code-object *clone* identity with
+    /// the op position, so a `once` fires once per clone (Raku semantics):
+    ///
+    /// - `__mutsu_callable_id` (set per-clone by the call dispatch) identifies a
+    ///   specific routine/closure clone and takes priority — this is what makes a
+    ///   fresh `my sub` clone per loop iteration re-fire, and (being stable across
+    ///   a routine's OTF recompiles on worker threads) what makes a sub's `once`
+    ///   agree across threads.
+    /// - Otherwise the innermost block/once scope (top-level / bare-block `once`).
+    ///
+    /// The `c`/`r` tag keeps the two id spaces from colliding numerically, and
+    /// `op_ip` is unique per `once` site within a single code object, so the key
+    /// is collision-free. Unlike the old global compile-time counter it is
+    /// deterministic across every recompilation of the same source.
+    pub(crate) fn once_scope_key(&self, op_ip: usize) -> String {
         match self.env.get("__mutsu_callable_id").map(Value::view) {
-            Some(ValueView::Int(id)) if id >= 0 => Some(id as u64),
-            _ => self.once_scope_stack.last().copied(),
+            Some(ValueView::Int(id)) if id >= 0 => format!("c{id}::{op_ip}"),
+            _ => format!(
+                "r{}::{op_ip}",
+                self.once_scope_stack.last().copied().unwrap_or(0)
+            ),
         }
+    }
+
+    /// The shared cross-thread `once` result store (see [`once_scope_key`]).
+    pub(crate) fn once_store(&self) -> &std::sync::Arc<crate::runtime::once_store::OnceStore> {
+        &self.once_values
     }
 
     pub(crate) fn push_once_scope(&mut self, scope: u64) {
@@ -385,14 +404,6 @@ impl Interpreter {
         let scope = self.next_once_scope_id;
         self.next_once_scope_id += 1;
         scope
-    }
-
-    pub(crate) fn get_once_value(&self, key: &str) -> Option<&Value> {
-        self.once_values.get(key)
-    }
-
-    pub(crate) fn set_once_value(&mut self, key: String, value: Value) {
-        self.once_values.insert(key, value);
     }
 
     pub(crate) fn when_matched(&self) -> bool {

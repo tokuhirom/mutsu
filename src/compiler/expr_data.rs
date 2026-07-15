@@ -290,17 +290,16 @@ impl Compiler {
     }
 
     /// Compile `once { ... }` expression.
+    ///
+    /// The once-site identity is the emitted `OnceExpr` op's bytecode position
+    /// (used at run time as the cache key together with the enclosing routine
+    /// clone id). Unlike the old global `STATE_COUNTER` key, the op position is
+    /// deterministic across every recompilation of the same routine body — in
+    /// particular, a worker thread that re-OTF-compiles the routine reaches the
+    /// same `once` under the same key, which (with the shared `once_values`
+    /// store) is what makes `once` fire once across threads.
     pub(super) fn compile_expr_once(&mut self, body: &[Stmt]) {
-        let key = format!(
-            "__once_{}::{}",
-            self.current_package,
-            STATE_COUNTER.fetch_add(1, Ordering::Relaxed)
-        );
-        let key_idx = self.code.add_constant(Value::str(key));
-        let once_idx = self.code.emit(OpCode::OnceExpr {
-            key_idx,
-            body_end: 0,
-        });
+        let once_idx = self.code.emit(OpCode::OnceExpr { body_end: 0 });
         self.compile_block_inline(body);
         self.code.patch_body_end(once_idx);
     }

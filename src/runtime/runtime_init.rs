@@ -2098,7 +2098,7 @@ impl Interpreter {
             state_vars: HashMap::new(),
             thread_redeclared_vars: std::collections::HashSet::new(),
             closure_captured_state: HashMap::new(),
-            once_values: HashMap::new(),
+            once_values: Arc::new(crate::runtime::once_store::OnceStore::default()),
             once_scope_stack: Vec::new(),
             next_once_scope_id: 1,
             var_dynamic_flags: HashMap::new(),

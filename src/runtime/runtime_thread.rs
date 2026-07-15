@@ -261,7 +261,9 @@ impl Interpreter {
             // closure captured state (falls back to the captured-env initial
             // values), exactly as before this store existed.
             closure_captured_state: HashMap::new(),
-            once_values: self.once_values.clone(),
+            // Share the store by handle (not a per-thread copy) so a `once` in a
+            // sub run from several `start` blocks fires once across all threads.
+            once_values: Arc::clone(&self.once_values),
             once_scope_stack: Vec::new(),
             next_once_scope_id: self.next_once_scope_id,
             var_dynamic_flags: self.var_dynamic_flags.clone(),

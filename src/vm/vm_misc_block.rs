@@ -230,34 +230,47 @@ impl Interpreter {
     pub(super) fn exec_once_expr_op(
         &mut self,
         code: &CompiledCode,
-        key_idx: u32,
         body_end: u32,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        let scope =
-            loan_env!(self, current_once_scope()).unwrap_or_else(|| self.next_once_scope_id());
-        let site_key = Self::const_str(code, key_idx);
-        let cache_key = format!("{scope}::{site_key}");
-        if let Some(value) = self.get_once_value(&cache_key).cloned() {
-            self.stack.push(value);
-            *ip = body_end as usize;
-            return Ok(());
+        // The op's own bytecode position is the deterministic per-site id (stable
+        // across recompiles); the scope prefix is the enclosing code-object clone.
+        let cache_key = loan_env!(self, once_scope_key(*ip));
+        let store = std::sync::Arc::clone(self.once_store());
+        // Claim the site: get the cached result, or take ownership to run the body
+        // (blocking until a peer thread that owns the claim publishes its result).
+        match store.claim(&cache_key) {
+            crate::runtime::once_store::OnceClaim::Cached(value) => {
+                self.stack.push(value);
+                *ip = body_end as usize;
+                Ok(())
+            }
+            crate::runtime::once_store::OnceClaim::Claimed => {
+                let body_start = *ip + 1;
+                let end = body_end as usize;
+                let stack_base = self.stack.len();
+                match self.run_range(code, body_start, end, compiled_fns) {
+                    Ok(()) => {
+                        let value = if self.stack.len() > stack_base {
+                            self.stack.pop().unwrap_or(Value::NIL)
+                        } else {
+                            Value::NIL
+                        };
+                        store.fulfill(&cache_key, value.clone());
+                        self.stack.push(value);
+                        *ip = end;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        // The body threw: release the claim so a retry or a waiting
+                        // peer can run it, then propagate the error.
+                        store.abandon(&cache_key);
+                        Err(e)
+                    }
+                }
+            }
         }
-
-        let body_start = *ip + 1;
-        let end = body_end as usize;
-        let stack_base = self.stack.len();
-        self.run_range(code, body_start, end, compiled_fns)?;
-        let value = if self.stack.len() > stack_base {
-            self.stack.pop().unwrap_or(Value::NIL)
-        } else {
-            Value::NIL
-        };
-        self.set_once_value(cache_key, value.clone());
-        self.stack.push(value);
-        *ip = end;
-        Ok(())
     }
 
     pub(super) fn exec_let_save_op(

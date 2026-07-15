@@ -37,6 +37,8 @@ impl Interpreter {
             && cf.param_defs.is_empty()
             && cf.return_type.is_none()
             && !fn_name.is_empty()
+            // A `once` needs the clone-id setup only the full call path performs.
+            && !cf.code.has_once
     }
 
     /// Check if a compiled function is eligible for the light call path.
@@ -60,6 +62,8 @@ impl Interpreter {
             && !cf.is_rw
             && !cf.is_raw
             && !cf.empty_sig
+            // A `once` needs the clone-id setup only the full call path performs.
+            && !cf.code.has_once
             && !cf.param_defs.is_empty()
             && cf.param_defs.iter().all(|pd| {
                 pd.named
@@ -88,6 +92,8 @@ impl Interpreter {
             && cf.param_local_slots.is_some()
             // Exclude functions with inner closures/blocks (may use phasers, closures, etc.)
             && !cf.has_inner_subs
+            // A `once` needs the clone-id setup only the full call path performs.
+            && !cf.code.has_once
             // Only allow return types that light_return_type_check can handle
             && cf
                 .return_type
