@@ -47,7 +47,7 @@ impl Interpreter {
         } else if name == "note" || name == "say" {
             // say and note use .gist for rendering
             for arg in args {
-                content.push_str(&self.render_gist_value(arg));
+                content.push_str(&self.render_gist_value(arg)?);
             }
         } else {
             for arg in args {

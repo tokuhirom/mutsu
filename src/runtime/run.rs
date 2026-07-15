@@ -132,6 +132,7 @@ impl Interpreter {
         crate::runtime::phasers::reorder_phasers(&mut body_main);
         self.update_raku_version_from_parser();
         self.check_eval_param_type_constraints(&body_main)?;
+        self.check_type_capture_inheritance(&body_main)?;
         self.preregister_top_level_subs(&body_main)?;
         // Rakudo rejects a call to a routine declared nowhere in the unit at
         // CHECK time, before anything runs (X::Undeclared::Symbols).

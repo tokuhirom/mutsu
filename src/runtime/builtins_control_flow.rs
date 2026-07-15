@@ -532,6 +532,25 @@ impl Interpreter {
         Err(self.runtime_error_from_die_value(&ex, "Stub code executed", false))
     }
 
+    /// Compile-target for constructs the parser recognizes as an undeclared
+    /// bare variable (e.g. `%::{''}` — rakudo's "Variable '%' is not
+    /// declared"). Raises X::Undeclared with symbol/what/line attributes.
+    pub(super) fn builtin_undeclared_var_die(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let symbol = args.first().map(Value::to_string_value).unwrap_or_default();
+        let msg = format!(
+            "Variable '{symbol}' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?"
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("symbol".to_string(), Value::str(symbol));
+        attrs.insert("what".to_string(), Value::str_from("Variable"));
+        attrs.insert("line".to_string(), Value::int(self.cur_source_line));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Err(RuntimeError::typed("X::Undeclared", attrs))
+    }
+
     pub(super) fn builtin_stub_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let mut message = String::new();
         for arg in args {

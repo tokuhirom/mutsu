@@ -323,6 +323,28 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
+        if let Some(after_colons) = rest.strip_prefix("::") {
+            // `%::name` is the root-namespace-qualified form of `%name`.
+            // `%::` followed by anything else (`%::{''}`, `%::<x>`) is rakudo's
+            // undeclared bare variable `%` — compile it to a typed
+            // X::Undeclared die (integration/error-reporting.t test 25).
+            if after_colons
+                .chars()
+                .next()
+                .is_some_and(is_raku_identifier_start)
+            {
+                let (rest2, name) = parse_qualified_ident_with_hyphens(after_colons)?;
+                let (rest2, name) = parse_var_name_adverb_suffixes(rest2, name);
+                return Ok((rest2, Expr::HashVar(name)));
+            }
+            return Ok((
+                rest,
+                Expr::Call {
+                    name: crate::symbol::Symbol::intern("__mutsu_undeclared_var_die"),
+                    args: vec![Expr::Literal(Value::str_from("%"))],
+                },
+            ));
+        }
         return Ok((rest, Expr::HashVar("__ANON_HASH__".to_string())));
     }
     // Special: %*ENV

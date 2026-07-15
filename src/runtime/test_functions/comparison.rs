@@ -190,12 +190,26 @@ impl Interpreter {
             Some(v) => self.stringify_value(v.clone())?,
             None => String::new(),
         };
-        let ok = match Self::positional_value(args, 1).map(Value::view) {
-            Some(ValueView::Regex(pat)) => self.regex_is_match(&pat, &text),
-            _ => false,
-        };
+        let ok = self.like_matches(args, &text);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::truth(ok))
+    }
+
+    /// Whether `text` matches the pattern argument of like/unlike. A regex
+    /// with adverbs (`rx:i/.../`) goes through the general smartmatch so the
+    /// adverbs apply (a plain `ValueView::Regex` keeps the direct fast path).
+    fn like_matches(&mut self, args: &[Value], text: &str) -> bool {
+        match Self::positional_value(args, 1) {
+            Some(re) => match re.view() {
+                ValueView::Regex(pat) => self.regex_is_match(&pat, text),
+                ValueView::RegexWithAdverbs(_) => {
+                    let re = re.clone();
+                    self.smart_match_values(&Value::str(text.to_string()), &re)
+                }
+                _ => false,
+            },
+            None => false,
+        }
     }
 
     pub(crate) fn test_fn_unlike(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
@@ -205,10 +219,7 @@ impl Interpreter {
             Some(v) => self.stringify_value(v.clone())?,
             None => String::new(),
         };
-        let ok = match Self::positional_value(args, 1).map(Value::view) {
-            Some(ValueView::Regex(pat)) => !self.regex_is_match(&pat, &text),
-            _ => true,
-        };
+        let ok = !self.like_matches(args, &text);
         self.test_ok(ok, &desc, todo)?;
         Ok(Value::truth(ok))
     }

@@ -553,7 +553,7 @@ impl Interpreter {
             "say" => {
                 let mut content = String::new();
                 for arg in &args {
-                    content.push_str(&self.render_gist_value(arg));
+                    content.push_str(&self.render_gist_value(arg)?);
                 }
                 self.write_to_handle_value_trying(&target_val, &content, true, "say")?;
                 Ok(Value::TRUE)
