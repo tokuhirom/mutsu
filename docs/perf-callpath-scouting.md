@@ -6,7 +6,7 @@ the order they should be attempted. No design is committed here beyond what the
 data supports; every slice carries its own gate.
 
 The measurement discipline this document follows is
-[ADR-0006 §「実装スライスの計測プロトコル」](adr/0006-baseline-interpreter-optimizations.md)
+[ADR-0006 §"Measurement protocol for implementation slices"](adr/0006-baseline-interpreter-optimizations.md)
 (judge with `perf stat -e instructions:u` under `taskset -c <p-core>`; wall-clock
 and kernel-inclusive `instructions` swing 2–8% on this hybrid CPU and cannot
 decide a 3% change).

@@ -85,8 +85,9 @@ redispatch (and `nextsame`/`callsame`/`nextwith`) of a `multi method` runs throu
 interpreter's **`method_dispatch_stack`** machinery (`dispatch.rs` ~1631-1670,
 `builtins_dispatch_next.rs`), which tree-walks each candidate body via
 `run_instance_method`. This is **exactly the blocker PLAN.md §2-D already flagged**
-("nextsame+rw チェーン … method 経路 … 単一スライス不可・§C の env↔locals/VM-frame cell
-共有を redispatch 境界へ広げる substrate 作業（要設計）", PLAN.md:193-209). So 91% of
+("nextsame+rw chain … method path … not doable as a single slice; substrate work
+extending §C's env↔locals/VM-frame cell sharing to the redispatch boundary (needs
+design)", PLAN.md:193-209). So 91% of
 tree-walk *volume* is this one deep substrate; it is the **capstone**, not the first
 slice.
 
@@ -112,7 +113,7 @@ tractable categories first; they share the same structural lever.
 Slice 1 was implemented (route a resolved, compilable, non-multi user method at the
 tree-walk site `methods_instance_ops.rs:867` through `dispatch_compiled_method` instead
 of `run_instance_method`) and **reverted**. Findings (the real substrate, confirmed
-empirically — this is *why* PLAN said "要設計"):
+empirically — this is *why* PLAN said "needs design"):
 
 - **`dispatch_compiled_method` is NOT byte-identical to `run_instance_method` for a
   method that mutates outer state.** It commits the receiver's *attributes* and fetches

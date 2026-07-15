@@ -7,7 +7,7 @@
 > Kept because PLAN.md links here for the "what was tried" history.
 
 Tracking design for the highest-leverage VM-decoupling task
-(`ANALYSIS.md` §1.2, `PLAN.md` "🔴 最優先"). This is a high-blast-radius change,
+(`ANALYSIS.md` §1.2, `PLAN.md` "🔴 top priority"). This is a high-blast-radius change,
 so it is staged into small, individually-shippable slices. This file is the
 map; record each slice's before/after here.
 

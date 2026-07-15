@@ -48,7 +48,7 @@ because several variants share a pointee type (`Str`/`Regex` are both
 must reconstruct smart pointers by value. The flip therefore uses the **guard
 types** (`ArcRef<'a,T>`/`GcRef<'a,T>`: `ManuallyDrop` reconstructions that
 `Deref` without touching refcounts) that the wall kept as the documented exit
-(wall doc §2, ADR-0005 §2.1 "両出口"). Call sites are already deref-compatible
+(wall doc §2, ADR-0005 §2.1 "both exits kept open"). Call sites are already deref-compatible
 by the 3b-0 migration rule and `ValueView` is deliberately non-`Copy`, so this
 does not disturb the wall. The *rest* of the pointer-favored rationale stands:
 pointer deref pays one AND (vs. the Num-favored layout's win on `Num` only),

@@ -1,122 +1,122 @@
-# Captured-outer lexical cell 共有 — 実装プラン（Sub-slice 1b+ / env_dirty 削除への substrate）
+# Captured-outer lexical cell sharing — implementation plan (Sub-slice 1b+ / substrate for env_dirty removal)
 
-> **★★ 2026-06-22 達成: boxing 恒久 ON 化＝goal「env↔locals コンテナ cell 共有」をデフォルト挙動として実現。**
-> `blanket_reconcile_disabled()` / `precise_reconcile_disabled()` を恒久 `true` にフリップ（cell-boxing を唯一の
-> コヒーレンス機構に）。根拠＝double-OFF survey（roast whitelist 1285・proper harness）＋フル `make test`（`t/` 10135）が
-> 両方 0 失敗。残＝`env_dirty`/`reconcile_locals_from_env_at_site`/`ensure_locals_synced`/`saved_env_dirty` の物理削除
-> （344 uses・dead code 化済み＝挙動不変の機械的クリーンアップ）。詳細＝§10.26 / PLAN §1-A。
+> **★★ Achieved 2026-06-22: boxing permanently ON = the goal "env↔locals container cell sharing" realized as the default behavior.**
+> Flipped `blanket_reconcile_disabled()` / `precise_reconcile_disabled()` to permanent `true` (making cell-boxing the sole
+> coherence mechanism). Rationale = the double-OFF survey (roast whitelist 1285, proper harness) plus the full `make test` (`t/` 10135)
+> both show 0 failures. Remaining = physical removal of `env_dirty`/`reconcile_locals_from_env_at_site`/`ensure_locals_synced`/`saved_env_dirty`
+> (344 uses, already dead code = a behavior-preserving mechanical cleanup). Details = §10.26 / PLAN §1-A.
 >
-> **Status:** SLICE 1〜1.19 DONE（〜2026-06-21・第41〜47セッション）。§6 第1スライス（named-sub 捕捉
-> scalar decl-site cell 化）＋§7.1〜7.1l（metaop-thunk `Mu`／carrier single-frame／EVAL carrier multi-frame／
-> captured-outer container `@`/`%` cell 化／`X`-cross metaop thunk／nested-method capture／cross-thread shared-var／
-> object 添字代入 invocant slot／substr-rw・subbuf-rw／zip short-circuit／map LAST phaser／undefine() lvalue）
-> ＋slice 1.17（proto state-%cache）／1.18（caller-frame by-name write）／**1.19（param default self-scoping＝code.t 8）**
-> を実装。各 pin が **blanket reconcile ON/OFF 両方で PASS**。**OFF roast survey（authoritative・§7.2a）= 初回 13 → 残 1**。
-> **destruction.t 3 = slice 1.20（#3400）で解決済**（cross-thread writeback の retain-on-miss・§7.2c）。
-> **lazy-lists.t 24-26 = 2026-06-22 で解決済**（`.kv`/`.pairs`/`.antipairs` を lazy index-pipe 化＝
-> `MapGrepSpec.index_transform`・lazy ソースを eager force しない）。**∴ OFF roast survey の決定的サーフェスは
-> IO-Socket-Async.t の reactive 並行 flaky のみ（決定的 pin 不可）に枯渇。**
-> 次＝env_dirty 削除の最終段（§7.4・`blanket_reconcile_if_dirty` 空洞化）。
-> 関連: [docs/env-locals-coherence.md](env-locals-coherence.md)（§7.3 = env_dirty 削除の壁）/
-> [docs/container-identity.md](container-identity.md)（cell インフラ）/ PLAN.md §1-A・§2-C・§2-E。
+> **Status:** SLICE 1–1.19 DONE (through 2026-06-21, sessions 41–47). §6 first slice (cell-ification of named-sub-captured
+> scalars at the decl site) plus §7.1–7.1l (metaop-thunk `Mu` / carrier single-frame / EVAL carrier multi-frame /
+> captured-outer container `@`/`%` cell-ification / `X`-cross metaop thunk / nested-method capture / cross-thread shared-var /
+> object subscript-assignment invocant slot / substr-rw & subbuf-rw / zip short-circuit / map LAST phaser / undefine() lvalue)
+> plus slice 1.17 (proto state-%cache) / 1.18 (caller-frame by-name write) / **1.19 (param default self-scoping = code.t 8)**
+> implemented. Every pin **PASSES with blanket reconcile both ON and OFF**. **OFF roast survey (authoritative, §7.2a) = initially 13 → 1 remaining**.
+> **destruction.t 3 = resolved by slice 1.20 (#3400)** (retain-on-miss for cross-thread writeback, §7.2c).
+> **lazy-lists.t 24-26 = resolved on 2026-06-22** (`.kv`/`.pairs`/`.antipairs` made lazy index-pipes =
+> `MapGrepSpec.index_transform`; lazy sources are not eagerly forced). **∴ The deterministic surface of the OFF roast survey
+> has been exhausted down to only IO-Socket-Async.t's reactive concurrency flakiness (no deterministic pin possible).**
+> Next = the final stage of env_dirty removal (§7.4, hollowing out `blanket_reconcile_if_dirty`).
+> Related: [docs/env-locals-coherence.md](env-locals-coherence.md) (§7.3 = the wall for env_dirty removal) /
+> [docs/container-identity.md](container-identity.md) (cell infrastructure) / PLAN.md §1-A, §2-C, §2-E.
 >
-> **★設計判断（第41セッション）— boxing は blanket reconcile と相互排他・toggle gated**:
-> cell boxing と blanket reconcile は **どちらか一方のみ active**（`box_decl_local_cell` は
-> `cell_boxing_active()` = `MUTSU_NO_BLANKET_RECONCILE` 時のみ発火）。理由＝reconcile ON のまま boxing
-> すると、reconcile が一部 carrier（`lives-ok {…}` 等）で **落とす** captured-outer write を cell が
-> 正しく伝播 → その伝播が **無関係な潜在バグを露出**（例: `&foo = &foo` の self-ref 型チェック欠落＝
-> roast `S06-signature/code.t` test 8 が main では write-loss で偶然 PASS していた）。∴ デフォルト
-> （shipping/CI）は reconcile が coherence を担い main と byte-identical、toggle 時のみ boxing を
-> exercise（pin が named-sub accumulation surface を担保）。env_dirty 削除時に boxing を恒久 ON 化＋
-> 露出バグを順次修正する。`let`/`temp` の cell-aware restore（`exec_let_save_op` deref +
-> `restore_let_value` write-through）も同 toggle gated。
+> **★Design decision (session 41) — boxing is mutually exclusive with blanket reconcile, toggle gated**:
+> cell boxing and blanket reconcile are **only ever one active at a time** (`box_decl_local_cell` fires only when
+> `cell_boxing_active()` = `MUTSU_NO_BLANKET_RECONCILE`). Reason = if you box while reconcile stays ON,
+> the cell correctly propagates captured-outer writes that reconcile **drops** in some carriers (`lives-ok {…}` etc.)
+> → that propagation **exposes unrelated latent bugs** (e.g. the missing self-ref type check for `&foo = &foo` =
+> roast `S06-signature/code.t` test 8 was accidentally PASSing on main due to write-loss). ∴ By default
+> (shipping/CI) reconcile carries coherence and stays byte-identical with main; boxing is exercised only under the toggle
+> (the pins guarantee the named-sub accumulation surface). When env_dirty is removed, boxing is flipped permanently ON and
+> the exposed bugs are fixed one by one. The cell-aware restore for `let`/`temp` (`exec_let_save_op` deref +
+> `restore_let_value` write-through) is gated by the same toggle.
 >
-> **実装メモ（第41セッション）**: 検出＝compile-time。`CompiledCode.named_sub_captures:
-> Vec<(free_var_writes, needs_cell_named_sub_free)>` に直接子 named sub の **write 集合**のみ畳む
-> （`compile_sub_body` が cf 構築後 push）。`compute_free_vars` が own local への named-sub write を
-> `needs_cell_named_sub` に、非 own を `needs_cell_named_sub_free`（祖先へ bubble）に計上。**closure 駆動の
-> `needs_cell_locals` とは完全分離**＝closure は creation op で精密 box されるので、それを decl-site で
-> 流用すると無関係な同名 local（同名 `my` は同一 slot 共有）を over-box し `let`-restore 等を壊す
-> （当初これで roast `let.t` 4/9/12 回帰＝修正済）。ボックス化＝**decl-site**だが捕捉 scalar は
-> `needs_env_sync`（non-simple）のため `exec_set_local_op` の **fast/slow 両 inner path をラップする
-> 外側**で box（fast path 内だけだと non-simple var に効かない＝当初の誤り）。検証トグル＝
-> `MUTSU_NO_BLANKET_RECONCILE`、6 つの env_dirty-gated reconcile を `blanket_reconcile_if_dirty(code)` に
-> 集約（将来の env_dirty 削除を 1 メソッドの空洞化で行えるように）。教訓: ①top-level/bare-block の
-> `my` は env(SetGlobal)行き＝slot box 不可だが、捕捉は **block-scoped か sub-body** の local で起きる
-> ので問題なし。②local 名は **sigil なし**（"acc" 等）で `free_var_writes`/`locals` 一貫。
-> ③同名 `my` は `alloc_local` で **同一 slot 共有**＝by-name box は scope を跨ぐので write 集合で精密化必須。
+> **Implementation notes (session 41)**: detection = compile-time. `CompiledCode.named_sub_captures:
+> Vec<(free_var_writes, needs_cell_named_sub_free)>` folds in only the **write sets** of direct child named subs
+> (`compile_sub_body` pushes after building the cf). `compute_free_vars` records named-sub writes to an own local into
+> `needs_cell_named_sub`, and non-own ones into `needs_cell_named_sub_free` (bubbled to ancestors). **Completely separate
+> from the closure-driven `needs_cell_locals`** = closures are precisely boxed at their creation op, so reusing that at the
+> decl site would over-box unrelated same-named locals (same-named `my` shares the same slot) and break `let`-restore etc.
+> (this initially regressed roast `let.t` 4/9/12 = fixed). Boxing happens at the **decl site**, but a captured scalar is
+> `needs_env_sync` (non-simple), so box in the **outer wrapper around both the fast and slow inner paths** of
+> `exec_set_local_op` (boxing only inside the fast path misses non-simple vars = the initial mistake). Verification toggle =
+> `MUTSU_NO_BLANKET_RECONCILE`; the six env_dirty-gated reconciles were consolidated into `blanket_reconcile_if_dirty(code)`
+> (so the future env_dirty removal can be done by hollowing out a single method). Lessons: (1) top-level/bare-block
+> `my` goes to env (SetGlobal) = cannot be slot-boxed, but captures happen on **block-scoped or sub-body** locals,
+> so this is not a problem. (2) Local names are **sigil-less** ("acc" etc.) consistently across `free_var_writes`/`locals`.
+> (3) Same-named `my` **shares the same slot** via `alloc_local` = by-name boxing crosses scopes, so refinement via the write set is mandatory.
 
 ---
 
-## 0. TL;DR — 配管は全て揃っている。欠落は「検出＋ボックス化」だけ
+## 0. TL;DR — all the plumbing is in place. The only gap is "detection + boxing"
 
-`env_dirty` を削除するには env と locals が乖離しないことが必要。第40セッションの調査で、**それを実現する
-ランタイム配管は 100% 既存**と確定した。唯一の欠落は:
+Removing `env_dirty` requires that env and locals never diverge. The session-40 investigation established that **the
+runtime plumbing to achieve this is 100% already present**. The only gap is:
 
-> **nested callee（closure **だけでなく** named sub）に捕捉＋変異される lexical を、
-> owner の local slot と env エントリの両方で同一 `ContainerRef` cell にボックス化する**こと。
+> **Boxing a lexical that is captured-and-mutated by a nested callee (not just a closure but **also** a named sub)
+> into the same `ContainerRef` cell in both the owner's local slot and the env entry.**
 
-`:=` bind が既にこの「同一 Arc を slot + env + saved frames に置く」パターンを完全実装している（§3）ので、
-それを **`:=` の無い暗黙キャプチャにも適用する**のが本作業。
+The `:=` bind already fully implements this "place the same Arc into slot + env + saved frames" pattern (§3), so
+the work here is to **apply it to implicit captures without `:=`**.
 
 ---
 
-## 1. なぜこれが env_dirty 削除の本丸か（§7.3 の壁の正体）
+## 1. Why this is the crux of env_dirty removal (the true nature of the §7.3 wall)
 
-env_dirty の唯一残る load-bearing な役割は「multi-frame captured-outer accumulation」を支えること:
+The only remaining load-bearing role of env_dirty is supporting "multi-frame captured-outer accumulation":
 
 ```raku
 my $acc = 0;
-sub bump-outer() { $acc = $acc + 10 }   # $acc は free var・SetGlobal で env を名前書き
+sub bump-outer() { $acc = $acc + 10 }   # $acc is a free var; writes env by name via SetGlobal
 sub via()        { bump-outer() }
-via(); via();                            # raku=20・env_dirty 削除すると 10（accumulation 失敗）
+via(); via();                            # raku=20; removing env_dirty gives 10 (accumulation fails)
 ```
 
-**壁の機構（agent 調査で確定）**: named sub `bump-outer` は fresh compiler で別個にコンパイルされ
-（`src/compiler/helpers_sub_body.rs:100`）、`$acc` を **free var として `GetGlobal`/`SetGlobal` で env 名前引き**する。
-top-level の escape 解析（`src/opcode.rs:1576-1690` `compute_free_vars`）は **closure（`closure_compiled_codes`）しか
-見ず named sub を見ない**ので `$acc` を `needs_cell` に flag しない → `$acc` は cell 化されず、env writeback +
-（かつては reverse pull、今は）env_dirty-gated blanket reconcile に依存する。
+**Mechanism of the wall (confirmed by agent investigation)**: the named sub `bump-outer` is compiled separately with a fresh
+compiler (`src/compiler/helpers_sub_body.rs:100`) and accesses `$acc` **as a free var by name in env via `GetGlobal`/`SetGlobal`**.
+The top-level escape analysis (`src/opcode.rs:1576-1690` `compute_free_vars`) **only looks at closures (`closure_compiled_codes`)
+and not named subs**, so it does not flag `$acc` as `needs_cell` → `$acc` is not cell-ified and depends on env writeback +
+(previously reverse pull, now) the env_dirty-gated blanket reconcile.
 
-`$acc` が **共有 cell** なら、`bump-outer` の `SetGlobal("$acc")` は cell を通して書き込み（§2-Q1）、top の
-slot も同じ cell を読む（§2-Q2）→ **reconcile 不要**で multi-frame accumulation が成立 → env_dirty のこの役割が消える。
+If `$acc` were a **shared cell**, `bump-outer`'s `SetGlobal("$acc")` would write through the cell (§2-Q1) and the top-level
+slot would read the same cell (§2-Q2) → multi-frame accumulation works **without reconcile** → this role of env_dirty disappears.
 
 ---
 
-## 2. Make-or-break 配管（全て確認済 ✓）
+## 2. Make-or-break plumbing (all verified ✓)
 
-| # | 経路 | 挙動 | 場所 |
+| # | Path | Behavior | Location |
 |---|------|------|------|
-| Q1 | **`SetGlobal`** | env が `ContainerRef` のとき **cell を通して書込**（Arc 置換しない）`arc.lock().clone_from(&val)` | `src/vm.rs:1999-2005` |
-| Q2 | **`GetGlobal`** | `into_deref()` で cell の内側を読む（Arc 非 detach） | `src/vm.rs:1387` / `value/mod.rs:3070` |
-| Q3 | **`$x++`/`$x+=n`（RMW）** | cell を通して RMW（atomic 対応・Track C） | `src/vm/vm_var_assign_ops.rs:1889-1902` |
-| — | **`SetLocal`** | 既存 `ContainerRef` slot を **通して書込** `arc.lock().clone_from(&val)`（非 rebind 時） | `src/vm/vm_var_assign_ops.rs:5837-5852` |
-| — | **`GetLocal`** | `into_deref()` で cell を読む | `value/mod.rs` `into_deref` |
-| Q4 | **`flush_local_to_env`** | `locals[idx]` が `ContainerRef` なら同一 Arc を env へ伝播（`set_env_with_main_alias`） | `src/vm/vm_env_helpers.rs:587-603` |
+| Q1 | **`SetGlobal`** | When env holds a `ContainerRef`, **writes through the cell** (does not replace the Arc): `arc.lock().clone_from(&val)` | `src/vm.rs:1999-2005` |
+| Q2 | **`GetGlobal`** | Reads the inside of the cell via `into_deref()` (does not detach the Arc) | `src/vm.rs:1387` / `value/mod.rs:3070` |
+| Q3 | **`$x++`/`$x+=n` (RMW)** | RMW through the cell (atomic-capable, Track C) | `src/vm/vm_var_assign_ops.rs:1889-1902` |
+| — | **`SetLocal`** | Writes **through** an existing `ContainerRef` slot: `arc.lock().clone_from(&val)` (when not rebinding) | `src/vm/vm_var_assign_ops.rs:5837-5852` |
+| — | **`GetLocal`** | Reads the cell via `into_deref()` | `value/mod.rs` `into_deref` |
+| Q4 | **`flush_local_to_env`** | If `locals[idx]` is a `ContainerRef`, propagates the same Arc to env (`set_env_with_main_alias`) | `src/vm/vm_env_helpers.rs:587-603` |
 
-**∴ 読み書き両側（Local/Global）が cell を透過し、slot→env 伝播も Arc を保つ。配管に欠落なし。**
+**∴ Both the read and write sides (Local/Global) pass through the cell, and slot→env propagation preserves the Arc. No gaps in the plumbing.**
 
 ---
 
-## 3. 従うべき precedent — `:=` bind の cell 共有（既存・動作中）
+## 3. The precedent to follow — `:=` bind's cell sharing (existing, working)
 
-`:=` bind は **まさに目標の「同一 cell を slot+env+saved frames に配置」を実装済**。これをテンプレにする。
+The `:=` bind **already implements exactly the target "place the same cell into slot+env+saved frames"**. Use it as the template.
 
-### scalar `:=`（`my $a := $b`）— `src/vm/vm_var_assign_ops.rs:6633-6689
+### scalar `:=` (`my $a := $b`) — `src/vm/vm_var_assign_ops.rs:6633-6689
 
 ```rust
 let container = if let Value::ContainerRef(ref arc) = val {
-    Value::ContainerRef(arc.clone())          // 既に cell なら再利用（第3の alias が同 cell に join）
+    Value::ContainerRef(arc.clone())          // if already a cell, reuse it (a third alias joins the same cell)
 } else {
-    val.clone().into_container_ref()           // 値を新 cell に包む
+    val.clone().into_container_ref()           // wrap the value in a new cell
 };
 self.locals[idx] = container.clone();          // target slot
 if let Some(source_idx) = code.locals.iter().rposition(|n| n == &resolved_source) {
-    self.locals[source_idx] = container.clone(); // source slot も同 cell
+    self.locals[source_idx] = container.clone(); // source slot gets the same cell too
     self.flush_local_to_env(code, source_idx);
 }
 self.env_mut().insert(resolved_source.clone(), container.clone()); // source env
-for frame in self.call_frames.iter_mut().rev() {                   // ★saved frames へ伝播
+for frame in self.call_frames.iter_mut().rev() {                   // ★propagate to saved frames
     if frame.saved_env.contains_key(&resolved_source) { frame.saved_env.insert(...); }
     for (i, local_name) in code.locals.iter().enumerate() {
         if local_name == &resolved_source && i < frame.saved_locals.len() {
@@ -128,307 +128,330 @@ self.set_env_with_main_alias(name, container.clone());  // target env
 self.flush_local_to_env(code, idx);
 ```
 
-### container `:=`（`my @a := @b`）— `src/vm/vm_var_assign_ops.rs:6534-6612`（同型・Array/Hash 用）
+### container `:=` (`my @a := @b`) — `src/vm/vm_var_assign_ops.rs:6534-6612` (same shape, for Array/Hash)
 
-**重要な教訓（saved-frame 伝播）**: cell を slot+env に置くだけでなく **`call_frames` の `saved_env`/`saved_locals`
-にも同 Arc を伝播**しないと、メソッド return（env 復元）で cell が stale 値に巻き戻る。新規ボックス化でも必須。
-
----
-
-## 4. 現状の coverage と gap
-
-### 既存の cell 化（done）
-- `:=` bind scalar / array / hash（§3）= env↔locals 同一 cell・**完了**。
-- **escaping closure に捕捉＋変異される scalar local**: `box_captured_lexicals`（`src/vm/vm_register_ops.rs:302-395`）が
-  `needs_cell_locals`（escape 解析・`closure_escapes[i]==true`）の **scalar** を cell 化。
-
-### gap（env_dirty 削除に必要な未カバー）
-`box_captured_lexicals` の skip ロジック（vm_register_ops.rs:334-376）と escape 解析の限界:
-- **(a) named sub に捕捉される scalar**（`$acc` ケース）= **未カバー**。`box_captured_lexicals` は closure
-  （`MakeLambda`/`MakeBlockClosure`）でしか呼ばれず、named sub 登録（`RegisterSub`）では呼ばれない。
-  escape 解析も named sub を `closure_compiled_codes` に含めない。← **multi-frame の壁・最初のスライス**
-- **(b) 捕捉される container `@`/`%`**（closure / named sub 双方）= **未カバー**。box は `@`/`%`/`&` sigil を skip。
-- **(c) type/where 制約付き scalar** = **意図的に skip**（cell write-through が制約再チェックを迂回するため・維持）。
-- **(d) blanket reconcile を外して surface する他のケース**（scoped overlay / carrier 等）。
+**Key lesson (saved-frame propagation)**: it is not enough to place the cell into slot+env — you must **also propagate the
+same Arc into the `saved_env`/`saved_locals` of `call_frames`**, or a method return (env restore) rolls the cell back to a
+stale value. This is mandatory for new boxing as well.
 
 ---
 
-## 5. 検証法 — 「blanket reconcile を外して壊れるもの」が残サーフェス
+## 4. Current coverage and gaps
 
-`drain_and_reconcile_after_cached_call`（`src/vm/vm_env_helpers.rs`）の `if env_dirty { reconcile_locals_from_env_at_site }`
-を一時的に外し（＋他の env_dirty consumer 6 サイト）、`make test` + roast を回す。**壊れる各テスト = まだ cell 共有
-されていない captured-outer ケース**。これを 0 にしてから env_dirty を削除する。
+### Existing cell-ification (done)
+- `:=` bind scalar / array / hash (§3) = env↔locals same cell, **complete**.
+- **Scalar locals captured-and-mutated by escaping closures**: `box_captured_lexicals` (`src/vm/vm_register_ops.rs:302-395`)
+  cell-ifies the **scalars** in `needs_cell_locals` (escape analysis, `closure_escapes[i]==true`).
 
-> 第40セッションで実証済: 外すと `t/multi-frame-accumulation-coherence.t` の 4 subtest が壊れる（= (a) のケース）。
-> consumer サイト一覧: `drain_and_reconcile_after_cached_call`（vm_env_helpers.rs:651）・`vm_call_func_ops.rs:605`・
-> `vm_call_method_ops.rs:1253`・`vm_call_method_mut_ops.rs:1549`・`vm_closure_dispatch.rs:745`・`vm_helpers.rs:662`。
-
----
-
-## 6. ★第1スライス（推奨）— named-sub 捕捉 scalar の cell 化（`$acc` ケース）
-
-env_dirty 削除に向けた最初の検証可能な一手。multi-frame の壁を直接攻める。
-
-### 6.1 検出（detection）— 2案
-
-**案A（compile-time・推奨）**: `compute_free_vars`（opcode.rs:1576-1690）を拡張し、**同スコープで宣言された
-named sub の `free_var_syms`/`free_var_writes` を、closure と同様に enclosing scope の capture 解析へ畳む**。
-これで `$acc` が `needs_cell_locals` に乗る。
-- 利点: 既存の `box_captured_lexicals` 機構に自然に乗る（escape 解析の一貫拡張）。
-- 要調査: top-level の `compute_free_vars` 実行時点で named sub の `CompiledCode`（free_var_writes 済）に
-  アクセスできるか。named sub は `sub` 宣言文のコンパイル時に compile される（`helpers_sub_body.rs`）ので、
-  enclosing body のコンパイル中に既に存在するはず。配線箇所を特定する。
-
-**案B（runtime・代替）**: `RegisterSub` op 実行時に、登録する sub の `free_var_writes` を走査し、登録フレームの
-local slot に一致する名前を §3 パターンで cell 化。
-- 利点: 配線が局所的。
-- 欠点: ordering（forward-declared/hoisted sub は `$acc=0` の前に登録され得る）。ただし slot は Nil で既存なので
-  Nil cell を box → 後続 `$acc=0`（SetLocal）が cell を通して書く（vm_var_assign_ops.rs:5837 で確認済）ので可。
-
-→ **まず案A を調査し、配線可能なら採用。困難なら案B。**
-
-### 6.2 ボックス化（boxing）
-検出した lexical を §3 の scalar `:=` パターンで cell 化（同一 Arc を slot + env + **saved frames** へ）。
-`box_captured_lexicals` を named-sub 捕捉でも呼ぶか、decl サイト（`$acc` の SetLocal で `needs_cell` 時）で box する。
-
-### 6.3 ガード（perf 崖回避・既存ルール踏襲）
-- **捕捉 AND 変異**のみ（`free_var_writes` に含まれる＝書かれる free var のみ）。読むだけは box しない。
-- **scalar のみ**（第1スライス）。container `@`/`%` は別スライス（§7）。
-- **type/where 制約付きは skip**（既存ルール・vm_register_ops.rs:349-352）。
-- escape-aware。`fib`/`method-call` は captured-mutated lexical を持たないので無影響（要 timed 確認・#2746 教訓）。
-
-### 6.4 検証
-1. 第1スライス後、`drain_and_reconcile_after_cached_call` の blanket reconcile を一時的に外して
-   `t/multi-frame-accumulation-coherence.t` が **通る**ことを確認（= (a) が cell 共有で解けた証拠）。
-2. blanket を戻して byte-identical（make test 988/9634 維持）。
-3. pin = `t/captured-outer-cell-sharing.t`（multi-frame scalar accumulation・nested named sub・再帰・
-   ON/OFF reconcile 同値）。
+### Gaps (uncovered cases needed for env_dirty removal)
+Limits of the skip logic in `box_captured_lexicals` (vm_register_ops.rs:334-376) and of the escape analysis:
+- **(a) Scalars captured by named subs** (the `$acc` case) = **uncovered**. `box_captured_lexicals` is only called for closures
+  (`MakeLambda`/`MakeBlockClosure`), not for named-sub registration (`RegisterSub`).
+  The escape analysis also does not include named subs in `closure_compiled_codes`. ← **the multi-frame wall, the first slice**
+- **(b) Captured containers `@`/`%`** (both closure / named sub) = **uncovered**. Boxing skips the `@`/`%`/`&` sigils.
+- **(c) Scalars with type/where constraints** = **intentionally skipped** (cell write-through would bypass constraint re-checks; kept).
+- **(d) Other cases surfaced by removing blanket reconcile** (scoped overlay / carriers etc.).
 
 ---
 
-## 7. 後続スライス（env_dirty 削除まで）
+## 5. Verification method — "what breaks when blanket reconcile is removed" is the remaining surface
 
-### 7.0 ★残サーフェス地図（slice 1 後・2026-06-21 計測）
+Temporarily remove the `if env_dirty { reconcile_locals_from_env_at_site }` in `drain_and_reconcile_after_cached_call`
+(`src/vm/vm_env_helpers.rs`) (plus the 6 other env_dirty consumer sites) and run `make test` + roast. **Each broken test =
+a captured-outer case not yet cell-shared**. Drive these to 0, then remove env_dirty.
 
-slice 1 マージ後に `MUTSU_NO_BLANKET_RECONCILE=1 prove -e target/debug/mutsu t/` で計測した、
-**まだ blanket reconcile に依存する（= cell 共有未到達の）23 file**。全て **default build では PASS**（reconcile
-が担う）。container `@`/`%` は Arc 共有で既に成立済（survey に container 単独 test なし）。slice 1 の named-sub
-scalar accumulation は boxing で解決済（pin 2 本が toggle 下 PASS）ので地図に出ない。
+> Demonstrated in session 40: removing it breaks 4 subtests of `t/multi-frame-accumulation-coherence.t` (= case (a)).
+> Consumer site list: `drain_and_reconcile_after_cached_call` (vm_env_helpers.rs:651), `vm_call_func_ops.rs:605`,
+> `vm_call_method_ops.rs:1253`, `vm_call_method_mut_ops.rs:1549`, `vm_closure_dispatch.rs:745`, `vm_helpers.rs:662`.
 
-| クラスタ | files | 性質・着手難度 |
+---
+
+## 6. ★First slice (recommended) — cell-ification of named-sub-captured scalars (the `$acc` case)
+
+The first verifiable step toward env_dirty removal. Attacks the multi-frame wall directly.
+
+### 6.1 Detection — 2 options
+
+**Option A (compile-time, recommended)**: extend `compute_free_vars` (opcode.rs:1576-1690) so that **the
+`free_var_syms`/`free_var_writes` of named subs declared in the same scope are folded into the enclosing scope's capture
+analysis, just like closures**. This puts `$acc` into `needs_cell_locals`.
+- Advantage: rides naturally on the existing `box_captured_lexicals` machinery (a consistent extension of the escape analysis).
+- To investigate: whether the named sub's `CompiledCode` (with free_var_writes already computed) is accessible at the point
+  the top-level `compute_free_vars` runs. Named subs are compiled when the `sub` declaration statement is compiled
+  (`helpers_sub_body.rs`), so it should already exist while the enclosing body is being compiled. Identify the wiring point.
+
+**Option B (runtime, alternative)**: when the `RegisterSub` op executes, scan the registered sub's `free_var_writes` and
+cell-ify names matching local slots of the registering frame using the §3 pattern.
+- Advantage: the wiring is local.
+- Drawback: ordering (a forward-declared/hoisted sub may be registered before `$acc=0`). However the slot already exists as Nil,
+  so box a Nil cell → the subsequent `$acc=0` (SetLocal) writes through the cell (verified at vm_var_assign_ops.rs:5837), so it works.
+
+→ **Investigate Option A first; adopt it if the wiring is feasible. Fall back to Option B if difficult.**
+
+### 6.2 Boxing
+Cell-ify the detected lexical using the §3 scalar `:=` pattern (same Arc into slot + env + **saved frames**).
+Either call `box_captured_lexicals` for named-sub captures too, or box at the decl site (on `$acc`'s SetLocal when `needs_cell`).
+
+### 6.3 Guards (avoiding the perf cliff, following existing rules)
+- **Captured AND mutated** only (only free vars included in `free_var_writes` = actually written). Do not box read-only captures.
+- **Scalars only** (first slice). Containers `@`/`%` are a separate slice (§7).
+- **Skip type/where-constrained** (existing rule, vm_register_ops.rs:349-352).
+- Escape-aware. `fib`/`method-call` have no captured-mutated lexicals so they are unaffected (needs timed confirmation, #2746 lesson).
+
+### 6.4 Verification
+1. After the first slice, temporarily remove the blanket reconcile in `drain_and_reconcile_after_cached_call` and confirm
+   `t/multi-frame-accumulation-coherence.t` **passes** (= evidence that (a) is solved by cell sharing).
+2. Restore the blanket and confirm byte-identical behavior (make test 988/9634 maintained).
+3. pin = `t/captured-outer-cell-sharing.t` (multi-frame scalar accumulation, nested named subs, recursion,
+   ON/OFF reconcile equivalence).
+
+---
+
+## 7. Follow-up slices (up to env_dirty removal)
+
+### 7.0 ★Remaining-surface map (after slice 1, measured 2026-06-21)
+
+Measured after the slice-1 merge with `MUTSU_NO_BLANKET_RECONCILE=1 prove -e target/debug/mutsu t/`:
+**23 files still depending on blanket reconcile (= not yet reached by cell sharing)**. All of them **PASS in the default build**
+(reconcile carries them). Containers `@`/`%` already work via Arc sharing (no container-only test in the survey). Slice 1's
+named-sub scalar accumulation is solved by boxing (the 2 pins PASS under the toggle) so it does not appear on the map.
+
+| Cluster | files | Nature / difficulty of attack |
 |---|---|---|
-| **並行(~13)** | `supply-{act,close-phaser,elems,multi-whenever-done,quit-handler,sync-infinite-emit,syntax-basic}`・`whenever-{last,quit}-phaser`・`promise-combinator`・`proc-async`(4)・`scheduler-cue-times`・`concurrency-basic` | cross-thread cell 共有の壁。`Arc<Mutex>` cell と `shared_vars`/`clone_for_thread` 整合（§8）。**最難・後回し**。 |
-| **carrier(~5)** | `metaop-thunk-captured-outer`(4)・`subst-closure-writeback`(3)・`eval-carrier-precise`(2)・`lazy-reify-captured-outer`(2)・`require-expression`(1) | 捕捉 outer write を carrier 経由で運ぶが multi-frame で cell 未共有。 |
-| **attr/method(~3)** | `attribute-trait-mod`(5・単一最大)・`methods-instance-regressions`(1)・`cross-metaops-regressions`(1) | method dispatch 経由の捕捉。 |
-| **misc** | `gather-lazy`(2)・`env-dirty-reconcile-coherence`(1=reconcile 自体の test) | |
+| **Concurrency (~13)** | `supply-{act,close-phaser,elems,multi-whenever-done,quit-handler,sync-infinite-emit,syntax-basic}`, `whenever-{last,quit}-phaser`, `promise-combinator`, `proc-async`(4), `scheduler-cue-times`, `concurrency-basic` | The cross-thread cell-sharing wall. Consistency of the `Arc<Mutex>` cell with `shared_vars`/`clone_for_thread` (§8). **Hardest, defer**. |
+| **Carrier (~5)** | `metaop-thunk-captured-outer`(4), `subst-closure-writeback`(3), `eval-carrier-precise`(2), `lazy-reify-captured-outer`(2), `require-expression`(1) | Captured outer writes are carried via a carrier but the cell is not shared multi-frame. |
+| **attr/method (~3)** | `attribute-trait-mod`(5, single largest), `methods-instance-regressions`(1), `cross-metaops-regressions`(1) | Captures via method dispatch. |
+| **misc** | `gather-lazy`(2), `env-dirty-reconcile-coherence`(1 = the test of reconcile itself) | |
 
-> 地図は `tmp/blanket-reconcile-surface.txt`（揮発）にも出力。再計測コマンドは上記。
+> The map is also output to `tmp/blanket-reconcile-surface.txt` (volatile). Re-measure command is above.
 
-### 7.1 ✅ スライス1.5（DONE・第42セッション）= `metaop-thunk` の typed-scalar（`Mu` universal 緩和）
+### 7.1 ✅ Slice 1.5 (DONE, session 42) = `metaop-thunk` typed scalars (`Mu` universal relaxation)
 
-`metaop-thunk-captured-outer`(4 fail) は `my Mu $s; 1 Zand ($s++,)` 系＝**thunk（closure）に捕捉される
-typed scalar**。untyped `my $s` は toggle 下 PASS（`box_captured_lexicals` が box）だが、`Mu` 制約付きは
-§6.3/§8 の「type/where 制約 skip」で box されず fail。**`Mu` は universal type（全値マッチ）なので write-through が
-制約再チェックを迂回しても無害**＝`box_captured_lexicals`（vm_register_ops.rs:343-353）の type-skip を
-`tc != "Mu"` のときのみ発火するよう緩和。subtest 4/6/8/9（`Zand`/`Zor`/`Z&&`/`Z||` with `my Mu $s`）が
-toggle 下でも PASS に。pin=`t/metaop-thunk-captured-outer-coherence.t`（12・ON/OFF 両 PASS）。make test 9656 /
-make roast 1285 回帰なし。**注意**: `Any` は Junction を弾くので universal でない＝緩和は `Mu` のみ。closure 駆動
-なので `box_captured_lexicals` 側の緩和のみで足り、`box_decl_local_cell`（named-sub path）は今回不要だった。
+`metaop-thunk-captured-outer` (4 fail) is the `my Mu $s; 1 Zand ($s++,)` family = **typed scalars captured by a thunk
+(closure)**. Untyped `my $s` PASSES under the toggle (`box_captured_lexicals` boxes it), but the `Mu`-constrained one is not
+boxed due to the §6.3/§8 "skip type/where constraints" rule and fails. **`Mu` is the universal type (matches all values), so
+write-through bypassing the constraint re-check is harmless** = relax the type-skip in `box_captured_lexicals`
+(vm_register_ops.rs:343-353) to only fire when `tc != "Mu"`. Subtests 4/6/8/9 (`Zand`/`Zor`/`Z&&`/`Z||` with `my Mu $s`)
+now PASS under the toggle as well. pin=`t/metaop-thunk-captured-outer-coherence.t` (12, PASSES both ON/OFF). make test 9656 /
+make roast 1285, no regressions. **Note**: `Any` rejects Junction so it is not universal = the relaxation is `Mu` only. This is
+closure-driven, so relaxing only the `box_captured_lexicals` side sufficed; `box_decl_local_cell` (the named-sub path) was not needed here.
 
-### 7.1b ✅ スライス1.6（DONE・第42セッション）= carrier cluster の single-frame 部（lazy map / gather / subst）
+### 7.1b ✅ Slice 1.6 (DONE, session 42) = the single-frame part of the carrier cluster (lazy map / gather / subst)
 
-carrier cluster のうち **single-frame**（書く callee が caller と同一フレーム or 直接呼ばれた callee）の3機構を
-precise writeback 化（`pending_rw_writeback_sources` に積み、既存の call-site/force-site drain が処理）＝blanket
-reconcile 非依存に。**この3つは cell 化ではなく precise-writeback で解けた**（map/grep が既に使う #3335/#3307 の機構を
-横展開）:
+Made the 3 **single-frame** mechanisms of the carrier cluster (where the writing callee is in the same frame as the caller
+or is a directly-invoked callee) precise-writeback (pushed to `pending_rw_writeback_sources`; the existing call-site/force-site
+drain handles them) = independent of blanket reconcile. **These three were solved by precise-writeback, not cell-ification**
+(a lateral rollout of the #3335/#3307 machinery that map/grep already use):
 
-- **lazy map（`@a.map({$c++}).eager`）**: `try_native_array_map` の `classify_body` が `$c++`/`$c--`（topic 以外の
-  **plain named** scalar inc/dec）を過剰に escape（`None`）扱いし slow path へ落とし、slow path は captured write を
-  記録しなかった。`Expr::Var(_) => Some(false)`（topic を変異しないので simple）に緩和＝native loop が処理し
-  `$c=$c+1` 同様に free-var write を記録（vm_native_map.rs:303）。indexed `@a[$i]++`/attr `$o.x++` は引き続き fall back。
-- **gather（`gather { ...; $c++; take $_ }`）**: forcing 時の `reconcile_caller_after_lazy_force` が gather body を
-  `blanket_reconcile_if_dirty`（OFF 無効）でしか reconcile していなかった。両 force inner（`force_lazy_list_vm_inner` /
-  `_n_inner`）の env-merge 直後に gather body の `free_var_writes` を `record_eager_block_free_var_writeback` で記録
-  （vm_helpers.rs）＝force-site の既存 `apply_pending_rw_writeback` が precise drain。
-- **subst（`.subst(/../, { $n++ })`）**: `eval_subst_replacement_cased` は捕捉 lexical write を env へ伝播するが
-  pending に積まず blanket 依存だった。伝播箇所で名前を `pending_rw_writeback_sources` に push（methods_string.rs）＝
-  `.subst` call-site が drain。
+- **lazy map (`@a.map({$c++}).eager`)**: `try_native_array_map`'s `classify_body` over-eagerly treated `$c++`/`$c--`
+  (inc/dec of a **plain named** scalar other than the topic) as escaping (`None`) and fell to the slow path, and the slow
+  path did not record captured writes. Relaxed to `Expr::Var(_) => Some(false)` (does not mutate the topic, so simple) =
+  the native loop handles it and records the free-var write like `$c=$c+1` (vm_native_map.rs:303). Indexed `@a[$i]++`/attr
+  `$o.x++` continue to fall back.
+- **gather (`gather { ...; $c++; take $_ }`)**: at forcing time `reconcile_caller_after_lazy_force` only reconciled the
+  gather body via `blanket_reconcile_if_dirty` (disabled when OFF). Right after the env-merge in both force inners
+  (`force_lazy_list_vm_inner` / `_n_inner`), record the gather body's `free_var_writes` via
+  `record_eager_block_free_var_writeback` (vm_helpers.rs) = the force-site's existing `apply_pending_rw_writeback` drains precisely.
+- **subst (`.subst(/../, { $n++ })`)**: `eval_subst_replacement_cased` propagates captured lexical writes to env but did not
+  push to pending, relying on blanket. Push the name to `pending_rw_writeback_sources` at the propagation point
+  (methods_string.rs) = the `.subst` call-site drains.
 
-pin（既存）=`t/{lazy-reify-captured-outer,gather-lazy,subst-closure-writeback}.t`（ON/OFF 両 PASS）。make test 9672 /
-make roast 1285 回帰なし。
+pins (existing) = `t/{lazy-reify-captured-outer,gather-lazy,subst-closure-writeback}.t` (PASS both ON/OFF). make test 9672 /
+make roast 1285, no regressions.
 
-### 7.1c ✅ スライス1.7（DONE・第42セッション）= EVAL carrier の multi-frame cell 共有
+### 7.1c ✅ Slice 1.7 (DONE, session 42) = multi-frame cell sharing for the EVAL carrier
 
-carrier cluster の **multi-frame** 部（`eval-carrier-precise` subtest 3/5・`require-expression` subtest 3）＝
-**descendant frame から ancestor lexical を書く EVAL carrier**（`sub set_x(){ EVAL '$x = 5' }; set_x()`）。
-EVAL 文字列内の write は **静的 `free_var_writes` 解析が見えず**、owner の decl-site で cell 化できない。precise
-single-frame writeback も**不可**＝値が callee の env restore で失われ、drain は restore 後の stale env を読む（実証済）。
-∴ **EVAL 実行時に cross-frame cell 化**: `box_carrier_free_var_writes`（vm_env_helpers.rs）が EVAL'd code の
-`free_var_writes` の captured-outer scalar を、live `env` + 全 `call_frames.saved_env` で同一 `ContainerRef` cell 化
-→ EVAL の by-name write が cell を通り、owner frame の env restore 後も cell が 5 を保持。**ガード**:
-①`cell_boxing_active()` gated（default は no-op・byte-identical）②`__mutsu_in_eval` 限定（supply/whenever/gather body も
-eval_block_value 経由だが Track C 並行 cell が別管理＝触れない）③sigilless alias（`__mutsu_sigilless_alias::x`）は
-skip（`\x`→`$a` の alias chain を cell が detach するため）④type/where 制約 skip（`Mu` 除く）。
-呼び出し＝`eval_block_value`（resolution.rs・compile 後・run 前）。pin（既存）=`t/{eval-carrier-precise-writeback,
-require-expression}.t`（ON/OFF 両 PASS）。make test 9679 / make roast 1285 回帰なし。OFF survey 20→18。
-**注意**: 当初 `__mutsu_in_eval` 無し（broad）版は supply/whenever 14 file を OFF-clean 化したが
-`concurrent-cell-writeback` subtest4 / `sigilless-params` subtest3 を**回帰**＝並行 cell 機構との衝突。EVAL 限定で解消。
+The **multi-frame** part of the carrier cluster (`eval-carrier-precise` subtests 3/5, `require-expression` subtest 3) =
+**an EVAL carrier writing an ancestor lexical from a descendant frame** (`sub set_x(){ EVAL '$x = 5' }; set_x()`).
+Writes inside the EVAL string are **invisible to static `free_var_writes` analysis**, so they cannot be cell-ified at the
+owner's decl site. Precise single-frame writeback is also **impossible** = the value is lost on the callee's env restore, and
+the drain reads the stale post-restore env (demonstrated). ∴ **Cross-frame cell-ification at EVAL execution time**:
+`box_carrier_free_var_writes` (vm_env_helpers.rs) cell-ifies the captured-outer scalars in the EVAL'd code's
+`free_var_writes` into the same `ContainerRef` cell across the live `env` + all `call_frames.saved_env`
+→ the EVAL's by-name write goes through the cell, and the cell retains 5 even after the owner frame's env restore. **Guards**:
+(1) gated by `cell_boxing_active()` (default is a no-op, byte-identical); (2) limited to `__mutsu_in_eval`
+(supply/whenever/gather bodies also go via eval_block_value, but Track C concurrency cells are managed separately = don't touch);
+(3) sigilless aliases (`__mutsu_sigilless_alias::x`) are skipped (a cell would detach the `\x`→`$a` alias chain);
+(4) skip type/where constraints (except `Mu`).
+Call site = `eval_block_value` (resolution.rs, after compile, before run). pins (existing) = `t/{eval-carrier-precise-writeback,
+require-expression}.t` (PASS both ON/OFF). make test 9679 / make roast 1285, no regressions. OFF survey 20→18.
+**Note**: the initial version without `__mutsu_in_eval` (broad) made 14 supply/whenever files OFF-clean but **regressed**
+`concurrent-cell-writeback` subtest 4 / `sigilless-params` subtest 3 = a collision with the concurrency cell machinery. Restricting to EVAL resolved it.
 
-### 7.1d ✅ スライス1.8（DONE・第43セッション）= captured-outer container `@`/`%` cell 化（`attribute-trait-mod` 5 fail）
+### 7.1d ✅ Slice 1.8 (DONE, session 43) = captured-outer container `@`/`%` cell-ification (`attribute-trait-mod` 5 fail)
 
-`attribute-trait-mod`（OFF 5 fail・単一最大）の真因＝**captured-outer container の COW detach + slot-restore clobber**。`my @noted-names` を
-ユーザ `trait_mod:<is>` が class composition 中に `push` するが、①class registration の `saved_env = self.env.clone()` が
-配列 Arc の refcount を上げ、push の `Arc::make_mut` が COW で detach（env=新 Arc B(3)、slot=旧 Arc A(0)）。②その後の
-`$obj ~~ Type` smartmatch が **env を local slot から復元**するため、stale な slot A(0) が env を 0 に巻き戻す（blanket
-reconcile ON なら smartmatch 前に slot を env から pull するので顕在化しない）。∴ `@noted-names` を **whole-container cell**
-にして slot==env を保てば、push が cell を通り、`saved_env.clone()` は cell（`Arc<Mutex>`）を共有し COW しない、smartmatch の
-slot-restore も同一 cell を保つ。
+The true cause of `attribute-trait-mod` (OFF 5 fail, single largest) = **COW detach of a captured-outer container + slot-restore clobber**. A user
+`trait_mod:<is>` `push`es `my @noted-names` during class composition, but (1) class registration's `saved_env = self.env.clone()`
+raises the array Arc's refcount, and the push's `Arc::make_mut` COW-detaches (env = new Arc B(3), slot = old Arc A(0)). (2) The
+subsequent `$obj ~~ Type` smartmatch **restores env from the local slot**, so the stale slot A(0) rolls env back to 0 (with blanket
+reconcile ON this never manifests because the slot is pulled from env before the smartmatch). ∴ Make `@noted-names` a **whole-container cell**
+so slot==env is preserved: the push goes through the cell, `saved_env.clone()` shares the cell (`Arc<Mutex>`) and does not COW,
+and the smartmatch's slot-restore keeps the same cell.
 
-- **検出（compile-time）**: container の in-place mutation（`push`/`append`/element-assign）は `SetGlobal` name-write では
-  **ない**ので `free_var_writes` に乗らない。新フィールド `CompiledCode.free_var_container_writes`（`op_container_mutate_const_idx`
-  が `CallMethodMut`＋mutating method 名／`IndexAssign*Named`／`ArrayPush` から `@`/`%` non-own 名を抽出）に分離計上し、
-  `compile_sub_body` が named sub の `free_var_writes ∪ free_var_container_writes` を `named_sub_captures` に push →
-  既存の fold が `needs_cell_named_sub` に乗せる。**`free_var_writes` 本体は不変＝default-build の precise-writeback drain に
-  無影響。**
-- **boxing**: `box_decl_local_cell` の `@`/`%` skip を解き `box_decl_local_container_cell`（Array/Hash を `ContainerRef` cell に
-  包み slot+env に配置・typed container は skip）へ dispatch。write-back（`try_native_array_mut`/`try_native_hash_mut_bound`/
-  `env_root_descended_mut`）と read（`GetArrayVar`/`GetHashVar` の `into_deref`）は `:=` bound container 用に既に cell 対応済。
-- **★broad boxing は不可（decont 漏れ）**: spike で「全 `@`/`%` decl を box」したところ aliased-container-mutation /
-  constant-hash-element-ro / hash-push-seq-of-pairs / quanthash-hyper-funcop など ~12 file が OFF 回帰（cell が slice/`.kv`/
-  raw-items 読みで漏れる）。∴ **precise 検出（named-sub captured-and-mutated container のみ）が必須**。precise 版は decont 漏れ 0。
-- pin=`t/captured-outer-container-cell-sharing.t`（9・trait_mod push/hash-elem・named-sub accumulation・ON/OFF 両 PASS）。
-  OFF survey 17 file（attribute-trait-mod の 5 fail 解消）。
+- **Detection (compile-time)**: in-place mutation of a container (`push`/`append`/element-assign) is **not** a `SetGlobal`
+  name-write, so it does not appear in `free_var_writes`. Accounted separately in a new field `CompiledCode.free_var_container_writes`
+  (`op_container_mutate_const_idx` extracts `@`/`%` non-own names from `CallMethodMut` + mutating method names /
+  `IndexAssign*Named` / `ArrayPush`), and `compile_sub_body` pushes the named sub's `free_var_writes ∪ free_var_container_writes`
+  into `named_sub_captures` → the existing fold puts it into `needs_cell_named_sub`. **`free_var_writes` itself is unchanged =
+  no impact on the default build's precise-writeback drain.**
+- **Boxing**: lift the `@`/`%` skip in `box_decl_local_cell` and dispatch to `box_decl_local_container_cell` (wraps Array/Hash
+  in a `ContainerRef` cell and places it in slot+env; typed containers are skipped). Write-back (`try_native_array_mut`/`try_native_hash_mut_bound`/
+  `env_root_descended_mut`) and read (`into_deref` in `GetArrayVar`/`GetHashVar`) are already cell-aware for `:=`-bound containers.
+- **★Broad boxing is not viable (decont leaks)**: a spike that boxed "all `@`/`%` decls" regressed ~12 files OFF
+  (aliased-container-mutation / constant-hash-element-ro / hash-push-seq-of-pairs / quanthash-hyper-funcop etc.; the cell leaks
+  through slice/`.kv`/raw-items reads). ∴ **Precise detection (only named-sub captured-and-mutated containers) is mandatory**. The precise version has 0 decont leaks.
+- pin=`t/captured-outer-container-cell-sharing.t` (9; trait_mod push/hash-elem, named-sub accumulation, PASSES both ON/OFF).
+  OFF survey 17 files (the 5 attribute-trait-mod fails resolved).
 
-### 7.1e ✅ スライス1.9（DONE・第43セッション）= `X`-cross metaop thunk の captured-outer scalar write（`cross-metaops` subtest 2）
+### 7.1e ✅ Slice 1.9 (DONE, session 43) = captured-outer scalar write in `X`-cross metaop thunks (`cross-metaops` subtest 2)
 
-`Nil Xorelse ($t = $_,)`（`X` cross meta over short-circuit op）は右辺を `__mutsu_cross_shortcircuit("orelse", Nil,
-AnonSub{$t=$_})` の **immediately-invoked thunk** にコンパイルする。call arg として渡される closure は escape 解析が
-non-escaping 扱い→`box_captured_lexicals` が box しない→thunk の captured-outer write（`$t`）が OFF で caller slot に
-届かない。**cell 化でなく precise-writeback で解決**（slice 1.6 の lazy-map/gather/subst と同型）: `builtin_cross_shortcircuit`
-が thunk 実行後（`thunk_ran` 時のみ）に thunk の `compiled_code.free_var_writes` を `record_eager_block_free_var_writeback`
-で `pending_rw_writeback_sources` に積む→`__mutsu_cross_shortcircuit` の call-site が既存 `apply_pending_rw_writeback` で
-drain。**非gated（ON/OFF 両対応・reconcile と idempotent）**。pin=`t/cross-metaop-thunk-captured-writeback-coherence.t`
-（6・Xorelse/Xandthen/Xor・ON/OFF 両 PASS）。make test 回帰なし。OFF survey 17→16。
-**注意（範囲外の別バグ）**: ①`(1,2,3) Xandthen (...)` の list 反復 count（raku=3・mutsu=2）は cross_shortcircuit ループの
-別バグ（ON でも fail・captured-write 無関係）。②`$x + 1`（`$x=11` 後）が 2 を返すパーサ quirk も別件。両方とも本スライス対象外。
+`Nil Xorelse ($t = $_,)` (`X` cross meta over a short-circuit op) compiles the RHS into an **immediately-invoked thunk**
+`__mutsu_cross_shortcircuit("orelse", Nil, AnonSub{$t=$_})`. A closure passed as a call arg is treated as non-escaping by
+the escape analysis → `box_captured_lexicals` does not box it → the thunk's captured-outer write (`$t`) does not reach the
+caller slot when OFF. **Solved by precise-writeback, not cell-ification** (same shape as slice 1.6's lazy-map/gather/subst):
+`builtin_cross_shortcircuit` pushes the thunk's `compiled_code.free_var_writes` onto `pending_rw_writeback_sources` via
+`record_eager_block_free_var_writeback` after thunk execution (only when `thunk_ran`) → the call-site of
+`__mutsu_cross_shortcircuit` drains with the existing `apply_pending_rw_writeback`.
+**Ungated (works both ON/OFF, idempotent with reconcile)**. pin=`t/cross-metaop-thunk-captured-writeback-coherence.t`
+(6; Xorelse/Xandthen/Xor; PASSES both ON/OFF). make test, no regressions. OFF survey 17→16.
+**Note (separate out-of-scope bugs)**: (1) the list-iteration count of `(1,2,3) Xandthen (...)` (raku=3, mutsu=2) is a separate
+bug in the cross_shortcircuit loop (fails even ON, unrelated to captured writes). (2) The parser quirk where `$x + 1` (after
+`$x=11`) returns 2 is also a separate issue. Both are out of scope for this slice.
 
-### 7.1f ✅ スライス1.10（DONE・第44セッション）= nested-method capture（`methods-instance` subtest 3）
+### 7.1f ✅ Slice 1.10 (DONE, session 44) = nested-method capture (`methods-instance` subtest 3)
 
-`method foo { my $a = 42; method bar { $tracker = $a } }` の **method body 内で宣言された method** `bar` を
-`.foo` 後に `.bar` で呼ぶケース。`bar` の captured-outer write（`$tracker`）が OFF で caller slot に届かず stale。
-**真因＝dispatch path**: nested-declared method は foo 実行時に RegisterSub で **captured env 付き `&bar` sub** として登録され、
-`$d.bar` は compiled method merge path（`call_compiled_method` / `merge_method_env`）でも closure dispatch
-（`call_compiled_closure_with_topic`）でもなく、slow path `call_method_with_values` → **`call_sub_value(merge_all=true)`**
-（tree-walk）を通る。`call_sub_value` は captured-outer scalar write を `merged`（caller env）へ正しくマージするが、
-**caller の local slot を refresh しない**＝blanket reconcile ON 時のみ slot が env から pull される。
-（class-level method の `$Foo++` は compiled path = #3322 の `merge_method_env` `changed_caller_locals` 記録で OFF も成立済。
-gap は nested-declared method の interpreter dispatch path だけ）。
+The case where the **method declared inside a method body** — `method foo { my $a = 42; method bar { $tracker = $a } }` —
+is called as `.bar` after `.foo`. `bar`'s captured-outer write (`$tracker`) does not reach the caller slot when OFF and goes stale.
+**True cause = the dispatch path**: the nested-declared method is registered when foo runs, via RegisterSub, as a
+**`&bar` sub with a captured env**, and `$d.bar` goes through neither the compiled method merge path
+(`call_compiled_method` / `merge_method_env`) nor closure dispatch (`call_compiled_closure_with_topic`), but the slow path
+`call_method_with_values` → **`call_sub_value(merge_all=true)`** (tree-walk). `call_sub_value` correctly merges captured-outer
+scalar writes into `merged` (the caller env), but **does not refresh the caller's local slot** = the slot is pulled from env
+only when blanket reconcile is ON.
+(For class-level methods, `$Foo++` uses the compiled path = already OFF-viable via #3322's `merge_method_env`
+`changed_caller_locals` recording. The gap is only the nested-declared method's interpreter dispatch path.)
 
-- **修正（precise-writeback・非gated）**: ①`call_sub_value`（resolution.rs）の merge ループで、body-entry snapshot
-  （`body_entry_env`）から **変化した captured-outer scalar**（Bool/Int/Num/Str/Rat・caller env に存在）を収集し
-  `pending_rw_writeback_sources` に push（merge_all / non-merge_all 両 branch・既存の precise scalar-changed 条件と同型）。
-  ②CallMethod op（vm_call_method_ops.rs）の call-site tail を `blanket_reconcile_if_dirty(code)` →
-  `drain_and_reconcile_after_cached_call(code)`（= `apply_pending_rw_writeback` + blanket）に変更。**この op は従来
-  pending を drain しておらず**（`merge_method_env` のコメント「CallMethod op が slot へ書き戻す」が示す意図に実装が
-  追いついていなかった＝latent gap も同時に解消）。ON では blanket が superset なので byte-identical、OFF では
-  precise drain のみが効く。
-- pin=`t/nested-method-captured-writeback-coherence.t`（9・given/topic・explicit invocant・RMW 累積・+=・string・
-  enclosing lexical read＋outer write・複数 outer・後続式コヒーレンス・intervening call・ON/OFF 両 PASS）。
-  make test 9727 / make roast 回帰なし。OFF survey 16→15（並行 ~13 残）。
+- **Fix (precise-writeback, ungated)**: (1) in the merge loop of `call_sub_value` (resolution.rs), collect the
+  **captured-outer scalars that changed** relative to the body-entry snapshot (`body_entry_env`) (Bool/Int/Num/Str/Rat,
+  present in the caller env) and push to `pending_rw_writeback_sources` (both merge_all / non-merge_all branches; same shape
+  as the existing precise scalar-changed condition).
+  (2) Change the call-site tail of the CallMethod op (vm_call_method_ops.rs) from `blanket_reconcile_if_dirty(code)` →
+  `drain_and_reconcile_after_cached_call(code)` (= `apply_pending_rw_writeback` + blanket). **This op previously did not
+  drain pending** (the `merge_method_env` comment "the CallMethod op writes back to the slot" expressed an intent the
+  implementation had not caught up with = a latent gap fixed at the same time). ON: blanket is a superset so byte-identical;
+  OFF: only the precise drain takes effect.
+- pin=`t/nested-method-captured-writeback-coherence.t` (9; given/topic, explicit invocant, RMW accumulation, +=, string,
+  enclosing lexical read + outer write, multiple outers, subsequent-expression coherence, intervening call; PASSES both ON/OFF).
+  make test 9727 / make roast, no regressions. OFF survey 16→15 (~13 concurrency remaining).
 
-### 7.1g ✅ スライス1.11（DONE・第44セッション）= cross-thread shared-var writeback（並行 cluster の決定的部）
+### 7.1g ✅ Slice 1.11 (DONE, session 44) = cross-thread shared-var writeback (the deterministic part of the concurrency cluster)
 
-並行 cluster ~13 のうち、`promise-combinator`・`scheduler-cue-times` は **flaky でなく決定的**な OFF 依存（OFF=1 が 4/4 再現・
-ON=0）。`my $seen = []; Promise.allof(start { cas $seen, -> @c { flat @c, 1 } }).result; is ~$seen, '1'` ＝worker
-`start` block の `cas`（atomic array CAS・`__mutsu_atomic_arr::$seen` shared store に書く）が `.result`（await）後に
-parent の `$seen` **local slot** に届かない。`sync_shared_vars_to_env`（runtime/mod.rs）は cross-thread の dirty key を
-env に書き戻すが（`__mutsu_atomic_arr::`/`__mutsu_atomic_hash::`/`__mutsu_atomic_name::` を解決）、**caller slot は
-refresh しない**＝blanket reconcile ON のみ pull。
+Of the ~13 concurrency cluster, `promise-combinator` and `scheduler-cue-times` are **deterministic**, not flaky, OFF
+dependencies (OFF=1 reproduces 4/4, ON=0). `my $seen = []; Promise.allof(start { cas $seen, -> @c { flat @c, 1 } }).result;
+is ~$seen, '1'` = the worker `start` block's `cas` (atomic array CAS; writes to the `__mutsu_atomic_arr::$seen` shared store)
+does not reach the parent's `$seen` **local slot** after `.result` (await). `sync_shared_vars_to_env` (runtime/mod.rs)
+writes cross-thread dirty keys back to env (resolving `__mutsu_atomic_arr::`/`__mutsu_atomic_hash::`/`__mutsu_atomic_name::`),
+but **does not refresh the caller slot** = pulled only with blanket reconcile ON.
 
-- **修正（precise-writeback・非gated）**: `sync_shared_vars_to_env` の `updates` 反映ループで各 synced key を
-  `pending_rw_writeback_sources` に push → `.result`/await の **CallMethod call-site が drain**（slice 1.10 で
-  `drain_and_reconcile_after_cached_call` 化済みなので追加配線不要）。ON は env_dirty→blanket superset=byte-identical、
-  OFF は precise drain のみ。env が cross-thread sync 後の source of truth なので slot=env は常に coherence 方向＝安全。
-- **★cross-thread cell（doc §8）の本格実装は不要だった**: 基本 cross-thread captured-write（`start { $x = v }; await`）は
-  既に shared_vars で ON/OFF 両成立（決定的 probe で確認）。決定的 OFF 依存は **atomic CAS の sync→slot writeback** のみで、
-  slice 1.10 の drain 基盤に sync 名を載せるだけで解けた。残る並行 cluster の OFF 依存は **flaky な reactive 系**
-  （supply/whenever の timing 依存・`^not ok` に出ない）で、決定的 substrate ではない。
-- pin=`t/cross-thread-shared-var-writeback-coherence.t`（6・cas array/scalar/hash・累積・後続式・intervening・ON/OFF 両 PASS）。
-  make test 9739 / make roast（要確認）。**決定的 OFF-only fail（`^not ok`）= 0 に到達**。
+- **Fix (precise-writeback, ungated)**: in the `updates` application loop of `sync_shared_vars_to_env`, push each synced key
+  to `pending_rw_writeback_sources` → the **CallMethod call-site of `.result`/await drains** (already converted to
+  `drain_and_reconcile_after_cached_call` in slice 1.10, so no extra wiring needed). ON: env_dirty→blanket superset =
+  byte-identical; OFF: only the precise drain. Env is the source of truth after a cross-thread sync, so slot=env is always
+  the coherence direction = safe.
+- **★A full implementation of cross-thread cells (doc §8) was not needed**: basic cross-thread captured writes
+  (`start { $x = v }; await`) already work both ON/OFF via shared_vars (confirmed with a deterministic probe). The
+  deterministic OFF dependency was **only the atomic CAS sync→slot writeback**, solved by simply putting the sync names onto
+  slice 1.10's drain substrate. The remaining OFF dependencies in the concurrency cluster are the **flaky reactive family**
+  (supply/whenever timing dependencies; do not show up in `^not ok`), not a deterministic substrate.
+- pin=`t/cross-thread-shared-var-writeback-coherence.t` (6; cas array/scalar/hash, accumulation, subsequent expression,
+  intervening; PASSES both ON/OFF). make test 9739 / make roast (to confirm). **Deterministic OFF-only fails (`^not ok`) = reached 0**.
 
-### 7.1h ✅ スライス1.12（DONE・第45セッション）= object 添字代入の invocant slot writeback（`parametric-role-of-type`）
-`parametric-role-of-type`（OFF で決定的 abort・ran 11/14・test 12）を解消。真因は当初の「typed array 属性の COW detach」
-診断ではなく **object 添字代入の invocant slot 未 refresh** だった。最小再現＝
+### 7.1h ✅ Slice 1.12 (DONE, session 45) = invocant slot writeback for object subscript assignment (`parametric-role-of-type`)
+Resolved `parametric-role-of-type` (deterministic abort when OFF; ran 11/14; test 12). The true cause was not the initial
+"COW detach of the typed array attribute" diagnosis but **the invocant slot not being refreshed on object subscript assignment**.
+Minimal reproduction =
 `role ER[::T] does Positional { has ER[T] @!c handles <AT-POS ASSIGN-POS BIND-POS> }; my $e = ER[Int].new; $e[0] = ER[Int].new; say $e[0].WHAT`
-が ON=`(ER)`／OFF=`(Any)`。`$e[0] = v` は `exec_index_assign_expr_named_op` → ASSIGN-POS dispatch →
-`assign_method_lvalue_with_values`（methods_mut.rs:1813 の handles delegation 経路）が delegate container を変異させ
-`env[$e]` に更新済 instance を `write_back_sharing` で書くが、**caller の local slot は refresh しない**。default build は
-blanket reconcile が `$e` を env から pull するので顕在化せず、OFF（cell boxing）では slot が stale instance のまま →
-AT-POS が空 `@!c` を読む。
-- **修正（precise・非gated）**: `exec_index_assign_expr_named_op` 末尾で、添字代入後 `env[var]` が `Instance`/`Mixin`
-  （＝object 添字代入で ASSIGN-POS/ASSIGN-KEY を dispatch したケース）なら `locals_set_by_name` で local slot へ write-through。
-  plain Array/Hash 要素代入は fast path で既に slot 更新済＆ここに Instance/Mixin として到達しないので発火しない。
-  ON は blanket reconcile の冪等 superset＝byte-identical。**副次効果**: plain `role P does Positional { has @!c handles
-  <AT-POS ASSIGN-POS> }` の `$p[0]=v`（ON/OFF 両方で `Nil` を返していた pre-existing バグ）も同時に修正。
-- pin=`t/positional-role-attr-writeback-coherence.t`（7・Positional/parametric/Associative 添字代入・BIND-POS・ON/OFF 両 PASS）。
-  make test 9755。**注**: delegated mutating *method call*（`$q.push(5)` が `@!c` へ委譲）は ON/OFF **両方**で失敗する別の
-  pre-existing バグ（method-call 後の invocant slot 未 refresh・トグル非依存）＝本スライス対象外・スコープ外として pin から除外。
+gives ON=`(ER)` / OFF=`(Any)`. `$e[0] = v` goes `exec_index_assign_expr_named_op` → ASSIGN-POS dispatch →
+`assign_method_lvalue_with_values` (the handles delegation path at methods_mut.rs:1813) mutates the delegate container and
+writes the updated instance to `env[$e]` via `write_back_sharing`, but **does not refresh the caller's local slot**. The default
+build never manifests this because blanket reconcile pulls `$e` from env; under OFF (cell boxing) the slot remains the stale
+instance → AT-POS reads an empty `@!c`.
+- **Fix (precise, ungated)**: at the tail of `exec_index_assign_expr_named_op`, if `env[var]` after the subscript assignment
+  is `Instance`/`Mixin` (= the case where the object subscript assignment dispatched ASSIGN-POS/ASSIGN-KEY), write through to
+  the local slot via `locals_set_by_name`. Plain Array/Hash element assignment already updates the slot on the fast path and
+  never arrives here as Instance/Mixin, so it does not fire. ON is an idempotent superset of blanket reconcile = byte-identical.
+  **Side effect**: also fixes the pre-existing bug where `$p[0]=v` on a plain `role P does Positional { has @!c handles
+  <AT-POS ASSIGN-POS> }` returned `Nil` (both ON/OFF).
+- pin=`t/positional-role-attr-writeback-coherence.t` (7; Positional/parametric/Associative subscript assignment, BIND-POS; PASSES both ON/OFF).
+  make test 9755. **Note**: a delegated mutating *method call* (`$q.push(5)` delegating to `@!c`) failing both ON/OFF is a
+  separate pre-existing bug (invocant slot not refreshed after a method call; toggle-independent) = out of scope for this
+  slice and excluded from the pin.
 
-### 7.1i ✅ スライス1.13（DONE・第45セッション）= substr-rw / subbuf-rw lvalue slot writeback（OFF 最大塊・12 fail）
-`substr-rw($s, ...) = v`／`subbuf-rw($buf, ...) = v` が OFF で `$s`/`$buf` を変更しない（`gorch ding` のまま・raku=
-`gloop ding`）。経路＝lvalue assign は `__mutsu_assign_named_sub_lvalue` Call → `assign_named_sub_lvalue_with_values`
-（builtins_lvalue.rs:258/281）が env scan で target var を特定し `assign_method_lvalue_with_values` に委譲→string/buf を
-変異して `env[$s]` に書くが **caller local slot 未 refresh**。`exec_call_func_op` の `lvalue_writeback_target` 機構は
-`__mutsu_assign_method_lvalue`/`__mutsu_index_assign_method_lvalue`（args[4]=target）専用で named-sub lvalue は対象外。
-- **修正（precise・非gated）**: substr-rw/subbuf-rw branch で解決済 target var 名を `pending_rw_writeback_sources` に push。
-  `exec_call_func_op` は **常に** `apply_pending_rw_writeback(code)`（vm_call_func_ops.rs:597）を呼ぶので、env の更新値が
-  precise に slot へ drain される（blanket pull 不要）。ON は冪等 superset＝byte-identical。
-- pin=`t/substr-rw-lvalue-writeback-coherence.t`（6・substr-rw/from-only/累積/bound proxy/subbuf-rw・ON/OFF 両 PASS）。
-  make test 9754。`S32-str/substr-rw.t` 46/46・`S03-operators/buf.t` も ON/OFF PASS（OFF survey の **2 file** 消化）。
+### 7.1i ✅ Slice 1.13 (DONE, session 45) = substr-rw / subbuf-rw lvalue slot writeback (largest OFF chunk, 12 fails)
+`substr-rw($s, ...) = v` / `subbuf-rw($buf, ...) = v` do not modify `$s`/`$buf` when OFF (stays `gorch ding`; raku=
+`gloop ding`). Path = the lvalue assign is a `__mutsu_assign_named_sub_lvalue` Call → `assign_named_sub_lvalue_with_values`
+(builtins_lvalue.rs:258/281) locates the target var by env scan and delegates to `assign_method_lvalue_with_values` →
+mutates the string/buf and writes to `env[$s]` but **the caller local slot is not refreshed**. The `lvalue_writeback_target`
+mechanism of `exec_call_func_op` is exclusive to `__mutsu_assign_method_lvalue`/`__mutsu_index_assign_method_lvalue`
+(args[4]=target) and does not cover named-sub lvalues.
+- **Fix (precise, ungated)**: in the substr-rw/subbuf-rw branch, push the resolved target var name to
+  `pending_rw_writeback_sources`. `exec_call_func_op` **always** calls `apply_pending_rw_writeback(code)`
+  (vm_call_func_ops.rs:597), so the updated env value is drained precisely to the slot (no blanket pull needed). ON is an
+  idempotent superset = byte-identical.
+- pin=`t/substr-rw-lvalue-writeback-coherence.t` (6; substr-rw/from-only/accumulation/bound proxy/subbuf-rw; PASSES both ON/OFF).
+  make test 9754. `S32-str/substr-rw.t` 46/46 and `S03-operators/buf.t` also PASS ON/OFF (**2 files** cleared from the OFF survey).
 
-### 7.1j ✅ スライス1.14（DONE・第45セッション）= zip short-circuit topicalizing thunk writeback（`zip.t` 68/71）
-`23 Zandthen ($side-effect = $_,)` の topicalize thunk write が OFF で lost（OFF=0・raku/ON=23）。`Zandthen`/`Zorelse`
-は `builtin_zip_shortcircuit_topic`（builtins_feed.rs:299）/`builtin_zip_shortcircuit` 経由で thunk を評価するが、
-`builtin_cross_shortcircuit`（slice 1.9・X-cross）と違い **captured-outer write を記録していなかった**＝即時起動 closure で
-escape 解析が box しない→blanket reconcile のみが運んでいた。修正＝両関数で thunk 実行後に
-`record_eager_block_free_var_writeback(&code, &params)` を呼び pending に push→`__mutsu_zip_shortcircuit*` call site の
-`apply_pending_rw_writeback` が drain（X-cross と同型）。ON は冪等 superset＝byte-identical。
-pin=`t/zip-shortcircuit-topic-writeback-coherence.t`（5・Zandthen/Zorelse topicalize＋increment・ON/OFF 両 PASS）。
-make test 9769。`S03-metaops/zip.t` ON/OFF PASS（OFF survey の **1 file** 消化）。
+### 7.1j ✅ Slice 1.14 (DONE, session 45) = zip short-circuit topicalizing thunk writeback (`zip.t` 68/71)
+The topicalize thunk write of `23 Zandthen ($side-effect = $_,)` is lost when OFF (OFF=0; raku/ON=23). `Zandthen`/`Zorelse`
+evaluate the thunk via `builtin_zip_shortcircuit_topic` (builtins_feed.rs:299) / `builtin_zip_shortcircuit`, but unlike
+`builtin_cross_shortcircuit` (slice 1.9, X-cross) **they did not record captured-outer writes** = an immediately-invoked
+closure the escape analysis does not box → only blanket reconcile was carrying it. Fix = both functions call
+`record_eager_block_free_var_writeback(&code, &params)` after thunk execution, pushing to pending → the
+`apply_pending_rw_writeback` at the `__mutsu_zip_shortcircuit*` call site drains (same shape as X-cross). ON is an idempotent
+superset = byte-identical.
+pin=`t/zip-shortcircuit-topic-writeback-coherence.t` (5; Zandthen/Zorelse topicalize + increment; PASSES both ON/OFF).
+make test 9769. `S03-metaops/zip.t` PASSES ON/OFF (**1 file** cleared from the OFF survey).
 
-### 7.1k ✅ スライス1.15（DONE・第45セッション）= `.map` block LAST phaser writeback（`map.t` 62）
-`(^20).map({ LAST $ranLAST=True; last if $_==10; $_ }).iterator` の LAST phaser write が OFF で lost（OFF=Nil・ON=True）。
-真因＝eager map loop（`resolution.rs:2123` 周辺）は LAST phaser body を map body と**別に** compile/run し
-（:2253-2258）、その直後の `record_eager_block_free_var_writeback(&code, ...)`（:2276）は **map body の `code` のみ**記録＝
-phaser の `$ranLAST=True` を拾わない。修正＝phaser 実行直後に `vm.record_eager_block_free_var_writeback(&phaser_code, &[])`
-追加→pending push→call site の `apply_pending_rw_writeback` drain。ON は冪等 superset＝byte-identical。
-pin=`t/map-last-phaser-writeback-coherence.t`（4・last/natural-end/eager・ON/OFF 両 PASS）。`S32-list/map.t` ON/OFF PASS。
+### 7.1k ✅ Slice 1.15 (DONE, session 45) = `.map` block LAST phaser writeback (`map.t` 62)
+The LAST phaser write of `(^20).map({ LAST $ranLAST=True; last if $_==10; $_ }).iterator` is lost when OFF (OFF=Nil; ON=True).
+True cause = the eager map loop (around `resolution.rs:2123`) compiles/runs the LAST phaser body **separately** from the map
+body (:2253-2258), and the immediately following `record_eager_block_free_var_writeback(&code, ...)` (:2276) records **only
+the map body's `code`** = it does not pick up the phaser's `$ranLAST=True`. Fix = add
+`vm.record_eager_block_free_var_writeback(&phaser_code, &[])` right after phaser execution → pending push → the call site's
+`apply_pending_rw_writeback` drains. ON is an idempotent superset = byte-identical.
+pin=`t/map-last-phaser-writeback-coherence.t` (4; last/natural-end/eager; PASSES both ON/OFF). `S32-list/map.t` PASSES ON/OFF.
 
-### 7.1l ✅ スライス1.16（DONE・第45セッション）= `undefine()` lvalue slot writeback（`undef.t` 85）
-`undefine($x) = v`（rw）が OFF で `$x` を変更しない（OFF=foo・ON/raku=bar）。slice 1.13 の substr-rw と**同一経路**＝
-`assign_named_sub_lvalue_with_values` の `undefine` branch（builtins_lvalue.rs:250）が `env[$x]` のみ書き slot 未 refresh。
-修正＝env 書込前に target var 名を `pending_rw_writeback_sources` に push→call site の `apply_pending_rw_writeback` drain。
-pin=`t/undefine-lvalue-writeback-coherence.t`（3）。`S32-scalar/undef.t` ON/OFF PASS。
+### 7.1l ✅ Slice 1.16 (DONE, session 45) = `undefine()` lvalue slot writeback (`undef.t` 85)
+`undefine($x) = v` (rw) does not modify `$x` when OFF (OFF=foo; ON/raku=bar). **Same path** as slice 1.13's substr-rw =
+the `undefine` branch of `assign_named_sub_lvalue_with_values` (builtins_lvalue.rs:250) writes only `env[$x]` without
+refreshing the slot. Fix = push the target var name to `pending_rw_writeback_sources` before the env write → the call site's
+`apply_pending_rw_writeback` drains.
+pin=`t/undefine-lvalue-writeback-coherence.t` (3). `S32-scalar/undef.t` PASSES ON/OFF.
 
-### 7.2 後続スライス（その先）
-- **delegated mutating method call の invocant writeback**（pre-existing・トグル非依存）: `$q.push(5)` が `handles` 経由で
-  `@!c` に委譲されるとき、attr は変異するが method-call 後に caller の `$q` slot/instance が refresh されず累積が壊れる
-  （ON/OFF 両方で失敗）。env_dirty 削除には不要（ON でも壊れている＝OFF survey の決定的依存ではない）が、一般的バグとして別途修正可。
-- **container `@`/`%` の named-sub 以外の cell 化**（必要なら）: closure 捕捉 container は現状 Arc 共有で動く。`box_captured_lexicals`
-  の `@`/`%` skip を緩和する場合は §8 の decont 監査が前提（broad boxing は ~12 file 回帰を実証済＝precise 限定必須）。
-- **並行 cluster の残り**（supply/whenever/react ~11）: §7.1g で決定的部（promise-combinator/scheduler-cue-times の
-  atomic-CAS sync）は解決。残りは **flaky な reactive 系**（supply/whenever の timing 依存・`^not ok` に出ず
-  abort/timeout で manifest）＝決定的 OFF-pin が書けないため toggle survey で追いきれない。env_dirty 削除の最終段
-  （`blanket_reconcile_if_dirty` 空洞化）で実挙動を確認するのが現実的。基本 cross-thread captured-write は shared_vars で
-  既に ON/OFF 両成立済（cross-thread cell の本格実装は不要と判明）。
+### 7.2 Follow-up slices (beyond that)
+- **Invocant writeback for delegated mutating method calls** (pre-existing, toggle-independent): when `$q.push(5)` is
+  delegated to `@!c` via `handles`, the attr mutates but the caller's `$q` slot/instance is not refreshed after the method
+  call and accumulation breaks (fails both ON/OFF). Not needed for env_dirty removal (broken even ON = not a deterministic
+  dependency of the OFF survey), but fixable separately as a general bug.
+- **Cell-ification of containers `@`/`%` beyond named subs** (if needed): closure-captured containers currently work via Arc
+  sharing. Relaxing the `@`/`%` skip in `box_captured_lexicals` requires the §8 decont audit as a prerequisite (broad boxing
+  demonstrably regressed ~12 files = precise-only is mandatory).
+- **Remainder of the concurrency cluster** (supply/whenever/react ~11): §7.1g resolved the deterministic part
+  (the atomic-CAS sync of promise-combinator/scheduler-cue-times). The remainder is the **flaky reactive family**
+  (supply/whenever timing dependencies; does not show in `^not ok`, manifests as abort/timeout) = no deterministic OFF pin can
+  be written, so the toggle survey cannot chase it. Realistically, verify actual behavior at the final stage of env_dirty
+  removal (hollowing out `blanket_reconcile_if_dirty`). Basic cross-thread captured writes already work both ON/OFF via
+  shared_vars (a full cross-thread cell implementation turned out to be unnecessary).
 
-### 7.2a ★OFF roast survey（第45セッション・2026-06-21・authoritative）= env_dirty 削除の真の残サーフェス
-これまでの「決定的 OFF 依存 = 0 到達」は **t/ のみの `^not ok` survey** に基づく過小評価だった。`MUTSU_NO_BLANKET_RECONCILE=1
-make roast`（release・全 whitelist 1285）を実走したところ、**13 ファイルが OFF で決定的に fail**（全て pre-existing＝
-main baseline でも同じ subtest が OFF fail・本スライスの変更とは無関係＝debug 比較で確認）。これが env_dirty 物理削除
-（§7.4）を解禁するために潰すべき残サーフェス（初回 13 → slice 1.13 で substr-rw.t/buf.t、slice 1.14 で zip.t、slice 1.15 で map.t、slice 1.16 で undef.t、slice 1.17 で proto.t/subsignature.t、slice 1.18 で caller.t/callframe.t 消化 → **残 4**）:
+### 7.2a ★OFF roast survey (session 45, 2026-06-21, authoritative) = the true remaining surface for env_dirty removal
+The earlier "deterministic OFF dependencies = reached 0" was an underestimate based on a **`^not ok` survey of t/ only**.
+Actually running `MUTSU_NO_BLANKET_RECONCILE=1 make roast` (release, full whitelist 1285) showed **13 files failing
+deterministically when OFF** (all pre-existing = the same subtests fail OFF on the main baseline too; unrelated to this
+slice's changes = confirmed by debug comparison). This is the remaining surface that must be cleared to unlock the physical
+removal of env_dirty (§7.4) (initially 13 → slice 1.13 cleared substr-rw.t/buf.t, slice 1.14 zip.t, slice 1.15 map.t,
+slice 1.16 undef.t, slice 1.17 proto.t/subsignature.t, slice 1.18 caller.t/callframe.t → **4 remaining**):
 
-| file | failed subtests | 推定カテゴリ | 状態 |
+| file | failed subtests | Estimated category | Status |
 |------|-----------------|--------------|------|
 | ~~S32-str/substr-rw.t~~ | 1, 8-9, 16, 24-25, 33-38 | substr-rw lvalue slot writeback | ✅ slice 1.13 |
 | ~~S03-operators/buf.t~~ | 38 | subbuf-rw lvalue slot writeback | ✅ slice 1.13 |
@@ -439,78 +462,90 @@ main baseline でも同じ subtest が OFF fail・本スライスの変更とは
 | ~~S06-multi/proto.t~~ | 21 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-multi/subsignature.t~~ | 54 | caching proto `state %` writeback | ✅ slice 1.17 |
 | ~~S06-signature/code.t~~ | 8 | `&`-param default self-scoping | ✅ slice 1.19 |
-| ~~S12-construction/destruction.t~~ | 3 | cross-thread worker-DESTROY captured-write（retain-on-miss sync） | ✅ slice 1.20 |
+| ~~S12-construction/destruction.t~~ | 3 | cross-thread worker-DESTROY captured-write (retain-on-miss sync) | ✅ slice 1.20 |
 | ~~S32-list/map.t~~ | 62 | `.map` block LAST phaser writeback | ✅ slice 1.15 |
 | ~~S32-scalar/undef.t~~ | 85 | undefine() lvalue slot writeback | ✅ slice 1.16 |
-| S32-io/IO-Socket-Async.t | 5, 7 | reactive 並行（flaky 疑い） | |
+| S32-io/IO-Socket-Async.t | 5, 7 | reactive concurrency (suspected flaky) | |
 
-**triage（第45〜46セッション・実測済）**:
-- ~~**map.t 62**~~ ✅ **slice 1.15 で消化**（§7.1k）。`.map({ LAST $x=True })` の LAST phaser body は map body と**別に**
-  コンパイル・実行される（`resolution.rs:2253`）ので、map body の `record_eager_block_free_var_writeback`（:2276）が
-  phaser の write を拾わなかった。phaser 実行直後に `record_eager_block_free_var_writeback(&phaser_code, &[])` 追加で解決。
-- **lazy-lists.t 24-26（`.kv`/`.pairs`/`.antipairs` is lazy）= writeback ではなく laziness バグの露出**（実測 ON=1/OFF=0/
-  raku=1）。`make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy` を `.kv` が **eager に force**して `$was-lazy=0` を
-  走らせてしまう（mutsu の `.kv`/`.pairs`/`.antipairs` が非 lazy）。ON は write-loss で偶然 raku 一致、OFF は slice 1.6 の
-  gather writeback が正しく伝播して**潜在 laziness バグを露出**（doc §7.3 教訓 #3 の典型）。∴ 修正は `.kv`/`.pairs`/
-  `.antipairs` の **真の lazy 化**（L 系・別軸）＝precise-writeback では解けない。env_dirty 削除には laziness 修正が前提。
-- ~~**undef.t 85**~~ ✅ **slice 1.16 で消化**（§7.1l・substr-rw と同経路の `undefine()` lvalue）。
-- ~~**proto.t 21 ＋ subsignature.t 54**~~ ✅ **slice 1.17 で消化（1 修正で 2 file・PR #3389）**。caching proto
-  （`proto cached($a){ state %cache; %cache{$a} //= {*} }`）の cache が呼び出しを跨いで accumulate せず multi が毎回
-  再 dispatch（OFF=`aba`／raku=ON=`ab`）。真因＝**`{*}` redispatch が RHS で評価される hash element-assign の
-  dual-store divergence**: `{*}`（`call_proto_dispatch`）の `restore_env_preserving_existing`（dispatch.rs:2074）が
-  `self.env` を丸ごとスワップし、env の `%cache` Arc を proto body の local slot の Arc から**切り離す**（strong_count→1）。
-  `try_fast_hash_element_assign`（vm_var_assign_ops.rs:2606）は strong_count==1 だと local slot を更新しない（env のみ
-  in-place mutate）ので slot が stale な空 hash のまま残り、続く `sync_env_from_locals`（run_inner）が stale slot を env に
-  書き戻して `state` 永続化が空 hash を保存→cache 喪失。修正（非 gated・precise）＝fast hash assign 末尾で strong_count==1
-  でも local slot が**存在すれば**（＝定義上必ず diverged）代入後 env 値を slot へ mirror（env-only `%*ENV` 等は slot 無し＝
-  no-op、default は blanket reconcile で冗長＝byte-identical）。`state @`-array element-assign（`@cache[$i] //= {*}`）+
-  in-place push は元々 coherent で非該当。教訓: run_inner の state persist は `sync_state_locals`（env 優先・476）→
-  `sync_env_from_locals`（480）順なので、reorder（env flush 先）は逆効果（stale local が fresh env を clobber）＝源流の
-  divergence 修正が正解。pin=`t/proto-state-cache-writeback-coherence.t`（6・ON/OFF 両 PASS）。make test 9788。
-- ~~**caller.t 9 ＋ callframe.t 12**~~ ✅ **slice 1.18 で消化（1 修正で 2 file・第46セッション）**。caller-frame の
-  lexical を名前書きする `$CALLER::x = v`（rw dynamic-var）／`callframe(d).my.<$x> = v` が OFF=stale（ON=書込成功）。
-  真因＝`set_caller_var`（mod.rs:5327）は `caller_env_stack[idx]` と現在 env に書き、`pop_caller_env_with_writeback`
-  （mod.rs:5277）が return 時に restored caller env へ dynamic var を伝播するが、**caller の local slot は未更新**＝OFF で
-  stale slot を読む。修正＝`set_caller_var` で書いた bare name を**新リスト `pending_caller_var_writeback`** に push し、
-  call-site の `apply_pending_rw_writeback` が `env[name]`→slot に drain。★`pending_rw_writeback_sources`（drop-on-miss）
-  と分離した理由＝caller-frame の slot は数フレーム上にあり、writer が return 前に**より深い**呼び出しをすると（`f(){ callframe(1).my.<$x>=v; g() }`）pending が g() の call-site で1フレーム早く消費される→**retain-on-miss**（slot が
-  当該 code に無ければ破棄せず保持し、所有フレームまで運ぶ）。`is dynamic` でない caller lexical は従来通り die。
-  pin=`t/caller-frame-write-slot-coherence.t`（5・ON/OFF 両 PASS）。make test 9799。
-- ~~**code.t 8（`&`-param）**~~ ✅ **slice 1.19 で消化（第47セッション・PR 別途）**。`sub foo(&foo = &foo){...}` の default
-  scoping バグ＝**writeback でなく露出バグ**（ON は carrier `lives-ok { foo }` で captured write が reconcile に落とされ偶然
-  PASS、OFF が正しく伝播して露出）。真因＝パラメータの default 式を評価する際に **そのパラメータ自身が scope に入っていない**
-  ため、`&foo`（default RHS）が外側の登録済み sub `foo` に解決されていた（raku は param `&foo` 自身＝undefined に解決）。
-  修正＝`bind_function_args_values` の両 default-eval サイト（binding.rs ~770 named / ~1500 positional）を新ヘルパー
-  `eval_param_default` に集約し、default 式評価の**直前にパラメータ名自身を undefined 型オブジェクト（or Nil）で env に
-  pre-bind**（self-reference が outer ではなく未定義パラメータに解決＝Raku の「param はその default 内で scope に入る」規則）。
-  earlier param（`$b = $a`）は前 iter で bind 済なので影響なし、別名 outer（`$z = $y`）も影響なし。pin=
-  `t/param-default-self-scoping.t`（7・ON/OFF 両 PASS）。make test 9819。
-- ~~**destruction.t 3**~~ ✅ **slice 1.20 で消化（第48セッション・retain-on-miss cross-thread sync）**。`submethod DESTROY {
-  $a++ }` の worker-thread captured write が top-level slot に届かない。真因＝§7.2c の「cell-detachment」は**誤診断**（#3398
-  で訂正済・真因は cross-thread writeback の **drop-on-miss** リスト誤用）。実測トレースで確定: worker が `$a` を 1 に書き
-  `shared_vars_dirty` にマーク → `await` の `sync_shared_vars_to_env`（mod.rs:6420）が `["a","@order"]` を pending に push し
-  `env["a"]=1` → しかしその後 `await` 内の `run_pending_instance_destroys()`（builtins_system.rs:1796）が **DESTROY を
-  `locals=[]` で dispatch** し、その tail の `apply_pending_rw_writeback`（drop-on-miss）が pending を**消費して捨てる** →
-  top-level frame（`locals=["a","@order","b0"]`・"a" slot 所有）が drain する頃には `sources=[]`。**修正**＝`sync_shared_vars_to_env`
-  の push 先を **drop-on-miss の `pending_rw_writeback_sources` → retain-on-miss の `pending_caller_var_writeback`** に変更
-  （cross-thread synced var の owning slot は数フレーム上＝caller-var と同形の retain-on-miss が正しい）。slice 1.18 の
-  caller-frame writeback と同じリストを再利用＝中間 DESTROY frame は slot 無しで retain、top-level が drain して slot refresh。
-  pin=`t/destroy-cross-thread-writeback-coherence.t`（5・ON/OFF 両 PASS）。
-  - ＋別軸: lazy-lists.t 24-26（laziness バグ・L 系）／IO-Socket-Async.t 5,7（flaky）。
+**Triage (sessions 45–46, measured)**:
+- ~~**map.t 62**~~ ✅ **cleared by slice 1.15** (§7.1k). The LAST phaser body of `.map({ LAST $x=True })` is compiled and
+  executed **separately** from the map body (`resolution.rs:2253`), so the map body's `record_eager_block_free_var_writeback`
+  (:2276) did not pick up the phaser's write. Solved by adding `record_eager_block_free_var_writeback(&phaser_code, &[])`
+  right after phaser execution.
+- **lazy-lists.t 24-26 (`.kv`/`.pairs`/`.antipairs` is lazy) = an exposed laziness bug, not a writeback issue** (measured
+  ON=1/OFF=0/raku=1). `.kv` **eagerly forces** `make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy`, running
+  `$was-lazy=0` (mutsu's `.kv`/`.pairs`/`.antipairs` are non-lazy). ON matched raku by accident via write-loss; OFF
+  propagates correctly via slice 1.6's gather writeback and **exposes the latent laziness bug** (a classic instance of doc
+  §7.3 lesson #3). ∴ The fix is **true lazification** of `.kv`/`.pairs`/`.antipairs` (L family, separate axis) =
+  precise-writeback cannot solve it. The laziness fix is a prerequisite for env_dirty removal.
+- ~~**undef.t 85**~~ ✅ **cleared by slice 1.16** (§7.1l, the `undefine()` lvalue on the same path as substr-rw).
+- ~~**proto.t 21 + subsignature.t 54**~~ ✅ **cleared by slice 1.17 (1 fix, 2 files, PR #3389)**. The caching proto's
+  (`proto cached($a){ state %cache; %cache{$a} //= {*} }`) cache did not accumulate across calls, and the multi was
+  re-dispatched every time (OFF=`aba` / raku=ON=`ab`). True cause = **dual-store divergence of a hash element-assign whose
+  RHS evaluates a `{*}` redispatch**: `{*}`'s (`call_proto_dispatch`) `restore_env_preserving_existing` (dispatch.rs:2074)
+  swaps `self.env` wholesale, **detaching** env's `%cache` Arc from the proto body's local-slot Arc (strong_count→1).
+  `try_fast_hash_element_assign` (vm_var_assign_ops.rs:2606) does not update the local slot when strong_count==1 (it only
+  mutates env in place), so the slot remains a stale empty hash, and the subsequent `sync_env_from_locals` (run_inner)
+  writes the stale slot back to env → the `state` persistence saves an empty hash → cache lost. Fix (ungated, precise) =
+  at the tail of the fast hash assign, even when strong_count==1, if the local slot **exists** (= by definition necessarily
+  diverged) mirror the post-assignment env value to the slot (env-only vars like `%*ENV` have no slot = no-op; default is
+  redundant with blanket reconcile = byte-identical). `state @`-array element-assign (`@cache[$i] //= {*}`) + in-place push
+  were already coherent and not affected. Lesson: run_inner's state persist runs in the order `sync_state_locals` (env
+  priority; 476) → `sync_env_from_locals` (480), so reordering (env flush first) backfires (the stale local clobbers the
+  fresh env) = fixing the divergence at the source is the right answer. pin=`t/proto-state-cache-writeback-coherence.t`
+  (6; PASSES both ON/OFF). make test 9788.
+- ~~**caller.t 9 + callframe.t 12**~~ ✅ **cleared by slice 1.18 (1 fix, 2 files, session 46)**. Writing a caller-frame
+  lexical by name — `$CALLER::x = v` (rw dynamic-var) / `callframe(d).my.<$x> = v` — is stale when OFF (write succeeds ON).
+  True cause = `set_caller_var` (mod.rs:5327) writes to `caller_env_stack[idx]` and the current env, and
+  `pop_caller_env_with_writeback` (mod.rs:5277) propagates dynamic vars to the restored caller env at return, but
+  **the caller's local slot is not updated** = OFF reads the stale slot. Fix = push the bare names written by
+  `set_caller_var` onto a **new list `pending_caller_var_writeback`**, drained by the call-site's
+  `apply_pending_rw_writeback` from `env[name]` → slot. ★Reason for separating it from `pending_rw_writeback_sources`
+  (drop-on-miss) = the caller-frame's slot is several frames up, and if the writer makes a **deeper** call before returning
+  (`f(){ callframe(1).my.<$x>=v; g() }`), the pending would be consumed one frame too early at g()'s call site →
+  **retain-on-miss** (if the slot is not in the current code, keep instead of discarding, carrying it up to the owning
+  frame). Caller lexicals that are not `is dynamic` still die as before.
+  pin=`t/caller-frame-write-slot-coherence.t` (5; PASSES both ON/OFF). make test 9799.
+- ~~**code.t 8 (`&`-param)**~~ ✅ **cleared by slice 1.19 (session 47, separate PR)**. The default-scoping bug of
+  `sub foo(&foo = &foo){...}` = **an exposed bug, not a writeback issue** (ON accidentally PASSes because the captured write
+  is dropped by reconcile in the `lives-ok { foo }` carrier; OFF propagates correctly and exposes it). True cause = when the
+  parameter's default expression is evaluated, **the parameter itself is not yet in scope**, so `&foo` (the default RHS)
+  resolved to the outer registered sub `foo` (raku resolves it to the param `&foo` itself = undefined).
+  Fix = consolidate both default-eval sites of `bind_function_args_values` (binding.rs ~770 named / ~1500 positional) into a
+  new helper `eval_param_default` that **pre-binds the parameter's own name in env to an undefined type object (or Nil)
+  immediately before** evaluating the default expression (self-reference resolves to the undefined parameter rather than the
+  outer = Raku's "a param is in scope inside its own default" rule). Earlier params (`$b = $a`) are already bound in a prior
+  iteration so unaffected; differently-named outers (`$z = $y`) are also unaffected. pin=
+  `t/param-default-self-scoping.t` (7; PASSES both ON/OFF). make test 9819.
+- ~~**destruction.t 3**~~ ✅ **cleared by slice 1.20 (session 48, retain-on-miss cross-thread sync)**. The worker-thread
+  captured write of `submethod DESTROY { $a++ }` does not reach the top-level slot. True cause = §7.2c's "cell-detachment"
+  was a **misdiagnosis** (corrected in #3398; the real cause is misuse of the **drop-on-miss** list for cross-thread
+  writeback). Confirmed by measured trace: the worker writes `$a` to 1 and marks `shared_vars_dirty` → `await`'s
+  `sync_shared_vars_to_env` (mod.rs:6420) pushes `["a","@order"]` to pending and sets `env["a"]=1` → but then
+  `run_pending_instance_destroys()` inside `await` (builtins_system.rs:1796) **dispatches DESTROY with `locals=[]`**, and its
+  tail `apply_pending_rw_writeback` (drop-on-miss) **consumes and discards** the pending → by the time the top-level frame
+  (`locals=["a","@order","b0"]`, owning the "a" slot) drains, `sources=[]`. **Fix** = change the push target of
+  `sync_shared_vars_to_env` from the **drop-on-miss `pending_rw_writeback_sources` → the retain-on-miss
+  `pending_caller_var_writeback`** (the owning slot of a cross-thread synced var is several frames up = the same shape as
+  caller-var, so retain-on-miss is correct). Reuses the same list as slice 1.18's caller-frame writeback = intermediate
+  DESTROY frames retain (no slot), and the top-level drains and refreshes the slot.
+  pin=`t/destroy-cross-thread-writeback-coherence.t` (5; PASSES both ON/OFF).
+  - Plus separate axes: lazy-lists.t 24-26 (laziness bug, L family) / IO-Socket-Async.t 5,7 (flaky).
 
-**残＝別軸 2（lazy-lists laziness・IO-Socket-Async flaky）のみ。純 writeback コヒーレンスのサーフェスは枯渇
-（slice 1.18 で純 writeback、1.19 で露出バグ、1.20 で cross-thread DESTROY writeback）。
-§7.4（env_dirty 削除）は lazy-lists の真 lazy 化（L 系・別軸）後に射程。**
+**Remaining = only the 2 separate-axis items (lazy-lists laziness, IO-Socket-Async flaky). The pure writeback-coherence
+surface is exhausted (slice 1.18 was pure writeback, 1.19 an exposed bug, 1.20 cross-thread DESTROY writeback).
+§7.4 (env_dirty removal) comes into range after true lazification of lazy-lists (L family, separate axis).**
 
-### 7.2c ✅ destruction.t 3 — cross-thread（worker DESTROY）captured-write（第47調査・第48解決＝slice 1.20）
+### 7.2c ✅ destruction.t 3 — cross-thread (worker DESTROY) captured-write (investigated session 47, resolved session 48 = slice 1.20)
 
-**★解決済（slice 1.20・第48セッション）。** 真因は cross-thread writeback の **drop-on-miss リスト誤用**（§7.2a の slice 1.20
-行を参照）。修正＝`sync_shared_vars_to_env` の push 先を `pending_rw_writeback_sources`（drop-on-miss）→
-`pending_caller_var_writeback`（retain-on-miss）に変更。なお第47前半の「cell-detachment」診断は#3398 で誤りと訂正済
-（計測で `$a` は cell-box されておらず、`box_decl_local_cell`/`box_captured_lexicals` の probe が一切発火しない）＝
-真因は cross-thread。以下は当時の調査記録（歴史参考）。
+**★Resolved (slice 1.20, session 48).** The true cause was **misuse of the drop-on-miss list** for cross-thread writeback
+(see the slice 1.20 row in §7.2a). Fix = change `sync_shared_vars_to_env`'s push target from `pending_rw_writeback_sources`
+(drop-on-miss) → `pending_caller_var_writeback` (retain-on-miss). Note that the "cell-detachment" diagnosis from the first
+half of session 47 was corrected as wrong in #3398 (measurement showed `$a` was never cell-boxed; the
+`box_decl_local_cell`/`box_captured_lexicals` probes never fired) = the true cause is cross-thread. What follows is the
+investigation record from that time (historical reference).
 
-**最小再現（決定的・`MUTSU_NO_BLANKET_RECONCILE=1` で確実 fail）**:
+**Minimal reproduction (deterministic; reliably fails with `MUTSU_NO_BLANKET_RECONCILE=1`)**:
 ```raku
 my $a = 0;
 my @order;
@@ -521,541 +556,593 @@ await start {
     loop {
         $*VM.request-garbage-collection;
         my $foo = Foo.new;
-        my $bar = Bar.new unless +@order;   # 条件付き生成
+        my $bar = Bar.new unless +@order;   # conditional creation
         last if $a && @order;
     }
 };
-say "a=$a";     # OFF: a=0（ON/raku: a=1）
+say "a=$a";     # OFF: a=0 (ON/raku: a=1)
 ```
 
-**最重要事実: `start` は別スレッド**。`builtin_start`→`spawn_callable_promise`（builtins_system.rs:106）が
-**`clone_for_thread()` + `spawn_user_thread`** でワーカーを起動＝**DESTROY はワーカースレッド（クローン interpreter）で発火**。
-env はワーカー→親に伝播するが（slice 1.11 の shared_vars 機構）、親の **local slot** は別途 refresh が要る。
+**Most important fact: `start` is a separate thread**. `builtin_start`→`spawn_callable_promise` (builtins_system.rs:106)
+launches the worker with **`clone_for_thread()` + `spawn_user_thread`** = **DESTROY fires on the worker thread (a cloned
+interpreter)**. Env propagates worker→parent (slice 1.11's shared_vars machinery), but the parent's **local slot** needs a
+separate refresh.
 
-**切り分け（OFF）**:
-- 単純 cross-thread write `await start { $x = 5 }` → ✅ `x=5`（slice 1.11 で既に成立）。
-- 単一 DESTROY-in-thread `await start { my $f=Foo.new; $f=Nil; $*VM.request-garbage-collection }` → ✅ `x=5`。
-- **fail するのは loop + 複数 captured var（`$a` scalar + `@order` array）+ 条件付き生成**（d10/min4/min10）。
-  ループ無し・単一 var は OK。
+**Isolation (OFF)**:
+- Simple cross-thread write `await start { $x = 5 }` → ✅ `x=5` (already works since slice 1.11).
+- Single DESTROY-in-thread `await start { my $f=Foo.new; $f=Nil; $*VM.request-garbage-collection }` → ✅ `x=5`.
+- **What fails is loop + multiple captured vars (`$a` scalar + `@order` array) + conditional creation** (d10/min4/min10).
+  No loop / single var is OK.
 
-**真因（計測で確定・親の await call-site で probe）**: `exec_call_func_op`→`dispatch_func_call_inner`→**L597
-`apply_pending_rw_writeback(code)`** の時点で:
-- `code.locals = ["a","@order","b0"]`（top-level frame）／`find_local_slot("a") = Some(0)`（**slot は存在**）／
-  `env.get("a") = Int(1)`（**env は正しく伝播済**）。
-- だが `pending_rw_writeback_sources` / `pending_caller_var_writeback` が **空**＝drain が走らず slot[0] が 0 のまま。
-- ∴ **欠落は「ワーカーが書いた captured scalar `a` を親の pending writeback に記録する」一点だけ**。単一 write 版は
-  slice 1.11 の `sync_shared_vars_to_env`（mod.rs:6412・dirty key を `pending_rw_writeback_sources` に push）が "a" を
-  運ぶので動く。loop+複数 var 版では **"a" が dirty として運ばれない**（ループ内の `last if $a` 読み出しが dirty を消費する／
-  複数 var の dirty 追跡が一部しか乗らない、のいずれか＝要特定）。
+**True cause (confirmed by measurement; probed at the parent's await call-site)**: at the point of
+`exec_call_func_op`→`dispatch_func_call_inner`→**L597 `apply_pending_rw_writeback(code)`**:
+- `code.locals = ["a","@order","b0"]` (top-level frame) / `find_local_slot("a") = Some(0)` (**the slot exists**) /
+  `env.get("a") = Int(1)` (**env is correctly propagated**).
+- But `pending_rw_writeback_sources` / `pending_caller_var_writeback` are **empty** = the drain never runs and slot[0] stays 0.
+- ∴ **The only missing piece is "recording the captured scalar `a` written by the worker into the parent's pending
+  writeback"**. The single-write version works because slice 1.11's `sync_shared_vars_to_env` (mod.rs:6412; pushes dirty keys
+  to `pending_rw_writeback_sources`) carries "a". In the loop+multiple-var version, **"a" is not carried as dirty** (either
+  the `last if $a` read inside the loop consumes the dirty flag, or the multi-var dirty tracking only carries a subset — to
+  be determined).
 
-**試した修正と不成立（第47・全 revert 済）**: ①DESTROY merge（class.rs:1421）で変更 captured scalar を
-`pending_rw_writeback_sources`/`pending_caller_var_writeback` に記録＋loop 境界 drain → ❌ 記録は**ワーカー interpreter の
-pending** に入り join で消失（drain は `locals=[]`/`["foo","bar"]` のワーカー frame でしか起きず "a" slot 不在で retain→消失）。
-②DESTROY merge で cell write-through → ❌ そもそも env が cell でなく plain Int（`saved=Some(Int(0))`）＝cell 不在で不成立。
+**Attempted fixes that did not work (session 47; all reverted)**: (1) recording changed captured scalars at the DESTROY merge
+(class.rs:1421) into `pending_rw_writeback_sources`/`pending_caller_var_writeback` + a loop-boundary drain → ❌ the recording
+goes into the **worker interpreter's pending** and vanishes at join (the drain only happens on the worker frames with
+`locals=[]`/`["foo","bar"]`, "a" slot absent so retain→lost). (2) cell write-through at the DESTROY merge → ❌ env is not a
+cell in the first place, just a plain Int (`saved=Some(Int(0))`) = no cell, so it fails.
 
-**∴ 次セッションの本丸＝cross-thread writeback recording の拡張（slice 1.11 family・localized で解ける見込み）**:
-`sync_shared_vars_to_env`（await が builtins_system.rs:1791 で呼ぶ）が、ワーカーで mutate された captured-outer scalar を
-**漏れなく** `pending_rw_writeback_sources` に push すれば、親の await call-site の既存 drain（L597・top-level slot に到達可）が
-slot を refresh する。**まず特定すべき: loop+複数 var の場合に shared_vars_dirty から "a" が落ちる経路**（ループ内 `$a` 読み出しの
-dirty クリア? worker の最終 sync で一部 var のみ?）。これは **cell substrate 不要**＝cross-thread shared-var の dirty/pending
-記録の取りこぼし修正。env も slot も await call-site で到達可能なことは計測済みなので、pending 記録さえ補えば通る。
-destruction.t 3 がその pin。（別軸: lazy-lists.t laziness / IO-Socket-Async flaky は無関係。）
-（補助案B＝await/loop 境界 top-level drain は、cell 伝播が入れば不要。）
+**∴ The core of the next session = extending cross-thread writeback recording (slice 1.11 family; expected to be solvable
+locally)**: if `sync_shared_vars_to_env` (called by await at builtins_system.rs:1791) pushes the captured-outer scalars
+mutated in the worker to `pending_rw_writeback_sources` **without omission**, the parent's existing await call-site drain
+(L597, which can reach the top-level slot) refreshes the slot. **First identify: the path through which "a" falls out of
+shared_vars_dirty in the loop+multiple-var case** (dirty cleared by the `$a` read inside the loop? only a subset of vars in
+the worker's final sync?). This requires **no cell substrate** = it is a fix for dropped dirty/pending recording of
+cross-thread shared vars. Both env and slot are measured to be reachable at the await call-site, so supplying the pending
+recording alone makes it pass. destruction.t 3 is the pin. (Separate axes: lazy-lists.t laziness / IO-Socket-Async flaky are
+unrelated.) (Auxiliary option B = an await/loop-boundary top-level drain becomes unnecessary once cell propagation lands.)
 
-### 7.2b ✅ proto `{*}` redispatch ＋ `state` var coherence（proto.t 21 / subsignature.t 54）= slice 1.17 で解決
-**実際の真因は当初推測（`restore_env_preserving_existing` が state を巻き戻す）とは別だった。** plain `state %h` を持つ
-通常 sub は OFF でも正常 persist（`counter(){state %seen; %seen<x>++}` → 1 2 3）＝state 機構自体は OK。`state $n`
-スカラも proto body で正常 persist。**問題は `%cache{$a} //= {*}` の hash element-assign 固有**: `{*}`
-（`call_proto_dispatch`）の `restore_env_preserving_existing`（dispatch.rs:2074）が `self.env` を丸ごとスワップし、env の
-`%cache` Arc を proto body の local slot の Arc から切り離す（strong_count→1）。`try_fast_hash_element_assign`
-（vm_var_assign_ops.rs:2606）が strong_count==1 で local slot を更新しない→slot stale→`sync_env_from_locals` が
-env を stale slot で clobber→state 永続化が空 hash 保存。修正＝fast hash assign 末尾で strong_count==1 でも local slot
-存在時に env 値を mirror。詳細＝§7.2a の proto.t 行。pin=`t/proto-state-cache-writeback-coherence.t`。
+### 7.2b ✅ proto `{*}` redispatch + `state` var coherence (proto.t 21 / subsignature.t 54) = resolved by slice 1.17
+**The actual root cause differed from the initial guess (`restore_env_preserving_existing` rolling back state).** A normal
+sub with a plain `state %h` persists correctly even OFF (`counter(){state %seen; %seen<x>++}` → 1 2 3) = the state machinery
+itself is OK. A `state $n` scalar also persists correctly in a proto body. **The problem is specific to the
+`%cache{$a} //= {*}` hash element-assign**: `{*}`'s (`call_proto_dispatch`) `restore_env_preserving_existing`
+(dispatch.rs:2074) swaps `self.env` wholesale, detaching env's `%cache` Arc from the proto body's local-slot Arc
+(strong_count→1). `try_fast_hash_element_assign` (vm_var_assign_ops.rs:2606) does not update the local slot when
+strong_count==1 → slot stale → `sync_env_from_locals` clobbers env with the stale slot → the state persistence saves an
+empty hash. Fix = at the tail of the fast hash assign, mirror the env value to the local slot when it exists, even at
+strong_count==1. Details = the proto.t row of §7.2a. pin=`t/proto-state-cache-writeback-coherence.t`.
 
-### 7.3 ★各スライスの必須手順（slice 1 の教訓）
+### 7.3 ★Mandatory procedure for each slice (lessons from slice 1)
 
-1. **boxing は `cell_boxing_active()` gated を維持**（default は reconcile・byte-identical）。新サーフェスを cell 化する
-   = その cluster の var を toggle 下で box する実装を追加。
-2. **必ず local で `make roast`（または該当 synopsis）を回す**。`make test` だけでは roast 回帰を見逃す
-   （slice 1 は let.t/code.t を make test では検出できなかった）。
-3. **cell 化が露出する潜在バグ**（reconcile が carrier で write を落として偶然 PASS していたケース）を覚悟する。
-   toggle 下で fail が残るなら、それは「次に直すべき本当のバグ」＝記録して order 付け。
-4. toggle OFF/ON 両方で pin が PASS することを確認。
+1. **Keep boxing gated by `cell_boxing_active()`** (default is reconcile, byte-identical). Cell-ifying a new surface
+   = adding an implementation that boxes that cluster's vars under the toggle.
+2. **Always run `make roast` locally (or the relevant synopsis)**. `make test` alone misses roast regressions
+   (slice 1 could not detect let.t/code.t via make test).
+3. **Expect latent bugs exposed by cell-ification** (cases that accidentally PASSed because reconcile dropped a write in a
+   carrier). If a fail remains under the toggle, that is "the next real bug to fix" = record it and order it.
+4. Confirm the pins PASS with the toggle both OFF and ON.
 
-### 7.4 最終（env_dirty 削除）
+### 7.4 Final (env_dirty removal)
 
-残サーフェス（toggle OFF survey）が 0 になったら → `blanket_reconcile_if_dirty` を空洞化 →
-`env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 削除（PLAN.md §2-E）。`pairs`/`slip` carrier-drop も同時に安全化。
-このとき boxing の `cell_boxing_active()` gate を外して恒久 ON 化。
-
----
-
-## 8. Hazard チェックリスト
-
-- [ ] **saved-frame 伝播必須**（§3 教訓）。slot+env だけだとメソッド return で cell が巻き戻る。
-- [ ] **type/where 制約付き scalar は box 禁止**（制約再チェック迂回）。
-- [ ] **non-scalar Value 種（Package/Sub/Instance/Proxy）は box 禁止**（identity/メタ破壊・既存 skip 維持）。
-- [ ] **forward-declared sub の ordering**（案B の場合）。Nil cell box → SetLocal 透過で吸収できるか確認。
-- [ ] **perf**: 該当 var の毎アクセスに Mutex lock。escape-aware で captured-mutated に限定。timed roast / fib・method-call 確認。
-- [ ] **container decont 漏れ**（スライス2）: cell が slice/`.kv`/`.pairs`/native raw-items 読みで漏れない監査。
-- [ ] **cross-thread**（Track C）: `Arc<Mutex>` cell と `shared_vars`/`clone_for_thread` の整合。
+Once the remaining surface (toggle OFF survey) reaches 0 → hollow out `blanket_reconcile_if_dirty` →
+remove `env_dirty` / `ensure_locals_synced` / `saved_env_dirty` (PLAN.md §2-E). The `pairs`/`slip` carrier-drop is made safe
+at the same time. At this point, remove the `cell_boxing_active()` gate and make boxing permanently ON.
 
 ---
 
-## 9. 着手手順（次セッション用クイックスタート）
+## 8. Hazard checklist
 
-**★純 writeback コヒーレンスは slice 1.20（#3400）で完了。lazy-lists.t 24-26 の真 lazy 化も完了（2026-06-22）＝
-OFF roast survey の決定的サーフェスは IO-Socket-Async.t の flaky のみに枯渇。** これで env_dirty 削除（§7.4）の前提が
-すべて揃った。
-
-**lazy-lists.t 24-26 の解決（2026-06-22・完了）**:
-- 真因: `make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy` を `.kv`/`.pairs`/`.antipairs` が **eager に force** して
-  `$was-lazy = 0` を走らせていた。ON は write-loss で偶然 raku 一致、OFF が正しく伝播して露出（writeback でなく laziness バグ）。
-- 修正: `MapGrepSpec` に `index_transform: Option<IndexTransform>`（Pairs/AntiPairs/Kv）を追加し、`.kv`/`.pairs`/`.antipairs`
-  を **lazy index-pipe**（`LazyList::new_index_pipe`）化。genuinely-lazy ソース（`.lazy` gather・無限 spec）に対しては eager
-  force でなく lazy pipe を返す。`source_idx` を positional key に使い、pull は既存の `pull_source_element`（gather coroutine を
-  incremental 消費）を再利用。`force_lazy_pipe` が `index_transform` Some 時に func/grep を bypass して index 変換を emit。
-  3 dispatch 経路（CallMethodMut fast-path・CallMethod 非mut・runtime slow-path methods.rs）すべてに早期 dispatch を追加。
-  index-pipe は preserve marker を持つので `my @res = one.kv` が lazy 保持。値は eager 版とバイト一致。pin=
-  `t/lazy-pairs-kv-antipairs.t`（18・ON/OFF 両 PASS）。
-
-**次 = §7.4（env_dirty 物理削除）**: `blanket_reconcile_if_dirty` 空洞化 → `env_dirty`/`ensure_locals_synced`/
-`saved_env_dirty` 削除 → `cell_boxing_active()` gate を外して boxing 恒久 ON 化。IO-Socket-Async の flaky はこの空洞化で実挙動確認。
+- [ ] **Saved-frame propagation is mandatory** (§3 lesson). Slot+env alone means the cell rolls back on method return.
+- [ ] **Do not box scalars with type/where constraints** (bypasses constraint re-checks).
+- [ ] **Do not box non-scalar Value kinds (Package/Sub/Instance/Proxy)** (breaks identity/meta; keep the existing skip).
+- [ ] **Ordering of forward-declared subs** (for Option B). Confirm that a Nil cell box → SetLocal transparency absorbs it.
+- [ ] **perf**: every access to affected vars takes a Mutex lock. Escape-aware, limited to captured-mutated. Check timed roast / fib and method-call.
+- [ ] **Container decont leaks** (slice 2): audit that the cell does not leak through slice/`.kv`/`.pairs`/native raw-items reads.
+- [ ] **Cross-thread** (Track C): consistency of the `Arc<Mutex>` cell with `shared_vars`/`clone_for_thread`.
 
 ---
 
-## 10. env_dirty 物理削除 substrate グラインド（2026-06-22 着手）
+## 9. Getting-started procedure (quick start for the next session)
 
-§7.4 は「blanket reconcile を空洞化すれば env_dirty を消せる」と書いていたが、**第49セッションの実証で
-それは不十分**と判明した。env_dirty は2つの役割を持つ:
+**★Pure writeback coherence completed with slice 1.20 (#3400). True lazification of lazy-lists.t 24-26 also complete
+(2026-06-22) = the deterministic surface of the OFF roast survey is exhausted down to only IO-Socket-Async.t's flakiness.**
+With this, all the prerequisites for env_dirty removal (§7.4) are in place.
 
-1. **blanket reconcile**（`blanket_reconcile_if_dirty`・env_dirty-gated の O(全 locals) 巻き戻し）のゲート。
-   `MUTSU_NO_BLANKET_RECONCILE`（boxing）下で既に無効＝**除去可能**。
-2. **精密 reconcile**（`reconcile_locals_from_env_at_site`・carrier fallback `lives-ok{}`・Proxy STORE 等の
-   サイトで全 locals を env から pull）の perf ゲート。**boxing 下でも load-bearing**。
+**Resolution of lazy-lists.t 24-26 (2026-06-22, complete)**:
+- True cause: `.kv`/`.pairs`/`.antipairs` **eagerly forced** `make-lazy-list = gather { take ...; $was-lazy = 0 }.lazy`,
+  running `$was-lazy = 0`. ON matched raku by accident via write-loss; OFF propagated correctly and exposed it (a laziness
+  bug, not writeback).
+- Fix: added `index_transform: Option<IndexTransform>` (Pairs/AntiPairs/Kv) to `MapGrepSpec` and made `.kv`/`.pairs`/`.antipairs`
+  **lazy index-pipes** (`LazyList::new_index_pipe`). For genuinely-lazy sources (`.lazy` gather, infinite spec) they return a
+  lazy pipe rather than eagerly forcing. Uses `source_idx` as the positional key; pull reuses the existing
+  `pull_source_element` (incrementally consumes the gather coroutine). `force_lazy_pipe` bypasses func/grep when
+  `index_transform` is Some and emits the index transformation. Early dispatch was added to all 3 dispatch paths
+  (CallMethodMut fast-path, CallMethod non-mut, runtime slow-path methods.rs).
+  The index-pipe carries the preserve marker, so `my @res = one.kv` stays lazy. Values are byte-identical with the eager
+  version. pin=`t/lazy-pairs-kv-antipairs.t` (18; PASSES both ON/OFF).
 
-**実証**: `MUTSU_NO_BLANKET_RECONCILE=1` のまま `reconcile_locals_from_env_at_site` を no-op 化すると
-`make test` が FAIL（"wrapper scalar mutation of captured var propagates" 他）。∴ env_dirty 完全削除は
-**精密 reconcile も不要にする＝精密 reconcile に依存する surface を一つずつ precise writeback / cell 共有へ畳む**
-multi-session グラインドが前提（§4-A の outer cell 共有・PLAN §2-E）。
+**Next = §7.4 (physical removal of env_dirty)**: hollow out `blanket_reconcile_if_dirty` → remove
+`env_dirty`/`ensure_locals_synced`/`saved_env_dirty` → remove the `cell_boxing_active()` gate and make boxing permanently ON.
+IO-Socket-Async's flakiness is verified against actual behavior during this hollowing-out.
 
-### 10.1 計測ハーネス `MUTSU_NO_PRECISE_RECONCILE`
+---
 
-`reconcile_locals_from_env_at_site` を no-op 化する独立トグル（`precise_reconcile_disabled()`・
-`vm/vm_env_helpers.rs`）。`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1`（double-OFF）＝
-**boxing のみ＝env_dirty 削除後の到達状態**を測定する。double-OFF で残る fail が「precise writeback / cell 共有に
-未変換の by-name writer」。これが 0（flaky 除く）になったら精密 reconcile + env_dirty を物理削除できる。
-（旧 `MUTSU_NO_BLANKET_RECONCILE` が slice 1〜1.20 の OFF survey を駆動したのと同型のハーネス。）
+## 10. env_dirty physical-removal substrate grind (started 2026-06-22)
 
-### 10.2 double-OFF baseline（2026-06-22・16 → 15）
+§7.4 said "hollowing out blanket reconcile lets us delete env_dirty", but **session 49's experiments showed that is
+insufficient**. env_dirty has two roles:
 
-double-OFF で fail する t/（＝精密 reconcile 依存 surface）:
-`closure-nested-writeback`（method 捕捉 `$output`）/ `concurrent-cell-writeback-coherence` /
-`done-paren-stmt-modifier`（react done()）/ `eval-carrier-precise-writeback` /
+1. Gate for **blanket reconcile** (`blanket_reconcile_if_dirty`, the env_dirty-gated O(all locals) rollback).
+   Already disabled under `MUTSU_NO_BLANKET_RECONCILE` (boxing) = **removable**.
+2. Perf gate for **precise reconcile** (`reconcile_locals_from_env_at_site`, pulling all locals from env at sites such as
+   the carrier fallback `lives-ok{}` and Proxy STORE). **Load-bearing even under boxing**.
+
+**Demonstration**: with `MUTSU_NO_BLANKET_RECONCILE=1` still set, making `reconcile_locals_from_env_at_site` a no-op makes
+`make test` FAIL ("wrapper scalar mutation of captured var propagates" and others). ∴ Full env_dirty removal presupposes a
+multi-session grind that **also makes precise reconcile unnecessary = folding each surface that depends on precise reconcile
+into precise writeback / cell sharing** (§4-A's outer cell sharing, PLAN §2-E).
+
+### 10.1 Measurement harness `MUTSU_NO_PRECISE_RECONCILE`
+
+An independent toggle that makes `reconcile_locals_from_env_at_site` a no-op (`precise_reconcile_disabled()`,
+`vm/vm_env_helpers.rs`). `MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` (double-OFF) =
+measures **boxing only = the state reached after env_dirty removal**. The fails remaining under double-OFF are "by-name
+writers not yet converted to precise writeback / cell sharing". Once these reach 0 (excluding flaky), precise reconcile +
+env_dirty can be physically removed.
+(A harness of the same shape as the old `MUTSU_NO_BLANKET_RECONCILE` that drove the OFF survey of slices 1–1.20.)
+
+### 10.2 double-OFF baseline (2026-06-22, 16 → 15)
+
+t/ files failing under double-OFF (= surfaces depending on precise reconcile):
+`closure-nested-writeback` (method-captured `$output`) / `concurrent-cell-writeback-coherence` /
+`done-paren-stmt-modifier` (react done()) / `eval-carrier-precise-writeback` /
 `junction-invocant-autothread-writeback-coherence` / `let-temp` + `let-temp-restore-writeback-coherence` /
 `note-gist-and-dynamic-handle` / `react-do-whenever-tap-coherence` / `react-whenever-last-next` /
 `resumable-control-signal-indirect-call` / `single-store-slice-c-prime` / `supply-on-demand-closing` /
-`supply-sync-infinite-emit` / `wrap-closure-capture`。カテゴリ＝carrier / 並行（supply/react）/ closure / その他。
+`supply-sync-infinite-emit` / `wrap-closure-capture`. Categories = carrier / concurrency (supply/react) / closure / other.
 
-### 10.3 slice S1（2026-06-22）— bound-Proxy substr-rw/subbuf-rw/undefine を precise 化（16→15）
+### 10.3 Slice S1 (2026-06-22) — make bound-Proxy substr-rw/subbuf-rw/undefine precise (16→15)
 
-`my $r := substr-rw($s, ...); $r = v` の Proxy STORE が `$s` を env に by-name 書きするが、STORE は
-slot owner の1フレーム下で走るため slice 1.13 の `pending_rw_writeback_sources`（drop-on-miss）では消える。
-**修正**: STORE の record サイト（`builtins_lvalue.rs` の substr-rw/subbuf-rw/undefine 分岐）で retain-on-miss の
-`pending_caller_var_writeback`（新ヘルパ `record_caller_var_writeback`）にも記録し、Proxy STORE assign サイト
-（`vm_var_assign_ops.rs` の local 3 サイト＋`vm_misc_ops.rs` の global by-name サイト）で
-`reconcile_locals_from_env_at_site` でなく `apply_pending_rw_writeback` で精密 drain。owner slot が数フレーム上でも
-retain-on-miss が運ぶ（slice 1.18 と同型）。blanket reconcile は任意 user `Proxy` STORE 用の fallback として local
-サイトに残置（double-OFF harness 下では no-op）＝default build はバイト不変。pin=既存
-`t/substr-rw-lvalue-writeback-coherence.t`（test 4・double-OFF で PASS 化）。make test 9890（default/double-OFF 両 PASS）。
+The Proxy STORE of `my $r := substr-rw($s, ...); $r = v` writes `$s` by name to env, but STORE runs one frame below the
+slot owner, so slice 1.13's `pending_rw_writeback_sources` (drop-on-miss) loses it.
+**Fix**: at STORE's recording sites (the substr-rw/subbuf-rw/undefine branches of `builtins_lvalue.rs`), also record into the
+retain-on-miss `pending_caller_var_writeback` (new helper `record_caller_var_writeback`), and at the Proxy STORE assign sites
+(3 local sites in `vm_var_assign_ops.rs` + the global by-name site in `vm_misc_ops.rs`) drain precisely via
+`apply_pending_rw_writeback` instead of `reconcile_locals_from_env_at_site`. Retain-on-miss carries it even when the owner
+slot is several frames up (same shape as slice 1.18). Blanket reconcile is left at the local sites as a fallback for
+arbitrary user `Proxy` STOREs (a no-op under the double-OFF harness) = the default build is byte-identical. pin = existing
+`t/substr-rw-lvalue-writeback-coherence.t` (test 4; now PASSES under double-OFF). make test 9890 (PASSES both default/double-OFF).
 
-### 10.4 slice S2（2026-06-22）— `let`/`temp` restore を precise 化（15→13）
+### 10.4 Slice S2 (2026-06-22) — make `let`/`temp` restore precise (15→13)
 
-`temp $x = 20` のブロック退出復元が `restore_let_value`（`accessors.rs`）の非cell path で `env.insert` のみ＝
-slot stale（double-OFF で `$x` が 20 のまま）。restore は復元名を正確に知っている。**修正**: 非cell path で復元名を
-`pending_rw_writeback_sources`（drop-on-miss・same-frame bare block 用）＋ `pending_caller_var_writeback`
-（retain-on-miss・nested callee の `temp` 用）に記録し、block-exit op 3 サイト（`vm_misc_ops.rs` success/err・
-`vm_control_ops.rs` err）で `reconcile_locals_from_env_at_site` の前に `apply_pending_rw_writeback` で精密 drain。
-blanket reconcile は fallback として残置（harness 下 no-op）＝default build 挙動不変。cell-boxed binding は従来どおり
-shared Arc 経由で slot が見えるので非該当。pin=`t/let-temp.t` + `t/let-temp-restore-writeback-coherence.t`
-（double-OFF で PASS 化）。make test 9904。
+The block-exit restore of `temp $x = 20` only does `env.insert` on the non-cell path of `restore_let_value` (`accessors.rs`)
+= slot stale (`$x` stays 20 under double-OFF). The restore knows the restored name exactly. **Fix**: on the non-cell path,
+record the restored name into `pending_rw_writeback_sources` (drop-on-miss, for same-frame bare blocks) plus
+`pending_caller_var_writeback` (retain-on-miss, for `temp` in nested callees), and at the 3 block-exit op sites
+(`vm_misc_ops.rs` success/err, `vm_control_ops.rs` err) drain precisely via `apply_pending_rw_writeback` before
+`reconcile_locals_from_env_at_site`. Blanket reconcile is left as a fallback (a no-op under the harness) = default-build
+behavior unchanged. Cell-boxed bindings are unaffected since the slot sees them via the shared Arc as before.
+pin=`t/let-temp.t` + `t/let-temp-restore-writeback-coherence.t` (now PASS under double-OFF). make test 9904.
 
-### 10.5 slice S3（2026-06-22）— closure/method nested-capture writeback を precise 化（13→10）
+### 10.5 Slice S3 (2026-06-22) — make closure/method nested-capture writeback precise (13→10)
 
-`cap({ note "" but role { method gist { $seen = 1 } } })`（note-gist）/ `capture-out` の `$output`
-（closure-nested-writeback）/ `&f.wrap(-> { $seen = True; callsame })`（wrap-closure-capture）= nested な
-gist/method/wrapper closure が捕捉した outer lexical を変異するが、その lexical は当該 closure の**直接 free var で
-ない**（nested 内で捕捉）ため §closure-dispatch の free_var 記録（811行）が拾えない。**修正**: ①closure-dispatch の
-env-scan writeback ループ（`vm_closure_dispatch.rs`）で、書き戻す caller-visible var の値が変化した場合
-`pending_caller_var_writeback`（retain-on-miss）に記録（`cell_boxing_active()` ガード＝default build の hot closure 経路
-には不可。blanket reconcile が担う）。②wrap dispatch（`vm_call_func_ops.rs:518`・`vm_call_exec_ops.rs:56`）で
-`apply_pending_rw_writeback` を追加（wrapper の記録を drain）。blanket reconcile は fallback として残置。
-pin=`t/note-gist-and-dynamic-handle.t` + `t/closure-nested-writeback.t` + `t/wrap-closure-capture.t`（double-OFF で
-PASS 化）。make test 9904。
+`cap({ note "" but role { method gist { $seen = 1 } } })` (note-gist) / `capture-out`'s `$output`
+(closure-nested-writeback) / `&f.wrap(-> { $seen = True; callsame })` (wrap-closure-capture) = a nested
+gist/method/wrapper closure mutates a captured outer lexical, but that lexical is **not a direct free var** of the closure
+in question (captured within the nesting), so the free_var recording of §closure-dispatch (line 811) cannot pick it up.
+**Fix**: (1) in the env-scan writeback loop of closure dispatch (`vm_closure_dispatch.rs`), when the value of a
+caller-visible var being written back has changed, record it into `pending_caller_var_writeback` (retain-on-miss)
+(guarded by `cell_boxing_active()` = not allowed on the default build's hot closure path; blanket reconcile carries it there).
+(2) at wrap dispatch (`vm_call_func_ops.rs:518`, `vm_call_exec_ops.rs:56`), add `apply_pending_rw_writeback` (drains the
+wrapper's recordings). Blanket reconcile is left as a fallback.
+pin=`t/note-gist-and-dynamic-handle.t` + `t/closure-nested-writeback.t` + `t/wrap-closure-capture.t` (now PASS under
+double-OFF). make test 9904.
 
-### 10.6 slice S4（2026-06-22）— regex embedded `{ }` / `:let` の cross-frame caller writeback を precise 化（10→8）
+### 10.6 Slice S4 (2026-06-22) — make cross-frame caller writeback of regex embedded `{ }` / `:let` precise (10→8)
 
-`sub do-match($txt) { $txt ~~ / (\d+) { $tracked = +$0 } / }`（single-store-slice-c-prime test 7）/
-EVAL 内 `my regex la { :let $a = 5; … }`（eval-carrier-precise-writeback test 12）= regex の埋め込み `{ }` /
-`:let` ブロックが、当該マッチが走るフレーム（`do-match` の本体・EVAL'd code）の slot では**ない** caller lexical
-（sub の呼び出し元／EVAL の呼び出し元の `$tracked`/`$a`）を `env` へ by-name 書きする。`writeback_match_locals`
-（マッチサイト `vm_comparison_ops.rs`）は**現フレームの slot しか書かない**ため、owning slot は1つ以上上のフレームに
-あり stale のまま残る（double-OFF で `$tracked=-1`/`$a=1`）。EVAL の cell-boxing（slice 1.7）は `$x=5` 型の
-`SetGlobal` 書き込みは cell 経由で拾うが、`:let` は `restore_env_entries` の直接 env insert で cell リンクを断つ
-ため拾えない。**修正**: マッチサイトで `writeback_match_locals` の後、埋め込み write 名（`pending_local_updates`）の
-うち match-special（`$/`/`$0`…）でも現フレーム slot でもないものを retain-on-miss の
-`pending_caller_var_writeback`（`record_caller_var_writeback`）に記録。owning フレームへ戻る call site の
-`apply_pending_caller_var_writeback` が drain する（slice 1.18/S1-S3 と同型）。**1 修正で 2 surface 消化**（sub
-carrier と EVAL carrier の双方）。`cell_boxing_active()` ガード＝default build は従来どおり blanket/精密 reconcile が
-担う＝バイト不変。pin=`t/single-store-slice-c-prime.t`（test 7）+ `t/eval-carrier-precise-writeback.t`（test 12）
-（double-OFF で PASS 化）。
+`sub do-match($txt) { $txt ~~ / (\d+) { $tracked = +$0 } / }` (single-store-slice-c-prime test 7) /
+`my regex la { :let $a = 5; … }` inside EVAL (eval-carrier-precise-writeback test 12) = a regex's embedded `{ }` /
+`:let` block writes by name to `env` a caller lexical (`$tracked`/`$a` of the sub's caller / the EVAL's caller) that is
+**not** a slot of the frame where the match runs (`do-match`'s body / the EVAL'd code). `writeback_match_locals`
+(at the match site, `vm_comparison_ops.rs`) **only writes the current frame's slots**, so the owning slot is one or more
+frames up and stays stale (`$tracked=-1`/`$a=1` under double-OFF). EVAL's cell-boxing (slice 1.7) picks up `$x=5`-style
+`SetGlobal` writes via the cell, but `:let` severs the cell link via `restore_env_entries`' direct env insert, so it cannot.
+**Fix**: at the match site, after `writeback_match_locals`, record the embedded write names (`pending_local_updates`)
+that are neither match specials (`$/`/`$0`…) nor current-frame slots into the retain-on-miss
+`pending_caller_var_writeback` (`record_caller_var_writeback`). The `apply_pending_caller_var_writeback` at the call site
+returning to the owning frame drains it (same shape as slices 1.18/S1-S3). **1 fix clears 2 surfaces** (both the sub carrier
+and the EVAL carrier). Guarded by `cell_boxing_active()` = the default build is carried by blanket/precise reconcile as
+before = byte-identical. pin=`t/single-store-slice-c-prime.t` (test 7) + `t/eval-carrier-precise-writeback.t` (test 12)
+(now PASS under double-OFF).
 
-### 10.7 slice S5（2026-06-22）— junction invocant autothread の per-eigenstate writeback を precise 化（8→7）
+### 10.7 Slice S5 (2026-06-22) — make per-eigenstate writeback of junction invocant autothreading precise (8→7)
 
-`my Mu $x = JB1.new | JB1.new | JB2.new; $x.a`（`method a { $cnt1++ }` / JB2 は `$cnt2++`）= invocant junction を
-ユーザーメソッドで autothread し、各 eigenstate が captured-outer / `our` 変数を変異する。各 eigenstate の dispatch は
-その by-name write を `pending_rw_writeback_sources` に記録するが、**次の eigenstate の dispatch がそのバッファを
-上書き**するため、post-loop drain に残るのは**最後の eigenstate のソースだけ**。EARLIER eigenstate のみが書いた変数
-（最後が `$cnt2` を書く間に `$cnt1` を書いた）は失われ owning slot が stale（double-OFF で `$cnt1=1`・期待 2）。同じ変数を
-全 eigenstate が書く場合は最後のソースで足りるので動いていた（露出は「異なる変数を異なる eigenstate が書く」場合のみ）。
-**修正**: junction loop の各 eigenstate 呼び出し後に `pending_rw_writeback_sources` ＋ `pending_caller_var_writeback` を
-drain して retain-on-miss の `pending_caller_var_writeback` に accumulate（`record_caller_var_writeback`・dedup）。
-loop 後の 1 回の `apply_pending_caller_var_writeback` が env（既に全 eigenstate の累積値を保持）から owning caller slot を
-精密に書く。CallMethod（非mut）/ CallMethodMut（mut）両 junction path に対称適用（`$cnt++` は mut path 経由）。
-`cell_boxing_active()` ガード＝default build は従来どおり blanket `reconcile_locals_from_env_at_site` の pull＝バイト不変。
-pin=`t/junction-invocant-autothread-writeback-coherence.t`（6・double-OFF で PASS 化）。回帰元
-`roast/S03-junctions/autothreading.t` 107/107 PASS。
+`my Mu $x = JB1.new | JB1.new | JB2.new; $x.a` (`method a { $cnt1++ }` / JB2 does `$cnt2++`) = autothreading an invocant
+junction over a user method, with each eigenstate mutating captured-outer / `our` variables. Each eigenstate's dispatch
+records its by-name write into `pending_rw_writeback_sources`, but **the next eigenstate's dispatch overwrites that buffer**,
+so all that remains for the post-loop drain is **only the last eigenstate's sources**. Variables written only by EARLIER
+eigenstates (`$cnt1` written while the last wrote `$cnt2`) are lost and the owning slot goes stale (double-OFF gives
+`$cnt1=1`, expected 2). When all eigenstates write the same variable, the last source suffices, so it worked (the exposure is
+only "different eigenstates write different variables").
+**Fix**: after each eigenstate call in the junction loop, drain `pending_rw_writeback_sources` + `pending_caller_var_writeback`
+and accumulate into the retain-on-miss `pending_caller_var_writeback` (`record_caller_var_writeback`, dedup). A single
+post-loop `apply_pending_caller_var_writeback` writes the owning caller slots precisely from env (which already holds the
+accumulated values of all eigenstates). Applied symmetrically to both junction paths, CallMethod (non-mut) / CallMethodMut
+(mut) (`$cnt++` goes via the mut path). Guarded by `cell_boxing_active()` = the default build keeps the blanket
+`reconcile_locals_from_env_at_site` pull as before = byte-identical.
+pin=`t/junction-invocant-autothread-writeback-coherence.t` (6; now PASSES under double-OFF). The regression source
+`roast/S03-junctions/autothreading.t` PASSES 107/107.
 
-### 10.8 slice S6（2026-06-22）— resumable CONTROL handler writeback を precise 化（7→6）
+### 10.8 Slice S6 (2026-06-22) — make resumable CONTROL handler writeback precise (7→6)
 
 `my $out=''; CONTROL { default { $out ~= "[{.message}]"; .resume } }; my $w = &warn; $w.("indirect")` =
-indirect call（`$w.(...)`／`&warn.(...)`＝CallOnValue）から raise された resumable な `warn` を、enclosing CONTROL の
-`resume_safe` ハンドラがインライン実行する（`try_resume_safe_control_inline`・builtins_control_flow.rs）。ハンドラ本体は
-installing frame の lexical `$out` を変異するが、ハンドラは locals を env から再構成 → 実行 → **変化した slot を env に
-flush + env_dirty** するだけで、frame の local SLOT は warn-call サイトの blanket/精密 `reconcile_locals_from_env_at_site`
-でしか更新されない＝double-OFF で no-op。**direct `warn`（ExecCall）は通り**、indirect（CallOnValue）だけ落ちた
-（計測: indirect 後 `env["out"]=[indirect]` は生存・slot[0] が stale・read が slot を見て空）。**修正**: ハンドラの flush
-ループで変化した名前を `pending_rw_writeback_sources`（drop-on-miss・same-frame）＋ `pending_caller_var_writeback`
-（retain-on-miss・deeper raise site が installing frame まで運ぶ）に記録。両 call site（ExecCall/CallOnValue）が既に走らせる
-**非ゲートの `apply_pending_rw_writeback`** が env → slot を drain する。`cell_boxing_active()` ガード＝default build は従来
-どおり blanket reconcile が担う＝バイト不変。pin=`t/resumable-control-signal-indirect-call.t`（5・double-OFF で PASS 化）。
+a resumable `warn` raised from an indirect call (`$w.(...)`/`&warn.(...)` = CallOnValue) is executed inline by the enclosing
+CONTROL's `resume_safe` handler (`try_resume_safe_control_inline`, builtins_control_flow.rs). The handler body mutates the
+installing frame's lexical `$out`, but the handler only reconstructs locals from env → runs → **flushes changed slots to env
++ env_dirty**; the frame's local SLOT is updated only by the warn-call site's blanket/precise
+`reconcile_locals_from_env_at_site` = a no-op under double-OFF. **Direct `warn` (ExecCall) passes**; only indirect
+(CallOnValue) dropped (measured: after the indirect call, `env["out"]=[indirect]` survives, slot[0] is stale, and the read
+sees the slot and comes up empty). **Fix**: in the handler's flush loop, record changed names into
+`pending_rw_writeback_sources` (drop-on-miss, same-frame) plus `pending_caller_var_writeback` (retain-on-miss; a deeper raise
+site carries it up to the installing frame). The **ungated `apply_pending_rw_writeback`** that both call sites
+(ExecCall/CallOnValue) already run drains env → slot. Guarded by `cell_boxing_active()` = the default build is carried by
+blanket reconcile as before = byte-identical. pin=`t/resumable-control-signal-indirect-call.t` (5; now PASSES under double-OFF).
 
-### 10.9 slice S7（2026-06-22）— react/whenever captured-outer writeback を precise 化（6→0）
+### 10.9 Slice S7 (2026-06-22) — make react/whenever captured-outer writeback precise (6→0)
 
-`react whenever Supply.from-list(…) { …; $i++ }` の `whenever` callback が captured-outer lexical `$i` を変異する。
-callback は `vm_call_map_block` 経由で by-name に env を書くが per-write 記録がなく、`exec_react_scope_op`
-（vm_register_ops.rs）の post-loop `reconcile_locals_from_env_at_site`（double-OFF で no-op）でしか slot に届かない。
-**修正**: react event loop の**前後で caller-frame slot-backing env 値をスナップショット**し、変化した slot だけを env
-から精密に書き戻す（per-write 記録が無い by-name writer の唯一の精密化手段＝loop が書いた名前を差分で同定）。**この
-1 修正で 5 surface 一掃**（`done-paren-stmt-modifier`/`concurrent-cell-writeback-coherence`/`react-whenever-last-next`/
-`supply-on-demand-closing`/`supply-sync-infinite-emit`）。加えて `exec_whenever_scope_op`（:1841）の
-`my $tap = do whenever $sup {…}` bind は **target_var 名が既知**なのでその slot のみ精密書き戻し
-（`react-do-whenever-tap-coherence`）。同期 `from-list` emit＝単一スレッドなので tractable。`cell_boxing_active()`
-ガード＝default build は blanket reconcile が担う＝バイト不変。pin=`t/done-paren-stmt-modifier.t`（4）+
-`t/react-do-whenever-tap-coherence.t`（2）他（全 6・double-OFF で PASS 化）。broad supply/react/concurrency/promise/start
-t/ も両モード PASS。
+The `whenever` callback of `react whenever Supply.from-list(…) { …; $i++ }` mutates the captured-outer lexical `$i`.
+The callback writes env by name via `vm_call_map_block` without per-write recording, and only the post-loop
+`reconcile_locals_from_env_at_site` of `exec_react_scope_op` (vm_register_ops.rs) (a no-op under double-OFF) delivers it to
+the slot. **Fix**: **snapshot the caller-frame slot-backing env values before and after the react event loop** and write back
+precisely only the changed slots from env (the only precise-ification method for by-name writers without per-write
+recording = identify the names the loop wrote by diffing). **This 1 fix sweeps 5 surfaces**
+(`done-paren-stmt-modifier`/`concurrent-cell-writeback-coherence`/`react-whenever-last-next`/
+`supply-on-demand-closing`/`supply-sync-infinite-emit`). Additionally, the `my $tap = do whenever $sup {…}` bind of
+`exec_whenever_scope_op` (:1841) has a **known target_var name**, so write back precisely only that slot
+(`react-do-whenever-tap-coherence`). Synchronous `from-list` emit = single-threaded so tractable. Guarded by
+`cell_boxing_active()` = the default build is carried by blanket reconcile = byte-identical. pin=`t/done-paren-stmt-modifier.t` (4) +
+`t/react-do-whenever-tap-coherence.t` (2) and others (all 6; now PASS under double-OFF). The broad
+supply/react/concurrency/promise/start t/ also PASSES in both modes.
 
-### 10.10 t/ surface 0 到達・**roast double-OFF sweep が 25 file の隠れサーフェスを露呈**（authoritative）
+### 10.10 t/ surface reaches 0; **the roast double-OFF sweep exposes 25 files of hidden surface** (authoritative)
 
-S1〜S7 で **t/ pin（16）＋ broad supply/react/concurrency/promise/start クラスタが両モード（default / double-OFF）で全
-PASS**＝t/ で観測できる精密 reconcile 依存サーフェスは枯渇。**だが全 roast whitelist（1285）の double-OFF sweep
-（`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release）を初めて実走したところ 25 file が決定的 fail
-＝t/ pin は不完全だった**（第45 で「OFF roast survey こそ authoritative」と判明したのと同型の教訓）。env_dirty 物理削除は
-この roast サーフェスを全消化してから。診断は `tmp/roast-double-off.log` / `tmp/roast-double-off-fails.txt`。
+With S1–S7, **the t/ pins (16) plus the broad supply/react/concurrency/promise/start cluster all PASS in both modes
+(default / double-OFF)** = the precise-reconcile-dependent surface observable in t/ is exhausted. **But the first actual
+double-OFF sweep of the full roast whitelist (1285) (`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release)
+showed 25 files failing deterministically = the t/ pins were incomplete** (the same lesson as session 45's discovery that
+"the OFF roast survey is what is authoritative"). Physical removal of env_dirty comes only after fully clearing this roast
+surface. Diagnostics in `tmp/roast-double-off.log` / `tmp/roast-double-off-fails.txt`.
 
-**roast double-OFF 25 file（S8 着手前・カテゴリ別）**:
-- **S03 演算子（andthen/orelse/notandthen）**＝user `method defined { $calls++ }` の captured-outer write。
-  → **✅ S10.11 で解決**（CallDefined snapshot writeback・1 修正 3 file）。
-- **S14 roles（anonymous/mixin-6e/parameterized-mixin/rw/submethods-6e・5）**＝role mixin/`rw` accessor の writeback
-  （anonymous/parameterized-mixin は abort=Bad plan）。
-- **S02 types（baghash/mixhash/set・3）**＝Set/Bag/Mix 演算の captured write。
-- **S02 names（our/symbolic-deref・2）**＝`our`/symbolic deref の by-name writeback。
-- **その他**: S02-types/lazy-lists・S04 gather（abort）・S04 terminator・S04 pointy-rw・S06 lvalue-subroutines・
-  S06 named-parameters・S12 coercion-methods・S12 primitives・S12 defer-next・S17 cas-loop・S17 throttle・S32 kv。
+**The 25 roast double-OFF files (before S8, by category)**:
+- **S03 operators (andthen/orelse/notandthen)** = captured-outer writes of a user `method defined { $calls++ }`.
+  → **✅ Resolved by S10.11** (CallDefined snapshot writeback; 1 fix, 3 files).
+- **S14 roles (anonymous/mixin-6e/parameterized-mixin/rw/submethods-6e, 5)** = writeback of role mixin/`rw` accessors
+  (anonymous/parameterized-mixin are abort=Bad plan).
+- **S02 types (baghash/mixhash/set, 3)** = captured writes of Set/Bag/Mix operations.
+- **S02 names (our/symbolic-deref, 2)** = by-name writeback of `our`/symbolic deref.
+- **Others**: S02-types/lazy-lists, S04 gather (abort), S04 terminator, S04 pointy-rw, S06 lvalue-subroutines,
+  S06 named-parameters, S12 coercion-methods, S12 primitives, S12 defer-next, S17 cas-loop, S17 throttle, S32 kv.
 
-**∴ env_dirty 物理削除（§7.4 / PLAN §2-E）は roast double-OFF 0 が前提**: ①roast 25→0 を slice で消化 →
-②`blanket_reconcile_if_dirty` / `reconcile_locals_from_env_at_site` を空洞化 → ③`env_dirty` / `ensure_locals_synced` /
-`saved_env_dirty` を削除 → ④`cell_boxing_active()` gate を撤去して boxing を恒久 ON（＝単一ストアの派生ビュー化）。
+**∴ Physical removal of env_dirty (§7.4 / PLAN §2-E) requires roast double-OFF 0**: (1) clear roast 25→0 in slices →
+(2) hollow out `blanket_reconcile_if_dirty` / `reconcile_locals_from_env_at_site` → (3) remove `env_dirty` /
+`ensure_locals_synced` / `saved_env_dirty` → (4) remove the `cell_boxing_active()` gate and make boxing permanently ON
+(= turning it into a derived view of a single store).
 
-### 10.11 slice S8（2026-06-22）— user `.defined`（andthen/orelse/notandthen）writeback を precise 化（roast 25→22）
+### 10.11 Slice S8 (2026-06-22) — make user `.defined` (andthen/orelse/notandthen) writeback precise (roast 25→22)
 
 `my $calls=0; my class Foo { method defined { $calls++; True } }; Foo andthen meow $_` = `andthen`/`orelse`/`notandthen`
-は LHS の definedness を `OpCode::CallDefined` で判定し、user `method defined` があれば dispatch する（vm.rs:2831）。その
-user method が captured-outer `$calls` を by-name env 書きするが、`CallDefined` の post-call `reconcile_locals_from_env_at_site`
-（double-OFF で no-op）でしか slot に届かず stale（double-OFF で `$calls=0`・期待 1）。`run_instance_method` 経由なので
-per-write 記録なし→**user-method 呼び出し前後で caller-frame slot-backing env 値をスナップショット**し変化した slot だけ
-精密書き戻し（react S7 と同手法）。`cell_boxing_active()` ガード＝default は blanket reconcile が担う＝バイト不変。
-**1 修正で 3 roast file（S03 andthen/orelse/notandthen）消化**。pin=roast/S03-operators/{andthen,orelse,notandthen}.t
-（double-OFF で PASS 化）。
+determine the LHS's definedness via `OpCode::CallDefined`, dispatching to a user `method defined` if present (vm.rs:2831).
+That user method writes the captured-outer `$calls` by name to env, but it only reaches the slot via `CallDefined`'s
+post-call `reconcile_locals_from_env_at_site` (a no-op under double-OFF) and goes stale (double-OFF gives `$calls=0`,
+expected 1). It goes via `run_instance_method`, so there is no per-write recording → **snapshot the caller-frame
+slot-backing env values before and after the user-method call** and write back precisely only the changed slots (same
+technique as react S7). Guarded by `cell_boxing_active()` = the default is carried by blanket reconcile = byte-identical.
+**1 fix clears 3 roast files (S03 andthen/orelse/notandthen)**. pin=roast/S03-operators/{andthen,orelse,notandthen}.t
+(now PASS under double-OFF).
 
-### 10.12 slice S9（2026-06-22）— symbolic-deref store の carrier writeback を precise 化（roast 22→21）
+### 10.12 Slice S9 (2026-06-22) — make carrier writeback of symbolic-deref stores precise (roast 22→21)
 
-`my $a_var=42; my $b_var="a_var"; lives-ok { $::($b_var) = 23 }; is $a_var, 23` = `$::($name) = v`（symbolic deref store・
-`exec_symbolic_deref_store_op`）と `::('$x') = v`（indirect type lookup store・`exec_indirect_type_lookup_store_op`）は
-ターゲット lexical を by-name で env 書きし `update_local_if_exists` で**現フレームの** slot だけ更新する。`lives-ok { }`
-carrier 内ではターゲット slot は carrier-caller のフレームにあり、carrier writeback（`writeback_carrier_writes`）経由で
-しか届かないが、両 store op は**carrier_writes にログしていなかった**ため OFF で reconcile されず stale（bare block では
-動くが lives-ok 内だけ失敗）。**修正**: 両 store op の env insert 後に `note_caller_env_write(&store_name)` を呼び
-carrier_writes へログ＋env_dirty（regex `:let`・`s///` writeback と同パターン）。スカラなので `:=` cell hazard なし。
-default build はバイト不変（scalar reconcile は blanket の subset）。pin=roast/S02-names/symbolic-deref.t（double-OFF で
-PASS 化）。**残 roast double-OFF 21**（our.t は EVAL+class+`$GLOBAL::`++ の別機構で未消化）。
+`my $a_var=42; my $b_var="a_var"; lives-ok { $::($b_var) = 23 }; is $a_var, 23` = `$::($name) = v` (symbolic deref store,
+`exec_symbolic_deref_store_op`) and `::('$x') = v` (indirect type lookup store, `exec_indirect_type_lookup_store_op`) write
+the target lexical by name to env and update only **the current frame's** slot via `update_local_if_exists`. Inside a
+`lives-ok { }` carrier the target slot is in the carrier-caller's frame, reachable only via the carrier writeback
+(`writeback_carrier_writes`), but neither store op **logged to carrier_writes**, so OFF was never reconciled and stale
+(works in a bare block but fails only inside lives-ok). **Fix**: after the env insert in both store ops, call
+`note_caller_env_write(&store_name)` to log into carrier_writes + env_dirty (the same pattern as regex `:let` and `s///`
+writeback). Scalar, so no `:=` cell hazard. The default build is byte-identical (scalar reconcile is a subset of blanket).
+pin=roast/S02-names/symbolic-deref.t (now PASSES under double-OFF). **21 roast double-OFF remaining** (our.t is a separate
+mechanism, EVAL+class+`$GLOBAL::`++, not yet cleared).
 
-### 10.13 slice S10（2026-06-22）— user Proxy STORE の captured-outer writeback を precise 化（roast 21→20）
+### 10.13 Slice S10 (2026-06-22) — make captured-outer writeback of user Proxy STORE precise (roast 21→20)
 
 `my $realvar="foo"; sub proxyvar($p) is rw { Proxy.new(STORE => method ($v) { $realvar = $v }, …) }; proxyvar("PRE")="BAR";
-is $realvar, 'BAR'` = lvalue sub が返す user `Proxy` の STORE method が captured-outer scalar `$realvar` を by-name 書き
-する（`assign_proxy_lvalue`・builtins_lvalue.rs）。ターゲット slot は assign-caller のフレームにあり、assign サイトの
-blanket reconcile（double-OFF で no-op）でしか届かず stale（double-OFF で `foo`・期待 `BAR`）。**修正**: `assign_proxy_lvalue`
-の STORE 呼び出し**前後で env の writeback-safe スカラのみをスナップショット**し、変化した名前を `record_caller_var_writeback`
-（retain-on-miss）に記録 → assign call site の `apply_pending_caller_var_writeback` が drain。スカラ限定
-（`is_writeback_safe_scalar` フィルタ）なので container/`:=` cell hazard なし。`cell_boxing_active()` ガード＝default は
-blanket reconcile が担う＝バイト不変。pin=roast/S06-routine-modifiers/lvalue-subroutines.t（double-OFF で PASS 化）。
-**残 roast double-OFF 20**。
+is $realvar, 'BAR'` = the STORE method of a user `Proxy` returned by an lvalue sub writes the captured-outer scalar
+`$realvar` by name (`assign_proxy_lvalue`, builtins_lvalue.rs). The target slot is in the assign-caller's frame and only
+reachable via the assign site's blanket reconcile (a no-op under double-OFF), so stale (double-OFF gives `foo`, expected
+`BAR`). **Fix**: **snapshot only the writeback-safe scalars of env before and after** `assign_proxy_lvalue`'s STORE call,
+record the changed names into `record_caller_var_writeback` (retain-on-miss) → the assign call site's
+`apply_pending_caller_var_writeback` drains. Scalar-limited (the `is_writeback_safe_scalar` filter), so no container/`:=`
+cell hazard. Guarded by `cell_boxing_active()` = the default is carried by blanket reconcile = byte-identical.
+pin=roast/S06-routine-modifiers/lvalue-subroutines.t (now PASSES under double-OFF).
+**20 roast double-OFF remaining**.
 
-### 10.14 slice S11（2026-06-22）— lives-ok container carrier の Set/Bag/Mix writeback を precise 化（roast 20→17）
+### 10.14 Slice S11 (2026-06-22) — make Set/Bag/Mix writeback of lives-ok container carriers precise (roast 20→17)
 
-`my $b=(…).BagHash; lives-ok { $b<a> = 42 }; is $b<a>, 42` = block Test fn（`lives-ok`/`dies-ok`＝`exec_call_pairs_op`
-carrier）が captured-outer の Set/Bag/Mix を env 経由で変異するが、`writeback_carrier_writes` は container slot を保護的に
-スキップ（barrier 任せ）するため double-OFF で stale。**修正**: carrier 実行**前後で env をスナップショット**し、変化した
-slot を write-through。**対象を COW aggregate（scalar + Set/Bag/Mix）に限定**＝`Value::Set/Bag/Mix(Arc<…Data>)` は
-in-place 変異で `make_mut` が COW し新 Arc へ detach する（pre snapshot は旧 Arc を保持）ので差分検出が確実。**Array/Hash
-除外**（env が COW-detach コピーで interior `:=` element cell を破壊する hazard）。**★Instance も除外**＝attributes が
-`Arc<RwLock>` の **shared cell** で in-place 変異するため snapshot が cell を共有し pre==post で差分検出**不可**（Instance
-rw-accessor は別スライス＝S14-roles/rw.t に残置）。`cell_boxing_active()` ガード＝default はバイト不変。
-回帰確認: element-bind-cell/S03-binding nested・arrays/set・mix 全 PASS（`:=` hazard なし）。pin=roast/S02-types/{baghash,
-mixhash,set}.t（double-OFF で PASS 化）。**残 roast double-OFF 17**（rw.t Instance rw-accessor 含む）。
+`my $b=(…).BagHash; lives-ok { $b<a> = 42 }; is $b<a>, 42` = a block Test fn (`lives-ok`/`dies-ok` = the
+`exec_call_pairs_op` carrier) mutates a captured-outer Set/Bag/Mix via env, but `writeback_carrier_writes` protectively
+skips container slots (leaving it to the barrier), so double-OFF is stale. **Fix**: **snapshot env before and after** carrier
+execution and write through the changed slots. **Limit the targets to COW aggregates (scalar + Set/Bag/Mix)** =
+`Value::Set/Bag/Mix(Arc<…Data>)` COWs on in-place mutation via `make_mut` and detaches to a new Arc (the pre snapshot keeps
+the old Arc), so diff detection is reliable. **Array/Hash excluded** (hazard: env being a COW-detached copy would destroy
+interior `:=` element cells). **★Instance also excluded** = attributes are a **shared cell** of `Arc<RwLock>` mutated in
+place, so the snapshot shares the cell and pre==post makes diff detection **impossible** (Instance rw-accessors are a
+separate slice = left in S14-roles/rw.t). Guarded by `cell_boxing_active()` = the default is byte-identical.
+Regression check: element-bind-cell/S03-binding nested, arrays/set, mix all PASS (no `:=` hazard). pin=roast/S02-types/{baghash,
+mixhash,set}.t (now PASS under double-OFF). **17 roast double-OFF remaining** (including rw.t Instance rw-accessor).
 
-### 10.15 slice S12（2026-06-22）— lives-ok carrier writeback の eligibility を slot-overwritable に拡張（roast 17→11）
+### 10.15 Slice S12 (2026-06-22) — extend lives-ok carrier writeback eligibility to slot-overwritable (roast 17→11)
 
-S11（§10.14）は carrier writeback を **COW aggregate（scalar + Set/Bag/Mix）に限定**したが、これは「新しい env 値の型」で
-判定していたため取りこぼしが多かった。S12 は eligibility を **「上書きされる slot の*現在値*の型」**（`slot_carrier_overwritable`）
-へ転換: 除外は `HashSlotRef`/`ContainerRef`（`:=` binding cell）と plain `Array`/`Hash`（env COW-detach コピーが interior
-`:=` element cell を破壊する hazard）の**2 種のみ**で、それ以外（scalar/Set/Bag/Mix/Mixin/Instance/…）はすべて write-through
-対象。これで `lives-ok { $a does Role[42] }`（Int(0) slot → Mixin・型変化）/ `lives-ok { $obj.r1++ }`（Instance rw-accessor・
-diverged Instance）/ Pair `.kv`/`.values` rw aliasing / `$GLOBAL::`++ も拾える。Instance の in-place attribute 変異は
-shared `Arc<RwLock>` cell で pre==post になり diff 不発火＝無害（genuine な値/型変化のみ write-through）。**全 roast double-OFF
-sweep で 17→11（新規回帰ゼロ・残 11 全て pre-existing）＝S11 比でさらに 6 file 消化**（S02-names/our・S04 pointy-rw・S04
-gather・S12 coercion-methods・S14 rw・S32 kv）。`cell_boxing_active()` ガード＝default はバイト不変。回帰確認: S03-binding
-nested/arrays・element-bind-cell 全 PASS。**残 roast double-OFF 11**: S14 `does`-mixin block-scoped 再代入 4（anonymous/
-mixin-6e/parameterized-mixin/submethods-6e＝block 内 `$a does R` 再代入が outer env に届かない・次スライス）／lazy-lists／
-terminator／named-parameters／primitives／defer-next／cas-loop／throttle。
+S11 (§10.14) limited carrier writeback to **COW aggregates (scalar + Set/Bag/Mix)**, but since it judged by "the type of the
+new env value" it missed many cases. S12 switches eligibility to **"the type of the *current value* of the slot being
+overwritten"** (`slot_carrier_overwritable`): the exclusions are **only 2 kinds** — `HashSlotRef`/`ContainerRef`
+(`:=` binding cells) and plain `Array`/`Hash` (hazard: an env COW-detached copy destroys interior `:=` element cells) —
+and everything else (scalar/Set/Bag/Mix/Mixin/Instance/…) is write-through eligible. This also picks up
+`lives-ok { $a does Role[42] }` (Int(0) slot → Mixin, a type change) / `lives-ok { $obj.r1++ }` (Instance rw-accessor,
+diverged Instance) / Pair `.kv`/`.values` rw aliasing / `$GLOBAL::`++. In-place attribute mutation of an Instance becomes
+pre==post via the shared `Arc<RwLock>` cell and the diff does not fire = harmless (only genuine value/type changes are
+written through). **The full roast double-OFF sweep goes 17→11 (zero new regressions; all 11 remaining are pre-existing)
+= 6 more files cleared vs S11** (S02-names/our, S04 pointy-rw, S04 gather, S12 coercion-methods, S14 rw, S32 kv).
+Guarded by `cell_boxing_active()` = the default is byte-identical. Regression check: S03-binding nested/arrays,
+element-bind-cell all PASS. **11 roast double-OFF remaining**: S14 `does`-mixin block-scoped reassignment 4 (anonymous/
+mixin-6e/parameterized-mixin/submethods-6e = `$a does R` reassignment inside a block does not reach the outer env; next
+slice) / lazy-lists / terminator / named-parameters / primitives / defer-next / cas-loop / throttle.
 
-### 10.16 slice S13（2026-06-22）— does/but mixin の captured-outer writeback を precise 化（roast 11→7）
+### 10.16 Slice S13 (2026-06-22) — make captured-outer writeback of does/but mixins precise (roast 11→7)
 
-S14 roles の `does`/`but` mixin 4 file（anonymous/mixin-6e/parameterized-mixin/submethods-6e）。3 つの異なる取りこぼし:
-1. **`Mixin` PartialEq の inner 委譲**: `lives-ok { $a does Role[42] }` で Int(0) slot が Mixin になるが、
-   `Value::Mixin(Int(0),_) == Int(0)`（PartialEq が inner に委譲・value/mod.rs:2881）のため carrier の差分（`pre != cur`）が
-   false → 上書き漏れ。**修正**: `carrier_writeback_changed_aggregates` の差分判定に `std::mem::discriminant` 比較を追加
-   （variant 変化 Int→Mixin を value 等価でも検出）。
-2. **`does`/`but` op 自体の reconcile 依存**: `$y does R`（`exec_does_op`/`exec_does_var_op`）/ `$obj but R`
-   （`exec_but_mixin_op`）が走らせる role の `submethod TWEAK`/`BUILD` が captured-outer counter
-   （`my $n=0; submethod TWEAK { $n++ }`）を変異するが、各 op の post-call `reconcile_locals_from_env_at_site` は
-   double-OFF で no-op。**修正**: 3 op に carrier snapshot 差分（`snapshot_carrier_overwritable_env` +
-   `carrier_writeback_changed_aggregates`）を `cell_boxing_active()` ガードで追加。
-3. **Hash slot の型変化**: `my $a = {:x}; lives-ok { $a does role {...} }` で **Hash** slot が Mixin 化。Hash は interior
-   `:=` element cell hazard で通常除外だが、**型変化（Hash→Mixin の whole replacement）は安全**。**修正**:
-   `carrier_writeback_changed_aggregates` で Array/Hash slot も `discriminant(slot) != discriminant(env)`（型変化）時のみ
-   上書き（同 variant の detached コピーは引き続き skip）。
-`cell_boxing_active()` ガード＝default はバイト不変。**全 roast double-OFF sweep で 11→7（新規回帰ゼロ）**。回帰確認:
-S03-binding nested/arrays PASS。**残 roast double-OFF 7**: lazy-lists／terminator／named-parameters／primitives／
-defer-next／cas-loop／throttle（各別機構）。
+The 4 S14-roles `does`/`but` mixin files (anonymous/mixin-6e/parameterized-mixin/submethods-6e). 3 distinct misses:
+1. **`Mixin` PartialEq delegating to the inner value**: `lives-ok { $a does Role[42] }` turns the Int(0) slot into a Mixin,
+   but since `Value::Mixin(Int(0),_) == Int(0)` (PartialEq delegates to the inner, value/mod.rs:2881), the carrier's diff
+   (`pre != cur`) is false → the overwrite is missed. **Fix**: add a `std::mem::discriminant` comparison to the diff check in
+   `carrier_writeback_changed_aggregates` (detects the variant change Int→Mixin even under value equality).
+2. **The `does`/`but` ops themselves depending on reconcile**: the role's `submethod TWEAK`/`BUILD` run by
+   `$y does R` (`exec_does_op`/`exec_does_var_op`) / `$obj but R` (`exec_but_mixin_op`) mutates a captured-outer counter
+   (`my $n=0; submethod TWEAK { $n++ }`), but each op's post-call `reconcile_locals_from_env_at_site` is a no-op under
+   double-OFF. **Fix**: add a carrier snapshot diff (`snapshot_carrier_overwritable_env` +
+   `carrier_writeback_changed_aggregates`) to the 3 ops, guarded by `cell_boxing_active()`.
+3. **Type change of a Hash slot**: `my $a = {:x}; lives-ok { $a does role {...} }` turns a **Hash** slot into a Mixin. Hash
+   is normally excluded due to the interior `:=` element cell hazard, but **a type change (whole replacement Hash→Mixin) is
+   safe**. **Fix**: in `carrier_writeback_changed_aggregates`, also overwrite Array/Hash slots but only when
+   `discriminant(slot) != discriminant(env)` (type change) (same-variant detached copies continue to be skipped).
+Guarded by `cell_boxing_active()` = the default is byte-identical. **The full roast double-OFF sweep goes 11→7 (zero new
+regressions)**. Regression check: S03-binding nested/arrays PASS. **7 roast double-OFF remaining**: lazy-lists / terminator /
+named-parameters / primitives / defer-next / cas-loop / throttle (each a separate mechanism).
 
-### 10.17 slice S14（2026-06-22）— param `where` clause の captured-outer writeback を precise 化（roast 7→6）
+### 10.17 Slice S14 (2026-06-22) — make captured-outer writeback of param `where` clauses precise (roast 7→6)
 
 `my $t=''; sub order_test(:$a where { $t ~= 'a' }, :$b where { $t ~= 'b' }) {…}; order_test(b=>2, a=>3); ok $t ~~ /a.*b/`
-= named param の `where { $t ~= 'a' }` clause が binding 中に captured-outer `$t` を変異する。**計測で slot-only と確定**:
-`order_test(...)` 後、closure 経由読みは `$t='ab'`（env に届いている）が direct 読みは空（caller slot stale）＝where-clause の
-write は outer env に達するが caller slot は call-site の blanket pull（double-OFF で no-op）でしか refresh されない。
-**修正**: where-constraint named-eval（`types/binding.rs` ~797）で **eval 前後に env の writeback-safe スカラをスナップ
-ショット**し、変化した名前（`_`/param 自身を除く）を retain-on-miss の `pending_caller_var_writeback`
-（`record_caller_var_writeback`）に記録 → compiled-function call site の `drain_and_reconcile_after_cached_call`
-→`apply_pending_caller_var_writeback` が drain。スカラ限定（`is_writeback_safe_scalar`）で `:=` hazard なし。
-`cell_boxing_active()` ガード＝default はバイト不変（where-constraint は稀パスで hot でない）。pin=roast/S06-signature/
-named-parameters.t（double-OFF で PASS 化）。**残 roast double-OFF 6**: cas-loop／defer-next／primitives／lazy-lists
-（laziness 別軸）／throttle（timing）／terminator（parser）。
+= a named param's `where { $t ~= 'a' }` clause mutates the captured-outer `$t` during binding. **Measurement confirmed
+slot-only**: after `order_test(...)`, a closure-mediated read gives `$t='ab'` (reaches env) but a direct read is empty
+(caller slot stale) = the where-clause's write reaches the outer env, but the caller slot is refreshed only by the
+call-site's blanket pull (a no-op under double-OFF).
+**Fix**: in the where-constraint named-eval (`types/binding.rs` ~797), **snapshot env's writeback-safe scalars before and
+after the eval** and record the changed names (excluding `_`/the param itself) into the retain-on-miss
+`pending_caller_var_writeback` (`record_caller_var_writeback`) → the compiled-function call site's
+`drain_and_reconcile_after_cached_call` → `apply_pending_caller_var_writeback` drains. Scalar-limited
+(`is_writeback_safe_scalar`), so no `:=` hazard. Guarded by `cell_boxing_active()` = the default is byte-identical
+(where-constraints are a rare, non-hot path). pin=roast/S06-signature/named-parameters.t (now PASSES under double-OFF).
+**6 roast double-OFF remaining**: cas-loop / defer-next / primitives / lazy-lists (laziness, separate axis) /
+throttle (timing) / terminator (parser).
 
-### 10.18 slice S15（2026-06-22）— CAS block の captured-outer writeback を precise 化（roast 6→5）
+### 10.18 Slice S15 (2026-06-22) — make captured-outer writeback of CAS blocks precise (roast 6→5)
 
-`my $was='WRONG'; cas($head, { $was = $_; $next }); ok $was === Node` = `cas $var, { … }` の block が captured-outer
-caller scalar `$was` を変異する。**slot-only と確定**（closure 経由読みは正・direct は stale・bare block 内のみ顕在化）:
-block の write は env に届くが caller slot は cas の呼び出しサイトの blanket pull（double-OFF で no-op）でしか refresh
-されない。**修正**: `builtin_cas_var`（`builtins_atomic.rs`）の block 実行（`call_sub_value`）前後で env writeback-safe
-スカラをスナップショットし、変化した名前（`_`/`$_`/cas 対象名を除く）を retain-on-miss の `pending_caller_var_writeback`
-に記録 → cas call site の `apply_pending_rw_writeback`（slow path L600）が drain。スカラ限定で `:=` hazard なし。
-`cell_boxing_active()` ガード＝default はバイト不変。pin=roast/S17-lowlevel/cas-loop.t（double-OFF で PASS 化）。
-**残 roast double-OFF 5**: defer-next（multi-dispatch）／primitives（meta compose）／lazy-lists（laziness 別軸・writeback
-でない）／throttle（timing・flaky 系）／terminator（auto-curly array composer・parser）。
+`my $was='WRONG'; cas($head, { $was = $_; $next }); ok $was === Node` = the block of `cas $var, { … }` mutates the
+captured-outer caller scalar `$was`. **Confirmed slot-only** (a closure-mediated read is correct, a direct read is stale;
+manifests only inside a bare block): the block's write reaches env, but the caller slot is refreshed only by the blanket pull
+at cas's call site (a no-op under double-OFF). **Fix**: snapshot env's writeback-safe scalars before and after the block
+execution (`call_sub_value`) in `builtin_cas_var` (`builtins_atomic.rs`), and record the changed names (excluding
+`_`/`$_`/the cas target name) into the retain-on-miss `pending_caller_var_writeback` → the cas call site's
+`apply_pending_rw_writeback` (slow path L600) drains. Scalar-limited, so no `:=` hazard. Guarded by `cell_boxing_active()`
+= the default is byte-identical. pin=roast/S17-lowlevel/cas-loop.t (now PASSES under double-OFF).
+**5 roast double-OFF remaining**: defer-next (multi-dispatch) / primitives (meta compose) / lazy-lists (laziness, separate
+axis, not writeback) / throttle (timing, flaky family) / terminator (auto-curly array composer, parser).
 
-### 10.20 slice S16（#3437・2026-06-22）— proto-multi 候補の captured-outer writeback を precise 化（roast 5→4）
+### 10.20 Slice S16 (#3437, 2026-06-22) — make captured-outer writeback of proto-multi candidates precise (roast 5→4)
 
-`proto method l(|){*}` ＋ `multi method l(%t,*@l){ $r ~= '%'; &?ROUTINE.dispatcher()(self,…) }` の候補 body が
-captured-outer caller scalar `$r` を変異する。**真因＝proto 候補は常に slow path 経由**: `proto method` の `{*}`
-（`call_proto_dispatch`・method_ctx あり）は `call_method_with_values` で候補を再ディスパッチし、候補は
-compiled path（`vm_call_method_compiled`＝env_dirty/saved_env_dirty/pending を記録）でなく
-`run_instance_method_resolved`（class.rs:934）を通る。この slow path は捕捉スカラ write を `merged_env`
-（L1421 の「saved_env に在るキーのみ伝播」ループ）で env へ伝播するが **`env_dirty` を立てず precise writeback も
-記録しない**。∴ caller の **local slot** は call-site の blanket pull でしか refresh されず、しかも slow path が
-`env_dirty` を立てないため blanket pull すら発火せず **default build でも caller slot が stale**（double-OFF 限定で
-ない潜在バグ）。計測＝MUTSU_DBG プローブで `merged_env["r"]=="X"`（env 伝播済）だが top-level slot 空を確認。
-**修正**: `try_proto_method_body`（dispatch.rs）で `run_proto_method` の **前後に env writeback-safe スカラを
-スナップショット**し、変化した名前（`_`/`$_` 除く）を retain-on-miss の `pending_caller_var_writeback`
-（`record_caller_var_writeback`）に記録 → proto call site（`vm_call_method_ops`/`vm_call_method_mut_ops` の
-`try_proto_method_body` 短絡 return 直前）の `apply_pending_rw_writeback` が drain。**★ungated**（`cell_boxing_active()`
-ガード無し）＝precise writeback は blanket reconcile の部分集合で正しい結果を変えず、かつ default build の潜在バグ
-（`say "$r"` 読みで stale）も直すため。`is $r` 読みは reconcile site を踏むので roast defer-next.t は default で偶然
-通っていたが、`say` 直読みは default でも壊れていた。pin=`t/proto-multi-captured-writeback-coherence.t`（5・ON/OFF
-両 PASS）。スカラ限定（`is_writeback_safe_scalar`）で `:=` hazard なし。make test 10015。
-**残 roast double-OFF 4**: primitives（meta compose・writeback 候補）／lazy-lists（laziness 別軸）／throttle
-（timing・flaky 系）／terminator（auto-curly array composer・parser）。
+The candidate body of `proto method l(|){*}` + `multi method l(%t,*@l){ $r ~= '%'; &?ROUTINE.dispatcher()(self,…) }` mutates
+the captured-outer caller scalar `$r`. **True cause = proto candidates always go via the slow path**: `proto method`'s `{*}`
+(`call_proto_dispatch`, with method_ctx) re-dispatches the candidate via `call_method_with_values`, and the candidate goes
+through `run_instance_method_resolved` (class.rs:934) rather than the compiled path (`vm_call_method_compiled` = which
+records env_dirty/saved_env_dirty/pending). This slow path propagates captured scalar writes to env via `merged_env`
+(the "propagate only keys present in saved_env" loop at L1421) but **sets no `env_dirty` and records no precise writeback**.
+∴ The caller's **local slot** is refreshed only by the call-site's blanket pull, and moreover, since the slow path does not
+set `env_dirty`, the blanket pull never even fires and **the caller slot is stale even in the default build** (a latent bug,
+not double-OFF-only). Measurement = a MUTSU_DBG probe confirmed `merged_env["r"]=="X"` (env propagated) but the top-level
+slot empty.
+**Fix**: in `try_proto_method_body` (dispatch.rs), **snapshot env's writeback-safe scalars before and after**
+`run_proto_method`, and record the changed names (excluding `_`/`$_`) into the retain-on-miss
+`pending_caller_var_writeback` (`record_caller_var_writeback`) → the `apply_pending_rw_writeback` at the proto call site
+(right before the `try_proto_method_body` short-circuit return in `vm_call_method_ops`/`vm_call_method_mut_ops`) drains.
+**★Ungated** (no `cell_boxing_active()` guard) = precise writeback is a subset of blanket reconcile and does not change
+correct results, and it also fixes the default build's latent bug (stale on a `say "$r"` read). An `is $r` read steps on a
+reconcile site, so roast defer-next.t happened to pass by accident in default, but a direct `say` read was broken even in
+default. pin=`t/proto-multi-captured-writeback-coherence.t` (5; PASSES both ON/OFF). Scalar-limited
+(`is_writeback_safe_scalar`), so no `:=` hazard. make test 10015.
+**4 roast double-OFF remaining**: primitives (meta compose, writeback candidate) / lazy-lists (laziness, separate axis) /
+throttle (timing, flaky family) / terminator (auto-curly array composer, parser).
 
-### 10.21 slice S17（#3438・2026-06-22）— custom HOW type-check メソッドの captured-outer writeback を precise 化（roast 4→3）
+### 10.21 Slice S17 (#3438, 2026-06-22) — make captured-outer writeback of custom HOW type-check methods precise (roast 4→3)
 
 `class UnionTypeHOW { method type_check(Mu $, Mu \c){ ++$union-type-checks; … } method find_method(Mu $,$n){ $find++; … } }`
-＋ `Metamodel::Primitives.create_type($how, …)` の custom 型に対する `Int ~~ $union` / `$union ~~ Int` smartmatch。
-HOW の `type_check`/`accepts_type`/`find_method` メソッドが captured-outer caller **counter** を `++` する。**S16 と同
-family**: HOW メソッドは type-check 時に slow path（`run_instance_method_resolved`）で dispatch され、捕捉スカラ write を
-env に伝播するが `env_dirty` を立てず precise writeback も記録しない → caller slot が blanket pull でしか refresh されない。
-**counter が read-modify-write（`++$c`）なので一層厄介**: slot が stale だと次の smartmatch 文が stale slot を env へ
-re-flush し increment が文跨ぎで消える（double-OFF で find=4→1・checks=2→0 に潰れる）。**修正**: 3 dispatch サイト
-（`metamodel.rs` の `accepts_type`/`find_method`、`smart_match.rs` の `type_check`）を新ヘルパー
-`call_how_method_recording_writeback`（env writeback-safe スカラを HOW 呼び出し前後でスナップショット→変化名を
-`pending_caller_var_writeback` に記録）経由に置換 → smartmatch op（`exec_smart_match_expr_op` 末尾）の
-`apply_pending_caller_var_writeback` が drain（各文末で slot refresh＝次文の re-flush が fresh 値を使う）。**★ungated**
-（S16 同様・custom-HOW dispatch 限定スコープ・precise writeback は blanket の部分集合・bare sink-context smartmatch
-`$obj~~T;$obj~~U;` の default 潜在バグも直す）。pin=`t/custom-how-type-check-writeback-coherence.t`（6・ON/OFF 両 PASS）。
-**残 roast double-OFF 3**: lazy-lists（laziness 別軸）／throttle（timing・flaky 系）／terminator（auto-curly composer・parser）。
+plus `Int ~~ $union` / `$union ~~ Int` smartmatches against a custom type from `Metamodel::Primitives.create_type($how, …)`.
+The HOW's `type_check`/`accepts_type`/`find_method` methods `++` a captured-outer caller **counter**. **Same family as
+S16**: HOW methods are dispatched at type-check time via the slow path (`run_instance_method_resolved`), propagating
+captured scalar writes to env but setting no `env_dirty` and recording no precise writeback → the caller slot is refreshed
+only by the blanket pull. **The counter being a read-modify-write (`++$c`) makes it even nastier**: if the slot is stale,
+the next smartmatch statement re-flushes the stale slot to env, and the increment is lost across statements (under
+double-OFF, find=4→1 and checks=2→0 collapse). **Fix**: replace the 3 dispatch sites (`accepts_type`/`find_method` in
+`metamodel.rs`, `type_check` in `smart_match.rs`) with a new helper `call_how_method_recording_writeback` (snapshots env's
+writeback-safe scalars before and after the HOW call → records the changed names into `pending_caller_var_writeback`) →
+the `apply_pending_caller_var_writeback` at the smartmatch op (tail of `exec_smart_match_expr_op`) drains (slot refresh at
+the end of each statement = the next statement's re-flush uses fresh values). **★Ungated** (like S16; scope limited to
+custom-HOW dispatch; precise writeback is a subset of blanket; also fixes the default build's latent bug in bare
+sink-context smartmatches `$obj~~T;$obj~~U;`). pin=`t/custom-how-type-check-writeback-coherence.t` (6; PASSES both ON/OFF).
+**3 roast double-OFF remaining**: lazy-lists (laziness, separate axis) / throttle (timing, flaky family) /
+terminator (auto-curly composer, parser).
 
-### 10.22 slice S18（#3439・2026-06-22）— EVAL carrier の scalar 再代入 writeback を container slot にも適用（roast 3→2）
+### 10.22 Slice S18 (#3439, 2026-06-22) — apply the EVAL carrier's scalar-reassignment writeback to container slots too (roast 3→2)
 
-`my $z = []; EVAL q'$z = do { 1 } + 2;'; is $z, 1` = EVAL carrier が captured-outer caller scalar `$z` を **container を
-保持していた slot に** scalar 再代入する。**真因＝`writeback_carrier_writes`（vm_env_helpers.rs）の reconcile 適格判定が
-「古い slot 値が scalar か」だった**: `my $z = []`（slot=Array）→ EVAL の `$z = 1`（env=Int）writeback 時、slot の現在値が
-Array なので scalar 分岐をスキップ → container 保護分岐（COW `:=` cell hazard 回避で上書き拒否）→ blanket reconcile
-（double-OFF で no-op）頼みになり slot が stale Array のまま。**この case は誤って「parser（auto-curly）」と分類されていたが
-実体は EVAL carrier scalar writeback**（normal は z=1・auto-curly parse は正常・double-OFF だけ z=[]）。**修正**: 適格判定を
-**新しい env 値が scalar か**に変更（`is_writeback_safe_scalar(&env_val)` ＋ slot が `:=` bind cell＝`ContainerRef`/`HashSlotRef`
-でないこと）。scalar 新値は container COW-copy hazard を持たないので、slot が以前 container を持っていても安全に上書き可。
-`my @e = …; EVAL q'@e = 7,8'`（container→container）は新値が container なので従来の保護分岐のまま＝非該当。`:=` bind cell
-（`t/element-bind-cell.t`・`S03-binding/nested.t`・`arrays.t`）両モード PASS で回帰なし。pin=`t/eval-carrier-scalar-writeback-coherence.t`
-（6・ON/OFF 両 PASS）。**この修正は一般的**（任意の `EVAL q'$x = scalar'` で container を持っていた slot を救う）。
-**残 roast double-OFF 2**: lazy-lists（laziness 別軸）／throttle（timing・flaky 系）。
+`my $z = []; EVAL q'$z = do { 1 } + 2;'; is $z, 1` = the EVAL carrier scalar-reassigns the captured-outer caller scalar
+`$z` **into a slot that previously held a container**. **True cause = the reconcile-eligibility check of
+`writeback_carrier_writes` (vm_env_helpers.rs) was "is the old slot value a scalar"**: `my $z = []` (slot=Array) → on
+writeback of EVAL's `$z = 1` (env=Int), the slot's current value is an Array so the scalar branch is skipped → the container
+protection branch (which refuses the overwrite to avoid the COW `:=` cell hazard) → falls back on blanket reconcile (a no-op
+under double-OFF) and the slot stays a stale Array. **This case was mistakenly classified as "parser (auto-curly)", but the
+substance is EVAL carrier scalar writeback** (normal gives z=1; the auto-curly parse is fine; only double-OFF gives z=[]).
+**Fix**: change the eligibility check to **whether the new env value is a scalar** (`is_writeback_safe_scalar(&env_val)`
+plus the slot not being a `:=` bind cell = `ContainerRef`/`HashSlotRef`). A scalar new value carries no container COW-copy
+hazard, so it can safely overwrite even a slot that previously held a container. `my @e = …; EVAL q'@e = 7,8'`
+(container→container) has a container new value so it keeps the old protection branch = unaffected. The `:=` bind cells
+(`t/element-bind-cell.t`, `S03-binding/nested.t`, `arrays.t`) PASS in both modes, no regressions.
+pin=`t/eval-carrier-scalar-writeback-coherence.t` (6; PASSES both ON/OFF). **This fix is general** (rescues any
+`EVAL q'$x = scalar'` where the slot held a container).
+**2 roast double-OFF remaining**: lazy-lists (laziness, separate axis) / throttle (timing, flaky family).
 
-### 10.23 S19 — lazy-lists の真 lazy 化（gather grep/map・PR 進行中・2026-06-22）
+### 10.23 S19 — true lazification of lazy-lists (gather grep/map; PR in progress, 2026-06-22)
 
-§10.19 で「真の laziness blocker」とした `S02-types/lazy-lists.t` 14/16（`grep is lazy` / `map is lazy`）を **真 lazy 化で解決**
-（double-OFF でも 27/27 PASS）。**真因＝blanket reconcile は load-bearing ではなかった**: gather は normal/double-OFF の
-**両方で eager force されていた**（§10.19 の「take counter=10」計測は正しいが結論が逆）。normal で `$was-lazy=1` だったのは
-gather tail `$was-lazy=0` の captured write が **write-loss していた**だけ（ON は write-loss で偶然 raku 一致＝doc §7.3 教訓#3）。
-∴ blanket reconcile が laziness を維持していたのではなく、reconcile が write を伝播した瞬間に露出した。修正は writeback でなく
-**`gather { … }.grep/.map` を eager force せず lazy pipe で pull する**こと。
+The `S02-types/lazy-lists.t` 14/16 (`grep is lazy` / `map is lazy`) that §10.19 identified as the "true laziness blocker"
+is **resolved by true lazification** (27/27 PASS even under double-OFF). **True cause = blanket reconcile was not
+load-bearing after all**: the gather was eagerly forced in **both** normal and double-OFF (the §10.19 "take counter=10"
+measurement was correct but the conclusion was inverted). Normal showed `$was-lazy=1` only because the captured write of the
+gather tail `$was-lazy=0` was **being write-lost** (ON matched raku by accident via write-loss = doc §7.3 lesson #3).
+∴ Blanket reconcile was not maintaining laziness — the bug was exposed the moment reconcile propagated the write. The fix is
+not writeback but **pulling `gather { … }.grep/.map` through a lazy pipe instead of eagerly forcing it**.
 
-真の eager-force 元は **4 サイト**（すべて「`.lazy` gather/infinite spec を map/grep で lazy pipe 化する」例外が
-`lazy_pipe.is_some() || is_infinite_spec()` のみで **gather coroutine を除外していた**）:
-1. `is_lazy_pipe_source`（methods_collection.rs:69）— gather を lazy pipe source と認めず → `ll.needs_vm_lazy_dispatch()`
-   （`is_from_gather() || is_infinite_spec()`）を OR 追加。
-2. `try_native_method`（vm_native_dispatch.rs:41）— gather+map/grep を native impl に流して materialize → `is_lazy_pipe_source`
-   ゲートに統一して defer。
-3. `vm_call_method_ops.rs:733` / 4. `vm_call_method_mut_ops.rs:474`（method dispatch 前の force ブロック）/ 加えて
-   `runtime/methods.rs:3157`（slow path force）— map/grep 例外に `|| ll.is_from_gather()` を追加し gather を force しない。
-インフラ（`pull_source_element` の `Value::LazyList → force_lazy_list_vm_n(ll, idx+1)`・vm_helpers.rs:1131）は既存＝coroutine を
-1 take ずつ resume できる。plain gather（非 `.lazy`）も Rakudo では grep+slice で lazy なので `is_from_gather()` で判定（lazy
-マーカーは sub return で失われる＝`is_genuinely_lazy()` は不可）。pin=`t/lazy-gather-grep-map-laziness.t`（8・両モード PASS）。
+The true eager-force sources were **4 sites** (all with a "make `.lazy` gather/infinite specs into lazy pipes for map/grep"
+exception that was only `lazy_pipe.is_some() || is_infinite_spec()`, thereby **excluding gather coroutines**):
+1. `is_lazy_pipe_source` (methods_collection.rs:69) — did not recognize gather as a lazy pipe source → OR in
+   `ll.needs_vm_lazy_dispatch()` (`is_from_gather() || is_infinite_spec()`).
+2. `try_native_method` (vm_native_dispatch.rs:41) — routed gather+map/grep to the native impl and materialized → unified on
+   the `is_lazy_pipe_source` gate to defer.
+3. `vm_call_method_ops.rs:733` / 4. `vm_call_method_mut_ops.rs:474` (the force block before method dispatch) / plus
+   `runtime/methods.rs:3157` (the slow-path force) — add `|| ll.is_from_gather()` to the map/grep exception so gather is not forced.
+The infrastructure (`pull_source_element`'s `Value::LazyList → force_lazy_list_vm_n(ll, idx+1)`, vm_helpers.rs:1131) already
+exists = coroutines can be resumed one take at a time. Plain gather (non-`.lazy`) is also lazy in Rakudo under grep+slice,
+so gate on `is_from_gather()` (the lazy marker is lost on sub return = `is_genuinely_lazy()` won't do).
+pin=`t/lazy-gather-grep-map-laziness.t` (8; PASSES in both modes).
 
-**★残 double-OFF サーフェス（authoritative survey・全1285 release・S19 後）= 2（writeback 候補ゼロ・新規回帰ゼロ）**:
-- **`S04-statements/lazy.t`** = **S20 で解決**（`Value::LazyThunk` 自己比較 deadlock・下記 §10.24）。
-- **`S17-supply/throttle.t`** 3,4 = timing flaky（§10.19 のまま・決定的 pin 不可なら削除ブロッカーから外す）。
-（survey で出た spurt.t / gb18030・gb2312・shiftjis-encode-decode.t は **harness artifact**＝raw `prove -e mutsu` が fudge
-ラッパー無しで誤検出・`run-roast-test.sh` 経由では全 PASS。spurt.t は stale temp-file flaky。double-OFF blocker でない。）
+**★Remaining double-OFF surface (authoritative survey, all 1285 release, after S19) = 2 (zero writeback candidates, zero new regressions)**:
+- **`S04-statements/lazy.t`** = **resolved by S20** (`Value::LazyThunk` self-comparison deadlock; see §10.24 below).
+- **`S17-supply/throttle.t`** 3,4 = timing flaky (as in §10.19; if no deterministic pin is possible, drop it from the removal blockers).
+(The spurt.t / gb18030, gb2312, shiftjis-encode-decode.t hits in the survey are **harness artifacts** = raw `prove -e mutsu`
+misdetects without the fudge wrapper; all PASS via `run-roast-test.sh`. spurt.t is the stale temp-file flakiness. Not
+double-OFF blockers.)
 
-**★full-consumption-through-pipe の gather tail writeback は double-OFF で残**（`my @a=gather{…;$t=1}.grep(*>1); ok $t`）:
-直接 gather force は伝播するが、lazy pipe 経由（grep）だと内側 `force_lazy_list_vm_n` の `reconcile_caller_after_lazy_force` が
-pipe 中の誤フレームに drop-on-miss で drain して落とす。**lazy-lists.t（slice・full-consume せず）では踏まれない**ので S19 では
-未修正（pin からも除外）。env_dirty 削除前の writeback slice 候補（retain-on-miss 化 or 外側 force での drain）。
+**★The full-consumption-through-pipe gather tail writeback remains under double-OFF** (`my @a=gather{…;$t=1}.grep(*>1); ok $t`):
+a direct gather force propagates, but via a lazy pipe (grep) the inner `force_lazy_list_vm_n`'s
+`reconcile_caller_after_lazy_force` drains drop-on-miss into the wrong frame mid-pipe and loses it.
+**lazy-lists.t (which slices, never fully consuming) does not step on it**, so it was left unfixed in S19 (also excluded
+from the pin). A writeback slice candidate before env_dirty removal (retain-on-miss conversion or draining at the outer force).
 
-### 10.24 S20 — LazyThunk 自己比較 deadlock（`use Test` END phaser・PR・2026-06-22）
+### 10.24 S20 — LazyThunk self-comparison deadlock (`use Test` END phaser; PR, 2026-06-22)
 
-§10.23 で「次の最有力 double-OFF blocker」とした `S04-statements/lazy.t` の double-OFF **hang** を解決。**busy-loop でなく
-futex deadlock**（`ps` STAT=S・%CPU=0・WCHAN=`futex_do_wait`・perf on-CPU サンプルゼロで確定）。
+Resolved the double-OFF **hang** of `S04-statements/lazy.t`, which §10.23 called "the next most likely double-OFF blocker".
+**A futex deadlock, not a busy loop** (confirmed by `ps` STAT=S, %CPU=0, WCHAN=`futex_do_wait`, zero perf on-CPU samples).
 
-**真因＝`Value::LazyThunk` の自己比較で非再入 mutex を二重ロック**。`PartialEq`（value/mod.rs:2885）が
-`(LazyThunk(a), LazyThunk(b))` で `a.cache.lock()` → `b.cache.lock()` と続けてロックするが、**a と b が同一 Arc のとき同じ mutex を
-二重ロック**して deadlock（std `Mutex` は非再入）。踏む経路は **`finish()` の END phaser overlay**（run.rs:1083 `if v != orig_v`）:
-`my $x := lazy { … }` で束縛した lexical が、END phaser の captured env（`v`）と original env（`orig_v`）の**両方に同一 Arc**で入り、
-`v != orig_v` の比較が自己比較になる。**double-OFF 限定の理由**＝normal は reconcile が END 前に thunk を force/置換して同一 Arc を
-崩すか別経路を取るが、double-OFF では同一 Arc のまま END まで残り自己比較に至る。
+**True cause = double-locking a non-reentrant mutex in a `Value::LazyThunk` self-comparison**. `PartialEq`
+(value/mod.rs:2885) for `(LazyThunk(a), LazyThunk(b))` locks `a.cache.lock()` → then `b.cache.lock()`, but **when a and b
+are the same Arc it double-locks the same mutex** and deadlocks (std `Mutex` is non-reentrant). The path that steps on it is
+**the END phaser overlay of `finish()`** (run.rs:1083 `if v != orig_v`): a lexical bound with `my $x := lazy { … }` enters
+**both** the END phaser's captured env (`v`) and the original env (`orig_v`) as the same Arc, making the `v != orig_v`
+comparison a self-comparison. **Why double-OFF only** = under normal, reconcile forces/replaces the thunk before END or
+takes another path, breaking the same-Arc identity; under double-OFF the same Arc survives to END and reaches the
+self-comparison.
 
-**修正**＝`ContainerRef`（value/mod.rs:2904）と同パターンで **比較冒頭に `Arc::ptr_eq(a, b)` を入れてロック前に短絡**（同一 thunk は
-自明に等しい）。1 行の汎用バグ修正（double-OFF 限定でない潜在 deadlock も塞ぐ）。**最小再現**＝`use Test; plan 1; my $var := lazy { 42 };
-ok 1;`（force/capture 不要・END phaser 到達がトリガ）。pin=`t/lazythunk-self-compare-deadlock.t`（4・両モード PASS）。lazy.t 10/10
-両モード PASS。make test 10069 PASS（回帰ゼロ）。
+**Fix** = following the same pattern as `ContainerRef` (value/mod.rs:2904), **add `Arc::ptr_eq(a, b)` at the head of the
+comparison to short-circuit before locking** (an identical thunk is trivially equal). A one-line general-purpose bug fix
+(also plugs the latent deadlock beyond double-OFF). **Minimal reproduction** = `use Test; plan 1; my $var := lazy { 42 };
+ok 1;` (no force/capture needed; reaching the END phaser is the trigger). pin=`t/lazythunk-self-compare-deadlock.t`
+(4; PASSES in both modes). lazy.t 10/10 PASSES in both modes. make test 10069 PASS (zero regressions).
 
-**★残 double-OFF サーフェス（S20 後）= 1（throttle）→ S21 で解決（§10.25）**。
+**★Remaining double-OFF surface (after S20) = 1 (throttle) → resolved by S21 (§10.25)**.
 
-### 10.25 S21 — Supply `.tap` callback の captured-outer writeback（PR・2026-06-22）
+### 10.25 S21 — Supply `.tap` callback captured-outer writeback (PR, 2026-06-22)
 
-§10.24 で「残 1」とした `S17-supply/throttle.t` を解決。**handoff の「timing flaky」ラベルは誤りで実体は決定的 writeback バグ**
-（3 run 連続で tests 3-4 fail・normal は決定的 PASS＝flaky でない）。`(1..10).Supply.throttle(1,.5).tap: { $max = $max min …;
-$min = $min max …; $before = now }` の tap callback が captured-outer scalar `$min`/`$max`/`$before` を書くが double-OFF で
-slot に伝播せず初期値（`$min=0`/`$max=10`）のまま→`ok $min > .5`/`ok $max < .9` が fail（**timing でなく初期値残留**）。`@seen`
-配列は Arc 共有で伝播していた点が「scalar だけ落ちる」writeback 問題の証左。
+Resolved `S17-supply/throttle.t`, the "1 remaining" from §10.24. **The handoff's "timing flaky" label was wrong; the
+substance is a deterministic writeback bug** (tests 3-4 fail 3 runs in a row; normal is a deterministic PASS = not flaky).
+The tap callback of `(1..10).Supply.throttle(1,.5).tap: { $max = $max min …; $min = $min max …; $before = now }` writes the
+captured-outer scalars `$min`/`$max`/`$before`, but under double-OFF they do not propagate to the slots and stay at their
+initial values (`$min=0`/`$max=10`) → `ok $min > .5`/`ok $max < .9` fail (**leftover initial values, not timing**). The
+`@seen` array did propagate via Arc sharing — evidence that this is a "only scalars drop" writeback problem.
 
-**真因＝同期 tap emission ループ（native_supply_mut_methods.rs:474-498）の `call_sub_value(tap_cb,…)` が captured write を
-記録しない**。tap callback はメインスレッドで即時実行される closure＝escape 解析が外側 lexical を box しないので slot 未 refresh。
-**修正**＝ループ後に `Value::Sub` の `compiled_code` から `record_eager_block_free_var_writeback(&code, &data.params)` を呼び
-free-var writes を `pending_rw_writeback_sources` に記録→`.tap` の `CallMethodMut` op が `apply_pending_rw_writeback` で drain
-（lazy-map / gather / cross-shortcircuit carrier と同機構・S19 の S7 react と同クラス）。throttle.t 両モード PASS。pin=
-`t/supply-tap-callback-writeback.t`（4・両モード PASS・timing 不要の高速 supply tap で writeback を pin）。make test 10105 PASS。
+**True cause = the synchronous tap emission loop's (native_supply_mut_methods.rs:474-498) `call_sub_value(tap_cb,…)` does
+not record captured writes**. The tap callback is a closure executed immediately on the main thread = the escape analysis
+does not box the outer lexicals, so the slots are never refreshed.
+**Fix** = after the loop, call `record_eager_block_free_var_writeback(&code, &data.params)` from the `Value::Sub`'s
+`compiled_code`, recording the free-var writes into `pending_rw_writeback_sources` → the `.tap` `CallMethodMut` op drains
+via `apply_pending_rw_writeback` (the same machinery as the lazy-map / gather / cross-shortcircuit carriers; the same class
+as S19's S7 react). throttle.t PASSES in both modes. pin=
+`t/supply-tap-callback-writeback.t` (4; PASSES in both modes; pins the writeback with a fast supply tap needing no timing). make test 10105 PASS.
 
-**★★ roast double-OFF 決定的サーフェス = 0 到達**（S4〜S21）。残る非決定的＝full-consumption-through-pipe gather tail
-writeback（§10.23・lazy pipe 経由 grep の内側 force が誤フレームに drop-on-miss・roast 非該当）と IO-Socket-Async.t flaky のみ。
-∴ **env_dirty 物理削除（§7.4 / PLAN §2-E）の前提（double-OFF roast 0）を達成**。次セッション＝`blanket_reconcile_if_dirty` /
-`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty` / `ensure_locals_synced` / `saved_env_dirty` 物理削除 →
-`cell_boxing_active()` gate 撤去で boxing 恒久 ON 化に着手できる。**★教訓: handoff の「timing flaky」分類は要再検証（S18
-terminator＝EVAL writeback 誤分類と同型）。決定性は 3-5 run で確認せよ＝throttle は決定的 writeback だった。**
+**★★ roast double-OFF deterministic surface = 0 reached** (S4–S21). The remaining non-deterministic items = the
+full-consumption-through-pipe gather tail writeback (§10.23; the inner force of a grep via a lazy pipe drains drop-on-miss
+into the wrong frame; not hit by roast) and the IO-Socket-Async.t flakiness only.
+∴ **The prerequisite for physical env_dirty removal (§7.4 / PLAN §2-E) — double-OFF roast 0 — is achieved**. Next session =
+hollow out `blanket_reconcile_if_dirty` / `reconcile_locals_from_env_at_site` → physically remove `env_dirty` /
+`ensure_locals_synced` / `saved_env_dirty` → remove the `cell_boxing_active()` gate and make boxing permanently ON.
+**★Lesson: re-verify the handoff's "timing flaky" classifications (same shape as S18 terminator = the EVAL writeback
+misclassification). Confirm determinism with 3-5 runs = throttle was a deterministic writeback bug.**
 
-### 10.26 ★★ boxing 恒久 ON 化 — goal「env↔locals コンテナ cell 共有」をデフォルト挙動として実現（PR・2026-06-22）
+### 10.26 ★★ Boxing permanently ON — the goal "env↔locals container cell sharing" realized as the default behavior (PR, 2026-06-22)
 
-S4〜S21 で roast double-OFF 決定的サーフェス 0 を達成（§10.25）後、**`blanket_reconcile_disabled()` /
-`precise_reconcile_disabled()`（vm_env_helpers.rs）を恒久 `true` にフリップ**し、env→locals reconcile（blanket + precise）を
-retire。これで **cell-boxing が唯一のコヒーレンス機構**になり、env と locals は共有 `ContainerRef` cell（または precise
-write-back）で常に整合する＝goal の実現。
+After S4–S21 achieved roast double-OFF deterministic surface 0 (§10.25), **flipped `blanket_reconcile_disabled()` /
+`precise_reconcile_disabled()` (vm_env_helpers.rs) to permanent `true`**, retiring the env→locals reconcile
+(blanket + precise). With this, **cell-boxing becomes the sole coherence mechanism**, and env and locals are always
+consistent via shared `ContainerRef` cells (or precise write-back) = the goal is realized.
 
-**検証**: フリップは double-OFF 計測ハーネス（`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1`）と**完全に同一の
-到達状態**で、その状態は既に ①authoritative roast survey（whitelist 1285・`run-roast-test.sh`）= 0 失敗 ②フル `make test`
-（`t/` 10135）= PASS で検証済み。フリップ後の default build で make test 10135 PASS・diverse roast spot-check（lazy-lists /
-lazy / gather / throttle / grep / map / caller / callframe）全 PASS。
+**Verification**: the flip reaches **exactly the same state** as the double-OFF measurement harness
+(`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1`), and that state was already verified by (1) the authoritative
+roast survey (whitelist 1285, `run-roast-test.sh`) = 0 failures and (2) the full `make test` (`t/` 10135) = PASS. After the
+flip, the default build passes make test 10135 and a diverse roast spot-check (lazy-lists / lazy / gather / throttle /
+grep / map / caller / callframe) all PASS.
 
-**残＝機械的クリーンアップ**（挙動不変）: `env_dirty`（344 uses）/ `reconcile_locals_from_env_at_site`（33）/
-`ensure_locals_synced`（11）/ `saved_env_dirty`（21）/ `cell_boxing_active()`（24・常に true）は dead code 化済み。
-段階的に物理削除する（reconcile は既に no-op なので安全）。**perf**: 全 captured-mutated scalar が毎アクセス Mutex cell に
-なるので、cleanup と並行して fib / method-call の wall-clock を確認すること（§8 hazard チェックリスト）。
+**Remaining = mechanical cleanup** (behavior-preserving): `env_dirty` (344 uses) / `reconcile_locals_from_env_at_site` (33) /
+`ensure_locals_synced` (11) / `saved_env_dirty` (21) / `cell_boxing_active()` (24, always true) are now dead code.
+Physically remove them in stages (reconcile is already a no-op, so it is safe). **perf**: every captured-mutated scalar now
+becomes a Mutex cell on every access, so check the fib / method-call wall-clock in parallel with the cleanup (§8 hazard
+checklist).
 
-### 10.19 ハンドオフ — roast double-OFF 残 2（S18 後・2026-06-22）
+### 10.19 Handoff — roast double-OFF 2 remaining (after S18, 2026-06-22)
 
-S4〜S18（16 slice）で **roast double-OFF surface 25 → 2**。全 whitelist（1285）の double-OFF sweep
-（`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release）で確定した残 2（**両方 writeback でない別軸**・新規回帰ゼロ）:
+S4–S18 (16 slices) took the **roast double-OFF surface 25 → 2**. The remaining 2 confirmed by the double-OFF sweep of the
+full whitelist (1285) (`MUTSU_NO_BLANKET_RECONCILE=1 MUTSU_NO_PRECISE_RECONCILE=1` release) (**both are separate axes, not
+writeback**; zero new regressions):
 
-| file | サブテスト | 種別 | 次の一手 |
+| file | Subtests | Kind | Next move |
 |---|---|---|---|
-| `S02-types/lazy-lists.t` | 14,16 | **真の laziness blocker** | `grep is lazy`/`map is lazy`。**精密切り分け済（下記）**＝blanket reconcile が laziness 維持に load-bearing。precise writeback では解けない。env_dirty 削除前に **grep/map が `.lazy` gather を eager force しない真 lazy 化**が必要。 |
-| `S17-supply/throttle.t` | 3,4 | **別軸（timing）** | `.5〜.8 秒差`のタイミングアサート。flaky 系。env_dirty と無関係の可能性大（決定的 pin 不可なら削除ブロッカーから外す）。 |
+| `S02-types/lazy-lists.t` | 14,16 | **true laziness blocker** | `grep is lazy`/`map is lazy`. **Precisely isolated (below)** = blanket reconcile is load-bearing for laziness maintenance. Cannot be solved by precise writeback. Before env_dirty removal, **true lazification so grep/map do not eagerly force a `.lazy` gather** is needed. |
+| `S17-supply/throttle.t` | 3,4 | **separate axis (timing)** | A timing assert on a `.5–.8 second gap`. Flaky family. Likely unrelated to env_dirty (if no deterministic pin is possible, drop it from the removal blockers). |
 
-**★lazy-lists の精密切り分け（重要・次セッション必読）**: `gather { take $_ for 0..^$n; $was-lazy = 0 }.lazy` を
-`grep(*.is-prime)[^3]` で消費し `ok $was-lazy`（lazy なら gather 未完で `$was-lazy=0` 行が走らず 1 のまま）。**blanket だけ
-OFF でも precise だけ OFF でも `$was-lazy=0`（両方 ON の default のみ 1）**。take counter を仕込んで計測すると、double-OFF /
-blanket-OFF では gather が **eager force される**（takes=10）が normal は lazy（take 計上前に grep が 3 個取って止まる）。
-∴ **precise writeback（snapshot 差分）では解けない＝blanket reconcile が「`.lazy` gather を eager force しない」laziness 維持に
-load-bearing**。env_dirty 物理削除はこの真 lazy 化が前提。再現＝`my $w=1; sub mk($n){gather{take $_ for 0..^$n; $w=0}.lazy};
-$w=1; my \one=mk(10); one.grep(*.is-prime)[^3]; say $w`（normal=1 / double-OFF=0）。
+**★Precise isolation of lazy-lists (important; required reading for the next session)**: consume
+`gather { take $_ for 0..^$n; $was-lazy = 0 }.lazy` via `grep(*.is-prime)[^3]` and `ok $was-lazy` (if lazy, the gather never
+completes, the `$was-lazy=0` line never runs, and it stays 1). **`$was-lazy=0` with blanket-only OFF and with precise-only
+OFF (only the both-ON default gives 1)**. Instrumenting a take counter shows the gather is **eagerly forced**
+(takes=10) under double-OFF / blanket-OFF, but normal is lazy (grep takes 3 and stops before the take count accrues).
+∴ **Precise writeback (snapshot diff) cannot solve it = blanket reconcile is load-bearing for the "do not eagerly force a
+`.lazy` gather" laziness maintenance**. Physical env_dirty removal presupposes this true lazification.
+Reproduction = `my $w=1; sub mk($n){gather{take $_ for 0..^$n; $w=0}.lazy};
+$w=1; my \one=mk(10); one.grep(*.is-prime)[^3]; say $w` (normal=1 / double-OFF=0).
 
-**∴ writeback 候補は枯渇**（S16 proto-multi・S17 custom-HOW・S18 EVAL container-slot scalar writeback で消化）。**残 2 は
-両方 writeback でない別軸**（laziness/timing）。**★terminator は parser 誤分類で実体は EVAL writeback だった（S18 で消化）＝
-ハンドオフの「別軸」分類は要再検証の教訓**。**次セッション着手順**: ①**lazy-lists の真 lazy 化**（grep/map on lazy gather・
-確定した最有力ブロッカー）→ ②throttle が flaky か最終確認 → ③§7.4 / PLAN §2-E（`env_dirty` 物理削除：
-`blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` 空洞化 → `env_dirty`/`ensure_locals_synced`/`saved_env_dirty`
-削除 → `cell_boxing_active()` gate 撤去）に着手できる。診断ファイル＝`tmp/roast-double-off-final-fails.txt`。
-**★S16/S17 の共通教訓**: slow path（`run_instance_method_resolved`）経由の dispatch（proto-multi 候補・custom HOW メソッド）は
-捕捉 write を env に伝播するが `env_dirty` を立てない＝blanket pull すら発火せず default build でも slot stale。修正は dispatch
-前後の env scalar スナップショット差分→`pending_caller_var_writeback` 記録 → 呼び出し op で drain。**ungated でよい**（custom
-dispatch 限定スコープ・blanket の部分集合・default 潜在バグも直す）。**slot-only 判定法**＝同変数を `{ $x }()`（closure＝env 読み）と
-direct（slot 読み）で比較し差があれば slot-only＝snapshot 差分で解ける。
+**∴ Writeback candidates are exhausted** (consumed by S16 proto-multi, S17 custom-HOW, S18 EVAL container-slot scalar
+writeback). **The remaining 2 are both separate axes, not writeback** (laziness/timing). **★terminator was a parser
+misclassification whose substance was EVAL writeback (consumed by S18) = the lesson that the handoff's "separate axis"
+classifications need re-verification**. **Next-session order of attack**: (1) **true lazification of lazy-lists** (grep/map
+on lazy gather; the confirmed top blocker) → (2) final check whether throttle is flaky → (3) §7.4 / PLAN §2-E (physical
+env_dirty removal: hollow out `blanket_reconcile_if_dirty`/`reconcile_locals_from_env_at_site` → remove
+`env_dirty`/`ensure_locals_synced`/`saved_env_dirty` → remove the `cell_boxing_active()` gate). Diagnostic file =
+`tmp/roast-double-off-final-fails.txt`.
+**★Common lesson of S16/S17**: dispatch via the slow path (`run_instance_method_resolved`) (proto-multi candidates, custom
+HOW methods) propagates captured writes to env but does not set `env_dirty` = not even the blanket pull fires, and the slot
+is stale even in the default build. The fix is an env scalar snapshot diff around the dispatch → record into
+`pending_caller_var_writeback` → drain at the calling op. **Ungated is fine** (scope limited to custom dispatch; a subset of
+blanket; also fixes default latent bugs). **The slot-only diagnosis method** = compare the same variable via `{ $x }()`
+(closure = env read) and directly (slot read); a difference means slot-only = solvable by snapshot diff.

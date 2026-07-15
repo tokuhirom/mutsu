@@ -460,7 +460,7 @@ colliding, and (b) every remaining leaf writeback carries a compile-time slot
 fatal, so **§1.3 is the load-bearing prerequisite** — it must come before, or fused
 with, the default flip. The per-variable opcode leaf slices (S1–S9) are done; the
 remaining leaf sites are multi-var / runtime-derived and do not reduce class-1
-breakage. See ANALYSIS.md §1.4 調査メモ.
+breakage. See the ANALYSIS.md §1.4 investigation memo.
 
 ## §1.4 shadow-slot activation, gated (2026-07-03, branch `refactor/lexical-scope-1.4-shadow`)
 
@@ -615,7 +615,7 @@ done). Each remaining genuine regression is one of:
   `write_back_hyper_target_var` (`find_local_slot`/`locals_set_by_name` by name);
   needs a baked `target_slot` on the hyper opcode. Same shape as above.
 - **`my @a := EVAL "my $t @"`** (`native-str.t` #8): `:=` bind + EVAL carrier —
-  ANALYSIS §1.4 追記 case (3), genuinely hard (EVAL is a separate scope).
+  ANALYSIS §1.4 addendum case (3), genuinely hard (EVAL is a separate scope).
 - **class-1 / §1.3 (roast:0's sibling half):** `hash.t`, `Channel.t`, `wrap.t`
   (closure captures the wrong-slot lexical), `reverse.t` (`@a`/`$b`/`.=` aggregate
   coherence) — the name-keyed env can't hold two live bindings.
