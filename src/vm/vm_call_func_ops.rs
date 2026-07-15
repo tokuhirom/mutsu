@@ -555,8 +555,7 @@ impl Interpreter {
         }
 
         // Check wrap chain for named function calls
-        if let Some(sub_id) = self.wrap_sub_id_for_name(&name)
-            && !self.is_wrap_dispatching(sub_id)
+        if self.wrap_sub_id_for_name(&name).is_some()
             && let Some(sub_val) = self.get_wrapped_sub(&name)
         {
             let result = self.vm_call_sub_value(sub_val, args, false)?;

@@ -1541,6 +1541,13 @@ pub struct Interpreter {
     wrap_handle_counter: u64,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
     wrap_dispatch_stack: Vec<WrapDispatchFrame>,
+    /// One-shot chain-skip for callsame/callwith invoking the *original* sub
+    /// (or an inner wrapper) of an active wrap dispatch: the very next
+    /// `call_sub_value` on this sub id must run the sub directly instead of
+    /// re-entering its wrap chain. Everything else — notably a *recursive*
+    /// named call from inside the original body — re-enters the chain, the
+    /// way Raku re-dispatches every fresh call of a wrapped sub.
+    wrap_skip_once: Option<u64>,
     /// Method-level wrap chains: (class_name, method_name, candidate_index) ->
     /// stack of (handle_id, wrapper_sub).
     method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,

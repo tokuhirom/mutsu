@@ -139,6 +139,11 @@ impl Interpreter {
                     let method_name = data.name.resolve();
                     self.call_method_with_values(invocant, &method_name, method_args)?
                 } else {
+                    // This exact call continues the active wrap chain — it must
+                    // run `next` directly, not re-enter the chain from the top.
+                    if let ValueView::Sub(data) = next.view() {
+                        self.wrap_skip_once = Some(data.id);
+                    }
                     self.call_sub_value(next, call_args, false)?
                 };
                 if tail_call {

@@ -168,8 +168,7 @@ impl Interpreter {
             || Self::is_type_with_smiley(name, self)
         {
             Value::package(Symbol::intern(Self::resolve_type_alias(name)))
-        } else if let Some(sub_id) = self.wrap_sub_id_for_name(name)
-            && !self.is_wrap_dispatching(sub_id)
+        } else if self.wrap_sub_id_for_name(name).is_some()
             && let Some(sub_val) = self.get_wrapped_sub(name)
         {
             // A wrapped sub used as a bareword term must dispatch through its

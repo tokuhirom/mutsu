@@ -372,12 +372,12 @@ impl Interpreter {
 
         // Wrap-aware dispatch: a Sub that has an active wrap chain must be
         // invoked through its wrappers. The compiled fast path below bypasses
-        // the wrap chain, so route such a Sub through `call_sub_value` (which
-        // checks `wrap_chains`). Skip when already dispatching this sub's chain
-        // to avoid re-entering the wrappers from the original-sub leg.
+        // the wrap chain, so route such a Sub through `call_sub_value`, which
+        // dispatches the chain — or, on the callsame/callwith original-sub leg
+        // (one-shot `wrap_skip_once`), runs the sub directly. A recursive
+        // named call from inside the original re-enters the chain like Raku.
         if let ValueView::Sub(data) = target.view()
             && self.has_wrap_chain(data.id)
-            && !self.is_wrap_dispatching(data.id)
         {
             return self.call_sub_value(target, args, false);
         }
