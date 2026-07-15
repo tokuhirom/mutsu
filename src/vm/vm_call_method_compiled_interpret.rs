@@ -493,44 +493,32 @@ impl Interpreter {
 
             if let Some((owner_class, method_def)) = {
                 // Monomorphic inline cache: single-entry check before HashMap.
-                if let Some((cc, cm, ref co, ref cd)) = self.last_method_resolve
+                if let Some((cc, cm, co, ref cd)) = self.last_method_resolve
                     && cc == class_sym
                     && cm == method_sym
                     && !cd.is_multi
                 {
-                    Some((co.clone(), cd.clone()))
+                    Some((co, cd.clone()))
                 } else {
                     let cached = self.method_resolve_cache.get(&cache_key).cloned();
-                    let result: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
-                        if let Some(ref hit) = cached
-                            && let Some((_, def)) = hit
-                            && !def.is_multi
-                        {
+                    let result: Option<(
+                        crate::symbol::Symbol,
+                        std::sync::Arc<crate::runtime::MethodDef>,
+                    )> = if let Some(ref hit) = cached
+                        && let Some((_, def)) = hit
+                        && !def.is_multi
+                    {
+                        hit.clone()
+                    } else if let Some(arg_keys) = Self::multi_arg_type_keys(&args)
+                        && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
+                    {
+                        // Sound multi-method resolution cache (§B): a type+arity-
+                        // deterministic multi resolves as a function of (class,
+                        // method, positional arg types), so key it on those types
+                        // rather than re-running the MRO/specificity walk per call.
+                        let mkey = (class_sym, method_sym, arg_keys);
+                        if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
                             hit.clone()
-                        } else if let Some(arg_keys) = Self::multi_arg_type_keys(&args)
-                            && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
-                        {
-                            // Sound multi-method resolution cache (§B): a type+arity-
-                            // deterministic multi resolves as a function of (class,
-                            // method, positional arg types), so key it on those types
-                            // rather than re-running the MRO/specificity walk per call.
-                            let mkey = (class_sym, method_sym, arg_keys);
-                            if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
-                                hit.clone()
-                            } else {
-                                let resolved = loan_env!(
-                                    self,
-                                    resolve_method_with_owner_invocant(cn, method, &args, &target)
-                                );
-                                let resolved_arc =
-                                    resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
-                                // Never cache an ambiguous multi resolution — it must
-                                // re-raise X::Multi::Ambiguous on every call.
-                                if !self.dispatch_ambiguous {
-                                    self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
-                                }
-                                resolved_arc
-                            }
                         } else {
                             let resolved = loan_env!(
                                 self,
@@ -538,17 +526,31 @@ impl Interpreter {
                             );
                             let resolved_arc =
                                 resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
-                            if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
-                                self.method_resolve_cache
-                                    .insert(cache_key, resolved_arc.clone());
+                            // Never cache an ambiguous multi resolution — it must
+                            // re-raise X::Multi::Ambiguous on every call.
+                            if !self.dispatch_ambiguous {
+                                self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
                             }
                             resolved_arc
-                        };
-                    if let Some((ref owner, ref def)) = result
+                        }
+                    } else {
+                        let resolved = loan_env!(
+                            self,
+                            resolve_method_with_owner_invocant(cn, method, &args, &target)
+                        );
+                        let resolved_arc =
+                            resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
+                        if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
+                            self.method_resolve_cache
+                                .insert(cache_key, resolved_arc.clone());
+                        }
+                        resolved_arc
+                    };
+                    if let Some((owner, ref def)) = result
                         && !def.is_multi
                     {
                         self.last_method_resolve =
-                            Some((class_sym, method_sym, owner.clone(), def.clone()));
+                            Some((class_sym, method_sym, owner, def.clone()));
                     }
                     result
                 }
@@ -564,7 +566,7 @@ impl Interpreter {
                 // ancestor, so gate the MRO walk on that cheap check. Defer to
                 // the slow path, whose `run_instance_method` accessor block
                 // resolves it.
-                if (method_def.role_origin.is_some() || owner_class != cn)
+                if (method_def.role_origin.is_some() || owner_class.as_str() != cn)
                     && !method_def.is_private
                     && matches!(target.view(), ValueView::Instance { .. })
                     && matches!(
@@ -576,7 +578,7 @@ impl Interpreter {
                 }
                 if let Some(result) = self.check_method_wrap_chain(
                     cn,
-                    &owner_class,
+                    owner_class.as_str(),
                     method,
                     &method_def,
                     &target,
@@ -590,41 +592,43 @@ impl Interpreter {
                 // `.^add_method`, ledger §1) and leave `compiled_code = None`;
                 // for those, compile on demand here so the method runs as
                 // bytecode instead of tree-walking through the interpreter.
-                let compiled_def: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
-                    if method_def.compiled_code.is_some() {
-                        Some((owner_class.clone(), method_def.clone()))
-                    } else if !method_def.body.is_empty()
-                        && let Some((owner, def)) = self.populate_uncompiled_method(
-                            cn,
-                            &owner_class,
-                            method,
-                            &args,
-                            &target,
-                        )
-                    {
-                        // Refresh the resolve caches so future calls take the
-                        // already-compiled fast path without re-resolving.
-                        self.method_resolve_cache
-                            .insert(cache_key, Some((owner.clone(), def.clone())));
-                        if !def.is_multi {
-                            self.last_method_resolve =
-                                Some((class_sym, method_sym, owner.clone(), def.clone()));
-                        }
-                        Some((owner, def))
-                    } else {
-                        None
-                    };
+                let compiled_def: Option<(
+                    crate::symbol::Symbol,
+                    std::sync::Arc<crate::runtime::MethodDef>,
+                )> = if method_def.compiled_code.is_some() {
+                    Some((owner_class, method_def.clone()))
+                } else if !method_def.body.is_empty()
+                    && let Some((owner, def)) = self.populate_uncompiled_method(
+                        cn,
+                        owner_class.as_str(),
+                        method,
+                        &args,
+                        &target,
+                    )
+                {
+                    // Refresh the resolve caches so future calls take the
+                    // already-compiled fast path without re-resolving.
+                    self.method_resolve_cache
+                        .insert(cache_key, Some((owner, def.clone())));
+                    if !def.is_multi {
+                        self.last_method_resolve =
+                            Some((class_sym, method_sym, owner, def.clone()));
+                    }
+                    Some((owner, def))
+                } else {
+                    None
+                };
                 if let Some((owner_class, method_def)) = compiled_def {
                     let cc = method_def.compiled_code.clone().expect("compiled_code set");
 
                     // Try to populate fast_method_cache for future calls
                     if !method_def.is_multi {
-                        self.try_populate_fast_cache(cache_key, cn, &owner_class, &method_def, &cc);
+                        self.try_populate_fast_cache(cache_key, cn, owner_class, &method_def, &cc);
                     }
 
                     return self.dispatch_compiled_method(
                         cn,
-                        &owner_class,
+                        owner_class.as_str(),
                         method,
                         &method_def,
                         &cc,

@@ -733,10 +733,10 @@ impl Interpreter {
                 skipped_chosen = true;
                 continue;
             }
-            if self.should_skip_defer_method_candidate(receiver_class, &owner) {
+            if self.should_skip_defer_method_candidate(receiver_class, owner.as_str()) {
                 continue;
             }
-            remaining.push((owner, def));
+            remaining.push((owner.resolve(), def));
         }
         let pushed = !remaining.is_empty();
         if pushed {

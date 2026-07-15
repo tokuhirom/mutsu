@@ -235,7 +235,7 @@ impl Interpreter {
                     );
                     let (result, updated) = self.run_resolved_method_compiled_or_treewalk(
                         &class_name.resolve(),
-                        &resolved_owner,
+                        resolved_owner.as_str(),
                         method,
                         method_def,
                         attrs,

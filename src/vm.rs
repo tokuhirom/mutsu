@@ -13,7 +13,7 @@ use crate::value::{
 };
 use num_traits::{Signed, Zero};
 
-pub(crate) type MethodResolveEntry = Option<(String, Arc<crate::runtime::MethodDef>)>;
+pub(crate) type MethodResolveEntry = Option<(Symbol, Arc<crate::runtime::MethodDef>)>;
 
 thread_local! {
     /// Set while execution is inside the `Interpreter::run` catch_unwind boundary, so the

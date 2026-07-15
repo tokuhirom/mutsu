@@ -125,7 +125,10 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
         target: &Value,
-    ) -> Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> {
+    ) -> Option<(
+        crate::symbol::Symbol,
+        std::sync::Arc<crate::runtime::MethodDef>,
+    )> {
         // Non-multi resolution depends only on (class, method) — not on arg
         // types/values — so it can be memoized. This mirrors the cache hierarchy
         // already used by the interpret path (`vm_call_method_compiled_interpret`);
@@ -136,22 +139,22 @@ impl Interpreter {
         // / `last_method_resolve = None`).
 
         // 1. Monomorphic inline cache: single-entry check before any HashMap.
-        if let Some((cc, cm, ref co, ref cd)) = self.last_method_resolve
+        if let Some((cc, cm, co, ref cd)) = self.last_method_resolve
             && cc == class_sym
             && cm == method_sym
             && !cd.is_multi
         {
-            return Some((co.clone(), cd.clone()));
+            return Some((co, cd.clone()));
         }
         // 2. Non-multi HashMap cache.
         if let Some(hit) = self
             .method_resolve_cache
             .get(&(class_sym, method_sym))
             .cloned()
-            && let Some((ref owner, ref def)) = hit
+            && let Some((owner, ref def)) = hit
             && !def.is_multi
         {
-            self.last_method_resolve = Some((class_sym, method_sym, owner.clone(), def.clone()));
+            self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             return hit;
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
@@ -181,9 +184,8 @@ impl Interpreter {
         if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
             self.method_resolve_cache
                 .insert((class_sym, method_sym), resolved_arc.clone());
-            if let Some((ref owner, ref def)) = resolved_arc {
-                self.last_method_resolve =
-                    Some((class_sym, method_sym, owner.clone(), def.clone()));
+            if let Some((owner, ref def)) = resolved_arc {
+                self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
             }
         }
         resolved_arc
@@ -207,7 +209,10 @@ impl Interpreter {
         method: &str,
         args: &[Value],
         target: &Value,
-    ) -> Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> {
+    ) -> Option<(
+        crate::symbol::Symbol,
+        std::sync::Arc<crate::runtime::MethodDef>,
+    )> {
         // Both compile passes are no-ops if the name is absent from the
         // respective registry, so calling both safely covers class- and
         // role-owned methods. Neither re-enters user code (pure compilation),
@@ -334,7 +339,7 @@ impl Interpreter {
         &mut self,
         cache_key: (crate::symbol::Symbol, crate::symbol::Symbol),
         receiver_class: &str,
-        owner_class: &str,
+        owner_class: crate::symbol::Symbol,
         method_def: &std::sync::Arc<crate::runtime::MethodDef>,
         cc: &std::sync::Arc<CompiledCode>,
     ) {
@@ -368,7 +373,9 @@ impl Interpreter {
                     .as_ref()
                     .is_some_and(|tc| tc.contains('('))
         });
-        let has_role_bindings = self.class_role_param_bindings(owner_class).is_some()
+        let has_role_bindings = self
+            .class_role_param_bindings(owner_class.as_str())
+            .is_some()
             || self.class_role_param_bindings(receiver_class).is_some();
         if has_invocant_constraint || has_complex_params || has_role_bindings {
             return;
@@ -396,7 +403,7 @@ impl Interpreter {
         self.fast_method_cache.insert(
             cache_key,
             super::FastMethodCacheEntry {
-                owner_class: crate::symbol::Symbol::intern(owner_class),
+                owner_class,
                 method_def: method_def.clone(),
                 compiled_code: cc.clone(),
                 can_skip_merge,
