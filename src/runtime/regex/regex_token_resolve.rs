@@ -2,7 +2,114 @@ use super::super::*;
 use super::regex_helpers::NamedRegexLookupSpec;
 use crate::symbol::Symbol;
 
+/// A resolved-and-parsed subrule candidate: (parsed pattern, dispatch package,
+/// `:sym<...>` key for proto candidates).
+pub(super) type ParsedTokenCandidate = (std::sync::Arc<RegexPattern>, String, Option<String>);
+
+/// Cache slot: the `TOKEN_DEFS_GEN` the entry was built under + the candidates.
+type CachedCandidates = (u64, std::sync::Arc<Vec<ParsedTokenCandidate>>);
+
+thread_local! {
+    /// Memoized argument-less subrule resolution: (pkg, name) → candidates
+    /// with their patterns already parsed. Rebuilding this on every
+    /// `<subrule>` reference dominated grammar matching (the registry walk in
+    /// `collect_token_patterns_for_scope` scans every `token_defs` key, plus a
+    /// `parse_regex` cache probe per candidate — together ~18% of a
+    /// JSON-grammar parse profile). Entries record the `TOKEN_DEFS_GEN` they
+    /// were built under; a stale generation rebuilds (same invalidation
+    /// discipline as `REGEX_PARSE_CACHE` and the charclass cache).
+    static PARSED_TOKEN_CANDIDATES: std::cell::RefCell<
+        rustc_hash::FxHashMap<(String, String), CachedCandidates>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
 impl Interpreter {
+    /// Resolve an argument-less subrule to parsed candidates, memoized per
+    /// (pkg, name). Returns `None` when any candidate's pattern is non-static
+    /// (its parse depends on runtime variable interpolation) or fails to
+    /// parse — callers fall back to the uncached per-call path.
+    fn resolve_parsed_token_candidates_in_pkg(
+        &self,
+        name: &str,
+        pkg: &str,
+    ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(hit) = PARSED_TOKEN_CANDIDATES.with(|c| {
+            c.borrow()
+                .get(&(pkg.to_string(), name.to_string()))
+                .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                .map(|(_, v)| std::sync::Arc::clone(v))
+        }) {
+            return Some(hit);
+        }
+        let raw = self.resolve_token_patterns_static_in_pkg(name, pkg);
+        let mut parsed_list = Vec::with_capacity(raw.len());
+        for (sub_pat, sub_pkg, sym_key) in raw {
+            if !crate::runtime::regex_parse::regex_pattern_is_static(&sub_pat) {
+                return None;
+            }
+            let parsed = self.parse_candidate_in_pkg(&sub_pat, &sub_pkg)?;
+            parsed_list.push((parsed, sub_pkg, sym_key));
+        }
+        let arc = std::sync::Arc::new(parsed_list);
+        PARSED_TOKEN_CANDIDATES.with(|c| {
+            c.borrow_mut().insert(
+                (pkg.to_string(), name.to_string()),
+                (tok_gen, std::sync::Arc::clone(&arc)),
+            );
+        });
+        Some(arc)
+    }
+
+    /// Parse a candidate's pattern in its OWN package so nested unqualified
+    /// token references (notably char-class `<+name>` items) resolve against
+    /// the grammar that defines them, not the outer caller's package.
+    fn parse_candidate_in_pkg(
+        &self,
+        sub_pat: &str,
+        sub_pkg: &str,
+    ) -> Option<std::sync::Arc<RegexPattern>> {
+        let saved_pkg = self.current_package();
+        let switch_pkg = saved_pkg.as_str() != sub_pkg;
+        if switch_pkg {
+            self.set_current_package_shared(sub_pkg.to_string());
+        }
+        let parsed = self.parse_regex(sub_pat);
+        if switch_pkg {
+            self.set_current_package_shared(saved_pkg);
+        }
+        parsed
+    }
+
+    /// Parsed candidates for a subrule reference: memoized fast path for the
+    /// argument-less case, per-call resolution + parse otherwise (candidates
+    /// whose pattern fails to parse are skipped, as before). The second value
+    /// reports whether the RAW resolution found nothing — that (not an empty
+    /// parsed list) drives the method-subrule fallback.
+    pub(super) fn parsed_subrule_candidates(
+        &self,
+        spec: &NamedRegexLookupSpec,
+        pkg: &str,
+        arg_values: &[Value],
+    ) -> (std::sync::Arc<Vec<ParsedTokenCandidate>>, bool) {
+        if arg_values.is_empty()
+            && let Some(hit) = self.resolve_parsed_token_candidates_in_pkg(&spec.lookup_name, pkg)
+        {
+            let raw_empty = hit.is_empty();
+            return (hit, raw_empty);
+        }
+        let raw = self.resolve_named_regex_candidates_in_pkg(spec, pkg, arg_values);
+        let raw_empty = raw.is_empty();
+        let mut parsed_list = Vec::with_capacity(raw.len());
+        for (sub_pat, sub_pkg, sym_key) in raw {
+            if let Some(parsed) = self.parse_candidate_in_pkg(&sub_pat, &sub_pkg) {
+                parsed_list.push((parsed, sub_pkg, sym_key));
+            }
+        }
+        (std::sync::Arc::new(parsed_list), raw_empty)
+    }
+
     pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<Arc<FunctionDef>> {
         let mut out = Vec::new();
         if name.contains("::") {
