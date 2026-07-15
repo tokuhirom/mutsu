@@ -47,7 +47,7 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_say(&mut self, target: &Value) -> Result<Value, RuntimeError> {
-        let gist = self.render_gist_value(target);
+        let gist = self.render_gist_value(target)?;
         self.write_to_named_handle("$*OUT", &gist, true)?;
         Ok(Value::TRUE)
     }
@@ -75,7 +75,7 @@ impl Interpreter {
     }
 
     pub(super) fn dispatch_note(&mut self, target: &Value) -> Result<Value, RuntimeError> {
-        let content = format!("{}\n", self.render_gist_value(target));
+        let content = format!("{}\n", self.render_gist_value(target)?);
         self.write_to_named_handle("$*ERR", &content, false)?;
         Ok(Value::NIL)
     }

@@ -249,7 +249,10 @@ impl Interpreter {
                 "say" => {
                     let mut c = String::new();
                     for arg in args {
-                        c.push_str(&loan_env!(self, render_gist_value(arg)));
+                        match loan_env!(self, render_gist_value(arg)) {
+                            Ok(g) => c.push_str(&g),
+                            Err(e) => return Some(Err(e)),
+                        }
                     }
                     (c, true)
                 }
@@ -651,7 +654,10 @@ impl Interpreter {
             Kind::Say => {
                 let mut c = String::new();
                 for arg in args {
-                    c.push_str(&loan_env!(self, render_gist_value(arg)));
+                    match loan_env!(self, render_gist_value(arg)) {
+                        Ok(g) => c.push_str(&g),
+                        Err(e) => return Some(Err(e)),
+                    }
                 }
                 (c, true, method)
             }

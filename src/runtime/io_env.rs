@@ -161,10 +161,27 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(crate) fn render_gist_value(&mut self, value: &Value) -> String {
-        self.call_method_with_values(value.clone(), "gist", vec![])
-            .map(|result| result.to_string_value())
-            .unwrap_or_else(|_| crate::runtime::gist_value(value))
+    /// Stringify a value by calling .gist. A dispatch failure falls back to
+    /// the native gist — EXCEPT a `return` control signal (or its typed
+    /// X::ControlFlow::Return form) raised while the gist forces a lazy Seq:
+    /// `say foo` where foo returned a lazy map whose block does `return` must
+    /// die like rakudo, not silently print the fallback gist
+    /// (integration/error-reporting.t test 21).
+    /// TODO: `render_str_value` (put/print) still swallows these signals.
+    pub(crate) fn render_gist_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
+        match self.call_method_with_values(value.clone(), "gist", vec![]) {
+            Ok(result) => Ok(result.to_string_value()),
+            Err(e) if e.return_value.is_some() => Err(RuntimeError::controlflow_return(true)),
+            Err(e)
+                if e.exception.as_ref().is_some_and(|ex| {
+                    matches!(ex.view(), ValueView::Instance { class_name, .. }
+                        if class_name.resolve() == "X::ControlFlow::Return")
+                }) =>
+            {
+                Err(e)
+            }
+            Err(_) => Ok(crate::runtime::gist_value(value)),
+        }
     }
 
     /// Stringify a value by calling .Str method (used by put/print).

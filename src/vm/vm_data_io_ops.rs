@@ -149,7 +149,7 @@ impl Interpreter {
             // Resolve bound-element sentinels inside arrays before gist
             let v = self.resolve_bound_array_elements(v);
             if needs_method_dispatch(&v) {
-                parts.push(loan_env!(self, render_gist_value(&v)));
+                parts.push(loan_env!(self, render_gist_value(&v))?);
             } else {
                 parts.push(runtime::gist_value(&v));
             }
@@ -172,7 +172,7 @@ impl Interpreter {
             let mut parts = Vec::new();
             for v in &values {
                 if needs_method_dispatch(v) {
-                    parts.push(loan_env!(self, render_gist_value(v)));
+                    parts.push(loan_env!(self, render_gist_value(v))?);
                 } else {
                     parts.push(runtime::gist_value(v));
                 }

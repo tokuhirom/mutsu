@@ -95,7 +95,127 @@ fn walk_validate_sub_param_types(
     Ok(())
 }
 
+/// Type-capture parameter names (`::T`) declared by `param_defs`, newly added
+/// to `captures` (already-present names are not re-added so scoped removal
+/// stays balanced).
+fn collect_type_captures(
+    param_defs: &[crate::ast::ParamDef],
+    captures: &mut std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut added = Vec::new();
+    for pd in param_defs {
+        if let Some(tc) = pd.type_constraint.as_deref()
+            && let Some(name) = tc.strip_prefix("::")
+            && !name.is_empty()
+            && !name.contains("::")
+            && captures.insert(name.to_string())
+        {
+            added.push(name.to_string());
+        }
+    }
+    added
+}
+
+/// Reject `class C is T {}` where `T` is a type-capture parameter (`::T`) of
+/// an enclosing routine/block: rakudo raises X::Inheritance::Unsupported at
+/// compile time ("T does not support inheritance, so C cannot inherit from
+/// it") without ever running the block. Best-effort walk over the common
+/// body-carrying constructs, in the same spirit as
+/// `walk_validate_sub_param_types`.
+fn walk_type_capture_inheritance(
+    stmts: &[Stmt],
+    captures: &mut std::collections::HashSet<String>,
+) -> Result<(), RuntimeError> {
+    fn check_expr(
+        expr: &crate::ast::Expr,
+        captures: &mut std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
+        use crate::ast::Expr;
+        match expr {
+            Expr::AnonSubParams {
+                param_defs, body, ..
+            } => {
+                let added = collect_type_captures(param_defs, captures);
+                let result = walk_type_capture_inheritance(body, captures);
+                for name in added {
+                    captures.remove(&name);
+                }
+                result
+            }
+            Expr::DoStmt(stmt) => {
+                walk_type_capture_inheritance(std::slice::from_ref(stmt), captures)
+            }
+            Expr::Grouped(e) => check_expr(e, captures),
+            _ => Ok(()),
+        }
+    }
+    for stmt in stmts {
+        match stmt {
+            Stmt::ClassDecl {
+                name,
+                parents,
+                body,
+                ..
+            } => {
+                for parent in parents {
+                    let base = parent.strip_prefix("::").unwrap_or(parent);
+                    if captures.contains(base) {
+                        let child = name.resolve();
+                        let child_display = if child.starts_with("__ANON_CLASS_") {
+                            "<anon>".to_string()
+                        } else {
+                            child.to_string()
+                        };
+                        let msg = format!(
+                            "{base} does not support inheritance, so {child_display} cannot inherit from it"
+                        );
+                        let mut attrs = HashMap::new();
+                        attrs.insert("child-typename".to_string(), Value::str(child_display));
+                        attrs.insert(
+                            "parent".to_string(),
+                            Value::package(crate::symbol::Symbol::intern(base)),
+                        );
+                        attrs.insert("message".to_string(), Value::str(msg));
+                        return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
+                    }
+                }
+                walk_type_capture_inheritance(body, captures)?;
+            }
+            Stmt::SubDecl {
+                param_defs, body, ..
+            } => {
+                let added = collect_type_captures(param_defs, captures);
+                let result = walk_type_capture_inheritance(body, captures);
+                for name in added {
+                    captures.remove(&name);
+                }
+                result?;
+            }
+            Stmt::Block(body)
+            | Stmt::SyntheticBlock(body)
+            | Stmt::Package { body, .. }
+            | Stmt::RoleDecl { body, .. } => {
+                walk_type_capture_inheritance(body, captures)?;
+            }
+            Stmt::Expr(expr) | Stmt::Return(expr) => check_expr(expr, captures)?,
+            Stmt::VarDecl { expr, .. } => check_expr(expr, captures)?,
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 impl Interpreter {
+    /// Reject inheriting from an enclosing routine's type-capture parameter
+    /// (`-> ::T { class C is T {} }`) at compile time, like rakudo.
+    pub(crate) fn check_type_capture_inheritance(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let mut captures = std::collections::HashSet::new();
+        walk_type_capture_inheritance(stmts, &mut captures)
+    }
+
     /// Reject sub parameter types that name a type unknown to this compilation
     /// unit (e.g. `sub yoink(Junctoin $barf)`) -> X::Parameter::InvalidType.
     pub(crate) fn check_eval_param_type_constraints(
