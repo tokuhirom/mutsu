@@ -455,16 +455,24 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
              it (`tests/gc_stress.rs::dead_sweep_bounds_threaded_mutation_memory`, sum=2 vs 800).
              Folding `closure_compiled_codes` free vars + `op_arg_sources_idx` (rw-arg sinks) +
              `op_container_mutate_const_idx` into `needs_env_sync` fixes this axis.
-         (c) **★JIT outer-lexical read (the decider)** — the JIT reads an *outer* lexical referenced
-             inside a hot loop (`my $c=…; for ^30 { $c.bump() }`) **from env by name**, so eliding the
-             env seed makes the JIT see `Any` (`tests/jit_diff.rs::hot_method_body_compiles_and_matches`).
-             Escape-folding cannot fix this; the JIT is default-on and compiles exactly the hot loops
-             the gate targets. A "gate only slots *declared inside* a `ForLoop` body (JIT-register
-             temps)" restriction might be safe but is unverified.
-         (d) **currying/priming capture** — `roast/S06-currying/positional.t` aborts at test 157.
+         (c) **★method-call caller-local coherence × JIT inline `GetLocal` (the decider; diagnosis
+             CORRECTED 2026-07-15)** — `tests/jit_diff.rs::hot_method_body_compiles_and_matches`
+             (`my $c=…; for ^30 { $c.bump() }`). The earlier "the JIT reads the outer lexical from env"
+             claim was **wrong** — proven by unconditionally skipping *only* `$c`'s env write: the JIT
+             run still prints the right answer, because `$c` is read via `GetLocal(0)` from its slot,
+             not from env. The real gatekeeper is **method-call specific** (a positional *sub* call in
+             the same JIT-hot loop is fine): the method path keeps caller-local coherence through env
+             (`vm_call_method_ops.rs` `drain_and_reconcile_after_cached_call`), so once the gate makes
+             `$c` env-absent, the first `bump()` leaves `$c`'s slot in a state the JIT's Tier-B **inline**
+             `GetLocal` (which bypasses `exec_get_local_op`) reads as `Any`, while the interpreter's
+             `exec_get_local_op` still reads it correctly — so it only surfaces under `MUTSU_JIT_THRESHOLD=1`
+             (JIT off / default threshold pass). Fixing it is load-bearing method-dispatch work.
+         (d) **currying/priming capture** — `roast/S06-currying/positional.t` aborts at test 157
+             (cause not yet isolated; likely the same method/dispatch env-reconcile as (c)).
          So it is **a campaign fused with §1.3/§1.5, §6 (`BlockScope`'s `self.locals.clone()`), and the
-         JIT's lexical-access path** (memory: a standalone change has a track record of breaking 5
-         mechanisms — 4 reproduced here). See memory `project_needs_env_sync_blanket_removal`.
+         method-dispatch env-based caller-local reconcile** (memory: a standalone change has a track
+         record of breaking 5 mechanisms). Note scalar locals are stored **sigil-less** (`"c"`, not
+         `"$c"`) — relevant when instrumenting. See memory `project_needs_env_sync_blanket_removal`.
       1. **Remove SipHash from `compiled_fns`** (scouting §2.1 — the function table is still a
          `HashMap<String, CompiledFunction>` (`vm.rs:280`), so **even calls that hit the light-call
          cache SipHash + memcmp the function name every time**). Order: FxHashMap → `Symbol` keys →
