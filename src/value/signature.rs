@@ -272,8 +272,18 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
             type_captures.push(Value::str(t[2..].to_string()));
             Value::Package(Symbol::intern("Any"))
         }
+        // `Int @x` / `Int %h` constrain the *element* type; the parameter's
+        // own type is the parameterized container role.
+        Some(t) if p.sigil == '@' => Value::Package(Symbol::intern(&format!("Positional[{t}]"))),
+        Some(t) if p.sigil == '%' => Value::Package(Symbol::intern(&format!("Associative[{t}]"))),
         Some(t) => Value::Package(Symbol::intern(t)),
-        None => Value::Package(Symbol::intern("Any")),
+        // Untyped params: the sigil implies the container role.
+        None => Value::Package(Symbol::intern(match p.sigil {
+            '@' => "Positional",
+            '%' => "Associative",
+            '&' => "Callable",
+            _ => "Any",
+        })),
     };
     attrs.insert("type".to_string(), type_val);
     attrs.insert("type_captures".to_string(), Value::array(type_captures));
@@ -386,13 +396,36 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
     let mut parts = Vec::new();
 
     // Type constraint
-    let type_name = attrs
+    let mut type_name = attrs
         .get("type")
         .map(|v| match v.view() {
             ValueView::Package(sym) => sym.resolve(),
             _ => v.to_string_value(),
         })
         .unwrap_or_default();
+    // The sigil-implied container role is not spelled out (`@x`, not
+    // `Positional @x`), and `Positional[Int] @x` renders as `Int @x`.
+    let sigil = attrs
+        .get("sigil")
+        .map(Value::to_string_value)
+        .unwrap_or_default();
+    let implied = match sigil.as_str() {
+        "@" => Some("Positional"),
+        "%" => Some("Associative"),
+        "&" => Some("Callable"),
+        _ => None,
+    };
+    if let Some(implied) = implied {
+        if type_name == implied {
+            type_name = String::new();
+        } else if let Some(inner) = type_name
+            .strip_prefix(implied)
+            .and_then(|r| r.strip_prefix('['))
+            .and_then(|r| r.strip_suffix(']'))
+        {
+            type_name = inner.to_string();
+        }
+    }
     if !type_name.is_empty() && type_name != "Any" && type_name != "Mu" {
         parts.push(type_name);
     } else if type_name == "Mu" {
@@ -687,6 +720,15 @@ fn render_param(p: &SigParam) -> String {
     for t in &p.traits {
         result.push_str(" is ");
         result.push_str(t);
+    }
+
+    // Literal default values render as `= 5`; complex default expressions
+    // are not reconstructed (mutsu has no full deparser).
+    if let Some(ref de) = p.default_expr
+        && let Expr::Literal(lit) = de.as_ref()
+    {
+        result.push_str(" = ");
+        result.push_str(&crate::builtins::methods_0arg::raku_repr::raku_value(lit));
     }
 
     result

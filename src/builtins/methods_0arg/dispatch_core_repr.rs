@@ -87,6 +87,16 @@ pub(super) fn dispatch(
         return Some(None);
     }
     Some(match target.view() {
+        // A parameterized role type object: raku is the bare name
+        // (`Cup[EggNog]`), gist wraps it in type-object parens.
+        ValueView::ParametricRole { .. } => {
+            let name = raku_value(target);
+            if method == "gist" {
+                Some(Ok(Value::str(format!("({})", name))))
+            } else {
+                Some(Ok(Value::str(name)))
+            }
+        }
         ValueView::Bool(b) => {
             if method == "gist" {
                 Some(Ok(Value::str(if b { "True" } else { "False" }.to_string())))

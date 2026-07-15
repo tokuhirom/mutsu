@@ -842,7 +842,11 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Method" || class_name == "Sub" || class_name == "Routine" => {
+            } if class_name == "Method"
+                || class_name == "Sub"
+                || class_name == "Routine"
+                || class_name == "Attribute" =>
+            {
                 attributes
                     .as_map()
                     .get("name")

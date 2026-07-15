@@ -734,6 +734,14 @@ pub fn raku_value(v: &Value) -> String {
         }
         ValueView::Nil => "Nil".to_string(),
         ValueView::Package(name) => name.resolve().to_string(),
+        // A parameterized role type object renders as `Cup[EggNog]`.
+        ValueView::ParametricRole {
+            base_name,
+            type_args,
+        } => {
+            let args: Vec<String> = type_args.iter().map(raku_value).collect();
+            format!("{}[{}]", base_name.resolve(), args.join(","))
+        }
         ValueView::Range(a, b) => {
             format!(
                 "{}..{}",

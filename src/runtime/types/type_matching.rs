@@ -1,7 +1,7 @@
 use super::*;
 
 impl Interpreter {
-    pub(in crate::runtime) fn type_arg_value_from_name(&self, name: &str) -> Value {
+    pub(crate) fn type_arg_value_from_name(&self, name: &str) -> Value {
         let trimmed = name.trim().trim_start_matches('(').trim_end_matches(')');
         if let Some((base, args)) = Self::parse_parametric_type_name(trimmed)
             && self.is_role(&base)

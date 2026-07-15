@@ -64,6 +64,14 @@ impl Interpreter {
             self.env.insert(var_name, Value::real_array(list_items));
             Ok(result)
         } else {
+            // Same deferral as dispatch_map_method: a callback containing
+            // `return` or a stub (`...`) must not run until the Seq is forced.
+            if let Some(ValueView::Sub(sub_data)) = func.as_ref().map(Value::view)
+                && (Self::body_contains_return(&sub_data.body)
+                    || Self::is_stub_routine_body(&sub_data.body))
+            {
+                return Ok(self.create_lazy_map_list(list_items, &sub_data));
+            }
             self.eval_map_over_items(func, list_items)
         }
     }

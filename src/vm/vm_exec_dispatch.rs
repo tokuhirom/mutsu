@@ -1526,10 +1526,26 @@ impl Interpreter {
                             } else if constraint == "str" {
                                 Value::str(String::new())
                             } else {
-                                Value::package(Symbol::intern(
-                                    &loan_env!(self, var_type_constraint(&name))
-                                        .unwrap_or(constraint.clone()),
-                                ))
+                                // A parameterized role constraint (`my Cup of
+                                // EggNog $mug` / `my Cup[EggNog] $mug`) resolves
+                                // to the ParametricRole type object so .WHAT /
+                                // .raku keep the type arguments. The stored
+                                // constraint metadata normalizes to the base
+                                // name, so probe the raw constraint here.
+                                let parametric = constraint.contains('[').then(|| {
+                                    loan_env!(self, type_arg_value_from_name(&constraint))
+                                });
+                                match parametric {
+                                    Some(v)
+                                        if matches!(v.view(), ValueView::ParametricRole { .. }) =>
+                                    {
+                                        v
+                                    }
+                                    _ => Value::package(Symbol::intern(
+                                        &loan_env!(self, var_type_constraint(&name))
+                                            .unwrap_or(constraint.clone()),
+                                    )),
+                                }
                             };
                         self.set_env_with_main_alias(&name, init_val.clone());
                         self.update_local_if_exists(code, &name, &init_val);
