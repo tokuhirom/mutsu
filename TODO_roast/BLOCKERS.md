@@ -30,7 +30,7 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 
 ## 現在の前提
 
-- whitelist は **1384 / 1463**（2026-07-14、`wc -l roast-whitelist.txt`）＝未 whitelist **79 本**。
+- whitelist は **1407 / 1463**（2026-07-15、`wc -l roast-whitelist.txt`）＝未 whitelist **56 本**。
 - **S\* 系（各シノプシスの機能テスト）は出尽くした。** かつての大型 campaign（真の lazy 配列 /
   dispatch・演算子 sugar の desugar / S17 並行・非同期 / 第一級コンテナ container identity /
   cross-thread lexical writeback）はすべて完了済みで、S\* に残るのは下の
@@ -54,24 +54,10 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 | **② パース不能（`===SORRY!===`）** | **0（完了）** | 10 本すべて解消（#4511 / #4514 / #4515 / #4517 / #4518 / #4522） | **このクラスタは枯渇。** 7 本が whitelist 到達、3 本はパースを通過して機能ギャップへ移行 — 下の「② の内訳」参照 |
 | **③ ハング / タイムアウト** | **完了** | 5 本すべて whitelist 到達（2026-07-15）: `gather-with-loops.t`（`next`/`redo` で終わったイテレーションの state 書き込み喪失＋sibling gather 間の state キー衝突＋ネストループの state 非リセット）・`advent2013-day14.t`（whenever ブロックの placeholder パラメータ非バインド＋thread 内再宣言の親レキシカル clobber）・`APPENDICES/A01-limits/misc.t`（`x` 演算子の O(n) push ループ→倍々 memcpy 化で 4GiB 文字列が数秒に＋異 role 間 multi method 合成＋where 節の動的変数副作用保持）・`overflow.t`（巨大指数 `**` の X::Numeric::Overflow/Underflow Failure 化＋worker thread からの `exit` のプロセス終了＋`say` の未 handled Failure 爆発）・`advent2012-day21.t`（純粋な速度ストレス — debug 102s/release は余裕。per-file timeout 120s を設定） | — |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
-| **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張 — **test 2 の `.parse` がハングに変化**、要再調査）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。**whitelist 到達 (2026-07-15)**: `advent2010-day22.t`（builtin 型の `^attributes`/`^methods(:local)` テーブル）・`advent2009-day20.t`（signature.raku のリテラル default 表示・sigil→Positional/Associative/Callable 型・stub map callback の遅延）・`advent2009-day18.t`（`my Cup of EggNog $mug` の `.WHAT.raku` が型引数を保持）・`advent2010-day14.t`（`Say`/`Put`/`Print`/`Note` opcode を `has_calls` に追加 — 下節参照）・`advent2013-day10.t`（演算子 adverb を式ルートの演算子に付与＝`attach_trailing_adverbs`、user prefix の operand 内 grab 抑制、`- * / **` の user override ディスパッチ統一、演算子呼び出しの Empty オペランド保持、`m:nth[5]` を X::Comp::Group で拒否 — #4536）・`advent2011-day04.t`（wrap 済み sub の**再帰呼び出しが wrap chain を再入**するように。broad な `is_wrap_dispatching` ガードを callsame/callwith 専用の one-shot `wrap_skip_once` に置換） |
+| **⑤ 個別機能ギャップ** | 2 | `advent2011-day07.t`（`Metamodel::GrammarHOW` 継承 — `Advent::GrammarProfiler` が `class ProfiledGrammarHOW is Metamodel::GrammarHOW` + `^set_how` 相当を要求＝**メタモデル大工事**）・`precompiled.t`（precomp 基盤） | **8 本 whitelist 到達（2026-07-15、#4533 / #4535 / #4536 / #4538 / #4541 / #4542）** — day22/day20/day18（introspection）、day14（`Say` 系 opcode の `has_calls` 漏れ）、2013-day10（演算子 adverb）、day04（wrap 再帰再入）、2011-day10（`--doc`/`pod2text`）、day24（派生 grammar の proto 候補マージ）。詳細は [news/2026-07.md](../news/2026-07.md) |
 
 **近道（1 subtest 差のファイル）**: `6.c/S04-declarations/my-6c.t` は **111/112**（唯一の失敗＝
-test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、`advent2009-day24.t` は 3/4。
-
-### advent2010-day14.t の実バグ（2026-07-15 root-cause → 修正済み・whitelist 到達）
-
-fail 1・5 は `nextsame` ではなかった（`nextsame` の継承チェーンも mixin も単体では動く）。
-実体: `method m { say "y" }` のように本体が I/O op だけのメソッドは、`Say`/`Put`/`Print`/
-`Note` opcode が `CompiledCode::emit` の `has_calls` 判定リスト（`src/opcode.rs`）に
-入っていなかったため `can_skip_merge = true` と誤分類され、メソッド exit が
-`frame.saved_env`（entry 時のスナップショット）を復元して live env を破棄していた。
-`say` は user 定義 `$*OUT` override の `print` を内部 dispatch できる＝任意のユーザコードが
-env に書き込める op なので、`has_calls` に含めるのが正しい（同リストのコメントの通り
-「漏れた variant は外向き mutation を静かに落とす」の実例）。sub 経路が無事だったのは
-`call_compiled_function_positional_light` に skip-merge 短絡が無く、常に overlay を
-drain して返すため。修正: 4 op を `has_calls` リストへ追加。pin:
-`t/method-say-out-override-writeback.t`。
+test 57 `OUTER::<$x>` 疑似パッケージ）。
 
 ### ① の内訳（2026-07-14 に 4 本とも root-cause 済み）
 
