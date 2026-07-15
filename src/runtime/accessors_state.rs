@@ -720,6 +720,18 @@ impl Interpreter {
         let registry = self.registry();
         let class_def = registry.classes.get(class_name)?;
         let defs = class_def.methods.get(method_name)?;
+        // Fast path: a resolved MethodDef is a clone of a registry entry, so
+        // its body Arc points at the same allocation — pointer identity finds
+        // the candidate without traversing any AST. The structural-fingerprint
+        // scan below (which Debug-traverses every candidate's whole body)
+        // remains only as a fallback for defs rebuilt with a fresh body Arc
+        // (e.g. on-demand recompilation).
+        if let Some(idx) = defs
+            .iter()
+            .position(|d| std::sync::Arc::ptr_eq(&d.body, &method_def.body))
+        {
+            return Some(idx);
+        }
         let target_fp = crate::ast::function_body_fingerprint(
             &method_def.params,
             &method_def.param_defs,

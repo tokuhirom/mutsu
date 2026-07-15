@@ -148,8 +148,13 @@ impl Interpreter {
                     Value::make_instance(Symbol::intern(receiver_class_name), attributes.clone())
                 }
             };
-        // Check for method-level wrap chain on this candidate
-        if !self.is_inside_wrap_dispatch()
+        // Check for method-level wrap chain on this candidate. The
+        // `has_any_wrap_chains` prefilter matters: without it every slow-path
+        // instance call (e.g. every bless/TWEAK) pays a candidate-index scan
+        // even though no `.wrap` exists in the whole program (mirrors the
+        // compiled path's guard in vm_call_method_compiled.rs).
+        if self.has_any_wrap_chains()
+            && !self.is_inside_wrap_dispatch()
             && let Some(cand_idx) =
                 self.find_method_candidate_index(&owner_class, method_name, &method_def)
             && let Some(chain) = self

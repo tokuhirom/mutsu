@@ -148,11 +148,14 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
          (definite-return-eval PR): every return from a `--> Nil` routine (e.g.
          Zef::Distribution's TWEAK) paid a full string EVAL whose setup clones the entire class
          registry twice; constant specs (Nil/True/False/Empty/pi/int) are now constructed
-         directly. Combined: full fez populate = **11.9s** release (raku ~1-2.8s); an 18-attr
-         ctor microbench (tmp/ctor-bench.raku) went 35x → 5.8x vs raku. Remaining hot spots
-         (per-dist): `bless` runs on the `run_instance_method` slow-path fallback, TWEAK x2 via
-         the resolver path, allocation churn (malloc/free/memmove still dominate the flat
-         profile).
+         directly. Third fix (wrap-chain-prefilter PR): every slow-path instance call
+         (bless/TWEAK) Debug-traversed method-body ASTs looking for `.wrap` chains that don't
+         exist; gated behind `has_any_wrap_chains()` + `Arc::ptr_eq` candidate matching.
+         Combined with #4559 (subrule memoization): full fez populate = **6.5s** release
+         (raku ~1-2.8s); the 18-attr ctor microbench (tmp/ctor-bench.raku) went 35x → **2.9x**
+         vs raku over the session. Remaining (per-dist): `bless` still runs on the
+         `run_instance_method` slow-path fallback, TWEAK x2 via the resolver path, allocation
+         churn / SipHash on String-keyed maps / Symbol intern traffic in the flat profile.
       2. Nested `.raku` rendering: an Instance inside a collection renders as `Sp()` (type-object
          style) (`(C.new,).raku` → raku gives `(C.new(...),)`). The value itself is fine
          (semantically harmless; display only).
