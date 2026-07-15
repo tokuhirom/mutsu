@@ -401,6 +401,9 @@ impl Interpreter {
             }
             "__mutsu_stub_die" => self.builtin_stub_die(&args),
             "__mutsu_stub_warn" => self.builtin_stub_warn(&args),
+            // From `use Pod::To::Text` (built-in module, like JSON::Fast's
+            // to-json/from-json).
+            "pod2text" => self.builtin_pod2text(&args),
             "__mutsu_incdec_nomatch" => self.builtin_incdec_nomatch(&args),
             "__mutsu_index_var_meta" => self.builtin_index_var_meta(&args),
             "exit" => self.builtin_exit(&args),
