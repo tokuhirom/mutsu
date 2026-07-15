@@ -38,8 +38,22 @@ pub(crate) fn trusts_decl(input: &str) -> PResult<'_, Stmt> {
     ))
 }
 
-/// Parse a `token`, `regex`, or `rule` declaration.
+/// Parse a `token`, `regex`, or `rule` declaration (optionally `multi`-marked:
+/// `multi rule expr($p) {...}` — candidates accumulate instead of replacing).
 pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
+    let (input, is_multi) = match keyword("multi", input).and_then(|r| ws1(r).ok()) {
+        // Only treat `multi` as a marker when a rule-ish keyword follows
+        // (`multi rule ...`); a bare `multi sub`/`multi method` belongs to
+        // other parsers.
+        Some((r, _))
+            if keyword("token", r).is_some()
+                || keyword("rule", r).is_some()
+                || keyword("regex", r).is_some() =>
+        {
+            (r, true)
+        }
+        _ => (input, false),
+    };
     let is_rule = keyword("rule", input).is_some();
     let is_regex = keyword("regex", input).is_some();
     let is_ratchet = !is_regex; // token and rule are ratcheting
@@ -94,7 +108,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 params,
                 param_defs,
                 body,
-                multi: false,
+                multi: is_multi,
             },
         ))
     } else {
@@ -105,7 +119,7 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
                 params,
                 param_defs,
                 body,
-                multi: false,
+                multi: is_multi,
                 is_my: false,
                 is_our: false,
             },

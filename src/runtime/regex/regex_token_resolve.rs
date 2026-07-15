@@ -21,6 +21,69 @@ thread_local! {
     static PARSED_TOKEN_CANDIDATES: std::cell::RefCell<
         rustc_hash::FxHashMap<(String, String), CachedCandidates>,
     > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+
+    /// Memoized WITH-ARGS subrule resolution: (pkg, name, rendered-args) →
+    /// parsed candidates. A parameterized rule (`multi rule expr($p)` called
+    /// as `<expr(3)>`) re-resolves through a fresh scratch interpreter (bind
+    /// args, eval body, bake params) on EVERY match-position probe; nested
+    /// precedence-climbing grammars (P47) re-enter that per position and per
+    /// LR-seed iteration, which is exponential without memoization. Cached
+    /// only when every candidate's body references no variables beyond its
+    /// own parameters (the args are part of the key), so a body reading an
+    /// outer runtime lexical is never staled. Same `TOKEN_DEFS_GEN`
+    /// invalidation as above.
+    static PARSED_TOKEN_ARG_CANDIDATES: std::cell::RefCell<
+        rustc_hash::FxHashMap<(String, String, String), CachedCandidates>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
+/// True when `pattern` contains no interpolation the with-args cache key does
+/// not cover: no `@`/`%` refs, no `$<cap>`/`$0`/`$(...)` forms, and every
+/// `$ident` names one of `params` (raku identifier rules: `-` extends a name
+/// only before a letter).
+fn pattern_static_modulo_params(pattern: &str, params: &[String]) -> bool {
+    if pattern.contains(['@', '%']) {
+        return false;
+    }
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0usize;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 2,
+            '$' => {
+                let j0 = i + 1;
+                let mut j = j0;
+                if j < chars.len() && (chars[j].is_alphabetic() || chars[j] == '_') {
+                    j += 1;
+                    while j < chars.len() {
+                        let c = chars[j];
+                        let kebab = c == '-'
+                            && chars
+                                .get(j + 1)
+                                .is_some_and(|n| n.is_alphabetic() || *n == '_');
+                        if c.is_alphanumeric() || c == '_' || kebab {
+                            j += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    let name: String = chars[j0..j].iter().collect();
+                    if !params
+                        .iter()
+                        .any(|p| p.trim_start_matches(['$', '@', '%', '&', ':']) == name)
+                    {
+                        return false;
+                    }
+                    i = j;
+                } else {
+                    // `$<cap>`, `$0`, `$(...)`, bare `$` — dynamic.
+                    return false;
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    true
 }
 
 impl Interpreter {
@@ -99,6 +162,30 @@ impl Interpreter {
             let raw_empty = hit.is_empty();
             return (hit, raw_empty);
         }
+        // With-args memoization (see PARSED_TOKEN_ARG_CANDIDATES).
+        let args_fp = if arg_values.is_empty() {
+            None
+        } else {
+            let mut fp = String::new();
+            for v in arg_values {
+                fp.push('\u{0}');
+                fp.push_str(&Self::format_named_regex_arg_value(v));
+            }
+            Some(fp)
+        };
+        let tok_gen =
+            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(fp) = &args_fp
+            && let Some(hit) = PARSED_TOKEN_ARG_CANDIDATES.with(|c| {
+                c.borrow()
+                    .get(&(pkg.to_string(), spec.lookup_name.clone(), fp.clone()))
+                    .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                    .map(|(_, v)| std::sync::Arc::clone(v))
+            })
+        {
+            let raw_empty = hit.is_empty();
+            return (hit, raw_empty);
+        }
         let raw = self.resolve_named_regex_candidates_in_pkg(spec, pkg, arg_values);
         let raw_empty = raw.is_empty();
         let mut parsed_list = Vec::with_capacity(raw.len());
@@ -107,7 +194,34 @@ impl Interpreter {
                 parsed_list.push((parsed, sub_pkg, sym_key));
             }
         }
-        (std::sync::Arc::new(parsed_list), raw_empty)
+        let arc = std::sync::Arc::new(parsed_list);
+        if let Some(fp) = args_fp {
+            // Cache only when every candidate def's body is self-contained
+            // (no variable references beyond its own params).
+            let cacheable = self
+                .resolve_token_defs_in_pkg(&spec.lookup_name, pkg)
+                .iter()
+                .all(|def| {
+                    def.body.iter().all(|stmt| match stmt {
+                        crate::ast::Stmt::Expr(crate::ast::Expr::Literal(v)) => match v.view() {
+                            ValueView::Regex(pat) => {
+                                pattern_static_modulo_params(&pat, &def.params)
+                            }
+                            _ => false,
+                        },
+                        _ => false,
+                    })
+                });
+            if cacheable {
+                PARSED_TOKEN_ARG_CANDIDATES.with(|c| {
+                    c.borrow_mut().insert(
+                        (pkg.to_string(), spec.lookup_name.clone(), fp),
+                        (tok_gen, std::sync::Arc::clone(&arc)),
+                    );
+                });
+            }
+        }
+        (arc, raw_empty)
     }
 
     pub(super) fn resolve_token_defs_in_pkg(&self, name: &str, pkg: &str) -> Vec<Arc<FunctionDef>> {
@@ -176,7 +290,44 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Vec<(String, String, Option<String>)> {
         let mut out = Vec::new();
-        for def in self.resolve_token_defs_in_pkg(name, pkg) {
+        let defs = self.resolve_token_defs_in_pkg(name, pkg);
+        // Rakudo multi semantics: a candidate whose literal parameter values
+        // exactly match the arguments is narrower than a generic (`$p`)
+        // candidate and wins the dispatch outright — `<expr(0)>` must pick
+        // `multi rule expr(0)` alone, not also try `expr($p)` (whose body may
+        // recurse with no base case, 99problems-41-to-50.t P47).
+        let literal_matches: Vec<_> = defs
+            .iter()
+            .filter(|def| {
+                let positional: Vec<_> = def.param_defs.iter().filter(|pd| !pd.named).collect();
+                positional.len() == arg_values.len()
+                    && !positional.is_empty()
+                    && positional
+                        .iter()
+                        .zip(arg_values)
+                        .all(|(pd, arg)| pd.literal_value.as_ref() == Some(arg))
+            })
+            .cloned()
+            .collect();
+        let defs = if literal_matches.is_empty() {
+            // No exact literal candidate: drop candidates whose literal params
+            // MISMATCH the args (`<expr(1)>` must not run `multi rule expr(0)`
+            // — bind_function_args_values does not enforce literal values).
+            defs.into_iter()
+                .filter(|def| {
+                    def.param_defs
+                        .iter()
+                        .filter(|pd| !pd.named)
+                        .zip(arg_values)
+                        .all(|(pd, arg)| {
+                            pd.literal_value.is_none() || pd.literal_value.as_ref() == Some(arg)
+                        })
+                })
+                .collect()
+        } else {
+            literal_matches
+        };
+        for def in defs {
             let mut interp = Interpreter {
                 env: self.env.clone(),
                 current_package: Arc::new(RwLock::new(def.package.resolve())),

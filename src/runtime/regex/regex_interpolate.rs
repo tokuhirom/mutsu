@@ -339,10 +339,20 @@ impl Interpreter {
                     if matches!(chars[j], '*' | '?' | '^' | '.') {
                         j += 1;
                     }
-                    while j < chars.len()
-                        && (chars[j].is_alphanumeric() || chars[j] == '_' || chars[j] == '-')
-                    {
-                        j += 1;
+                    while j < chars.len() {
+                        let c = chars[j];
+                        // Raku identifier rule: `-` extends the name only when
+                        // followed by a letter — `$p-1` is `$p` minus one, not
+                        // the kebab variable "p-1".
+                        let kebab = c == '-'
+                            && chars
+                                .get(j + 1)
+                                .is_some_and(|n| n.is_alphabetic() || *n == '_');
+                        if c.is_alphanumeric() || c == '_' || kebab {
+                            j += 1;
+                        } else {
+                            break;
+                        }
                     }
                     Some((chars[name_start..j].iter().collect::<String>(), j))
                 } else {
@@ -445,6 +455,29 @@ impl Interpreter {
 
             let inner_end = i - 1;
             let inner: String = chars[start..inner_end].iter().collect();
+            // A lookaround assertion (`<?before ...>` / `<!after ...>` ...)
+            // wraps a nested sub-pattern: recurse so an arg-call inside it
+            // (`<?before <pred($p)>>`) gets its bound params rendered too —
+            // at match time the lookaround body evaluates args against a
+            // default env where `$p` no longer exists (P47).
+            {
+                let assertion = inner
+                    .strip_prefix(['?', '!', '.'])
+                    .unwrap_or(inner.as_str());
+                if let Some(rest) = assertion
+                    .strip_prefix("before ")
+                    .or_else(|| assertion.strip_prefix("after "))
+                {
+                    let head_len = inner.len() - rest.len();
+                    let head = &inner[..head_len];
+                    let rendered_inner = self.instantiate_named_regex_arg_calls(rest)?;
+                    out.push('<');
+                    out.push_str(head);
+                    out.push_str(&rendered_inner);
+                    out.push('>');
+                    continue;
+                }
+            }
             let spec = Self::parse_named_regex_lookup_spec(&inner);
             if spec.arg_exprs.is_empty() {
                 out.push('<');
