@@ -331,10 +331,17 @@ impl Interpreter {
                     false,
                 )
             };
+        let attr_syms = std::sync::Arc::new(
+            class_attrs
+                .iter()
+                .map(|(n, ..)| crate::symbol::Symbol::intern(n))
+                .collect::<Vec<_>>(),
+        );
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             is_cunion,
             eligible,
             class_attrs,
+            attr_syms,
             type_constraints,
             has_build,
             has_tweak,

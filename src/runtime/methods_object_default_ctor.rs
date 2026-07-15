@@ -27,13 +27,10 @@ impl Interpreter {
         let class_attrs = &*plan.class_attrs;
         let type_constraints = &*plan.type_constraints;
 
-        let sigil_of = |name: &str| -> char {
-            class_attrs
-                .iter()
-                .find(|(n, ..)| n == name)
-                .map(|(_, _, _, _, _, s, _)| *s)
-                .unwrap_or('$')
-        };
+        let attr_idx_of =
+            |name: &str| -> Option<usize> { class_attrs.iter().position(|(n, ..)| n == name) };
+        let sigil_of =
+            |name: &str| -> char { attr_idx_of(name).map(|i| class_attrs[i].5).unwrap_or('$') };
 
         // A custom BUILD replaces the default named-argument → attribute binding:
         // with a BUILD present, a provided `:attr(value)` is NOT auto-assigned to
@@ -52,6 +49,7 @@ impl Interpreter {
             if let ValueView::Pair(key, val) = arg.view()
                 && self.is_attribute_buildable(cn_resolved, key)
             {
+                let key_sym = attr_idx_of(key).map(|i| plan.attr_syms[i]);
                 match sigil_of(key) {
                     '@' | '%' => {
                         // A `%`-attribute bound to a non-Hash object is
@@ -69,10 +67,11 @@ impl Interpreter {
                         }
                         // Coerce exactly as the interpreter's shared helper does
                         // (List/Range -> Array, array-of-Pairs -> Hash, …).
-                        attrs.insert(
-                            key.clone(),
-                            Self::coerce_attr_value_by_sigil(val.clone(), sigil_of(key)),
-                        );
+                        let coerced = Self::coerce_attr_value_by_sigil(val.clone(), sigil_of(key));
+                        match key_sym {
+                            Some(s) => attrs.insert(s, coerced),
+                            None => attrs.insert(key.clone(), coerced),
+                        };
                     }
                     _ => {
                         // A provided value that does not already match its
@@ -91,7 +90,10 @@ impl Interpreter {
                         {
                             return None;
                         }
-                        attrs.insert(key.clone(), val.clone());
+                        match key_sym {
+                            Some(s) => attrs.insert(s, val.clone()),
+                            None => attrs.insert(key.clone(), val.clone()),
+                        };
                     }
                 }
             }
@@ -148,8 +150,10 @@ impl Interpreter {
         // that fast path made a 20k-iteration native-attr loop time out.
         let mut eval_error: Option<RuntimeError> = None;
         let mut typed_default_mismatch = false;
-        for (attr_name, _is_public, default_expr, _, _, sigil, _) in class_attrs.iter() {
-            if attrs.contains_key(attr_name) {
+        for ((attr_name, _is_public, default_expr, _, _, sigil, _), &attr_sym) in
+            class_attrs.iter().zip(plan.attr_syms.iter())
+        {
+            if attrs.contains_key(attr_sym) {
                 continue;
             }
             match default_expr {
@@ -157,7 +161,7 @@ impl Interpreter {
                 // The interpreter stores it without a type check, so we do too.
                 Some(Expr::Literal(lit_val)) => {
                     attrs.insert(
-                        attr_name.clone(),
+                        attr_sym,
                         Self::coerce_attr_value_by_sigil(lit_val.clone(), *sigil),
                     );
                 }
@@ -254,10 +258,7 @@ impl Interpreter {
                         typed_default_mismatch = true;
                         break;
                     }
-                    attrs.insert(
-                        attr_name.clone(),
-                        Self::coerce_attr_value_by_sigil(val, *sigil),
-                    );
+                    attrs.insert(attr_sym, Self::coerce_attr_value_by_sigil(val, *sigil));
                 }
                 None => {
                     // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For
@@ -272,7 +273,7 @@ impl Interpreter {
                             .and_then(|c| Self::native_scalar_default(c))
                             .unwrap_or(Value::NIL),
                     };
-                    attrs.insert(attr_name.clone(), empty);
+                    attrs.insert(attr_sym, empty);
                 }
             }
         }
@@ -289,7 +290,9 @@ impl Interpreter {
         // `coerce_value_for_constraint` is the exact path the interpreter uses, so
         // the result is identical; the gate already excluded user-class targets,
         // so only built-in coercion logic runs here.
-        for (attr_name, _, _, _, _, sigil, _) in class_attrs.iter() {
+        for ((attr_name, _, _, _, _, sigil, _), &attr_sym) in
+            class_attrs.iter().zip(plan.attr_syms.iter())
+        {
             if *sigil != '$' {
                 continue;
             }
@@ -298,7 +301,7 @@ impl Interpreter {
                 && let Some(val) = attrs.remove(attr_name)
             {
                 let coerced = self.coerce_value_for_constraint(tc, val);
-                attrs.insert(attr_name.clone(), coerced);
+                attrs.insert(attr_sym, coerced);
             }
         }
         // Tag typed `@`/`%` attributes (`has Int @.nums`) with element-type
@@ -313,7 +316,9 @@ impl Interpreter {
         // container flattens it (just like `my @a = |@x` yields an `Array`, not a
         // `Slip`), so materialize it into a plain mutable `Array` here. Without
         // this the attribute keeps a `Slip` whose `.^name` is `Slip`.
-        for (attr_name, _, _, _, _, sigil, _) in class_attrs.iter() {
+        for ((attr_name, _, _, _, _, sigil, _), &attr_sym) in
+            class_attrs.iter().zip(plan.attr_syms.iter())
+        {
             if *sigil != '@' {
                 continue;
             }
@@ -324,10 +329,12 @@ impl Interpreter {
                     crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
                     crate::value::ArrayKind::Array,
                 );
-                attrs.insert(attr_name.clone(), flattened);
+                attrs.insert(attr_sym, flattened);
             }
         }
-        for (attr_name, _, _, _, _, sigil, _) in class_attrs.iter() {
+        for ((attr_name, _, _, _, _, sigil, _), &attr_sym) in
+            class_attrs.iter().zip(plan.attr_syms.iter())
+        {
             if !matches!(sigil, '@' | '%') {
                 continue;
             }
@@ -339,7 +346,7 @@ impl Interpreter {
                     // Hashes embed the element type in `HashData`, so store the
                     // tagged value back into the attrs that move into the instance.
                     Ok(tagged) => {
-                        attrs.insert(attr_name.clone(), tagged);
+                        attrs.insert(attr_sym, tagged);
                     }
                     Err(e) => return Some(Err(e)),
                 }

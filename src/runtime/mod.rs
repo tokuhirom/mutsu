@@ -422,6 +422,10 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) is_cunion: bool,
     pub(crate) eligible: bool,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
+    /// Interned attribute names, same order as `class_attrs`. Construction
+    /// inserts attributes by Symbol so the per-bless per-attribute
+    /// `String` clone + re-intern is paid once per class, not per instance.
+    pub(crate) attr_syms: Arc<Vec<crate::symbol::Symbol>>,
     pub(crate) type_constraints: Arc<HashMap<String, String>>,
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
