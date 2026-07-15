@@ -3277,6 +3277,16 @@ impl CompiledCode {
                     | OpCode::CallOnCodeVar { .. }
                     | OpCode::HyperMethodCall { .. }
                     | OpCode::HyperMethodCallDynamic { .. }
+                    // The I/O ops internally dispatch a user `$*OUT`/`$*ERR`
+                    // override's `print` (plus `.Str`/`.gist` coercion of the
+                    // arguments), which can write captured-outer/`our`/dynamic
+                    // variables into this frame's env — omitting them made
+                    // `can_skip_merge` restore a stale env snapshot on method
+                    // exit and drop those writes (advent2010-day14).
+                    | OpCode::Say(_)
+                    | OpCode::Put(_)
+                    | OpCode::Print(_)
+                    | OpCode::Note(_)
             );
         }
         if !self.has_env_writes {
