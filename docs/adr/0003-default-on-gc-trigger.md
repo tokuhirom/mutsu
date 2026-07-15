@@ -1,99 +1,112 @@
-# ADR-0003: デフォルト GC=on のトリガ方針（level-1a の production トリガ）
+# ADR-0003: Trigger policy for default-on GC (the level-1a production trigger)
 
-- **Status**: Accepted（2026-07-05 ユーザー承認）
+- **Status**: Accepted (user approval 2026-07-05)
 - **Date**: 2026-07-05
-- **Relates to**: [ADR-0001](0001-gc-strategy-and-phasing.md)（§4.2 起動方式 / §4.3 A' 範囲）,
+- **Relates to**: [ADR-0001](0001-gc-strategy-and-phasing.md) (§4.2 activation mechanism / §4.3 A' scope),
   [ADR-0002](0002-phase-a-gate-reassessment.md), `docs/gc-level1-detailed-design.md` §9
 
 ## 1. Context
 
-level-1a cycle collector（Bacon-Rajan on Arc）は機能的に完成した: 全 safepoint 種別の emit
-（#4195）、worker churn 下の cooperative cross-thread STW（#4205）、共有 captured-env の
-phantom-edge unsoundness 修正（#4213）、deterministic/random stress 面の完備（§9.2）、CI
-gc-stress の全ステップ blocking 化（#4219）。しかし GC は**依然 default off** であり、
-`MUTSU_GC=on` でも automatic トリガ未設定なら collect は program-end の 1 回のみ —
-長時間稼働のサーバプロセスはサイクルゴミを溜め続ける。ADR-0001 は §4.2（同期/非同期）と
-§4.3（A' をどこまで前提とするか）を未決のまま残していた。
+The level-1a cycle collector (Bacon-Rajan on Arc) is functionally complete: emission of all
+safepoint kinds (#4195), cooperative cross-thread STW under worker churn (#4205), the
+phantom-edge unsoundness fix for shared captured-envs (#4213), a complete deterministic/random
+stress surface (§9.2), and making every CI gc-stress step blocking (#4219). However, GC is
+**still default off**, and even with `MUTSU_GC=on`, without an automatic trigger configured,
+collection happens exactly once at program end — a long-running server process keeps
+accumulating cycle garbage. ADR-0001 left §4.2 (synchronous vs asynchronous) and
+§4.3 (how much of A' to assume as a prerequisite) undecided.
 
-2026-07-05 に確定した 2 つの事実が設計を規定する:
+Two facts established on 2026-07-05 constrain the design:
 
-1. **push 回数周期のトリガは production には漸近的に不適**。`MUTSU_GC_EVERY_CANDIDATE=N` は
-   N push ごとに full trial-deletion scan（コスト = O(live suspect graph)）を発火する。
-   candidate を churn しながら大きな生存構造を伸ばすワークロード
-   （S17-lowlevel/cas-loop.t: 4×1000 `cas` で linked list 構築）では、N=64 で
-   8500+ collects × 各 ~4300 ノードのトレース = **180 秒超**（N=1024 で 3.3 秒、GC-off ~5 秒）。
-   固定周期は同じ生存 suspect を何度も再走査する。トリガは「前回の scan がどれだけ回収できたか」
-   に適応しなければならない。
-2. **A'（root 集約）は level-1a の前提ではない**（§11 step 11 調査）: collector は refcount
-   駆動で root 列挙を一切消費しないため、frame/upvalue の root 集約は 1a のトリガにも
-   正しさにも寄与しない。ADR-0001 §4.3 は「A' は繰延」として狭く解決する。
+1. **A push-count-periodic trigger is asymptotically unsuitable for production**.
+   `MUTSU_GC_EVERY_CANDIDATE=N` fires a full trial-deletion scan (cost = O(live suspect graph))
+   every N pushes. On a workload that churns candidates while growing a large live structure
+   (S17-lowlevel/cas-loop.t: building a linked list via 4×1000 `cas`), N=64 yields
+   8500+ collects × ~4300 nodes traced each = **over 180 seconds** (N=1024: 3.3 seconds,
+   GC-off ~5 seconds). A fixed period re-scans the same surviving suspects over and over.
+   The trigger must adapt to "how much did the previous scan actually reclaim".
+2. **A' (root consolidation) is NOT a prerequisite for level-1a** (per the §11 step 11
+   investigation): the collector is refcount-driven and consumes no root enumeration at all,
+   so consolidating frame/upvalue roots contributes nothing to either the 1a trigger or its
+   correctness. ADR-0001 §4.3 is resolved narrowly as "A' is deferred".
 
-## 2. Decision（Proposed）
+## 2. Decision (Proposed)
 
-1. **同期 collect**（ADR-0001 §4.2 = 同期。設計書 §12「1a では background collector を捨てる」を
-   再確認）。トリガは既存の `PENDING` フラグを arm し、次に safepoint を踏んだ mutator 上で
-   inline に collect する（他 mutator が生きていれば既存の cooperative STW）。非同期
-   （concurrent collection）は 1a では却下: trial deletion は並行 refcount 変異に耐えられず
-   （epoch 機構が必要）、全種 safepoint 網の完備によりトリガ→collect の遅延は既に十分小さい。
+1. **Synchronous collect** (ADR-0001 §4.2 = synchronous; reconfirming the detailed design's
+   §12 "1a drops the background collector"). The trigger arms the existing `PENDING` flag,
+   and the collect runs inline on the next mutator that hits a safepoint (with the existing
+   cooperative STW if other mutators are alive). Asynchronous (concurrent) collection is
+   rejected for 1a: trial deletion cannot tolerate concurrent refcount mutation (it would
+   need an epoch mechanism), and with the full safepoint coverage in place, the
+   trigger-to-collect latency is already small enough.
 
-2. **トリガ = candidate バッファの「サイズ」閾値 + adaptive backoff**。
-   `buffer_candidate` はバッファ長が実効閾値に達したら `PENDING` を arm する。collect の
-   たびに `threshold = clamp(BASE, 2 × survivors, MAX)`（survivors = revive された生存
-   suspect 数）へ更新: 「ほぼ全部生きていた」scan は閾値を引き上げ（cas-loop 型の quadratic
-   から自動退避）、「ほぼ全部回収できた」scan は BASE へ戻す。チューナブルは
-   `MUTSU_GC_THRESHOLD`（BASE。既定値は計測で決定 — 出発点 16384）のみ。既存の stress 用
-   env 変数群は CI/デバッグ用としてそのまま残す（production トリガは独立した追加機構）。
+2. **Trigger = candidate-buffer "size" threshold + adaptive backoff**.
+   `buffer_candidate` arms `PENDING` when the buffer length reaches the effective threshold.
+   After each collect, update `threshold = clamp(BASE, 2 × survivors, MAX)`
+   (survivors = number of live suspects that were revived): a scan where "almost everything
+   was alive" raises the threshold (automatic escape from the cas-loop-style quadratic),
+   while a scan where "almost everything was reclaimed" resets it to BASE. The only tunable
+   is `MUTSU_GC_THRESHOLD` (BASE; default to be determined by measurement — starting point
+   16384). The existing stress env variables remain as-is for CI/debugging (the production
+   trigger is an independent, additional mechanism).
 
-3. **`MUTSU_GC` の既定値 off → on の切替**は、次を順に満たしてから行う:
-   a. gc-stress roast の blocking 化と green 維持（#4219 で完了・継続観察）。
-   b. 閾値トリガの実装 + gc_stress での担保（GC-off と出力 byte 一致・churn 下の
-      `pause_ns_max` 有界・cas-loop 型ワークロードが GC-off 比 ~1.2 倍以内）。
-   c. 計測オーバーヘッド予算: fib/int ループ ≈ 0（スカラ型フィルタ — ADR-0001 の
-      「fib で push == 0」ゲート）、method-call / bench-class は GC-off 比 < 5%。
-   d. opt-out `MUTSU_GC=off` の維持。
-   切替自体は本 ADR の Accepted 後、b/c の実測を添えた PR で行う。
+3. **Flipping the `MUTSU_GC` default from off to on** happens only after satisfying, in order:
+   a. gc-stress roast made blocking and kept green (done in #4219; continued observation).
+   b. Threshold-trigger implementation + assurance via gc_stress (byte-identical output vs
+      GC-off; bounded `pause_ns_max` under churn; cas-loop-style workloads within ~1.2x of
+      GC-off).
+   c. Measured overhead budget: fib/int loops ≈ 0 (the scalar type filter — ADR-0001's
+      "push == 0 on fib" gate); method-call / bench-class < 5% vs GC-off.
+   d. The opt-out `MUTSU_GC=off` is retained.
+   The flip itself happens after this ADR is Accepted, in a PR accompanied by the actual
+   measurements for b/c.
 
-4. **A' は繰延**（Context 2 による）: 将来の root 消費型 VERIFY 拡張、および
-   NaN-boxing / JIT 世代の最適化の enabler として、それぞれの時間軸で扱う。
+4. **A' is deferred** (per Context item 2): treated on its own timeline, as an enabler for
+   future root-consuming VERIFY extensions and for NaN-boxing / JIT-generation optimizations.
 
 ## 3. Consequences
 
-- サーバ型プログラム（join しない worker がサイクルを churn する — ADR-0001 の動機ケース）が、
-  バッファ増加に比例した自動サイクル回収を quadratic 病理なしで得る。
-- `MUTSU_VM_STATS` の gc カウンタ群が default-on 切替の受け入れ計測器になる。
-- stress ノブ（`EVERY_SAFEPOINT`/`EVERY_CANDIDATE`/`AT`/random）は CI・デバッグ用として不変。
+- Server-style programs (workers that never join and churn cycles — ADR-0001's motivating
+  case) get automatic cycle reclamation proportional to buffer growth, without the quadratic
+  pathology.
+- The `MUTSU_VM_STATS` gc counters become the acceptance instrumentation for the default-on
+  flip.
+- The stress knobs (`EVERY_SAFEPOINT`/`EVERY_CANDIDATE`/`AT`/random) are unchanged, for
+  CI/debugging use.
 
 ## 4. Alternatives considered
 
-| 案 | 判定 |
+| Option | Verdict |
 |---|---|
-| push 回数周期（`EVERY_CANDIDATE` の流用） | 却下 — O(live graph) scan の周期発火は quadratic（cas-loop.t 実測 180 秒超） |
-| background thread での concurrent collect | 却下（1a）— trial deletion が並行変異に非対応。設計書 §12 の再確認 |
-| 時間ベース（N 秒ごと） | 却下 — アイドルプロセスで無駄、バースト時に遅すぎる。サイズ閾値が負荷に自然追従 |
-| A' 完了を前提にする | 却下 — collector は root 列挙を消費しない（§11 step 11 調査） |
+| Push-count period (reusing `EVERY_CANDIDATE`) | Rejected — periodic firing of the O(live graph) scan is quadratic (cas-loop.t measured at over 180 seconds) |
+| Concurrent collect on a background thread | Rejected (for 1a) — trial deletion does not tolerate concurrent mutation. Reconfirms the detailed design's §12 |
+| Time-based (every N seconds) | Rejected — wasteful on idle processes, too slow under bursts. A size threshold naturally tracks load |
+| Requiring A' completion as a prerequisite | Rejected — the collector consumes no root enumeration (§11 step 11 investigation) |
 
 ---
 
-*2026-07-05 ユーザー承認により Accepted。実装は §2 の Decision に従い、§2-3 のゲートを満たして default-on を切り替える。*
+*Accepted by user approval on 2026-07-05. Implementation follows the Decision in §2; the
+default-on flip happens once the gates in §2-3 are met.*
 
-## 5. Update（2026-07-05・切替時の受け入れ実測とゲート改訂）
+## 5. Update (2026-07-05 — acceptance measurements at flip time and gate revision)
 
-§2-3c の実測（release・9 反復 best・load < 1.5）:
+Measurements for §2-3c (release build, best of 9 iterations, load < 1.5):
 
-| bench | GC-on overhead | 判定 |
+| bench | GC-on overhead | Verdict |
 |---|---|---|
-| fib25 / bench-fib / int-arith | +0.5% / +3.0% / +2.0% | ✓（型フィルタで scalar/関数 hot path はほぼ無料 — ADR-0001 の本来の狙いを達成） |
-| method-call | +0.7〜6.4%（測定ノイズ帯） | ✓/△ |
-| **bench-class** | **+7.5〜8.3%** | ✗（< 5% に対し） |
-| churn 系 | ≤ +10% | ✓（≤ 1.2x） |
+| fib25 / bench-fib / int-arith | +0.5% / +3.0% / +2.0% | ✓ (with the type filter, scalar/function hot paths are nearly free — achieving ADR-0001's original intent) |
+| method-call | +0.7–6.4% (measurement noise band) | ✓/△ |
+| **bench-class** | **+7.5–8.3%** | ✗ (against < 5%) |
+| churn suite | ≤ +10% | ✓ (≤ 1.2x) |
 
-bench-class の残差は「28k インスタンスに対して 16.5M 回の `Value` clone/drop」という既存の
-クローン交通量に per-drop の buffered-bit 分岐 1 個が乗る構造的コストで、GC 側の安価な改善
-（drop fast path で +61%→+8%・program-end collect skip・`gc_enabled` キャッシュ）は投入済み。
-交通量自体の削減は ADR-0001 が層 3b（NaN-boxing）に割り当てる領域である。
+The bench-class residual is a structural cost: one buffered-bit branch per drop layered on
+the pre-existing clone traffic of "16.5M `Value` clone/drop operations against 28k
+instances". The cheap GC-side improvements have already landed (drop fast path taking
++61%→+8%, skipping the program-end collect, caching `gc_enabled`). Reducing the traffic
+itself is the territory ADR-0001 assigns to layer 3b (NaN-boxing).
 
-**ユーザー判断（2026-07-05）: bench-class ~8% を許容してこのまま default-on に切り替える。**
-リークしない既定の価値が class 密度の高いコードの 8% に優先し、根本削減は 3b で回収する。
-`cfg!(test)`（crate 自身の unit-test ビルド）のみ既定 off — 並列 `cargo test` のテスト分離のため
-（GC-on unit test は CI gc-stress ジョブが担保）。
-
+**User decision (2026-07-05): accept the ~8% on bench-class and flip to default-on as-is.**
+The value of a leak-free default outweighs 8% on class-dense code, and the root-cause
+reduction will be recovered in 3b. The only exception is `cfg!(test)` (the crate's own
+unit-test builds), which stays default off — for test isolation under parallel `cargo test`
+(GC-on unit testing is covered by the CI gc-stress job).

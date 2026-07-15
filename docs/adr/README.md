@@ -1,27 +1,27 @@
 # Architecture Decision Records (ADR)
 
-このディレクトリは mutsu のアーキテクチャ上の意思決定を記録する。
+This directory records mutsu's architectural decisions.
 
-## 目的
+## Purpose
 
-設計の分岐点（大きな方式選定・順序決定・撤回しうる判断）について、
-**「なぜそう決めたか」と「何を却下したか」**を後から辿れるようにする。
-コードや PLAN.md からは読み取れない *判断の文脈* を残すのが ADR の役割。
+For design forks in the road (major mechanism selections, ordering decisions, judgments that could be reversed),
+make it possible to trace **"why we decided that way" and "what we rejected"** after the fact.
+The role of an ADR is to preserve the *context of the judgment* — something that cannot be read out of the code or PLAN.md.
 
-## 運用
+## Conventions
 
-- 1 決定 = 1 ファイル。`NNNN-kebab-title.md`（連番）。
-- **Status**: `Proposed`（議論中・承認待ち）/ `Accepted`（確定）/ `Superseded by ADR-XXXX`（更新済）。
-- 判断が変わったら**既存 ADR を書き換えず**、新しい ADR で supersede し、旧 ADR の Status を更新する。
-- 既存 docs に合わせ日本語で記述する。
+- 1 decision = 1 file. `NNNN-kebab-title.md` (sequential numbering).
+- **Status**: `Proposed` (under discussion / awaiting approval) / `Accepted` (final) / `Superseded by ADR-XXXX` (updated).
+- When a decision changes, **do not rewrite the existing ADR** — supersede it with a new ADR and update the old ADR's Status.
+- Written in English (repo-wide English-only documentation rule).
 
-## 一覧
+## Index
 
-| # | タイトル | Status |
+| # | Title | Status |
 |---|---|---|
-| [0001](0001-gc-strategy-and-phasing.md) | GC 導入の方式選定とフェーズ計画 | Accepted |
-| [0002](0002-phase-a-gate-reassessment.md) | Phase A ゲート再評価 — GC 着手条件の充足確認 | Accepted |
-| [0003](0003-default-on-gc-trigger.md) | デフォルト GC=on のトリガ方針（同期 + バッファサイズ閾値 + adaptive backoff） | Accepted |
-| [0004](0004-jit-strategy.md) | JIT の方式選定とフェーズ計画（Cranelift method JIT・deopt なし） | Accepted |
-| [0005](0005-nanbox-representation-encoding.md) | NaN-boxing 表現スイッチ（3b-1）のエンコーディング選択と newtype seal 統合 | Accepted |
-| [0006](0006-baseline-interpreter-optimizations.md) | ベースライン（古典的）インタープリタ最適化の採否と優先順位 | Accepted |
+| [0001](0001-gc-strategy-and-phasing.md) | GC adoption — mechanism selection and phasing | Accepted |
+| [0002](0002-phase-a-gate-reassessment.md) | Phase A gate reassessment — confirming the preconditions for starting GC | Accepted |
+| [0003](0003-default-on-gc-trigger.md) | Trigger policy for default-on GC (synchronous + buffer-size threshold + adaptive backoff) | Accepted |
+| [0004](0004-jit-strategy.md) | JIT — mechanism selection and phasing (Cranelift method JIT, no deopt) | Accepted |
+| [0005](0005-nanbox-representation-encoding.md) | NaN-boxing representation switch (3b-1) — encoding choice and newtype-seal integration | Accepted |
+| [0006](0006-baseline-interpreter-optimizations.md) | Baseline (classical) interpreter optimizations — adoption decisions and priorities | Accepted |

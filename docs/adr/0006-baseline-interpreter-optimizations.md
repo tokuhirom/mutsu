@@ -1,239 +1,258 @@
-# ADR-0006: ベースライン（古典的）インタープリタ最適化の採否と優先順位
+# ADR-0006: Baseline (classical) interpreter optimizations — adoption decisions and priorities
 
-- **Status**: Accepted（2026-07-13 tokuhirom 承認）
+- **Status**: Accepted (approved by tokuhirom 2026-07-13)
 - **Date**: 2026-07-13
 - **Deciders**: tokuhirom, Claude
-- **関連**: [ADR-0004](0004-jit-strategy.md)（JIT・threaded dispatch 凍結の判断）,
-  [ADR-0005](0005-nanbox-representation-encoding.md)（8B Value）,
-  [docs/opcode-design-review.md](../opcode-design-review.md)（opcode 残件 §2/§5/§6）,
+- **Related**: [ADR-0004](0004-jit-strategy.md) (JIT; the decision to freeze threaded dispatch),
+  [ADR-0005](0005-nanbox-representation-encoding.md) (8B Value),
+  [docs/opcode-design-review.md](../opcode-design-review.md) (remaining opcode items §2/§5/§6),
   PLAN.md §5, PERFORMANCE.md
 
-> ADR-0004 で JIT（Cranelift, J5 で既定 on・2026-07-13）まで到達した一方、
-> CPython / Ruby (YARV) / PHP (opcache) が**JIT 以前から**備えている古典的な
-> バイトコード最適化はほぼ未実装であることが監査（2026-07-13）で判明した。
-> 本 ADR はその監査結果を記録し、各施策の採否・優先順位・Raku 固有の安全条件を決める。
+> While ADR-0004 got us all the way to a JIT (Cranelift, default-on since J5, 2026-07-13),
+> an audit (2026-07-13) found that the classical bytecode optimizations that CPython /
+> Ruby (YARV) / PHP (opcache) have had **since before their JITs** are almost entirely
+> unimplemented. This ADR records that audit and decides the adoption, priority, and
+> Raku-specific safety conditions for each measure.
 
 ---
 
-## 1. Context（背景）
+## 1. Context
 
-- 実行系: Parser → Compiler（`src/compiler/`）→ bytecode（~340 opcode）→ VM。
-  コンパイラは AST を**一対一で**opcode 列に落とし、emit 後の最適化パスは
-  `compute_upvalues` / `compute_needs_env_sync`（変数アクセス系）のみ。
-- 主要言語処理系の対応状況（比較のための整理）:
-  - **CPython**: AST レベル定数畳み込み・peephole（jump 最適化）・3.11 adaptive
-    specializing interpreter（quickening + inline cache）。
-  - **Ruby (YARV)**: peephole・specialized instructions（`opt_plus` 等）・
-    operand/instruction unification・call-site inline cache。
-  - **PHP (opcache)**: SSA ベースの最適化パス群 — 定数畳み込み・定数伝播・DCE・
-    jump 最適化・型推論による opcode 特殊化。
-- mutsu が**既に持つ**同等物: スーパーインストラクション（`WhileLoop`/`ForLoop` 等の
-  複合 op・`StringConcat(n)`・`JunctionAnyN` 等）、グローバルメソッドキャッシュ
-  （`method_resolve_cache` + monomorphic 1-entry `last_method_resolve`）、
-  indexed locals、COW env、Symbol インターン、NaN-box small-Int（±2^47 インライン）、
-  grammar token の静的 fold（#4460）。
-- つまり「変数アクセス・呼び出し・データ表現」の最適化は進んでいるが、
-  **「opcode 列そのものを短くする」系の最適化が丸ごと欠けている**。
+- Execution pipeline: Parser → Compiler (`src/compiler/`) → bytecode (~340 opcodes) → VM.
+  The compiler lowers the AST to the opcode stream **one-to-one**; the only post-emit
+  optimization passes are `compute_upvalues` / `compute_needs_env_sync` (variable-access
+  related).
+- Status in the major language implementations (organized for comparison):
+  - **CPython**: AST-level constant folding, peephole (jump optimization), the 3.11
+    adaptive specializing interpreter (quickening + inline caches).
+  - **Ruby (YARV)**: peephole, specialized instructions (`opt_plus` etc.),
+    operand/instruction unification, call-site inline caches.
+  - **PHP (opcache)**: a suite of SSA-based optimization passes — constant folding,
+    constant propagation, DCE, jump optimization, opcode specialization via type inference.
+- Equivalents mutsu **already has**: superinstructions (compound ops like `WhileLoop`/`ForLoop`,
+  `StringConcat(n)`, `JunctionAnyN`, etc.), a global method cache
+  (`method_resolve_cache` + the monomorphic 1-entry `last_method_resolve`),
+  indexed locals, COW env, Symbol interning, NaN-box small-Int (±2^47 inline),
+  static folding of grammar tokens (#4460).
+- In other words, the "variable access / calls / data representation" optimizations are well
+  advanced, but the entire class of optimizations that **shorten the opcode stream itself**
+  is missing.
 
-### 1.1 監査結果（2026-07-13、実装状況の正本）
+### 1.1 Audit results (2026-07-13; authoritative record of implementation status)
 
-| 施策 | CPython | YARV | opcache | mutsu の現状 | 判定 |
+| Measure | CPython | YARV | opcache | Current state in mutsu | Verdict |
 |---|---|---|---|---|---|
-| 定数畳み込み | ✅ | ✅ | ✅ | ❌ `compile_expr_binary` はリテラル同士でも常に演算 op を emit（`expr_binary.rs`） | **採用** (§2.1) |
-| `constant` 読みのインライン化 | ✅ (co_consts) | ✅ | ✅ | ❌ BEGIN 時評価はするが読みは `GetLocal`/`GetBareWord`/`GetGlobal`（`stmt.rs` constant 宣言） | **採用** (§2.2) |
-| 定数条件の分岐除去・DCE | ✅ | ✅ | ✅ | ❌ `if False {...}` も条件評価+`JumpIfFalse` を emit | **採用** (§2.2) |
-| peephole（冗長 op 除去/融合） | ✅ | ✅ | ✅ | ❌ emit 後の書き換えパスなし（変数系の `compute_*` のみ） | **採用** (§2.3) |
-| 定数プール重複排除 | ✅ | ✅ | ✅ | ❌ `add_constant` は無条件 `constants.push`（`opcode.rs:2927`） | **採用** (§2.4) |
-| per-call-site inline cache (PIC) | ✅ (3.11) | ✅ | 部分 | 部分: グローバルキャッシュ+monomorphic 1-entry のみ、opcode 埋め込みキャッシュなし | **保留** (§3.1) |
-| quickening / adaptive specialization | ✅ (3.11) | 部分 | ✅ | ❌ | **却下** (§3.2) |
-| threaded dispatch | ✅ (computed goto) | ✅ | ✅ | ❌ | **却下済み**（ADR-0004 §2.5 J0 で凍結 — 再論しない） |
-| 小整数キャッシュ | ✅ | ✅ (Fixnum) | — | **実質達成**: NaN-box small-Int はヒープ非確保（層3b） | 対応不要 |
-| 文字列インターン（値） | 部分 (fstring) | ✅ (frozen str) | ✅ | ❌ `Value::Str` は都度 `Arc<String>`（Symbol は別途インターン済み） | **保留** (§3.3) |
+| Constant folding | ✅ | ✅ | ✅ | ❌ `compile_expr_binary` always emits the arithmetic op even for literal-literal pairs (`expr_binary.rs`) | **Adopt** (§2.1) |
+| Inlining of `constant` reads | ✅ (co_consts) | ✅ | ✅ | ❌ evaluated at BEGIN time, but reads go through `GetLocal`/`GetBareWord`/`GetGlobal` (`stmt.rs` constant declaration) | **Adopt** (§2.2) |
+| Constant-condition branch elimination / DCE | ✅ | ✅ | ✅ | ❌ even `if False {...}` emits the condition evaluation + `JumpIfFalse` | **Adopt** (§2.2) |
+| Peephole (redundant-op removal/fusion) | ✅ | ✅ | ✅ | ❌ no post-emit rewrite pass (only the variable-related `compute_*`) | **Adopt** (§2.3) |
+| Constant-pool deduplication | ✅ | ✅ | ✅ | ❌ `add_constant` unconditionally does `constants.push` (`opcode.rs:2927`) | **Adopt** (§2.4) |
+| Per-call-site inline cache (PIC) | ✅ (3.11) | ✅ | partial | Partial: only the global cache + monomorphic 1-entry; no cache embedded in the opcode | **Deferred** (§3.1) |
+| Quickening / adaptive specialization | ✅ (3.11) | partial | ✅ | ❌ | **Rejected** (§3.2) |
+| Threaded dispatch | ✅ (computed goto) | ✅ | ✅ | ❌ | **Already rejected** (frozen in ADR-0004 §2.5 J0 — not relitigated) |
+| Small-integer cache | ✅ | ✅ (Fixnum) | — | **Effectively achieved**: NaN-box small-Int is heap-allocation-free (layer 3b) | No action needed |
+| String interning (values) | partial (fstring) | ✅ (frozen str) | ✅ | ❌ `Value::Str` is a fresh `Arc<String>` each time (Symbols are interned separately) | **Deferred** (§3.3) |
 
-### 1.2 実測根拠（新設ベンチ、ローカル release・3 回最小値・2026-07-13）
+### 1.2 Empirical basis (newly added benchmarks; local release, min of 3 runs, 2026-07-13)
 
-判定を「一般論」でなく mutsu の実測で裏づけるため、対象最適化に感応する
-自然なワークロードを `benchmarks/` に 4 本新設して測った:
+To back the verdicts with mutsu measurements rather than generalities, four natural workloads
+sensitive to the targeted optimizations were newly added under `benchmarks/` and measured:
 
-| ベンチ | interp | JIT on | raku | 比（interp） | 主な感応対象 |
+| Benchmark | interp | JIT on | raku | Ratio (interp) | Primary sensitivity |
 |---|---|---|---|---|---|
-| time-parts（タイムスタンプ分解） | 0.73s | 0.75s | 0.21s | **3.5x** | 定数畳み込み・peephole |
-| debug-guard（定数ガード付きホット関数） | 0.42s | 0.43s | 0.19s | **2.2x** | constant インライン化・定数条件 DCE |
-| poly-call（3 クラス混合の area 集計） | 0.10s | 0.10s | 0.21s | 0.48x | PIC（保留の基準線） |
-| word-count（単語頻度カウント） | 0.10s | 0.10s | 0.22s | 0.45x | 文字列インターン（保留の基準線） |
+| time-parts (timestamp decomposition) | 0.73s | 0.75s | 0.21s | **3.5x** | constant folding, peephole |
+| debug-guard (hot function with a constant guard) | 0.42s | 0.43s | 0.19s | **2.2x** | constant inlining, constant-condition DCE |
+| poly-call (area aggregation over 3 mixed classes) | 0.10s | 0.10s | 0.21s | 0.48x | PIC (baseline for the deferral) |
+| word-count (word frequency counting) | 0.10s | 0.10s | 0.22s | 0.45x | string interning (baseline for the deferral) |
 
-- **time-parts 3.5x / debug-guard 2.2x は現行スイート最悪の bench-fib 1.78x を超える**。
-  既存スイートが「関数呼び出し・OOP・コレクション」に寄っていて、
-  素朴な式・文の密度が高いコードの弱さを見落としていた。
-- **JIT on でも改善しない**（interp と同時間）— この 2 本の遅さは dispatch でなく
-  「実行する opcode がそもそも多い」ことに由来し、JIT と独立の直交レバーである証拠。
-- opcode ヒストグラム（`MUTSU_VM_STATS=1`）の内訳:
-  - time-parts: total 7.6M op/run のうち `LoadConst`=1.7M・`Mul`=1.0M（うち
-    リテラル定数式 `60*60*24` 等の再計算が iteration あたり Mul×6 = 600k）、
-    加えて `SetSourceLine`=600k・`Mark*`/`SetVarDynamic`=1.5M の administrative op。
-  - debug-guard: `if DEBUG` が毎回 `GetBareWord`+`JumpIfFalse`（各 200k）として実行
-    される。constant インライン化 + 定数条件 DCE でブロックごと消える形。
-- poly-call / word-count は**既に raku 比で優位**（0.48x / 0.45x）。PIC・文字列インターンを
-  「他言語にあるから」という理由で実装する緊急性はない、という判定の根拠。
+- **time-parts at 3.5x / debug-guard at 2.2x exceed bench-fib's 1.78x, the worst in the current
+  suite**. The existing suite skews toward "function calls / OOP / collections" and had missed
+  the weakness on code with a high density of plain expressions and statements.
+- **The JIT does not help either** (same time as interp) — the slowness of these two comes not
+  from dispatch but from "simply executing too many opcodes", which is evidence that this is an
+  orthogonal lever independent of the JIT.
+- Breakdown of the opcode histogram (`MUTSU_VM_STATS=1`):
+  - time-parts: out of 7.6M ops/run, `LoadConst`=1.7M and `Mul`=1.0M (of which recomputation
+    of literal constant expressions like `60*60*24` is Mul×6 per iteration = 600k), plus the
+    administrative ops `SetSourceLine`=600k and `Mark*`/`SetVarDynamic`=1.5M.
+  - debug-guard: `if DEBUG` executes as `GetBareWord`+`JumpIfFalse` every time (200k each).
+    With constant inlining + constant-condition DCE the whole block disappears.
+- poly-call / word-count are **already ahead of raku** (0.48x / 0.45x). This is the basis for
+  the verdict that there is no urgency to implement PIC or string interning merely "because
+  other languages have them".
 
-## 2. Decision — 採用する施策（優先順）
+## 2. Decision — adopted measures (in priority order)
 
-すべて**コンパイル時（emit 時/emit 後）の変換**で、実行時の適応機構を持たない。
-ADR-0004 の「deopt を作らない」方針と同型: 静的に安全と証明できる場合のみ変換し、
-証明できなければ何もしない（フォールバックは「無変換」なので flaky になり得ない）。
+All are **compile-time transformations (at emit time / post-emit)** with no runtime adaptive
+machinery. Same shape as ADR-0004's "no deopt" policy: transform only when statically provable
+safe; otherwise do nothing (the fallback is "no transformation", so it cannot become flaky).
 
-### 2.1 定数畳み込み（constant folding）
+### 2.1 Constant folding
 
-リテラル同士の純粋演算（算術・比較・文字列連結・論理）を emit 時に評価して
-`LoadConst` 1 個に置換する。実装は `compile_expr_binary` の入口で
-「両オペランドが畳み込み済み定数か」を見る bottom-up 方式（AST は変更しない）。
+Evaluate pure operations between literals (arithmetic, comparison, string concatenation,
+logical) at emit time and replace them with a single `LoadConst`. Implemented bottom-up at the
+entry of `compile_expr_binary` by checking "are both operands already-folded constants" (the
+AST is not modified).
 
-**Raku 固有の安全条件**（畳み込んでよいのは以下を全て満たす場合のみ）:
+**Raku-specific safety conditions** (folding is allowed only when all of the following hold):
 
-1. **演算子オーバーライド不在**: 同一コンパイル単位に当該演算子の
-   `multi sub infix:<op>` 宣言（`sub infix:<op>` 含む）が存在する場合、
-   そのファイル全体で fold を無効化する（宣言スコープの精密解析はしない —
-   保守的すぎて畳み込み機会を失っても、誤畳み込みよりよい）。
-   JIT Tier B が同じ問題を infix-override ガードで解いている
-   （pin: `t/jit-tier-b-infix-override.t`）— 同じ検出結果を共有する。
-2. **実行時と同一の演算実装**: 畳み込みは VM の native 演算（`builtins/arith.rs` 等）を
-   そのまま呼んで評価する。独自の「コンパイル時演算」を書かない
-   （Int の BigInt 昇格・Rat 化 `1/3`・型昇格規則が実行時と自動で一致する）。
-3. **例外を投げ得る式は畳み込まない**: 評価が `Err`（`0 div 0` 等）になったら
-   無変換で残す（実行時に投げる意味論を保存。コンパイル時エラーへの昇格はしない）。
-4. **畳み込み結果が value 型のみ**: Int/Num/Str/Bool/Rat。コンテナや Instance に
-   なる式は対象外（同一性が観測可能）。
+1. **No operator override present**: if the same compilation unit contains a
+   `multi sub infix:<op>` declaration for the operator (including `sub infix:<op>`),
+   disable folding for the entire file (no precise declaration-scope analysis —
+   being too conservative and losing folding opportunities is better than mis-folding).
+   JIT Tier B solves the same problem with an infix-override guard
+   (pin: `t/jit-tier-b-infix-override.t`) — share the same detection result.
+2. **Same operation implementation as at runtime**: folding evaluates by calling the VM's
+   native operations (`builtins/arith.rs` etc.) directly. Do not write a separate
+   "compile-time arithmetic" (Int's BigInt promotion, Rat-ification of `1/3`, and type
+   promotion rules automatically match runtime behavior).
+3. **Do not fold expressions that can throw**: if evaluation yields `Err` (`0 div 0` etc.),
+   leave the expression untransformed (preserving throw-at-runtime semantics; no promotion
+   to a compile-time error).
+4. **Fold results must be value types only**: Int/Num/Str/Bool/Rat. Expressions producing
+   containers or Instances are out of scope (identity is observable).
 
-### 2.2 `constant` 読みのインライン化 + 定数条件 DCE
+### 2.2 Inlining of `constant` reads + constant-condition DCE
 
-- `constant NAME = ...` は言語仕様上コンパイル時（BEGIN）に確定し再代入不可。
-  現在は BEGIN 評価した値をスロット/env に入れて実行時に読んでいる
-  （`src/compiler/mod.rs:180` 付近が「GetLocal に変える」ことを意図的に避けているのは
-  *宣言前使用の検出*のためで、インライン化自体の否定ではない）。
-  値が value 型（Int/Num/Str/Bool/Rat/Nil）の `constant` の読みを `LoadConst` に置換する。
-  コンテナ値の constant は同一性が観測可能なので対象外（従来どおり）。
-- インライン化で条件がリテラル定数になった `if`/`unless`/`while` は分岐ごと解決する:
-  `if False {...}` はブロックを emit しない（elsif/else 連鎖は残りを通常コンパイル）。
-  `constant DEBUG = False; if DEBUG { note ... }` というガード付きロギングは
-  実コードの頻出パターンで、debug-guard ベンチ（2.2x）がこれを測る。
-- **safety**: DCE で消すのは「値が確定した分岐の非到達側」のみ。副作用解析は不要
-  （条件式自体がリテラル定数のときだけ発動するため）。ブロック内の `BEGIN`/宣言の
-  扱いは Rakudo の意味論（コンパイルはされる）に合わせ、**宣言を含むブロックは
-  消さず従来コンパイルに落とす**保守則から始める。
+- `constant NAME = ...` is, per the language spec, fixed at compile time (BEGIN) and cannot
+  be reassigned. Currently the BEGIN-evaluated value is put into a slot/env and read at
+  runtime (the code around `src/compiler/mod.rs:180` deliberately avoids "turning it into
+  GetLocal" — but that is for *use-before-declaration detection*, not a rejection of inlining
+  itself). Replace reads of `constant`s whose value is a value type (Int/Num/Str/Bool/Rat/Nil)
+  with `LoadConst`. Container-valued constants have observable identity and are out of scope
+  (as before).
+- When inlining turns the condition of an `if`/`unless`/`while` into a literal constant,
+  resolve the branch entirely: `if False {...}` emits no block (for elsif/else chains, the
+  remainder is compiled normally). `constant DEBUG = False; if DEBUG { note ... }` — guarded
+  logging — is a frequent pattern in real code, and the debug-guard benchmark (2.2x)
+  measures it.
+- **Safety**: DCE removes only "the unreachable side of a branch whose value is determined".
+  No side-effect analysis is needed (it only fires when the condition expression itself is a
+  literal constant). Handling of `BEGIN`/declarations inside the block follows Rakudo
+  semantics (they still get compiled): start from the conservative rule that **blocks
+  containing declarations are not removed but fall back to normal compilation**.
 
-### 2.3 peephole — administrative opcode の削減・融合
+### 2.3 Peephole — reduction/fusion of administrative opcodes
 
-time-parts の per-iteration 64 op のうち約 27% が administrative
-（`SetSourceLine`・`MarkVarDeclContext`・`MarkExplicitInitializerContext`・
-`SetVarDynamic`・`CheckReadOnly`）。古典的な push/pop 除去より、
-この mutsu 固有の administrative 列の静的化・融合の方が実測上大きい:
+Of time-parts' 64 ops per iteration, about 27% are administrative
+(`SetSourceLine`, `MarkVarDeclContext`, `MarkExplicitInitializerContext`,
+`SetVarDynamic`, `CheckReadOnly`). Statically eliminating/fusing this mutsu-specific
+administrative sequence yields more, empirically, than classical push/pop removal:
 
-- `my $x = <expr>` の宣言 3-4 op 列の複合 op 化ないし静的フラグ化（`SetLocalDecl`, #4488）。
-- **`SetSourceLine` は「重複除去」ではなく opcode ごと廃止する（実装済み）**:
-  行番号は命令ごとの**静的データ**であり、それを運ぶために dispatch される命令は要らない。
-  `CompiledCode` に ip→行の静的テーブル（`op_lines`、`ops` と平行な `Vec<u32>`）を持たせ、
-  `Stmt::SetLine` は opcode を emit せず emit カーソル（`set_emit_line`）を進めるだけにする。
-  `cur_source_line` は**行を観測し得る命令だけ**が `sync_source_line(code, ip)` で引く
-  （呼び出し/ユーザコードへの再入・フレーム push・宣言登録・raise site の各 arm と、
-  ネイティブ実行される JIT の call shim）。算術・ローカル・分岐といった純粋な hot op は
-  一切払わない。
-  - **毎命令リフレッシュは駄目**（実測）: `exec_one` プロローグで全命令に対して
-    テーブル参照 + ストアを行う版は、削減した dispatch より高くつき fib で
-    **命令数 +7.8%**。「観測点のみ」に絞ると fib で **-3.4%**（インタプリタ経路）。
-  - 実行 opcode 数自体は fib で -21%（1.91M/8.90M が `SetSourceLine` だった）、
-    time-parts で -11% 減るが、**opcode 数の削減幅と時間の削減幅は一致しない**
-    （`SetSourceLine` は 1 命令ストアの最安 op で、mutsu の平均 op は桁違いに重い）。
-    JIT 経路（既定構成）では ±0%。bytecode のメモリは ~15% 減る。
-  - 行番号はむしろ**より正確**になる（従来はブロック/ループ本体の実行後に行が古いまま
-    残るため、メソッド呼び出し前に `SetSourceLine` を防御的に再 emit していた
-    `emit_source_line_if_known` が必要だった。これも削除）。pin: `t/source-line-table.t`。
-- jump-to-jump は複合ループ op のおかげで現状ほぼ発生しないため優先しない。
-- 対象の選定は**ヒストグラム駆動**（`MUTSU_VM_STATS=1` の opcode_histogram）で行い、
-  美学による書き換えはしない — [opcode-design-review.md](../opcode-design-review.md) §6
-  の既存方針をそのまま peephole にも適用する。
+- Turn the 3-4-op declaration sequence of `my $x = <expr>` into a compound op or a static
+  flag (`SetLocalDecl`, #4488).
+- **`SetSourceLine` is not "deduplicated" but abolished as an opcode entirely (implemented)**:
+  the line number is **static data** per instruction, and no dispatched instruction is needed
+  to carry it. Give `CompiledCode` a static ip→line table (`op_lines`, a `Vec<u32>` parallel
+  to `ops`); `Stmt::SetLine` emits no opcode and merely advances the emit cursor
+  (`set_emit_line`). `cur_source_line` is pulled via `sync_source_line(code, ip)` **only by
+  instructions that can observe the line** (the arms for calls / re-entry into user code /
+  frame pushes / declaration registration / raise sites, and the JIT's call shim that runs
+  natively). Pure hot ops — arithmetic, locals, branches — pay nothing at all.
+  - **Refreshing on every instruction is a loser** (measured): a version doing a table lookup
+    + store for every instruction in the `exec_one` prologue costs more than the dispatch it
+    saved — **+7.8% instructions** on fib. Restricting to "observation points only" gives
+    **-3.4%** on fib (interpreter path).
+  - The executed opcode count itself drops by -21% on fib (1.91M of 8.90M were
+    `SetSourceLine`) and -11% on time-parts, but **the reduction in opcode count does not
+    match the reduction in time** (`SetSourceLine` was the cheapest op — a single store —
+    while mutsu's average op is an order of magnitude heavier). On the JIT path (the default
+    configuration) it is ±0%. Bytecode memory shrinks by ~15%.
+  - Line numbers actually become **more accurate** (previously the line stayed stale after
+    executing a block/loop body, which required defensively re-emitting `SetSourceLine`
+    before method calls via `emit_source_line_if_known` — also deleted).
+    Pin: `t/source-line-table.t`.
+- Jump-to-jump barely occurs today thanks to the compound loop ops, so it is not prioritized.
+- Target selection is **histogram-driven** (`MUTSU_VM_STATS=1` opcode_histogram); no
+  rewriting for aesthetics — the existing policy of
+  [opcode-design-review.md](../opcode-design-review.md) §6 applies to peephole as-is.
 
-### 2.4 定数プール重複排除（dedup）
+### 2.4 Constant-pool deduplication (dedup)
 
-`add_constant` に FxHashMap の逆引き（値→index、hashable な value 型のみ）を足して
-同値定数を共有する。実行速度への直接効果は小さいが、コンパイラ各所が名前文字列を
-使用箇所ごとに push している現状は `CompiledCode` のメモリと cache locality を
-無駄にしており、mzef の大規模 populate（数万 dist のコンパイル）でも効く方向。
-実装が最小（1 関数）なので最初のスライスに向く。
+Add an FxHashMap reverse index (value→index, hashable value types only) to `add_constant` so
+equal constants are shared. The direct effect on execution speed is small, but the current
+state — every compiler site pushing name strings once per use site — wastes `CompiledCode`
+memory and cache locality, and this also helps mzef's large-scale populate (compiling tens of
+thousands of dists). Minimal to implement (1 function), so it suits the first slice.
 
-### 実装順序
+### Implementation order
 
-依存関係と費用対効果から: **(1) §2.4 dedup →(2) §2.1 畳み込み →
-(3) §2.2 constant インライン化+DCE →(4) §2.3 peephole**。
-(2) と (3) は同じ「emit 時定数性トラッキング」基盤を共有する。
-ゲート: 各スライスで time-parts / debug-guard の改善を bench CI で確認し、
-既存 12 ベンチに退行がないこと。
+By dependency and cost-effectiveness: **(1) §2.4 dedup → (2) §2.1 folding →
+(3) §2.2 constant inlining + DCE → (4) §2.3 peephole**.
+(2) and (3) share the same "emit-time constness tracking" foundation.
+Gate: for each slice, confirm the time-parts / debug-guard improvement in the bench CI, and
+that the existing 12 benchmarks show no regression.
 
-### 実装スライスの計測プロトコル（★2026-07-13 追記・#4489 の教訓）
+### Measurement protocol for implementation slices (★added 2026-07-13; lessons from #4489)
 
-**opcode 数の削減幅は、時間の削減幅と一致しない。** `MUTSU_VM_STATS` の
-opcode ヒストグラムは「どの op が多いか」しか答えず、「その op が時間を食っているか」は
-答えない。実際 §2.3-b（`SetSourceLine` 廃止）は実行 opcode を fib で 21% 減らしたが、
-時間の削減は 1 桁小さかった（1 ストアの最安 op だったため）。さらに、削減と引き換えに
-**全命令に小さなコストを足す実装は簡単に赤字になる**（毎命令の行 refresh 版 = 命令数 +7.8%）。
+**The reduction in opcode count does not match the reduction in time.** The
+`MUTSU_VM_STATS` opcode histogram only answers "which ops are frequent", not "whether that op
+is eating time". Indeed §2.3-b (abolishing `SetSourceLine`) cut executed opcodes by 21% on
+fib, but the time reduction was an order of magnitude smaller (it was the cheapest op — a
+single store). Moreover, **an implementation that trades the reduction for a small cost added
+to every instruction easily goes into the red** (the per-instruction line-refresh version =
++7.8% instructions).
 
-したがって administrative op の削減スライスは、着手前と実装後に**必ず命令数で検証**する:
+Therefore, every administrative-op-reduction slice must be **verified by instruction counts**
+before starting and after implementing:
 
-1. **ヒストグラムは候補出しにのみ使う**（`MUTSU_VM_STATS=1`・デバッグビルドで可・
-   最適化レベル非依存）。
-2. **判定は perf の retired instructions で行う**（wall-clock はこの規模では ±2〜6% 揺れて
-   判定不能）。ハイブリッド CPU（P/E コア）では計測が 8% 揺れるので、
-   **ユーザ空間のみ・コア固定**が必須:
+1. **Use the histogram only for candidate generation** (`MUTSU_VM_STATS=1`; a debug build is
+   fine; independent of optimization level).
+2. **Judge by perf's retired instructions** (wall-clock jitters by ±2–6% at this scale and
+   cannot decide). On hybrid CPUs (P/E cores) measurements swing by 8%, so
+   **user-space only + core pinning** is mandatory:
    ```
    sudo perf stat -r 5 -x, -e instructions:u,task-clock -- taskset -c 2 <bin> <bench>
    ```
-   （`instructions`（カーネル込み）で測るとページフォルト等が混ざって再現しない。
-   `:u` + `taskset` なら同一バイナリの再実行で 0.1% 以内に再現する。）
-3. **hot op に 1 命令でも足さない**設計を優先する（#4489 は「行を観測し得る op だけが
-   テーブルを引く」形にして初めて黒字化した）。
-4. 最終的なベンチ数字の正本は bench CI（`bench-data` ブランチ）— ローカル perf は
-   in-flight の設計判断用。
+   (Measuring with `instructions` (kernel included) mixes in page faults etc. and does not
+   reproduce. With `:u` + `taskset`, re-running the same binary reproduces within 0.1%.)
+3. **Prefer designs that add not even one instruction to hot ops** (#4489 only went into the
+   black once shaped as "only ops that can observe the line consult the table").
+4. The authoritative final benchmark numbers are the bench CI (`bench-data` branch) — local
+   perf is for in-flight design decisions.
 
-**次の的の見直し**: fib の profile 上位は `call_compiled_function_positional_light` /
-`malloc`・`free` / `Env::get_sym` であり、administrative opcode ではない。残る
-`SetVarDynamic`（time-parts 500k）・`CheckReadOnly` に着手する前に、上記プロトコルで
-「時間を食っているか」を確認すること。食っていなければ **割当チャーンと call path
-（＝レキシカル slot キャンペーン）が本命**。
+**Re-aiming the next target**: fib's profile top entries are
+`call_compiled_function_positional_light` / `malloc`+`free` / `Env::get_sym`, not
+administrative opcodes. Before starting on the remaining `SetVarDynamic` (time-parts 500k)
+and `CheckReadOnly`, confirm via the protocol above that they are "eating time". If they are
+not, **allocation churn and the call path (= the lexical-slot campaign) are the real target**.
 
-## 3. 保留・却下する施策（と、再開のトリガ）
+## 3. Deferred / rejected measures (and their re-activation triggers)
 
-### 3.1 per-call-site inline cache（PIC）— 保留
+### 3.1 Per-call-site inline cache (PIC) — deferred
 
-- 現状の monomorphic 1-entry（`last_method_resolve`）+ グローバルキャッシュで
-  poly-call が **0.48x と既に raku 比優位**。メガモーフィックサイトでの
-  1-entry ミス単価は FxHashMap ルックアップ 1 回で、現時点で律速でない。
-- 再開トリガ: profile で `method_resolve_cache` ルックアップが上位に入る、
-  または JIT J4d（呼び出しインライン化）で call-site 単位のキャッシュ構造が
-  どのみち必要になったとき。その場合 **opcode 側でなく JIT の CallMethod shim 側**
-  （ADR-0004 J3）に設ける — インタプリタと JIT で二重のキャッシュ機構を作らない。
+- With the current monomorphic 1-entry (`last_method_resolve`) + global cache, poly-call is
+  **already ahead of raku at 0.48x**. The per-miss cost of the 1-entry cache at megamorphic
+  sites is a single FxHashMap lookup, which is not the bottleneck at present.
+- Re-activation trigger: `method_resolve_cache` lookups showing up high in a profile, or JIT
+  J4d (call inlining) needing a per-call-site cache structure anyway. In that case, put it
+  **on the JIT's CallMethod shim side (ADR-0004 J3), not on the opcode side** — do not build
+  duplicate cache machinery in the interpreter and the JIT.
 
-### 3.2 quickening / adaptive specialization — 却下
+### 3.2 Quickening / adaptive specialization — rejected
 
-CPython 3.11 の主戦力だが、mutsu では **JIT Tier B（NaN-box タグ分岐の
-インライン算術）が同じ役割をより大きな天井で担う**。実行時に opcode 列を
-書き換える機構は resume/再入・並行実行との相互作用が複雑で、
-threaded dispatch と同じ「JIT との二重投資」判断（ADR-0004 §2.5）を適用する。
-JIT が頓挫した場合のみ threaded dispatch とセットで再検討。
+CPython 3.11's main weapon, but in mutsu **JIT Tier B (inline arithmetic on NaN-box tag
+branches) plays the same role with a higher ceiling**. Machinery that rewrites the opcode
+stream at runtime interacts in complex ways with resume/re-entry and concurrent execution;
+apply the same "double investment alongside the JIT" judgment as threaded dispatch
+(ADR-0004 §2.5). Reconsider only if the JIT fails, together with threaded dispatch.
 
-### 3.3 Value 文字列インターン — 保留
+### 3.3 Value string interning — deferred
 
-word-count（文字列キーのハッシュ集計）が **0.45x で既に優位**。
-ハッシュキーは既に `Symbol` ベースの経路が太く、`Value::Str` の Arc 共有で
-コピーは O(1)。再開トリガ: profile で文字列 alloc/hash が上位に入ったとき。
-その場合も全域インターンでなく、NaN-box の小文字列インライン化（SSO）を
-先に検討する（層3b の設計と整合）。
+word-count (hash aggregation over string keys) is **already ahead at 0.45x**. Hash keys
+already flow mostly through the `Symbol`-based path, and `Value::Str`'s Arc sharing makes
+copies O(1). Re-activation trigger: string alloc/hash showing up high in a profile. Even
+then, consider NaN-box small-string inlining (SSO) first rather than whole-program interning
+(consistent with the layer-3b design).
 
-## 4. Consequences（結果）
+## 4. Consequences
 
-- 新設ベンチ 4 本（time-parts / debug-guard / poly-call / word-count）を
-  `benchmarks/` に追加 — `bench-ci.sh` の glob に自動収載され、
-  採用施策の各スライスの効果と、保留施策の基準線が bench CI 履歴に残る。
-- 採用施策はすべて「静的に安全な場合のみ・フォールバックは無変換」なので、
-  roast への意味論リスクは低い。オーバーライドガード（§2.1-1）が唯一の
-  意味論境界で、pin テストを実装スライスに含めること。
-- 畳み込み・インライン化は **JIT の入力（opcode 列）を短くする**ため、
-  Tier B のカバレッジ・コンパイル時間にもプラスに働く（独立ではあるが順方向）。
+- Four new benchmarks (time-parts / debug-guard / poly-call / word-count) added under
+  `benchmarks/` — automatically picked up by the `bench-ci.sh` glob, so the effect of each
+  adopted-measure slice and the baselines for the deferred measures remain in the bench CI
+  history.
+- All adopted measures are "only when statically safe; fallback is no transformation", so
+  semantic risk to roast is low. The override guard (§2.1-1) is the only semantic boundary;
+  include its pin test in the implementation slice.
+- Folding and inlining **shorten the JIT's input (the opcode stream)**, which also benefits
+  Tier B coverage and compile time (independent, but same direction).
