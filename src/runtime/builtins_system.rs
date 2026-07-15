@@ -15,6 +15,36 @@ where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
+    spawn_registered_thread(Some(USER_THREAD_STACK_SIZE), f)
+}
+
+/// Spawn a runtime service thread (timer, promise combinator, socket
+/// accept/read pump, supply emitter) as a REGISTERED GC mutator, with the
+/// default thread stack (these never run user VM code, so they need no deep
+/// recursion headroom).
+///
+/// Every thread that clones, drops, or creates `Gc` values MUST go through a
+/// registered spawn: the cycle collector's stop-the-world counts only
+/// registered threads toward quiescence, so an unregistered thread's
+/// `Gc::drop` can land mid-scan and corrupt trial deletion (seen as
+/// `MUTSU_GC_VERIFY` "survivor left inconsistent", strong N -> N-1 color
+/// Purple, when a `Promise.in` timer dropped its promise handle during a
+/// collect). Long blocking waits inside the closure (sleeps, blocking reads)
+/// must be wrapped in `gc::block_quiescent` so the thread does not starve the
+/// stop-the-world rendezvous.
+pub(crate) fn spawn_gc_helper_thread<F, T>(f: F) -> std::thread::JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    spawn_registered_thread(None, f)
+}
+
+fn spawn_registered_thread<F, T>(stack_size: Option<usize>, f: F) -> std::thread::JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
     // Register a mutator worker with the GC: the worker count is the
     // cooperative stop-the-world's quiescence target (trial deletion must not
     // race this thread's `Gc` mutations; see `gc::stw`). Raised here on the
@@ -26,8 +56,11 @@ where
     // without this a spawn burst starves every stop-the-world attempt — see
     // `gc::stw::preregister_worker_quiescent`.
     crate::gc::preregister_worker_quiescent();
-    std::thread::Builder::new()
-        .stack_size(USER_THREAD_STACK_SIZE)
+    let mut builder = std::thread::Builder::new();
+    if let Some(size) = stack_size {
+        builder = builder.stack_size(size);
+    }
+    builder
         .spawn(move || {
             struct WorkerGuard;
             impl Drop for WorkerGuard {

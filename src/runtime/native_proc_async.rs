@@ -278,6 +278,11 @@ impl Interpreter {
                     }
                     if let Some(bytes) = stdin_bytes {
                         let stdin_arc = stdin_arc.clone();
+                        // Deliberately UNREGISTERED: this thread touches only
+                        // plain bytes (`Vec<u8>` + `Arc<Mutex<ChildStdin>>`),
+                        // never a `Gc` value, and the pipe write can block
+                        // indefinitely — registering it would starve the GC's
+                        // stop-the-world instead.
                         std::thread::spawn(move || {
                             if let Ok(mut guard) = stdin_arc.lock()
                                 && let Some(ref mut stdin) = *guard
