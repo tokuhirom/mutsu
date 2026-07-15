@@ -40,6 +40,21 @@ pub(crate) fn bound_array_slice_key(name: &str) -> String {
     format!("__mutsu_bound_array_slice::{name}")
 }
 
+/// True for the per-call-site internal temp names of the Index-argument `is rw`
+/// writeback machinery (`__mutsu_index_rw_arg_N` / `__mutsu_index_rw_orig_N` /
+/// `__mutsu_call_result_N`, see `compile_call_arg_with_escape` /
+/// `emit_index_rw_writebacks`). The names are compile-time-fixed, so a callee
+/// that executes a same-named call site of its own (recursion, or an accidental
+/// cross-chunk numbering collision) holds entries under the SAME names — the
+/// cross-frame env merges must never copy them back into the caller, or the
+/// caller's pending post-call compare reads the callee's values and fires a
+/// bogus writeback (`g(@xs[1..*])` recursion assigning into an immutable List,
+/// 99problems-21-to-30.t P26/P27). The designed writeback channel
+/// (`apply_rw_bindings_to_env`) is separate and unaffected.
+pub(crate) fn is_index_rw_call_temp(name: &str) -> bool {
+    name.starts_with("__mutsu_index_rw_") || name.starts_with("__mutsu_call_result_")
+}
+
 /// Build the `Failure` value raku yields when a count/numeric coercion is
 /// attempted on a lazy iterable (e.g. `(1..*).elems` / `.Int` / `+@a`):
 /// `X::Cannot::Lazy` with the message `Cannot .<action> a lazy list`.

@@ -71,7 +71,7 @@ noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `integration/99problems-21-to-30.t` | aborts at 6/15 | PASS ★ | not yet root-caused (post-#4510/#4516 re-measure) |
+| `integration/99problems-21-to-30.t` | 14/15 | PASS ★ | Root-caused 2026-07-15 and fixed 3 of 4: `return` in a sub callback via map (routine call path), recursive slice-arg index-rw temp corruption, `(<=)` Range coercion. Remaining 1 = test 13 (P27 `group`): the nested `map -> $g {...}` over the recursion's itemized-Seq result loses the inner group — mutsu's inner value is `$(($[[3],],),)` where raku builds `$((($[[3],],).Seq,).Seq)`, and the subsequent `|@$g` slips a different level. Needs the Seq-vs-List structure of nested map results aligned with raku |
 | `integration/99problems-31-to-40.t` | aborts at 44/67 | PASS ★ | not yet root-caused |
 | `integration/99problems-41-to-50.t` | fails | PASS ★ | P47 needs parameterized `multi rule expr($p)` (grammar rules taking arguments); P41/P46 fixed in #4510 |
 | `integration/99problems-51-to-60.t` | 35/37 | PASS ★ | test 8 (balanced-binary-tree branch dropping) and test 21; the P57 infinite recursion was fixed in #4516 |

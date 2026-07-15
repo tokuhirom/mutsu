@@ -457,7 +457,13 @@ impl Interpreter {
                 }
                 if restored_env.contains_key_sym(*k)
                     && !cf.is_callee_local_sym(*k)
-                    && !k.with_str(|s| rw_sources.contains(s))
+                    && !k.with_str(|s| {
+                        rw_sources.contains(s)
+                            // Per-call-site index-rw temps are frame-internal;
+                            // merging a callee's same-named entries corrupts the
+                            // caller's pending post-call writeback compare.
+                            || crate::runtime::utils::is_index_rw_call_temp(s)
+                    })
                 {
                     restored_env.insert_sym(*k, v.clone());
                 }

@@ -1644,7 +1644,13 @@ fn merge_method_env(
             // names, replacing the former per-call materialized
             // `HashSet<String>` (~dozens of String allocations per non-pure
             // method call for a set consulted only against the few overlay keys).
-            if k.with_str(|s| is_method_local(s)) {
+            if k.with_str(|s| {
+                is_method_local(s)
+                    // Per-call-site index-rw temps are frame-internal; merging a
+                    // callee's same-named entries corrupts the caller's pending
+                    // post-call writeback compare (see is_index_rw_call_temp).
+                    || crate::runtime::utils::is_index_rw_call_temp(s)
+            }) {
                 return None;
             }
             let keep = saved.contains_key_sym(*k)
