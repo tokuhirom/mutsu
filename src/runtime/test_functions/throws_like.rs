@@ -172,6 +172,16 @@ impl Interpreter {
                                 // so a pure lazy sequence/range is never driven.
                                 // A force error IS the thrown exception: surface it
                                 // as the eval result so the type matcher sees it.
+                                // The nested `run` has returned: its bytecode
+                                // frames are gone, so clear the frame
+                                // bookkeeping the force would reconcile against
+                                // (`current_code` is a raw pointer into the
+                                // dropped CompiledCode; leftover rw-writeback
+                                // sources name its dead slots). Dereferencing
+                                // it SEGVs on the release build
+                                // (`gather for ^3 -> $a, $b { take 1 }`).
+                                nested.current_code = 0;
+                                nested.pending_rw_writeback_sources.clear();
                                 if let ValueView::LazyList(ll) = last_val.view()
                                     && ll.coroutine.is_some()
                                     && let Err(e) = nested.force_lazy_list_vm(&ll)
@@ -551,6 +561,16 @@ impl Interpreter {
                                 // so a pure lazy sequence/range is never driven.
                                 // A force error IS the thrown exception: surface it
                                 // as the eval result so the type matcher sees it.
+                                // The nested `run` has returned: its bytecode
+                                // frames are gone, so clear the frame
+                                // bookkeeping the force would reconcile against
+                                // (`current_code` is a raw pointer into the
+                                // dropped CompiledCode; leftover rw-writeback
+                                // sources name its dead slots). Dereferencing
+                                // it SEGVs on the release build
+                                // (`gather for ^3 -> $a, $b { take 1 }`).
+                                nested.current_code = 0;
+                                nested.pending_rw_writeback_sources.clear();
                                 if let ValueView::LazyList(ll) = last_val.view()
                                     && ll.coroutine.is_some()
                                     && let Err(e) = nested.force_lazy_list_vm(&ll)

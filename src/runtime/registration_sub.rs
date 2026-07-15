@@ -675,6 +675,7 @@ impl Interpreter {
             return_type: return_type.cloned(),
             is_default: custom_traits.iter().any(|(t, _)| t == "default"),
             deprecated_message,
+            source_file: self.current_source_file(),
         };
         let single_key = format!("{}::{}", self.current_package(), name);
         let multi_prefix = format!("{}::{}/", self.current_package(), name);
@@ -1057,6 +1058,7 @@ impl Interpreter {
             return_type: None,
             is_default: false,
             deprecated_message: None,
+            source_file: self.current_source_file(),
         };
         self.insert_token_def(name, def, multi);
     }
@@ -1113,6 +1115,7 @@ impl Interpreter {
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,
+                source_file: self.current_source_file(),
             }),
         );
         Ok(())
@@ -1215,6 +1218,7 @@ impl Interpreter {
             return_type: return_type.cloned(),
             is_default: false,
             deprecated_message: None,
+            source_file: self.current_source_file(),
         };
         let single_key = format!("GLOBAL::{}", name);
         let single_key_sym = Symbol::intern(&single_key);
@@ -1357,6 +1361,7 @@ impl Interpreter {
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,
+                source_file: self.current_source_file(),
             }),
         );
         Ok(())

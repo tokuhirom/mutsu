@@ -120,6 +120,7 @@ impl Interpreter {
             file: None,
             is_method: false,
             is_block: false,
+            def_file: None,
         });
         let result = self.run_block(&def.body);
         self.routine_stack.pop();

@@ -48,7 +48,7 @@ Definitions of the classifications:
 
 ## Current assumptions
 
-- The whitelist stands at **1410 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **53** files not whitelisted.
+- The whitelist stands at **1411 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **52** files not whitelisted.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -71,7 +71,6 @@ noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `integration/error-reporting.t` | 31/33 | PASS ★ | **④ error-message quality.** Remaining 2 = backtrace frames for module files (15: a frame for a sub defined in a `use`d module must report `Foo.rakumod`, needs per-FunctionDef source-file tracking) and Failure dual backtrace (20: a thrown Failure prints the fail-site backtrace AND the throw-site backtrace). Tests 21/25/30 fixed 2026-07-15 (say no longer swallows return signals from lazy Seqs; `%::{''}` → X::Undeclared; type-capture inheritance → compile-time X::Inheritance::Unsupported; pin t/error-reporting-quality.t). Earlier: compile-time undeclared-routine detection (tests 5/23, `check_undeclared_routines_mainline`); #4539 backtraces on all runtime errors, is_run = stderr identical to the CLI, Backtrace.new/full |
 | `integration/weird-errors.t` | 31/36 | PASS ★ | **④ error-message quality.** Remaining = `say(;:[])` (11), `::a`→X::NoSuchSymbol needs `::` info on BareWord (20), our method invocant type (29), `new Foo:` (32), `hash a=>1` (33) |
 | `integration/advent2012-day15.t` | 9/11 | PASS ★ | statement-form phasers create their own scope (`$best` in `NEXT (state $best) max= $_;` is not visible from `LAST`) / `INIT` runs after the mainline |
 | `integration/99problems-21-to-30.t` | aborts at 6/15 | PASS ★ | not yet root-caused (post-#4510/#4516 re-measure) |

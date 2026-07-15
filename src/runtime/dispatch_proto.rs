@@ -188,6 +188,7 @@ impl Interpreter {
             file: None,
             is_method: false,
             is_block: false,
+            def_file: None,
         });
         self.proto_dispatch_stack
             .push((proto_name.to_string(), args.to_vec(), None));

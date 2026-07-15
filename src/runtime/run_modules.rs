@@ -480,7 +480,23 @@ impl Interpreter {
             // severs the shared `state` cell). Compiled under GLOBAL, matching the
             // package the module body runs under here.
             self.capture_module_compiled_fns(&stmts);
+            // Scope `?FILE` to the module path while its mainline runs, so
+            // routine registration records the module as each sub's
+            // `source_file` (module backtrace frames, error-reporting.t 15).
+            let saved_qfile = self.env.get("?FILE").cloned();
+            self.env.insert(
+                "?FILE".to_string(),
+                Value::str(source_path.to_string_lossy().to_string()),
+            );
             let result = self.run_block(&stmts);
+            match saved_qfile {
+                Some(f) => {
+                    self.env.insert("?FILE".to_string(), f);
+                }
+                None => {
+                    self.env.remove("?FILE");
+                }
+            }
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
             }

@@ -105,6 +105,12 @@ pub(crate) struct FunctionDef {
     /// `is DEPRECATED` trait message: None = not deprecated, Some(msg) = deprecated.
     /// Empty string means "something else", non-empty is the custom replacement text.
     pub(crate) deprecated_message: Option<String>,
+    /// Source file this routine was declared in (None = the main script).
+    /// Set at registration time from the interpreter's `?FILE` (which module
+    /// loading scopes to the module path), so backtrace frames for module subs
+    /// can report the module file (integration/error-reporting.t test 15).
+    #[serde(default)]
+    pub(crate) source_file: Option<String>,
 }
 
 /// A `fmt::Write` sink that streams formatted bytes straight into a `Hasher`,

@@ -74,6 +74,7 @@ impl Interpreter {
             routine_push_name,
             self.current_source_line(),
             self.current_source_file(),
+            cf.source_file.clone(),
         );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {

@@ -73,6 +73,9 @@ impl Interpreter {
                 let inner_frame = reversed[i - 1];
                 (inner_frame.line, inner_frame.file.clone())
             };
+            // A routine defined in another file (a `use`d module) displays at
+            // its defining file; the call-site line is within that file.
+            let file = frame.def_file.clone().or(file);
             let location = Self::format_location(file.as_deref(), line);
             if frame.name.is_empty() || frame.name == "<unit>" || frame.name == "<pointy-block>" {
                 lines.push(format!("  in block <unit>{}", location));
@@ -158,6 +161,9 @@ impl Interpreter {
                 let inner_frame = reversed[i - 1];
                 (inner_frame.line, inner_frame.file.clone())
             };
+            // Module routines display at their defining file (see
+            // `build_backtrace_string`).
+            let file = frame.def_file.clone().or(file);
             // A genuine bare-block callframe (is_block + empty name) is an
             // anonymous block in Raku: its `.subname` is the empty string (so
             // `.is-routine` is False and `.code.name` is empty), distinct from
@@ -350,7 +356,14 @@ impl Interpreter {
     pub(super) fn attach_backtrace_to_error(&self, err: &mut RuntimeError) {
         if err.backtrace().is_none() {
             let backtrace_str = self.build_backtrace_string();
-            if !backtrace_str.is_empty() {
+            // An error raised by USING an unhandled Failure renders rakudo's
+            // dual-backtrace form: the fail-site backtrace (carried from the
+            // Failure's exception) plus where it was actually thrown.
+            if let Some(orig) = err.failure_original_backtrace().map(str::to_string) {
+                err.set_backtrace(Some(format!(
+                    "{orig}\n\nActually thrown at:\n{backtrace_str}"
+                )));
+            } else if !backtrace_str.is_empty() {
                 err.set_backtrace(Some(backtrace_str));
             }
         }

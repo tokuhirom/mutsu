@@ -1041,6 +1041,11 @@ pub(crate) struct RoutineFrame {
     pub is_method: bool,
     /// Whether this frame is a block/closure (not a named routine).
     pub is_block: bool,
+    /// The file this routine's BODY lives in (None = same as the caller /
+    /// main script). `line`/`file` above record the call-site; a backtrace
+    /// displays each frame at its defining file (module subs report the
+    /// module path, integration/error-reporting.t test 15).
+    pub def_file: Option<String>,
 }
 
 /// CompUnit::Repository::Installation runtime state. Boxed inside `Interpreter`

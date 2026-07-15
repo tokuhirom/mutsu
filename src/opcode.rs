@@ -3683,6 +3683,9 @@ pub(crate) type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>;
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
+    /// Source file the routine was declared in (None = main script); flows
+    /// from `FunctionDef::source_file` for backtrace frame attribution.
+    pub(crate) source_file: Option<String>,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) return_type: Option<String>,

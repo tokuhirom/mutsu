@@ -9,7 +9,7 @@ impl Interpreter {
     }
 
     /// Get the current source file from the interpreter env.
-    pub(super) fn current_source_file(&self) -> Option<String> {
+    pub(crate) fn current_source_file(&self) -> Option<String> {
         self.env().get("?FILE").and_then(|v| match v.view() {
             ValueView::Str(s) => Some(s.to_string()),
             _ => None,

@@ -154,6 +154,7 @@ impl Interpreter {
         });
         let mut cf = CompiledFunction {
             code: cc,
+            source_file: def.source_file.clone(),
             params: def.params.clone(),
             param_defs: def.param_defs.clone(),
             return_type: def.return_type.clone(),

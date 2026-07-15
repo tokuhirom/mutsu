@@ -195,6 +195,7 @@ impl Interpreter {
                     file: None,
                     is_method: false,
                     is_block: false,
+                    def_file: None,
                 });
                 let result = interp.eval_block_value(&def.body);
                 interp.routine_stack.pop();
