@@ -264,6 +264,13 @@ fn lift_phasers_from_stmt(
         Stmt::Label { stmt: inner, .. } => {
             lift_phasers_from_stmt(inner, begin, check, init);
         }
+        // INIT/CHECK inside a named sub body run at program init/check time,
+        // not at first call (advent2012-day15.t: `my $fh = INIT Open(...)`
+        // must call Open before the mainline runs). The lifted DoBlock is
+        // assigned to a shared temp read by the sub body at call time.
+        Stmt::SubDecl { body, .. } => {
+            lift_phasers_from_closure_stmts(body, begin, check, init);
+        }
         _ => {}
     }
 }
@@ -643,6 +650,11 @@ fn lift_phasers_from_closure_stmt(
         Stmt::Label { stmt: inner, .. } => {
             lift_phasers_from_closure_stmt(inner, begin, check, init);
         }
+        // See the SubDecl arm of lift_phasers_from_stmt: sub-body INIT/CHECK
+        // are program-init-time, wherever the sub is declared.
+        Stmt::SubDecl { body, .. } => {
+            lift_phasers_from_closure_stmts(body, begin, check, init);
+        }
         Stmt::Call { args, .. } => {
             for arg in args.iter_mut() {
                 match arg {
@@ -943,8 +955,21 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
         | Stmt::Package { body, .. } => {
             reorder_recursive(body, false);
         }
-        Stmt::Phaser { body, .. } => {
-            reorder_recursive(body, false);
+        Stmt::Phaser { kind, body } => {
+            // A statement-form loop phaser is marked as `[SyntheticBlock([stmt])]`
+            // (see phaser_stmt): it shares the enclosing block's lexical scope,
+            // and `expand_loop_phasers` reads the marker to splice it scope-less.
+            // Flattening the marker here would silently downgrade it to the
+            // scoped block form, so recurse into the inner statements instead.
+            if matches!(
+                kind,
+                PhaserKind::First | PhaserKind::Next | PhaserKind::Last
+            ) && let [Stmt::SyntheticBlock(inner)] = body.as_mut_slice()
+            {
+                reorder_recursive(inner, false);
+            } else {
+                reorder_recursive(body, false);
+            }
         }
         Stmt::If {
             cond,

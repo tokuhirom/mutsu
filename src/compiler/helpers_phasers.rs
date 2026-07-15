@@ -33,6 +33,17 @@ impl Compiler {
         })
     }
 
+    /// The body of a FIRST/NEXT/LAST phaser as a single statement. A
+    /// statement-form phaser (parsed as `[SyntheticBlock([stmt])]`) shares the
+    /// enclosing block's lexical scope, so it is spliced in scope-less; a
+    /// block-form phaser gets its own `Stmt::Block` scope.
+    fn loop_phaser_body(body: &[Stmt]) -> Stmt {
+        match body {
+            [stmt @ Stmt::SyntheticBlock(_)] => stmt.clone(),
+            _ => Stmt::Block(body.to_vec()),
+        }
+    }
+
     fn next_targets_current_loop(
         next_label: &Option<String>,
         current_loop_label: Option<&str>,
@@ -230,9 +241,9 @@ impl Compiler {
                     PhaserKind::Leave => leave_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Keep => keep_ph.push(Stmt::Block(body.clone())),
                     PhaserKind::Undo => undo_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::First => first_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Next => next_ph.push(Stmt::Block(body.clone())),
-                    PhaserKind::Last => last_ph.push(Stmt::Block(body.clone())),
+                    PhaserKind::First => first_ph.push(Self::loop_phaser_body(body)),
+                    PhaserKind::Next => next_ph.push(Self::loop_phaser_body(body)),
+                    PhaserKind::Last => last_ph.push(Self::loop_phaser_body(body)),
                     PhaserKind::Pre => pre_ph.push(stmt.clone()),
                     PhaserKind::Post => post_ph.push(stmt.clone()),
                     _ => body_main.push(stmt.clone()),

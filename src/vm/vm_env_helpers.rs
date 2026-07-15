@@ -852,6 +852,33 @@ impl Interpreter {
         }
     }
 
+    /// Like [`Self::sync_env_from_locals`], but skips slots whose name was
+    /// never introduced into env — a compile-time-allocated local whose
+    /// declaration has not run yet (e.g. a `state $b` later in the same loop
+    /// body). Prematurely seeding env with such a name makes the declaration,
+    /// when it does run, mistake the seeded entry for a live outer binding and
+    /// record it for the loop-local shadow restore — which then wipes the
+    /// variable at loop exit (advent2012-day15 FIRST/NEXT/LAST state loss).
+    /// Mirrors the identical guard in
+    /// [`Self::sync_regex_interpolation_env_from_locals`].
+    ///
+    /// Used by the I/O ops (Say/Put/Print/Note), whose pre-sync exists so a
+    /// user `$*OUT` override / `.gist` method sees fresh values of *live*
+    /// variables: any name such an override can legitimately reach via env is
+    /// either already present in env (declared, captured, `our`, dynamic) or
+    /// forced there by the reflective-access flag — never slot-only.
+    pub(super) fn sync_env_from_locals_declared(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            if !self.env().contains_key(name) {
+                continue;
+            }
+            self.set_env_with_main_alias(name, self.locals[i].clone());
+        }
+    }
+
     pub(super) fn sync_regex_interpolation_env_from_locals(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             if name == "_"

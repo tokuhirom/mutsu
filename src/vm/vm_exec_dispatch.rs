@@ -2782,25 +2782,25 @@ impl Interpreter {
             // -- I/O --
             OpCode::Say(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals(code);
+                self.sync_env_from_locals_declared(code);
                 self.exec_say_op(*n)?;
                 *ip += 1;
             }
             OpCode::Put(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals(code);
+                self.sync_env_from_locals_declared(code);
                 self.exec_put_op(*n)?;
                 *ip += 1;
             }
             OpCode::Print(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals(code);
+                self.sync_env_from_locals_declared(code);
                 self.exec_print_op(*n)?;
                 *ip += 1;
             }
             OpCode::Note(n) => {
                 self.sync_source_line(code, *ip);
-                self.sync_env_from_locals(code);
+                self.sync_env_from_locals_declared(code);
                 self.exec_note_op(*n)?;
                 *ip += 1;
             }
