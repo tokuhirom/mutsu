@@ -102,6 +102,16 @@ impl Interpreter {
             && !cc.has_env_writes
             && !cc.has_calls;
 
+        // Whether any sigilless-attribute alias metadata is present. Computed
+        // once: the fast-path gate below needs it, and the merge path's
+        // `is_method_local` predicate uses it to skip the per-env-key
+        // `attr_alias_local` scan over ALL attributes (O(env keys x attrs) on
+        // every full-path method exit) in the overwhelmingly common no-alias
+        // case.
+        let has_attr_aliases = attributes
+            .keys()
+            .any(|k| k.starts_with(ATTR_ALIAS_META_PREFIX));
+
         // Fast path: bypass env entirely and populate locals directly from
         // source data. Avoids the ~12μs Arc::make_mut deep clone that the
         // first env_mut() call triggers.
@@ -110,9 +120,6 @@ impl Interpreter {
                 (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                     && pd.type_constraint.is_some()
             });
-            let has_attr_aliases = attributes
-                .keys()
-                .any(|k| k.starts_with(ATTR_ALIAS_META_PREFIX));
             let has_role_bindings = self.class_role_param_bindings(owner_class).is_some()
                 || self
                     .class_role_param_bindings(receiver_class_name)
@@ -701,7 +708,7 @@ impl Interpreter {
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
                     || attr_twigil_local(&attributes, s)
-                    || attr_alias_local(&attributes, s)
+                    || (has_attr_aliases && attr_alias_local(&attributes, s))
             };
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
