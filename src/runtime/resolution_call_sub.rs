@@ -117,12 +117,21 @@ impl Interpreter {
             return Ok(Value::junction(kind, results));
         }
         if let ValueView::Sub(data) = func.view() {
-            // Check for wrap chain — if wrappers exist, dispatch through them
-            // Skip if we're already inside a wrap dispatch for this sub
-            let already_dispatching = self.wrap_dispatch_stack.iter().any(|f| f.sub_id == data.id);
-            if !already_dispatching
+            // Check for wrap chain — if wrappers exist, dispatch through them.
+            // A callsame/callwith invocation of the original (or an inner
+            // wrapper) sets `wrap_skip_once` so exactly that call runs the sub
+            // directly; a fresh named call — including a *recursive* one from
+            // inside the original body — re-enters the chain like Raku does.
+            let skip_chain_once = self.wrap_skip_once.take() == Some(data.id);
+            if !skip_chain_once
                 && let Some(chain) = self.wrap_chains.get(&data.id).cloned()
                 && !chain.is_empty()
+                // A nextcallee-returned wrappee carries __mutsu_wrap_direct:
+                // it is the inner code object and always runs directly.
+                && !matches!(
+                    data.env.get("__mutsu_wrap_direct").map(Value::view),
+                    Some(ValueView::Bool(true))
+                )
             {
                 let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
                 self.test_pending_callsite_line = callsite_line;
