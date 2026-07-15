@@ -697,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "mutsu"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "bincode",
  "console_error_panic_hook",

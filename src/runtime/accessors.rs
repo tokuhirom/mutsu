@@ -206,7 +206,27 @@ impl Interpreter {
         if let Some(name) = Self::return_spec_scalar_name(spec) {
             return Ok(self.env.get(&name).cloned().unwrap_or(Value::NIL));
         }
-        self.eval_eval_string(spec.trim())
+        let s = spec.trim();
+        // Constant specs are by far the common case (`--> Nil` on every
+        // mutating routine) and run once per RETURN: construct them directly
+        // instead of paying a full string EVAL (whose setup snapshots the
+        // entire class registry) on every call.
+        match s {
+            "Nil" => return Ok(Value::NIL),
+            "True" => return Ok(Value::TRUE),
+            "False" => return Ok(Value::FALSE),
+            "Empty" => return Ok(Value::slip_arc(std::sync::Arc::new(vec![]))),
+            "pi" => return Ok(Value::num(std::f64::consts::PI)),
+            _ => {}
+        }
+        if s.chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit() || c == '-')
+            && let Ok(i) = s.parse::<i64>()
+        {
+            return Ok(Value::int(i));
+        }
+        self.eval_eval_string(s)
     }
 
     fn sink_for_definite_return(&mut self, value: &Value) -> Result<(), RuntimeError> {
