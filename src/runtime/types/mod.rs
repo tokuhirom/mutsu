@@ -431,7 +431,16 @@ impl Interpreter {
         if let Some((target, _source)) = parse_coercion_type(base) {
             return self.nominal_type_object_name_for_constraint(target);
         }
-        let base_name = Self::optional_type_object_name(base);
+        // A parameterized type constraint (`Cup[EggNog]`, `Array[Int]`) keeps
+        // its type arguments in the nominal type object name — Rakudo reports
+        // `Cup[EggNog]` from `.WHAT` on an uninitialized `my Cup[EggNog] $x`.
+        // Coercion parens were already unwrapped above, so `[` here is always
+        // a parameterization.
+        let base_name = if base.contains('[') && !base.contains('(') {
+            base.to_string()
+        } else {
+            Self::optional_type_object_name(base)
+        };
         if let Some(captured_name) = base_name.strip_prefix("::")
             && let Some(ValueView::Package(bound)) = self.env.get(captured_name).map(Value::view)
         {

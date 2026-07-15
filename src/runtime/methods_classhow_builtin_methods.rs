@@ -53,6 +53,13 @@ impl Interpreter {
             for role_name in &mixin_role_names {
                 self.collect_role_methods(role_name, private, &mut result);
             }
+            // Built-in types have no registry entry; their declared own list
+            // (leaf methods up to the coercion tail) approximates :local.
+            if result.is_empty() && !self.registry().classes.contains_key(&class_name) {
+                let names =
+                    crate::builtins::builtin_type_methods::builtin_type_method_names(&class_name);
+                self.push_native_method_objects(&names, &mut result);
+            }
         } else {
             // Walk MRO (already includes the class itself)
             let mro = self.class_mro(&class_name);
@@ -84,7 +91,13 @@ impl Interpreter {
         // `builtins::builtin_type_methods` for the rationale.
         let methods =
             crate::builtins::builtin_type_methods::introspected_type_method_names(type_name);
-        for name in &methods {
+        self.push_native_method_objects(&methods, result);
+    }
+
+    /// Append a native Method object for each name not already present in
+    /// `result` (dedup by the Method object's `name` attribute).
+    fn push_native_method_objects(&self, names: &[&str], result: &mut Vec<Value>) {
+        for name in names {
             if !result.iter().any(|v| {
                 if let ValueView::Instance { attributes, .. } = v.view() {
                     attributes
@@ -92,7 +105,7 @@ impl Interpreter {
                         .get("name")
                         .map(|n| n.to_string_value())
                         .as_deref()
-                        == Some(name)
+                        == Some(*name)
                 } else {
                     false
                 }

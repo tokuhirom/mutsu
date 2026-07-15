@@ -1321,7 +1321,9 @@ roast/integration/advent2009-day14.t
 roast/integration/advent2009-day15.t
 roast/integration/advent2009-day16.t
 roast/integration/advent2009-day17.t
+roast/integration/advent2009-day18.t
 roast/integration/advent2009-day19.t
+roast/integration/advent2009-day20.t
 roast/integration/advent2009-day21.t
 roast/integration/advent2009-day22.t
 roast/integration/advent2009-day23.t
@@ -1334,6 +1336,7 @@ roast/integration/advent2010-day11.t
 roast/integration/advent2010-day12.t
 roast/integration/advent2010-day19.t
 roast/integration/advent2010-day21.t
+roast/integration/advent2010-day22.t
 roast/integration/advent2010-day23.t
 roast/integration/advent2011-day03.t
 roast/integration/advent2011-day05.t

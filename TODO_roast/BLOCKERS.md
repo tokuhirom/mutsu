@@ -54,10 +54,30 @@ S\* 系 24 本しか載せておらず、`integration/` 41 本・`6.c/` 7 本・
 | **② パース不能（`===SORRY!===`）** | **0（完了）** | 10 本すべて解消（#4511 / #4514 / #4515 / #4517 / #4518 / #4522） | **このクラスタは枯渇。** 7 本が whitelist 到達、3 本はパースを通過して機能ギャップへ移行 — 下の「② の内訳」参照 |
 | **③ ハング / タイムアウト** | 5 | `advent2012-day21.t`・`advent2013-day14.t`・`gather-with-loops.t`・`APPENDICES/A01-limits/{misc,overflow}.t` | 25s で打ち切り。gather×loop の遅延評価と limit 系 |
 | **④ エラーメッセージ品質** | 2 | `error-reporting.t`（mutsu 4/33・raku 33/33）・`weird-errors.t`（26/36） | 「Parse error contains line number」等、**例外の文面・行番号・バックトレース**を検査するテスト。PLAN §6「エラーメッセージ品質向上」と同一の的 |
-| **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張）・`advent2010-day14.t`（`nextsame` の継承/mixin）・`advent2010-day22.t`（`Rat` の `$!numerator`/`$!denominator` 属性）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2009-day20.t`（signature の introspection/stringification）・`advent2009-day18.t`（パラメタ化 role の mixin）・`advent2013-day10.t`（`:round` 等の演算子 adverb）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。★の近道はここ |
+| **⑤ 個別機能ギャップ** | 残り | `advent2009-day24.t`（派生 grammar の拡張 — **test 2 の `.parse` がハングに変化**、要再調査）・`advent2010-day14.t`（**`nextsame` ではなく** メソッド内 `say` → user `$*OUT.print` の captured-outer 書き込みが消える dual-store バグ — 最小再現は下記）・`advent2011-day07.t`（`Metamodel::GrammarHOW` 継承）・`advent2011-day10.t`（`--doc` / `DOC INIT {}`）・`advent2011-day04.t`（`.wrap` 後の再帰呼び出しが wrapper を通らず cache が top-level のみ）・`advent2013-day10.t`（演算子 adverb: `1/3 :round` のユーザ infix 適用・prefix `!` 適用・`1+2-3 :adv` の最後の infix・`1**2**3 :adv` の最左 `**`・`m:nth[5]` の X::Comp::Group — fail 26,28,31-32,38）・`precompiled.t`（precomp） | 1 ファイル数本ずつ。**whitelist 到達 (2026-07-15)**: `advent2010-day22.t`（builtin 型の `^attributes`/`^methods(:local)` テーブル）・`advent2009-day20.t`（signature.raku のリテラル default 表示・sigil→Positional/Associative/Callable 型・stub map callback の遅延）・`advent2009-day18.t`（`my Cup of EggNog $mug` の `.WHAT.raku` が型引数を保持） |
 
 **近道（1 subtest 差のファイル）**: `6.c/S04-declarations/my-6c.t` は **111/112**（唯一の失敗＝
 test 57 `OUTER::<$x>` 疑似パッケージ）。`advent2011-day04.t` は 1/2、`advent2009-day24.t` は 3/4。
+
+### advent2010-day14.t の実バグ（2026-07-15 root-cause）
+
+fail 1・5 は `nextsame` ではない（`nextsame` の継承チェーンも mixin も単体では動く）。
+実体は **メソッド内から `say` したときだけ、user 定義 `$*OUT.print` の captured-outer /
+`our` 変数への書き込みが完全に消える** dual-store バグ:
+
+```raku
+our $out = "";
+my $*OUT = class { method print(*@args) { $out ~= @args.join } }
+class A { method m { say "y" } }
+A.new.m;                      # print は呼ばれる（$*ERR 経由で確認済み）
+# raku: $out eq "y\n" / mutsu: $out eq "" — env からも消えている
+```
+
+- sub 内からの `say` は正しく蓄積される（`write_to_named_handle` の Slice F reconcile が効く）。
+- メソッド内から **明示的に** `$*OUT.print("y")` と書けば正しい（CallMethod op 経由）。
+- 消えるのは `say`（`Say` op → `write_to_named_handle` → `call_method_with_values` の
+  内部 redispatch）がメソッドフレームの中で走った場合のみ。`our` 変数ですら消えるので、
+  メソッド return 時の env merge が内部 redispatch の書き込みを捨てていると思われる。
 
 ### ① の内訳（2026-07-14 に 4 本とも root-cause 済み）
 

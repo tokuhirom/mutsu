@@ -708,6 +708,31 @@ pub(crate) fn introspected_type_method_names(type_name: &str) -> Vec<&'static st
     names
 }
 
+/// Introspectable instance attributes for built-in types, as
+/// `(name-without-sigil, type-name)` pairs in declaration order. These mirror
+/// the attributes Rakudo reports from `.^attributes` (e.g. `Rat.^attributes`
+/// yields `$!numerator` and `$!denominator`). Types without modelled
+/// attributes return an empty slice.
+pub(crate) fn builtin_type_attributes(type_name: &str) -> &'static [(&'static str, &'static str)] {
+    match type_name {
+        "Rat" | "FatRat" => &[("numerator", "Int"), ("denominator", "Int")],
+        "Complex" => &[("re", "Num"), ("im", "Num")],
+        "Int" => &[("value", "int")],
+        "Num" => &[("value", "num")],
+        "Str" => &[("value", "str")],
+        "Pair" => &[("key", "Mu"), ("value", "Mu")],
+        "Range" => &[
+            ("min", "Mu"),
+            ("max", "Mu"),
+            ("excludes-min", "Bool"),
+            ("excludes-max", "Bool"),
+            ("infinite", "Bool"),
+            ("is-int", "Bool"),
+        ],
+        _ => &[],
+    }
+}
+
 /// The built-in MRO (parent chain) for `type_name`, up to but not including
 /// `Any`/`Mu` (those are appended by the caller). Returns an empty slice for
 /// types with no modelled built-in hierarchy.

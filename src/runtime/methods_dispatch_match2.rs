@@ -469,8 +469,12 @@ impl Interpreter {
         // out-of-dynamic-scope set. To get that right without making every map
         // lazy (which perturbs list shape/context in many call sites), only
         // defer evaluation when the callback body actually contains a `return`.
+        // A stub body (`...`) must likewise stay unevaluated until the Seq is
+        // forced: `map -> $x, $y { ... }, @list` lives in Raku as long as the
+        // result is never iterated.
         if let Some(ValueView::Sub(sub_data)) = args.first().map(Value::view)
-            && Self::body_contains_return(&sub_data.body)
+            && (Self::body_contains_return(&sub_data.body)
+                || Self::is_stub_routine_body(&sub_data.body))
         {
             return Ok(self.create_lazy_map_list(items, &sub_data));
         }
@@ -489,7 +493,7 @@ impl Interpreter {
     /// the callback for each item. This ensures that `return` inside the
     /// callback correctly detects when the lexically enclosing routine has
     /// already exited (out-of-dynamic-scope).
-    fn create_lazy_map_list(
+    pub(super) fn create_lazy_map_list(
         &self,
         items: Vec<Value>,
         callback: &crate::gc::Gc<crate::value::SubData>,

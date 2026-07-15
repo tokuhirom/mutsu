@@ -11,6 +11,21 @@ impl Interpreter {
         if class_name == "Attribute" && !self.registry().classes.contains_key("Attribute") {
             return Self::make_bootstrapattr_list();
         }
+        // Built-in types have no registry entry; serve their modelled
+        // attributes (e.g. Rat's $!numerator/$!denominator). They are declared
+        // on the leaf type itself, so :local and the MRO walk agree.
+        if !self.registry().classes.contains_key(class_name) {
+            let builtin =
+                crate::builtins::builtin_type_methods::builtin_type_attributes(class_name);
+            if !builtin.is_empty() {
+                return builtin
+                    .iter()
+                    .map(|(name, type_name)| {
+                        Self::make_builtin_attribute_object(name, type_name, class_name)
+                    })
+                    .collect();
+            }
+        }
         if local_only {
             if let Some(class_def) = self.registry().classes.get(class_name) {
                 class_def
@@ -91,6 +106,30 @@ impl Interpreter {
                 Value::make_instance(Symbol::intern("Attribute"), meta)
             })
             .collect()
+    }
+
+    /// Build an Attribute introspection object for a modelled built-in type
+    /// attribute (private `$!name`, no accessor, read-only).
+    fn make_builtin_attribute_object(attr_name: &str, type_name: &str, owner: &str) -> Value {
+        let mut meta = HashMap::new();
+        meta.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
+        meta.insert(
+            "__mutsu_attr_name".to_string(),
+            Value::str(attr_name.to_string()),
+        );
+        meta.insert(
+            "__mutsu_attr_owner".to_string(),
+            Value::str(owner.to_string()),
+        );
+        meta.insert("is_public".to_string(), Value::FALSE);
+        meta.insert("is_rw".to_string(), Value::FALSE);
+        meta.insert("sigil".to_string(), Value::str("$".to_string()));
+        meta.insert(
+            "type".to_string(),
+            Value::package(Symbol::intern(type_name)),
+        );
+        meta.insert("has_accessor".to_string(), Value::FALSE);
+        Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
