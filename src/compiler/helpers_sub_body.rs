@@ -402,7 +402,7 @@ impl Compiler {
             param_local_slots: None,
             has_inner_subs: false,
             declares_inner_routines: false,
-            named_param_slots: None,
+            named_call_plan: None,
             deprecated_info,
             declared_locals: None,
             param_name_syms: Vec::new(),
@@ -411,7 +411,7 @@ impl Compiler {
             package: self.current_package.clone(),
         };
         cf.precompute_param_local_slots();
-        cf.precompute_named_param_slots();
+        cf.precompute_named_call_plan();
         cf.precompute_param_name_syms();
         cf.detect_inner_subs();
         cf.compute_declared_locals();

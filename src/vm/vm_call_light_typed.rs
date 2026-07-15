@@ -1,5 +1,4 @@
 use super::*;
-use crate::runtime::types::unwrap_varref_value;
 
 impl Interpreter {
     /// Lightweight compiled function call that avoids the heavyweight frame
@@ -9,13 +8,21 @@ impl Interpreter {
     pub(super) fn call_compiled_function_light(
         &mut self,
         cf: &CompiledFunction,
-        args: Vec<Value>,
+        args: &[Value],
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): the light-call boundary skips
         // push_call_frame, so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
+        // Eligibility (`is_light_call_eligible`) guarantees every param is
+        // named, which is exactly when the plan is precomputed. A hand-built
+        // chunk without one takes the full named dispatch instead.
+        let Some(plan) = cf.named_call_plan.as_deref() else {
+            let pkg = self.current_package().to_string();
+            let name = String::new();
+            return self.call_compiled_function_named(cf, args.to_vec(), compiled_fns, &pkg, &name);
+        };
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         // Isolate the caller's loop-body-local declaration scope (mirrors
@@ -34,164 +41,137 @@ impl Interpreter {
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller. Param / alias / @_ env writes below
         // land in a fresh map and are discarded by dropping the overlay on return
-        // (callee-local names) or merged overlay-only (captured-outer writes),
-        // replacing the per-key save/restore the `modified_env_keys` list did.
-        let parent = self.env().clone();
-        let caller_env = std::mem::replace(self.env_mut(), crate::env::Env::scoped_child(parent));
+        // (callee-local names) or merged overlay-only (captured-outer writes).
+        //
+        // Frame reuse (ADR-0004 J4d, mirrored from the positional-light path):
+        // when the caller's live env is itself a scoped child whose overlay is
+        // still the process-shared empty singleton, keep it in place — the
+        // clone + scoped_child + drop round-trip is pure overhead. The shared
+        // singleton doubles as a write detector: the body's first by-name write
+        // un-shares it, and the unwind arm below replays the return merge in
+        // place.
+        let caller_env = if self.env().overlay_is_shared_empty() {
+            None
+        } else {
+            let parent = self.env().clone();
+            Some(std::mem::replace(
+                self.env_mut(),
+                crate::env::Env::scoped_child(parent),
+            ))
+        };
 
         let num_locals = cf.code.locals.len();
         self.locals = self.take_locals_from_pool(num_locals);
 
-        // Bind parameters directly to locals slots and the overlay env.
-        let mut positional_idx = 0usize;
-        for pd in &cf.param_defs {
-            let param_name = &pd.name;
-            let value = if pd.named {
-                // Named parameter: search args for matching Pair
-                let match_key = pd
-                    .name
-                    .strip_prefix('@')
-                    .or_else(|| pd.name.strip_prefix('%'))
-                    .unwrap_or(&pd.name);
-                let match_key = match_key
-                    .strip_prefix('!')
-                    .or_else(|| match_key.strip_prefix('.'))
-                    .unwrap_or(match_key);
-
-                let mut found_val: Option<Value> = None;
-
-                // Try matching the param name directly
-                for arg in args.iter().rev() {
-                    let arg = unwrap_varref_value(arg.clone());
-                    if let ValueView::Pair(key, val) = arg.view()
-                        && key.as_str() == match_key
-                    {
-                        found_val = Some(val.clone());
-                        break;
-                    }
-                }
-
-                // Try alias matching via sub_signature (e.g. :color(:$colour))
-                if found_val.is_none()
-                    && let Some(ref sub_params) = pd.sub_signature
-                {
-                    for sub_pd in sub_params {
-                        if found_val.is_some() {
-                            break;
-                        }
-                        if !sub_pd.named {
-                            continue;
-                        }
-                        let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
-                        for arg in args.iter().rev() {
-                            let arg = unwrap_varref_value(arg.clone());
-                            if let ValueView::Pair(key, val) = arg.view()
-                                && key.as_str() == inner_key
-                            {
-                                found_val = Some(val.clone());
-                                break;
-                            }
-                        }
-                    }
-                }
-                // Try outer_sub_signature aliases
-                if found_val.is_none()
-                    && let Some(ref outer) = pd.outer_sub_signature
-                {
-                    for outer_pd in outer {
-                        if found_val.is_some() {
-                            break;
-                        }
-                        let outer_name = outer_pd
-                            .name
-                            .trim_start_matches(|c: char| "$@%&".contains(c));
-                        for arg in args.iter().rev() {
-                            let arg = unwrap_varref_value(arg.clone());
-                            if let ValueView::Pair(key, val) = arg.view()
-                                && key.as_str() == outer_name
-                            {
-                                found_val = Some(val.clone());
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if let Some(v) = found_val {
-                    // If there's a sub_signature (rename), also bind inner params.
-                    // e.g. :color(:$colour) — bind both "color" and "colour".
-                    if let Some(ref sub_params) = pd.sub_signature {
-                        for sub_pd in sub_params {
-                            let sub_name = &sub_pd.name;
-                            if let Some(slot) = cf.code.locals.iter().position(|n| n == sub_name) {
-                                self.locals[slot] = v.clone();
-                            }
-                            self.env_mut().insert(sub_name.clone(), v.clone());
-                        }
-                    }
-                    Some(v)
-                } else if pd.required {
-                    self.set_env(caller_env);
-                    let used = std::mem::replace(&mut self.locals, saved_locals);
-                    self.recycle_locals(used);
-                    self.loop_local_vars = saved_loop_local_vars;
-                    self.loop_local_saved_env = saved_loop_local_saved_env;
-                    self.block_declared_vars = saved_block_declared_vars;
-                    // Missing required named parameter is a runtime X::AdHoc in
-                    // Raku (see binding.rs); carry the typed exception so it does
-                    // not fall back to the bare "Exception" default.
-                    return Err(RuntimeError::typed_msg(
-                        "X::AdHoc",
-                        format!("Required named parameter '{}' not passed", param_name),
-                    ));
-                } else {
-                    None
-                }
-            } else {
-                // Positional parameter: skip Pair args (they are named)
-                while positional_idx < args.len() {
-                    let unwrapped = unwrap_varref_value(args[positional_idx].clone());
-                    if !matches!(unwrapped.view(), ValueView::Pair(..)) {
-                        break;
-                    }
-                    positional_idx += 1;
-                }
-                if positional_idx < args.len() {
-                    let val = unwrap_varref_value(args[positional_idx].clone());
-                    positional_idx += 1;
-                    Some(val)
-                } else if pd.required {
-                    self.set_env(caller_env);
-                    let used = std::mem::replace(&mut self.locals, saved_locals);
-                    self.recycle_locals(used);
-                    self.loop_local_vars = saved_loop_local_vars;
-                    self.loop_local_saved_env = saved_loop_local_saved_env;
-                    self.block_declared_vars = saved_block_declared_vars;
-                    return Err(RuntimeError::new(format!(
-                        "Too few positionals passed; expected {} arguments but got {}",
-                        cf.param_defs.iter().filter(|p| !p.named).count(),
-                        args.iter()
-                            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
-                            .count()
-                    )));
-                } else {
-                    None
-                }
-            };
-
-            // Set both locals slot and env for the param.
-            // Locals are needed for GetLocal (fast path), env is needed for
-            // closures that capture the variable and for GetLocal's Nil
-            // fallback check (which errors on undeclared variables).
-            let bound_val = value.unwrap_or(Value::NIL);
-            if let Some(slot) = cf.code.locals.iter().position(|n| n == param_name) {
-                self.locals[slot] = bound_val.clone();
+        // Borrow-deref a possibly-VarRef-wrapped argument without cloning it.
+        #[inline]
+        fn deref_arg(arg: &Value) -> &Value {
+            match arg.view() {
+                ValueView::VarRef { value, .. } => value,
+                _ => arg,
             }
-            self.env_mut().insert(param_name.clone(), bound_val);
+        }
+        // Find the value of the last argument pair whose key is `key`.
+        #[inline]
+        fn find_named<'a>(args: &'a [Value], key: &str) -> Option<&'a Value> {
+            args.iter()
+                .rev()
+                .find_map(|arg| match deref_arg(arg).view() {
+                    ValueView::Pair(k, v) if k.as_str() == key => Some(v),
+                    _ => None,
+                })
         }
 
-        // Mark parameters as readonly (by default, params are immutable in Raku).
-        // Save existing readonly state so we can restore it after the call.
+        // Bind named parameters to their precomputed locals slots; mirror into
+        // the overlay env only when a name-based reader needs it (reflective
+        // access anywhere / closure capture via needs_env_sync) or when the
+        // value is `Nil` (the GetLocal handler treats a `Nil` slot as
+        // possibly-undeclared and verifies via env.contains_key).
+        let write_all_params = crate::opcode::reflective_name_access_possible();
+        for (i, npb) in plan.params.iter().enumerate() {
+            let mut found_val: Option<&Value> = find_named(args, &npb.match_key);
+            if found_val.is_none() {
+                for key in &npb.alias_keys {
+                    found_val = find_named(args, key);
+                    if found_val.is_some() {
+                        break;
+                    }
+                }
+            }
+            if found_val.is_none() {
+                for key in &npb.outer_alias_keys {
+                    found_val = find_named(args, key);
+                    if found_val.is_some() {
+                        break;
+                    }
+                }
+            }
+            let Some(v) = found_val else {
+                if npb.required {
+                    // Unwind (missing required named param => runtime X::AdHoc).
+                    match caller_env {
+                        Some(caller_env) => self.set_env(caller_env),
+                        None => {
+                            if !self.env().overlay_is_shared_empty() {
+                                self.env_mut().retain_overlay(|_, _| false);
+                            }
+                        }
+                    }
+                    let used = std::mem::replace(&mut self.locals, saved_locals);
+                    self.recycle_locals(used);
+                    self.loop_local_vars = saved_loop_local_vars;
+                    self.loop_local_saved_env = saved_loop_local_saved_env;
+                    self.block_declared_vars = saved_block_declared_vars;
+                    return Err(RuntimeError::typed_msg(
+                        "X::AdHoc",
+                        format!(
+                            "Required named parameter '{}' not passed",
+                            cf.param_defs[i].name
+                        ),
+                    ));
+                }
+                // Missing optional named param: bind `Nil` into the overlay
+                // env so the param SHADOWS a same-named caller lexical (the
+                // locals seed below reads through to the caller otherwise)
+                // and so GetLocal's Nil-slot "declared?" probe finds it.
+                match cf.param_name_syms.get(i) {
+                    Some(sym) => {
+                        self.env_mut().insert_sym(*sym, Value::NIL);
+                    }
+                    None => {
+                        self.env_mut()
+                            .insert(cf.param_defs[i].name.clone(), Value::NIL);
+                    }
+                }
+                continue;
+            };
+            let v = v.clone();
+            // A sub_signature rename (`:color(:$colour)`) binds every inner
+            // name to the value as well.
+            for (alias_name, alias_slot) in &npb.alias_binds {
+                if let Some(slot) = alias_slot {
+                    self.locals[*slot] = v.clone();
+                }
+                self.env_mut().insert(alias_name.clone(), v.clone());
+            }
+            if let Some(slot) = npb.slot {
+                self.locals[slot] = v.clone();
+            }
+            if write_all_params || npb.needs_env || v.is_nil() {
+                match cf.param_name_syms.get(i) {
+                    Some(sym) => {
+                        self.env_mut().insert_sym(*sym, v);
+                    }
+                    None => {
+                        self.env_mut().insert(cf.param_defs[i].name.clone(), v);
+                    }
+                }
+            }
+        }
+
+        // Mark parameters as readonly (eligibility excludes `is rw/copy/raw`
+        // traits, so every param is immutable). Save the existing readonly
+        // state to restore after the call.
         let saved_readonly = self.enter_readonly_frame();
         for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()
@@ -199,90 +179,49 @@ impl Interpreter {
                 && !pd.name.starts_with('!')
                 && !pd.name.starts_with('.')
             {
-                let has_mutable_trait = pd
-                    .traits
-                    .iter()
-                    .any(|t| t == "rw" || t == "copy" || t == "raw");
                 // `param_name_syms` is `param_defs[i].name` pre-interned; fall
                 // back to interning for a chunk that never precomputed it.
-                let sym = cf.param_name_syms.get(i).copied();
-                if !has_mutable_trait {
-                    match sym {
-                        Some(sym) => self.mark_readonly_sym(sym),
-                        None => self.mark_readonly(&pd.name),
-                    }
-                } else {
-                    // `is copy`/`is rw`/`is raw` params are writable. The readonly
-                    // set is keyed by bare name and shared across frames, so a
-                    // caller's same-named readonly param (e.g. an outer `$d`) would
-                    // otherwise leak in and make this writable param appear readonly.
-                    // Unmark it; `restore_readonly_vars` reinstates the caller's
-                    // state after the call.
-                    match sym {
-                        Some(sym) => self.unmark_readonly_sym(sym),
-                        None => self.unmark_readonly(&pd.name),
-                    }
+                match cf.param_name_syms.get(i) {
+                    Some(sym) => self.mark_readonly_sym(*sym),
+                    None => self.mark_readonly(&pd.name),
                 }
             }
         }
 
-        // Set @_ only if the function body uses it (has @_ in locals)
-        if cf.code.locals.iter().any(|n| n == "@_") {
+        // Set @_ only if the function body uses it (has a @_ local).
+        if plan.uses_arg_array {
             let plain_args: Vec<Value> = args
                 .iter()
-                .filter(|a| {
-                    !matches!(
-                        unwrap_varref_value((*a).clone()).view(),
-                        ValueView::Pair(..)
-                    )
-                })
-                .map(|a| unwrap_varref_value(a.clone()))
+                .map(deref_arg)
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .cloned()
                 .collect();
             self.env_mut()
                 .insert("@_".to_string(), Value::array(plain_args));
         }
 
-        // Handle legacy placeholder params (e.g. $^a, $^b from cf.params)
-        if cf.param_defs.is_empty() && !cf.params.is_empty() {
-            let mut placeholder_pos = 0usize;
-            let plain_args: Vec<Value> = args
-                .iter()
-                .filter(|a| {
-                    !matches!(
-                        unwrap_varref_value((*a).clone()).view(),
-                        ValueView::Pair(..)
-                    )
-                })
-                .map(|a| unwrap_varref_value(a.clone()))
-                .collect();
-            for param in &cf.params {
-                if placeholder_pos < plain_args.len() {
-                    let val = plain_args[placeholder_pos].clone();
-                    placeholder_pos += 1;
-                    // Set in locals
-                    if let Some(slot) = cf.code.locals.iter().position(|n| n == param) {
-                        self.locals[slot] = val.clone();
-                    }
-                    // Also set in (overlay) env for the placeholder and its alias
-                    self.env_mut().insert(param.clone(), val.clone());
-                    // Create de-careted alias: ^foo -> foo, ^k -> k
-                    if let Some(bare) = param.strip_prefix('^') {
-                        let bare = bare.to_string();
-                        if let Some(slot) = cf.code.locals.iter().position(|n| *n == bare) {
-                            self.locals[slot] = val.clone();
-                        }
-                        self.env_mut().insert(bare, val);
-                    }
+        // Seed the remaining (non-param) locals by reading through to the
+        // caller env, matching the prior env().get() semantics. `locals_sym`
+        // is `locals` pre-interned at finalize(), so the seed hashes a `u32`
+        // per local instead of the name string. A slot already bound above is
+        // non-Nil unless the bound value itself was Nil — in which case the
+        // param was also mirrored into the overlay env (the `is_nil` gate), so
+        // the read-through finds that same value and stays coherent.
+        if cf.code.locals_sym.len() == num_locals {
+            for (i, sym) in cf.code.locals_sym.iter().enumerate() {
+                if self.locals[i].is_nil()
+                    && let Some(val) = self.env().get_sym(*sym)
+                {
+                    self.locals[i] = val.clone();
                 }
             }
-        }
-
-        // For any locals not yet set from params, try to initialize from env
-        for (i, local_name) in cf.code.locals.iter().enumerate() {
-            if self.locals[i].is_nil()
-                && let Some(val) = self.env().get(local_name)
-            {
-                self.locals[i] = val.clone();
+        } else {
+            for (i, local_name) in cf.code.locals.iter().enumerate() {
+                if self.locals[i].is_nil()
+                    && let Some(val) = self.env().get(local_name)
+                {
+                    self.locals[i] = val.clone();
+                }
             }
         }
 
@@ -379,19 +318,40 @@ impl Interpreter {
         // param of this function) persists in the caller; the function's
         // params/locals/aliases are dropped with the overlay. This replaces the
         // per-key `modified_env_keys` save/restore.
-        {
-            let scoped = std::mem::replace(self.env_mut(), caller_env);
-            for (k, v) in scoped.overlay_iter() {
-                if *k == "_"
-                    || *k == "@_"
-                    || *k == "%_"
-                    || *k == "__mutsu_callable_id"
-                    || k.with_str(|s| s.starts_with('?'))
-                {
-                    continue;
+        match caller_env {
+            Some(caller_env) => {
+                let scoped = std::mem::replace(self.env_mut(), caller_env);
+                for (k, v) in scoped.overlay_iter() {
+                    if *k == "_"
+                        || *k == "@_"
+                        || *k == "%_"
+                        || *k == "__mutsu_callable_id"
+                        || k.with_str(|s| s.starts_with('?'))
+                    {
+                        continue;
+                    }
+                    if !cf.is_callee_local_sym(*k) {
+                        self.env_mut().insert_sym(*k, v.clone());
+                    }
                 }
-                if !cf.is_callee_local_sym(*k) {
-                    self.env_mut().insert_sym(*k, v.clone());
+            }
+            None => {
+                // Reused frame: the caller's overlay was the shared empty
+                // singleton at entry. If the latch is still armed the body
+                // never wrote env — nothing to merge or restore. Otherwise
+                // every overlay entry is a write made by this call; replay the
+                // swap path's return merge in place — keep captured-outer
+                // writes (already sitting in the caller's env) and drop
+                // callee-locals and the per-frame private names.
+                if !self.env().overlay_is_shared_empty() {
+                    self.env_mut().retain_overlay(|k, _| {
+                        !(*k == "_"
+                            || *k == "@_"
+                            || *k == "%_"
+                            || *k == "__mutsu_callable_id"
+                            || k.with_str(|s| s.starts_with('?'))
+                            || cf.is_callee_local_sym(*k))
+                    });
                 }
             }
         }
