@@ -143,14 +143,22 @@ impl Interpreter {
     /// `Mixin` (runtime `$obj does Role`) to the wrapped instance. The
     /// Mixin's inner value is held in a shared `Arc`, and the instance's own cell is
     /// an `Arc<RwLock>` — so a write through this reference persists back to the
-    /// caller's Mixin (it shares the same inner instance). Returns `None` for a
-    /// type object / non-instance.
+    /// caller's Mixin (it shares the same inner instance). A `ContainerRef` is read
+    /// through: `$outer := self` rewrites the frame's `self` into the bind's shared
+    /// cell, and attribute writes after that bind must still reach the instance
+    /// (t/bind-self-attr-write.t). Returns `None` for a type object / non-instance.
     pub(crate) fn self_instance_attrs(
         val: &Value,
     ) -> Option<crate::gc::Gc<crate::value::InstanceAttrs>> {
         match val.view() {
             ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             ValueView::Mixin(inner, _) => Self::self_instance_attrs(inner),
+            ValueView::ContainerRef(_) => val.with_deref(|inner| {
+                // The deref'd borrow is a different value than `val` (the lock
+                // guard's target), so this recursion terminates: a cell holding
+                // another cell unwraps one level per call.
+                Self::self_instance_attrs(inner)
+            }),
             _ => None,
         }
     }
