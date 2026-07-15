@@ -68,6 +68,14 @@ per_file_timeout() {
       # tracked separately; bump the budget so it is categorized as pass.
       echo 45
       ;;
+    roast/S04-exceptions/exceptions-alternatives.t)
+      # Subtest 3 parses a ~176-char JSON error string with JSON::Tiny::Grammar,
+      # which currently takes ~12.6s in mutsu (raku: 2ms) due to exponential
+      # sep-quantifier backtracking with per-step RegexCaptures clones -- a known
+      # regex-engine perf pathology tracked in PLAN.md section 5. Match the 30s
+      # budget run-roast-test.sh (CI) gives it so it is categorized as pass.
+      echo 30
+      ;;
     roast/S04-declarations/state.t)
       # Contains a 2,000,000-iteration hot loop (test "lives-ok { ... for ^2000000 }").
       # raku runs it in ~1.3s; mutsu's per-call overhead makes it ~13s -- a known

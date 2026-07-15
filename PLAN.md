@@ -361,7 +361,15 @@ S\* 系で唯一残る実機能ギャップ（whitelist には直結しない）
       （`current_code` 生ポインタ store・`trace_log!` チェック）の計測付き削減 / `Jump(i32)` が
       絶対 index を運ぶ encoding の是正 / per-opcode ヒストグラム駆動での特化 op 統合
       （`ContainerEq`×4・`IndexAssign*`×6 — 美学でなくデータで駆動）。
-- [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。
+- [ ] 正規表現: 量指定子反復ごとの `RegexCaptures.clone()` 削減。**具体的な病理
+      （2026-07-15 計測）**: `S04-exceptions/exceptions-alternatives.t` の
+      `JSON::Tiny::Grammar.parse`（176 文字の JSON）が **12.6s（raku: 2ms・~6000 倍）**。
+      inner object の pair が 2 つ増えただけで 0.95s → 12.6s（**pair 1 つあたり ~3.6 倍**の
+      指数爆発 — `rule pairlist { <pair> * % \, }` の sep-quantifier バックトラック）。
+      profile は malloc/free/memmove ~40% ＋ `RegexCaptures::clone` が上位＝
+      バックトラックごとの capture 全 clone が支配。raku 相当の 13 pair の JSON なら
+      天文学的時間になるため、grammar 実用性のブロッカー。再現 = `tmp/ea-parse-only.raku`
+      相当（このテストは CI の 30s 予算内には収まるが roast-history.sh の 10s は超過）。
 - 目標（数字は bench CI・main `c8955d2e`・2026-07-13、括弧内は JIT on 系列）:
   method-call <1.5x（✅ 1.19x / jit 1.16x）、bench-class <1.5x（✅ 1.02x / jit 1.00x）、
   fib <10x（✅ **0.82x / jit 0.65x**）、bench-fib（型制約付き）<2x
