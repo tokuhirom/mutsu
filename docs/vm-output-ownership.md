@@ -1,56 +1,60 @@
-# ③後段/④ output-sink (emit_output) の VM 所有移管
+# ③ latter stage / ④ output-sink (emit_output) ownership transfer to the VM
 
-[PLAN.md](../PLAN.md) 最終ゴール「tree-walking Interpreter 実行パス撤去 → dual-store 削除」の **③後段/④**。
-[native IO 所有移管](vm-io-ownership.md)の **PR-D Tier-2** で判明した「**File 出力は純粋 handle state で native 化できたが、
-Stdout/Stderr 出力は `emit_output` 依存で VM 到達不能**」を解消する。手本は ② registry / ③ native IO（io_handles）の
-共有ハンドル playbook（[vm-io-ownership.md](vm-io-ownership.md) / [vm-registry-ownership.md](vm-registry-ownership.md)）。
+This is **③ latter stage / ④** of the [PLAN.md](../PLAN.md) end goal "remove the tree-walking Interpreter execution
+path → delete the dual store". It resolves what **PR-D Tier-2** of the [native IO ownership transfer](vm-io-ownership.md)
+revealed: "**File output could be made native with pure handle state, but Stdout/Stderr output depends on
+`emit_output` and is unreachable from the VM**". The model to follow is the shared-handle playbook of
+② registry / ③ native IO (io_handles) ([vm-io-ownership.md](vm-io-ownership.md) / [vm-registry-ownership.md](vm-registry-ownership.md)).
 
-## 解くべき問題
+## Problem to solve
 
-`IO::Handle.say/print/put/printf/write/spurt` の **Stdout/Stderr 受け手分岐**は `emit_output`（Stdout）/
-`stderr_output` バッファ（Stderr）へ書く。これは `Interpreter` が独占保持する出力シンク状態に依存し、VM から到達できない
-（native IO Tier-2 で File のみ native 化、Stdout/Stderr は fall through のまま残った）。VM ネイティブ化には VM が
-**出力シンク状態**に触れる必要がある。
+The **Stdout/Stderr receiver branches** of `IO::Handle.say/print/put/printf/write/spurt` write to `emit_output`
+(Stdout) / the `stderr_output` buffer (Stderr). These depend on output-sink state exclusively held by the
+`Interpreter` and are unreachable from the VM (native IO Tier-2 made only File native; Stdout/Stderr remained a
+fall-through). To make it VM-native, the VM needs access to the **output-sink state**.
 
-## 出力シンク状態のマップ（調査確定 2026-06-11）
+## Map of the output-sink state (investigation finalized 2026-06-11)
 
-`emit_output`（`mod.rs:4229`）が依存する `Interpreter` 状態:
+`Interpreter` state that `emit_output` (`mod.rs:4229`) depends on:
 
-| フィールド | 役割 | per-thread? |
+| Field | Role | per-thread? |
 |-----------|------|------------|
-| `output: String` (`mod.rs:828`) | 非 immediate 時の出力アキュムレータ。`run()` が `self.output.clone()` を返す（`run.rs:865`）。`take_output`/`output()`/`clear_output` で消費 | ○ thread clone が `mem::take` して promise へ（`builtins_system.rs:155`） |
-| `stderr_output: String` (`829`) | stderr バッファ（同上） | ○ 同上 |
-| `output_emitted: bool` (`846`) | 何か出力されたかのフラグ。`has_output_emitted()` | ○ |
-| `immediate_stdout: bool` (`843`) | **真の stdout へ即書きするか**。**CLI 実行は true**（`main.rs:466`）→ emit_output は `std::io::stdout().write_all` 直書き。embedded/EVAL/test は false → buffer | thread clone は true (`socket_thread.rs:386`) |
-| `is_thread_clone` + `shared_thread_output: Option<Arc<Mutex<String>>>` (`1131`/`1135`) | thread clone がリアル時系列で出力を交織するための共有バッファ | clone 固有 |
-| `tap.subtest_depth()` (`tap_state.rs:130`) | **subtest 中は即書きを抑止**（`subtest_depth()==0 && immediate_stdout` で初めて真の stdout へ） | tap も Interpreter 所有 |
+| `output: String` (`mod.rs:828`) | Output accumulator when not immediate. `run()` returns `self.output.clone()` (`run.rs:865`). Consumed via `take_output`/`output()`/`clear_output` | ○ a thread clone `mem::take`s it into the promise (`builtins_system.rs:155`) |
+| `stderr_output: String` (`829`) | stderr buffer (same as above) | ○ same |
+| `output_emitted: bool` (`846`) | Flag: has anything been output. `has_output_emitted()` | ○ |
+| `immediate_stdout: bool` (`843`) | **Whether to write immediately to the real stdout**. **CLI execution is true** (`main.rs:466`) → emit_output writes directly with `std::io::stdout().write_all`. embedded/EVAL/test are false → buffer | thread clones are true (`socket_thread.rs:386`) |
+| `is_thread_clone` + `shared_thread_output: Option<Arc<Mutex<String>>>` (`1131`/`1135`) | Shared buffer so thread clones interleave output in real chronological order | clone-specific |
+| `tap.subtest_depth()` (`tap_state.rs:130`) | **Suppresses immediate writes during a subtest** (only `subtest_depth()==0 && immediate_stdout` reaches the real stdout) | tap is also Interpreter-owned |
 
-`emit_output` 本体の決定木:
+The decision tree of `emit_output` itself:
 ```
-output_emitted = true; (Stdout handle の bytes_written 加算)
-if tap.subtest_depth()==0 && immediate_stdout: 真の stdout へ write_all+flush
-elif is_thread_clone && shared_thread_output: 共有バッファへ push
-else: self.output へ push
+output_emitted = true; (add to the Stdout handle's bytes_written)
+if tap.subtest_depth()==0 && immediate_stdout: write_all+flush to the real stdout
+elif is_thread_clone && shared_thread_output: push to the shared buffer
+else: push to self.output
 ```
 
-`emit_output` は **37 箇所**から呼ばれる（subtest/test_functions/io/supply/handle/builtins_system/vm_hyper_race_parallel/
-main_args …）。`output` 読み書きは **~33 箇所**。
+`emit_output` is called from **37 sites** (subtest/test_functions/io/supply/handle/builtins_system/vm_hyper_race_parallel/
+main_args …). `output` reads/writes number **~33 sites**.
 
-## ★ io_handles と決定的に違う点（戦略上の crux）
+## ★What is decisively different from io_handles (the strategic crux)
 
-1. **出力シンクは「単一所有・末尾消費」**。io_handles は per-thread snapshot + merge-back だったが、`output` は
-   `run()` が最後に `clone()` して返すプログラム出力そのもの。thread clone は `mem::take` で promise に渡し、await で
-   連結。＝per-thread だが「merge-back」でなく「promise が収集」。
-2. **依存が連鎖する**: emit_output の**書き込み決定**は `immediate_stdout`（単純 bool）だけでなく **`tap.subtest_depth()`**
-   （TAP 状態機械）にも依存。VM が Stdout 出力を native 化するには TAP subtest 深度も VM 到達可能でなければならない
-   → **tap の移管/参照も巻き込む**。これが「本丸が重い」理由。
-3. **CLI 実行は immediate**（buffer を経由せず真の stdout 直書き）。よって「buffer を共有化」だけでは CLI path の
-   native 化にならない — **書き込み決定（immediate + subtest + thread）ごと** OutputSink へ括り出す必要がある。
+1. **The output sink is "single-owner, consumed at the end"**. io_handles used a per-thread snapshot + merge-back,
+   but `output` is the program output itself, `clone()`d and returned by `run()` at the end. A thread clone hands it
+   to the promise via `mem::take`, concatenated at await. = per-thread, but "collected by the promise" rather than
+   "merge-back".
+2. **The dependencies chain**: emit_output's **write decision** depends not only on `immediate_stdout` (a simple bool)
+   but also on **`tap.subtest_depth()`** (the TAP state machine). For the VM to make Stdout output native, the TAP
+   subtest depth must also be VM-reachable → **the transfer/referencing of tap gets dragged in**. This is why "the
+   main keep is heavy".
+3. **CLI execution is immediate** (writes directly to the real stdout, bypassing the buffer). So "just sharing the
+   buffer" does not make the CLI path native — the **entire write decision (immediate + subtest + thread)** must be
+   factored out into the OutputSink.
 
-## 戦略: OutputSink 抽象 + 共有ハンドル（io_handles playbook）
+## Strategy: OutputSink abstraction + shared handle (the io_handles playbook)
 
-出力シンクの**状態 + 書き込み決定**を 1 つの `OutputSink` 構造へ括り出し、`Arc<RwLock<OutputSink>>` として VM↔Interpreter
-で共有する（io_handles と同型・`lock_reentry.rs` の汎用 guard を再利用）。
+Factor the output sink's **state + write decision** into a single `OutputSink` struct, shared between VM↔Interpreter
+as `Arc<RwLock<OutputSink>>` (same shape as io_handles; reuse the generic guard in `lock_reentry.rs`).
 
 ```rust
 // src/runtime/output_sink.rs
@@ -63,120 +67,138 @@ pub(crate) struct OutputSink {
     pub(crate) shared_thread_output: Option<Arc<Mutex<String>>>,
 }
 impl OutputSink {
-    // subtest_active は呼び出し側（tap を持つ Interpreter / 将来の VM）が渡す。
-    // TAP 移管前は「subtest 中かどうか」だけを bool で受ける（tap 全体は移さない）。
+    // subtest_active is passed by the caller (the Interpreter owning tap / the future VM).
+    // Before the TAP transfer, we only take a bool for "inside a subtest or not" (tap as a whole does not move).
     pub(crate) fn emit(&mut self, text: &str, subtest_active: bool) { ... }
     pub(crate) fn emit_stderr(&mut self, text: &str, subtest_active: bool) { ... }
 }
 // Interpreter.output_sink: Arc<RwLock<OutputSink>>
 ```
 
-TAP 依存の扱い: **subtest 中かどうかを bool で OutputSink::emit に渡す**（TAP 状態機械全体は移さない）。Interpreter は
-`self.tap.subtest_depth()==0` を計算して渡す。VM ネイティブ Stdout dispatch 時は VM も subtest 深度を知る必要があるが、
-これは別途 tap 参照を VM へ渡す小スライス（または「VM が Stdout 出力する時点で subtest 中なら fall through」で回避）で扱う。
+Handling the TAP dependency: **pass "inside a subtest or not" as a bool to OutputSink::emit** (the whole TAP state
+machine does not move). The Interpreter computes and passes `self.tap.subtest_depth()==0`. For VM-native Stdout
+dispatch the VM also needs to know the subtest depth, but that is handled by a separate small slice passing a tap
+reference to the VM (or avoided via "fall through if inside a subtest at the moment the VM outputs to Stdout").
 
-## スライス計画（strangler-fig・各 PR 挙動不変・CI が安全網）
+## Slice plan (strangler-fig; each PR behavior-invariant; CI is the safety net)
 
-- **PR-A = `OutputSink` 構造抽出（plain field のまま）**: `output`/`stderr_output`/`output_emitted`/`immediate_stdout`/
-  `is_thread_clone`/`shared_thread_output` を `Interpreter.output_sink: OutputSink`（**まだ `Arc<RwLock>` でない plain
-  field**）へ集約。`emit_output`/`emit_stderr` を `OutputSink::emit(text, subtest_active)` へ移し、Interpreter ラッパが
-  `self.tap.subtest_depth()==0` を計算して委譲（1 操作1実装）。37 callers と ~33 アクセスはアクセサ経由へ。挙動不変。
-- **PR-B = `output_sink` を `Arc<RwLock<OutputSink>>` へ持ち上げ**: io_handles PR-B と同型。`lock_reentry.rs` 汎用 guard 再利用、
-  `output_sink()`/`output_sink_mut()` アクセサ、`clone_for_thread` で per-thread の fresh sink（thread は mem::take でなく
-  sink ごと差し替え or snapshot）、promise 収集を sink 経由へ。挙動不変。
-- **PR-C = VM へ output_sink ハンドル移管 + 最初の VM ネイティブ Stdout/Stderr dispatch**: io_handles PR-C 同型。
-  `$fh.say/print/put` の **Stdout/Stderr 受け手**を VM の `output_sink` で native 化。payload は既存の render_* 利用
-  （Tier-2a と同じ）。subtest 中は fall through（または VM へ subtest 深度を渡す小工夫）。これで native IO Tier-2 の
-  「Stdout/Stderr fall through」が消える。
-- **PR-D+ = 読み系（get/lines/read/slurp + ArgFiles `@*ARGS` env / 非UTF8 decode）** の VM 到達可能化。これは別の状態
-  （env の `@*ARGS`、encode/decode）依存ゆえ別スライス。
-- **最終 fold（④/⑤）**: tree-walk 実行パスが消えたら output_sink / io_handles を plain VM field へ畳む。
+- **PR-A = extract the `OutputSink` struct (still a plain field)**: consolidate `output`/`stderr_output`/`output_emitted`/`immediate_stdout`/
+  `is_thread_clone`/`shared_thread_output` into `Interpreter.output_sink: OutputSink` (**still a plain field, not yet
+  `Arc<RwLock>`**). Move `emit_output`/`emit_stderr` into `OutputSink::emit(text, subtest_active)`, with the
+  Interpreter wrapper computing `self.tap.subtest_depth()==0` and delegating (one operation, one implementation).
+  The 37 callers and ~33 accesses go through accessors. Behavior-invariant.
+- **PR-B = lift `output_sink` to `Arc<RwLock<OutputSink>>`**: same shape as io_handles PR-B. Reuse the generic guard
+  in `lock_reentry.rs`, `output_sink()`/`output_sink_mut()` accessors, `clone_for_thread` gets a fresh per-thread sink
+  (threads swap the whole sink or snapshot instead of mem::take), promise collection goes via the sink. Behavior-invariant.
+- **PR-C = transfer the output_sink handle to the VM + first VM-native Stdout/Stderr dispatch**: same shape as
+  io_handles PR-C. Make the **Stdout/Stderr receivers** of `$fh.say/print/put` native using the VM's `output_sink`.
+  Payloads use the existing render_* (same as Tier-2a). Fall through while inside a subtest (or a small trick passing
+  the subtest depth to the VM). This eliminates native IO Tier-2's "Stdout/Stderr fall through".
+- **PR-D+ = making the read side (get/lines/read/slurp + ArgFiles `@*ARGS` env / non-UTF8 decode) VM-reachable**. This
+  depends on different state (the env's `@*ARGS`, encode/decode), hence a separate slice.
+- **Final fold (④/⑤)**: once the tree-walk execution path is gone, fold output_sink / io_handles into plain VM fields.
 
-## 規律（io_handles と同一）
+## Discipline (identical to io_handles)
 
-RwLock ガードを**同一スレッドで再入再取得しない**（debug guard で検出）。emit_output は 37 箇所から呼ばれ、一部は
-render_*（メソッド dispatch 再入）の後/前に呼ばれるので、**ガードを跨いで render_* を呼ばない**（payload は guard 外で構築）。
-最終防衛線は make roast。
+Never **re-acquire the RwLock guard re-entrantly on the same thread** (detected by the debug guard). emit_output is
+called from 37 sites, some of which run after/before render_* (method-dispatch re-entry), so **never call render_*
+across the guard** (build payloads outside the guard). The last line of defense is make roast.
 
-## スコープ / 非ゴール
+## Scope / non-goals
 
-- スコープ = 出力シンク状態を OutputSink へ括り出し共有ハンドル化し、Stdout/Stderr 出力 dispatch を VM ネイティブ化して
-  native IO Tier-2 の Stdout/Stderr fall through を消す。各 PR 挙動不変。
-- 非ゴール: TAP 状態機械全体の移管（subtest_active を bool で渡すに留める）、読み系 decode/ArgFiles の移管（PR-D+）、
-  output_sink の plain VM field 化（④/⑤）。
+- Scope = factor the output-sink state into OutputSink, make it a shared handle, make Stdout/Stderr output dispatch
+  VM-native, and eliminate the Stdout/Stderr fall-through of native IO Tier-2. Each PR behavior-invariant.
+- Non-goals: transferring the whole TAP state machine (we stop at passing subtest_active as a bool), transferring the
+  read-side decode/ArgFiles (PR-D+), folding output_sink into a plain VM field (④/⑤).
 
-## 進捗
+## Progress
 
-- **設計確定（本書, 2026-06-11）**: 出力シンク状態をマップ（output/stderr_output/output_emitted/immediate_stdout/
-  thread-clone/tap subtest_depth、emit_output 37 callers）。io_handles playbook（OutputSink 抽出 → Arc<RwLock> 化 →
-  VM ハンドル → native dispatch）を採用。crux = TAP subtest 依存の連鎖（subtest_active を bool で渡して回避）。
-- **PR-A 完了（2026-06-11）**: `OutputSink` 構造（`src/runtime/output_sink.rs`）に 7 フィールド
-  （output/stderr_output/output_emitted/immediate_stdout/is_thread_clone/shared_thread_output/shared_thread_stderr）を集約、
-  `Interpreter` の散在フィールドを 1 つの `output_sink: OutputSink`（**まだ plain field**）へ置換。`emit_output` の書き込み
-  決定を `OutputSink::emit(text, subtest_active)` へ移し、Interpreter ラッパが `tap.subtest_depth()!=0` を計算して委譲
-  （Stdout handle の `bytes_written` 加算は io_handles 依存ゆえラッパ側に残す）。`clone_for_thread` は thread 用 OutputSink
-  を構築（shared buffer を親から Arc clone）。~85 アクセスサイト（self/thread_interp 等）を `.output_sink.FIELD` 経由へ
-  （`TapState` 抽出と同型）。挙動完全不変（stdout/stderr/thread/subtest/EVAL を raku と一致確認、`make test` cargo 461 緑）。
-  次 = **PR-B**（`output_sink` を `Arc<RwLock<OutputSink>>` へ持ち上げ、io_handles PR-B 同型、`lock_reentry.rs` 再利用）。
-- **PR-B 完了（2026-06-11）**: `output_sink: OutputSink` → `Arc<RwLock<OutputSink>>`（io_handles PR-B 同型）。
-  `OutputSinkReadGuard`/`OutputSinkWriteGuard` 型エイリアス（`lock_reentry.rs` 汎用 guard 再利用）+ `output_sink()`/
-  `output_sink_mut()` アクセサ。~85 サイトを guard 経由へ（read/write は**コンパイラが強制**＝write 誤りは E0596/E0594 検出）。
-  `output()` は guard 越しに `&str` を返せず `String`(clone) 返しへ。`clone_for_thread` は thread の OutputSink を
-  `Arc<RwLock>` で構築。**crux: Rust 2021 の if-let temporary 寿命** — `if let ... = self.output_sink()... { ...
-  self.output_sink_mut()/emit_output ... }` は read guard が body 跨ぎで生き、write-while-read の**実行時 reentry panic**
-  （コンパイルは通る＝accessor が `&self`）。thread/supply の drain 5 箇所を「Arc を `let` で clone-out → guard を `;` で
-  drop → body」へ再構成。挙動不変（threads/supply/subtest/warn/EVAL を reentry panic ゼロ確認、cargo 461 緑）。
-  次 = **PR-C**（VM へ output_sink ハンドル移管 + VM ネイティブ Stdout/Stderr dispatch）。
-- **PR-C 完了（2026-06-11）**: VM へ output_sink ハンドル移管 + **VM ネイティブ Stdout/Stderr 出力 dispatch**。
-  これで native IO Tier-2 で残った「Stdout/Stderr fall through」が消え、`$fh.say/print/put/printf/print-nl` の**全ターゲット
-  （File/Stdout/Stderr）が VM ネイティブ**に。
-  - `Interpreter::output_sink_handle()`（Arc clone）+ VM `output_sink` フィールド/`output_sink_mut()` アクセサ（io_handles PR-C 同型）。
-    `Interpreter::subtest_active()`（`tap.subtest_depth()!=0`、TAP は interpreter 所有のまま bool で VM へ）。
-  - `OutputSink::emit_stderr(text, subtest_active)` 新設（Stderr 分岐を 1 impl 化、interpreter の Stderr 分岐が委譲）。
-    `IoHandleState` に `is_stdout_target`/`is_stderr_target`/`add_bytes_written` + `native_text_write` を
-    `prepare_text_payload`(closed+nl_out+bytes 計上、target 非依存) と write に分割。`native_print_nl` は撤去
-    （print-nl = content="" + newline=true で統一、trying="write")。
-  - VM `vm_emit_stdout`（Stdout handle の bytes_written scan-bump ＝ emit_output 同型 + sink.emit）/`vm_emit_stderr`
-    （sink.emit_stderr）。`try_native_io_handle_output` を File/Stdout/Stderr の 3 分岐へ拡張（target を payload 構築前に
-    判定、Socket/非UTF8 File/Stdin は fall-through）。Stdout は **bytes_written 二重加算**（prepare の receiver + emit の scan）
-    ＝**main と同一の既存挙動**（raku は 1 回＝既存差・スコープ外）。subtest 中も sink.emit が subtest_active で正しく buffer。
-  - **検証**: 新 `t/io-handle-stdout-stderr-native.t`(6, is_run で subprocess の実 stdout/stderr 捕捉) mutsu PASS・期待値 raku 一致。
-    `$*OUT/$*ERR` 出力が **method-fallback 0%**。subtest indent / tell 二重加算は **main と同一**（pre-PR-C で確認）＝既存・不変。
-    `make test` 緑。次 = **PR-D+**（読み系 get/lines/read/slurp + ArgFiles `@*ARGS`/非UTF8 decode の VM 到達可能化）。
-- **PR-D（読み系・第1スライス `get`）完了（2026-06-11）**: File+UTF8 ターゲットの `.get`（1 行読み）を VM ネイティブ化。
-  **調査確定: 読み系も書き込み先で割れる** — `read_line_from_handle_value` の **File+UTF8/bin 分岐は純粋 handle state**
-  （`read_record_with_separators(file, seps, chomp)`、UTF-8 lossy、`self` 再入なし）。**ArgFiles**（`@*ARGS` env 依存）/
-  **Stdin**（`std::io::stdin`）/**非UTF8 File**（`decode_with_encoding` 再入）/**Socket** は fall-through。
-  - `read_record_bytes`/`read_record_with_separators`（純粋・static）を `pub(crate)` 化（record 読みの 1 impl）。
-    `IoHandleState::read_line_native()`（closed 検査 + seps/chomp + `read_record_with_separators`）追加。
-  - VM `try_native_io_handle_read`（早期ゲート、byte_output の次、mut/非mut 両パス）: `get`・引数なし・**File+UTF8
-    （`can_native_text_write`）** のみ native、それ以外 fall-through。結果は interpreter の `get` と同じく `Str`/`Nil` 整形。
-  - **検証**: 新 `t/io-handle-get-native.t`(10) mutsu/raku 双方 10/10（chomp/EOF→Nil/:!chomp/custom nl-in/latin1 fall-through/
-    closed dies）。`MUTSU_VM_STATS` で File+UTF8 get が native（latin1 get は get=1 で fall-through）。io-handle.t not-ok 数
-    main と同一(24=既存)。`make test` 緑。
-  - **次 = PR-D2+**: 同パターンで `lines`(lazy Seq)/`words`/`slurp`(read all→String/Buf)/`read`(N bytes→Buf)/`getc`/`readchars`
-    を File+UTF8 で native 化。**ArgFiles/Stdin/非UTF8 decode の真の撲滅は `@*ARGS`(env)/`decode_with_encoding` の VM 到達
-    可能化が前提**（env 移管＝別campaign、tracks A/B/C と絡む）。
-- **PR-D2（読み系・bulk read `slurp`/`read`）完了（2026-06-11）**: File+UTF8 の `.slurp`(→Str) と `.read`(→Buf) を native 化。
-  - `IoHandleState` に `can_native_slurp_string(has_bin_arg)`（File+UTF8・非:bin・非bin-mode のゲート）/`slurp_string_native`
-    （`read_to_end`+UTF-8 lossy）/`read_bytes_native(count)`（count>0=1回 read up to count／count=0=全read、encoding 非依存）追加。
-    `make_buf`（Buf 構築）を `pub(crate)` 化。
-  - VM `try_native_io_handle_read` を get/slurp/read の 3 メソッドへ拡張。**slurp** は :bin/非UTF8/bin-mode を fall-through
-    （Buf/decode は interpreter）、**read** は File のみ（raw bytes＝encoding 非依存）で `Interpreter::make_buf` へ。junction fall-through。
-  - **検証**: 新 `t/io-handle-slurp-read-native.t`(10) mutsu/raku 双方 10/10（slurp 全体/部分読み後/EOF空、read N→Buf/EOF空、
-    :bin→Buf fall-through、latin1 decode fall-through、closed dies）。`MUTSU_VM_STATS` で String slurp/read が native（:bin slurp は
-    slurp=1 で fall-through）。io-handle.t not-ok=24（既存）。`make test` 緑。
-  - **lines/words は lazy（`LazyIoLines`）＝メソッド dispatch を native 化しても実 read は iterator 消費時で、value 組立のみ
-    ＝効果薄**。`getc`/`readchars`(char 読み) は次スライス候補。残る ArgFiles/Stdin/非UTF8 は env/decode 移管が前提（不変）。
-- **PR-D3（読み系・char read `getc`/`readchars`）完了（2026-06-11）**: File+UTF8 の `.getc`(→Str/Nil)/`.readchars`(→Str) を native 化。
-  - `read_utf8_char`（純粋・static、1 UTF-8 char 読み）を `pub(crate)` 化。`IoHandleState::read_chars_native(count: Option<usize>)`
-    （count=Some(n)=n char loop／None=read_to_end+UTF-8 lossy）追加。
-  - VM `try_native_io_handle_read` に getc/readchars 追加。ゲートは `can_native_text_write`（File+utf8/bin）＝**utf16 は除外**
-    （BOM/endian の特殊処理が要るので interpreter へ fall-through）、非UTF8/Stdin も fall-through。getc は empty→Nil、readchars は
-    count を `parse_out_buffer_size` で interpreter 同様にパース（不正→同 error）。
-  - **検証**: 新 `t/io-handle-getc-readchars-native.t`(10) mutsu/raku 双方 10/10（getc multibyte é/EOF→Nil、readchars N/EOF空/
-    no-arg 全読み、latin1 fall-through）。`MUTSU_VM_STATS` で getc/readchars native（latin1 は fall-through）。**utf16.t 緑**＝
-    utf16 getc/readchars が正しく fall-through。io-handle.t not-ok=24（既存）。`make test` 緑。
-  - **読み系 native 化の到達点**: 単一ハンドル読み `get`/`slurp`/`read`/`getc`/`readchars` が File+UTF8 で全て native。残るは
-    **lines/words(lazy・効果薄)** と **ArgFiles/Stdin/非UTF8 decode(=`@*ARGS` env / `decode_with_encoding` の VM 到達可能化が前提、
-    env 移管=別campaign)**。IO の単発出力・読みはほぼ撲滅完了。
+- **Design finalized (this document, 2026-06-11)**: mapped the output-sink state (output/stderr_output/output_emitted/immediate_stdout/
+  thread-clone/tap subtest_depth, emit_output's 37 callers). Adopted the io_handles playbook (extract OutputSink →
+  Arc<RwLock> → VM handle → native dispatch). Crux = the chained TAP subtest dependency (avoided by passing
+  subtest_active as a bool).
+- **PR-A completed (2026-06-11)**: consolidated 7 fields
+  (output/stderr_output/output_emitted/immediate_stdout/is_thread_clone/shared_thread_output/shared_thread_stderr)
+  into the `OutputSink` struct (`src/runtime/output_sink.rs`), replacing the `Interpreter`'s scattered fields with a
+  single `output_sink: OutputSink` (**still a plain field**). Moved `emit_output`'s write decision into
+  `OutputSink::emit(text, subtest_active)`, with the Interpreter wrapper computing `tap.subtest_depth()!=0` and
+  delegating (the Stdout handle's `bytes_written` accounting stays in the wrapper since it depends on io_handles).
+  `clone_for_thread` builds a thread OutputSink (Arc-cloning the shared buffer from the parent). ~85 access sites
+  (self/thread_interp etc.) now go through `.output_sink.FIELD` (same shape as the `TapState` extraction). Behavior
+  fully invariant (stdout/stderr/thread/subtest/EVAL confirmed to match raku; `make test` cargo 461 green).
+  Next = **PR-B** (lift `output_sink` to `Arc<RwLock<OutputSink>>`, same shape as io_handles PR-B, reuse `lock_reentry.rs`).
+- **PR-B completed (2026-06-11)**: `output_sink: OutputSink` → `Arc<RwLock<OutputSink>>` (same shape as io_handles PR-B).
+  `OutputSinkReadGuard`/`OutputSinkWriteGuard` type aliases (reusing the generic guard in `lock_reentry.rs`) +
+  `output_sink()`/`output_sink_mut()` accessors. ~85 sites go through the guards (read/write is **compiler-enforced** =
+  a wrong write is caught as E0596/E0594). `output()` can no longer return `&str` across the guard and now returns
+  `String` (clone). `clone_for_thread` builds the thread's OutputSink as an `Arc<RwLock>`.
+  **Crux: Rust 2021 if-let temporary lifetimes** — in `if let ... = self.output_sink()... { ...
+  self.output_sink_mut()/emit_output ... }` the read guard stays alive across the body, producing a **runtime reentry
+  panic** on write-while-read (it compiles, because the accessor takes `&self`). Restructured the 5 thread/supply
+  drain sites into "clone the Arc out with a `let` → drop the guard at the `;` → body". Behavior-invariant
+  (threads/supply/subtest/warn/EVAL confirmed with zero reentry panics, cargo 461 green).
+  Next = **PR-C** (transfer the output_sink handle to the VM + VM-native Stdout/Stderr dispatch).
+- **PR-C completed (2026-06-11)**: output_sink handle transferred to the VM + **VM-native Stdout/Stderr output dispatch**.
+  This removes the "Stdout/Stderr fall through" remaining from native IO Tier-2; **all targets
+  (File/Stdout/Stderr) of `$fh.say/print/put/printf/print-nl` are now VM-native**.
+  - `Interpreter::output_sink_handle()` (Arc clone) + VM `output_sink` field/`output_sink_mut()` accessor (same shape as io_handles PR-C).
+    `Interpreter::subtest_active()` (`tap.subtest_depth()!=0`; TAP stays interpreter-owned, passed to the VM as a bool).
+  - New `OutputSink::emit_stderr(text, subtest_active)` (unifies the Stderr branch into 1 impl; the interpreter's
+    Stderr branch delegates). `IoHandleState` gains `is_stdout_target`/`is_stderr_target`/`add_bytes_written`, and
+    `native_text_write` is split into `prepare_text_payload` (closed+nl_out+bytes accounting, target-independent) and
+    the write. `native_print_nl` removed (print-nl unified as content="" + newline=true, trying="write").
+  - VM `vm_emit_stdout` (scan-bump of the Stdout handle's bytes_written = same shape as emit_output + sink.emit) /
+    `vm_emit_stderr` (sink.emit_stderr). `try_native_io_handle_output` extended into 3 branches File/Stdout/Stderr
+    (target determined before payload construction; Socket/non-UTF8 File/Stdin fall through). Stdout has **double
+    bytes_written accounting** (the receiver in prepare + the scan in emit) = **identical to main's existing
+    behavior** (raku counts once = pre-existing difference, out of scope). Inside subtests sink.emit still buffers
+    correctly via subtest_active.
+  - **Verification**: new `t/io-handle-stdout-stderr-native.t` (6; is_run captures the subprocess's real stdout/stderr)
+    mutsu PASS, expected values match raku. `$*OUT/$*ERR` output is **0% method-fallback**. subtest indent / tell
+    double accounting are **identical to main** (confirmed pre-PR-C) = pre-existing, unchanged.
+    `make test` green. Next = **PR-D+** (making the read side get/lines/read/slurp + ArgFiles `@*ARGS`/non-UTF8 decode VM-reachable).
+- **PR-D (read side, first slice `get`) completed (2026-06-11)**: made `.get` (single line read) VM-native for File+UTF8 targets.
+  **Investigation finalized: the read side also splits by destination** — the **File+UTF8/bin branch of
+  `read_line_from_handle_value` is pure handle state** (`read_record_with_separators(file, seps, chomp)`, UTF-8 lossy,
+  no `self` re-entry). **ArgFiles** (depends on the `@*ARGS` env) / **Stdin** (`std::io::stdin`) / **non-UTF8 File**
+  (`decode_with_encoding` re-entry) / **Socket** fall through.
+  - Made `read_record_bytes`/`read_record_with_separators` (pure, static) `pub(crate)` (1 impl of record reading).
+    Added `IoHandleState::read_line_native()` (closed check + seps/chomp + `read_record_with_separators`).
+  - VM `try_native_io_handle_read` (early gate, right after byte_output, both mut/non-mut paths): native only for
+    `get`, no args, **File+UTF8 (`can_native_text_write`)**; everything else falls through. The result is shaped as
+    `Str`/`Nil` just like the interpreter's `get`.
+  - **Verification**: new `t/io-handle-get-native.t` (10) — 10/10 on both mutsu and raku (chomp/EOF→Nil/:!chomp/custom
+    nl-in/latin1 fall-through/closed dies). `MUTSU_VM_STATS` shows File+UTF8 get native (latin1 get falls through with
+    get=1). io-handle.t not-ok count identical to main (24 = pre-existing). `make test` green.
+  - **Next = PR-D2+**: same pattern to make `lines` (lazy Seq)/`words`/`slurp` (read all→String/Buf)/`read` (N bytes→Buf)/`getc`/`readchars`
+    native for File+UTF8. **True elimination of ArgFiles/Stdin/non-UTF8 decode requires making `@*ARGS` (env) /
+    `decode_with_encoding` VM-reachable** (env transfer = separate campaign, entangled with tracks A/B/C).
+- **PR-D2 (read side, bulk read `slurp`/`read`) completed (2026-06-11)**: made `.slurp` (→Str) and `.read` (→Buf) native for File+UTF8.
+  - Added to `IoHandleState`: `can_native_slurp_string(has_bin_arg)` (gate: File+UTF8, not :bin, not bin-mode) /
+    `slurp_string_native` (`read_to_end`+UTF-8 lossy) / `read_bytes_native(count)` (count>0 = one read up to count /
+    count=0 = read all; encoding-independent). Made `make_buf` (Buf construction) `pub(crate)`.
+  - Extended VM `try_native_io_handle_read` to the 3 methods get/slurp/read. **slurp** falls through for :bin/non-UTF8/bin-mode
+    (Buf/decode stays in the interpreter); **read** is File-only (raw bytes = encoding-independent), going through
+    `Interpreter::make_buf`. Junctions fall through.
+  - **Verification**: new `t/io-handle-slurp-read-native.t` (10) — 10/10 on both mutsu and raku (slurp whole/after a
+    partial read/EOF empty, read N→Buf/EOF empty, :bin→Buf fall-through, latin1 decode fall-through, closed dies).
+    `MUTSU_VM_STATS` shows String slurp/read native (:bin slurp falls through with slurp=1). io-handle.t not-ok=24
+    (pre-existing). `make test` green.
+  - **lines/words are lazy (`LazyIoLines`) = even making method dispatch native, the actual read happens at iterator
+    consumption; only the value assembly would be native = little benefit**. `getc`/`readchars` (char reads) are the
+    next slice candidates. The remaining ArgFiles/Stdin/non-UTF8 still require the env/decode transfer (unchanged).
+- **PR-D3 (read side, char read `getc`/`readchars`) completed (2026-06-11)**: made `.getc` (→Str/Nil)/`.readchars` (→Str) native for File+UTF8.
+  - Made `read_utf8_char` (pure, static, reads 1 UTF-8 char) `pub(crate)`. Added
+    `IoHandleState::read_chars_native(count: Option<usize>)` (count=Some(n) = n-char loop / None = read_to_end+UTF-8 lossy).
+  - Added getc/readchars to VM `try_native_io_handle_read`. The gate is `can_native_text_write` (File+utf8/bin) =
+    **utf16 is excluded** (needs special BOM/endian handling, so it falls through to the interpreter); non-UTF8/Stdin
+    also fall through. getc maps empty→Nil; readchars parses count with `parse_out_buffer_size` just like the
+    interpreter (invalid → same error).
+  - **Verification**: new `t/io-handle-getc-readchars-native.t` (10) — 10/10 on both mutsu and raku (getc multibyte
+    é/EOF→Nil, readchars N/EOF empty/no-arg read-all, latin1 fall-through). `MUTSU_VM_STATS` shows getc/readchars
+    native (latin1 falls through). **utf16.t green** = utf16 getc/readchars correctly fall through. io-handle.t
+    not-ok=24 (pre-existing). `make test` green.
+  - **Where read-side nativization stands**: single-handle reads `get`/`slurp`/`read`/`getc`/`readchars` are all native
+    for File+UTF8. Remaining: **lines/words (lazy, little benefit)** and **ArgFiles/Stdin/non-UTF8 decode (= requires
+    making the `@*ARGS` env / `decode_with_encoding` VM-reachable; env transfer = separate campaign)**. One-shot IO
+    output and reads are essentially eliminated.

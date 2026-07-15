@@ -1,390 +1,409 @@
-# `$x = @arr` reference sharing — first-class container (bug ②) の設計
+# `$x = @arr` reference sharing — design for first-class containers (bug ②)
 
 > **Status:** Slice 2a + chained `$r = $q` + **Slice 2b (`@aoa[i] = @row` / `%h<k> = @row`
-> 要素・ハッシュ値共有, 2026-06-19, §5.2 参照)** IMPLEMENTED. `$scalar = @arr` /
-> `$scalar = %hash` (VarDecl と reassign 両方) が source を共有 `ContainerRef` cell
-> に昇格し、`.push`/`.unshift`/`.pop`/要素 write/whole-reassign が双方向に伝播する
-> ようになった。pin=`t/scalar-array-share.t`(24)。**副次修正**: cell 経由 array push
-> (`vm_data_ops.rs` の `ArrayPush` ContainerRef 分岐)を `Arc::make_mut` COW 化し、
-> cell から取った copy(`my @copy = @z`)が source の in-place mutation で漏れる
-> **pre-existing `:=` バグ**(`my @a:=@b; my @copy=@a; @a.push` が @copy に漏れていた)
-> も同時に修正。**延期(Slice 2b/2c で対応)**: chained scalar share `my $r = $q`
-> (RHS が scalar var で array を保持)= open-q #3、配列要素/ハッシュ値代入 `@aoa[i]=@row`
-> = Slice 2b。
+> element / hash-value sharing, 2026-06-19, see §5.2)** IMPLEMENTED. `$scalar = @arr` /
+> `$scalar = %hash` (both VarDecl and reassign) now promote the source to a shared `ContainerRef`
+> cell, and `.push`/`.unshift`/`.pop`/element writes/whole-reassign propagate bidirectionally.
+> pin=`t/scalar-array-share.t`(24). **Side fix**: cell-mediated array push
+> (the `ArrayPush` ContainerRef branch in `vm_data_ops.rs`) was made COW via `Arc::make_mut`,
+> which also fixed a **pre-existing `:=` bug** where a copy taken from a cell (`my @copy = @z`)
+> leaked the source's in-place mutations (`my @a:=@b; my @copy=@a; @a.push` leaked into @copy).
+> **Deferred (handled in Slice 2b/2c)**: chained scalar share `my $r = $q`
+> (RHS is a scalar var holding an array) = open-q #3; array-element/hash-value assignment `@aoa[i]=@row`
+> = Slice 2b.
 >
-> 以下は当初の DESIGN メモ(2026-06-18)。env↔locals coherence Stage 1 の for-rw site A
-> (array #3259 / hash #3260) 完了後に残った **bug ②**(`my @a := @$n` 非伝播)の root-cause が
-> 「`$x = @arr` が *コピー* で参照共有しない」ことと確定したのを受け、その正攻法を設計する。
-> `docs/container-identity.md`(第一級コンテナ)Phase 1/2 の延長であり、`docs/env-locals-coherence.md`
-> Stage 1 の outer cell 化と同じ ContainerRef cell 機構を使う。
+> The rest is the original DESIGN memo (2026-06-18). After finishing for-rw site A of env↔locals
+> coherence Stage 1 (array #3259 / hash #3260), the root cause of the remaining **bug ②**
+> (`my @a := @$n` non-propagation) was pinned down to "`$x = @arr` *copies* instead of sharing a
+> reference"; this document designs the proper fix. It is an extension of
+> `docs/container-identity.md` (first-class containers) Phase 1/2 and uses the same ContainerRef
+> cell mechanism as the outer-cell promotion in `docs/env-locals-coherence.md` Stage 1.
 
 ---
 
 ## 0. TL;DR
 
-Raku では **Array/Hash を *scalar スロット* に代入すると同一オブジェクトを参照共有**する(Array は reference 型):
+In Raku, **assigning an Array/Hash to a *scalar slot* shares the same object by reference** (Array is a reference type):
 
 ```raku
 my @z = (1,2);
-my $n = @z;       # $n は @z と同じ Array を指す(コピーでない)
-@z.push(9);       # → $n も [1 2 9]
-$n.push(8);       # → @z も [... 8]
+my $n = @z;       # $n points at the same Array as @z (not a copy)
+@z.push(9);       # → $n is also [1 2 9]
+$n.push(8);       # → @z is also [... 8]
 ```
 
-`@`変数への代入(`my @copy = @z`)は **要素コピー**(独立)。区別は **代入先 sigil/スロット種別**:
-- **`@`変数** ← copy(独立)。**現状正しい。**
-- **`$`変数 / 配列要素(`@aoa[i]`) / ハッシュ値(`%h<k>`)** ← share(同一オブジェクト)。**現状コピー=バグ。**
+Assignment to an `@` variable (`my @copy = @z`) is an **element copy** (independent). The distinction is the **destination sigil/slot kind**:
+- **`@` variable** ← copy (independent). **Currently correct.**
+- **`$` variable / array element (`@aoa[i]`) / hash value (`%h<k>`)** ← share (same object). **Currently a copy = bug.**
 
-`my $n := @z`(bind)は mutsu でも正しく共有する。壊れているのは **`=`(代入)で array が scalar スロットに入る**ときだけ。
+`my $n := @z` (bind) shares correctly in mutsu too. The only broken case is **an array entering a scalar slot via `=` (assignment)**.
 
 ---
 
-## 1. 現状の正確な切り分け(2026-06-18 probe)
+## 1. Precise breakdown of the current state (2026-06-18 probe)
 
-| 操作 | mutsu | raku | 判定 |
+| Operation | mutsu | raku | Verdict |
 |---|---|---|---|
-| `my @copy = @z; @z.push(9); say @copy` | `[1 2]` | `[1 2]` | ✅ copy 正しい |
-| `my $n = @z; @z.push(9); say $n` | `[1 2]` | `[1 2 9]` | ❌ share すべき |
-| `my $n = @z; $n[0]=8; say @z` | `[8 2]` | `[8 2]` | ✅ **要素書込は既に伝播** |
-| `my $n = @z; $n.push(8); say @z` | `[1 2]` | `[1 2 8]` | ❌ **push が detach** |
-| `@aoa[0]=@row; @row.push(9); say @aoa[0]` | `[1 2]` | `[1 2 9]` | ❌ share すべき |
-| `%h<k>=@row; @row.push(9); say %h<k>` | `[1 2]` | `[1 2 9]` | ❌ share すべき |
-| `my $n := @z; @z.push(9); say $n` | `[1 2 9]` | `[1 2 9]` | ✅ bind は共有 |
+| `my @copy = @z; @z.push(9); say @copy` | `[1 2]` | `[1 2]` | ✅ copy correct |
+| `my $n = @z; @z.push(9); say $n` | `[1 2]` | `[1 2 9]` | ❌ should share |
+| `my $n = @z; $n[0]=8; say @z` | `[8 2]` | `[8 2]` | ✅ **element writes already propagate** |
+| `my $n = @z; $n.push(8); say @z` | `[1 2]` | `[1 2 8]` | ❌ **push detaches** |
+| `@aoa[0]=@row; @row.push(9); say @aoa[0]` | `[1 2]` | `[1 2 9]` | ❌ should share |
+| `%h<k>=@row; @row.push(9); say %h<k>` | `[1 2]` | `[1 2 9]` | ❌ should share |
+| `my $n := @z; @z.push(9); say $n` | `[1 2 9]` | `[1 2 9]` | ✅ bind shares |
 
-**核心**: `$n = @z` は **既に同じ outer `Arc` を共有している**(`$n[0]=8` が @z に伝播するのが証拠)。
-だが **`.push`/構造変異は `Arc::make_mut` が strong_count>1 で deep copy → detach** するため伝播しない。
-∴ 問題は「初期共有が無い」ことではなく「**構造変異が COW で割れる**」こと。要素 write は既に in-place
-(`assign_element_slot`)で通っているのと同じ問題が、whole-container 構造変異(push/unshift/再代入)で残っている。
-
----
-
-## 2. なぜ ContainerRef cell が正準解か
-
-`ContainerRef(Arc<Mutex<Value>>)` は COW deep-copy 後も **`Arc<Mutex>` がクローン間で共有**される
-(`docs/env-locals-coherence.md` §2)。array を **cell に包み、source(`@z`)と target(`$n`/要素/ハッシュ値)が
-同じ cell を保持**すれば:
-- `.push`(構造変異)も cell をロックして in-place mutate → 両者に可視(make_mut detach が起きない)。
-- 要素 write は既に cell-aware(`assign_element_slot`/`hash_insert_through`)。
-- 読みは `into_deref()` で decont 済(Stage 0 監査で確認済)。
-
-これは for-rw site A 修正(#3259/#3260)が使った `write_back_container_source` と同じ cell 機構の **格納側**版。
+**Core insight**: `$n = @z` **already shares the same outer `Arc`** (evidence: `$n[0]=8` propagates to @z).
+But **`.push`/structural mutation goes through `Arc::make_mut`, which deep-copies when strong_count>1 → detach**, so it does not propagate.
+∴ The problem is not "no initial sharing" but "**structural mutation splits via COW**". The same issue that element writes already pass through in-place
+(`assign_element_slot`) remains for whole-container structural mutation (push/unshift/reassign).
 
 ---
 
-## 3. 設計: scalar スロットへの array 代入を escape-aware に cell 共有
+## 2. Why the ContainerRef cell is the canonical solution
 
-### 3.1 トリガー(いつ cell 化するか)
+`ContainerRef(Arc<Mutex<Value>>)` keeps **the `Arc<Mutex>` shared across clones** even after a COW deep copy
+(`docs/env-locals-coherence.md` §2). If we **wrap the array in a cell and have the source (`@z`) and the target (`$n`/element/hash value)
+hold the same cell**:
+- `.push` (structural mutation) also locks the cell and mutates in place → visible to both (no make_mut detach).
+- Element writes are already cell-aware (`assign_element_slot`/`hash_insert_through`).
+- Reads are already deconted via `into_deref()` (confirmed in the Stage 0 audit).
 
-array/hash 値が **scalar スロットに格納される瞬間**に、source 変数と target を共有 cell にする:
-1. **scalar var 代入** `$n = @z` — `SetLocal`/`AssignExpr` で RHS が Array/Hash かつ LHS が `$`。
-2. **配列要素代入** `@aoa[i] = @row` — `assign_element_slot` の値が Array/Hash。
-3. **ハッシュ値代入** `%h<k> = @row` — `hash_insert_through` の値が Array/Hash。
-4. **(将来)** sub 引数で scalar param に array を渡す `f($x)` where `$x` binds array、戻り値等。
-
-`@`変数代入(`@copy = @z`)・list 代入は **対象外**(コピー維持)。
-
-### 3.2 source 昇格(escape-aware)
-
-`$n = @z` のとき、RHS の Array が **裸の Arc**(cell でない)なら、source 変数 `@z` を **ContainerRef cell に
-昇格**し、その cell を `$n` にも格納する。`@z` が既に cell ならそれを共有。**source が anonymous な一時値
-(`$n = (1,2,3)` / `$n = @a.map(...)`)** のときは昇格不要 = 単に cell に包んで `$n` だけが持つ(誰とも共有しない
-が、後で別の scalar に渡ると同 cell を共有)。
-
-これは `box_captured_lexicals`(`vm_register_ops.rs`)が `@`/`%` を skip しているのを、**scalar スロットへ escape
-する時点で昇格**する形に一般化する(closure capture と同じ "escape したら cell" 規律)。
-
-### 3.3 裸ローカルは据え置き(perf 崖回避・#2746 の轍)
-
-scalar スロットへ escape しない裸の `@arr` は **従来の Arc のまま**。値 op(算術 fold・iteration・native
-raw-items)が ContainerRef を毎回 decont する "deref everywhere" を避ける。昇格は escape 点のみ。
+This is the **storage-side** counterpart of the same cell mechanism that the for-rw site A fix (#3259/#3260) used via `write_back_container_source`.
 
 ---
 
-## 4. blast radius(格納サイト) — 着手前 audit
+## 3. Design: escape-aware cell sharing for array assignment into scalar slots
 
-`docs/env-locals-coherence.md` §5 Stage 1 audit の write サイトと重なる。array/hash 値を scalar スロットへ
-格納する経路:
-- **scalar var 代入**: `SetLocal`/`AssignExprLocal`/`AssignExpr`/`SetGlobal`(`vm.rs`/`vm_var_assign_ops.rs`)。
-  RHS 型判定 + LHS sigil 判定が要る。
-- **配列要素代入**: `assign_element_slot`(`value/mod.rs`)— 値が Array/Hash のとき cell 化。
-- **ハッシュ値代入**: `hash_insert_through`(`value/mod.rs`)— 同上。
-- **読み consumer**: `into_deref`(済) + raw-items を舐める native method/slice/`.raku`/`.kv`(leak 監査・Phase 2 既知課題)。
+### 3.1 Trigger (when to cell-ify)
 
-**hazard**: cell が漏れて値 op に流れる経路の網羅(open-q#1)。Stage 0 監査で read チョークポイントは
-単一化済みだが、scalar に入った array は `$n.method` 経由で **scalar-value-method dispatch** に流れるため、
-そこで decont されるか要確認(for-rw site A で `deref_container` を足したのと同型の補完が要るかも)。
+At the moment an array/hash value is **stored into a scalar slot**, put the source variable and the target on a shared cell:
+1. **Scalar var assignment** `$n = @z` — `SetLocal`/`AssignExpr` where the RHS is Array/Hash and the LHS is `$`.
+2. **Array element assignment** `@aoa[i] = @row` — value in `assign_element_slot` is Array/Hash.
+3. **Hash value assignment** `%h<k> = @row` — value in `hash_insert_through` is Array/Hash.
+4. **(Future)** passing an array to a scalar sub param `f($x)` where `$x` binds an array, return values, etc.
+
+`@` variable assignment (`@copy = @z`) and list assignment are **out of scope** (copying is kept).
+
+### 3.2 Source promotion (escape-aware)
+
+For `$n = @z`, if the RHS Array is a **bare Arc** (not a cell), **promote the source variable `@z` to a ContainerRef cell**
+and store that cell into `$n` as well. If `@z` is already a cell, share it. **When the source is an anonymous temporary
+(`$n = (1,2,3)` / `$n = @a.map(...)`)**, no promotion is needed = simply wrap it in a cell held only by `$n` (shared with no one,
+but if later passed to another scalar, the same cell gets shared).
+
+This generalizes what `box_captured_lexicals` (`vm_register_ops.rs`) does — it currently skips `@`/`%` — into **promotion at the
+point of escape into a scalar slot** (the same "cell-on-escape" discipline as closure capture).
+
+### 3.3 Bare locals stay as-is (avoiding the perf cliff — the #2746 lesson)
+
+A bare `@arr` that never escapes into a scalar slot **remains a plain Arc**. This avoids "deref everywhere", where value ops
+(arithmetic folds, iteration, native raw-items) would have to decont a ContainerRef on every access. Promotion happens only at escape points.
 
 ---
 
-## 5. 段階スライス(big-bang 不可)
+## 4. Blast radius (storage sites) — pre-work audit
 
-1. **Slice 2a — scalar var 代入の source 昇格 [DONE 2026-06-18]**: `$n = @z` だけを cell 共有化。
-   - **実装**: 新 opcode `MarkArrayShareContext` + flag `array_share_context`(`MarkArrayShareContext`
-     が立てる)。compiler の `try_emit_array_share`(`compiler/stmt.rs`)が scalar LHS + `ArrayVar`/
-     `HashVar` RHS を検出し、RHS 値を `WrapVarRef(source)` で包んで `MarkArrayShareContext` を emit。
-     VM は `array_share_assign`(`vm_var_assign_ops.rs`)で source/target を共有 `ContainerRef` cell に
-     昇格し、scalar slot に `__mutsu_array_share::<name>` マーカーを立てる。**SetLocal(VarDecl)/
-     AssignExpr(reassign)/SetLocal slow path の3経路**全てに promotion と replace-on-reassign を入れた
-     (`$n` は array を持つと `simple_locals=false` になり slow path を通るため、fast path だけでは不足
-     だった=実装中の最大のハマりどころ)。`our`/global は SetGlobal でフラグを消費(copy・Slice 2d)。
-   - **rebind vs mutate-through(設計通り実装)**: scalar への非-array/別コンテナ whole-reassign は
-     `__mutsu_array_share` マーカーを drop して slot 置換、`@z = (...)`(array var)と `.push` は cell
-     write-through。マーカーが `:=` write-through と `=` replace を per-variable で区別する。
-   (旧設計メモ:) `$n = @z` だけを cell 共有化。
-   `@z.push`/`$n.push` 双方向伝播を pin(`t/scalar-array-share.t`)。`@copy = @z` は不変(copy 維持)を guard。
-   読み・既存 roast 完全一致が合格条件。**最小スライス。**
-   - **[実装知見 2026-06-18] RHS source はコンパイル時に判別可能**: `my $n = @z` は
-     `VarDecl { name:"n", expr: ArrayVar("z") }` に compile される(`--dump-ast` 確認)。∴ source 変数名 "z" は
-     compile 時に既知＝`:=` の varref 追跡を新設せずとも、**scalar LHS + `ArrayVar`/`HashVar` RHS** を検出して
-     source 昇格 op を emit できる。再代入 `$n = @z`(非 decl)も `AssignExpr` で同様に RHS が `ArrayVar` か判定可能。
-   - **★rebind vs mutate-through の区別が肝**: cell 共有後、
-     - `$n.push` / `@z.push` / `$n[0]=x` / `@z[0]=x` → cell を lock して in-place mutate(双方向伝播)。
-     - `$n = 5`(scalar を非 array に再代入) → **$n の slot を `Value::Int(5)` で置換**(cell に触れない＝@z 不変)。
-       `$n = @other`(別 array) → $n の slot を @other の cell に張り替え(@z の cell 不変)。
-     - `@z = (9)`(array var 再代入) → **@z の cell を mutate-through**(中身入れ替え＝$n に可視)。
-     つまり「scalar slot への非-array 代入 / 別コンテナ代入 = slot 置換」「array var 代入 = cell 中身置換」。
-     `:=` bind(scalar container 自体の共有)とは異なり、**共有されるのは array オブジェクト(cell)だけで scalar
-     container は別**。SetLocal が「既存 ContainerRef を維持して中身 write-through」する現挙動
-     (`vm_var_assign_ops.rs:5543` 系)を、scalar への非-array 代入では「slot 置換」に分岐させる必要がある。
-2. **Slice 2b — 配列要素 / ハッシュ値代入 [DONE 2026-06-19 / PR #3274]**: `@aoa[i] = @row` / `%h<k> = @row` を
-   cell 共有化。AoA・HoA の参照共有。
-   - **実装(2026-06-19)**: scratch から書くのではなく **`:=` element-bind 機構を再利用**した。コンパイラ
-     (`compiler/expr_closure.rs` の `element_share_bind_value`)が `@var[単一添字] = @containervar` を検出し、
-     RHS を `__mutsu_bind_index_value` で包んで **bind と同一バイトコード**にコンパイル(cell 設置 + source 昇格を
-     bind 機構がそのまま行う)+ 新 opcode `MarkElementShare` を emit。VM は `exec_index_assign_expr_named_op` で
-     `element_share_pending` を消費し、store 後に **element-keyed marker** `__mutsu_elem_share::<var>`(Hash of
-     encoded-index、`mark_element_share`/`is_element_share`/`clear_element_share`、scalar 2a の per-variable marker
-     を要素単位へ拡張)を立てる。**`=` と `:=` の唯一の差=reassign 時の replace vs write-through** を、3 つの
-     write-through チョークポイント(array `arr[i]` cell 分岐=旧 BLOCKER の ~3836 行 / hash slow
-     `hash_insert_through` / hash fast `try_fast_hash_element_assign`=ContainerRef で bail させ slow へ送る)で
-     `elem_is_value_share` ゲートにより replace に分岐(precompute はコンテナ borrow 前、marker clear は store 後)。
-     ∴ §10/旧 BLOCKER が指摘した「per-element の share-vs-bind 区別」を element-keyed marker で実現。
-   - **★ハマり所**: ① **スライス代入の誤検出** — `@b[*-3,*-2] = @x` は distributing slice assignment であって参照
-     共有でない。index が `ArrayLiteral`/Range/Whatever のとき share させない(単一スカラー添字=`Literal(Int/Str/Num/Bool)`
-     /`Var`/`Binary`/`Unary` のみ whitelist)。② **self-reference** `%h<k> = %h`(infinite HoH)は既存の
-     `is_self_hash_ref`→`self_hash_ref_marker` 経路を維持すべきで、source(=target)を ContainerRef 昇格すると
-     `isa-ok %h, Hash` と循環読みが壊れる(hash_ref.t whitelist 回帰)→ `source == target_name` で share 除外。
-   - pin=`t/element-array-share.t`(28 ケース)。make test PASS、whitelist S02/S03 全 251 PASS。
-   - **[chained `$r = $q` DONE 2026-06-18, open-q#3 / #3267]**: scalar source の chained 共有も実装。Slice 2a の
-     `WrapVarRef`+`MarkArrayShareContext` を **`MarkArrayShareSource(name_idx)` + `array_share_source` field**
-     に統一リファクタ(WrapVarRef は plain `$x=$y` を bind 化する副作用があったため不可)。compiler
-     `try_emit_array_share` が `Expr::Var(n)` RHS も対象に追加。runtime は **source 値が deref して
-     Array/Hash のときだけ共有**(`with_deref` ゲート)→ plain `$x=$y`(scalar source)・`:=` bound Int
-     scalar の chained `=` は copy 維持。pin に 9 ケース追加(計 33)。make test/roast green。
-3. **Slice 2c — bug ② の deref bind [array 形 DONE 2026-06-18(6th) / PR #3268]**: `my @a := @$n`(value-alias
-   scalar `$n` の deref bind)が 2a の共有 cell を辿って caller @z に届くようにした。
-   - **実装**: `@$n` は parser が `ArrayVar("n")` に desugar するため、bind の source は `"@n"`(WrapVarRef)。
-     実際の cell は scalar `$n`(env key `"n"`)に在る。SetLocal bind 経路(`vm_var_assign_ops.rs` の
-     `if let Some(source_name) = bind_source` ブロック)に **scalar-source フォールバック**を追加:
-     `resolved_source`("@n")が**実行時に**コンテナ値でない(env.get("@n") が Array/Hash/ContainerRef でない)
-     とき、`@`/`%` を剥がした bare 名("n")の scalar が `ContainerRef` を持てばその cell を reuse。
-     `effective_source` で promotion/env/frame 書き戻しを bare scalar 名に向ける。pin=`t/deref-bind-value-alias.t`。
-   - **★ハマり所**: `source_in_same_scope`(`code.locals` に "@n" が在るか)は **function 全体の locals** を見る
-     ため、*別ブロック*の `my @n` でも真になり fallback を誤抑制した。∴ gate は locals 在否でなく
-     **resolved_source の実行時値がコンテナか**で判定する(`source_resolves_to_container`)。
-   - **hash 形 `my %h := %$m` [DONE 2026-06-19(24th) / PR pending]**: parser が `%$m` を `$m.hash`
-     (MethodCall)に desugar するため `ArrayVar` のような simple-var bind 経路に乗らなかった。**修正**=
-     bind 文脈(`handle_binding`, `my_decl_assign.rs`)で、target が hash かつ RHS が plain-scalar 形の
-     `$m.hash`(`MethodCall{target:Var(m), name:"hash", args:[]}`)のとき `HashVar("m")` に rewrite。
-     これで array 形と同一の deref-bind 経路(scalar-source フォールバックは `['@','%']` 両対応済)に乗る。
-     `%$/`・`%$_` 等の CaptureVar 形は `.hash` coercion のまま(value-alias でないため)。
-   - **★同時に発見・修正した対称バグ(array にも存在)**: deref bind の**要素代入**(`@a[0]=` / `%h<k>=`)が
-     共有 cell を write-through せず detach していた(`.push` は別 opcode で動いていた)。真因=SetLocal
-     bind 経路が `__mutsu_sigilless_alias::%h = "%m"`(sigil 付き source 名)を立てるが、index-assign は
-     この alias を辿って存在しない `%m` を autovivify → fresh detached container。**修正**=`scalar_source`
-     が Some(deref bind via 昇格 scalar)のとき alias を **effective_source**(bare scalar "m")に向け直す。
-     これで index-assign が共有 cell に到達。array `@a[0]=` も同時に修正された。
-   - **残: sub-param 経由(headline bug② `sub f($n){ my @a := @$n; @a.push }`)**: param `$n` は `.push`
-     直接(case A)は伝播するが、その上に deref bind を重ねると伝播しない=param が `"n"` env key に
-     `ContainerRef` を持たない(`arg_sources` return-writeback 共有=別機構)。Slice 2d の
-     param-by-reference 化が前提。
-4. **Slice 2d — array/hash 変数 → scalar param 共有 [✅ DONE 2026-06-19・PR #3283]**: headline bug②
-   (`sub f($n){ my @a := @$n; @a.push }; f(@z)` が mutsu [1 2]/raku [1 2 99]) を解決。**第24セッションで
-   「Slice F 壁」と判定したが、第25セッションの精密 probe で覆った**:
-   - **真因の再切り分け**: call 境界の共有自体は壊れていない。`$n.push`/`$n[0]=`(直接変異)は既に caller @z へ
-     伝播していた——但しそれは **env_dirty 由来の copy-back で文順依存の脆さ**(`$n.push` の前に `say` を 1 文
-     挟むだけで壊れる)。**local case(`my $n=@z; my @a:=@$n; @a.push`)は Slice 2a/2c で完動**。∴ 壊れているのは
-     param `$n` が共有 cell を持たないことだけ。
-   - **解(採用)= call 境界で `@`/`%` 変数を `$`-param に渡すとき value を共有 `ContainerRef` cell に昇格**
-     (`bind_function_args_values`/binding.rs)+ rw_bindings 登録(既存 `apply_rw_bindings_to_env` writeback が
-     return 時 caller へ flush)。`my @a:=@$n` は Slice 2c の deref-bind cell 共有に乗り、`$n.push` も cell 経由で
-     robust。
-   - **★最大のハマり=slot-only fast path(`positional_light`/`light`)が `bind_function_args_values` をバイパス**
-     し params を local slot に直接 bind(これが第24セッションの「壁」の正体)。**解=gate
-     `call_shares_container_into_scalar_param`(`vm_call_dispatch.rs`)で「`@`/`%` array/hash 変数を plain
-     `$`-param に渡す呼び」を検出し全 fast-path から slow path へ迂回**。5 dispatch サイト配線(pos_light cache /
-     light cache = `exec_call_func_op` + otf block + `dispatch_func_call_inner` の 2 fast path)。arg-first 評価で
-     非 container 引数(fib)は即 reject=perf 維持。
-   - **2 つの表現の罠**: ①plain `$`-param は sigil 剥がし `"n"` 格納(@/% は保持)=`is_plain_scalar_param_name`。
-     ②変数引数は `Value::Capture { __mutsu_varref_value/name }` で到達=`arg_is_container_value` で peek。
-   - **★初回 CI 赤→fix-forward**: 初版は「値が Array なら promote」で **`$`-scalar が array 保持して渡される
-     場合($aref→$refin)も発火**→writeback で caller `$aref` を ContainerRef 化し `$aref[0]++` 破壊(roast
-     S06-signature/named-parameters 68-69)。**修正=promote は `@`/`%` source のときだけ**(scalar source は既存
-     Arc 共有で element 変異が動く=promote 不要かつ有害)。pin=`t/scalar-param-container-share.t`(21)。
-   - **残 follow-up(2d では未カバー・pre-existing・回帰でない)**:
-     - **method param**(`method m($n){ $n.push }`)=raku 共有/mutsu 非共有。**拡張点=`vm_method_dispatch.rs:79`
-       の fast-path gate(`!has_rw_params && !has_aliasable_container_params`)に scalar-container-share 条件を追加**
-       (slow path は `vm_method_dispatch.rs:424` で `bind_function_args_values` を使う→binding.rs promotion 適用)。
-       先例=同ファイル `has_aliasable_container_params`(@/% param で同型に fast-path 除外済)。**注意=method は
-       param_defs に invocant 含む→args との index alignment が sub と違う**(non-invocant positional と args を
-       揃える専用ロジック要)。`call_shares_container_into_scalar_param` を param_defs ベースに refactor して再利用可。
-     - **`is copy` $-param**=raku は array 共有(copy はコンテナ束縛の copy で array 同一)/mutsu 非共有。gate が
-       `traits.is_empty()` で除外中。`$n=…` rebind 許可と cell 共有の両立に注意。
-   - **教訓**: CI roast log は truncated で失敗ファイル特定困難→`prove -j4 $(cat roast-whitelist.txt)` をローカル
-     全実行し Failed:[1-9] の concrete subtest を探す(Failed:0/exited255 は load フレーキー・encoding 系は main でも
-     fail の red herring)。
+Overlaps with the write-site audit of `docs/env-locals-coherence.md` §5 Stage 1. Paths that store array/hash values into scalar slots:
+- **Scalar var assignment**: `SetLocal`/`AssignExprLocal`/`AssignExpr`/`SetGlobal` (`vm.rs`/`vm_var_assign_ops.rs`).
+  Needs RHS type check + LHS sigil check.
+- **Array element assignment**: `assign_element_slot` (`value/mod.rs`) — cell-ify when the value is Array/Hash.
+- **Hash value assignment**: `hash_insert_through` (`value/mod.rs`) — same.
+- **Read consumers**: `into_deref` (done) + native methods/slices/`.raku`/`.kv` that walk raw-items (leak audit — known Phase 2 issue).
 
-各 Slice は **make test(t/ 回帰は whitelist 非収録=必須)+ release roast の main-vs-branch 比較 + int.t/
-method-call wall-clock**(#2746 教訓: perf 回帰は roast timeout でしか出ない)で固める。
+**Hazard**: full coverage of paths where a cell leaks into value ops (open-q#1). The Stage 0 audit unified the read
+chokepoints, but an array stored in a scalar flows through **scalar-value-method dispatch** via `$n.method`, so we must
+verify it is deconted there (a complement of the same shape as the `deref_container` we added for for-rw site A may be needed).
+
+---
+
+## 5. Incremental slices (no big-bang)
+
+1. **Slice 2a — source promotion for scalar var assignment [DONE 2026-06-18]**: cell-share only `$n = @z`.
+   - **Implementation**: new opcode `MarkArrayShareContext` + flag `array_share_context` (set by
+     `MarkArrayShareContext`). The compiler's `try_emit_array_share` (`compiler/stmt.rs`) detects a scalar LHS +
+     `ArrayVar`/`HashVar` RHS, wraps the RHS value in `WrapVarRef(source)`, and emits `MarkArrayShareContext`.
+     The VM, in `array_share_assign` (`vm_var_assign_ops.rs`), promotes source/target to a shared `ContainerRef` cell
+     and sets a `__mutsu_array_share::<name>` marker on the scalar slot. Promotion and replace-on-reassign were added
+     to **all 3 paths — SetLocal(VarDecl) / AssignExpr(reassign) / SetLocal slow path**
+     (once `$n` holds an array, `simple_locals=false` and it goes through the slow path, so the fast path alone was
+     insufficient — the biggest pitfall during implementation). `our`/globals consume the flag in SetGlobal (copy; Slice 2d).
+   - **rebind vs mutate-through (implemented as designed)**: a whole-reassign of the scalar to a non-array/different
+     container drops the `__mutsu_array_share` marker and replaces the slot, while `@z = (...)` (array var) and `.push`
+     write through the cell. The marker distinguishes `:=` write-through from `=` replace on a per-variable basis.
+   (Old design memo:) cell-share only `$n = @z`.
+   Pin `@z.push`/`$n.push` bidirectional propagation (`t/scalar-array-share.t`). Guard that `@copy = @z` is unchanged (copy kept).
+   Acceptance = reads and existing roast match exactly. **Minimal slice.**
+   - **[Implementation insight 2026-06-18] The RHS source is identifiable at compile time**: `my $n = @z` compiles to
+     `VarDecl { name:"n", expr: ArrayVar("z") }` (confirmed with `--dump-ast`). ∴ The source variable name "z" is known at
+     compile time = without building new varref tracking for `:=`, we can detect **scalar LHS + `ArrayVar`/`HashVar` RHS**
+     and emit a source-promotion op. Reassignment `$n = @z` (non-decl) can likewise be checked in `AssignExpr` for an `ArrayVar` RHS.
+   - **★The rebind vs mutate-through distinction is the crux**: after cell sharing,
+     - `$n.push` / `@z.push` / `$n[0]=x` / `@z[0]=x` → lock the cell and mutate in place (bidirectional propagation).
+     - `$n = 5` (reassign the scalar to a non-array) → **replace $n's slot with `Value::Int(5)`**
+       (do not touch the cell = @z unchanged).
+       `$n = @other` (different array) → repoint $n's slot to @other's cell (@z's cell unchanged).
+     - `@z = (9)` (array var reassign) → **mutate @z's cell through** (contents replaced = visible to $n).
+     In other words: "non-array assignment / different-container assignment into a scalar slot = slot replacement",
+     "array var assignment = cell content replacement".
+     Unlike a `:=` bind (sharing the scalar container itself), **only the array object (the cell) is shared; the scalar
+     container is separate**. SetLocal's current behavior of "keep the existing ContainerRef and write the contents through"
+     (the `vm_var_assign_ops.rs:5543` family) must branch into "slot replacement" for non-array assignment into a scalar.
+2. **Slice 2b — array element / hash value assignment [DONE 2026-06-19 / PR #3274]**: cell-share `@aoa[i] = @row` /
+   `%h<k> = @row`. Reference sharing for AoA and HoA.
+   - **Implementation (2026-06-19)**: rather than writing from scratch, we **reused the `:=` element-bind mechanism**.
+     The compiler (`element_share_bind_value` in `compiler/expr_closure.rs`) detects `@var[single subscript] = @containervar`,
+     wraps the RHS in `__mutsu_bind_index_value`, and compiles it to **the same bytecode as a bind** (the bind mechanism does
+     the cell installation + source promotion as-is) + emits the new opcode `MarkElementShare`. The VM consumes
+     `element_share_pending` in `exec_index_assign_expr_named_op` and, after the store, sets an **element-keyed marker**
+     `__mutsu_elem_share::<var>` (a Hash of encoded-index; `mark_element_share`/`is_element_share`/`clear_element_share` —
+     the per-variable marker of scalar 2a extended to per-element). **The single difference between `=` and `:=` = replace vs
+     write-through on reassignment** is branched into replace via the `elem_is_value_share` gate at the 3 write-through
+     chokepoints (array `arr[i]` cell branch = the old BLOCKER around line ~3836 / hash slow `hash_insert_through` / hash fast
+     `try_fast_hash_element_assign` = bails on ContainerRef and sends to slow) (precompute happens before the container borrow,
+     marker clear after the store).
+     ∴ The "per-element share-vs-bind distinction" that §10/the old BLOCKER pointed out is realized via the element-keyed marker.
+   - **★Pitfalls**: ① **false positives on slice assignment** — `@b[*-3,*-2] = @x` is a distributing slice assignment, not
+     reference sharing. Do not share when the index is `ArrayLiteral`/Range/Whatever (whitelist only single scalar subscripts =
+     `Literal(Int/Str/Num/Bool)`/`Var`/`Binary`/`Unary`). ② **self-reference** `%h<k> = %h` (infinite HoH) must keep the existing
+     `is_self_hash_ref`→`self_hash_ref_marker` path; promoting the source (=target) to ContainerRef breaks
+     `isa-ok %h, Hash` and circular reads (hash_ref.t whitelist regression) → exclude from sharing when `source == target_name`.
+   - pin=`t/element-array-share.t` (28 cases). make test PASS, whitelist S02/S03 all 251 PASS.
+   - **[chained `$r = $q` DONE 2026-06-18, open-q#3 / #3267]**: chained sharing with a scalar source is also implemented.
+     Slice 2a's `WrapVarRef`+`MarkArrayShareContext` was refactored into a unified
+     **`MarkArrayShareSource(name_idx)` + `array_share_source` field** (WrapVarRef had the side effect of turning plain
+     `$x=$y` into a bind, so it could not be used). The compiler's `try_emit_array_share` also accepts an `Expr::Var(n)` RHS.
+     At runtime, sharing happens **only when the source value derefs to Array/Hash** (`with_deref` gate) → plain `$x=$y`
+     (scalar source) and chained `=` of a `:=`-bound Int scalar keep copying. 9 cases added to the pin (33 total).
+     make test/roast green.
+3. **Slice 2c — the deref bind of bug ② [array form DONE 2026-06-18 (6th) / PR #3268]**: made `my @a := @$n` (deref bind of a
+   value-alias scalar `$n`) follow 2a's shared cell and reach the caller's @z.
+   - **Implementation**: the parser desugars `@$n` to `ArrayVar("n")`, so the bind source is `"@n"` (WrapVarRef).
+     The actual cell lives on the scalar `$n` (env key `"n"`). Added a **scalar-source fallback** to the SetLocal bind path
+     (the `if let Some(source_name) = bind_source` block in `vm_var_assign_ops.rs`):
+     when `resolved_source` ("@n") is **not a container value at runtime** (env.get("@n") is not Array/Hash/ContainerRef),
+     and the scalar under the bare name with `@`/`%` stripped ("n") holds a `ContainerRef`, reuse that cell.
+     `effective_source` points promotion/env/frame write-back at the bare scalar name. pin=`t/deref-bind-value-alias.t`.
+   - **★Pitfall**: `source_in_same_scope` (whether "@n" is in `code.locals`) looks at the **locals of the whole function**,
+     so a `my @n` in a *different block* also makes it true and wrongly suppressed the fallback. ∴ The gate must be
+     **whether resolved_source's runtime value is a container** (`source_resolves_to_container`), not locals membership.
+   - **hash form `my %h := %$m` [DONE 2026-06-19 (24th) / PR pending]**: the parser desugars `%$m` to `$m.hash`
+     (MethodCall), so it did not ride the simple-var bind path like `ArrayVar`. **Fix** =
+     in the bind context (`handle_binding`, `my_decl_assign.rs`), when the target is a hash and the RHS is a plain-scalar-shaped
+     `$m.hash` (`MethodCall{target:Var(m), name:"hash", args:[]}`), rewrite to `HashVar("m")`.
+     This puts it on the same deref-bind path as the array form (the scalar-source fallback already handles both `['@','%']`).
+     CaptureVar forms like `%$/` and `%$_` stay as `.hash` coercion (they are not value-aliases).
+   - **★Symmetric bug discovered and fixed at the same time (also present for arrays)**: **element assignment** through a deref
+     bind (`@a[0]=` / `%h<k>=`) did not write through the shared cell and detached (`.push` worked via a different opcode).
+     Root cause = the SetLocal bind path sets `__mutsu_sigilless_alias::%h = "%m"` (sigiled source name), but index-assign
+     follows this alias to a nonexistent `%m` and autovivifies it → fresh detached container. **Fix** = when `scalar_source`
+     is Some (deref bind via a promoted scalar), repoint the alias to **effective_source** (the bare scalar "m").
+     Index-assign then reaches the shared cell. Array `@a[0]=` was fixed at the same time.
+   - **Remaining: via sub params (the headline bug② `sub f($n){ my @a := @$n; @a.push }`)**: the param `$n` propagates on
+     direct `.push` (case A), but stacking a deref bind on top does not propagate = the param does not hold a
+     `ContainerRef` under the `"n"` env key (`arg_sources` return-writeback sharing = a different mechanism). Slice 2d's
+     param-by-reference work is the prerequisite.
+4. **Slice 2d — array/hash variable → scalar param sharing [✅ DONE 2026-06-19, PR #3283]**: resolves the headline bug②
+   (`sub f($n){ my @a := @$n; @a.push }; f(@z)` gives mutsu [1 2] / raku [1 2 99]). **Session 24 judged this the
+   "Slice F wall", but session 25's precise probe overturned that**:
+   - **Re-isolation of the root cause**: sharing across the call boundary itself is not broken. `$n.push`/`$n[0]=`
+     (direct mutation) already propagated to the caller's @z — but via **env_dirty-driven copy-back, fragile and
+     statement-order-dependent** (inserting a single `say` statement before `$n.push` breaks it). **The local case
+     (`my $n=@z; my @a:=@$n; @a.push`) works fully with Slice 2a/2c.** ∴ The only thing broken is that the param `$n`
+     does not hold a shared cell.
+   - **Solution (adopted) = at the call boundary, when passing an `@`/`%` variable to a `$`-param, promote the value
+     to a shared `ContainerRef` cell** (`bind_function_args_values`/binding.rs) + register rw_bindings (the existing
+     `apply_rw_bindings_to_env` writeback flushes to the caller on return). `my @a:=@$n` rides Slice 2c's deref-bind
+     cell sharing, and `$n.push` is also robust via the cell.
+   - **★Biggest pitfall = the slot-only fast paths (`positional_light`/`light`) bypass `bind_function_args_values`**
+     and bind params directly into local slots (this was the real identity of session 24's "wall"). **Solution = gate
+     `call_shares_container_into_scalar_param` (`vm_call_dispatch.rs`) detects "calls passing an `@`/`%` array/hash
+     variable to a plain `$`-param" and diverts all fast paths to the slow path**. Wired at 5 dispatch sites (pos_light
+     cache / light cache = `exec_call_func_op` + otf block + the 2 fast paths of `dispatch_func_call_inner`). Args-first
+     evaluation rejects non-container args (fib) immediately = perf preserved.
+   - **Two representation traps**: ① a plain `$`-param is stored with the sigil stripped, `"n"` (@/% keep theirs) =
+     `is_plain_scalar_param_name`. ② variable arguments arrive as `Value::Capture { __mutsu_varref_value/name }` =
+     peek via `arg_is_container_value`.
+   - **★First CI red → fix-forward**: the first version promoted "whenever the value is an Array", which **also fired
+     when a `$`-scalar holding an array is passed ($aref→$refin)** → writeback turned the caller's `$aref` into a
+     ContainerRef and broke `$aref[0]++` (roast S06-signature/named-parameters 68-69). **Fix = promote only for
+     `@`/`%` sources** (scalar sources already work for element mutation via the existing Arc sharing = promotion is
+     unnecessary and harmful). pin=`t/scalar-param-container-share.t`(21).
+   - **Remaining follow-ups (not covered by 2d, pre-existing, not regressions)**:
+     - **method params** (`method m($n){ $n.push }`) = raku shares / mutsu does not. **Extension point = add a
+       scalar-container-share condition to the fast-path gate at `vm_method_dispatch.rs:79`
+       (`!has_rw_params && !has_aliasable_container_params`)** (the slow path uses `bind_function_args_values` at
+       `vm_method_dispatch.rs:424` → binding.rs promotion applies). Precedent = `has_aliasable_container_params` in the
+       same file (already excludes fast path in the same shape for @/% params). **Caution = method param_defs include
+       the invocant → index alignment with args differs from subs** (dedicated logic needed to align non-invocant
+       positionals with args). `call_shares_container_into_scalar_param` can be refactored to be param_defs-based and reused.
+     - **`is copy` $-params** = raku shares the array (copy copies the container binding; the array is the same) /
+       mutsu does not share. The gate currently excludes them via `traits.is_empty()`. Take care to reconcile allowing
+       `$n=…` rebind with cell sharing.
+   - **Lesson**: CI roast logs are truncated, making it hard to identify failing files → run
+     `prove -j4 $(cat roast-whitelist.txt)` locally in full and look for concrete subtests with Failed:[1-9]
+     (Failed:0/exited255 are load flakes; encoding-related ones fail on main too = red herrings).
+
+Each Slice is hardened with **make test (t/ regressions are not in the whitelist = mandatory) + a release-roast
+main-vs-branch comparison + int.t / method-call wall-clock** (the #2746 lesson: perf regressions only surface as roast timeouts).
 
 ---
 
 ## 6. open questions
 
-1. **scalar-value-method dispatch の decont**: `$n.push`/`$n.elems` 等が cell を decont してから native array
-   method に渡るか。漏れると "deref everywhere" の入口。
-2. **`@copy = @z` との確実な分離**: 代入先 sigil/スロット判定が list-assign / flatten / slice 代入で誤らないか。
-3. **anonymous 一時値の扱い**: `$n = (1,2,3)` は誰とも共有しないが cell に包むか(包めば後続の `$m = $n` 共有が
-   自然)。包まないなら後で `$m = $n` の共有が別途必要。
-4. **cross-thread**: 共有 cell(`Arc<Mutex>`)と `clone_for_thread`/`shared_vars` の整合(Track C)。
-5. **COW コスト**: cell 化した array の値 op が毎回 lock するコスト。escape-aware で裸ローカルは除外するが、
-   scalar に入った array の hot path(`$n[i]` ループ)の wall-clock を計測。
+1. **Decont in scalar-value-method dispatch**: do `$n.push`/`$n.elems` etc. decont the cell before reaching the native
+   array method? A leak here is the entrance to "deref everywhere".
+2. **Reliable separation from `@copy = @z`**: can the destination sigil/slot check misfire for list-assign / flatten /
+   slice assignment?
+3. **Handling anonymous temporaries**: `$n = (1,2,3)` shares with no one, but do we wrap it in a cell? (If wrapped, a
+   subsequent `$m = $n` share falls out naturally.) If not wrapped, `$m = $n` sharing needs separate work later.
+4. **Cross-thread**: consistency of the shared cell (`Arc<Mutex>`) with `clone_for_thread`/`shared_vars` (Track C).
+5. **COW cost**: the cost of value ops locking a cell-ified array on every access. Escape-awareness excludes bare
+   locals, but measure wall-clock for the hot path of an array in a scalar (`$n[i]` loops).
 
 ---
 
-## 8. 実装試行の結果(2026-06-18) — Slice 2a は動くが Arc-identity ripple で revert
+## 8. Result of the implementation attempt (2026-06-18) — Slice 2a works but was reverted due to Arc-identity ripple
 
-> **★SUPERSEDED (2026-06-18, PR #3264 MERGED)**: この §8 は `MarkValueAliasSource` を使った
-> 並行試行が Pair-value 回帰で revert された記録。その後の **PR #3264 で Slice 2a は実際に landing
-> 済み**(別 opcode `MarkArrayShareContext`)。§8 が「不可」とした Arc-identity ripple は、**blanket な
-> Sub-slice 1a(全 write-chokepoint の behavior-invariant decont)を先行させずに**、cell が壊した
-> identity 機構を**個別に cell-aware 化**することで解消した: ①`overwrite_array/hash_bindings_by_identity`
-> (needle Arc を inner に持つ ContainerRef cell の中身を write-through)②`builtin_index_assign_method_lvalue`
-> の `current` を deref ③regex `interpolate_regex_scalars` の var-read を `into_deref` ④`UndefineAggregate`
-> を cell-aware(`clear_aggregate_cell`)。**∴ "leak を見つけ次第 deref で塞ぐ" 漸進アプローチで十分**で、
-> blanket Stage 0 1a 先行は不要だった。§5 Slice 2a の DONE 注記が最新の実装真実。以下の §8 本文は歴史的記録。
+> **★SUPERSEDED (2026-06-18, PR #3264 MERGED)**: this §8 is the record of a parallel attempt using
+> `MarkValueAliasSource` that was reverted due to a Pair-value regression. **Slice 2a subsequently landed
+> for real in PR #3264** (with a different opcode, `MarkArrayShareContext`). The Arc-identity ripple that §8
+> declared "impossible" was resolved **without first landing a blanket Sub-slice 1a (behavior-invariant decont of
+> all write chokepoints)**, by **individually making the identity mechanisms that the cell broke cell-aware**:
+> ① `overwrite_array/hash_bindings_by_identity` (write through the contents of ContainerRef cells whose inner
+> holds the needle Arc) ② deref `current` in `builtin_index_assign_method_lvalue` ③ regex
+> `interpolate_regex_scalars` var reads via `into_deref` ④ make `UndefineAggregate` cell-aware
+> (`clear_aggregate_cell`). **∴ The incremental "plug each leak with a deref as you find it" approach is
+> sufficient**; a blanket Stage 0 1a upfront was unnecessary. The DONE note in §5 Slice 2a is the current
+> implementation truth. The §8 body below is a historical record.
 
-Slice 2a(scalar `$n = @z` の cell 共有 = "value-alias")を実装し検証した。**設計は正しく、§5 の
-スライス順序を裏付けた。** 結論: **value-alias は Sub-slice 1a(write-chokepoint decont)を先に landing
-しないと既存の Arc-identity 機構を壊す。** revert 済み。
+Slice 2a (cell sharing for scalar `$n = @z` = "value-alias") was implemented and verified. **The design is correct
+and confirmed the slice ordering of §5.** Conclusion: **value-alias breaks the existing Arc-identity mechanisms
+unless Sub-slice 1a (write-chokepoint decont) lands first.** Reverted.
 
-### 動いた実装(次回そのまま再利用可)
+### Implementation that worked (reusable as-is next time)
 
-- 新 opcode `MarkValueAliasSource(name_idx)`(`opcode.rs`)を compiler が `my $n = @z`/`$n = @z`
-  (scalar = whole `@`/`%` var)で SetLocal 直前に emit(`compiler/stmt.rs` VarDecl else 分岐 ＋
-  Stmt::Assign plain-assign 分岐、**local scalar 限定**＝SetLocal が flag を消費するため・SetGlobal だと
-  flag が dangling)。**gotcha**: `Expr::ArrayVar(s)` の `s` は **sigil 無し**("z")。src は
-  `format!("@{}", s)` で sigil 付与しないと local slot "@z" にマッチしない(これで最初 share せず空振り)。
-- VM: `value_alias_source: Option<String>` field(`runtime/mod.rs`)。SetLocal 冒頭で take し
-  `setup_scalar_value_alias` を呼ぶ: src を共有 `ContainerRef` cell 化(bind path
-  `vm_var_assign_ops.rs:6192` と同型 — slot+env+saved frames へ書き戻し)、$n に同 cell、
-  `__mutsu_value_alias::$n` marker を env へ。snapshot(GetArrayVar の deref 値)は cell 不在時の初期値。
-- detach(§5 Slice 2a の「scalar への非-array 代入 = slot 置換」): value-alias marker 持ち ContainerRef
-  scalar への再代入は **cell write-through せず slot 置換**(`$n = 5` が @z を壊さない)。**gotcha**:
-  value-alias scalar は `simple_locals=false` になり read が env 経由になるため、detach は
-  `flush_local_to_env`(simple 限定で no-op)ではなく `env_mut().insert(name, v)` で env を直接上書き
-  しないと stale な ContainerRef が残り `say $n` が旧 array を読む。
+- New opcode `MarkValueAliasSource(name_idx)` (`opcode.rs`), emitted by the compiler right before SetLocal for
+  `my $n = @z`/`$n = @z` (scalar = whole `@`/`%` var) (`compiler/stmt.rs` VarDecl else branch + the
+  Stmt::Assign plain-assign branch, **local scalars only** = SetLocal consumes the flag; with SetGlobal the
+  flag would dangle). **gotcha**: the `s` in `Expr::ArrayVar(s)` is **sigil-less** ("z"). The src must add the
+  sigil via `format!("@{}", s)` or it will not match the local slot "@z" (this made the share silently no-op at first).
+- VM: `value_alias_source: Option<String>` field (`runtime/mod.rs`). At the top of SetLocal, take it and call
+  `setup_scalar_value_alias`: cell-ify src as a shared `ContainerRef` (same shape as the bind path at
+  `vm_var_assign_ops.rs:6192` — write back to slot+env+saved frames), give $n the same cell, and put a
+  `__mutsu_value_alias::$n` marker in the env. The snapshot (the deref value from GetArrayVar) is the initial
+  value when no cell exists.
+- detach (§5 Slice 2a's "non-array assignment into a scalar = slot replacement"): reassignment of a ContainerRef
+  scalar carrying the value-alias marker **replaces the slot without writing through the cell** (`$n = 5` does not
+  break @z). **gotcha**: a value-alias scalar becomes `simple_locals=false` so reads go through the env; detach
+  must overwrite the env directly with `env_mut().insert(name, v)`, not `flush_local_to_env` (which is a no-op
+  outside simple locals) — otherwise a stale ContainerRef remains and `say $n` reads the old array.
 
-### 検証結果
+### Verification results
 
-- **core 全 PASS**(`t/scalar-array-ref-sharing.t` 18 ケース): `my $n=@z; $n.push(99)` → @z 3 件、
-  element/push 両方向伝播、detach(push 後含む)、hash 版、itemized copy(`my @c=$n` → `[[1 2] 3]` raku 一致)。
-- `cargo test` 466/0、array/binding/list/signature roast spread clean。
+- **All core cases PASS** (`t/scalar-array-ref-sharing.t`, 18 cases): `my $n=@z; $n.push(99)` → @z has 3 elements,
+  element/push bidirectional propagation, detach (including after push), the hash variant, itemized copy
+  (`my @c=$n` → `[[1 2] 3]`, matches raku).
+- `cargo test` 466/0, array/binding/list/signature roast spread clean.
 
-### revert 理由 — open-q#1/#2 が現実の壁
+### Reason for revert — open-q#1/#2 are real walls
 
-`my $a = @src` が $a を **ContainerRef にすると、source を Arc identity で追跡する既存機構が壊れる**:
-**`t/pair-value-element-writethrough.t`(#2943)が回帰** — `$p = (k => $a); $p.value[3] = "x"` の
-write-through は @src/$a の **plain Array Arc を identity で照合**するが、cell 化で `Value::ContainerRef`
-になると照合に失敗し空書き込みになる。これは §5 が「2a の前に Stage 0 チョークポイント先行」と書いた
-依存そのもの＝**全 mutation/write-through サイトを ContainerRef-aware(decont)化する Sub-slice 1a が前提**。
-open-q#1(scalar-value-method dispatch の decont)も同根: cell が漏れない監査が要る。
+Making `$a = @src` turn $a into a **ContainerRef breaks the existing mechanisms that track the source by Arc identity**:
+**`t/pair-value-element-writethrough.t` (#2943) regressed** — the write-through of
+`$p = (k => $a); $p.value[3] = "x"` matches @src/$a's **plain Array Arc by identity**, but once cell-ified into
+`Value::ContainerRef` the match fails and the write goes nowhere. This is exactly the dependency §5 described as
+"Stage 0 chokepoints must precede 2a" = **Sub-slice 1a, making all mutation/write-through sites
+ContainerRef-aware (decont), is a prerequisite**. open-q#1 (decont in scalar-value-method dispatch) has the same
+root: an audit ensuring the cell never leaks is required.
 
-**∴ 次回の正しい順序: (1) Sub-slice 1a を behavior-invariant に landing(全 write-chokepoint で
-ContainerRef を decont、roast byte 一致が合格) → (2) その上に value-alias(本実装を再適用)。**
-value-alias 単独 PR は Arc-identity 機構を壊すので不可。
-
----
-
-## 9. 参照
-
-- `docs/env-locals-coherence.md` — Stage 1 outer cell 化(for-rw site A 完了)。本書はその格納側の延長。
-- `docs/container-identity.md` — 第一級コンテナ台帳(Phase 1 scalar cell / Phase 2 要素 cell)。
-- `docs/vm-single-store.md` — 二重ストア統合(Slice F)。scalar-array 共有も env↔locals 同一 cell が前提。
-- 実証 probe: §1 の表(2026-06-18)。実装試行: §8(2026-06-18)。
+**∴ The correct order for next time: (1) land Sub-slice 1a behavior-invariant (decont ContainerRef at all
+write chokepoints; roast byte-identical = acceptance) → (2) re-apply value-alias (this implementation) on top.**
+A standalone value-alias PR breaks the Arc-identity mechanisms and is not viable.
 
 ---
 
-## 10. Slice 2b 着手 handoff(2026-06-18 偵察完了・次セッション即着手用)
+## 9. References
 
-`@aoa[i] = @row` / `%h<k> = @row`(配列要素 / ハッシュ値への whole `@`/`%` 代入)を参照共有化する。
-**Slice 2a の cell 機構 + `MarkArrayShareSource`/`array_share_source` をそのまま流用**できる。偵察で
-判明した実装地図・raku 意味論・leak 評価・最大の設計課題を以下に固める。
+- `docs/env-locals-coherence.md` — Stage 1 outer-cell promotion (for-rw site A done). This document is its
+  storage-side extension.
+- `docs/container-identity.md` — first-class container ledger (Phase 1 scalar cells / Phase 2 element cells).
+- `docs/vm-single-store.md` — dual-store unification (Slice F). Scalar-array sharing also presupposes env↔locals
+  sharing the same cell.
+- Empirical probe: the table in §1 (2026-06-18). Implementation attempt: §8 (2026-06-18).
 
-### 10.1 現状(2026-06-18 probe・全て mutsu=copy / raku=share でバグ)
+---
 
-| 操作 | mutsu | raku |
+## 10. Slice 2b kickoff handoff (recon completed 2026-06-18 — for immediate start next session)
+
+Make `@aoa[i] = @row` / `%h<k> = @row` (whole `@`/`%` assignment into an array element / hash value) share by
+reference. **Slice 2a's cell mechanism + `MarkArrayShareSource`/`array_share_source` can be reused as-is.** The
+implementation map, raku semantics, leak assessment, and the biggest design issue found during recon are pinned below.
+
+### 10.1 Current state (2026-06-18 probe — all are mutsu=copy / raku=share bugs)
+
+| Operation | mutsu | raku |
 |---|---|---|
 | `@aoa[0]=@row; @row.push(9); say @aoa[0]` | `[1 2]` | `[1 2 9]` |
-| `@aoa[0]=@row; @aoa[0].push(8); say @row` | 非伝播 | `[1 2 ... 8]` |
+| `@aoa[0]=@row; @aoa[0].push(8); say @row` | no propagation | `[1 2 ... 8]` |
 | `%h<k>=@v; @v.push(3); say %h<k>` | `[1 2]` | `[1 2 3]` |
 
-### 10.2 ★最重要: cell-install 機構は `:=` 版が**既に存在**=trigger を `=` に広げるだけ
+### 10.2 ★Most important: the cell-install mechanism **already exists** in its `:=` form = just widen the trigger to `=`
 
-`@aoa[0] := @row` / `%h<k> := @v`(`:=` 要素/値 bind)は mutsu で**既に完全双方向共有**する
-(probe 確認: `@aoa[0].push`→@row, `@v.push`→%h<k> 双方向 OK)。つまり **要素 cell の格納・読み機構は
-完成済み**。Slice 2b は「`:=` でやっていることを `=`(array_share_source 経由)でもやる」。
-- **named handler**(`@aoa[0]=@row`: target が `ArrayVar`/`HashVar`)= `IndexAssignExprNamed` →
-  `exec_index_assign_expr_named_op_inner`(`vm_var_assign_ops.rs:2772`)。**ここに `bind_mode` ゲートの
-  `bind_cell` 機構が既にある**(cell を要素に install + source var へ cell 書き戻し)。これを
-  `array_share_source` でも発火させる。
-- **generic/computed handler**(`($ref)[i]=@row`, `f()<k>=@row`)= `vm_var_assign_ops.rs:4787-4897` に
-  同型の `bind_cell` 機構。同様に `=` 対応。
-- **compile hook**: `compile_expr_index_assign`(`compiler/expr_closure.rs:286`)。`@aoa[0]=@row` は
-  `IndexAssign{target:ArrayVar("aoa"), index, value:ArrayVar("row")}`(`--dump-ast` 確認)。value を
-  `compile_bind_index_value`(:268)で compile した直後に、**value が `ArrayVar`/`HashVar` のとき
-  `MarkArrayShareSource(value_source_name)` を emit**(2a と同じ opcode・field)。target も
-  `ArrayVar`/`HashVar`(要素 LHS)のときのみ。
+`@aoa[0] := @row` / `%h<k> := @v` (`:=` element/value bind) **already shares fully bidirectionally** in mutsu
+(probe-confirmed: `@aoa[0].push`→@row, `@v.push`→%h<k>, both directions OK). In other words, **the storage and
+read mechanisms for element cells are complete**. Slice 2b is "do for `=` (via array_share_source) what `:=` already does".
+- **named handler** (`@aoa[0]=@row`: target is `ArrayVar`/`HashVar`) = `IndexAssignExprNamed` →
+  `exec_index_assign_expr_named_op_inner` (`vm_var_assign_ops.rs:2772`). **The `bind_cell` mechanism gated by
+  `bind_mode` is already there** (install the cell into the element + write the cell back to the source var). Fire
+  it for `array_share_source` too.
+- **generic/computed handler** (`($ref)[i]=@row`, `f()<k>=@row`) = the same-shaped `bind_cell` mechanism at
+  `vm_var_assign_ops.rs:4787-4897`. Handle `=` likewise.
+- **compile hook**: `compile_expr_index_assign` (`compiler/expr_closure.rs:286`). `@aoa[0]=@row` is
+  `IndexAssign{target:ArrayVar("aoa"), index, value:ArrayVar("row")}` (confirmed with `--dump-ast`). Right after
+  compiling the value with `compile_bind_index_value` (:268), **emit `MarkArrayShareSource(value_source_name)` when
+  the value is `ArrayVar`/`HashVar`** (same opcode/field as 2a). Only when the target is also
+  `ArrayVar`/`HashVar` (element LHS).
 
-### 10.3 raku 意味論(probe 確定・要素も 2a の `$n` と同一の rebind/replace)
+### 10.3 raku semantics (probe-confirmed — elements have the same rebind/replace as 2a's `$n`)
 
-- `@aoa[0]=@row` → 共有(cell)。`@row.push`/`@aoa[0].push` 双方向。
-- `@aoa[0]=5`(要素を非 array 再代入) → **要素 slot を 5 に置換・@row は不変**(`[1 2]`)。
-- `@aoa[0]=@other`(別 array) → @other の cell へ張り替え・@row はもう追わない・`@other.push` のみ伝播。
-- hash 値も同様(`%h<k>=@v` 共有 / `%h<k>=5` 置換 / `%h<k>=@other` 張り替え)。
+- `@aoa[0]=@row` → share (cell). `@row.push`/`@aoa[0].push` bidirectional.
+- `@aoa[0]=5` (reassign the element to a non-array) → **replace the element slot with 5; @row unchanged** (`[1 2]`).
+- `@aoa[0]=@other` (different array) → repoint to @other's cell; @row is no longer followed; only `@other.push` propagates.
+- Hash values likewise (`%h<k>=@v` shares / `%h<k>=5` replaces / `%h<k>=@other` repoints).
 
-### 10.4 ★最大の設計課題: 要素 cell には name marker が無い(`=`-share と `:=`-bind の区別)
+### 10.4 ★Biggest design issue: element cells have no name marker (distinguishing `=`-share from `:=`-bind)
 
-2a は `__mutsu_array_share::<name>` marker で「`=`-share の whole-reassign は cell write-through せず
-slot 置換」を実現したが、**要素には変数名が無いので同じ marker を貼れない**。**★具体的 BLOCKER 箇所
-(#3268 でユーザーが特定)**: 単一要素 array store `exec_index_assign_expr_named_op_inner`
-(`vm_var_assign_ops.rs` ~3836 行)の `else if let Value::ContainerRef(cell) = &arr[i] { *cell.lock()=val }`
-が **ContainerRef 要素を再代入時に無条件 write-through**。`=`-share では replace したいが bind-cell は
-write-through。`assign_element_slot`(`value/mod.rs:3009`)も同型。
-- **★probe で確定(2026-06-18)**: raku では `@aoa[0]:=@row; @aoa[0]=5` **も** `@aoa[0]=(7,7)` **も**
-  "Cannot assign to an immutable value" **エラー**(非-array でも別 array でも write-through ではない)。
-  ∴ **「要素 cell へ値を write-through する」正しい raku 経路は存在しない**(現 mutsu の write-through は
-  元々非準拠)。
-- **方向=案A(新値型で分岐)**: 要素 write 時、新値が array(かつ array_share_source 有)→ re-share
-  (別 cell 張り替え) / 新値が非-array → 要素 slot replace(cell 捨て)。name 不要。**ただし前提**:
-  既存 `t/element-bind-cell.t`(`:=` bound 要素)が ~3836 の write-through に依存しているケースがある
-  (ユーザー指摘「per-element の share-vs-bind 区別が要る」)→ **着手時に element-bind-cell.t が要求する
-  write-through を洗い出し、`=`-share だけ replace に分岐**する(bound-index マーカー有=write-through
-  維持 / array_share_source 起源の cell=replace)。「値側で ContainerRef を push して通常 store に任せる」
-  ショートカットはこの write-through で破綻するので不可。
-- **案B(代替)**: cell に "value-share" フラグ(新 field/wrapper)を持たせ per-cell 区別。案A が
-  element-bind-cell.t と両立しない場合のフォールバック。
+2a used the `__mutsu_array_share::<name>` marker to implement "whole-reassign of an `=`-share replaces the slot
+instead of writing through the cell", but **elements have no variable name, so the same marker cannot be attached**.
+**★Concrete BLOCKER site (identified by the user in #3268)**: the single-element array store
+`exec_index_assign_expr_named_op_inner` (`vm_var_assign_ops.rs` ~line 3836) has
+`else if let Value::ContainerRef(cell) = &arr[i] { *cell.lock()=val }`, which **unconditionally writes through a
+ContainerRef element on reassignment**. An `=`-share wants replace, but a bind-cell wants write-through.
+`assign_element_slot` (`value/mod.rs:3009`) has the same shape.
+- **★Probe-confirmed (2026-06-18)**: in raku, after `@aoa[0]:=@row`, **both** `@aoa[0]=5` **and** `@aoa[0]=(7,7)`
+  are "Cannot assign to an immutable value" **errors** (neither non-array nor another array write through).
+  ∴ **No correct raku path "writes a value through an element cell"** (mutsu's current write-through was
+  non-conformant to begin with).
+- **Direction = option A (branch on new value type)**: on element write, new value is an array (and
+  array_share_source is set) → re-share (repoint to a different cell) / new value is a non-array → replace the
+  element slot (discard the cell). No name needed. **Prerequisite, however**: some cases in the existing
+  `t/element-bind-cell.t` (`:=`-bound elements) depend on the ~3836 write-through (the user's point: "a
+  per-element share-vs-bind distinction is needed") → **when starting, enumerate the write-throughs that
+  element-bind-cell.t requires, and branch only `=`-share into replace** (bound-index marker present =
+  keep write-through / cell originating from array_share_source = replace). The shortcut of "push a
+  ContainerRef on the value side and let the normal store handle it" collapses on this write-through — not viable.
+- **Option B (alternative)**: give the cell a "value-share" flag (new field/wrapper) for per-cell distinction.
+  Fallback if option A cannot coexist with element-bind-cell.t.
 
-### 10.5 leak 評価: **2b は 2a より低リスク**
+### 10.5 Leak assessment: **2b is lower-risk than 2a**
 
-`@aoa[0]:=@row` 経由で要素 cell の read 面を warmup probe(deref read/`.elems`/parent stringify/
-nested index `@aoa[0][1]`/`for @aoa`/`@aoa.map`/itemize/`.WHAT`/`.raku`)→**全て raku 一致**
-(`element-bind-cell.t` が既に網羅)。唯一 trivial 差=`@aoa.raku` の単要素 trailing-comma
-(`[[1,2,9]]` vs `[[1,2,9],]`・pre-existing・cell 無関係)。∴ 要素 cell の read leak 面は枯れている。
-2a で踏んだ regex/undefine 級の leak は要素では出にくい(要素は into_deref/resolve_*_entry に集約)。
-それでも着手時に同じ warmup probe を `=`-share で再走させ確認すること。
+Warm-up probe of the element-cell read surface via `@aoa[0]:=@row` (deref read/`.elems`/parent stringify/
+nested index `@aoa[0][1]`/`for @aoa`/`@aoa.map`/itemize/`.WHAT`/`.raku`) → **all match raku**
+(`element-bind-cell.t` already covers these). The only trivial difference = the single-element trailing comma in
+`@aoa.raku` (`[[1,2,9]]` vs `[[1,2,9],]` — pre-existing, unrelated to cells). ∴ The element-cell read leak surface
+is well-worn. The regex/undefine-class leaks 2a stepped on are unlikely for elements (elements are concentrated in
+into_deref/resolve_*_entry). Still, when starting, re-run the same warm-up probe with `=`-share to confirm.
 
-### 10.6 pin テスト草案(`t/scalar-array-share.t` に追記 or 新 `t/scalar-array-share-2b.t`)
+### 10.6 Pin-test draft (append to `t/scalar-array-share.t` or new `t/scalar-array-share-2b.t`)
 
 ```raku
 # AoA element share
@@ -402,10 +421,11 @@ my @v=(1,2); my %h; %h<k>=@v; @v.push(3); is-deeply %h<k>.Array,[1,2,3];
 # plain element copy unaffected: @x[0]=@y where used as copy? (raku still shares — verify)
 ```
 
-### 10.7 検証順序
+### 10.7 Verification order
 
-(1) compile hook + named handler `=`-share install を実装し AoA/HoA 双方向共有を pin で固める →
-(2) 要素 rebind/replace(§10.4 案A)→ (3) `make test`(t/ 必須)+ `MarkArrayShareSource` の単要素
-re-share/replace 境界 → (4) generic/computed handler 対応 → (5) `make roast` で leak/回帰確認。
-**Slice 2a/chained と同様、source promotion で要素値が ContainerRef 化した read 経路を warmup probe で
-先に洗う**(§10.5 で枯れ確認済みだが `=`-share 実装後に再確認)。
+(1) Implement the compile hook + named-handler `=`-share install and pin AoA/HoA bidirectional sharing →
+(2) element rebind/replace (§10.4 option A) → (3) `make test` (t/ mandatory) + the single-element
+re-share/replace boundary of `MarkArrayShareSource` → (4) generic/computed handler support → (5) `make roast`
+for leak/regression checks.
+**As with Slice 2a/chained, first sweep the read paths where source promotion turned element values into
+ContainerRef with the warm-up probe** (§10.5 confirmed the surface is well-worn, but re-confirm after implementing `=`-share).
