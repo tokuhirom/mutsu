@@ -30,14 +30,9 @@ impl Interpreter {
             // the token as a plain count (so `(\d) ** 4 % '.'` fails to match
             // "1.2.3.4"). We only need the end positions here, so discard caps.
             if token.separator.is_some() {
-                for (next, _caps) in self.match_separated_quantifier(
-                    token,
-                    chars,
-                    pos,
-                    &RegexCaptures::default(),
-                    pkg,
-                    pattern,
-                ) {
+                for (next, _caps) in
+                    self.match_separated_quantifier(token, chars, pos, pkg, pattern)
+                {
                     stack.push((idx + 1, next));
                 }
                 continue;

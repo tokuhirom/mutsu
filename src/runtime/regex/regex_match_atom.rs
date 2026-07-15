@@ -51,9 +51,15 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Vec<(usize, RegexCaptures)> {
-        // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST.
-        // Callers push this vec to a LIFO stack in order, so the last element
-        // is pushed last and sits on top (= tried first = highest priority).
+        // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST
+        // (the engine iterates the vec in reverse, trying the highest-priority
+        // candidate first).
+        //
+        // Each candidate's captures are a DELTA relative to an EMPTY baseline
+        // (ADR-0007): the engine merges the chosen delta into its capture
+        // store and rewinds it on backtrack. `current_caps` is the engine's
+        // accumulated store, passed for READS only (backrefs, code assertions,
+        // subrule argument evaluation) — it must never be cloned into results.
 
         if let RegexAtom::Alternation(alternatives) = atom {
             // | (LTM): try all alternatives, longest match wins.
@@ -62,7 +68,7 @@ impl Interpreter {
                 if let Some((next, mut inner_caps)) =
                     self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                 {
-                    let mut new_caps = current_caps.clone();
+                    let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().extend(v);
                     }
@@ -110,7 +116,7 @@ impl Interpreter {
                 // convention). Reverse to LOWEST FIRST for our return convention.
                 let mut group = Vec::new();
                 for (next, mut inner_caps) in inner_matches {
-                    let mut new_caps = current_caps.clone();
+                    let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().extend(v);
                     }
@@ -146,7 +152,7 @@ impl Interpreter {
             // branch and, for each, require every other branch to match exactly
             // to that end.
             let Some((first, rest)) = branches.split_first() else {
-                return vec![(pos, current_caps.clone())];
+                return vec![(pos, RegexCaptures::default())];
             };
             let mut out: Vec<(usize, RegexCaptures)> = Vec::new();
             // first-branch candidates: HIGHEST-priority-first from ends fn.
@@ -154,7 +160,7 @@ impl Interpreter {
             let mut first_ends = self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg);
             first_ends.reverse();
             for (end, first_caps) in first_ends {
-                let mut merged = merge_regex_captures(current_caps.clone(), first_caps);
+                let mut merged = merge_regex_captures(RegexCaptures::default(), first_caps);
                 let mut ok = true;
                 for branch in rest {
                     if let Some(bcaps) =
@@ -177,7 +183,7 @@ impl Interpreter {
             for (end, mut inner_caps) in
                 self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
             {
-                let mut new_caps = current_caps.clone();
+                let mut new_caps = RegexCaptures::default();
                 for (k, v) in inner_caps.named.drain() {
                     new_caps.named.entry(k).or_default().extend(v);
                 }
@@ -229,7 +235,7 @@ impl Interpreter {
                 }
                 for (goal_end, goal_caps) in goal_matches {
                     let new_caps = merge_regex_captures(
-                        current_caps.clone(),
+                        RegexCaptures::default(),
                         merge_regex_captures(goal_caps, inner_caps.clone()),
                     );
                     out.push((goal_end, new_caps));
@@ -243,7 +249,7 @@ impl Interpreter {
                 self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
             {
                 let captured: String = chars[pos..end].iter().collect();
-                let mut new_caps = current_caps.clone();
+                let mut new_caps = RegexCaptures::default();
                 let mut inner_caps = inner_caps;
                 // Named captures appearing inside a positional capture group belong
                 // to that group's sub-Match (`$/[0]<name>`), NOT to the parent
@@ -278,7 +284,7 @@ impl Interpreter {
                 for (end, mut inner_caps) in
                     self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg)
                 {
-                    let mut new_caps = current_caps.clone();
+                    let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().extend(v);
                     }
@@ -335,8 +341,7 @@ impl Interpreter {
             // `die` inside the method) must propagate out of the parse rather than
             // being swallowed as a silent non-match.
             if raw_empty
-                && let Some(result) =
-                    self.try_regex_subrule_as_method(&spec, chars, pos, current_caps, pkg)
+                && let Some(result) = self.try_regex_subrule_as_method(&spec, chars, pos, pkg)
             {
                 return result;
             }
@@ -346,14 +351,8 @@ impl Interpreter {
             // normal engine path.
             if !candidates.is_empty()
                 && !self.registry().grammar_custom_how.is_empty()
-                && let Some(result) = self.try_custom_how_subrule_dispatch(
-                    &spec,
-                    chars,
-                    pos,
-                    current_caps,
-                    pkg,
-                    &arg_values,
-                )
+                && let Some(result) =
+                    self.try_custom_how_subrule_dispatch(&spec, chars, pos, pkg, &arg_values)
             {
                 return result;
             }
@@ -406,12 +405,7 @@ impl Interpreter {
                     // returns items in the same order as input (HIGHEST FIRST).
                     // Caller expects LOWEST FIRST, so reverse.
                     let mut result = Self::build_named_candidates_from_inner(
-                        seed,
-                        pos,
-                        chars,
-                        &spec,
-                        current_caps,
-                        None, // no sym_key for seed
+                        seed, pos, chars, &spec, None, // no sym_key for seed
                     );
                     result.reverse();
                     return result;
@@ -508,14 +502,8 @@ impl Interpreter {
                 // best_raw is HIGHEST FIRST; build_named_candidates_from_inner returns in
                 // the same order (one-to-one), so result is HIGHEST FIRST.
                 // Caller expects LOWEST FIRST, so reverse.
-                let mut result = Self::build_named_candidates_from_inner(
-                    best_raw,
-                    pos,
-                    chars,
-                    &spec,
-                    current_caps,
-                    None,
-                );
+                let mut result =
+                    Self::build_named_candidates_from_inner(best_raw, pos, chars, &spec, None);
                 result.reverse();
                 result
             } else {
@@ -557,7 +545,6 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,
-        current_caps: &RegexCaptures,
         pkg: &str,
     ) -> Option<Vec<(usize, RegexCaptures)>> {
         // Only plain, argument-less identifier subrules dispatched against a real
@@ -623,7 +610,7 @@ impl Interpreter {
                 {
                     let end = pos + to as usize;
                     if end <= chars.len() {
-                        return Some(vec![(end, current_caps.clone())]);
+                        return Some(vec![(end, RegexCaptures::default())]);
                     }
                 }
                 // Undefined / non-cursor return → treated as a non-match.
@@ -634,19 +621,19 @@ impl Interpreter {
 
     /// Build named regex candidates from inner match results (positions relative to tail).
     /// Wraps each inner match in the appropriate capture structure for the named regex call.
-    /// `pos` is the position of the named atom in `chars`.
+    /// `pos` is the position of the named atom in `chars`. Each candidate is a
+    /// capture DELTA relative to an empty baseline (ADR-0007).
     pub(super) fn build_named_candidates_from_inner(
         inner_matches: Vec<(usize, RegexCaptures)>,
         pos: usize,
         chars: &[char],
         spec: &NamedRegexLookupSpec,
-        current_caps: &RegexCaptures,
         sym_key: Option<&String>,
     ) -> Vec<(usize, RegexCaptures)> {
         let mut out = Vec::new();
         for (inner_end, inner_caps) in inner_matches {
             let end = pos + inner_end;
-            let mut new_caps = current_caps.clone();
+            let mut new_caps = RegexCaptures::default();
             let capture_name = spec
                 .capture_name
                 .as_deref()

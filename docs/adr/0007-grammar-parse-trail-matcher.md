@@ -1,8 +1,31 @@
 # ADR-0007: Grammar/regex matcher — cursor + undo-log (trail) to kill capture-threading churn
 
-- **Status**: Proposed (2026-07-16)
+- **Status**: Accepted (2026-07-16) — implemented in #4591
 - **Context**: PLAN §5 grammar-parse performance. Follows the incremental Arc-shared
   sub-captures slice (#4586) and the exponential/ceremony fixes (#4556, #4559).
+
+## Implementation outcome (2026-07-16, #4591)
+
+The four phases landed as one PR: a key simplification made the split unnecessary.
+Every candidate producer only ever *appended* to the cloned accumulated caps, so
+converting them to delta output was mechanically `current_caps.clone()` →
+`RegexCaptures::default()` (~30 sites) with the per-branch merge-field subsets preserved
+exactly; the engine walk became a recursive DFS (`walk_tokens`) over a `CapStore`
+(`regex_trail.rs`) with mark/apply-delta/rewind, and the all-ends producers stayed
+materialized (their elements are now cheap deltas, so laziness — P2's concern — stopped
+being load-bearing). `quant_expand_greedy` became the trail-based `quant_alt_dfs`.
+
+Measured (local release A/B): deep bench ~×1.25, shallow ~×1.2; memmove 15.4% → 7.5% of
+samples, `RegexCaptures::clone` 2.1% → 1.0%. The per-step O(accumulated) clone is
+structurally gone — but the headline "~60–70% allocator churn" turned out to be only
+partly *accumulated-state* churn. The remainder (~36% of samples post-trail) is
+**per-subrule ceremony**, present on main too: candidate `Vec`s, captured-text `String`s,
+`Arc<RegexCaptures>` subcap allocations, HashMap+SipHash traffic on the caps maps,
+`RegexCaptures::default` zeroing (~2%), one `snapshot()` per complete inner end, and a
+still-unexplained **runtime regex re-parse** path (`parse_regex_uncached` + LTM expansion
+~4% in-profile). The ≥5× deep-bench target therefore needs the follow-up slices (find &
+memoize the residual re-parse; FxHash or small-map for caps maps; box cold
+`RegexCaptures` fields; intern trail-record keys) — tracked in PLAN §5.
 
 ## Problem
 

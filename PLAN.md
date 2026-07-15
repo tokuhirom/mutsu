@@ -517,24 +517,28 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       `RegexCaptures::clone`+drop ~10% → ~4% of samples; bench-grammar-parse ~9% faster
       (1.51s → 1.37s), a deep nested-JSON doc ~4-10% faster. Pinned by
       `t/regex-nested-subcaps-sharing.t`.
-      **Remaining (the real prize — a high constant factor, NOT O(n²)):** grammar parsing
-      is **linear** in document size but ~**30× slower than raku** per matched character
-      (~18 ms/char on the deep object-of-nested-arrays bench: P=2→2.04s … P=8→8.11s single
-      parse, intercept ≈0; raku flat ~0.26s). The cost is allocation churn from threading
-      the whole `RegexCaptures` struct by value and cloning it at nearly every step —
-      per-quantifier-iteration `current_caps = new_caps.clone()`
-      (`regex_match_core.rs:1096/1338/1419`), ~14 per-candidate clones in
-      `regex_match_capture.rs`, and zero-width/leaf atoms cloning the struct for nothing.
-      Profile of a ~6s deep parse: ~19% memmove + ~40% malloc/free, clone+drop ~4%,
-      `RegexCaptures::default` ~1.7%. **(An earlier "O(n²)/140×" note was a 3-iteration
-      benchmark-loop artefact — corrected.)** The sound fix is a single mutable capture
-      store + an **undo-log / trail** (mutate-forward, rewind-on-backtrack) replacing the
-      by-value CPS threading, which requires converting the all-ends enumeration producers
-      to depth-first-with-rewind generators. Design, structural blocker, mutation/trail
-      inventory, hazards, and a 4-phase plan are in
-      **[docs/adr/0007-grammar-parse-trail-matcher.md](docs/adr/0007-grammar-parse-trail-matcher.md)
-      (Proposed)** — the next grammar-parse lever. Bench: `benchmarks/bench-grammar-parse.raku`
-      (shallow) + `benchmarks/bench-grammar-parse-deep.raku` (deep).
+      **Update 2026-07-16 (4): the trail matcher (ADR-0007, Accepted) is LANDED (#4591)** —
+      the engine walks tokens depth-first over ONE mutable `RegexCaptures` store per
+      pattern level with an undo-log (`regex_trail.rs`: mark/apply-delta/rewind); atom
+      producers return deltas relative to an empty baseline instead of cloning the
+      accumulated caps per candidate, and quantifier chains grow/shrink on the store with
+      a mark per iteration. Per-step capture cost is O(delta), never O(accumulated).
+      Measured (local release A/B): deep bench ~×1.25 (memmove 15.4%→7.5% of samples,
+      `RegexCaptures::clone` 2.1%→1.0%), shallow ~×1.2.
+      **Remaining: per-subrule ceremony — still ~25× vs raku per matched character.**
+      The residual profile (~36% allocator + spread) is a constant cost per subrule
+      invocation, NOT accumulated-state churn: candidate `Vec`s + captured-text `String`s
+      + `Arc<RegexCaptures>` subcap allocs, HashMap+SipHash traffic on the caps maps
+      (~3%), a **runtime regex re-parse path** visible in-profile
+      (`parse_regex_uncached` + LTM expansion ~4% — bypasses `PARSED_TOKEN_CANDIDATES` /
+      `REGEX_PARSE_CACHE` somewhere; find it first, likely the cheapest big win),
+      `RegexCaptures::default` zeroing (~2%), one `snapshot()` per complete inner end.
+      Next slices: memoize the residual re-parse; FxHash (or a small-vec map) for the
+      caps maps; box cold `RegexCaptures` fields (shrinks default/memmove); intern trail
+      undo-record keys. Details in
+      **[docs/adr/0007-grammar-parse-trail-matcher.md](docs/adr/0007-grammar-parse-trail-matcher.md)**
+      §Implementation outcome. Bench: `benchmarks/bench-grammar-parse.raku` (shallow) +
+      `benchmarks/bench-grammar-parse-deep.raku` (deep).
 - Targets (numbers from bench CI, main `c8955d2e`, 2026-07-13; parentheses = JIT-on series):
   method-call <1.5x (✅ 1.19x / jit 1.16x), bench-class <1.5x (✅ 1.02x / jit 1.00x),
   fib <10x (✅ **0.82x / jit 0.65x**), bench-fib (with type constraints) <2x
