@@ -199,6 +199,7 @@ impl Interpreter {
             file: None,
             is_method: false,
             is_block: false,
+            def_file: def.source_file.clone(),
         });
         // Set __mutsu_callable_id so blocks defined inside this routine
         // capture the correct target for non-local return.
@@ -354,6 +355,7 @@ impl Interpreter {
                         file: None,
                         is_method: false,
                         is_block: false,
+                        def_file: def.source_file.clone(),
                     });
                     self.prepare_definite_return_slot(return_spec.as_deref());
                     let result = self.run_block(&def.body);

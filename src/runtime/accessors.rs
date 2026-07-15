@@ -119,8 +119,30 @@ impl Interpreter {
             "Died".to_string()
         };
         let mut err = RuntimeError::new(&message);
+        // Carry the fail-site backtrace (recorded on the exception when `fail`
+        // ran) so the throw site renders rakudo's dual-backtrace form.
+        if let Some(orig) = Self::exception_backtrace_text(exception) {
+            err.set_failure_original_backtrace(Some(orig));
+        }
         err.exception = Some(Box::new(exception.clone()));
         err
+    }
+
+    /// The `.text` of a `Backtrace` stored on an exception instance's
+    /// `backtrace` attribute, if present and non-empty.
+    pub(crate) fn exception_backtrace_text(exception: &Value) -> Option<String> {
+        let ValueView::Instance { attributes, .. } = exception.view() else {
+            return None;
+        };
+        let bt = attributes.as_map().get("backtrace").cloned()?;
+        let ValueView::Instance {
+            attributes: bta, ..
+        } = bt.view()
+        else {
+            return None;
+        };
+        let text = bta.as_map().get("text").map(|v| v.to_string_value())?;
+        (!text.is_empty()).then_some(text)
     }
 
     pub(crate) fn failure_to_runtime_error_if_unhandled(

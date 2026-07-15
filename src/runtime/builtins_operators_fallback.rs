@@ -497,6 +497,7 @@ impl Interpreter {
                 file: None,
                 is_method: false,
                 is_block: false,
+                def_file: None,
             });
             // Set __mutsu_callable_id so blocks defined inside this routine
             // capture the correct target for non-local return.

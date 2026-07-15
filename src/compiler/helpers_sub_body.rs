@@ -387,6 +387,7 @@ impl Compiler {
         sub_compiler.code.compute_needs_env_sync();
         let mut cf = CompiledFunction {
             code: sub_compiler.code,
+            source_file: None,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
             return_type: return_type.cloned(),

@@ -446,6 +446,7 @@ impl Interpreter {
                 file: None,
                 is_method: false,
                 is_block: true,
+                def_file: None,
             });
             self.block_stack.push(block_sub);
             let return_spec = data

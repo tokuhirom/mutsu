@@ -1386,6 +1386,7 @@ roast/integration/advent2014-day16.t
 roast/integration/code-blocks-as-sub-args.t
 roast/integration/deep-recursion-initing-native-array.t
 roast/integration/diamond.t
+roast/integration/error-reporting.t
 roast/integration/eval-and-threads.t
 roast/integration/failure-and-callsame.t
 roast/integration/gather-with-loops.t

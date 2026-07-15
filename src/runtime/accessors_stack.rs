@@ -11,13 +11,16 @@ impl Interpreter {
     }
 
     /// Push a new routine frame. `line` and `file` record the call-site
-    /// in the *caller* (the line/file where this function was called from).
+    /// in the *caller* (the line/file where this function was called from);
+    /// `def_file` is the file the routine's body lives in (None = main
+    /// script), used by backtrace rendering.
     pub(crate) fn push_routine_with_location(
         &mut self,
         package: String,
         name: String,
         line: Option<u32>,
         file: Option<String>,
+        def_file: Option<String>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -26,6 +29,7 @@ impl Interpreter {
             file,
             is_method: false,
             is_block: false,
+            def_file,
         });
     }
 
@@ -43,6 +47,7 @@ impl Interpreter {
             file,
             is_method: true,
             is_block: false,
+            def_file: None,
         });
     }
 
@@ -61,6 +66,7 @@ impl Interpreter {
             file,
             is_method: false,
             is_block: true,
+            def_file: None,
         });
     }
 

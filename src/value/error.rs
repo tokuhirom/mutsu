@@ -102,6 +102,11 @@ pub struct RuntimeErrorCold {
     pub container_name: Option<String>,
     /// Formatted backtrace string from the call stack at the point of error.
     pub backtrace: Option<String>,
+    /// For an error raised by USING an unhandled Failure: the backtrace
+    /// captured when `fail` originally ran. The throw-site attach combines it
+    /// with the current stack as rakudo's dual-backtrace form
+    /// ("...\n\nActually thrown at:\n...").
+    pub failure_original_backtrace: Option<String>,
 }
 
 #[derive(Debug)]
@@ -231,6 +236,16 @@ impl RuntimeError {
     }
     pub(crate) fn set_backtrace(&mut self, v: Option<String>) {
         self.cold_mut().backtrace = v;
+    }
+
+    pub(crate) fn failure_original_backtrace(&self) -> Option<&str> {
+        self.cold
+            .as_ref()
+            .and_then(|c| c.failure_original_backtrace.as_deref())
+    }
+
+    pub(crate) fn set_failure_original_backtrace(&mut self, v: Option<String>) {
+        self.cold_mut().failure_original_backtrace = v;
     }
 
     /// `return` control signal (non-local return carrying `return_value`).

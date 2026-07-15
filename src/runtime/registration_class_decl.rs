@@ -99,6 +99,7 @@ impl Interpreter {
             return_type: None,
             is_default: false,
             deprecated_message: None,
+            source_file: self.current_source_file(),
         };
         // Register as a typed multi candidate under the class package, mirroring
         // the `multi sub` registration keys so `import` copies it and operator
@@ -1783,6 +1784,7 @@ impl Interpreter {
                             return_type: None,
                             is_default: *is_default_candidate,
                             deprecated_message: None,
+                            source_file: self.current_source_file(),
                         };
                         self.registry_mut().functions.insert(
                             Symbol::intern(&qualified_name),
@@ -1858,6 +1860,7 @@ impl Interpreter {
                             return_type: None,
                             is_default: *is_default_candidate,
                             deprecated_message: None,
+                            source_file: self.current_source_file(),
                         };
                         // Register under the short name (lexical scope)
                         self.registry_mut().functions.insert(
@@ -2043,6 +2046,7 @@ impl Interpreter {
                         return_type: None,
                         is_default: false,
                         deprecated_message: None,
+                        source_file: self.current_source_file(),
                     };
                     self.registry_mut()
                         .proto_methods

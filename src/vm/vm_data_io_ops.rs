@@ -87,6 +87,11 @@ fn check_unhandled_failure(v: &Value) -> Result<(), RuntimeError> {
         if !handled && let Some(ex) = attributes.as_map().get("exception").cloned() {
             let ex = crate::runtime::Interpreter::as_exception_value(ex);
             let mut err = RuntimeError::new(ex.to_string_value());
+            // Fail-site backtrace for the dual-backtrace rendering (see
+            // `failure_value_to_error`).
+            if let Some(orig) = crate::runtime::Interpreter::exception_backtrace_text(&ex) {
+                err.set_failure_original_backtrace(Some(orig));
+            }
             err.exception = Some(Box::new(ex));
             return Err(err);
         }
