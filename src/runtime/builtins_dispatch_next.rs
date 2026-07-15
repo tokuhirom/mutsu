@@ -232,6 +232,7 @@ impl Interpreter {
                         .map(|(n, _)| n.clone())
                         .unwrap_or_default();
                     if !method_name_now.is_empty()
+                        && self.has_any_wrap_chains()
                         && let Some(cand_idx) = self.find_method_candidate_index(
                             &owner_class,
                             &method_name_now,
