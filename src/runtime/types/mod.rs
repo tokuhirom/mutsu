@@ -169,6 +169,31 @@ impl Interpreter {
         self.readonly_undo.pop();
     }
 
+    /// Swap out the whole readonly state for a lazily-forced body run
+    /// (gather / lazy list). The body was compiled and captured in its OWN
+    /// frame's readonly context, but at force time the CONSUMER frame's marks
+    /// are in effect — so a same-named writable variable of the body
+    /// (`sub f($n is copy) { gather { $n div= 2 } }` forced inside
+    /// `sub phi($n)`) false-positives the readonly check
+    /// (99problems-31-to-40.t P37). Clearing for the duration of the force
+    /// loses in-body protection of captured outer readonly names (rare) but
+    /// never blocks the body's own writes. Restore with
+    /// [`Self::restore_readonly_state`] on every exit path.
+    pub(crate) fn take_readonly_state(&mut self) -> super::SavedReadonlyState {
+        super::SavedReadonlyState {
+            vars: std::mem::take(&mut self.readonly_vars),
+            undo: std::mem::take(&mut self.readonly_undo),
+            frames: std::mem::replace(&mut self.readonly_frames, 0),
+        }
+    }
+
+    /// Restore the readonly state saved by [`Self::take_readonly_state`].
+    pub(crate) fn restore_readonly_state(&mut self, saved: super::SavedReadonlyState) {
+        self.readonly_vars = saved.vars;
+        self.readonly_undo = saved.undo;
+        self.readonly_frames = saved.frames;
+    }
+
     /// Check if a variable is readonly.
     pub(crate) fn is_readonly(&self, name: &str) -> bool {
         self.is_readonly_sym(Symbol::intern(name))

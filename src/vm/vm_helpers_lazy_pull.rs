@@ -134,6 +134,9 @@ impl Interpreter {
 
         // Push gather items collector with the take limit
         let saved_gather_len = self.gather_items_len();
+        // A stale deferred-suspension flag from an enclosing pull must not
+        // fire this run's first loop boundary.
+        self.gather_suspend_pending = false;
 
         // If resuming, restore already-cached items into the gather collector
         // so that the take_value limit check accounts for them.
@@ -194,6 +197,10 @@ impl Interpreter {
             body_finished = true;
         }
 
+        // The body may finish (or error) with the deferred-suspension flag
+        // still set (straight-line takes, last iteration); it must not leak
+        // into an unrelated later loop.
+        self.gather_suspend_pending = false;
         // Collect gather items
         let items = self.pop_gather_items().unwrap_or_default();
         self.pop_gather_take_limit();

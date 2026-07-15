@@ -15,12 +15,19 @@ impl Interpreter {
         // sibling loop). Gated on the compile-time flag so the overwhelmingly
         // common no-`sub` loop body pays zero cost. Snapshot happens once per
         // loop entry, not per iteration.
-        if !spec.body_declares_routines {
-            return self.exec_for_loop_op_inner(code, spec, ip, compiled_fns);
-        }
-        let snapshot = self.snapshot_routine_registry();
-        let result = self.exec_for_loop_op_inner(code, spec, ip, compiled_fns);
-        self.restore_routine_registry(snapshot);
+        // A `for` loop keeps the immediate at-take lazy suspension (its
+        // positional resume state makes that exact) — see
+        // `lazy_take_boundary_defer`.
+        let saved_defer = std::mem::replace(&mut self.lazy_take_boundary_defer, false);
+        let result = if !spec.body_declares_routines {
+            self.exec_for_loop_op_inner(code, spec, ip, compiled_fns)
+        } else {
+            let snapshot = self.snapshot_routine_registry();
+            let result = self.exec_for_loop_op_inner(code, spec, ip, compiled_fns);
+            self.restore_routine_registry(snapshot);
+            result
+        };
+        self.lazy_take_boundary_defer = saved_defer;
         result
     }
 

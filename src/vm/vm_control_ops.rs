@@ -254,6 +254,21 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // Condition-driven loop: a lazy-pull take limit defers its suspension
+        // to this loop's iteration boundary (see `lazy_take_boundary_defer`).
+        let saved_defer = std::mem::replace(&mut self.lazy_take_boundary_defer, true);
+        let r = self.exec_while_loop_op_inner(code, spec, ip, compiled_fns);
+        self.lazy_take_boundary_defer = saved_defer;
+        r
+    }
+
+    fn exec_while_loop_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        spec: &WhileLoopSpec,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
         let cond_start = *ip + 1;
         let body_start = spec.cond_end as usize;
         let loop_end = spec.body_end as usize;
@@ -285,6 +300,17 @@ impl Interpreter {
         self.push_loop_local_scope();
 
         'while_loop: loop {
+            // Deferred lazy-pull suspension (see `gather_suspend_pending`):
+            // an iteration boundary is the exact point where re-entering from
+            // the condition on resume continues correctly.
+            if self.gather_suspend_pending {
+                self.gather_suspend_pending = false;
+                self.gather_for_loop_resume = Some(crate::value::ForLoopResumeState::CStyleLoop);
+                self.pop_loop_local_scope(code);
+                return Err(RuntimeError::new(
+                    crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
+                ));
+            }
             self.loop_cond_active = true;
             let cond_res = self.run_range(code, cond_start, body_start, compiled_fns);
             self.loop_cond_active = false;

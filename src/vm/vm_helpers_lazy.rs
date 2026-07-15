@@ -176,7 +176,11 @@ impl Interpreter {
         // GC safepoint (§9.2a `lazy_force`): the strict-force entry boundary.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::LazyForce);
         let caller_code = self.current_code;
+        // The body runs under its OWN readonly context, not the consumer
+        // frame's (see take_readonly_state).
+        let saved_readonly = self.take_readonly_state();
         let r = self.force_lazy_list_vm_inner(list);
+        self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
         r
     }
@@ -410,7 +414,11 @@ impl Interpreter {
         // GC safepoint (§9.2a `lazy_force`): the bounded pull/resume boundary.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::LazyForce);
         let caller_code = self.current_code;
+        // The body runs under its OWN readonly context, not the consumer
+        // frame's (see take_readonly_state).
+        let saved_readonly = self.take_readonly_state();
         let r = self.force_lazy_list_vm_n_inner(list, needed);
+        self.restore_readonly_state(saved_readonly);
         self.reconcile_caller_after_lazy_force(caller_code);
         r
     }

@@ -103,7 +103,11 @@ impl Interpreter {
         self.env = list.env.clone();
         self.gather_items.push(Vec::new());
         self.gather_take_limits.push(Some(needed_len));
+        self.gather_suspend_pending = false;
         let run_res = self.run_block(&list.body);
+        // Clear the deferred-suspension flag on exit — see the matching clear
+        // in force_lazy_list_vm_n_inner.
+        self.gather_suspend_pending = false;
         let mut items = self.gather_items.pop().unwrap_or_default();
         self.gather_take_limits.pop();
         while self.gather_items.len() > saved_len {
