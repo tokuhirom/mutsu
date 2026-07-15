@@ -85,7 +85,21 @@ impl Interpreter {
             },
             _ => func,
         };
-        if let ValueView::Routine { package, name, .. } = func.view() {
+        if let ValueView::Routine {
+            package,
+            name,
+            is_regex,
+        } = func.view()
+        {
+            // A token/rule method value called with a cursor (`$meth($c)`,
+            // e.g. from a custom grammar HOW's `find_method` wrapper) runs
+            // the token at the cursor position and returns a Match.
+            if is_regex
+                && let Some(res) =
+                    self.try_call_token_method_value(&package.resolve(), &name.resolve(), &args)
+            {
+                return res;
+            }
             if !package.is_empty() && package != "GLOBAL" {
                 let fq = format!("{package}::{name}");
                 if self.resolve_function(&fq).is_some() {

@@ -612,6 +612,55 @@ impl Interpreter {
         resolved
     }
 
+    /// True when `class_name`'s MRO (or direct parents) includes a builtin
+    /// metamodel class, i.e. the class is a user-defined HOW. Gated by the
+    /// registry-level `has_metamodel_how_classes` flag so programs that never
+    /// declare a HOW subclass pay a single bool read per method dispatch.
+    pub(crate) fn is_metamodel_how_class(&self, class_name: &str) -> bool {
+        let reg = self.registry();
+        if !reg.has_metamodel_how_classes {
+            return false;
+        }
+        reg.classes.get(class_name).is_some_and(|cd| {
+            cd.mro.iter().any(|c| Self::is_metamodel_class_name(c))
+                || cd.parents.iter().any(|c| Self::is_metamodel_class_name(c))
+        })
+    }
+
+    /// Name of a builtin metamodel class a user HOW can inherit from.
+    pub(crate) fn is_metamodel_class_name(name: &str) -> bool {
+        matches!(
+            name,
+            "Metamodel::ClassHOW"
+                | "Metamodel::GrammarHOW"
+                | "Perl6::Metamodel::ClassHOW"
+                | "Perl6::Metamodel::GrammarHOW"
+        )
+    }
+
+    /// Push the samewith context for a method dispatch, plus a metamodel
+    /// dispatch context when the receiver is a user-defined HOW class (so
+    /// `callsame` can reach the native metamodel method as the last
+    /// candidate). Always pair with `pop_method_samewith_context`.
+    pub(crate) fn push_method_samewith_context(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+        invocant: Option<Value>,
+    ) {
+        self.samewith_context_stack
+            .push((method_name.to_string(), invocant));
+        if self.is_metamodel_how_class(receiver_class) {
+            self.metamodel_dispatch_stack.push((
+                self.samewith_context_stack.len(),
+                receiver_class.to_string(),
+                method_name.to_string(),
+                args.to_vec(),
+            ));
+        }
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -620,8 +669,12 @@ impl Interpreter {
         invocant: Value,
     ) -> bool {
         // Always push samewith context so samewith() can find the method name/invocant
-        self.samewith_context_stack
-            .push((method_name.to_string(), Some(invocant.clone())));
+        self.push_method_samewith_context(
+            receiver_class,
+            method_name,
+            args,
+            Some(invocant.clone()),
+        );
         // Fast path: a name with at most one *structural* dispatch candidate across
         // the MRO can never produce a deferral frame (arg-matching only reduces the
         // candidate count), so skip the per-call `resolve_all_methods_with_owner`
@@ -735,9 +788,17 @@ impl Interpreter {
         self.method_dispatch_stack.pop();
     }
 
-    /// Pop the samewith context pushed by push_method_dispatch_frame.
+    /// Pop the samewith context pushed by push_method_dispatch_frame /
+    /// push_method_samewith_context.
     /// Must always be called after push_method_dispatch_frame, regardless of its return value.
     pub(crate) fn pop_method_samewith_context(&mut self) {
+        if self
+            .metamodel_dispatch_stack
+            .last()
+            .is_some_and(|(depth, ..)| *depth == self.samewith_context_stack.len())
+        {
+            self.metamodel_dispatch_stack.pop();
+        }
         self.samewith_context_stack.pop();
     }
 

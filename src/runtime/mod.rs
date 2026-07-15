@@ -1539,6 +1539,16 @@ pub struct Interpreter {
     /// Each entry is (function_or_method_name, optional_invocant).
     /// Pushed whenever a multi sub or multi method is entered, popped on exit.
     samewith_context_stack: Vec<(String, Option<Value>)>,
+    /// Metamodel-method dispatch contexts:
+    /// (samewith_depth, receiver_class, method_name, args).
+    /// Pushed alongside the samewith context when the receiver's MRO includes
+    /// a builtin metamodel class (Metamodel::ClassHOW / Metamodel::GrammarHOW),
+    /// so a `callsame` in a user HOW method that exhausts the user MRO can
+    /// fall through to the NATIVE metamodel implementation (e.g. the default
+    /// `find_method`), which is not represented as a `MethodDef` candidate.
+    /// `samewith_depth` ties each entry to its samewith frame so the shared
+    /// pop helper knows whether the top entry belongs to the frame being popped.
+    metamodel_dispatch_stack: Vec<(usize, String, String, Vec<Value>)>,
     /// Wrap chains: sub_id -> stack of (handle_id, wrapper_sub). Outermost is last.
     wrap_chains: HashMap<u64, Vec<(u64, Value)>>,
     /// Maps sub_id to function name for named call wrap chain lookup.
