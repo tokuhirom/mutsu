@@ -114,6 +114,41 @@ impl Interpreter {
         ))
     }
 
+    /// When a user method on a subclass of a builtin metamodel class
+    /// (Metamodel::ClassHOW / Metamodel::GrammarHOW) exhausts the user-defined
+    /// MRO, provide the NATIVE metamodel implementation as the final
+    /// `callsame` candidate. Native metamodel methods are not `MethodDef`
+    /// candidates, so the regular MRO chain cannot reach them.
+    fn native_metamodel_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let (_depth, _receiver, method_name, orig_args) =
+            self.metamodel_dispatch_stack.last().cloned()?;
+        // Only fire when the innermost method dispatch is the metamodel method
+        // itself (not some helper method it called).
+        if self
+            .samewith_context_stack
+            .last()
+            .is_none_or(|(n, _)| n != &method_name)
+        {
+            return None;
+        }
+        let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(orig_args);
+        match method_name.as_str() {
+            "find_method" => {
+                let obj = args.first()?.clone();
+                let name = args.get(1)?.to_string_value();
+                Some(Ok(self
+                    .classhow_find_method(&obj, &name)
+                    .unwrap_or(Value::NIL)))
+            }
+            // mutsu has no method cache to publish; the default is a no-op.
+            "publish_method_cache" => Some(Ok(Value::NIL)),
+            _ => None,
+        }
+    }
+
     /// Shared implementation for callsame/nextsame/callwith/nextwith.
     /// `override_args`: if Some, use these args instead of the original.
     /// `tail_call`: if true, raise a return-control exception with the result.
@@ -240,13 +275,21 @@ impl Interpreter {
             let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
                 let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
+                    // User MRO exhausted: a metamodel-HOW dispatch falls through
+                    // to the native metamodel implementation as the last
+                    // candidate before giving up.
+                    let result =
+                        match self.native_metamodel_next_candidate(override_args.as_deref()) {
+                            Some(res) => res?,
+                            None => Value::NIL,
+                        };
                     if tail_call {
                         return Err(RuntimeError {
-                            return_value: Some(Value::NIL),
+                            return_value: Some(result),
                             ..RuntimeError::new("")
                         });
                     }
-                    return Ok(Value::NIL);
+                    return Ok(result);
                 };
                 frame.remaining.remove(0);
                 let rw_params = frame.rw_params.clone();
@@ -546,6 +589,19 @@ impl Interpreter {
                     self.env.insert(first_param.clone(), val);
                 }
             }
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(result),
+                    ..RuntimeError::new("")
+                });
+            }
+            return Ok(result);
+        }
+        // A metamodel-HOW method (user subclass of Metamodel::ClassHOW /
+        // Metamodel::GrammarHOW) with no user MRO frame at all: the native
+        // metamodel implementation is the next (and last) candidate.
+        if let Some(res) = self.native_metamodel_next_candidate(override_args.as_deref()) {
+            let result = res?;
             if tail_call {
                 return Err(RuntimeError {
                     return_value: Some(result),

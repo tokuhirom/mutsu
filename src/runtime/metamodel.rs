@@ -272,4 +272,48 @@ impl Interpreter {
         );
         false
     }
+
+    /// Install a custom metaclass on a just-declared grammar: instantiate the
+    /// EXPORTHOW-provided HOW type and record the instance as the grammar's
+    /// `.HOW`. When the HOW class (or an ancestor) defines a user
+    /// `find_method`, the grammar is also entered in `grammar_custom_how` so
+    /// the regex engine routes subrule dispatch through it
+    /// (Metamodel::GrammarHOW protocol).
+    pub(crate) fn install_custom_grammar_how(
+        &mut self,
+        grammar_name: &str,
+        how_type: Value,
+    ) -> Result<(), RuntimeError> {
+        let how_class = match how_type.view() {
+            ValueView::Package(sym) => sym.resolve(),
+            _ => return Ok(()),
+        };
+        // The HOW type must be a user-declared class (a stale/foreign stash
+        // entry is ignored rather than failing the grammar declaration).
+        if !self.registry().classes.contains_key(&how_class) {
+            return Ok(());
+        }
+        let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        let has_user_find_method = self
+            .registry()
+            .classes
+            .get(&how_class)
+            .map(|cd| cd.mro.clone())
+            .unwrap_or_default()
+            .iter()
+            .any(|c| {
+                self.registry()
+                    .classes
+                    .get(c.as_str())
+                    .is_some_and(|cd| cd.methods.contains_key("find_method"))
+            });
+        let mut reg = self.registry_mut();
+        reg.class_how_values
+            .insert(grammar_name.to_string(), instance.clone());
+        if has_user_find_method {
+            reg.grammar_custom_how
+                .insert(grammar_name.to_string(), instance);
+        }
+        Ok(())
+    }
 }

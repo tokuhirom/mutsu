@@ -2132,6 +2132,7 @@ impl Interpreter {
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             samewith_context_stack: Vec::new(),
+            metamodel_dispatch_stack: Vec::new(),
             wrap_chains: HashMap::new(),
             wrap_sub_names: HashMap::new(),
             wrap_name_to_sub: HashMap::new(),

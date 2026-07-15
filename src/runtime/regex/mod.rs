@@ -12,4 +12,5 @@ mod regex_match_find;
 mod regex_match_nocap;
 mod regex_match_public;
 mod regex_resolve;
+mod regex_token_method;
 mod regex_token_resolve;

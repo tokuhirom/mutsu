@@ -417,9 +417,21 @@ impl Interpreter {
         // priority is preserved because a bare builtin Routine (e.g. `&SETTING::not`
         // -> Routine{GLOBAL, "not"}) is not a declared user function, so it skips the
         // `has_function` branches and resolves natively in compiled-first.
-        if let ValueView::Routine { package, name, .. } = target.view() {
+        if let ValueView::Routine {
+            package,
+            name,
+            is_regex,
+        } = target.view()
+        {
             let pkg = package.resolve();
             let name_str = name.resolve();
+            // A token/rule method value called with a cursor (`$meth($c)`,
+            // e.g. from a custom grammar HOW's `find_method` wrapper) runs
+            // the token at the cursor position and returns a Match.
+            if is_regex && let Some(res) = self.try_call_token_method_value(&pkg, &name_str, &args)
+            {
+                return res;
+            }
             let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
             if !pkg.is_empty() && pkg != "GLOBAL" {

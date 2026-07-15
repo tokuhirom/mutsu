@@ -338,6 +338,23 @@ impl Interpreter {
             {
                 return result;
             }
+            // A grammar declared under a custom EXPORTHOW metaclass with a user
+            // `find_method` routes subrule dispatch through it (the
+            // Metamodel::GrammarHOW protocol); `None` falls through to the
+            // normal engine path.
+            if !candidates.is_empty()
+                && !self.registry().grammar_custom_how.is_empty()
+                && let Some(result) = self.try_custom_how_subrule_dispatch(
+                    &spec,
+                    chars,
+                    pos,
+                    current_caps,
+                    pkg,
+                    &arg_values,
+                )
+            {
+                return result;
+            }
             if !candidates.is_empty() {
                 // Borrow the remaining text — a `.to_vec()` copy here cost
                 // O(remaining) per subrule reference (O(n^2) over a parse).

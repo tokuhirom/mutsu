@@ -74,6 +74,15 @@ pub(crate) struct Registry {
     pub(crate) class_trusts: HashMap<String, HashSet<String>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
+    /// Grammars declared under a custom EXPORTHOW `grammar` metaclass whose HOW
+    /// class defines a user `find_method`: grammar name -> HOW instance. The
+    /// regex engine consults this to route subrule dispatch through the custom
+    /// `find_method` (Metamodel::GrammarHOW protocol).
+    pub(crate) grammar_custom_how: HashMap<String, Value>,
+    /// True once any user class inheriting a builtin metamodel class
+    /// (Metamodel::ClassHOW / Metamodel::GrammarHOW) has been declared. Cheap
+    /// gate for the per-dispatch `is_metamodel_how_class` check.
+    pub(crate) has_metamodel_how_classes: bool,
     /// Roles composed into each class: class -> [role names]. This is the
     /// FLATTENED set (includes roles reached transitively through a composed
     /// role's own `does`), used for `~~`/role-membership checks.

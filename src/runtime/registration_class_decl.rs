@@ -405,6 +405,8 @@ impl Interpreter {
             "Stash",
             "Metamodel::ClassHOW",
             "Perl6::Metamodel::ClassHOW",
+            "Metamodel::GrammarHOW",
+            "Perl6::Metamodel::GrammarHOW",
         ];
         let mut deferred_custom_traits: Vec<String> = Vec::new();
         for parent in parents {
@@ -2228,6 +2230,39 @@ impl Interpreter {
         if let Err(err) = self.validate_private_method_existence(name) {
             restore_previous_state(self);
             return Err(err);
+        }
+        // A user class inheriting a builtin metamodel class is a HOW subclass:
+        // arm the cheap per-dispatch gate for `is_metamodel_how_class`. Check
+        // the raw parent list too — builtin parents that are not registry
+        // classes may be absent from the computed MRO.
+        if !self.registry().has_metamodel_how_classes
+            && (parents.iter().any(|c| Self::is_metamodel_class_name(c))
+                || self
+                    .registry()
+                    .classes
+                    .get(name)
+                    .is_some_and(|cd| cd.mro.iter().any(|c| Self::is_metamodel_class_name(c))))
+        {
+            self.registry_mut().has_metamodel_how_classes = true;
+        }
+        // A grammar declared while an EXPORTHOW `grammar` metaclass mapping is
+        // installed (`EXPORTHOW.WHO.<grammar> = SomeHOW`, typically from a
+        // `use`d module) gets an instance of that HOW. The regex engine then
+        // routes the grammar's subrule dispatch through the HOW's user
+        // `find_method` (Metamodel::GrammarHOW protocol).
+        // TODO: EXPORTHOW should be lexically scoped to the `use`ing scope;
+        // mutsu approximates it with the (globally visible) EXPORTHOW package
+        // stash entry.
+        // The stash-assignment path stores the entry under a `$`-prefixed env
+        // key (`EXPORTHOW::$grammar`); check the sigil-less form too.
+        if parents.iter().any(|p| p == "Grammar")
+            && let Some(how_type) = self
+                .env
+                .get("EXPORTHOW::$grammar")
+                .or_else(|| self.env.get("EXPORTHOW::grammar"))
+                .cloned()
+        {
+            self.install_custom_grammar_how(name, how_type)?;
         }
         Ok(deferred_custom_traits)
     }

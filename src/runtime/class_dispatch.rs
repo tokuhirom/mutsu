@@ -159,8 +159,12 @@ impl Interpreter {
             let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, &attributes);
             let remaining = build_remaining(self, &method_def);
             let pushed_dispatch = !remaining.is_empty();
-            self.samewith_context_stack
-                .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));
+            self.push_method_samewith_context(
+                receiver_class_name,
+                method_name,
+                &args,
+                Some(invocant_for_dispatch.clone()),
+            );
             if pushed_dispatch {
                 let rw_params = super::builtins_dispatch_next::rw_scalar_positional_params(
                     &method_def.param_defs,
@@ -216,7 +220,7 @@ impl Interpreter {
                     }
                 }
             }
-            self.samewith_context_stack.pop();
+            self.pop_method_samewith_context();
             if pushed_dispatch {
                 self.method_dispatch_stack.pop();
             }
@@ -225,8 +229,12 @@ impl Interpreter {
         let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, &attributes);
         let remaining = build_remaining(self, &method_def);
         let pushed_dispatch = !remaining.is_empty();
-        self.samewith_context_stack
-            .push((method_name.to_string(), Some(invocant_for_dispatch.clone())));
+        self.push_method_samewith_context(
+            receiver_class_name,
+            method_name,
+            &args,
+            Some(invocant_for_dispatch.clone()),
+        );
         if pushed_dispatch {
             let rw_params =
                 super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
@@ -261,7 +269,7 @@ impl Interpreter {
             args,
             invocant,
         );
-        self.samewith_context_stack.pop();
+        self.pop_method_samewith_context();
         if pushed_dispatch {
             self.method_dispatch_stack.pop();
         }
