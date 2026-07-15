@@ -134,6 +134,7 @@ impl Interpreter {
                     self.resolve_all_methods_with_owner(bc, lookup_name, &args)
                         .into_iter()
                         .filter(|(_, d)| d.is_private == is_private_call)
+                        .map(|(o, d)| (o.resolve(), d))
                         .collect()
                 } else {
                     Vec::new()

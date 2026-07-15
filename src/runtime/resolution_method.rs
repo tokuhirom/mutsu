@@ -87,7 +87,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Option<(String, MethodDef)> {
+    ) -> Option<(Symbol, MethodDef)> {
         self.resolve_method_with_owner_impl(class_name, method_name, arg_values, None)
     }
 
@@ -97,7 +97,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
         invocant: &Value,
-    ) -> Option<(String, MethodDef)> {
+    ) -> Option<(Symbol, MethodDef)> {
         self.resolve_method_with_owner_impl(class_name, method_name, arg_values, Some(invocant))
     }
 
@@ -107,13 +107,13 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
         invocant: Option<&Value>,
-    ) -> Option<(String, MethodDef)> {
+    ) -> Option<(Symbol, MethodDef)> {
         self.dispatch_ambiguous = false;
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
-        let mut all_matches: Vec<(String, MethodDef)> = Vec::new();
+        let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
         // Track whether a non-multi submethod was found on an ancestor
         // (submethods block MRO search for their class but not for
         // descendants).
@@ -155,7 +155,7 @@ impl Interpreter {
                                 && pd.sub_signature.is_none()
                         })
                     {
-                        return Some((cn.resolve(), only.clone()));
+                        return Some((*cn, only.clone()));
                     }
                 }
                 for def in overloads {
@@ -182,9 +182,9 @@ impl Interpreter {
                             // Non-multi: return the first match immediately,
                             // but only if no multi candidates were already
                             // collected from a child class in the MRO.
-                            return Some((cn.resolve(), def));
+                            return Some((*cn, def));
                         }
-                        all_matches.push((cn.resolve(), def));
+                        all_matches.push((*cn, def));
                     }
                 }
                 // A non-multi submethod on an ancestor blocks the MRO search
@@ -198,7 +198,7 @@ impl Interpreter {
                 // For non-multi methods, stop here — a subclass override
                 // hides the parent's version.
                 if !any_multi && all_matches.is_empty() {
-                    return first_visible_non_multi.map(|def| (cn.resolve(), def));
+                    return first_visible_non_multi.map(|def| (*cn, def));
                 }
             }
         }
@@ -444,7 +444,7 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Vec<(String, MethodDef)> {
+    ) -> Vec<(Symbol, MethodDef)> {
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro = self.class_mro(class_name);
         let mut matches = Vec::new();
@@ -485,7 +485,7 @@ impl Interpreter {
                         role_bindings.as_ref(),
                         None,
                     ) {
-                        matches.push((cn.resolve(), def));
+                        matches.push((*cn, def));
                     }
                 }
             }
@@ -501,9 +501,9 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Vec<(String, MethodDef)> {
+    ) -> Vec<(Symbol, MethodDef)> {
         let mro = self.class_mro(class_name);
-        let mut defining_levels: Vec<String> = Vec::new();
+        let mut defining_levels: Vec<Symbol> = Vec::new();
         for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
             if let Some(overloads) = self
@@ -514,7 +514,7 @@ impl Interpreter {
                     .iter()
                     .any(|d| !d.is_private && (!d.is_my || !is_ancestor));
                 if has_visible {
-                    defining_levels.push(cn.resolve());
+                    defining_levels.push(*cn);
                 }
             }
         }
@@ -535,7 +535,7 @@ impl Interpreter {
         let mut any_failed = false;
         for cn in &defining_levels {
             if let Some(resolved) =
-                self.resolve_method_with_owner_impl(cn, method_name, arg_values, None)
+                self.resolve_method_with_owner_impl(cn.as_str(), method_name, arg_values, None)
             {
                 matches.push(resolved);
             } else {

@@ -368,23 +368,30 @@ impl Interpreter {
                     ),
                 );
             }
-            if let Some(result) =
-                self.check_method_wrap_chain(cn, &owner_class, method, &method_def, &target, &args)
-            {
+            if let Some(result) = self.check_method_wrap_chain(
+                cn,
+                owner_class.as_str(),
+                method,
+                &method_def,
+                &target,
+                &args,
+            ) {
                 return result;
             }
             // Resolve to a def carrying compiled bytecode, compiling on demand
             // for methods added after the registration compile pass (e.g.
             // `.^add_method`, ledger §1) so they run as bytecode rather than
             // tree-walking. None → native receiver, keep interpreter fallback.
-            let resolved: Option<(String, std::sync::Arc<crate::runtime::MethodDef>)> =
-                if method_def.compiled_code.is_some() {
-                    Some((owner_class, method_def))
-                } else if !method_def.body.is_empty() {
-                    self.populate_uncompiled_method(cn, &owner_class, method, &args, &target)
-                } else {
-                    None
-                };
+            let resolved: Option<(
+                crate::symbol::Symbol,
+                std::sync::Arc<crate::runtime::MethodDef>,
+            )> = if method_def.compiled_code.is_some() {
+                Some((owner_class, method_def))
+            } else if !method_def.body.is_empty() {
+                self.populate_uncompiled_method(cn, owner_class.as_str(), method, &args, &target)
+            } else {
+                None
+            };
             if let Some((owner_class, method_def)) = resolved {
                 let cc = method_def.compiled_code.clone().expect("compiled_code set");
                 let target_id = match target.view() {
@@ -412,7 +419,7 @@ impl Interpreter {
                 let empty_fns = CompiledFns::default();
                 let method_result = self.call_compiled_method(
                     cn,
-                    &owner_class,
+                    owner_class.as_str(),
                     method,
                     &method_def,
                     &cc,

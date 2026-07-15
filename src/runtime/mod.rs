@@ -1859,7 +1859,7 @@ pub struct Interpreter {
     pub(crate) method_resolve_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
     #[allow(clippy::type_complexity)]
-    pub(crate) last_method_resolve: Option<(Symbol, Symbol, String, Arc<MethodDef>)>,
+    pub(crate) last_method_resolve: Option<(Symbol, Symbol, Symbol, Arc<MethodDef>)>,
     pub(crate) fast_method_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::FastMethodCacheEntry>,
     /// Memoized `class -> NativeCtorPlan` for the native default constructor.
@@ -1876,7 +1876,7 @@ pub struct Interpreter {
     /// method caches when the registry changes.
     #[allow(clippy::type_complexity)]
     pub(crate) multi_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<(String, Arc<MethodDef>)>>,
+        rustc_hash::FxHashMap<(Symbol, Symbol, Vec<Symbol>), Option<(Symbol, Arc<MethodDef>)>>,
     /// Memoized `(class, method) -> is this multi's dispatch type+arity deterministic`
     /// (i.e. cacheable in `multi_resolve_cache`). Computed once by scanning the MRO
     /// candidates for value-dependent constraints.

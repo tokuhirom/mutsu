@@ -182,10 +182,10 @@ impl Interpreter {
                     skipped = true;
                     continue;
                 }
-                if this.should_skip_defer_method_candidate(receiver_class_name, &owner) {
+                if this.should_skip_defer_method_candidate(receiver_class_name, owner.as_str()) {
                     continue;
                 }
-                remaining.push((owner, def));
+                remaining.push((owner.resolve(), def));
             }
             remaining
         };
@@ -207,9 +207,9 @@ impl Interpreter {
         if self.has_any_wrap_chains()
             && !self.is_inside_wrap_dispatch()
             && let Some(cand_idx) =
-                self.find_method_candidate_index(&owner_class, method_name, &method_def)
+                self.find_method_candidate_index(owner_class.as_str(), method_name, &method_def)
             && let Some(chain) = self
-                .get_method_wrap_chain(&owner_class, method_name, cand_idx)
+                .get_method_wrap_chain(owner_class.as_str(), method_name, cand_idx)
                 .cloned()
         {
             let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
@@ -236,7 +236,7 @@ impl Interpreter {
             let mut orig_env = crate::env::Env::new();
             orig_env.insert("__mutsu_method_wrap_original".to_string(), Value::TRUE);
             let original_sub = Value::make_sub(
-                Symbol::intern(&owner_class),
+                owner_class,
                 Symbol::intern(method_name),
                 method_def.params.clone(),
                 method_def.param_defs.clone(),
@@ -307,7 +307,7 @@ impl Interpreter {
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
             let cl = self.test_pending_callsite_line;
-            self.check_deprecation_for_method_with_line(method_name, &owner_class, msg, cl);
+            self.check_deprecation_for_method_with_line(method_name, owner_class.as_str(), msg, cl);
         }
         // §B: run the resolved (non-wrapped) candidate as compiled bytecode via the
         // VM-native `call_compiled_method` instead of the tree-walk
@@ -320,7 +320,7 @@ impl Interpreter {
         // the interpreter path.
         let result = self.run_resolved_method_celled(
             receiver_class_name,
-            &owner_class,
+            owner_class.as_str(),
             method_name,
             method_def,
             attributes,
