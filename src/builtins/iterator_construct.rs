@@ -16,6 +16,25 @@ use std::collections::HashMap;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
+/// The elements of a Buf/Blob receiver, or `None` when it is not one.
+fn blob_elements(target: &Value) -> Option<Vec<Value>> {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
+        return None;
+    };
+    if !crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
+        return None;
+    }
+    match attributes.as_map().get("bytes").map(Value::view) {
+        Some(ValueView::Array(items, ..)) => Some(items.to_vec()),
+        _ => Some(Vec::new()),
+    }
+}
+
 /// Build the `Iterator` instance for a `.iterator` call on a plain receiver.
 /// Mirrors the pure tail of `Interpreter::dispatch_iterator_method`.
 pub(crate) fn build_iterator_instance(target: &Value) -> Value {
@@ -29,6 +48,11 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     };
     let items = if crate::runtime::utils::is_shaped_array(target) {
         crate::runtime::utils::shaped_array_leaves(target)
+    } else if let Some(bytes) = blob_elements(target) {
+        // A Buf/Blob is an Instance holding its elements in a `bytes` attribute,
+        // so `value_to_list` would see one opaque object. It iterates its elements
+        // (`for Buf.new(1,2,3) { }` yields 1, 2, 3), so the iterator does too.
+        bytes
     } else {
         crate::runtime::utils::value_to_list(target)
     };

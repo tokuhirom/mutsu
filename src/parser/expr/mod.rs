@@ -285,6 +285,22 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
     Ok((rest, expr))
 }
 
+/// Extend an already-parsed listop argument with the list-infix operators
+/// (Z/X/meta ops/infix funcs), which bind tighter than the comma separating
+/// listop arguments. Feed operators (`==>`/`<==`) are NOT consumed — they stay
+/// outside the call (`grep {...} ==> @b`).
+pub(in crate::parser) fn extend_listop_arg_list_infix<'a>(
+    rest: &'a str,
+    orig_input: &str,
+    expr: Expr,
+) -> PResult<'a, Expr> {
+    let mut expr = expr;
+    let mut assoc_key: Option<String> = None;
+    let rest =
+        precedence::parse_list_infix_loop_no_feed(rest, orig_input, &mut expr, &mut assoc_key)?;
+    Ok((rest, expr))
+}
+
 pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, mut expr) = precedence::call_arg_expr(input)?;
     let (r, _) = ws(rest)?;

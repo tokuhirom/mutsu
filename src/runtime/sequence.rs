@@ -835,6 +835,37 @@ impl Interpreter {
             }
         }
 
+        // An arithmetic sequence emits only its *first* seed verbatim; every later
+        // element — including the remaining seeds — is `previous + step`, so it
+        // takes the numeric type of that addition rather than the type the seed
+        // was written with. `0.1, 2 … 3` is `(0.1, 2.0)`, not `(0.1, 2)`, and
+        // `1e0, 2 … 4` is all `Num`. Re-derive the later seeds with a *typed* step
+        // (`seeds[1] - seeds[0]`, following Raku's Int/Rat/Num promotion) so both
+        // they and the values generated from the last seed get the right type.
+        // Only when ALL seeds already form one consistent arithmetic progression
+        // (each gap equal, within tolerance) — a "misleading" prefix like
+        // `1, 1, 1, 2, 3 ...` keeps its literal seeds and only the tail is
+        // arithmetic, so it must be left untouched (mirrors the `all_geometric`
+        // guard below).
+        if matches!(mode, SeqMode::Arithmetic(_)) && seeds.len() > 1 {
+            let floats: Vec<f64> = seeds.iter().filter_map(Self::seq_value_to_f64).collect();
+            let all_arithmetic = floats.len() == seeds.len() && {
+                let step0 = floats[1] - floats[0];
+                floats
+                    .windows(2)
+                    .all(|w| ((w[1] - w[0]) - step0).abs() < 1e-12)
+            };
+            if all_arithmetic {
+                let step = crate::builtins::arith::arith_sub(seeds[1].clone(), seeds[0].clone());
+                for i in 1..seeds.len() {
+                    match crate::builtins::arith::arith_add(seeds[i - 1].clone(), step.clone()) {
+                        Ok(v) => seeds[i] = v,
+                        Err(_) => break,
+                    }
+                }
+            }
+        }
+
         // For geometric sequences with non-integer ratio, re-derive seeds (except first)
         // from the geometric formula to match Raku behavior:
         // (81, 27, 9 ... 1) gives (81, 27.0, 9.0, 3.0, 1.0)
