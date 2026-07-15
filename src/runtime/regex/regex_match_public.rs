@@ -118,13 +118,15 @@ impl Interpreter {
         if !spec.arg_exprs.is_empty() {
             return None;
         }
-        let candidates = self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg);
+        // Memoized resolution+parse (PARSED_TOKEN_CANDIDATES); this fast path
+        // runs per quantifier iteration, so the per-call registry walk it used
+        // to do was pure overhead. None (non-static pattern) → no fast path.
+        let (candidates, _raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
         if candidates.len() != 1 {
             return None;
         }
-        let (sub_pat, sub_pkg, _sym_key) = &candidates[0];
-        let parsed = self.parse_regex(sub_pat)?;
-        Some((parsed, sub_pkg.clone()))
+        let (parsed, sub_pkg, _sym_key) = &candidates[0];
+        Some((std::sync::Arc::clone(parsed), sub_pkg.clone()))
     }
 
     pub(in crate::runtime) fn regex_match_with_captures_core(

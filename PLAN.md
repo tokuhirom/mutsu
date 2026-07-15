@@ -424,13 +424,20 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       (was ~3.6×/pair exponential, now linear), and the capture-heavy alternation case
       `[ (<[ac]>) | (<[bc]>) ]*` over 40 chars went 372ms → 3.5ms. Pinned by
       `t/regex-sep-quantifier-ratchet.t`; tracked by `benchmarks/bench-grammar-parse.raku`
-      (mutsu ~5.9s vs raku ~0.5s, **~12×**). Remaining (why still 12×):
-      1. **Named-subrule per-call ceremony**: the singular matcher's `Named` arm
-         (`regex_match_capture.rs`) spawns a scratch sub-interpreter + copies the tail text
-         per candidate per call, so nested rules are multiplicative — `"matrix":[[1,2],[3,4]]`
-         style nesting costs seconds. Same root as the zef populate per-call cost (§1 B2).
-      2. The original general item: non-ratchet (`regex`) quantifier iterations still clone
-         `RegexCaptures` per backtrack step.
+      (mutsu ~5.9s vs raku ~0.5s, **~12×**). **Update 2026-07-15 (2): the Named-subrule
+      per-call ceremony is also FIXED** — subrule resolution+parse is memoized per
+      (pkg, name) in `PARSED_TOKEN_CANDIDATES` (invalidated by `TOKEN_DEFS_GEN`, same
+      discipline as `REGEX_PARSE_CACHE`): the per-reference registry walk
+      (`collect_token_patterns_for_scope` scanned every `token_defs` key), the per-candidate
+      `parse_regex` probe, the singular matcher's scratch sub-interpreter + tail-text
+      `String` copy, and the all-path's `tail.to_vec()` are all gone; the singular arm now
+      matches in place and wraps via the shared `build_named_candidates_from_inner`
+      (capture markers / silent-subrule action channel now behave identically on both
+      paths). bench-grammar-parse **5.9s → ~2.2s (~2.7×)**; nested `matrix` case 3.0s →
+      1.0s. Remaining (why still ~4-5×): allocation churn — profile is ~50%
+      malloc/memmove/free with `RegexCaptures::clone`+drop and `String::clone` on top =
+      the capture representation itself (String-keyed maps, full clones per DFS stack
+      push and per non-ratchet backtrack step). That is the original item of this bullet.
 - Targets (numbers from bench CI, main `c8955d2e`, 2026-07-13; parentheses = JIT-on series):
   method-call <1.5x (✅ 1.19x / jit 1.16x), bench-class <1.5x (✅ 1.02x / jit 1.00x),
   fib <10x (✅ **0.82x / jit 0.65x**), bench-fib (with type constraints) <2x

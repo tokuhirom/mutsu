@@ -324,20 +324,24 @@ impl Interpreter {
                 };
                 values
             };
-            let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
+            // Resolve + parse the candidates once (memoized for the
+            // argument-less common case — see PARSED_TOKEN_CANDIDATES).
+            let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &arg_values);
             // A subrule that resolves to no token/regex/rule but names a plain
             // METHOD of the grammar (`rule TOP { <.panic> }` where `method panic`
             // is defined) is a method-call subrule: invoke it. Its exception (e.g.
             // `die` inside the method) must propagate out of the parse rather than
             // being swallowed as a silent non-match.
-            if candidates.is_empty()
+            if raw_empty
                 && let Some(result) =
                     self.try_regex_subrule_as_method(&spec, chars, pos, current_caps, pkg)
             {
                 return result;
             }
             if !candidates.is_empty() {
-                let tail: Vec<char> = chars[pos..].to_vec();
+                // Borrow the remaining text — a `.to_vec()` copy here cost
+                // O(remaining) per subrule reference (O(n^2) over a parse).
+                let tail = &chars[pos..];
                 // The subrule candidates match `tail` (a slice from `pos`) at
                 // position 0, so publish the char before the slice for look-behind
                 // anchors (`^^`). At `pos == 0` inherit the current value (this
@@ -403,40 +407,25 @@ impl Interpreter {
                     let mut raw_out: Vec<(usize, RegexCaptures)> = Vec::new();
                     let mut has_proto = false;
 
-                    for (sub_pat, sub_pkg, sym_key) in &candidates {
+                    for (parsed, sub_pkg, sym_key) in candidates.iter() {
                         if sym_key.is_some() {
                             has_proto = true;
                         }
-                        // Parse the candidate's body in its OWN package so that
-                        // nested unqualified token references (notably char-class
-                        // `<+name>` items) resolve against the grammar that
-                        // defines them, not the outer caller's package.
-                        let saved_pkg = self.current_package();
-                        let switch_pkg = saved_pkg.as_str() != sub_pkg.as_str();
-                        if switch_pkg {
-                            self.set_current_package_shared(sub_pkg.clone());
-                        }
-                        let parsed_opt = self.parse_regex(sub_pat);
-                        if switch_pkg {
-                            self.set_current_package_shared(saved_pkg);
-                        }
-                        if let Some(parsed) = parsed_opt {
-                            let all_matches =
-                                self.regex_match_ends_from_caps_in_pkg(&parsed, &tail, 0, sub_pkg);
-                            // all_matches: HIGHEST FIRST.
-                            let matches_to_use: Vec<_> = if sym_key.is_some() {
-                                all_matches.into_iter().take(1).collect()
-                            } else {
-                                all_matches
-                            };
-                            // Preserve sym_key in each match so build_named_candidates_from_inner
-                            // can set subcap.sym correctly for action method dispatch.
-                            for (end, mut caps) in matches_to_use {
-                                if sym_key.is_some() {
-                                    caps.sym = sym_key.clone();
-                                }
-                                raw_out.push((end, caps));
+                        let all_matches =
+                            self.regex_match_ends_from_caps_in_pkg(parsed, tail, 0, sub_pkg);
+                        // all_matches: HIGHEST FIRST.
+                        let matches_to_use: Vec<_> = if sym_key.is_some() {
+                            all_matches.into_iter().take(1).collect()
+                        } else {
+                            all_matches
+                        };
+                        // Preserve sym_key in each match so build_named_candidates_from_inner
+                        // can set subcap.sym correctly for action method dispatch.
+                        for (end, mut caps) in matches_to_use {
+                            if sym_key.is_some() {
+                                caps.sym = sym_key.clone();
                             }
+                            raw_out.push((end, caps));
                         }
                     }
 
@@ -614,7 +603,7 @@ impl Interpreter {
     /// Build named regex candidates from inner match results (positions relative to tail).
     /// Wraps each inner match in the appropriate capture structure for the named regex call.
     /// `pos` is the position of the named atom in `chars`.
-    fn build_named_candidates_from_inner(
+    pub(super) fn build_named_candidates_from_inner(
         inner_matches: Vec<(usize, RegexCaptures)>,
         pos: usize,
         chars: &[char],

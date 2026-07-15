@@ -391,14 +391,20 @@ impl Interpreter {
             } else {
                 self.eval_regex_arg_list(&spec.arg_exprs, current_caps)?
             };
-            let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
+            // Resolve + parse the candidates once (memoized for the
+            // argument-less common case). Patterns are matched in place with
+            // `self` against the `&chars[pos..]` borrow — the previous
+            // implementation built a fresh scratch sub-interpreter (plus a
+            // tail-text `String`) per candidate per call, which dominated
+            // nested-grammar matching.
+            let (candidates, _raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
-                let tail: Vec<char> = chars[pos..].to_vec();
-                // The subrule matches `tail` (a slice starting at `pos`) in a fresh
-                // sub-interpreter, where slice-position 0 is not the original text
-                // start. Publish the char before the slice so look-behind anchors
-                // (`^^`) in the subrule see the real context. At `pos == 0` inherit
-                // the current value (this slice may itself be a nested subrule).
+                let tail = &chars[pos..];
+                // The subrule matches a slice starting at `pos`, where
+                // slice-position 0 is not the original text start. Publish the
+                // char before the slice so look-behind anchors (`^^`) in the
+                // subrule see the real context. At `pos == 0` inherit the
+                // current value (this slice may itself be a nested subrule).
                 let saved_prev = super::regex_helpers::REGEX_PRECEDING_CHAR.with(|c| c.get());
                 let slice_prev = if pos > 0 {
                     Some(chars[pos - 1])
@@ -409,96 +415,40 @@ impl Interpreter {
                 let _restore_prev = super::regex_helpers::RegexPrecedingCharGuard(saved_prev);
                 let mut best: Option<(usize, RegexCaptures)> = None;
                 let mut best_sym: Option<String> = None;
-                for (sub_pat, sub_pkg, sym_key) in candidates {
-                    let tail_text: String = tail.iter().collect();
-                    let mut interp = Interpreter {
-                        env: self.env.clone(),
-                        current_package: Arc::new(RwLock::new(sub_pkg.clone())),
-                        var_dynamic_flags: self.var_dynamic_flags.clone(),
-                        var_type_constraints: self.var_type_constraints.clone(),
-                        state_vars: self.state_vars.clone(),
-                        ..Self::new_regex_scratch()
-                    };
-                    self.copy_decl_registry_into(&mut interp);
-                    if let Some(mut inner_caps) =
-                        interp.regex_match_with_captures(&sub_pat, &tail_text)
+                for (parsed, sub_pkg, sym_key) in candidates.iter() {
+                    if let Some((inner_end, inner_caps)) =
+                        self.regex_match_end_from_caps_in_pkg(parsed, tail, 0, sub_pkg)
                     {
-                        if inner_caps.from != 0 {
-                            continue;
-                        }
-                        let inner_end = inner_caps.to;
                         let better = best
                             .as_ref()
                             .map(|(best_end, _)| inner_end > *best_end)
                             .unwrap_or(true);
                         if better {
+                            let mut inner_caps = inner_caps;
                             inner_caps.from = 0;
                             inner_caps.to = inner_end;
                             best = Some((inner_end, inner_caps));
-                            best_sym = sym_key;
+                            best_sym = sym_key.clone();
                         }
                     }
                 }
-                if let Some((inner_end, inner_caps)) = best {
-                    let end = pos + inner_end;
-                    let mut new_caps = current_caps.clone();
-                    let capture_name = spec
-                        .capture_name
-                        .as_deref()
-                        .or_else(|| (!spec.silent).then_some(spec.lookup_name.as_str()));
-                    if let Some(capture_name) = capture_name {
-                        let captured: String = chars[pos..end].iter().collect();
-                        // Store inner captures as subcaptures (nested)
-                        let mut subcap = inner_caps;
-                        subcap.matched = captured.clone();
-                        subcap.from = pos;
-                        subcap.to = end;
-                        // Store :sym<> variant in subcapture
-                        if best_sym.is_some() {
-                            subcap.sym = best_sym;
-                        }
-                        new_caps.code_blocks.extend(subcap.code_blocks.clone());
-                        new_caps
-                            .named_subcaps
-                            .entry(capture_name.to_string())
-                            .or_default()
-                            .push(subcap);
-                        new_caps
-                            .named
-                            .entry(capture_name.to_string())
-                            .or_default()
-                            .push(captured);
-                        if spec.capture_name.is_some() && capture_name != spec.lookup_name {
-                            new_caps
-                                .capture_alias_map
-                                .insert(capture_name.to_string(), spec.lookup_name.clone());
-                            if let Some(subcaps) = new_caps.named_subcaps.get_mut(capture_name)
-                                && let Some(last) = subcaps.last_mut()
-                            {
-                                last.action_name = Some(spec.lookup_name.clone());
-                            }
-                        }
-                    } else {
-                        // No capture name — merge inner captures flat
-                        let mut inner_caps = inner_caps;
-                        for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().extend(v);
-                        }
-                        new_caps
-                            .named_quantified
-                            .extend(inner_caps.named_quantified.drain());
-                        for v in inner_caps.positional.drain(..) {
-                            new_caps.positional.push(v);
-                        }
-                        new_caps
-                            .positional_subcaps
-                            .append(&mut inner_caps.positional_subcaps);
-                        new_caps
-                            .positional_quantified
-                            .append(&mut inner_caps.positional_quantified);
-                        new_caps.code_blocks.extend(inner_caps.code_blocks);
+                // Wrap the winning inner match via the shared builder (the same
+                // one the all-candidates path uses), so capture markers
+                // (`<( )>`), alias double-registration and the silent-subrule
+                // action channel behave identically on both paths.
+                if let Some((inner_end, mut inner_caps)) = best {
+                    if best_sym.is_some() {
+                        inner_caps.sym = best_sym;
                     }
-                    return Some((end, new_caps));
+                    return Self::build_named_candidates_from_inner(
+                        vec![(inner_end, inner_caps)],
+                        pos,
+                        chars,
+                        &spec,
+                        current_caps,
+                        None,
+                    )
+                    .pop();
                 }
                 return None;
             }
