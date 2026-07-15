@@ -398,6 +398,14 @@ pub(crate) enum ReadonlyUndo {
     Scope,
 }
 
+/// The full readonly state swapped out around a lazily-forced body run — see
+/// `Interpreter::take_readonly_state` / `restore_readonly_state`.
+pub(crate) struct SavedReadonlyState {
+    pub(crate) vars: ReadonlySet,
+    pub(crate) undo: Vec<ReadonlyUndo>,
+    pub(crate) frames: u32,
+}
+
 /// A set of variable names (`block_declared_vars` / `loop_local_vars`), keyed by
 /// the interned `Symbol` rather than an owned `String`.
 ///
@@ -1963,6 +1971,22 @@ pub struct Interpreter {
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
     pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,
+    /// Set by `take_value` when a lazy pull's take limit is reached inside a
+    /// condition-driven loop (`while`/`until`/C-style `loop`): the suspension
+    /// is DEFERRED to that loop's next iteration boundary, where re-entering
+    /// from the condition on resume is exact. Suspending at the `take` itself
+    /// replayed the statements between the take and the iteration end
+    /// (`while $n > 1 { take $n; $n div= 2 }` yielded 6,6,6... —
+    /// 99problems-31-to-40.t P37).
+    pub(crate) gather_suspend_pending: bool,
+    /// True while the innermost enclosing loop op is condition-driven
+    /// (`while`/`until`/C-style/`repeat`), i.e. a take-limit hit should defer
+    /// to its iteration boundary (`gather_suspend_pending`). `for` loops keep
+    /// the immediate at-take signal: their positional resume state
+    /// (`next_index`) makes the at-take suspension exact for element values,
+    /// and roast pins its side-effect timing (S04-statements/gather.t
+    /// "gather is lazy"). Saved/restored on loop-op entry/exit.
+    pub(crate) lazy_take_boundary_defer: bool,
     pub(crate) rw_map_topic_capture: Option<Value>,
 }
 

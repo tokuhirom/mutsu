@@ -159,9 +159,25 @@ impl Interpreter {
             if let Some(Some(limit)) = self.gather_take_limits.last()
                 && items.len() >= *limit
             {
-                return Err(RuntimeError::new(
-                    "__mutsu_lazy_gather_take_limit_reached__",
-                ));
+                if self.lazy_take_boundary_defer {
+                    // Inside a condition-driven loop: defer the suspension to
+                    // the loop's iteration boundary (`gather_suspend_pending`)
+                    // — suspending at the take itself replays the statements
+                    // between the take and the iteration end on resume. The
+                    // overshoot backstop still signals here if no boundary is
+                    // ever reached.
+                    self.gather_suspend_pending = true;
+                    if items.len() >= limit.saturating_add(64) {
+                        self.gather_suspend_pending = false;
+                        return Err(RuntimeError::new(
+                            "__mutsu_lazy_gather_take_limit_reached__",
+                        ));
+                    }
+                } else {
+                    return Err(RuntimeError::new(
+                        "__mutsu_lazy_gather_take_limit_reached__",
+                    ));
+                }
             }
         }
         Ok(())
