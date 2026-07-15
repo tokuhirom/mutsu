@@ -303,14 +303,19 @@ impl Interpreter {
                         )
                     {
                         let start = self.stack.len() - arity_usize;
-                        let args: Vec<Value> = self.stack.drain(start..).collect();
+                        // Pooled args buffer (J4d): `drain(..).collect()` was one
+                        // malloc/free per call; borrow the locals pool's recycled
+                        // `Vec<Value>` instead (mirrors the positional cached path).
+                        let mut args = self.take_locals_from_pool(0);
+                        args.extend(self.stack.drain(start..));
                         // Extract callsite line for deprecation tracking
                         let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                         if cl.is_some() {
                             loan_env!(self, set_pending_callsite_line(cl));
                         }
-                        let result = self.call_compiled_function_light(cf, args, compiled_fns)?;
-                        self.stack.push(result);
+                        let result = self.call_compiled_function_light(cf, &args, compiled_fns);
+                        self.recycle_locals(args);
+                        self.stack.push(result?);
                         // Slice F: drain captured-outer writes through to this
                         // caller frame's local slots (see the positional-light
                         // cached path above). The env_dirty-gated reconcile also
@@ -373,7 +378,7 @@ impl Interpreter {
                             && !named_share
                             && Self::is_light_call_eligible(&cf, name_str)
                         {
-                            self.call_compiled_function_light(&cf, args, compiled_fns)
+                            self.call_compiled_function_light(&cf, &args, compiled_fns)
                         } else if !share_into_scalar
                             && !named_share
                             && Self::is_positional_light_call_eligible(&cf, name_str)
@@ -1098,7 +1103,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    let result = self.call_compiled_function_light(cf, args, compiled_fns);
+                    let result = self.call_compiled_function_light(cf, &args, compiled_fns);
                     let result = result?;
                     return loan_env!(self, maybe_fetch_rw_proxy(result, true));
                 }

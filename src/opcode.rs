@@ -3687,6 +3687,41 @@ impl CompiledCode {
 /// compiler-generated strings, so HashDoS resistance buys nothing here.
 pub(crate) type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>;
 
+/// Precomputed bind plan for the light named-call path: what
+/// `call_compiled_function_light`'s binding loop needs per call, derived once
+/// per `CompiledFunction` instead of re-deriving match keys / locals slots /
+/// env-mirror gates from strings on every call.
+#[derive(Clone, Debug)]
+pub(crate) struct NamedCallPlan {
+    /// One entry per (named) parameter, in `param_defs` order.
+    pub(crate) params: Vec<NamedParamBind>,
+    /// Whether the body reads `@_` (has a `@_` local), so the caller's
+    /// positional args must be materialized into it.
+    pub(crate) uses_arg_array: bool,
+}
+
+/// Per-parameter entry of a [`NamedCallPlan`].
+#[derive(Clone, Debug)]
+pub(crate) struct NamedParamBind {
+    /// The key a caller's `:key(value)` pair must carry (sigil/twigil stripped).
+    pub(crate) match_key: String,
+    /// The parameter's locals slot (by `pd.name`), when it has one.
+    pub(crate) slot: Option<usize>,
+    /// Whether the bound value must also be written into the overlay env
+    /// (a name-based reader exists for the slot / the param has no slot).
+    pub(crate) needs_env: bool,
+    /// Whether the parameter is required (missing => X::AdHoc).
+    pub(crate) required: bool,
+    /// `sub_signature` alias keys that also match this param
+    /// (e.g. `colour` for `:color(:$colour)`).
+    pub(crate) alias_keys: Vec<String>,
+    /// On a match, every `sub_signature` name is additionally bound to the
+    /// value: (bind name, its locals slot).
+    pub(crate) alias_binds: Vec<(String, Option<usize>)>,
+    /// `outer_sub_signature` alias keys (sigils trimmed) that also match.
+    pub(crate) outer_alias_keys: Vec<String>,
+}
+
 /// A compiled function body (SubDecl compiled to bytecode).
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {
@@ -3720,11 +3755,12 @@ pub(crate) struct CompiledFunction {
     /// returns. A `my sub` nested inside a `{ }` block within the body is not
     /// counted here: `BlockScope` already restores the registry for it.
     pub(crate) declares_inner_routines: bool,
-    /// Pre-computed mapping for named parameters: (match_key, local_slot, sub_sig_slots).
-    /// sub_sig_slots is a list of (inner_key, inner_slot) for sub_signature aliases.
-    /// Used by the OTF named call fast path to avoid name-based lookup per call.
-    #[allow(clippy::type_complexity)]
-    pub(crate) named_param_slots: Option<Vec<(String, usize, Vec<(String, usize)>)>>,
+    /// Pre-computed bind plan for the light named-call path
+    /// (`call_compiled_function_light`): per-parameter match keys, locals
+    /// slots, and env-mirror gates that the binding loop would otherwise
+    /// recompute from strings on every call. `Some` exactly when every
+    /// parameter is named (the light path's eligibility precondition).
+    pub(crate) named_call_plan: Option<Box<NamedCallPlan>>,
     /// Deprecation info: (kind, name, package, message).
     /// When set, every call records a deprecation event.
     pub(crate) deprecated_info: Option<(String, String, String, String)>,
@@ -3792,12 +3828,20 @@ impl CompiledFunction {
         }
     }
 
-    /// Pre-compute the mapping for named parameters: match_key -> (local_slot, sub_sig_slots).
-    pub(crate) fn precompute_named_param_slots(&mut self) {
+    /// Pre-compute the light named-call bind plan (see [`NamedCallPlan`]).
+    pub(crate) fn precompute_named_call_plan(&mut self) {
         if self.param_defs.is_empty() || !self.param_defs.iter().all(|pd| pd.named) {
             return;
         }
-        let mut slots = Vec::new();
+        let slot_of = |name: &str| self.code.locals.iter().position(|n| n == name);
+        // A slot's bound value must be mirrored into the overlay env when a
+        // name-based reader exists for it (same compile-time analysis the
+        // body's SetLocal flush uses); a param with no slot is env-only.
+        let needs_env_of = |slot: Option<usize>| match slot {
+            Some(s) => self.code.needs_env_sync.get(s).copied().unwrap_or(true),
+            None => true,
+        };
+        let mut params = Vec::with_capacity(self.param_defs.len());
         for pd in &self.param_defs {
             let match_key = pd
                 .name
@@ -3809,38 +3853,50 @@ impl CompiledFunction {
                 .or_else(|| match_key.strip_prefix('.'))
                 .unwrap_or(match_key)
                 .to_string();
-            let slot = self
-                .code
-                .locals
-                .iter()
-                .position(|n| n == &pd.name)
-                .unwrap_or(0);
-            // Pre-compute sub_signature alias slots
-            let mut sub_sig_slots = Vec::new();
+            let slot = slot_of(&pd.name);
+            let mut alias_keys = Vec::new();
+            let mut alias_binds = Vec::new();
             if let Some(ref sub_params) = pd.sub_signature {
                 for sub_pd in sub_params {
-                    if !sub_pd.named {
-                        continue;
+                    if sub_pd.named {
+                        alias_keys.push(
+                            sub_pd
+                                .name
+                                .strip_prefix(':')
+                                .unwrap_or(&sub_pd.name)
+                                .to_string(),
+                        );
                     }
-                    let inner_key = sub_pd
-                        .name
-                        .strip_prefix(':')
-                        .unwrap_or(&sub_pd.name)
-                        .to_string();
-                    let inner_slot = self
-                        .code
-                        .locals
-                        .iter()
-                        .position(|n| n == &sub_pd.name)
-                        .unwrap_or(0);
-                    sub_sig_slots.push((inner_key, inner_slot));
+                    // On a match (by any key), every sub-signature name is
+                    // bound to the value — e.g. `:color(:$colour)` binds both.
+                    alias_binds.push((sub_pd.name.clone(), slot_of(&sub_pd.name)));
                 }
             }
-            slots.push((match_key, slot, sub_sig_slots));
+            let mut outer_alias_keys = Vec::new();
+            if let Some(ref outer) = pd.outer_sub_signature {
+                for outer_pd in outer {
+                    outer_alias_keys.push(
+                        outer_pd
+                            .name
+                            .trim_start_matches(|c: char| "$@%&".contains(c))
+                            .to_string(),
+                    );
+                }
+            }
+            params.push(NamedParamBind {
+                match_key,
+                slot,
+                needs_env: needs_env_of(slot),
+                required: pd.required,
+                alias_keys,
+                alias_binds,
+                outer_alias_keys,
+            });
         }
-        if !slots.is_empty() {
-            self.named_param_slots = Some(slots);
-        }
+        self.named_call_plan = Some(Box::new(NamedCallPlan {
+            params,
+            uses_arg_array: self.code.locals.iter().any(|n| n == "@_"),
+        }));
     }
 
     /// Detect whether the function body contains inner sub declarations or closures.
