@@ -89,6 +89,25 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return result;
         }
+        // Native `bless` (mut path twin — `self.bless(...)` has a variable
+        // receiver, so it lands here): route straight to the interpreter's
+        // single `dispatch_bless` impl, skipping the generic method-dispatch
+        // scan (lever A). Gated inside `try_native_bless`: registered class, no
+        // user `bless` override. bless builds a *new* instance and never
+        // mutates the receiver, so there is no writeback; the dispatch is
+        // env-pure exactly when the plan has no BUILD/TWEAK phase.
+        if method == "bless"
+            && let Some(result) = loan_env!(self, try_native_bless(&target, &args))
+        {
+            let class_sym = match target.view() {
+                ValueView::Package(name) => name,
+                ValueView::Instance { class_name, .. } => class_name,
+                _ => unreachable!("try_native_bless only fires on Package/Instance"),
+            };
+            let plan = self.native_ctor_plan(class_sym);
+            self.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
+            return result;
+        }
         if let ValueView::Instance { class_name, .. } = target.view() {
             let class = class_name.as_str();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D),

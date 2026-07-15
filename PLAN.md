@@ -152,10 +152,16 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
          (bless/TWEAK) Debug-traversed method-body ASTs looking for `.wrap` chains that don't
          exist; gated behind `has_any_wrap_chains()` + `Arc::ptr_eq` candidate matching.
          Combined with #4559 (subrule memoization): full fez populate = **6.5s** release
-         (raku ~1-2.8s); the 18-attr ctor microbench (tmp/ctor-bench.raku) went 35x → **2.9x**
-         vs raku over the session. Remaining (per-dist): `bless` still runs on the
-         `run_instance_method` slow-path fallback, TWEAK x2 via the resolver path, allocation
-         churn / SipHash on String-keyed maps / Symbol intern traffic in the flat profile.
+         (raku ~1-2.8s). Fourth fix (native-bless PR): `bless` no longer routes through the
+         interpreter's generic method-dispatch scan — the VM forks it straight to
+         `dispatch_bless`, which now reuses the cached per-class `NativeCtorPlan` (attribute
+         defs + BUILD/TWEAK probes, incl. 6.e role submethods) instead of re-collecting the
+         class shape per call; ctor microbench (benchmarks/bench-ctor.raku) 0.35 → 0.31s release,
+         **2.9x → 2.2x** vs raku. Remaining (per-dist): TWEAK x2 via the resolver path
+         (per-call `resolve_method_with_owner_invocant` + `build_remaining` fingerprints +
+         attributive-named-param full env path), allocation churn (~30% malloc/free in the
+         flat profile: AttrMap clones per phase, `!attr`/`.attr` env inserts) / Symbol intern
+         traffic.
       2. Nested `.raku` rendering: an Instance inside a collection renders as `Sp()` (type-object
          style) (`(C.new,).raku` → raku gives `(C.new(...),)`). The value itself is fine
          (semantically harmless; display only).
