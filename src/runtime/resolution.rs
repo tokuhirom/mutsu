@@ -87,6 +87,64 @@ impl Interpreter {
     }
 
     /// Collect token defs for a given scope (exact + :sym<> variants).
+    /// Candidate identity of a token def: the def's own name when it is a
+    /// proto candidate of `token_name` (`statement:sym<expr>`), else the bare
+    /// `token_name`.
+    pub(crate) fn token_def_identity(def_name: &str, token_name: &str) -> String {
+        if def_name
+            .strip_prefix(token_name)
+            .is_some_and(|rest| rest.starts_with(":sym"))
+        {
+            def_name.to_string()
+        } else {
+            token_name.to_string()
+        }
+    }
+
+    /// Collect token defs for `name` in `scope`, deduplicating by candidate
+    /// identity (the bare `name` for an exact def, `name:sym<X>` for a proto
+    /// candidate) across successive calls via `seen`. Walking an MRO with this
+    /// merges proto candidates from every class — a derived grammar that adds
+    /// `rule statement:sym<repeat>` keeps the base grammar's candidates — while
+    /// a same-identity redefinition in a more-derived class still overrides its
+    /// ancestor's (first hit wins).
+    pub(crate) fn collect_token_defs_for_scope_dedup(
+        &self,
+        scope: &str,
+        name: &str,
+        defs: &mut Vec<std::sync::Arc<FunctionDef>>,
+        seen: &mut std::collections::HashSet<String>,
+    ) {
+        let exact_key = format!("{scope}::{name}");
+        if !seen.contains(name)
+            && let Some(exact) = self.registry().token_defs.get(&Symbol::intern(&exact_key))
+        {
+            defs.extend(exact.clone());
+            seen.insert(name.to_string());
+        }
+        let scope_prefix_len = scope.len() + 2;
+        let sym_prefix_angle = format!("{scope}::{name}:sym<");
+        let sym_prefix_french = format!("{scope}::{name}:sym\u{ab}");
+        let mut sym_keys: Vec<String> = self
+            .registry()
+            .token_defs
+            .keys()
+            .map(|key| key.resolve())
+            .filter(|key| key.starts_with(&sym_prefix_angle) || key.starts_with(&sym_prefix_french))
+            .collect();
+        sym_keys.sort();
+        for key in &sym_keys {
+            let identity = &key[scope_prefix_len..];
+            if seen.contains(identity) {
+                continue;
+            }
+            if let Some(sym_defs) = self.registry().token_defs.get(&Symbol::intern(key)) {
+                defs.extend(sym_defs.clone());
+                seen.insert(identity.to_string());
+            }
+        }
+    }
+
     pub(crate) fn collect_token_defs_for_scope(
         &self,
         scope: &str,
@@ -186,32 +244,32 @@ impl Interpreter {
                     defs.extend(sym_defs.clone());
                 }
             }
-            // If not found, try walking MRO of the package part
-            if defs.is_empty()
-                && let Some(pos) = name.rfind("::")
-            {
+            // Walk the MRO of the package part, merging proto candidates from
+            // every ancestor (dedup by candidate identity, derived-first).
+            if let Some(pos) = name.rfind("::") {
                 let pkg = &name[..pos];
                 let token_name = &name[pos + 2..];
+                let mut seen: std::collections::HashSet<String> = defs
+                    .iter()
+                    .map(|d| Self::token_def_identity(&d.name.resolve(), token_name))
+                    .collect();
                 for ancestor in self.mro_readonly(pkg) {
                     if ancestor == pkg {
                         continue; // already checked
                     }
-                    self.collect_token_defs_for_scope(&ancestor, token_name, &mut defs);
-                    if !defs.is_empty() {
-                        break;
-                    }
+                    self.collect_token_defs_for_scope_dedup(
+                        &ancestor, token_name, &mut defs, &mut seen,
+                    );
                 }
             }
             return if defs.is_empty() { None } else { Some(defs) };
         }
         let mut defs = Vec::new();
-        // Check current package and its MRO
+        // Check current package and its MRO, merging proto candidates.
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let scopes_to_check = self.mro_readonly(&self.current_package());
         for scope in &scopes_to_check {
-            self.collect_token_defs_for_scope(scope, name, &mut defs);
-            if !defs.is_empty() {
-                break;
-            }
+            self.collect_token_defs_for_scope_dedup(scope, name, &mut defs, &mut seen);
         }
         // Also check GLOBAL
         if defs.is_empty() {
