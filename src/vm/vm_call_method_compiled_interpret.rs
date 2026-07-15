@@ -368,7 +368,7 @@ impl Interpreter {
                             method,
                             &method_def,
                             &cc,
-                            attributes,
+                            &attributes,
                             args,
                             invocant,
                             &empty_fns,

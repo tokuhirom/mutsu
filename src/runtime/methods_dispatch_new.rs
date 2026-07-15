@@ -335,22 +335,27 @@ impl Interpreter {
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(&class_name.resolve(), &mut attributes);
+        // Build the instance BEFORE the BUILD/TWEAK phases and thread its shared
+        // attribute cell through them (raku semantics: `self` inside BUILD/TWEAK
+        // IS the constructed object — same identity, mutations through a stored
+        // `self` alias stay visible). This also drops the former per-phase-step
+        // AttrMap clones + phantom intermediate instances (each of which was
+        // queued for DESTROY).
+        let inv = Value::make_instance(class_name, attributes);
         // Run BUILD/TWEAK submethods in MRO order (base-first). The whole BUILD
         // walk (per-MRO-class registry probes + role-submethod ordering) is
         // skipped when the plan says no class or composed role declares one.
         if plan.has_build {
-            self.run_bless_build_phase(class_name, &mut attributes, &args)?;
+            self.run_bless_build_phase(class_name, &inv, &args)?;
         }
         // `bless` passes its named arguments through to BUILD and TWEAK (as
         // `BUILDALL` does), so a `submethod BUILD(:$!attr!)` with a required named
         // parameter binds -- the args are also pre-folded into `attributes` above
         // for the common no-explicit-BUILD case.
-        let attributes = if plan.has_tweak {
-            self.run_tweak_phase(class_name, attributes, &args)?
-        } else {
-            attributes
-        };
-        Ok(Value::make_instance(class_name, attributes))
+        if plan.has_tweak {
+            self.run_tweak_phase(class_name, &inv, &args)?;
+        }
+        Ok(inv)
     }
 
     /// Native `bless` entry for the VM: dispatch straight to `dispatch_bless`,
@@ -380,17 +385,24 @@ impl Interpreter {
     }
 
     /// The BUILD phase of `bless`: invoke every BUILD submethod (own and
-    /// role-composed) across the MRO in base-first order, threading the
-    /// (possibly mutated) attribute map through each call. Extracted verbatim
-    /// from `dispatch_bless` so the `plan.has_build` gate can skip it wholesale.
-    /// (Unlike `run_build_phase`, a `fail` inside BUILD propagates as an error
-    /// here — the historical `bless` behavior.)
+    /// role-composed) across the MRO in base-first order against `inv`'s shared
+    /// attribute cell (every step sees — and mutates — the same live object).
+    /// Extracted from `dispatch_bless` so the `plan.has_build` gate can skip it
+    /// wholesale. (Unlike `run_build_phase`, a `fail` inside BUILD propagates as
+    /// an error here — the historical `bless` behavior.)
     fn run_bless_build_phase(
         &mut self,
         class_name: Symbol,
-        attributes: &mut AttrMap,
+        inv: &Value,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
+        let Some(cell) = Self::self_instance_attrs(inv) else {
+            return Ok(());
+        };
+        let mut probe_attrs = cell.to_map();
+        let refresh_probe = probe_attrs
+            .keys()
+            .any(|k| k.starts_with("__mutsu_attr_alias::"));
         let mro = self.class_mro(&class_name.resolve());
         // Determine the class's language revision for submethod dispatch rules.
         let class_lang_rev = self
@@ -448,16 +460,21 @@ impl Interpreter {
                 if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
                     continue;
                 }
-                let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
+                if refresh_probe {
+                    probe_attrs = cell.to_map();
+                }
+                let (_v, updated) = self.run_resolved_method_celled(
                     &class_name.resolve(),
                     &role_name,
                     "BUILD",
                     method_def,
-                    attributes.clone(),
+                    &probe_attrs,
                     args.to_vec(),
-                    Some(Value::make_instance(class_name, attributes.clone())),
+                    Some(inv.clone()),
                 )?;
-                *attributes = updated;
+                if let Some(m) = updated {
+                    cell.commit_attrs(m);
+                }
             }
             // Call the class's BUILD if it has one that wasn't already handled
             // by ordered_role_submethods_for_class. Role submethods (is_my=true,
@@ -475,34 +492,47 @@ impl Interpreter {
                 })
                 .unwrap_or(false);
             if has_non_submethod_build {
-                let (_v, updated) = self.run_instance_method(
+                if refresh_probe {
+                    probe_attrs = cell.to_map();
+                }
+                let (_v, updated) = self.run_instance_method_celled(
                     mro_class,
-                    attributes.clone(),
+                    &probe_attrs,
                     "BUILD",
                     args.to_vec(),
-                    Some(Value::make_instance(class_name, attributes.clone())),
+                    Some(inv.clone()),
                 )?;
-                *attributes = updated;
+                if let Some(m) = updated {
+                    cell.commit_attrs(m);
+                }
             }
         }
         Ok(())
     }
 
     /// Run the TWEAK phase of construction: invoke every TWEAK submethod (own and
-    /// role-composed) across the MRO in base-first order, threading the
-    /// (possibly mutated) attribute map through each call. `tweak_args` are the
-    /// constructor's named arguments, passed through to each TWEAK so a
-    /// `submethod TWEAK(:$y)` signature binds them (the `.new` path passes the
-    /// original args; `self.bless` passes none). Extracted so the native default
-    /// constructor can reuse the exact same TWEAK ordering/dispatch instead of
-    /// duplicating it (Track A ③ ctor: a class whose only non-simple feature is
-    /// TWEAK is native-default constructible, then runs TWEAK here).
+    /// role-composed) across the MRO in base-first order against `inv`'s shared
+    /// attribute cell (every step sees — and mutates — the same live object).
+    /// `tweak_args` are the constructor's named arguments, passed through to each
+    /// TWEAK so a `submethod TWEAK(:$y)` signature binds them (the `.new` path
+    /// passes the original args; `self.bless` passes none). Extracted so the
+    /// native default constructor can reuse the exact same TWEAK
+    /// ordering/dispatch instead of duplicating it (Track A ③ ctor: a class whose
+    /// only non-simple feature is TWEAK is native-default constructible, then
+    /// runs TWEAK here).
     pub(crate) fn run_tweak_phase(
         &mut self,
         class_name: Symbol,
-        mut attributes: AttrMap,
+        inv: &Value,
         tweak_args: &[Value],
-    ) -> Result<AttrMap, RuntimeError> {
+    ) -> Result<(), RuntimeError> {
+        let Some(cell) = Self::self_instance_attrs(inv) else {
+            return Ok(());
+        };
+        let mut probe_attrs = cell.to_map();
+        let refresh_probe = probe_attrs
+            .keys()
+            .any(|k| k.starts_with("__mutsu_attr_alias::"));
         let cn = class_name.resolve();
         let mro = self.class_mro(&cn);
         let class_lang_rev = self
@@ -554,16 +584,21 @@ impl Interpreter {
                 if !class_is_6e && class_has_own_tweak && role_lang_rev == "c" {
                     continue;
                 }
-                let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
+                if refresh_probe {
+                    probe_attrs = cell.to_map();
+                }
+                let (_v, updated) = self.run_resolved_method_celled(
                     &cn,
                     &role_name,
                     "TWEAK",
                     method_def,
-                    attributes.clone(),
+                    &probe_attrs,
                     tweak_args.to_vec(),
-                    Some(Value::make_instance(class_name, attributes.clone())),
+                    Some(inv.clone()),
                 )?;
-                attributes = updated;
+                if let Some(m) = updated {
+                    cell.commit_attrs(m);
+                }
             }
             // Call the class's TWEAK if it has one that wasn't already handled
             // by ordered_role_submethods_for_class. Same logic as BUILD above.
@@ -579,35 +614,47 @@ impl Interpreter {
                 })
                 .unwrap_or(false);
             if has_non_submethod_tweak {
-                let (_v, updated) = self.run_instance_method(
+                if refresh_probe {
+                    probe_attrs = cell.to_map();
+                }
+                let (_v, updated) = self.run_instance_method_celled(
                     mro_class,
-                    attributes.clone(),
+                    &probe_attrs,
                     "TWEAK",
                     tweak_args.to_vec(),
-                    Some(Value::make_instance(class_name, attributes.clone())),
+                    Some(inv.clone()),
                 )?;
-                attributes = updated;
+                if let Some(m) = updated {
+                    cell.commit_attrs(m);
+                }
             }
         }
-        Ok(attributes)
+        Ok(())
     }
 
     /// Run the BUILD phase of construction: invoke every BUILD submethod (own and
-    /// role-composed) across the MRO in base-first order, threading the
-    /// (possibly mutated) attribute map and passing the constructor's named args.
-    /// Mirrors the BUILD loop in the full `.new` path, including its `fail`
-    /// semantics: a `fail` inside BUILD does not propagate as an error but yields
-    /// a `Failure` instance to return from `.new`. The result is therefore
-    /// `Ok(Ok(attrs))` on success, `Ok(Err(failure))` when a BUILD failed (the
-    /// caller returns that `Failure` value), or `Err(e)` for a real error.
-    /// Extracted so the native default constructor can reuse it (Track A ③ ctor).
+    /// role-composed) across the MRO in base-first order against `inv`'s shared
+    /// attribute cell, passing the constructor's named args. Mirrors the BUILD
+    /// loop in the full `.new` path, including its `fail` semantics: a `fail`
+    /// inside BUILD does not propagate as an error but yields a `Failure`
+    /// instance to return from `.new`. The result is therefore `Ok(Ok(()))` on
+    /// success, `Ok(Err(failure))` when a BUILD failed (the caller returns that
+    /// `Failure` value), or `Err(e)` for a real error. Extracted so the native
+    /// default constructor can reuse it (Track A ③ ctor).
     #[allow(clippy::type_complexity)]
     pub(crate) fn run_build_phase(
         &mut self,
         class_name: Symbol,
-        mut attributes: AttrMap,
+        inv: &Value,
         build_args: &[Value],
-    ) -> Result<Result<AttrMap, Value>, RuntimeError> {
+    ) -> Result<Result<(), Value>, RuntimeError> {
+        let Some(cell) = Self::self_instance_attrs(inv) else {
+            return Ok(Ok(()));
+        };
+        let mut probe_attrs = cell.to_map();
+        let refresh_probe = probe_attrs
+            .keys()
+            .any(|k| k.starts_with("__mutsu_attr_alias::"));
         let cn = class_name.resolve();
         let mro = self.class_mro(&cn);
         let class_lang_rev = self
@@ -655,16 +702,21 @@ impl Interpreter {
                 if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
                     continue;
                 }
-                let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
+                if refresh_probe {
+                    probe_attrs = cell.to_map();
+                }
+                let (_v, updated) = self.run_resolved_method_celled(
                     &cn,
                     &role_name,
                     "BUILD",
                     method_def,
-                    attributes.clone(),
+                    &probe_attrs,
                     build_args.to_vec(),
-                    Some(Value::make_instance(class_name, attributes.clone())),
+                    Some(inv.clone()),
                 )?;
-                attributes = updated;
+                if let Some(m) = updated {
+                    cell.commit_attrs(m);
+                }
             }
             let has_non_submethod_build = self
                 .registry()
@@ -678,15 +730,20 @@ impl Interpreter {
                 })
                 .unwrap_or(false);
             if has_non_submethod_build {
-                match self.run_instance_method(
+                if refresh_probe {
+                    probe_attrs = cell.to_map();
+                }
+                match self.run_instance_method_celled(
                     mro_class,
-                    attributes.clone(),
+                    &probe_attrs,
                     "BUILD",
                     build_args.to_vec(),
-                    Some(Value::make_instance(class_name, attributes.clone())),
+                    Some(inv.clone()),
                 ) {
                     Ok((_v, updated)) => {
-                        attributes = updated;
+                        if let Some(m) = updated {
+                            cell.commit_attrs(m);
+                        }
                     }
                     Err(err) if err.is_fail() => {
                         // `fail` inside BUILD yields a Failure, not an error.
@@ -708,7 +765,7 @@ impl Interpreter {
                 }
             }
         }
-        Ok(Ok(attributes))
+        Ok(Ok(()))
     }
 
     /// Dispatch Enum .new — should throw X::Constructor::BadType.

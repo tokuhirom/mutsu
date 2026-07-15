@@ -14,7 +14,7 @@ impl Interpreter {
         method_name: &str,
         method_def: &crate::runtime::MethodDef,
         cc: &CompiledCode,
-        mut attributes: AttrMap,
+        attributes: &AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
         compiled_fns: &CompiledFns,
@@ -420,7 +420,7 @@ impl Interpreter {
         }
 
         // Bind attributes
-        for (attr_name, attr_val) in &attributes {
+        for (attr_name, attr_val) in attributes {
             let attr_name = attr_name.as_str();
             // Skip class-qualified private attribute entries (ClassName\0attrName)
             // — these are handled below when binding $!attr for the owner class.
@@ -652,18 +652,16 @@ impl Interpreter {
             loan_env!(self, set_state_var(key.clone(), val));
         }
 
-        let attrs_adjusted;
+        // `Some` only when a `:=`-bound attribute was recovered beyond the raw
+        // cell contents (`reconcile_attrs`); the common exit stays `None` = the
+        // live cell is authoritative and no whole-map snapshot is materialized.
+        let reconciled_attrs: Option<AttrMap>;
         if can_skip_merge {
             // Phase 3 Stage 2: all attributes (scalar/array/hash) are reconciled
             // against the live cell + local/env writes before the env is torn
             // down. The cell-direct reads + per-op mirrors make the cell the
             // single source; the legacy attribute writeback is gone.
-            if let Some(m) = self.reconcile_attrs(&base, cc) {
-                attributes = m;
-                attrs_adjusted = true;
-            } else {
-                attrs_adjusted = false;
-            }
+            reconciled_attrs = self.reconcile_attrs(&base, cc);
 
             let method_var_bindings = self.take_var_bindings();
             let mut restored_bindings = saved_var_bindings;
@@ -687,12 +685,7 @@ impl Interpreter {
 
             // Phase 3 Stage 2: reconcile all attributes against the live cell +
             // local/env writes before the env is merged away.
-            if let Some(m) = self.reconcile_attrs(&base, cc) {
-                attributes = m;
-                attrs_adjusted = true;
-            } else {
-                attrs_adjusted = false;
-            }
+            reconciled_attrs = self.reconcile_attrs(&base, cc);
             // Callee-frame key predicate for the merge (formerly a per-call
             // materialized HashSet<String>): the method's params and locals,
             // the frame fixtures, the attribute twigil forms and sigilless
@@ -707,8 +700,8 @@ impl Interpreter {
                     || method_def.params.iter().any(|p| p == s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
-                    || attr_twigil_local(&attributes, s)
-                    || (has_attr_aliases && attr_alias_local(&attributes, s))
+                    || attr_twigil_local(attributes, s)
+                    || (has_attr_aliases && attr_alias_local(attributes, s))
             };
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
@@ -820,20 +813,15 @@ impl Interpreter {
                     },
                     ValueView::Instance { id: ret_id, .. },
                 ) if base_id == ret_id => {
-                    if attrs_adjusted {
-                        Value::write_back_sharing(
-                            &base_attrs,
-                            class_name,
-                            attributes.clone(),
-                            base_id,
-                        )
+                    if let Some(ref m) = reconciled_attrs {
+                        Value::write_back_sharing(&base_attrs, class_name, m.clone(), base_id)
                     } else {
                         Value::instance_sharing_cell(&base_attrs, class_name, base_id)
                     }
                 }
                 _ => v,
             };
-            (adjusted, attrs_adjusted.then_some(attributes))
+            (adjusted, reconciled_attrs)
         })
     }
 

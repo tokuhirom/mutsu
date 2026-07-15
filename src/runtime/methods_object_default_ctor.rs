@@ -378,14 +378,21 @@ impl Interpreter {
         {
             return Some(Err(e));
         }
+        // Build the instance BEFORE BUILD/TWEAK and thread its shared attribute
+        // cell through them (raku semantics: `self` inside BUILD/TWEAK IS the
+        // constructed object). The post-phase checks re-snapshot the live cell.
+        let inv = Value::make_instance(class_name, attrs);
         if has_build {
             // Pass the original constructor args so `submethod BUILD(:$x)` binds
             // them. A `fail` inside BUILD yields a `Failure` instance to return.
-            match self.run_build_phase(class_name, attrs, args) {
-                Ok(Ok(updated)) => attrs = updated,
+            match self.run_build_phase(class_name, &inv, args) {
+                Ok(Ok(())) => {}
                 Ok(Err(failure)) => return Some(Ok(failure)),
                 Err(e) => return Some(Err(e)),
             }
+            let attrs = Self::self_instance_attrs(&inv)
+                .map(|c| c.to_map())
+                .unwrap_or_default();
             // Enforce required attributes after BUILD ran (BUILD may set them),
             // exactly where the full constructor does its post-BUILD required
             // check. A still-unset attribute (`None` or `Nil`) raises
@@ -418,27 +425,36 @@ impl Interpreter {
                 return Some(Err(e));
             }
         }
-        if has_tweak {
+        if has_tweak && let Err(e) = self.run_tweak_phase(class_name, &inv, args) {
             // Pass the original constructor args so `submethod TWEAK(:$y)` binds
             // them, matching the full `.new` path.
-            match self.run_tweak_phase(class_name, attrs, args) {
-                Ok(updated) => attrs = updated,
-                Err(e) => return Some(Err(e)),
-            }
+            return Some(Err(e));
         }
         // Re-check `where` after BUILD/TWEAK: the full constructor enforces
         // constraints again post-construction, so a BUILD/TWEAK that mutates an
         // attribute into a `where` violation is rejected identically.
-        if has_where
-            && (has_build || has_tweak)
-            && let Err(e) =
+        if has_where && (has_build || has_tweak) {
+            let attrs = Self::self_instance_attrs(&inv)
+                .map(|c| c.to_map())
+                .unwrap_or_default();
+            if let Err(e) =
                 self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)
-        {
-            return Some(Err(e));
+            {
+                return Some(Err(e));
+            }
         }
         // Mix `has $.x does Role` roles into the final attribute values — the
         // full constructor does this last (after BUILD/TWEAK), so do the same.
-        self.apply_attribute_does_role_mixins(cn_resolved, &mut attrs);
-        Some(Ok(Value::make_instance(class_name, attrs)))
+        // Gated on the program declaring ANY attribute `does`/container mixin:
+        // the common case pays no cell snapshot + commit.
+        if (!self.registry().class_attribute_does_roles.is_empty()
+            || !self.registry().class_attribute_container_mixins.is_empty())
+            && let Some(cell) = Self::self_instance_attrs(&inv)
+        {
+            let mut attrs = cell.to_map();
+            self.apply_attribute_does_role_mixins(cn_resolved, &mut attrs);
+            cell.commit_attrs(attrs);
+        }
+        Some(Ok(inv))
     }
 }
