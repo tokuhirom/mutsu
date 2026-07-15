@@ -35,6 +35,7 @@ mod registry;
 mod user_ops;
 
 // `pub` re-exports.
+pub(crate) use lib_paths::parser_program_path;
 pub use lib_paths::{clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path};
 
 // `pub(crate)` re-exports.

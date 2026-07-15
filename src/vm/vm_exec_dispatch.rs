@@ -133,6 +133,29 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        let mut result = self.exec_one_dispatch(code, ip, compiled_fns);
+        // Only genuine runtime errors get a backtrace here: control-flow
+        // signals (return/next/warn/fail/...) and parse errors (which carry
+        // their own line/column and render as ===SORRY!===) are excluded.
+        // The innermost exec_one frame observes the error first, while the
+        // routine stack is still intact; outer frames see backtrace()
+        // already set and skip. die/throw attach theirs at the throw site.
+        if let Err(ref mut e) = result
+            && e.control.is_none()
+            && e.backtrace().is_none()
+            && !e.code().is_some_and(|c| c.is_parse())
+        {
+            self.attach_backtrace_to_error(e);
+        }
+        result
+    }
+
+    fn exec_one_dispatch(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &HashMap<String, CompiledFunction>,
+    ) -> Result<(), RuntimeError> {
         crate::trace::trace_log!(
             "vm",
             "exec_one[{}]: {:?}",
@@ -3508,26 +3531,8 @@ impl Interpreter {
                 } else {
                     let val = spec.error.clone();
                     self.resume_ip = Some(*ip + 1);
-                    let backtrace_str = self.build_backtrace_string();
-                    let backtrace_val = self.build_backtrace_value();
-                    let current_line = self.current_source_line();
-                    let current_file = self.current_source_file();
                     let mut err = self.runtime_error_from_exception_value(val, "Died", false);
-                    if !backtrace_str.is_empty() {
-                        err.set_backtrace(Some(backtrace_str));
-                    }
-                    if let Some(ref exc_box) = err.exception
-                        && let ValueView::Instance { attributes, .. } = exc_box.view()
-                    {
-                        attributes.insert("backtrace".to_string(), backtrace_val);
-                        if let Some(line) = current_line {
-                            attributes
-                                .insert_if_absent("line".to_string(), Value::int(line as i64));
-                        }
-                        if let Some(ref file) = current_file {
-                            attributes.insert_if_absent("file".to_string(), Value::str_from(file));
-                        }
-                    }
+                    self.attach_backtrace_to_error(&mut err);
                     return Err(err);
                 }
             }
@@ -3550,26 +3555,8 @@ impl Interpreter {
                 } else {
                     val
                 };
-                let backtrace_str = self.build_backtrace_string();
-                let backtrace_val = self.build_backtrace_value();
-                let current_line = self.current_source_line();
-                let current_file = self.current_source_file();
                 let mut err = self.runtime_error_from_exception_value(val, "Died", false);
-                if !backtrace_str.is_empty() {
-                    err.set_backtrace(Some(backtrace_str));
-                }
-                // Attach backtrace, line, and file to the exception value
-                if let Some(ref exc_box) = err.exception
-                    && let ValueView::Instance { attributes, .. } = exc_box.view()
-                {
-                    attributes.insert("backtrace".to_string(), backtrace_val);
-                    if let Some(line) = current_line {
-                        attributes.insert_if_absent("line".to_string(), Value::int(line as i64));
-                    }
-                    if let Some(ref file) = current_file {
-                        attributes.insert_if_absent("file".to_string(), Value::str_from(file));
-                    }
-                }
+                self.attach_backtrace_to_error(&mut err);
                 return Err(err);
             }
             OpCode::Fail => {

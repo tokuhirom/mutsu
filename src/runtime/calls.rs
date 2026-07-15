@@ -571,6 +571,12 @@ impl Interpreter {
         if err.is_return() || err.is_last() || err.is_next() || func_name.is_empty() {
             return err;
         }
+        // A subset/where constraint failure is a genuine *runtime* check in
+        // raku; it surfaces verbatim ("Constraint type check failed in binding
+        // to parameter ..."), never as a compile-flavored "will never work".
+        if err.message.starts_with("Constraint type check failed") {
+            return err;
+        }
         // Capture the hint before `err.exception` is (possibly) moved out below,
         // so the later `set_hint` does not clash with that partial move.
         let hint = err.take_hint();

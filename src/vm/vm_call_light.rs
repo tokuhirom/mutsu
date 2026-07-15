@@ -214,6 +214,14 @@ impl Interpreter {
             };
             match step {
                 Ok(()) => {}
+                // CX::Warn carries its resume value in `return_value`; it is a
+                // control signal for the caller's loop / CONTROL handler, NOT
+                // an explicit return — don't let the next arm swallow it.
+                Err(e) if e.is_warn() => {
+                    loan_env!(self, restore_let_saves(let_mark));
+                    result = Err(e);
+                    break;
+                }
                 Err(e) if e.return_value.is_some() => {
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());

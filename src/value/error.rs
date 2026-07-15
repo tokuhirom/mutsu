@@ -211,6 +211,9 @@ impl RuntimeError {
     pub(crate) fn set_line(&mut self, v: Option<usize>) {
         self.cold_mut().line = v;
     }
+    pub(crate) fn set_column(&mut self, v: Option<usize>) {
+        self.cold_mut().column = v;
+    }
     pub(crate) fn set_hint(&mut self, v: Option<String>) {
         self.cold_mut().hint = v;
     }

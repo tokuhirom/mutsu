@@ -367,6 +367,35 @@ impl Interpreter {
         Err(RuntimeError::warn_signal(message))
     }
 
+    /// Raise a resumable warning from an arbitrary raise site: print-and-resume
+    /// inline when no CONTROL handler is active (returning `resume` as the
+    /// expression's value), run a resume-safe CONTROL handler inline, or fall
+    /// back to the unwinding `CX::Warn` signal. Op-level warn sites (e.g. the
+    /// `+Any` numeric coercion) must use this instead of returning a bare
+    /// `warn_signal_with_resume` error: the unwinding signal carries its resume
+    /// value in `return_value`, which function-call boundaries treat as an
+    /// explicit `return` — silently swallowing the warning and abandoning the
+    /// rest of the callee body.
+    pub(crate) fn raise_resumable_warning(
+        &mut self,
+        message: &str,
+        resume: Value,
+    ) -> Result<Value, RuntimeError> {
+        if self.control_handler_depth == 0 {
+            if !self.warning_suppressed() {
+                self.write_warn_to_stderr(message);
+            }
+            return Ok(resume);
+        }
+        if let Some(result) = self.try_resume_safe_control_inline(message) {
+            return result.map(|_| resume);
+        }
+        Err(RuntimeError::warn_signal_with_resume(
+            message.to_string(),
+            resume,
+        ))
+    }
+
     /// If the innermost active CONTROL handler is `resume_safe`, run it inline
     /// against the current (deep) environment and return the value the suspended
     /// `warn` should evaluate to (`Nil` for a bare `.resume`). Returns `None`

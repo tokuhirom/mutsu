@@ -49,7 +49,7 @@ impl Interpreter {
     ///     frame[i-1])
     ///   - <unit> (outermost): use the outermost routine frame's stored
     ///     call-site (where <unit> called the first function)
-    pub(super) fn build_backtrace_string(&self) -> String {
+    pub(crate) fn build_backtrace_string(&self) -> String {
         let stack = self.routine_stack();
         let current_line = self.current_source_line();
         let current_file = self.current_source_file();
@@ -102,7 +102,7 @@ impl Interpreter {
     /// Returns a `Backtrace` instance whose `frames` attribute is a list of
     /// `Backtrace::Frame` instances (each with `.subname`, `.file`, `.line`)
     /// and whose `text` attribute is the formatted backtrace string.
-    pub(super) fn build_backtrace_value(&self) -> Value {
+    pub(crate) fn build_backtrace_value(&self) -> Value {
         self.build_backtrace_value_with_leading(None)
     }
 
@@ -339,5 +339,32 @@ impl Interpreter {
         bt_attrs.insert("frames".to_string(), Value::array(frames));
         bt_attrs.insert("text".to_string(), Value::str(bt_str.to_string()));
         Value::make_instance(Symbol::intern("Backtrace"), bt_attrs)
+    }
+
+    /// Attach the current call-stack backtrace (string form on the error, and
+    /// structured `Backtrace` + line/file attributes on the exception instance
+    /// if any) to a runtime error that does not carry one yet. `die`/`fail`
+    /// build theirs at the throw site; this generalizes the same information to
+    /// every other runtime error (method-not-found, type-check, ...) so CLI
+    /// output and `$!.backtrace` report the failing line for all of them.
+    pub(super) fn attach_backtrace_to_error(&self, err: &mut RuntimeError) {
+        if err.backtrace().is_none() {
+            let backtrace_str = self.build_backtrace_string();
+            if !backtrace_str.is_empty() {
+                err.set_backtrace(Some(backtrace_str));
+            }
+        }
+        if let Some(ref exc_box) = err.exception
+            && let ValueView::Instance { attributes, .. } = exc_box.view()
+            && !attributes.as_map().contains_key("backtrace")
+        {
+            attributes.insert("backtrace".to_string(), self.build_backtrace_value());
+            if let Some(line) = self.current_source_line() {
+                attributes.insert_if_absent("line".to_string(), Value::int(line as i64));
+            }
+            if let Some(file) = self.current_source_file() {
+                attributes.insert_if_absent("file".to_string(), Value::str_from(&file));
+            }
+        }
     }
 }

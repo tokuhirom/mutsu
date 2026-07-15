@@ -610,6 +610,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
 
     // Sigilless parameter: \name or anonymous \
     if let Some(r) = rest.strip_prefix('\\') {
+        // Perl 6 pre-GLR `\@args` / `\$x` is gone: rakudo reports
+        // "Obsolete use of | or \ with sigil on param @args".
+        if let Some(sigil) = r
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '$' | '@' | '%' | '&'))
+            && let Ok((_, pname)) = super::super::ident(&r[sigil.len_utf8()..])
+        {
+            return Err(PError::fatal_at(
+                format!(
+                    "Obsolete use of | or \\ with sigil on param {}{}",
+                    sigil, pname
+                ),
+                rest,
+            ));
+        }
         let (r, name) = match super::super::ident(r) {
             Ok((r, name)) => (r, name),
             Err(_) => (r, String::new()),

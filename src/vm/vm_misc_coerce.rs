@@ -33,14 +33,26 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // Type objects (Mu, Any, etc.) cannot be numerically coerced
-        if let ValueView::Package(name) = val.view()
-            && matches!(name.resolve().as_str(), "Mu" | "Any")
-        {
-            return Err(RuntimeError::new(format!(
-                "Cannot resolve caller prefix:<+>({}:U); none of these signatures matches:\n    (\\a)",
-                name.resolve()
-            )));
+        // Type objects: Mu has no Numeric candidate at all (hard error); Any
+        // (and Cool descendants) numify to 0 with an uninitialized-value
+        // warning, matching rakudo.
+        if let ValueView::Package(name) = val.view() {
+            let n = name.resolve();
+            if n == "Mu" {
+                return Err(RuntimeError::new(format!(
+                    "Cannot resolve caller prefix:<+>({}:U); none of these signatures matches:\n    (\\a)",
+                    n
+                )));
+            }
+            if n == "Any" {
+                let msg = format!(
+                    "Use of uninitialized value of type {} in numeric context",
+                    n
+                );
+                let resumed = self.raise_resumable_warning(&msg, Value::int(0))?;
+                self.stack.push(resumed);
+                return Ok(());
+            }
         }
         if matches!(
             val.view(),
@@ -130,10 +142,9 @@ impl Interpreter {
                 "Use of uninitialized value of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
                 name.resolve()
             );
-            return Err(RuntimeError::warn_signal_with_resume(
-                msg,
-                Value::str(String::new()),
-            ));
+            let resumed = self.raise_resumable_warning(&msg, Value::str(String::new()))?;
+            self.stack.push(resumed);
+            return Ok(());
         }
         // Stringifying an unhandled Failure throws
         if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {

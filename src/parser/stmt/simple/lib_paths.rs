@@ -14,6 +14,11 @@ pub fn set_parser_program_path(path: Option<String>) {
     });
 }
 
+/// Read the program path registered for the current parse (for diagnostics).
+pub(crate) fn parser_program_path() -> Option<String> {
+    PROGRAM_PATH.with(|p| p.borrow().clone())
+}
+
 /// Clear the library search paths (called after parsing).
 pub fn clear_parser_lib_paths() {
     LIB_PATHS.with(|p| {

@@ -8,6 +8,41 @@ use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
 impl Interpreter {
+    /// Render a dispatch-failure call profile the way rakudo does: positionals
+    /// as their type name, named arguments as `:name(Type)` — falling back to
+    /// `:Type` when the value's `.raku` dies (rakudo stringifies the value via
+    /// `.raku` for the profile and degrades to the bare type on failure).
+    pub(crate) fn format_call_arg_profile(&mut self, args: &[Value]) -> String {
+        let mut parts = Vec::new();
+        for a in args {
+            match a.view() {
+                ValueView::Pair(k, v) => {
+                    parts.push(self.format_named_arg_profile(k, v));
+                }
+                ValueView::ValuePair(k, v) => {
+                    let key = k.to_string_value();
+                    parts.push(self.format_named_arg_profile(&key, v));
+                }
+                _ => parts.push(crate::value::types::what_type_name(a)),
+            }
+        }
+        parts.join(", ")
+    }
+
+    fn format_named_arg_profile(&mut self, key: &str, val: &Value) -> String {
+        let type_name = crate::value::types::what_type_name(val);
+        if matches!(
+            val.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) && self
+            .call_method_with_values(val.clone(), "raku", vec![])
+            .is_err()
+        {
+            return format!(":{}", type_name);
+        }
+        format!(":{}({})", key, type_name)
+    }
+
     pub(crate) fn run_instance_method(
         &mut self,
         receiver_class_name: &str,
@@ -50,10 +85,14 @@ impl Interpreter {
             if has_visible_method {
                 let sigs =
                     self.format_method_candidate_signatures(receiver_class_name, method_name);
+                let profile = self.format_call_arg_profile(&args);
+                let concrete = !matches!(inv_value.view(), ValueView::Package(_));
                 return Err(
                     super::methods_signature_errors::make_multi_no_match_error_detailed(
                         method_name,
                         receiver_class_name,
+                        concrete,
+                        &profile,
                         &sigs,
                     ),
                 );

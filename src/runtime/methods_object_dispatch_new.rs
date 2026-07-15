@@ -904,16 +904,30 @@ impl Interpreter {
                     return Ok(Self::build_native_complex_value(&args));
                 }
                 "Backtrace" => {
-                    let file = self
-                        .env
-                        .get("?FILE")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let mut frame_attrs = HashMap::new();
-                    frame_attrs.insert("file".to_string(), Value::str(file));
-                    let frame =
-                        Value::make_instance(Symbol::intern("Backtrace::Frame"), frame_attrs);
-                    return Ok(Value::array(vec![frame]));
+                    // Backtrace.new captures the current call stack;
+                    // Backtrace.new($offset) skips the first $offset frames.
+                    let bt = self.build_backtrace_value();
+                    let offset = args
+                        .first()
+                        .and_then(|a| match a.view() {
+                            ValueView::Int(n) if n > 0 => Some(n as usize),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+                    if offset > 0
+                        && let ValueView::Instance { attributes, .. } = bt.view()
+                    {
+                        // Read (and drop the map guard) before the insert below.
+                        let list = attributes
+                            .as_map()
+                            .get("frames")
+                            .map(crate::runtime::utils::value_to_list);
+                        if let Some(list) = list {
+                            let rest: Vec<Value> = list.into_iter().skip(offset).collect();
+                            attributes.insert("frames".to_string(), Value::array(rest));
+                        }
+                    }
+                    return Ok(bt);
                 }
                 "Lock" | "Lock::Async" | "Lock::Soft" => {
                     // Shared with the VM's native fast path

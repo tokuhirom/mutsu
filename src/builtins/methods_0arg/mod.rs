@@ -1365,7 +1365,24 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .get("frames")
                         .map(|v| crate::runtime::utils::value_to_list(v).len())
                         .unwrap_or(0);
-                    return Some(Ok(Value::str(format!("Backtrace({} frames)", count))));
+                    let noun = if count == 1 { "frame" } else { "frames" };
+                    return Some(Ok(Value::str(format!("Backtrace({} {})", count, noun))));
+                }
+                "full" => {
+                    // .full renders every frame (mutsu tracks no hidden/setting
+                    // frames, so this is the frame list verbatim).
+                    let frames = attributes
+                        .as_map()
+                        .get("frames")
+                        .map(crate::runtime::utils::value_to_list)
+                        .unwrap_or_default();
+                    let mut out = String::new();
+                    for frame in &frames {
+                        if let ValueView::Instance { attributes: fa, .. } = frame.view() {
+                            out.push_str(&backtrace_frame_str(&fa));
+                        }
+                    }
+                    return Some(Ok(Value::str(out)));
                 }
                 "list" | "List" | "flat" | "Seq" => {
                     if let Some(frames) = attributes.as_map().get("frames") {

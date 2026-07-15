@@ -131,7 +131,19 @@ impl Interpreter {
     }
 
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
-        let msg = format!("{}\n", message);
+        // Rakudo appends the warn location ("  in sub foo at file line N") to
+        // every warning. Skip when the message already carries location lines
+        // (some warn sites bake their own "  in block <unit> at ..." suffix).
+        let msg = if message.contains("\n  in ") {
+            format!("{}\n", message)
+        } else {
+            let bt = self.build_backtrace_string();
+            if bt.is_empty() {
+                format!("{}\n", message)
+            } else {
+                format!("{}\n{}\n", message, bt)
+            }
+        };
         // Read the thread-clone shared stderr Arc out under a scoped guard so it
         // is dropped before `self.warn_output` / `emit` re-borrow self.
         let thread_shared_stderr = {
