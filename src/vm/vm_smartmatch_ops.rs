@@ -14,7 +14,7 @@ impl Interpreter {
         rhs_is_match_regex: bool,
         lhs_is_literal: bool,
         rhs_pure_regex: bool,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let left = self.stack.pop().unwrap();
         let rhs_start = *ip + 1;

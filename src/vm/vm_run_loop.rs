@@ -46,7 +46,7 @@ impl Interpreter {
     pub(crate) fn run_top(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
         self.run_inner_guarded(code, compiled_fns)
     }
@@ -61,7 +61,7 @@ impl Interpreter {
     fn run_inner_guarded(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
         install_vm_panic_hook();
         // Save/restore the flag so nested boundaries (EVAL, sub-VMs) don't
@@ -98,7 +98,7 @@ impl Interpreter {
     fn run_inner(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
         Self::validate_labels(code)?;
         // Initialize local variable slots
@@ -203,7 +203,7 @@ impl Interpreter {
     pub(crate) fn run_nested(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Option<Value>, RuntimeError> {
         // Use the guarded runner so a Rust panic in a re-entrant carrier
         // (run_compiled_block / eval_block_value / run_block_raw — e.g. a
@@ -352,7 +352,7 @@ impl Interpreter {
     pub(crate) fn run_reuse(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         Self::validate_labels(code)?;
         self.stack.clear();
@@ -532,7 +532,7 @@ impl Interpreter {
         code: &CompiledCode,
         start: usize,
         end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         install_vm_panic_hook();
         let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
@@ -553,7 +553,7 @@ impl Interpreter {
         code: &CompiledCode,
         start: usize,
         end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Hot-loop entry (ADR-0004 J4b): compound-loop bodies/conds call
         // run_range once per iteration, so a hot sub-range gets JIT-compiled
@@ -611,7 +611,7 @@ impl Interpreter {
         from: usize,
         start: usize,
         end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let mut ip = from;
         while ip < end {
@@ -672,7 +672,7 @@ impl Interpreter {
         code: &CompiledCode,
         start: usize,
         end: usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         if start >= end {
             return Ok(());

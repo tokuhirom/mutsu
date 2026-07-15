@@ -278,7 +278,7 @@ impl Interpreter {
                             push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
                         );
                         let invocant = Some(target);
-                        let empty_fns = HashMap::new();
+                        let empty_fns = CompiledFns::default();
                         let method_result = self.call_compiled_method(
                             cn,
                             &owner_class,
@@ -390,7 +390,7 @@ impl Interpreter {
                     push_method_dispatch_frame(cn, method, &args, invocant_for_dispatch,)
                 );
                 let invocant = Some(target);
-                let empty_fns = HashMap::new();
+                let empty_fns = CompiledFns::default();
                 let method_result = self.call_compiled_method(
                     cn,
                     &owner_class,

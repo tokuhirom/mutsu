@@ -7,7 +7,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak};
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
 use crate::gc::Gc;
-use crate::opcode::{CompiledCode, CompiledFunction};
+use crate::opcode::{CompiledCode, CompiledFns};
 use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
@@ -1622,7 +1622,7 @@ pub(crate) enum ForLoopResumeState {
 
 /// Pre-compiled fast-path body for a closure sequence generator: the compiled
 /// code plus its associated compiled functions.
-pub(crate) type CompiledClosureBody = (Arc<CompiledCode>, Arc<HashMap<String, CompiledFunction>>);
+pub(crate) type CompiledClosureBody = (Arc<CompiledCode>, Arc<CompiledFns>);
 
 /// State for an infinite closure-based sequence (`1, 1, * + * ... *`).
 ///
@@ -1695,7 +1695,7 @@ pub(crate) struct LazyList {
     /// Pre-compiled bytecode for the gather body (used by VM-native forcing).
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
     /// Compiled functions associated with the compiled code.
-    pub(crate) compiled_fns: Option<Arc<HashMap<String, CompiledFunction>>>,
+    pub(crate) compiled_fns: Option<Arc<CompiledFns>>,
     /// Known element count for combinatorial lazy sequences (e.g. n! for permutations).
     /// When set, numeric coercion uses this value instead of materializing all elements.
     pub(crate) elems_count: Option<Value>,

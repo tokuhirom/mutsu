@@ -245,7 +245,7 @@ impl Interpreter {
         // No whole-map `to_map()` snapshot here: the fast path reads attributes
         // through the live cell, and the slow path materializes its own map.
         let attrs_empty = attrs_cell.as_ref().is_none_or(|c| c.as_map().is_empty());
-        let empty_fns = HashMap::new();
+        let empty_fns = CompiledFns::default();
         let method_result = if let Some(csm) = can_skip_merge {
             // Fast path: move target directly as base (avoid extra clone).
             let invocant_for_dispatch = if attrs_empty {

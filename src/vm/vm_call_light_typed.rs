@@ -10,7 +10,7 @@ impl Interpreter {
         &mut self,
         cf: &CompiledFunction,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): the light-call boundary skips
         // push_call_frame, so it emits the call safepoint itself.

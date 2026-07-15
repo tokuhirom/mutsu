@@ -1,6 +1,6 @@
 use super::*;
 
-type CompiledFnMap = std::collections::HashMap<String, crate::opcode::CompiledFunction>;
+type CompiledFnMap = crate::opcode::CompiledFns;
 type ProtectBlockCompiled = std::sync::Arc<crate::opcode::CompiledCode>;
 type ProtectBlockCompiledFns = std::sync::Arc<CompiledFnMap>;
 type ProtectBlockCapturedBindings = std::sync::Arc<Vec<(usize, String)>>;
@@ -90,10 +90,7 @@ impl Interpreter {
     pub(crate) fn compile_block_value(
         &self,
         body: &[Stmt],
-    ) -> (
-        crate::opcode::CompiledCode,
-        std::collections::HashMap<String, crate::opcode::CompiledFunction>,
-    ) {
+    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
@@ -344,7 +341,7 @@ impl Interpreter {
     pub(crate) fn eval_precompiled_block_fast(
         &mut self,
         code: &crate::opcode::CompiledCode,
-        compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+        compiled_fns: &crate::opcode::CompiledFns,
     ) -> Result<Value, RuntimeError> {
         self.block_scope_depth += 1;
         // CP-3 collapse: run the precompiled block re-entrantly in place.
@@ -390,7 +387,7 @@ impl Interpreter {
             let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
                 (
                     cc.clone(),
-                    std::sync::Arc::new(std::collections::HashMap::new()),
+                    std::sync::Arc::new(crate::opcode::CompiledFns::default()),
                 )
             } else {
                 let compiler = crate::compiler::Compiler::new();
@@ -476,7 +473,7 @@ impl Interpreter {
     fn run_compiled_block(
         &mut self,
         code: &crate::opcode::CompiledCode,
-        compiled_fns: &std::collections::HashMap<String, crate::opcode::CompiledFunction>,
+        compiled_fns: &crate::opcode::CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // CP-3 collapse: run the compiled block re-entrantly in place.
         let result = self.run_nested(code, compiled_fns);

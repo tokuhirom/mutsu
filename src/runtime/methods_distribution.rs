@@ -366,8 +366,7 @@ impl Interpreter {
         }
         result?;
         // Dispatch MAIN if defined, with @*ARGS
-        let empty: std::collections::HashMap<String, crate::opcode::CompiledFunction> =
-            std::collections::HashMap::new();
+        let empty = crate::opcode::CompiledFns::default();
         let dispatch_result = self.dispatch_main(&empty);
         // Restore the function registry to prevent MAIN from leaking into parent scope
         self.restore_routine_registry_eval(registry_snapshot);

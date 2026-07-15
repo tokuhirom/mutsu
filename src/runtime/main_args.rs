@@ -1,7 +1,6 @@
 use super::*;
 use crate::ast::{FunctionDef, ParamDef};
-use crate::opcode::CompiledFunction;
-use std::collections::HashMap;
+use crate::opcode::CompiledFns;
 
 pub(super) struct ParsedMainArgs {
     pub(super) positional: Vec<Value>,
@@ -70,7 +69,7 @@ impl Interpreter {
 
     pub(super) fn dispatch_main(
         &mut self,
-        _compiled_fns: &HashMap<String, CompiledFunction>,
+        _compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let all_candidates = self.collect_main_candidates();
         if all_candidates.is_empty() {

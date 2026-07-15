@@ -3662,6 +3662,13 @@ impl CompiledCode {
     }
 }
 
+/// The compiled-functions table of a program (function key → compiled body).
+/// `FxHashMap`: this map is probed on the light-call cache hit path of every
+/// function call (ADR-0004 J4d), where std SipHash over the string key was a
+/// measured ~5% of a recursion-heavy workload. The keys are internal,
+/// compiler-generated strings, so HashDoS resistance buys nothing here.
+pub(crate) type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>;
+
 /// A compiled function body (SubDecl compiled to bytecode).
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {

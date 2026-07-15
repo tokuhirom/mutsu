@@ -17,7 +17,7 @@ impl Interpreter {
         mut attributes: AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         // Slice F: the rw-writeback source list is drained by the CallMethod /
         // CallMethodMut op right after this dispatch returns, so it must hold
@@ -1023,7 +1023,7 @@ impl Interpreter {
         cc: &CompiledCode,
         args: Vec<Value>,
         base: Value,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         can_skip_merge: bool,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         let attrs_cell = match base.view() {

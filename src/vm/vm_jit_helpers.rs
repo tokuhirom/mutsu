@@ -154,7 +154,7 @@ pub(super) unsafe extern "C" fn step(
     interp: *mut Interpreter,
     code: *const CompiledCode,
     op_idx: u32,
-    fns: *const HashMap<String, CompiledFunction>,
+    fns: *const CompiledFns,
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
     let mut ip = op_idx as usize;
@@ -360,7 +360,7 @@ pub(super) unsafe extern "C" fn call_func(
     interp: *mut Interpreter,
     code: *const CompiledCode,
     op_idx: u32,
-    fns: *const HashMap<String, CompiledFunction>,
+    fns: *const CompiledFns,
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
     let OpCode::CallFunc {

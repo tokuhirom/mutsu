@@ -8,7 +8,7 @@ impl Interpreter {
         dwim_left: bool,
         dwim_right: bool,
         writeback: bool,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
@@ -243,7 +243,7 @@ impl Interpreter {
         dwim_left: bool,
         dwim_right: bool,
         writeback: bool,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let probe_left: Vec<Value> = match left.view() {
             ValueView::Hash(m) => m.values().cloned().collect(),
@@ -395,7 +395,7 @@ impl Interpreter {
         name: &str,
         func_value: Option<&Value>,
         call_args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         if let Some(fv) = func_value {
             self.vm_call_on_value(fv.clone(), call_args, Some(compiled_fns))
@@ -412,7 +412,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         func_value: Option<&Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         left_list: &[Value],
         right_list: &[Value],
     ) -> bool {

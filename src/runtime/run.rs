@@ -263,10 +263,7 @@ impl Interpreter {
     pub(crate) fn compile_block_raw(
         &self,
         stmts: &[Stmt],
-    ) -> (
-        crate::opcode::CompiledCode,
-        std::collections::HashMap<String, crate::opcode::CompiledFunction>,
-    ) {
+    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
         let mut compiler = crate::compiler::Compiler::new();
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();

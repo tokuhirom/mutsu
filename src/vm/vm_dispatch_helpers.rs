@@ -307,7 +307,7 @@ impl Interpreter {
         let ValueView::Sub(data) = block.view() else {
             return self.vm_call_on_value(block.clone(), args, None);
         };
-        let empty_fns = HashMap::new();
+        let empty_fns = CompiledFns::default();
         if let Some(cc) = &data.compiled_code {
             let cc = cc.clone();
             let data = data.clone();
@@ -350,7 +350,7 @@ impl Interpreter {
         &mut self,
         target: Value,
         args: Vec<Value>,
-        compiled_fns: Option<&HashMap<String, CompiledFunction>>,
+        compiled_fns: Option<&CompiledFns>,
     ) -> Result<Value, RuntimeError> {
         // Upgrade WeakSub to Sub transparently
         let target = if let ValueView::WeakSub(weak) = target.view() {
@@ -388,7 +388,7 @@ impl Interpreter {
         {
             let cc = cc.clone();
             let data = data.clone();
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
@@ -403,7 +403,7 @@ impl Interpreter {
                 compiler.compile_routine_closure_body(&data.params, &data.param_defs, &data.body)
             };
             let data = data.clone();
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
             return self.call_compiled_closure(&data, &cc, args, fns);
         }
@@ -420,7 +420,7 @@ impl Interpreter {
         if let ValueView::Routine { package, name, .. } = target.view() {
             let pkg = package.resolve();
             let name_str = name.resolve();
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             let fns = compiled_fns.unwrap_or(&empty_fns);
             if !pkg.is_empty() && pkg != "GLOBAL" {
                 let fq = format!("{pkg}::{name_str}");

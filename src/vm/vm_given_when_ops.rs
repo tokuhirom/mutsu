@@ -8,7 +8,7 @@ impl Interpreter {
         topic_readonly: bool,
         pointy_param_idx: Option<u32>,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let topic = self.stack.pop().unwrap();
         // For a pointy block (`given @a -> @p { ... }`), the writeback reads the
@@ -167,7 +167,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let topic = self.stack.pop().unwrap_or(Value::NIL);
         let body_start = *ip + 1;
@@ -225,7 +225,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let cond_val = self.stack.pop().unwrap();
         let body_start = *ip + 1;
@@ -315,7 +315,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let end = body_end as usize;

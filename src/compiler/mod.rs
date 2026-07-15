@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
-use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
+use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -77,7 +77,7 @@ pub(crate) struct Compiler {
     local_scopes: Vec<HashMap<String, Option<u32>>>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
-    compiled_functions: HashMap<String, CompiledFunction>,
+    compiled_functions: CompiledFns,
     current_package: String,
     /// True when compiling inside a `unit module`/`unit class`/`unit role`
     /// body. Used to pre-qualify class/role declarations with the package
@@ -267,7 +267,7 @@ impl Compiler {
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
             local_types: HashMap::new(),
-            compiled_functions: HashMap::new(),
+            compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             block_decl_tracker: Vec::new(),
@@ -1240,10 +1240,7 @@ impl Compiler {
     /// the unit is recompiled here, folding disabled, if one turned up after
     /// something had already been folded. Only files that declare operators pay
     /// the second pass.
-    pub(crate) fn compile(
-        self,
-        stmts: &[Stmt],
-    ) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+    pub(crate) fn compile(self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
         if !self.fold_root || !self.fold_ctx.is_enabled() {
             return self.compile_unit(stmts);
         }
@@ -1258,7 +1255,7 @@ impl Compiler {
         retry.compile_unit(stmts)
     }
 
-    fn compile_unit(mut self, stmts: &[Stmt]) -> (CompiledCode, HashMap<String, CompiledFunction>) {
+    fn compile_unit(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
         // Hoist top-level `use Test` declarations to the front (Raku `use` is
         // BEGIN-time, so test functions are available throughout the file even
         // when `plan`/`ok` appear textually before `use Test;`).

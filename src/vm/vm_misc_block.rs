@@ -76,7 +76,7 @@ impl Interpreter {
         scope_isolate: bool,
         isolate_decls_idx: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let body_start = *ip + 1;
         let end = body_end as usize;
@@ -233,7 +233,7 @@ impl Interpreter {
         key_idx: u32,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let scope =
             loan_env!(self, current_once_scope()).unwrap_or_else(|| self.next_once_scope_id());
@@ -331,7 +331,7 @@ impl Interpreter {
         code: &CompiledCode,
         body_end: u32,
         ip: &mut usize,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let mark = self.let_saves_len();
         let body_start = *ip + 1;

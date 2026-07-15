@@ -23,7 +23,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
 use crate::env::Env;
-use crate::opcode::{CompiledCode, CompiledFunction};
+use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
 use crate::value::ValueView;
 use crate::value::{
@@ -115,7 +115,7 @@ pub(crate) fn local_timezone_offset_secs() -> i64 {
 
 type ProtectBlockCacheEntry = (
     Arc<CompiledCode>,
-    Arc<HashMap<String, CompiledFunction>>,
+    Arc<CompiledFns>,
     Arc<Vec<(usize, String)>>,
     Arc<Vec<(usize, String)>>,
     Arc<Vec<String>>,
@@ -1752,14 +1752,15 @@ pub struct Interpreter {
     pub(crate) imported_compiled_fns: HashMap<u64, std::sync::Arc<CompiledFunction>>,
     pub(crate) state_scope_id: Option<u64>,
     #[allow(clippy::type_complexity)]
-    pub(crate) fn_resolve_cache: HashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,
+    pub(crate) fn_resolve_cache:
+        rustc_hash::FxHashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,
     pub(crate) fn_resolve_gen: u64,
     pub(crate) fn_resolve_cache_gen: u64,
-    pub(crate) multi_candidates_cache: HashMap<Symbol, bool>,
+    pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
     pub(crate) multi_candidates_cache_gen: u64,
-    pub(crate) light_call_cache: HashMap<Symbol, (String, u64)>,
+    pub(crate) light_call_cache: rustc_hash::FxHashMap<Symbol, (String, u64)>,
     pub(crate) light_call_cache_gen: u64,
-    pub(crate) pos_light_call_cache: HashMap<Symbol, (String, u64)>,
+    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, (String, u64)>,
     pub(crate) pos_light_call_cache_gen: u64,
     /// Bare names that appear as a `&`-sigil parameter in some registered sub
     /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
@@ -1775,7 +1776,7 @@ pub struct Interpreter {
     /// so the registrar can return early without re-deriving the FunctionDef and
     /// without invalidating the resolution caches. Entries are best-effort: a
     /// miss simply takes the full registration path.
-    pub(crate) registered_fn_fingerprints: HashMap<Symbol, u64>,
+    pub(crate) registered_fn_fingerprints: rustc_hash::FxHashMap<Symbol, u64>,
     /// Derive-once cache: a declaration is parsed into a `FunctionDef` exactly
     /// once, then shared. Keyed by the routine's fully-qualified name
     /// (`package::name`), the value is `(declaration fingerprint, Arc<FunctionDef>)`.
@@ -1887,7 +1888,7 @@ pub struct Interpreter {
     /// `LoadEnterResult` at the end of the block body.
     pub(crate) enter_result_stack: Vec<Value>,
     pub(crate) pending_alias_bind_names: Vec<(String, String)>,
-    pub(crate) otf_call_cache: HashMap<Symbol, CompiledFunction>,
+    pub(crate) otf_call_cache: rustc_hash::FxHashMap<Symbol, CompiledFunction>,
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
     pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,
@@ -1921,10 +1922,7 @@ pub(crate) struct ContainerTypeInfo {
 /// nested compiled functions), shared via `Arc` so a single compilation is
 /// reused across every type check. Keyed by subset name in
 /// `Interpreter::subset_predicate_cache`.
-type SubsetPredicateCompiled = Arc<(
-    crate::opcode::CompiledCode,
-    HashMap<String, crate::opcode::CompiledFunction>,
-)>;
+type SubsetPredicateCompiled = Arc<(crate::opcode::CompiledCode, crate::opcode::CompiledFns)>;
 
 /// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
 /// embedded in their backing data struct (travels across copy-on-write);

@@ -3,7 +3,7 @@ use super::*;
 impl Interpreter {
     pub(super) fn find_compiled_function<'a>(
         &mut self,
-        compiled_fns: &'a HashMap<String, CompiledFunction>,
+        compiled_fns: &'a CompiledFns,
         name: &str,
         args: &[Value],
     ) -> Option<&'a CompiledFunction> {
@@ -24,7 +24,7 @@ impl Interpreter {
 
     fn find_compiled_function_inner<'a>(
         &mut self,
-        compiled_fns: &'a HashMap<String, CompiledFunction>,
+        compiled_fns: &'a CompiledFns,
         name: &str,
         args: &[Value],
     ) -> Option<&'a CompiledFunction> {

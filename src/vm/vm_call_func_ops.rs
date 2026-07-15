@@ -118,7 +118,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
         // NativeCall: a sub declared `is native(...)` is dispatched through C
@@ -165,12 +165,24 @@ impl Interpreter {
                 {
                     let arity_usize = arity as usize;
                     if self.stack.len() >= arity_usize {
-                        // Check if any arg is a Junction -- if so, skip the fast path
-                        // to allow junction auto-threading.
+                        // One fused pass over the args (J4d): junction detection
+                        // (skip the fast path to allow auto-threading) and the
+                        // callsite-line marker peek used to walk the args
+                        // separately; both are per-value view checks, so fold
+                        // them into a single scan.
                         let stack_args = &self.stack[self.stack.len() - arity_usize..];
-                        let has_junction = stack_args
-                            .iter()
-                            .any(|v| matches!(v.view(), ValueView::Junction { .. }));
+                        let mut has_junction = false;
+                        let mut cl: Option<i64> = None;
+                        for v in stack_args {
+                            let view = v.view();
+                            if matches!(view, ValueView::Junction { .. }) {
+                                has_junction = true;
+                                break;
+                            }
+                            if cl.is_none() {
+                                cl = Self::callsite_line_of_view(&view);
+                            }
+                        }
                         // Slice 2d: array/hash into a plain `$` param must share the
                         // caller's container -> fall through to the slow path.
                         let share_into_scalar =
@@ -183,8 +195,6 @@ impl Interpreter {
                             // `Vec<Value>`s, so borrow it for the args too.
                             let mut args = self.take_locals_from_pool(0);
                             args.extend(self.stack.drain(start..));
-                            // Extract callsite line for deprecation tracking
-                            let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
                             if cl.is_some() {
                                 loan_env!(self, set_pending_callsite_line(cl));
                             }
@@ -645,7 +655,7 @@ impl Interpreter {
         regular_arity: u32,
         _arg_sources_idx: Option<u32>,
         slip_pos: Option<u32>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
         let name = Self::const_str(code, name_idx).to_string();
@@ -821,7 +831,7 @@ impl Interpreter {
         code: &CompiledCode,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
         let arity = arity as usize;
@@ -885,7 +895,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         arg_sources_idx: Option<u32>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
         let name = Self::const_str(code, name_idx).to_string();
@@ -973,7 +983,7 @@ impl Interpreter {
         args: Vec<Value>,
         arg_sources: Option<Vec<Option<String>>>,
         call_me_override: Option<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         if name == "__PROTO_DISPATCH__" {
             // `{*}` inside a compiled proto body (ledger §D): the proto-dispatch
@@ -1416,7 +1426,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Option<Result<Value, RuntimeError>> {
         use crate::ast::{Expr, Stmt};
         if self.is_interpreter_handled_function(name) {
@@ -1495,7 +1505,7 @@ impl Interpreter {
     pub(super) fn vm_call_proto_dispatch(
         &mut self,
         code: &CompiledCode,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let Some((proto_name, args, method_ctx)) = self.proto_dispatch_last() else {
             // `{*}` outside a proto — let the interpreter raise the proper error.
@@ -1845,7 +1855,7 @@ impl Interpreter {
         &mut self,
         shared: &CompiledFunction,
         args: Vec<Value>,
-        compiled_fns: &HashMap<String, CompiledFunction>,
+        compiled_fns: &CompiledFns,
         pkg: &str,
         name: &str,
     ) -> Result<Value, RuntimeError> {

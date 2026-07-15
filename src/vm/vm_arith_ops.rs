@@ -100,7 +100,7 @@ impl Interpreter {
         let start = self.stack.len() - n;
         let args: Vec<Value> = self.stack.drain(start..).collect();
         if let Some(def) = loan_env!(self, resolve_function_with_types("infix:<,>", &args)) {
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
             self.stack.push(result);
             Ok(true)
@@ -124,7 +124,7 @@ impl Interpreter {
     ) -> Result<Option<Value>, RuntimeError> {
         let args = vec![left.clone(), right.clone()];
         if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
-            let empty_fns = HashMap::new();
+            let empty_fns = CompiledFns::default();
             let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
             return Ok(Some(result));
         }

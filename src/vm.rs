@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::ast::Stmt;
 use crate::env::Env;
 use crate::interpreter::Interpreter;
-use crate::opcode::{CompiledCode, CompiledFunction, OpCode};
+use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{
@@ -277,7 +277,7 @@ pub(crate) struct ControlHandlerCode {
     pub code: std::sync::Arc<CompiledCode>,
     pub control_begin: usize,
     pub end: usize,
-    pub compiled_fns: HashMap<String, CompiledFunction>,
+    pub compiled_fns: CompiledFns,
 }
 
 pub(crate) struct VmCallFrame {
