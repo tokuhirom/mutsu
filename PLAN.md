@@ -402,11 +402,35 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
          session)** — currently `captures_env_by_name` (true if the frame contains even one
          `ForLoop`/`BlockScope`/`MakeGather`/`WheneverScope`) **makes every local in the frame an env
          mirror target**, so locals never read by name — like a loop body's `my $ts` — are written to
-         env on every store (the top entry in the remaining time-parts profile). Making it precise
-         requires removing three env name dependencies at once — `exec_do_block_op`'s
-         "pull all locals from env" restore, the loop shadow save/restore, and closure capture —
-         so it is **a campaign fused with §1.3/§1.5** (memory: a standalone change has a track record
-         of breaking 5 mechanisms).
+         env on every store. **Update 2026-07-15 (probed, then clean-reverted):** the actual per-store
+         cost is the *unconditional* env write at the tail of `exec_set_local_op_inner`
+         (`vm_var_assign_set_local.rs`, `set_env_plain_lexical`/`set_env_with_main_alias`) — NOT
+         `flush_local_to_env`, which is already gated on `needs_env_sync` (so the `env_flushes`
+         counter reads 0 and does not surface this; measure by wall-clock). Gating that tail write on
+         `needs_env_sync || reflective` won ~7% on a JIT-bailed `time-parts` loop but **deterministically
+         broke four independent mechanisms** (each pinned by an existing test), confirming this is a
+         fused campaign, not a standalone change:
+         (a) **block-scope restore** — `exec_block_scope_op` reverts `self.locals` to the pre-block
+             snapshot then **re-pulls every local from env by name**, so an outer var mutated inside a
+             bare `{ }` reverts to its pre-block value without the env seed (`my $x=1;{$x=2};say $x`
+             printed `(Any)`). `BlockScope`/`BlockLocalScope` frames therefore still need the blanket;
+             note a loop-body `if { }` stays *inline* (no `BlockScope`) unless the branch declares its
+             own `my` (`BlockLocalScope`), so most hot loops are unaffected.
+         (b) **cross-thread closure capture / `cas`** — a `%h` captured by a `Thread.start` body and
+             mutated via `cas` needs its shared-var cell established through env by name; the gate lost
+             it (`tests/gc_stress.rs::dead_sweep_bounds_threaded_mutation_memory`, sum=2 vs 800).
+             Folding `closure_compiled_codes` free vars + `op_arg_sources_idx` (rw-arg sinks) +
+             `op_container_mutate_const_idx` into `needs_env_sync` fixes this axis.
+         (c) **★JIT outer-lexical read (the decider)** — the JIT reads an *outer* lexical referenced
+             inside a hot loop (`my $c=…; for ^30 { $c.bump() }`) **from env by name**, so eliding the
+             env seed makes the JIT see `Any` (`tests/jit_diff.rs::hot_method_body_compiles_and_matches`).
+             Escape-folding cannot fix this; the JIT is default-on and compiles exactly the hot loops
+             the gate targets. A "gate only slots *declared inside* a `ForLoop` body (JIT-register
+             temps)" restriction might be safe but is unverified.
+         (d) **currying/priming capture** — `roast/S06-currying/positional.t` aborts at test 157.
+         So it is **a campaign fused with §1.3/§1.5, §6 (`BlockScope`'s `self.locals.clone()`), and the
+         JIT's lexical-access path** (memory: a standalone change has a track record of breaking 5
+         mechanisms — 4 reproduced here). See memory `project_needs_env_sync_blanket_removal`.
       1. **Remove SipHash from `compiled_fns`** (scouting §2.1 — the function table is still a
          `HashMap<String, CompiledFunction>` (`vm.rs:280`), so **even calls that hit the light-call
          cache SipHash + memcmp the function name every time**). Order: FxHashMap → `Symbol` keys →
