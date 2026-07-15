@@ -12,7 +12,10 @@ use crate::value::RuntimeError;
 ///   "Confused. parse error at line 1, column 1: expected expected statement ..."
 /// We extract a cleaner version for display.
 fn short_parse_message(msg: &str) -> String {
-    // Strip "Confused. " prefix
+    // Remember the "Confused" marker: rakudo renders "Confused" as the SORRY
+    // message body and roast checks stderr for it (S02-one-pass-parsing/misc.t),
+    // so it is re-prefixed onto the simplified message below.
+    let confused = msg.starts_with("Confused.");
     let body = msg.strip_prefix("Confused. ").unwrap_or(msg);
 
     // Strip " \u{2014} near: ..." suffix (em-dash followed by near)
@@ -41,7 +44,12 @@ fn short_parse_message(msg: &str) -> String {
     let core = strip_internal_location(&core);
 
     // Simplify long alternative lists
-    simplify_expected_list(&core)
+    let simplified = simplify_expected_list(&core);
+    if confused {
+        format!("Confused. {}", simplified)
+    } else {
+        simplified
+    }
 }
 
 /// Strip internal location details like "at line N (after M stmts)" from parse messages.
