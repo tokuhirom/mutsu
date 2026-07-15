@@ -8,10 +8,10 @@ use Test;
 # instance, so a stored `self` went stale. All expectations below verified
 # against raku.
 #
-# (The stored aliases use `=`, not `:=`: a `:=` bind anywhere in a TWEAK body
-# trips a pre-existing, unrelated bug where the exit reconcile falsely adopts
-# an array attribute's frame value as a `:=` override and drops its per-op
-# mirrored `.push` — that reproduces on the pre-change binary too.)
+# (The stored aliases use `=`; the `:=`-bound variants — which historically
+# broke attribute WRITES after the bind because `$outer := self` rewrites the
+# frame's `self` into the bind's ContainerRef cell — are pinned separately in
+# t/bind-self-attr-write.t.)
 
 plan 8;
 

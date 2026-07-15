@@ -1822,118 +1822,20 @@ impl Interpreter {
                     }
                 }
                 self.env = restored_env;
-                // Walk MRO in reverse (base-first) and call BUILD/TWEAK
-                // submethods defined directly on each class. Submethods are
-                // NOT inherited, so each class's own BUILD/TWEAK is called
-                // independently with the construction args.
-                // Under v6.e.PREVIEW+, role submethods are also called
-                // (roles' BUILD/TWEAK before the class's own).
+                // Build the instance BEFORE the BUILD/TWEAK phases and thread its
+                // shared attribute cell through them (raku semantics: `self`
+                // inside BUILD/TWEAK IS the constructed object). The MRO walk,
+                // submethod visibility, 6.c/6.e role-submethod rules, and the
+                // fail-in-BUILD -> Failure contract all live in the shared
+                // `run_build_phase` / `run_tweak_phase` (formerly duplicated
+                // inline here).
+                let inv = Value::make_instance(*class_name, attrs);
+                let inv_cell = Self::self_instance_attrs(&inv)
+                    .expect("a freshly built instance has an attribute cell");
                 let mro = self.class_mro(class_key);
-                // Determine the class's language revision for submethod dispatch rules.
-                let class_lang_rev = self
-                    .type_metadata
-                    .get(&class_name.resolve())
-                    .and_then(|m| m.get("language-revision"))
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| {
-                        let version = crate::parser::current_language_version();
-                        if let Some(rest) = version.strip_prefix("6.") {
-                            rest.chars().next().unwrap_or('c').to_string()
-                        } else {
-                            "c".to_string()
-                        }
-                    });
-                let class_is_6e = class_lang_rev != "c";
-                for mro_class in mro.iter().rev() {
-                    if mro_class == "Any" || mro_class == "Mu" {
-                        continue;
-                    }
-                    // Skip role entries in MRO — they are handled separately below
-                    if self.registry().roles.contains_key(mro_class)
-                        && !self.registry().classes.contains_key(mro_class)
-                    {
-                        continue;
-                    }
-                    // Check if the class has its own BUILD (not from a role)
-                    let class_has_own_build = self
-                        .registry()
-                        .classes
-                        .get(mro_class)
-                        .and_then(|def| def.methods.get("BUILD"))
-                        .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
-                        .unwrap_or(false);
-                    // Call BUILD submethods from composed roles
-                    let role_order = self.ordered_role_submethods_for_class(mro_class, "BUILD");
-                    for (role_name, method_def) in role_order {
-                        let role_base = role_name
-                            .split_once('[')
-                            .map(|(b, _)| b)
-                            .unwrap_or(&role_name);
-                        let role_lang_rev = self
-                            .type_metadata
-                            .get(role_base)
-                            .and_then(|m| m.get("language-revision"))
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_else(|| "c".to_string());
-                        // In 6.c class with own BUILD: skip 6.c role submethods
-                        if !class_is_6e && class_has_own_build && role_lang_rev == "c" {
-                            continue;
-                        }
-                        let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
-                            &class_name.resolve(),
-                            &role_name,
-                            "BUILD",
-                            method_def,
-                            attrs.clone(),
-                            args.clone(),
-                            Some(Value::make_instance(*class_name, attrs.clone())),
-                        )?;
-                        attrs = updated;
-                    }
-                    // Call the class's BUILD if it has one that wasn't already handled
-                    // by ordered_role_submethods_for_class. Role submethods (is_my=true,
-                    // role_origin=Some) were already called above.
-                    let has_non_submethod_build = self
-                        .registry()
-                        .classes
-                        .get(mro_class)
-                        .and_then(|def| def.methods.get("BUILD"))
-                        .map(|overloads| {
-                            overloads
-                                .iter()
-                                .any(|md| md.role_origin.is_none() || !md.is_my)
-                        })
-                        .unwrap_or(false);
-                    if has_non_submethod_build {
-                        match self.run_instance_method(
-                            mro_class,
-                            attrs.clone(),
-                            "BUILD",
-                            args.clone(),
-                            Some(Value::make_instance(*class_name, attrs.clone())),
-                        ) {
-                            Ok((_v, updated)) => {
-                                attrs = updated;
-                            }
-                            Err(err) if err.is_fail() => {
-                                // fail in BUILD: return a Failure wrapping the exception
-                                let ex = if let Some(exception) = err.exception {
-                                    *exception
-                                } else {
-                                    let mut ex_attrs = HashMap::new();
-                                    ex_attrs.insert("message".to_string(), Value::str(err.message));
-                                    Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs)
-                                };
-                                let mut failure_attrs = HashMap::new();
-                                failure_attrs.insert("exception".to_string(), ex);
-                                return Ok(Value::make_instance(
-                                    Symbol::intern("Failure"),
-                                    failure_attrs,
-                                ));
-                            }
-                            Err(err) => return Err(err),
-                        }
-                    }
+                match self.run_build_phase(*class_name, &inv, &args)? {
+                    Ok(()) => {}
+                    Err(failure) => return Ok(failure),
                 }
                 // Check required attributes after all BUILDs have run
                 let any_build = mro.iter().any(|cn| {
@@ -1955,6 +1857,7 @@ impl Interpreter {
                             .is_empty()
                 });
                 if any_build || any_role_build {
+                    let attrs = inv_cell.to_map();
                     for (attr_name, _is_public, _default, _is_rw, is_required, _sigil, _) in
                         &class_attrs_info
                     {
@@ -1974,86 +1877,32 @@ impl Interpreter {
                     self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                     self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
                 }
-                // Walk MRO in reverse for TWEAK as well
-                for mro_class in mro.iter().rev() {
-                    if mro_class == "Any" || mro_class == "Mu" {
-                        continue;
-                    }
-                    // Skip role entries in MRO
-                    if self.registry().roles.contains_key(mro_class)
-                        && !self.registry().classes.contains_key(mro_class)
-                    {
-                        continue;
-                    }
-                    // Check if the class has its own TWEAK (not from a role)
-                    let class_has_own_tweak = self
-                        .registry()
-                        .classes
-                        .get(mro_class)
-                        .and_then(|def| def.methods.get("TWEAK"))
-                        .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
-                        .unwrap_or(false);
-                    // Call TWEAK submethods from composed roles (same rules as BUILD)
-                    let role_order = self.ordered_role_submethods_for_class(mro_class, "TWEAK");
-                    for (role_name, method_def) in role_order {
-                        let role_base = role_name
-                            .split_once('[')
-                            .map(|(b, _)| b)
-                            .unwrap_or(&role_name);
-                        let role_lang_rev = self
-                            .type_metadata
-                            .get(role_base)
-                            .and_then(|m| m.get("language-revision"))
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_else(|| "c".to_string());
-                        // In 6.c class with own TWEAK: skip 6.c role submethods
-                        if !class_is_6e && class_has_own_tweak && role_lang_rev == "c" {
-                            continue;
-                        }
-                        let (_v, updated) = self.run_resolved_method_compiled_or_treewalk(
-                            &class_name.resolve(),
-                            &role_name,
-                            "TWEAK",
-                            method_def,
-                            attrs.clone(),
-                            args.clone(),
-                            Some(Value::make_instance(*class_name, attrs.clone())),
-                        )?;
-                        attrs = updated;
-                        self.enforce_attribute_where_constraints(
-                            class_key,
-                            &class_attrs_info,
-                            &attrs,
-                        )?;
-                    }
-                    // Only call the class's own TWEAK (not role-composed ones).
-                    let has_own_tweak = self
-                        .registry()
-                        .classes
-                        .get(mro_class)
-                        .and_then(|def| def.methods.get("TWEAK"))
-                        .map(|overloads| {
-                            overloads
-                                .iter()
-                                .any(|md| md.role_origin.is_none() || !md.is_my)
-                        })
-                        .unwrap_or(false);
-                    if has_own_tweak {
-                        let (_v, updated) = self.run_instance_method(
-                            mro_class,
-                            attrs.clone(),
-                            "TWEAK",
-                            args.clone(),
-                            Some(Value::make_instance(*class_name, attrs.clone())),
-                        )?;
-                        attrs = updated;
-                        self.enforce_attribute_where_constraints(
-                            class_key,
-                            &class_attrs_info,
-                            &attrs,
-                        )?;
-                    }
+                let any_tweak = mro.iter().any(|cn| {
+                    cn != "Any"
+                        && cn != "Mu"
+                        && (self
+                            .registry()
+                            .classes
+                            .get(cn)
+                            .and_then(|def| def.methods.get("TWEAK"))
+                            .is_some()
+                            || !self
+                                .ordered_role_submethods_for_class(cn, "TWEAK")
+                                .is_empty())
+                });
+                if any_tweak {
+                    self.run_tweak_phase(*class_name, &inv, &args)?;
+                    // Re-check `where` after the TWEAK phase (formerly checked
+                    // after each TWEAK step; a violation surfaces identically —
+                    // rakudo enforces `where` at assignment time, so the
+                    // phase-granular check remains an approximation either way).
+                    self.enforce_attribute_where_constraints(
+                        class_key,
+                        &class_attrs_info,
+                        &inv_cell.to_map(),
+                    )?;
                 }
+                let mut attrs = inv_cell.to_map();
                 // Initialize per-class private attributes: when a parent and child
                 // both declare an attribute with the same name, each class gets its
                 // own copy stored under a qualified key ("ClassName\0attrName").
@@ -2210,7 +2059,11 @@ impl Interpreter {
                 // Apply `has $.x does Role` attribute traits (shared with the
                 // native default constructor).
                 self.apply_attribute_does_role_mixins(class_key, &mut attrs);
-                let mut instance = Value::make_instance(*class_name, attrs);
+                // Commit the post-phase attribute surgery (per-class qualified
+                // keys, Array backing storage, container tagging, mixins) into
+                // the live cell and return the SAME instance BUILD/TWEAK saw.
+                inv_cell.commit_attrs(attrs);
+                let mut instance = inv;
                 if let Some(type_args) = type_args.as_ref() {
                     if self.class_mro(class_key).iter().any(|n| n == "Array") {
                         let value_type = type_args
