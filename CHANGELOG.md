@@ -1,5 +1,59 @@
 # Changelog
 
+## [v0.4.0](https://github.com/tokuhirom/mutsu/compare/v0.3.1...v0.4.0) - 2026-07-15
+
+- perf(vm): give the argument varref a first-class Value representation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4499
+- perf(vm): stop every `my` declaration from allocating env-metadata keys by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4501
+- perf(vm): latch-gate the per-element index metadata probes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4502
+- perf(jit): inline `div` / `mod` into Tier B native code by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4503
+- fix(bind): propagate `:=` writes across the whole bind group, and inherit readonly by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4504
+- fix(bind): make `:=` onto an `is rw` parameter reach the caller by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4505
+- perf(vm): stop `my $x = ...` from re-interning, re-hashing and COW-ing the env by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4506
+- refactor(vm): delete the unreachable `simple_locals` fast paths by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4507
+- perf(vm): key the block/loop declaration sets by Symbol, not String by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4508
+- docs: record the declaration-path perf slice and the `needs_env_sync` blocker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4509
+- fix(parser): fix the quote/heredoc gaps behind three unparseable integration tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4511
+- fix(vm): resolve a closure's free variables in its own captured scope by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4510
+- fix(io): let the OS assign the port for `IO::Socket::Async.listen(host, 0)` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4512
+- docs: split BLOCKERS cluster ① into its four real root causes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4513
+- fix(parser): close the statement/expression parse gaps in the SORRY cluster by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4514
+- fix: let a feed operator open a continuation line, and keep an infinite closure sequence lazy in a for loop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4515
+- fix(parser): give the operators looser than the comma their real precedence in every comma splitter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4517
+- fix(vm): only refresh the receiver's slot when a method actually rebinds it by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4516
+- docs: record the CallMethodMut receiver-writeback root cause (BLOCKERS ①) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4518
+- test(roast): whitelist deep-recursion-initing-native-array.t (it was a debug-build artifact) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4519
+- docs: record the exact root cause of man-or-boy (BLOCKERS ①, the last one) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4520
+- fix: bind a destructuring signature's names — in the parser, in grep, and through a grep-containerized slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4521
+- fix: give a user-defined operator's precedence trait its actual effect by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4522
+- docs: ANALYSIS.md rev9 — rewrite in English, archive resolved items to news by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4524
+- fix(vm): capture &-sigiled code variables as closure free variables (man-or-boy) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4523
+- fix(vm): capture bare-call code-var reads and keep vouched captures authoritative at depth by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4525
+- fix: close the metamodel, coercion, hyper and scoping gaps behind A04-experimental by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4526
+- perf(jit): J4d slice 1 — Tier B inline GetLocal + lock-free hot-range cache by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4527
+- perf(vm): J4d slice 2 — kill the per-store intern chain on the SetLocal mirror by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4528
+- perf(vm): J4d slice 3 — make the light-call ceremony allocation-free by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4529
+- docs: update PLAN J4d status after slices 1-3 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4531
+- fix: resolve all 5 hang/timeout roast blockers (BLOCKERS cluster ③) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4532
+- fix: close three integration cluster-5 introspection gaps (day18/day20/day22) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4533
+- perf(vm): J4d slice 4 — FxHash the function-dispatch tables + fuse the light-call arg scans by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4534
+- fix: count Say/Put/Print/Note as calls so method exit keeps env writes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4535
+- fix: bind trailing operator adverbs to the outermost operator (advent2013-day10) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4536
+- perf(vm): J4d slice 5 — reuse the caller env frame on light calls via a CoW write latch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4537
+- fix: re-enter the wrap chain on recursive calls of a wrapped sub by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4538
+- perf(vm): J4d slice 6 — replace the readonly-set Arc snapshot with a mutation journal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4540
+- feat: --doc renders pod before declarators, =item bullets, native pod2text by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4541
+- fix: merge inherited proto-token candidates in derived grammars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4542
+- docs: close ADR-0004 — J4d complete, int-loop ratio gate re-judged obsolete by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4543
+- docs: record BLOCKERS cluster-5 wrap-up (8 of 10 whitelisted) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4544
+- fix: error message quality — backtraces on all runtime errors, CLI-identical is_run stderr (BLOCKERS cluster 4) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4539
+- fix: weird-errors.t 26→30 — proto signature gate, term-call rejection, for-modifier over sequences by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4545
+- docs: clarify English-only document rule and translate news/ to English by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4546
+- docs: translate ADRs (docs/adr/) to English by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4548
+- docs(roast): update HISTORY.tsv (1270 pass / 1296 files, 2026-07-15) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4547
+- docs: translate design documents to English (batch 1 of 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4551
+- fix: pass roast/6.c/MISC/bug-coverage.t (17/17) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4530
+- docs: translate design documents to English (batch 2 of 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4552
+
 ## [v0.3.1](https://github.com/tokuhirom/mutsu/compare/v0.3.0...v0.3.1) - 2026-07-14
 
 - perf(vm): stop rebuilding per-variable metadata keys on every declaration/store by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4495
