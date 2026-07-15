@@ -43,6 +43,12 @@ impl Interpreter {
         format!(":{}({})", key, type_name)
     }
 
+    /// Map-in/map-out wrapper over [`Self::run_instance_method_celled`]: the
+    /// historical `(value, post-method attribute map)` contract. The map is
+    /// materialized from the invocant's live cell (or the entry snapshot for a
+    /// cell-less invocant) only here — the celled core returns `None` on the
+    /// common path so cell-threading callers (the construction phases) never
+    /// pay the whole-map `to_map()`.
     pub(crate) fn run_instance_method(
         &mut self,
         receiver_class_name: &str,
@@ -51,6 +57,40 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
+        let cell = invocant.as_ref().and_then(Self::self_instance_attrs);
+        let fallback = if cell.is_none() {
+            Some(attributes.clone())
+        } else {
+            None
+        };
+        let (v, reconciled) = self.run_instance_method_celled(
+            receiver_class_name,
+            &attributes,
+            method_name,
+            args,
+            invocant,
+        )?;
+        let final_attrs = match reconciled {
+            Some(m) => m,
+            None => cell.map(|c| c.to_map()).or(fallback).unwrap_or_default(),
+        };
+        Ok((v, final_attrs))
+    }
+
+    /// Cell-authoritative instance-method dispatch: resolve across the MRO, set
+    /// up the dispatch frame / wrap chain, run the candidate compiled. Returns
+    /// `(value, None)` on the common path — the invocant's shared attribute
+    /// cell already holds every attribute mutation — and `(value, Some(map))`
+    /// only when the exit reconcile recovered a `:=`-bound attribute beyond the
+    /// cell contents (the caller must commit that map to its cell).
+    pub(crate) fn run_instance_method_celled(
+        &mut self,
+        receiver_class_name: &str,
+        attributes: &AttrMap,
+        method_name: &str,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         crate::vm::vm_stats::record_resolver_method_dispatch(method_name);
         let inv_value = if let Some(inv) = &invocant {
             inv.clone()
@@ -172,7 +212,7 @@ impl Interpreter {
                 .get_method_wrap_chain(&owner_class, method_name, cand_idx)
                 .cloned()
         {
-            let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, &attributes);
+            let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
             let remaining = build_remaining(self, &method_def);
             let pushed_dispatch = !remaining.is_empty();
             self.push_method_samewith_context(
@@ -240,9 +280,11 @@ impl Interpreter {
             if pushed_dispatch {
                 self.method_dispatch_stack.pop();
             }
-            return result.map(|v| (v, attributes));
+            // The wrapped call mutated attributes (if any) through the live
+            // cell; there is no `:=` reconcile on this path.
+            return result.map(|v| (v, None));
         }
-        let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, &attributes);
+        let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
         let remaining = build_remaining(self, &method_def);
         let pushed_dispatch = !remaining.is_empty();
         self.push_method_samewith_context(
@@ -276,7 +318,7 @@ impl Interpreter {
         // (roast S12-methods/defer-next.t: method `m` x10000). Delegation forwarders
         // (synthesized, `compiled_code = None`) and any other uncompiled method keep
         // the interpreter path.
-        let result = self.run_resolved_method_compiled_or_treewalk(
+        let result = self.run_resolved_method_celled(
             receiver_class_name,
             &owner_class,
             method_name,
@@ -320,6 +362,51 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
+        let cell = invocant.as_ref().and_then(Self::self_instance_attrs);
+        // Non-instance invocant (no live cell): keep the entry snapshot as the
+        // unadjusted fallback map, mirroring the pre-Option return contract.
+        let fallback = if cell.is_none() {
+            Some(attributes.clone())
+        } else {
+            None
+        };
+        let (v, reconciled) = self.run_resolved_method_celled(
+            receiver_class_name,
+            owner_class,
+            method_name,
+            method_def,
+            &attributes,
+            args,
+            invocant,
+        )?;
+        // Read the committed attribute map from the live cell of `self`,
+        // unwrapping a `Mixin` invocant to its inner instance (so a
+        // runtime-`does` mixin method's attribute mutations are captured,
+        // not a stale entry snapshot). A `Some` reconcile keeps the
+        // `:=`-recovered snapshot.
+        let final_attrs = match reconciled {
+            Some(m) => m,
+            None => cell.map(|c| c.to_map()).or(fallback).unwrap_or_default(),
+        };
+        Ok((v, final_attrs))
+    }
+
+    /// Cell-authoritative core of [`Self::run_resolved_method_compiled_or_treewalk`]:
+    /// `(value, None)` on the common path (the invocant's shared cell holds every
+    /// attribute mutation); `(value, Some(map))` when the exit reconcile recovered a
+    /// `:=`-bound attribute (or a delegation forwarder rebuilt the map) — the caller
+    /// commits that map to its cell.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn run_resolved_method_celled(
+        &mut self,
+        receiver_class_name: &str,
+        owner_class: &str,
+        method_name: &str,
+        method_def: MethodDef,
+        attributes: &AttrMap,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         // Writeback-safety gate (§B, #3658 step 4 — free_var_writes filter REMOVED).
         // Any resolved candidate that has compiled bytecode and is not a delegation
         // forwarder now runs compiled, regardless of what free vars it writes:
@@ -354,28 +441,20 @@ impl Interpreter {
         let writeback_safe_compiled =
             method_def.compiled_code.is_some() && method_def.delegation.is_none();
         if !writeback_safe_compiled {
-            return self.forward_resolved_delegation(
-                receiver_class_name,
-                owner_class,
-                method_def,
-                attributes,
-                args,
-                invocant,
-            );
+            // A delegation forwarder threads the map functionally (it may insert
+            // an updated delegate); surface it as `Some` so the caller commits.
+            return self
+                .forward_resolved_delegation(
+                    receiver_class_name,
+                    owner_class,
+                    method_def,
+                    attributes.clone(),
+                    args,
+                    invocant,
+                )
+                .map(|(v, updated)| (v, Some(updated)));
         }
         let cc = method_def.compiled_code.clone().unwrap();
-        let inv_for_cell = invocant.clone();
-        // Non-instance invocant (no live cell): keep the entry snapshot as the
-        // unadjusted fallback map, mirroring the pre-Option return contract.
-        let fallback_attrs = if inv_for_cell
-            .as_ref()
-            .and_then(Self::self_instance_attrs)
-            .is_none()
-        {
-            Some(attributes.clone())
-        } else {
-            None
-        };
         let empty_fns = crate::opcode::CompiledFns::default();
         let saved_pending = std::mem::take(&mut self.pending_rw_writeback_sources);
         let call_result = self.call_compiled_method(
@@ -412,20 +491,7 @@ impl Interpreter {
                     err.control = Some(crate::value::Control::Fail);
                     return Err(err);
                 }
-                // Read the committed attribute map from the live cell of `self`,
-                // unwrapping a `Mixin` invocant to its inner instance (so a
-                // runtime-`does` mixin method's attribute mutations are captured,
-                // not a stale entry snapshot). A `Some` reconcile keeps the
-                // `:=`-recovered snapshot.
-                let final_attrs = if let Some(updated) = reconciled {
-                    updated
-                } else if let Some(cell) = inv_for_cell.as_ref().and_then(Self::self_instance_attrs)
-                {
-                    cell.to_map()
-                } else {
-                    fallback_attrs.unwrap_or_default()
-                };
-                Ok((v, final_attrs))
+                Ok((v, reconciled))
             }
             Err(e) => Err(e),
         }
