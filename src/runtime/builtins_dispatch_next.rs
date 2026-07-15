@@ -600,6 +600,16 @@ impl Interpreter {
         if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
+                // The wrappee returned by nextcallee is the inner code object
+                // itself: calling it must run it directly, never re-enter the
+                // wrap chain (which would recurse into the wrapper forever).
+                if let crate::value::ValueView::Sub(data) = next.view() {
+                    let mut direct = crate::value::SubData::clone(&data);
+                    direct
+                        .env
+                        .insert("__mutsu_wrap_direct".to_string(), Value::TRUE);
+                    return Ok(Value::sub_value(crate::gc::Gc::new(direct)));
+                }
                 return Ok(next);
             }
             return Ok(Value::NIL);

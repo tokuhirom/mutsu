@@ -126,6 +126,12 @@ impl Interpreter {
             if !skip_chain_once
                 && let Some(chain) = self.wrap_chains.get(&data.id).cloned()
                 && !chain.is_empty()
+                // A nextcallee-returned wrappee carries __mutsu_wrap_direct:
+                // it is the inner code object and always runs directly.
+                && !matches!(
+                    data.env.get("__mutsu_wrap_direct").map(Value::view),
+                    Some(ValueView::Bool(true))
+                )
             {
                 let (sanitized_args, callsite_line) = self.sanitize_call_args(&args);
                 self.test_pending_callsite_line = callsite_line;
