@@ -829,7 +829,13 @@ pub(crate) struct CodeBlockContext {
 }
 
 /// A single entry in a quantified capture list: (matched_text, from, to, subcaptures).
-pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<RegexCaptures>);
+///
+/// The nested sub-captures are held behind an `Arc` so that cloning a parent
+/// `RegexCaptures` during backtracking is a refcount bump rather than a deep
+/// copy of the whole sub-match tree. A completed sub-match is effectively
+/// immutable once stored; the rare post-store tweak (e.g. setting `action_name`)
+/// goes through `Arc::make_mut`, which is free while the entry is still unshared.
+pub(crate) type QuantifiedCaptureEntry = (String, usize, usize, Option<Arc<RegexCaptures>>);
 
 /// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
 /// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
@@ -843,11 +849,11 @@ pub(crate) struct RegexCaptures {
     pub(crate) named: HashMap<String, Vec<String>>,
     /// Nested sub-captures for named subrule matches. Key is capture name,
     /// value is inner captures from the subrule (parallel to entries in `named`).
-    pub(crate) named_subcaps: HashMap<String, Vec<RegexCaptures>>,
+    pub(crate) named_subcaps: HashMap<String, Vec<Arc<RegexCaptures>>>,
     pub(crate) positional: Vec<String>,
     /// Nested sub-captures for positional capture groups. Each entry corresponds
     /// to the same index in `positional` and holds inner captures from nested groups.
-    pub(crate) positional_subcaps: Vec<Option<RegexCaptures>>,
+    pub(crate) positional_subcaps: Vec<Option<Arc<RegexCaptures>>>,
     /// When a capture group is quantified (e.g. `(\w)+`), this parallel vec
     /// stores the list of all iteration matches for that positional index.
     /// When `Some`, the positional slot should be rendered as an Array of Match objects.

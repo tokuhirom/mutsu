@@ -509,10 +509,22 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       matches in place and wraps via the shared `build_named_candidates_from_inner`
       (capture markers / silent-subrule action channel now behave identically on both
       paths). bench-grammar-parse **5.9s → ~2.2s (~2.7×)**; nested `matrix` case 3.0s →
-      1.0s. Remaining (why still ~4-5×): allocation churn — profile is ~50%
-      malloc/memmove/free with `RegexCaptures::clone`+drop and `String::clone` on top =
-      the capture representation itself (String-keyed maps, full clones per DFS stack
-      push and per non-ratchet backtrack step). That is the original item of this bullet.
+      1.0s. **Update 2026-07-15 (3): nested sub-captures are now shared behind `Arc`
+      (#4586)** — `named_subcaps` / `positional_subcaps` / quantified-capture entries hold
+      `Arc<RegexCaptures>` instead of an owned `RegexCaptures`, so cloning a parent caps at
+      each DFS stack push (and every separated/repetition-quantifier fold) is a refcount
+      bump rather than a recursive deep copy of the whole sub-match tree. Profile:
+      `RegexCaptures::clone`+drop ~10% → ~4% of samples; bench-grammar-parse ~9% faster
+      (1.51s → 1.37s), a deep nested-JSON doc ~4-10% faster. Pinned by
+      `t/regex-nested-subcaps-sharing.t`.
+      **Remaining (the real prize — still O(n²) in document size):** a 552-char nested-JSON
+      doc takes mutsu ~38s vs raku ~0.27s (~140×). The quadratic is the by-value threading
+      of the *whole* caps struct: the hot `named` map (String keys + matched-text `String`s)
+      still deep-copies at every DFS step, and the ~450-byte struct is memmoved on every
+      stack push/pop and Vec element. Profile of a 4s deep parse: ~19% memmove + ~40%
+      malloc/free, `RegexCaptures::default` ~1.7%. The sound fix is a single mutable cursor
+      with an undo-log / trail (mutate-and-rewind) instead of by-value CPS — a larger
+      matcher rewrite, tracked as the next grammar-parse lever.
 - Targets (numbers from bench CI, main `c8955d2e`, 2026-07-13; parentheses = JIT-on series):
   method-call <1.5x (✅ 1.19x / jit 1.16x), bench-class <1.5x (✅ 1.02x / jit 1.00x),
   fib <10x (✅ **0.82x / jit 0.65x**), bench-fib (with type constraints) <2x

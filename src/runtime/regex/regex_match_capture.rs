@@ -208,7 +208,9 @@ impl Interpreter {
                     subcap.from = pos;
                     subcap.to = end;
                     new_caps.positional.push(captured);
-                    new_caps.positional_subcaps.push(Some(subcap));
+                    new_caps
+                        .positional_subcaps
+                        .push(Some(std::sync::Arc::new(subcap)));
                     new_caps.positional_quantified.push(None);
                     return Some((end, new_caps));
                 }
@@ -529,7 +531,7 @@ impl Interpreter {
                         .named_subcaps
                         .entry(capture_name.to_string())
                         .or_default()
-                        .push(subcap);
+                        .push(std::sync::Arc::new(subcap));
                     new_caps
                         .named
                         .entry(capture_name.to_string())
@@ -554,7 +556,7 @@ impl Interpreter {
                             .named_subcaps
                             .entry(spec.lookup_name.to_string())
                             .or_default()
-                            .push(subcap2);
+                            .push(std::sync::Arc::new(subcap2));
                         new_caps
                             .named
                             .entry(spec.lookup_name.to_string())
@@ -602,7 +604,7 @@ impl Interpreter {
                         .named_subcaps
                         .entry(capture_name.to_string())
                         .or_default()
-                        .push(subcap);
+                        .push(std::sync::Arc::new(subcap));
                     new_caps
                         .named
                         .entry(capture_name.to_string())
