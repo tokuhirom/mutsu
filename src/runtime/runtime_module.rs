@@ -135,6 +135,10 @@ impl Interpreter {
                     // (see runtime/json.rs, dispatched in vm_native_json.rs).
                     | "JSON::Fast"
                     | "JSON::Tiny"
+                    // Pod::To::Text: `pod2text` is implemented natively over the
+                    // Pod object tree (see runtime/io_pod.rs), so the `use` only
+                    // needs to be recognized (same pattern as JSON::Fast).
+                    | "Pod::To::Text"
             ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {

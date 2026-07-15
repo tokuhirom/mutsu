@@ -41,6 +41,111 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Pod::Heading"), attrs)
     }
 
+    /// Render a Pod object tree to plain text, Pod::To::Text style. Backs the
+    /// native `pod2text` (from `use Pod::To::Text`, recognized as a built-in
+    /// module the same way JSON::Fast is).
+    pub(crate) fn pod_to_text(value: &Value) -> String {
+        fn contents_of(value: &Value) -> Vec<Value> {
+            if let ValueView::Instance { attributes, .. } = value.view() {
+                match attributes.as_map().get("contents").map(Value::view) {
+                    Some(ValueView::Array(items, _)) => return items.to_vec(),
+                    Some(_) => {
+                        return attributes
+                            .as_map()
+                            .get("contents")
+                            .cloned()
+                            .into_iter()
+                            .collect();
+                    }
+                    None => {}
+                }
+            }
+            Vec::new()
+        }
+        fn inline_text(values: &[Value]) -> String {
+            let mut out = String::new();
+            for v in values {
+                match v.view() {
+                    ValueView::Str(s) => out.push_str(&s),
+                    ValueView::Instance { .. } => {
+                        out.push_str(&inline_text(&contents_of(v)));
+                    }
+                    ValueView::Array(items, _) => out.push_str(&inline_text(&items.to_vec())),
+                    _ => out.push_str(&v.to_string_value()),
+                }
+            }
+            out
+        }
+        fn render(value: &Value, out: &mut String) {
+            match value.view() {
+                ValueView::Array(items, _) => {
+                    for item in items.iter() {
+                        render(item, out);
+                    }
+                }
+                ValueView::Seq(items) => {
+                    for item in items.iter() {
+                        render(item, out);
+                    }
+                }
+                ValueView::Instance { class_name, .. } => {
+                    let contents = contents_of(value);
+                    match class_name.resolve().as_str() {
+                        "Pod::Heading" => {
+                            out.push_str(&inline_text(&contents));
+                            out.push_str("\n\n");
+                        }
+                        "Pod::Block::Para" => {
+                            out.push_str(&inline_text(&contents));
+                            out.push_str("\n\n");
+                        }
+                        "Pod::Item" => {
+                            out.push_str("  * ");
+                            out.push_str(&inline_text(&contents));
+                            out.push_str("\n\n");
+                        }
+                        "Pod::Block::Code" => {
+                            for line in inline_text(&contents).lines() {
+                                out.push_str("    ");
+                                out.push_str(line);
+                                out.push('\n');
+                            }
+                            out.push('\n');
+                        }
+                        "Pod::Block::Comment" => {}
+                        // Pod::Block, Pod::Block::Named, Pod::Block::Declarator, ...
+                        _ => {
+                            for item in &contents {
+                                render(item, out);
+                            }
+                        }
+                    }
+                }
+                ValueView::Str(s) => {
+                    out.push_str(&s);
+                    out.push('\n');
+                }
+                ValueView::Nil => {}
+                _ => {
+                    out.push_str(&value.to_string_value());
+                    out.push('\n');
+                }
+            }
+        }
+        let mut out = String::new();
+        render(value, &mut out);
+        out
+    }
+
+    pub(crate) fn builtin_pod2text(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let rendered = args
+            .iter()
+            .map(Self::pod_to_text)
+            .collect::<Vec<_>>()
+            .join("");
+        Ok(Value::str(rendered))
+    }
+
     /// Strip the `# ` / `#` abbreviated-block alias for `:numbered` from the
     /// start of a directive tail. Returns `(is_numbered, remainder)`.
     pub(crate) fn extract_numbered_alias(rest: &str) -> (bool, &str) {

@@ -228,6 +228,17 @@ fn render_begin_pod_blocks(source: &str) -> String {
                     i += 1;
                     continue;
                 }
+                // `=item text` renders as a bullet (Pod::To::Text style).
+                if let Some(rest) = inner.strip_prefix("=item") {
+                    let text = rest
+                        .trim_start_matches(|c: char| c.is_ascii_digit())
+                        .trim_start();
+                    output.push_str("  * ");
+                    output.push_str(text);
+                    output.push('\n');
+                    i += 1;
+                    continue;
+                }
                 if inner.starts_with('=') {
                     i += 1;
                     continue;
@@ -383,8 +394,10 @@ pub fn run_doc_mode(source: &str) -> Result<DocModeResult, RuntimeError> {
     validate_pod_blocks(source)?;
     let (mut output, status, halted) = run_doc_init_blocks(source)?;
     if !halted {
-        output.push_str(&render_doc(source));
+        // Rakudo's Pod::To::Text renders the pod blocks in source order
+        // first, then the declarator (#| / #=) blocks.
         output.push_str(&render_begin_pod_blocks(source));
+        output.push_str(&render_doc(source));
     }
     Ok(DocModeResult { output, status })
 }
