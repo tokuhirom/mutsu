@@ -731,6 +731,12 @@ impl Interpreter {
     ) -> Option<String> {
         match expr {
             Expr::BareWord(name) => {
+                // A bare `_` is never a declared name in raku (the topic is
+                // `$_`); report it before the env lookup below would excuse it
+                // via the topic entry.
+                if name == "_" {
+                    return Some("_".to_string());
+                }
                 // Skip well-known constants and special names
                 if matches!(
                     name.as_str(),
@@ -867,6 +873,11 @@ impl Interpreter {
             Expr::ArrayLiteral(items) => items
                 .iter()
                 .find_map(|e| self.find_undeclared_name_in_expr(e, local_classes, declared)),
+            // A Whatever-lambda body (`_~*.A` parses into one) can still
+            // reference undeclared barewords.
+            Expr::Lambda { body, .. } => body
+                .iter()
+                .find_map(|s| self.find_undeclared_name_in_stmt(s, local_classes, declared)),
             _ => None,
         }
     }

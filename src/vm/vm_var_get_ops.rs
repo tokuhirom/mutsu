@@ -8,6 +8,13 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
+        // A bare `_` term is never a declared name in raku (the topic is `$_`);
+        // rakudo reports it as X::Undeclared::Symbols at compile time.
+        if name == "_" {
+            return Err(RuntimeError::undeclared_symbols(
+                "Undeclared name:\n    _ used at line 1",
+            ));
+        }
         let val = if name == "Bool::True" {
             Value::TRUE
         } else if name == "Bool::False" {

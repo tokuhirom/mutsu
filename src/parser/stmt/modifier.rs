@@ -1,4 +1,4 @@
-use super::super::expr::{expression, expression_no_sequence};
+use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages};
 
@@ -383,7 +383,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             ));
         }
         let (r, _) = ws1(r)?;
-        let (r, first) = expression_no_sequence(r).map_err(|err| PError {
+        let (r, first) = expression(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected iterable expression after 'for'",
                 &err.messages,
@@ -406,7 +406,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     r = r2;
                     break;
                 }
-                let (r2, next) = expression_no_sequence(r2)?;
+                let (r2, next) = expression(r2)?;
                 items.push(next);
                 r = r2;
             }

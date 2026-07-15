@@ -2,6 +2,7 @@ use crate::ast::{Expr, Stmt};
 use crate::parser::expr::{expression, expression_no_sequence};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, parse_char, parse_tag};
+use crate::parser::primary::current_line_number;
 use crate::parser::primary::misc::parse_block_body;
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -340,6 +341,17 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         && !input[3..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
         let after = input[3..].trim_start();
+        // `now` is a term, not a routine: the call form `now(...)` is a
+        // compile-time "Undeclared routine" in rakudo.
+        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("now") {
+            return Err(PError::fatal_at(
+                format!(
+                    "X::Undeclared::Symbols: Undeclared routine:\n    now used at line {}",
+                    current_line_number(input)
+                ),
+                input,
+            ));
+        }
         // Don't treat as a call if followed by => (fat arrow creates a Pair)
         if !after.starts_with("=>") || after.starts_with("==>") {
             return Ok((
@@ -356,6 +368,17 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
         && !input[4..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     {
         let after = input[4..].trim_start();
+        // `time` is a term, not a routine: the call form `time(...)` is a
+        // compile-time "Undeclared routine" in rakudo.
+        if after.starts_with('(') && !crate::parser::stmt::simple::is_user_declared_sub("time") {
+            return Err(PError::fatal_at(
+                format!(
+                    "X::Undeclared::Symbols: Undeclared routine:\n    time used at line {}",
+                    current_line_number(input)
+                ),
+                input,
+            ));
+        }
         // Don't treat as a call if followed by => (fat arrow creates a Pair)
         if !after.starts_with("=>") || after.starts_with("==>") {
             return Ok((

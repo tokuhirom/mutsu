@@ -93,7 +93,7 @@ impl Interpreter {
             let type_names: Vec<String> = arg_values
                 .iter()
                 .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
-                .map(|a| crate::value::types::what_type_name(a))
+                .map(crate::value::types::what_type_name)
                 .collect();
             let msg = format!(
                 "Calling {}({}) will never work with signature of the proto ()",
