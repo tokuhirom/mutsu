@@ -11,7 +11,7 @@ use super::*;
 /// `pi`/`tau`/`e`/`i`) and the module/import statement keywords (`use`/`need`/
 /// `import`) that parse as calls. Being permissive here only suppresses false
 /// positives; a genuinely undeclared user routine is still flagged.
-const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
+pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "BEGIN",
     "Bag",
     "BagHash",
@@ -600,11 +600,7 @@ impl Interpreter {
                 continue;
             }
             let suggestions = self.suggest_routine_names(&name);
-            return Err(RuntimeError::undeclared_routine_symbols(
-                &name,
-                format!("Undeclared routine:\n    {} used at line 1", name),
-                suggestions,
-            ));
+            return Err(Self::undeclared_routine_error(&name, 1, suggestions));
         }
         Ok(())
     }

@@ -282,11 +282,11 @@ The root causes collapse into a handful (counts, symptoms, and files in BLOCKERS
       (`4.7k`), heredoc indentation, `do {…} … *` sequence series, `subtest … => {}`, etc. Each
       construct is independent = likely contains some cheap ★ wins.
 - [ ] **③ 5 hangs/timeouts**: `gather-with-loops.t` and others.
-- [ ] **④ 2 error-message-quality files**: `error-reporting.t` (**26/33**, originally 4/33) and
-      `weird-errors.t` (**30/36**, originally 26/36). #4539 implemented backtraces on all runtime
-      errors, is_run seeing the same stderr as the CLI, Backtrace.new/.full, etc. The biggest
-      remaining target is **compile-time undeclared-routine detection** (breakdown of the remainder
-      in the BLOCKERS.md ④ row).
+- [ ] **④ 2 error-message-quality files**: `error-reporting.t` (**28/33**, originally 4/33) and
+      `weird-errors.t` (**31/36**, originally 26/36). #4539 implemented backtraces on all runtime
+      errors, is_run seeing the same stderr as the CLI, Backtrace.new/.full, etc. Compile-time
+      undeclared-routine detection is now implemented (breakdown of the remainder in the
+      BLOCKERS.md inventory rows).
 - [ ] **⑤ Individual feature gaps**: derived grammar extension / `nextsame` with inheritance and
       mixins / `Rat`'s `$!numerator`/`$!denominator` / `Metamodel::GrammarHOW` inheritance /
       `--doc` and `DOC INIT {}` / signature introspection / parameterized-role mixins / operator

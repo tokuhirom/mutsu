@@ -345,6 +345,7 @@ mod system_introspect;
 mod tap_state;
 mod test_functions;
 pub(crate) mod types;
+mod undeclared_routines;
 mod unicode;
 pub(crate) mod utf8_c8;
 pub(crate) mod utils;
