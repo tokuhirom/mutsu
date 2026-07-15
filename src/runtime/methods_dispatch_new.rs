@@ -273,59 +273,59 @@ impl Interpreter {
                 "getcodename requires a concrete code object",
             ));
         }
-        // Initialize with default attribute values
+        // Initialize with default attribute values. The attribute defs and the
+        // BUILD/TWEAK probes come from the cached per-class NativeCtorPlan
+        // (shape-only data, invalidated with the dispatch caches) instead of
+        // being re-collected on every bless.
+        let plan = self.native_ctor_plan(class_name);
         let mut attributes = AttrMap::new();
-        if self.registry().classes.contains_key(&class_name.resolve()) {
-            for (attr_name, _is_public, default, _is_rw, _, sigil, _) in
-                self.collect_class_attributes(&class_name.resolve())
-            {
-                let val = if let Some(Expr::Literal(ref lit_val)) = default {
-                    // Fast path: simple literal defaults (e.g. native type
-                    // defaults like Int(0)) don't need interpretation.
-                    lit_val.clone()
-                } else if let Some(expr) = default {
-                    self.eval_block_value(&[Stmt::Expr(expr)])?
-                } else if sigil == '@' {
-                    // A `@`-sigil attribute with no default is an empty Array,
-                    // not Nil (matches `dispatch_new`). Leaving it Nil makes
-                    // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
-                    let mut arr = Value::real_array(Vec::new());
-                    let tc = self
-                        .registry()
-                        .classes
-                        .get(&class_name.resolve())
-                        .and_then(|cd| cd.attribute_types.get(&attr_name))
-                        .cloned();
-                    if let Some(tc) = tc {
-                        arr = self.tag_container_metadata(
-                            arr,
-                            super::ContainerTypeInfo {
-                                value_type: tc,
-                                key_type: None,
-                                declared_type: None,
-                            },
-                        );
-                    }
-                    arr
-                } else if sigil == '%' {
-                    // A `%`-sigil attribute with no default is an empty Hash.
-                    Value::hash(HashMap::new())
-                } else {
-                    // Native types have zero/empty defaults instead of Nil
-                    let type_constraint =
-                        self.get_attr_type_constraint(&class_name.resolve(), &attr_name);
-                    match type_constraint.as_deref() {
-                        Some(
-                            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
-                            | "uint16" | "uint32" | "uint64" | "byte" | "atomicint",
-                        ) => Value::int(0),
-                        Some("num" | "num32" | "num64") => Value::num(0.0),
-                        Some("str") => Value::str("".to_string()),
-                        _ => Value::NIL,
-                    }
-                };
-                attributes.insert(attr_name, val);
-            }
+        for (attr_name, _is_public, default, _is_rw, _, sigil, _) in plan.class_attrs.iter() {
+            let val = if let Some(Expr::Literal(lit_val)) = default {
+                // Fast path: simple literal defaults (e.g. native type
+                // defaults like Int(0)) don't need interpretation.
+                lit_val.clone()
+            } else if let Some(expr) = default {
+                self.eval_block_value(&[Stmt::Expr(expr.clone())])?
+            } else if *sigil == '@' {
+                // A `@`-sigil attribute with no default is an empty Array,
+                // not Nil (matches `dispatch_new`). Leaving it Nil makes
+                // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
+                let mut arr = Value::real_array(Vec::new());
+                let tc = self
+                    .registry()
+                    .classes
+                    .get(&class_name.resolve())
+                    .and_then(|cd| cd.attribute_types.get(attr_name))
+                    .cloned();
+                if let Some(tc) = tc {
+                    arr = self.tag_container_metadata(
+                        arr,
+                        super::ContainerTypeInfo {
+                            value_type: tc,
+                            key_type: None,
+                            declared_type: None,
+                        },
+                    );
+                }
+                arr
+            } else if *sigil == '%' {
+                // A `%`-sigil attribute with no default is an empty Hash.
+                Value::hash(HashMap::new())
+            } else {
+                // Native types have zero/empty defaults instead of Nil
+                let type_constraint =
+                    self.get_attr_type_constraint(&class_name.resolve(), attr_name);
+                match type_constraint.as_deref() {
+                    Some(
+                        "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                        | "uint32" | "uint64" | "byte" | "atomicint",
+                    ) => Value::int(0),
+                    Some("num" | "num32" | "num64") => Value::num(0.0),
+                    Some("str") => Value::str("".to_string()),
+                    _ => Value::NIL,
+                }
+            };
+            attributes.insert(attr_name.clone(), val);
         }
         // Override with named args from bless call
         for arg in &args {
@@ -335,7 +335,62 @@ impl Interpreter {
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(&class_name.resolve(), &mut attributes);
-        // Run BUILD/TWEAK submethods in MRO order (base-first)
+        // Run BUILD/TWEAK submethods in MRO order (base-first). The whole BUILD
+        // walk (per-MRO-class registry probes + role-submethod ordering) is
+        // skipped when the plan says no class or composed role declares one.
+        if plan.has_build {
+            self.run_bless_build_phase(class_name, &mut attributes, &args)?;
+        }
+        // `bless` passes its named arguments through to BUILD and TWEAK (as
+        // `BUILDALL` does), so a `submethod BUILD(:$!attr!)` with a required named
+        // parameter binds -- the args are also pre-folded into `attributes` above
+        // for the common no-explicit-BUILD case.
+        let attributes = if plan.has_tweak {
+            self.run_tweak_phase(class_name, attributes, &args)?
+        } else {
+            attributes
+        };
+        Ok(Value::make_instance(class_name, attributes))
+    }
+
+    /// Native `bless` entry for the VM: dispatch straight to `dispatch_bless`,
+    /// skipping the interpreter's generic method-dispatch scan (lever A).
+    /// Only a registered class with no user-defined (or role-composed) `bless`
+    /// override qualifies; everything else returns `None` and falls back to
+    /// the interpreter, whose scan handles user overrides / builtin receivers.
+    pub(crate) fn try_native_bless(
+        &mut self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let class_name = match target.view() {
+            ValueView::Package(name) => name,
+            ValueView::Instance { class_name, .. } => class_name,
+            _ => return None,
+        };
+        if !self.registry().classes.contains_key(class_name.as_str()) {
+            return None;
+        }
+        // The user-`bless`-override probe is cached in the per-class plan (an
+        // MRO + registry scan otherwise paid on every construction).
+        if self.native_ctor_plan(class_name).has_custom_bless {
+            return None;
+        }
+        Some(self.dispatch_bless(target, args.to_vec()))
+    }
+
+    /// The BUILD phase of `bless`: invoke every BUILD submethod (own and
+    /// role-composed) across the MRO in base-first order, threading the
+    /// (possibly mutated) attribute map through each call. Extracted verbatim
+    /// from `dispatch_bless` so the `plan.has_build` gate can skip it wholesale.
+    /// (Unlike `run_build_phase`, a `fail` inside BUILD propagates as an error
+    /// here — the historical `bless` behavior.)
+    fn run_bless_build_phase(
+        &mut self,
+        class_name: Symbol,
+        attributes: &mut AttrMap,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
         let mro = self.class_mro(&class_name.resolve());
         // Determine the class's language revision for submethod dispatch rules.
         let class_lang_rev = self
@@ -399,10 +454,10 @@ impl Interpreter {
                     "BUILD",
                     method_def,
                     attributes.clone(),
-                    args.clone(),
+                    args.to_vec(),
                     Some(Value::make_instance(class_name, attributes.clone())),
                 )?;
-                attributes = updated;
+                *attributes = updated;
             }
             // Call the class's BUILD if it has one that wasn't already handled
             // by ordered_role_submethods_for_class. Role submethods (is_my=true,
@@ -424,18 +479,13 @@ impl Interpreter {
                     mro_class,
                     attributes.clone(),
                     "BUILD",
-                    args.clone(),
+                    args.to_vec(),
                     Some(Value::make_instance(class_name, attributes.clone())),
                 )?;
-                attributes = updated;
+                *attributes = updated;
             }
         }
-        // `bless` passes its named arguments through to BUILD and TWEAK (as
-        // `BUILDALL` does), so a `submethod BUILD(:$!attr!)` with a required named
-        // parameter binds -- the args are also pre-folded into `attributes` above
-        // for the common no-explicit-BUILD case.
-        let attributes = self.run_tweak_phase(class_name, attributes, &args)?;
-        Ok(Value::make_instance(class_name, attributes))
+        Ok(())
     }
 
     /// Run the TWEAK phase of construction: invoke every TWEAK submethod (own and

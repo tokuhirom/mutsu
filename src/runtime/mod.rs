@@ -425,6 +425,10 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
     pub(crate) has_smiley: bool,
+    /// A user-defined (or role-composed) public `bless` method anywhere in the
+    /// MRO — such a class must take the interpreter's generic dispatch instead
+    /// of the native `bless` fork.
+    pub(crate) has_custom_bless: bool,
 }
 
 /// Kind of declaration a doc comment is attached to.

@@ -159,6 +159,25 @@ impl Interpreter {
             self.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
         }
+        // Native `bless`: route straight to the interpreter's single
+        // `dispatch_bless` impl (attribute assembly + BUILD/TWEAK phases),
+        // skipping the generic method-dispatch scan (lever A). Gated inside
+        // `try_native_bless`: registered class, no user `bless` override.
+        // Construction runs user code only through BUILD/TWEAK (and non-literal
+        // attribute defaults, same as the native `.new` fork above), so the
+        // dispatch is env-pure exactly when the plan has neither phase.
+        if method == "bless"
+            && let Some(result) = loan_env!(self, try_native_bless(&target, &args))
+        {
+            let class_sym = match target.view() {
+                ValueView::Package(name) => name,
+                ValueView::Instance { class_name, .. } => class_name,
+                _ => unreachable!("try_native_bless only fires on Package/Instance"),
+            };
+            let plan = self.native_ctor_plan(class_sym);
+            self.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
+            return result;
+        }
         // Native built-in *class* method (a pure type-object method other than
         // `.new`, e.g. `Instant.from-posix`) — built directly instead of routing
         // through the interpreter's class-method dispatch.
