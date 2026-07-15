@@ -11,7 +11,9 @@ mod hash;
 mod lambda;
 mod reduction;
 
-pub(super) use anon_decl::{anon_class_expr, anon_grammar_expr, anon_role_expr};
+pub(super) use anon_decl::{
+    anon_class_expr, anon_grammar_expr, anon_role_expr, indirect_method_call,
+};
 pub(super) use lambda::{arrow_lambda, capture_literal};
 pub(super) use reduction::reduction_op;
 

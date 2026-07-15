@@ -188,3 +188,64 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
         })),
     ))
 }
+
+/// Indirect object notation: `new Foo:` / `method Type: args` desugars to
+/// `Type.method(args)` (rakudo still accepts this Perl-5-style form —
+/// integration/weird-errors.t 32 uses `$ = new Foo:`). Deliberately narrow:
+/// the invocant must be a type-looking identifier (uppercase start, optional
+/// `::` qualification) with the colon attached directly and followed by
+/// whitespace or a statement/expression terminator, so labels (`Foo:` at
+/// statement start), `::`-qualified names, smileys (`Foo:D`) and colonpair
+/// adverbs never match.
+pub(crate) fn indirect_method_call(input: &str) -> PResult<'_, Expr> {
+    let (r, method) = crate::parser::stmt::ident_pub(input)?;
+    if crate::parser::primary::ident::is_keyword(&method) {
+        return Err(PError::expected("indirect method call"));
+    }
+    if !r.starts_with([' ', '\t']) {
+        return Err(PError::expected("indirect method call"));
+    }
+    let (r, _) = ws(r)?;
+    let (r, type_name) = crate::parser::stmt::ident_pub(r)?;
+    if !type_name.starts_with(|c: char| c.is_uppercase()) {
+        return Err(PError::expected("indirect method call"));
+    }
+    let r = r
+        .strip_prefix(':')
+        .ok_or_else(|| PError::expected("indirect method call"))?;
+    match r.chars().next() {
+        None => {}
+        Some(c) if c.is_whitespace() || matches!(c, ';' | ')' | '}' | ',' | '#') => {}
+        _ => return Err(PError::expected("indirect method call")),
+    }
+    // Optional comma-separated argument list on the same statement.
+    let mut args = Vec::new();
+    let (mut rest, _) = ws_inner(r);
+    if !(rest.is_empty() || rest.starts_with(';') || rest.starts_with('}') || rest.starts_with(')'))
+    {
+        loop {
+            let Ok((r2, arg)) = crate::parser::expr::expression(rest) else {
+                break;
+            };
+            args.push(arg);
+            let (r2, _) = ws_inner(r2);
+            if let Some(r3) = r2.strip_prefix(',') {
+                let (r3, _) = ws_inner(r3);
+                rest = r3;
+            } else {
+                rest = r2;
+                break;
+            }
+        }
+    }
+    Ok((
+        rest,
+        Expr::MethodCall {
+            target: Box::new(Expr::BareWord(type_name)),
+            name: crate::symbol::Symbol::intern(&method),
+            args,
+            modifier: None,
+            quoted: false,
+        },
+    ))
+}
