@@ -1408,4 +1408,5 @@ roast/integration/sequence.t
 roast/integration/substr-after-match-in-gather-in-for.t
 roast/integration/topic_in_double_loop.t
 roast/integration/variables-in-do.t
+roast/integration/weird-errors.t
 roast/t/test-util/01-is-eqv.t

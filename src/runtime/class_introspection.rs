@@ -461,6 +461,19 @@ impl Interpreter {
         }
     }
 
+    /// Whether `class_name` (or any class in its MRO) declares an attribute
+    /// with the bare name `bare` (`"x"` for `$!x`/`$.x`). Used by the VM's
+    /// private-attribute read check: a read of an attribute that the invocant's
+    /// class neither carries nor declares throws (P6opaque no-such-attribute).
+    pub(crate) fn class_declares_attribute(&mut self, class_name: &str, bare: &str) -> bool {
+        self.class_mro(class_name).iter().any(|cn| {
+            self.registry()
+                .classes
+                .get(cn)
+                .is_some_and(|cd| cd.attributes.iter().any(|(n, ..)| n == bare))
+        })
+    }
+
     pub(super) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();

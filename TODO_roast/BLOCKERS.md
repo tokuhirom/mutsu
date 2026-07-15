@@ -48,7 +48,7 @@ Definitions of the classifications:
 
 ## Current assumptions
 
-- The whitelist stands at **1411 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **52** files not whitelisted.
+- The whitelist stands at **1412 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **51** files not whitelisted.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -71,7 +71,6 @@ noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `integration/weird-errors.t` | 35/36 | PASS ★ | **④ error-message quality.** Remaining 1 = test 29: `&B114672::foo(A114672.new)` where `our method foo(A114672:)` reads `$!x` must THROW (rakudo: P6opaque no-such-attribute on the wrong-class invocant); mutsu reads the missing `!x` env key as Nil. Needs "private-attr read on an instance whose class does not carry the attribute throws" — touches attr seeding in `call_compiled_method`, deferred as its own slice. Tests 11/20/32/33 fixed 2026-07-15: `:[...]` itemized-array colonpair + leading-`;` LoL argument slices (`say(;:[])` prints `()([])` like rakudo), `::lowercase` → runtime symbol lookup (X::NoSuchSymbol), indirect object notation `new Foo: args`, `hash` listop. Pin: t/weird-errors-parse-forms.t |
 | `integration/advent2012-day15.t` | 9/11 | PASS ★ | statement-form phasers create their own scope (`$best` in `NEXT (state $best) max= $_;` is not visible from `LAST`) / `INIT` runs after the mainline |
 | `integration/99problems-21-to-30.t` | aborts at 6/15 | PASS ★ | not yet root-caused (post-#4510/#4516 re-measure) |
 | `integration/99problems-31-to-40.t` | aborts at 44/67 | PASS ★ | not yet root-caused |
@@ -112,7 +111,7 @@ noted.
 | No oracle | `S02-types/array-shapes.t` | aborts at 35/43 | 38/43 (raku also aborts; same on v2026.06) | shaped array `.pairs`' `.value` does not return a writable container |
 | No oracle | `S05-metasyntax/longest-alternative.t` | 57/62, notok 5 | SORRY (`::` LTM stopper NYI) | LTM (longest-token-match) tie-break edge. Still SORRY on v2026.06 because rakudo has not implemented `::` |
 | No oracle | `S10-packages/basic.t` | 59/83, notok 9 | 6/83 (mutsu ahead; same on v2026.06) | Error-detection edges for the semicolon form of package declarations |
-| No oracle | `S12-attributes/trusts.t` | 9/15, notok 6 | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06 |
+| No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
 | No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | 0/8 (`$*OS` unsupported; same on v2026.06) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
 | No oracle | `S32-basics/xxPOS.t` | aborts at 11/64 | 53/64 (raku also aborts; same on v2026.06) | Aborts from test 12 onward due to deep features |
 | Non-goal | `S05-capture/hash.t` | rejected (matches raku) | SORRY (removed) | Hash captures in regexes `%<name>=(...)` are removed/reserved in the current spec. mutsu also gives a compile error, matching raku = **no implementation needed** |
@@ -211,9 +210,10 @@ completed fix history lives in `news/`.
 1. **Shortcuts**: `6.c/S04-declarations/my-6c.t` needs only the single `OUTER::<$x>` subtest
    (111/112). `integration/99problems-51-to-60.t` (35/37) and `99problems-61-to-70.t` (12/15)
    are close.
-2. **④ error-message quality** (`error-reporting.t` 28/33, `weird-errors.t` 31/36,
-   `advent2011-day11.t` 7/9, `multi-no-match.t` 11/16) — the same target as the identically
-   named task in PLAN §6, so it can be driven by roast pass/fail while working on that.
+2. **④ error-message quality** (`advent2011-day11.t` 7/9, `multi-no-match.t` 11/16) — the
+   same target as the identically named task in PLAN §6, so it can be driven by roast
+   pass/fail while working on that. (`error-reporting.t` and `weird-errors.t` reached the
+   whitelist 2026-07-15.)
 3. **The 11 not-yet-root-caused `integration/` aborts** (see inventory) — history says one root
    cause usually spans several files; re-run and diff against raku before picking features.
 4. `6.c/S14-roles/mixin-6c.t` (aborts at 16/57, raku full pass) — 6.c mixin semantics.
