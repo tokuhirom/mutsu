@@ -129,7 +129,7 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - If CI fails, fix on the same branch and push again (the background watch notifies you; re-watch after pushing).
   - **Flaky-looking CI failures:** consult the "Known flaky tests" section below before re-triggering. (`roast/S02-names-vars/perl.t`'s historical `Failed: 0` abort no longer reproduces as of 2026-07-05 and was re-whitelisted — treat a new failure there as real first, per the triage protocol.)
 - **Never close a PR without preserving its knowledge.** If a PR has rebase conflicts, rebase it (manually or with an agent that reads the PR diff via `gh pr diff <number>`). The PR diff itself is the best documentation of the change — do not just close it and write a summary. Reopen and fix it, or have a new agent read the diff and re-implement on a fresh branch.
-- Write all documents, code comments, and commit messages in English.
+- Write all documents, code comments, and commit messages in English. This explicitly includes ADRs (`docs/adr/`), `news/*.md`, `PLAN.md`, `TODO_roast/*.md`, design docs under `docs/`, and PR titles/descriptions. Conversing with the user in Japanese does NOT change this — repository artifacts are always English.
 - Do not use `echo`, `cat`, `printf`, or heredoc via Bash to create files. Always use the Write tool.
 - Temporary test scripts must be written to `./tmp/` (project-local, gitignored) using the Write tool. Never write to `/tmp/` or `/tmp/claude-1000/`.
 - Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
