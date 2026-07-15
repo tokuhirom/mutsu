@@ -73,8 +73,8 @@ noted.
 |---|---|---|---|
 | `integration/advent2011-day07.t` | fails | PASS ★ | `Metamodel::GrammarHOW` inheritance — `Advent::GrammarProfiler` requires `class ProfiledGrammarHOW is Metamodel::GrammarHOW` plus the equivalent of `^set_how` = **major metamodel work** |
 | `integration/precompiled.t` | fails | PASS ★ | precomp infrastructure |
-| `integration/error-reporting.t` | 26/33 | PASS ★ | **④ error-message quality.** Remaining 7 = compile-time detection of undeclared routines (tests 5/23 — the biggest target), backtrace frames for module files (15), Failure dual backtrace (20), return inside map (21), `%::{''}` (25), type-capture inheritance (30). #4539 implemented backtraces on all runtime errors, is_run = stderr identical to the CLI, Backtrace.new/full |
-| `integration/weird-errors.t` | 30/36 | PASS ★ | **④ error-message quality.** Remaining = `say(;:[])` (11), `::a`→X::NoSuchSymbol needs `::` info on BareWord (20), our method invocant type (29), `new Foo:` (32), `hash a=>1` (33) |
+| `integration/error-reporting.t` | 28/33 | PASS ★ | **④ error-message quality.** Remaining 5 = backtrace frames for module files (15), Failure dual backtrace (20), return inside map (21), `%::{''}` (25), type-capture inheritance (30). Compile-time undeclared-routine detection (tests 5/23) is implemented (`check_undeclared_routines_mainline` — rakudo's CHECK-time X::Undeclared::Symbols + `Did you mean 'BEGIN'?` suggestion); #4539 implemented backtraces on all runtime errors, is_run = stderr identical to the CLI, Backtrace.new/full |
+| `integration/weird-errors.t` | 31/36 | PASS ★ | **④ error-message quality.** Remaining = `say(;:[])` (11), `::a`→X::NoSuchSymbol needs `::` info on BareWord (20), our method invocant type (29), `new Foo:` (32), `hash a=>1` (33) |
 | `integration/advent2012-day15.t` | 9/11 | PASS ★ | statement-form phasers create their own scope (`$best` in `NEXT (state $best) max= $_;` is not visible from `LAST`) / `INIT` runs after the mainline |
 | `integration/99problems-21-to-30.t` | aborts at 6/15 | PASS ★ | not yet root-caused (post-#4510/#4516 re-measure) |
 | `integration/99problems-31-to-40.t` | aborts at 44/67 | PASS ★ | not yet root-caused |
@@ -214,7 +214,7 @@ completed fix history lives in `news/`.
 1. **Shortcuts**: `6.c/S04-declarations/my-6c.t` needs only the single `OUTER::<$x>` subtest
    (111/112). `integration/99problems-51-to-60.t` (35/37) and `99problems-61-to-70.t` (12/15)
    are close.
-2. **④ error-message quality** (`error-reporting.t` 26/33, `weird-errors.t` 30/36,
+2. **④ error-message quality** (`error-reporting.t` 28/33, `weird-errors.t` 31/36,
    `advent2011-day11.t` 7/9, `multi-no-match.t` 11/16) — the same target as the identically
    named task in PLAN §6, so it can be driven by roast pass/fail while working on that.
 3. **The 11 not-yet-root-caused `integration/` aborts** (see inventory) — history says one root

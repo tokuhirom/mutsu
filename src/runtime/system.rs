@@ -353,6 +353,13 @@ impl Interpreter {
             .map(|s| s.to_string())
             .collect();
         candidates.extend(self.registry().functions.keys().map(|s| s.resolve()));
+        // Phasers are suggested for a case-typo'd routine name (`begin` →
+        // "Did you mean 'BEGIN'?"), matching rakudo.
+        candidates.extend(
+            crate::runtime::undeclared_routines::PHASER_SUGGESTION_NAMES
+                .iter()
+                .map(|s| s.to_string()),
+        );
         Self::suggest_from_candidates(name, &candidates)
     }
 
@@ -377,7 +384,13 @@ impl Interpreter {
             if cand == name || !seen.insert(cand.clone()) {
                 continue;
             }
-            let dist = levenshtein_distance(name, cand);
+            // A pure case variant (`begin` vs `BEGIN`) counts as distance 1,
+            // like rakudo's case-insensitive-leaning suggestion metric.
+            let dist = if cand.eq_ignore_ascii_case(name) {
+                1
+            } else {
+                levenshtein_distance(name, cand)
+            };
             if dist > 0 && dist <= max_distance {
                 scored.push((dist, cand.clone()));
             }
