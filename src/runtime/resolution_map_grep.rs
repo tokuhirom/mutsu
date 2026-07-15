@@ -94,7 +94,28 @@ impl Interpreter {
                     || pd.code_signature.is_some()
                     || pd.shape_constraints.is_some()
             });
-            if requires_full_binding {
+            // A routine callback (`map $f, @xs` / `@xs.map($f)` where `$f` is a
+            // `sub`) must run through the real call path so a `return` in its
+            // body ends THAT call with the returned value (routine semantics).
+            // The inline fast path below runs the body as a bare block, so the
+            // return signal would escape the map VM and surface as
+            // X::ControlFlow::Return (99problems-21-to-30.t P23 `$compress`).
+            // A WhateverCode is expression-shaped (it cannot contain `return`)
+            // and needs the fast path's outer-topic handling for its `$_`.
+            let is_routine_callback = !data.is_bare_block
+                && data.compiled_code.as_ref().is_some_and(|cc| cc.is_routine)
+                && !matches!(
+                    data.env.get("__mutsu_callable_type").map(Value::view),
+                    Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
+                )
+                // A placeholder block (`{ $^x.value }`) is a Block, not a
+                // Routine, even though its compile path currently flags
+                // is_routine (it compiles as a named-anon-sub body). It must
+                // stay on the fast path: the general call machinery binds a
+                // Pair element as a NAMED argument, leaving the placeholder
+                // positional unbound (t/map-native-pairs.t).
+                && crate::ast::collect_placeholders_shallow(&data.body).is_empty();
+            if requires_full_binding || is_routine_callback {
                 // `map` batches the source by the block's `.count` (the number of
                 // positional parameters it will bind): a multi-positional block
                 // such as `-> \a, \b { }` consumes a chunk of that many elements

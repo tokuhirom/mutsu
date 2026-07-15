@@ -537,6 +537,12 @@ impl Interpreter {
             let mut captured_outer_writes: Vec<String> = Vec::new();
             if merge_all {
                 for (k, v) in self.env.iter() {
+                    // Per-call-site index-rw temps are frame-internal; merging a
+                    // callee's same-named entries corrupts the caller's pending
+                    // post-call writeback compare (see is_index_rw_call_temp).
+                    if k.with_str(crate::runtime::utils::is_index_rw_call_temp) {
+                        continue;
+                    }
                     if k != "_"
                         && k != "@_"
                         && (merged.contains_key_sym(*k) || k.starts_with("__mutsu_var_meta::"))
@@ -568,6 +574,10 @@ impl Interpreter {
                 }
                 for (k, v) in self.env.iter() {
                     if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
+                        continue;
+                    }
+                    // See the merge_all branch: index-rw temps never merge back.
+                    if k.with_str(crate::runtime::utils::is_index_rw_call_temp) {
                         continue;
                     }
                     if matches!(v.view(), ValueView::Array(..)) {

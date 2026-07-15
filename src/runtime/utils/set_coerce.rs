@@ -154,6 +154,16 @@ pub(crate) fn coerce_value_to_quanthash(val: &Value) -> Value {
             }
             Value::set(set)
         }
+        // A Range enumerates its elements (`@n (<=) (1..49)`), mirroring
+        // `coerce_to_set` above — without this arm it fell to the scalar
+        // catch-all and became a one-element Set of the string "1..49".
+        _ if val.is_range() => {
+            let mut set = HashSet::new();
+            for item in value_to_list(val) {
+                set.insert(item.to_string_value());
+            }
+            Value::set(set)
+        }
         _ => {
             let mut set = HashSet::new();
             let sv = val.to_string_value();

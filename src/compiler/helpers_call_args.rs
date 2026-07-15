@@ -363,8 +363,28 @@ impl Compiler {
                 self.code.emit(OpCode::StrictEq);
                 // If equal (True), skip writeback
                 let skip_idx = self.code.emit(OpCode::JumpIfTrue(0));
-                // Values differ: pop comparison result and do the writeback
+                // Values differ: pop comparison result
                 self.code.emit(OpCode::Pop); // pop False from StrictEq
+                // Second guard: the tmp/orig globals are compile-time-fixed
+                // names, so a RECURSIVE execution of this same call site inside
+                // the callee clobbers them (and the callee's plain-@-param exit
+                // merge writes its final param value into tmp). If tmp is
+                // structurally `eqv` to what the source slot holds RIGHT NOW,
+                // there is no real mutation to apply — writing back would
+                // re-assign the slot with its own value, which explodes on an
+                // immutable List source (`g(@xs[1..*])` recursion,
+                // 99problems-21-to-30.t P26). A genuine `is rw` mutation leaves
+                // tmp differing from the (not-yet-updated) slot, so it still
+                // writes back.
+                self.code.emit(OpCode::GetGlobal(tmp_idx));
+                self.compile_expr(&Expr::Index {
+                    target: target.clone(),
+                    index: index.clone(),
+                    is_positional: *is_positional,
+                });
+                self.code.emit(OpCode::Eqv);
+                let skip2_idx = self.code.emit(OpCode::JumpIfTrue(0));
+                self.code.emit(OpCode::Pop); // pop False from Eqv
                 let writeback = Expr::IndexAssign {
                     target: target.clone(),
                     index: index.clone(),
@@ -374,9 +394,10 @@ impl Compiler {
                 self.compile_expr(&writeback);
                 self.code.emit(OpCode::Pop); // discard assignment result
                 let jump_to_restore = self.code.emit(OpCode::Jump(0));
-                // Skip target: pop True from StrictEq
+                // Skip targets: pop the True left by StrictEq / Eqv
                 self.code.patch_jump(skip_idx);
-                self.code.emit(OpCode::Pop); // pop True from StrictEq
+                self.code.patch_jump(skip2_idx);
+                self.code.emit(OpCode::Pop); // pop True
                 // Restore point
                 self.code.patch_jump(jump_to_restore);
                 self.code.emit(OpCode::GetGlobal(result_idx));
