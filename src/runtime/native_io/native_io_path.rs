@@ -282,7 +282,10 @@ impl Interpreter {
                 }
 
                 let watched_path = path_buf.clone();
-                std::thread::spawn(move || {
+                // Registered spawn (emits `Value`s into a supply channel);
+                // the poll sleep is a quiescent safe region — see
+                // `spawn_gc_helper_thread`.
+                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                     let poll_interval = std::time::Duration::from_millis(10);
                     let mut last_state = fs::metadata(&watched_path).ok().map(|meta| {
                         let modified = meta
@@ -318,7 +321,7 @@ impl Interpreter {
                             last_state = state;
                         }
 
-                        std::thread::sleep(poll_interval);
+                        crate::gc::block_quiescent(|| std::thread::sleep(poll_interval));
                     }
                 });
 

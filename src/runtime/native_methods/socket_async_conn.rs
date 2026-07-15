@@ -126,11 +126,14 @@ impl Interpreter {
         if let Some(stream_arc) = get_tcp_stream(id) {
             let stream_clone = stream_arc.lock().ok().and_then(|s| s.try_clone().ok());
             if let Some(mut reader) = stream_clone {
-                std::thread::spawn(move || {
+                // Registered spawn: emits freshly built `Gc` values (Buf
+                // instances) whose drops on a failed send must not race a
+                // cycle scan; the blocking read is a quiescent safe region.
+                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                     use std::io::Read;
                     let mut buf = [0u8; 4096];
                     loop {
-                        match reader.read(&mut buf) {
+                        match crate::gc::block_quiescent(|| reader.read(&mut buf)) {
                             Ok(0) => {
                                 let _ = tx.send(SupplyEvent::Done);
                                 break;

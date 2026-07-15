@@ -365,8 +365,11 @@ impl Interpreter {
 
                 let accept_host = host.clone();
                 let accept_enc = enc.clone();
-                // Start a background thread to accept connections
-                std::thread::spawn(move || {
+                // Start a background thread to accept connections.
+                // Registered spawn: it builds `Gc` values (the connection
+                // Instance) whose drop on a failed send must not race a cycle
+                // scan; the poll sleep is a quiescent safe region.
+                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                     // Use a short timeout on accept so we can check the closed flag
                     // TcpListener doesn't have set_timeout, so we use non-blocking + sleep
                     let _ = tcp_listener.set_nonblocking(true);
@@ -415,7 +418,9 @@ impl Interpreter {
                             }
                             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                                 // No pending connection, sleep briefly
-                                std::thread::sleep(std::time::Duration::from_millis(10));
+                                crate::gc::block_quiescent(|| {
+                                    std::thread::sleep(std::time::Duration::from_millis(10))
+                                });
                             }
                             Err(_) => {
                                 // Fatal accept error, stop

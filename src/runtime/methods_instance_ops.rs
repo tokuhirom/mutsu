@@ -1347,12 +1347,17 @@ impl Interpreter {
                     map.insert(supply_id, rx);
                 }
 
-                std::thread::spawn(move || {
+                // Registered spawn (emits `Value`s into a supply channel);
+                // the interval sleeps are quiescent safe regions — see
+                // `spawn_gc_helper_thread`.
+                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                     let period = std::time::Duration::from_secs_f64(period_secs);
                     let mut tick = 0i64;
                     // Initial delay before first emission (default 0 = immediate)
                     if initial_delay > 0.0 {
-                        std::thread::sleep(std::time::Duration::from_secs_f64(initial_delay));
+                        crate::gc::block_quiescent(|| {
+                            std::thread::sleep(std::time::Duration::from_secs_f64(initial_delay))
+                        });
                     }
                     loop {
                         if tx
@@ -1362,7 +1367,7 @@ impl Interpreter {
                             break;
                         }
                         tick = tick.saturating_add(1);
-                        std::thread::sleep(period);
+                        crate::gc::block_quiescent(|| std::thread::sleep(period));
                     }
                 });
 

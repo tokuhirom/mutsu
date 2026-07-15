@@ -36,9 +36,14 @@ impl Interpreter {
             let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             let ret = Value::promise(promise.clone());
-            std::thread::spawn(move || {
+            // Registered spawn: this thread drops a `Gc` promise handle at
+            // exit (see `spawn_gc_helper_thread`); the sleep is a quiescent
+            // safe region so a long timer never starves a stop-the-world.
+            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                 if secs > 0.0 {
-                    std::thread::sleep(Duration::from_secs_f64(secs));
+                    crate::gc::block_quiescent(|| {
+                        std::thread::sleep(Duration::from_secs_f64(secs))
+                    });
                 }
                 promise.keep(Value::TRUE, String::new(), String::new());
             });
@@ -79,9 +84,12 @@ impl Interpreter {
             let delay = (at_time - now).max(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             let ret = Value::promise(promise.clone());
-            std::thread::spawn(move || {
+            // Registered spawn + quiescent sleep — see `dispatch_promise_in`.
+            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                 if delay > 0.0 {
-                    std::thread::sleep(Duration::from_secs_f64(delay));
+                    crate::gc::block_quiescent(|| {
+                        std::thread::sleep(Duration::from_secs_f64(delay))
+                    });
                 }
                 promise.keep(Value::TRUE, String::new(), String::new());
             });
@@ -141,7 +149,10 @@ impl Interpreter {
                 promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
             }
-            std::thread::spawn(move || {
+            // Registered spawn: `p.wait()` clones arbitrary result `Value`s
+            // and the thread drops its promise handles at exit (the waits
+            // themselves are already STW-aware / quiescent).
+            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                 for p in &promises {
                     p.wait();
                 }
@@ -169,7 +180,9 @@ impl Interpreter {
                 promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
             }
-            std::thread::spawn(move || {
+            // Registered spawn + quiescent poll sleep — this thread drops its
+            // `Gc` promise handles at exit (see `spawn_gc_helper_thread`).
+            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                 // Poll until any promise resolves
                 loop {
                     for p in &promises {
@@ -178,7 +191,7 @@ impl Interpreter {
                             return;
                         }
                     }
-                    std::thread::sleep(Duration::from_millis(1));
+                    crate::gc::block_quiescent(|| std::thread::sleep(Duration::from_millis(1)));
                 }
             });
             return Some(Ok(ret));

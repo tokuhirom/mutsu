@@ -379,7 +379,11 @@ impl Interpreter {
                         // Create a one-shot channel for the promise
                         let (tx, rx) = mpsc::channel();
                         let shared_clone = shared.clone();
-                        std::thread::spawn(move || {
+                        // Registered spawn: `wait()` clones the resolved
+                        // result `Value` and the promise handle drops at
+                        // thread exit — both are `Gc` mutations that must not
+                        // race a cycle scan (the wait itself is STW-aware).
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                             let (result, _, _) = shared_clone.wait();
                             let _ = tx.send(SupplyEvent::Emit(result));
                             let _ = tx.send(SupplyEvent::Done);
