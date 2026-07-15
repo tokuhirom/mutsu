@@ -77,9 +77,9 @@ The three that matter — newly oracle-verified mutsu gaps — are:
 - `S06-advanced/return-prioritization.t` (raku 11/11, mutsu 9/11) — **new ★ in
   [BLOCKERS.md](BLOCKERS.md)**: `return` inside LEAVE phasers.
 - `S32-str/format.t` (raku 49/49, mutsu 26/49 abort) — oracle available now, but
-  still 基盤待ち (needs the RakuAST subsystem).
+  still awaiting infrastructure (needs the RakuAST subsystem).
 - `S02-types/generics.t` (raku 1/1, mutsu 0/1) — oracle available now, still
-  基盤待ち (6.e generics / `Array[T]` subclassing).
+  awaiting infrastructure (6.e generics / `Array[T]` subclassing).
 
 Raku-side reversals, all on whitelisted files (noise for mutsu): 
 `S10-packages/precompilation.t` and `S17-procasync/stress.t` `PASS→TIMEOUT`
@@ -108,12 +108,12 @@ Genuine mutsu gaps outside the `integration/` bucket. `mutsu` column is
 | file | mutsu | note |
 |---|---|---|
 | `S06-advanced/return-prioritization.t` | 9/11 | **new ★ (v2026.06 refresh)** — `return` inside LEAVE phaser: overwrite return value (T5), different lexical scope (T9). See BLOCKERS.md |
-| `S32-str/format.t` | 26/49 abort | new oracle (v2026.06) but 基盤待ち — RakuAST subsystem |
-| `S02-types/generics.t` | 0/1 | new oracle (v2026.06) but 基盤待ち — 6.e generics / `Array[T]` subclassing |
-| `6.c/S14-roles/mixin-6c.t` | 16/57 | role mixin (6.c) の深い機能 |
-| `6.c/MISC/bug-coverage.t` | ERROR | 起動時 error |
-| `APPENDICES/A01-limits/overflow.t` | TIMEOUT 0/18 | 数値 overflow 限界（timeout, notok 9） |
-| `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 3/16 | multi 不一致時のエラー整形 |
+| `S32-str/format.t` | 26/49 abort | new oracle (v2026.06) but awaiting infrastructure — RakuAST subsystem |
+| `S02-types/generics.t` | 0/1 | new oracle (v2026.06) but awaiting infrastructure — 6.e generics / `Array[T]` subclassing |
+| `6.c/S14-roles/mixin-6c.t` | 16/57 | deep role mixin (6.c) features |
+| `6.c/MISC/bug-coverage.t` | ERROR | error at startup |
+| `APPENDICES/A01-limits/overflow.t` | TIMEOUT 0/18 | numeric overflow limits (timeout, notok 9) |
+| `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 3/16 | error formatting when no multi candidate matches |
 
 ### C. integration gaps — raku PASS, mutsu not-PASS (39)
 
