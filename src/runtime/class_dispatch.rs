@@ -117,10 +117,21 @@ impl Interpreter {
                 &sigs,
             ));
         }
-        // Helper to build remaining candidates, skipping the chosen one
+        // Helper to build remaining candidates, skipping the chosen one.
+        // Submethod prefilter: a submethod is never inherited, so when the
+        // visible-candidate table holds at most one entry the remaining list is
+        // empty by construction — skip the full `resolve_all_methods_with_owner`
+        // pass (per-MRO-class overload-Vec clones + signature matching +
+        // fingerprints) that every construction-phase BUILD/TWEAK dispatch
+        // otherwise pays just to learn "nothing to defer to".
+        let skip_remaining = (method_def.is_my || method_def.is_submethod)
+            && self.count_visible_method_candidates(receiver_class_name, method_name) <= 1;
         let build_remaining = |this: &mut Self,
                                method_def: &MethodDef|
          -> Vec<(String, MethodDef)> {
+            if skip_remaining {
+                return Vec::new();
+            }
             let all = this.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
             let chosen_fp = this.method_def_fingerprint(method_def);
             let mut remaining = Vec::new();
