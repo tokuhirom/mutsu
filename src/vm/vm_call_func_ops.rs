@@ -143,6 +143,53 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // An empty-signature proto (`proto bar {*}`) gates the whole dispatch:
+        // a call with positional arguments can never reach a candidate. Reject
+        // it here, before the light-call caches would dispatch directly to a
+        // multi candidate. Guarded by `is_empty()` so the common case is free.
+        if !self.empty_sig_proto_names.is_empty()
+            && self
+                .empty_sig_proto_names
+                .contains(&code.const_sym(name_idx))
+            // Re-verify against the registry: the name-only set can go stale
+            // (an EVAL-scoped `proto bar {*}` must not veto an unrelated
+            // mainline `bar`), so only gate while an empty-sig proto is still
+            // the visible one.
+            && self
+                .resolve_proto_function(Self::const_str(code, name_idx))
+                .is_some_and(|p| p.empty_sig)
+        {
+            let arity_usize = arity as usize;
+            if self.stack.len() >= arity_usize {
+                let stack_args = &self.stack[self.stack.len() - arity_usize..];
+                let positional_types: Vec<String> = stack_args
+                    .iter()
+                    .filter(|a| {
+                        !Self::is_callsite_line_marker(a)
+                            && !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..))
+                    })
+                    .map(crate::value::types::what_type_name)
+                    .collect();
+                if !positional_types.is_empty() {
+                    let name_str = Self::const_str(code, name_idx);
+                    let msg = format!(
+                        "Calling {}({}) will never work with signature of the proto ()",
+                        name_str,
+                        positional_types.join(", ")
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    attrs.insert("objname".to_string(), Value::str(name_str.to_string()));
+                    attrs.insert("signature".to_string(), Value::str("()".to_string()));
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(Value::make_instance(
+                        crate::symbol::Symbol::intern("X::TypeCheck::Argument"),
+                        attrs,
+                    )));
+                    return Err(err);
+                }
+            }
+        }
         // If this name is used as a `&`-sigil parameter anywhere, a lexical
         // `&name` binding in the current frame may shadow a same-named package
         // sub. The name-keyed light-call caches cannot represent that, so bypass
