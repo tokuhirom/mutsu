@@ -292,7 +292,7 @@ impl Interpreter {
                 return Err(Self::reject_args_for_empty_sig(&call_args));
             }
             let saved_env = self.env.clone();
-            let saved_readonly = self.save_readonly_vars();
+            let saved_readonly = self.enter_readonly_frame();
             if let Some(line) = self.test_pending_callsite_line {
                 self.cur_source_line = line;
             }
@@ -344,7 +344,7 @@ impl Interpreter {
             if data.empty_sig && !positional_call_args.is_empty() {
                 self.pop_caller_env();
                 self.env = saved_env;
-                self.restore_readonly_vars(saved_readonly);
+                self.exit_readonly_frame(saved_readonly);
                 return Err(Self::reject_args_for_empty_sig(&call_args));
             }
             let rw_bindings =
@@ -353,7 +353,7 @@ impl Interpreter {
                     Err(e) => {
                         self.pop_caller_env();
                         self.env = saved_env;
-                        self.restore_readonly_vars(saved_readonly);
+                        self.exit_readonly_frame(saved_readonly);
                         return Err(e);
                     }
                 };
@@ -591,7 +591,7 @@ impl Interpreter {
                 merged.insert("__mutsu_rw_map_topic__".to_string(), topic_val);
             }
             self.env = merged;
-            self.restore_readonly_vars(saved_readonly);
+            self.exit_readonly_frame(saved_readonly);
             if let Err(e) = &result
                 && e.is_fail()
             {

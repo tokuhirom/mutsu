@@ -2151,6 +2151,8 @@ impl Interpreter {
             last_value: None,
             pending_local_updates: Vec::new(),
             readonly_vars: crate::runtime::ReadonlySet::default(),
+            readonly_undo: Vec::new(),
+            readonly_frames: 0,
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),

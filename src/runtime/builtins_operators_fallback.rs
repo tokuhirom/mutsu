@@ -432,7 +432,7 @@ impl Interpreter {
             let routine_is_rw = !def.is_raw;
             let return_spec = self.routine_return_spec_by_name(&def.name.resolve());
             let saved_env = self.env.clone();
-            let saved_readonly = self.save_readonly_vars();
+            let saved_readonly = self.enter_readonly_frame();
             if let Some(line) = self.test_pending_callsite_line {
                 self.cur_source_line = line;
             }
@@ -469,7 +469,7 @@ impl Interpreter {
                     Err(e) => {
                         self.pop_caller_env();
                         self.env = saved_env;
-                        self.restore_readonly_vars(saved_readonly);
+                        self.exit_readonly_frame(saved_readonly);
                         self.samewith_context_stack.pop();
                         return Err(Self::enhance_binding_error(
                             e,
@@ -558,7 +558,7 @@ impl Interpreter {
                 .as_deref()
                 .map(|spec| self.resolved_type_capture_name(spec));
             self.env = restored_env;
-            self.restore_readonly_vars(saved_readonly);
+            self.exit_readonly_frame(saved_readonly);
             self.samewith_context_stack.pop();
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();

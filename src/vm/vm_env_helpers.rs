@@ -51,9 +51,7 @@ impl Interpreter {
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
             saved_cur_line: self.cur_source_line,
-            saved_readonly: Some(self.save_readonly_vars()),
-            readonly_added: Vec::new(),
-            readonly_removed: Vec::new(),
+            readonly_mark: self.enter_readonly_frame(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
@@ -65,8 +63,10 @@ impl Interpreter {
         self.call_frames.push(frame);
     }
 
-    /// Lightweight call frame for simple methods: skips saving readonly vars
-    /// since simple methods don't use `:=` binding.
+    /// Lightweight call frame for simple methods. Historically this skipped
+    /// the whole-set readonly snapshot and tracked param deltas by hand; the
+    /// journal (`enter_readonly_frame`) made that split obsolete — both frame
+    /// flavors now open a scope for two integer ops.
     pub(super) fn push_light_call_frame(&mut self) {
         // GC safepoint (§9.2a `call`) — see `push_call_frame`.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
@@ -74,9 +74,7 @@ impl Interpreter {
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
             saved_cur_line: self.cur_source_line,
-            saved_readonly: None,
-            readonly_added: Vec::new(),
-            readonly_removed: Vec::new(),
+            readonly_mark: self.enter_readonly_frame(),
             saved_locals: std::mem::take(&mut self.locals),
             saved_upvalues: std::mem::take(&mut self.upvalues),
             saved_stack_depth: self.stack.len(),
@@ -105,19 +103,7 @@ impl Interpreter {
         self.loop_local_vars = std::mem::take(&mut frame.saved_loop_local_vars);
         self.loop_local_saved_env = std::mem::take(&mut frame.saved_loop_local_saved_env);
         self.block_declared_vars = std::mem::take(&mut frame.saved_block_declared_vars);
-        if let Some(readonly) = std::mem::take(&mut frame.saved_readonly) {
-            // Slow path: restore the whole snapshot (covers any `:=` marking).
-            self.restore_readonly_vars(readonly);
-        } else {
-            // Light-frame method path: drop only the param names this frame added
-            // and restore any caller names this frame's writable params shadowed.
-            for name in &frame.readonly_added {
-                self.unmark_readonly(name);
-            }
-            for name in &frame.readonly_removed {
-                self.mark_readonly(name);
-            }
-        }
+        self.exit_readonly_frame(frame.readonly_mark);
         frame
     }
 

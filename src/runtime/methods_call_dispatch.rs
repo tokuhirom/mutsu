@@ -853,10 +853,10 @@ impl Interpreter {
             && let Some(formatter) = attributes.as_map().get("formatter")
         {
             let saved_env = self.env().clone();
-            let saved_readonly = self.save_readonly_vars();
+            let saved_readonly = self.enter_readonly_frame();
             let rendered = self.eval_call_on_value(formatter.clone(), vec![target.clone()])?;
             *self.env_mut() = saved_env;
-            self.restore_readonly_vars(saved_readonly);
+            self.exit_readonly_frame(saved_readonly);
             return Ok(Value::str(rendered.to_string_value()));
         }
         // Immutable List/Range: push/pop/shift/unshift/append/prepend/splice must throw

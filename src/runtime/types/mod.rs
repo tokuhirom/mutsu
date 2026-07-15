@@ -115,20 +115,58 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
 }
 
 impl Interpreter {
-    /// Save the current readonly_vars set (call before function body execution).
-    ///
-    /// O(1): an `Arc` bump, not a deep copy. The set is copy-on-write (see
-    /// [`ReadonlySet`]), so the snapshot only materializes if the callee
-    /// actually changes the set — and a callee whose params are already marked
-    /// (the monomorphic/recursive steady state) changes nothing, so a call pays
-    /// no allocation at all.
-    pub(crate) fn save_readonly_vars(&self) -> ReadonlySet {
-        ReadonlySet::clone(&self.readonly_vars)
+    /// Open a readonly scope (call before function body execution) and return
+    /// its rollback mark. Replaces the old whole-set `Arc` snapshot
+    /// (`save_readonly_vars`): the two `lock inc/dec`s of the snapshot's
+    /// clone + drop were a measured ~15% of the hottest call path's self time
+    /// (ADR-0004 J4d), while the set almost never changes inside a frame. The
+    /// mutators below journal their *actual* changes into `readonly_undo`
+    /// while at least one scope is open, and [`exit_readonly_frame`] replays
+    /// the inverses — a frame whose params are already marked (the
+    /// monomorphic/recursive steady state) journals nothing and pays two
+    /// integer ops total.
+    #[inline]
+    pub(crate) fn enter_readonly_frame(&mut self) -> usize {
+        self.readonly_frames += 1;
+        // The scope sentinel bounds the cancellation peephole in
+        // `unmark_readonly_sym`: an unmark may only cancel a mark journaled by
+        // the *same* frame — cancelling across the sentinel would erase an
+        // outer frame's rollback entry (e.g. an `is copy` param transiently
+        // unmarking the caller's same-named readonly param would eat the
+        // caller's own mark, leaving it writable after the inner call).
+        self.readonly_undo.push(ReadonlyUndo::Scope);
+        self.readonly_undo.len()
     }
 
-    /// Restore the readonly_vars set (call after function body execution).
-    pub(crate) fn restore_readonly_vars(&mut self, saved: ReadonlySet) {
-        self.readonly_vars = saved;
+    /// Close a readonly scope: undo every journaled mutation made since the
+    /// matching [`enter_readonly_frame`], newest first, then pop the scope
+    /// sentinel. Scopes are strictly LIFO (each pairs entry/exit around one
+    /// call frame); an inner scope abandoned by an error unwind is cleaned up
+    /// by the enclosing exit, since rolling back to a lower mark replays the
+    /// abandoned entries (and drops their sentinels) too.
+    pub(crate) fn exit_readonly_frame(&mut self, mark: usize) {
+        self.readonly_frames -= 1;
+        while self.readonly_undo.len() > mark {
+            match self.readonly_undo.pop().unwrap() {
+                ReadonlyUndo::Marked(sym) => {
+                    self.readonly_vars.remove(&sym);
+                }
+                ReadonlyUndo::Unmarked(sym) => {
+                    self.readonly_vars.insert(sym);
+                }
+                // An abandoned inner scope's sentinel: its exit was skipped by
+                // an error unwind, so re-balance the open-scope counter here.
+                ReadonlyUndo::Scope => {
+                    self.readonly_frames = self.readonly_frames.saturating_sub(1);
+                }
+            }
+        }
+        // Pop this scope's own sentinel (at `mark - 1`).
+        debug_assert!(matches!(
+            self.readonly_undo.last(),
+            Some(ReadonlyUndo::Scope)
+        ));
+        self.readonly_undo.pop();
     }
 
     /// Check if a variable is readonly.
@@ -149,12 +187,11 @@ impl Interpreter {
 
     /// Mark an already-interned name as readonly. The membership test comes
     /// first so a no-op mark (the common case: a recursive/monomorphic call
-    /// re-marking a param the caller's frame already marked) does not trigger
-    /// the copy-on-write clone.
+    /// re-marking a param the caller's frame already marked) journals nothing.
     #[inline]
     pub(crate) fn mark_readonly_sym(&mut self, sym: Symbol) {
-        if !self.readonly_vars.contains(&sym) {
-            std::sync::Arc::make_mut(&mut self.readonly_vars).insert(sym);
+        if self.readonly_vars.insert(sym) && self.readonly_frames > 0 {
+            self.readonly_undo.push(ReadonlyUndo::Marked(sym));
         }
     }
 
@@ -172,11 +209,20 @@ impl Interpreter {
     }
 
     /// Remove an already-interned name from the readonly set. Like
-    /// `mark_readonly_sym`, a no-op unmark skips the copy-on-write clone.
+    /// `mark_readonly_sym`, a no-op unmark journals nothing. A remove that
+    /// exactly cancels the journal's newest entry (the per-iteration
+    /// mark/unmark churn of loop topics) pops it instead of appending, so a
+    /// long loop inside an open scope keeps the journal flat. The scope
+    /// sentinel bounds the cancellation to the current frame's own entries —
+    /// an outer frame's mark stays journaled so its exit re-marks the name.
     #[inline]
     pub(crate) fn unmark_readonly_sym(&mut self, sym: Symbol) {
-        if self.readonly_vars.contains(&sym) {
-            std::sync::Arc::make_mut(&mut self.readonly_vars).remove(&sym);
+        if self.readonly_vars.remove(&sym) && self.readonly_frames > 0 {
+            if self.readonly_undo.last() == Some(&ReadonlyUndo::Marked(sym)) {
+                self.readonly_undo.pop();
+            } else {
+                self.readonly_undo.push(ReadonlyUndo::Unmarked(sym));
+            }
         }
     }
 
