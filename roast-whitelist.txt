@@ -1398,6 +1398,7 @@ roast/integration/no-indirect-new.t
 roast/integration/packages.t
 roast/integration/pair-in-array.t
 roast/integration/passing-pair-class-to-sub.t
+roast/integration/precompiled.t
 roast/integration/real-strings.t
 roast/integration/role-composition-vs-attribute.t
 roast/integration/rule-in-class-Str.t

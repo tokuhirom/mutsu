@@ -1754,12 +1754,17 @@ impl Compiler {
                 // don't mark it readonly, and write modifications back.
                 let has_sigilless = (**param_def).as_ref().is_some_and(|def| def.sigilless)
                     || params_def.iter().any(|def| def.sigilless);
-                // Determine if this for-loop has rw params (via `<->` or `is rw` trait)
+                // Determine if this for-loop has rw params (via `<->` or `is rw`
+                // trait) — for multi-param blocks the per-param defs live in
+                // `params_def`, not `param_def`.
                 let has_rw = *rw_block
                     || has_sigilless
                     || (**param_def)
                         .as_ref()
-                        .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
+                        .is_some_and(|def| def.traits.iter().any(|t| t == "rw"))
+                    || params_def
+                        .iter()
+                        .any(|def| def.traits.iter().any(|t| t == "rw"));
                 // `is copy` also makes the param writable (but without writeback)
                 let has_copy = (**param_def)
                     .as_ref()
@@ -1778,9 +1783,15 @@ impl Compiler {
                     // (unless the block uses `<->` or `is rw`).
                     // Skip @-sigil and %-sigil params: they bind to a mutable
                     // Array/Hash container, so assignments must be allowed.
+                    // Also skip params whose OWN def is writable (`is copy` /
+                    // `is rw` / sigilless) — `-> $x is copy, $fn` must leave
+                    // $x assignable while $fn stays readonly.
                     if !has_rw && !has_copy && !params.is_empty() {
-                        for p in params {
-                            if !p.starts_with('@') && !p.starts_with('%') {
+                        for (i, p) in params.iter().enumerate() {
+                            let per_param_writable = params_def.get(i).is_some_and(|d| {
+                                d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "copy")
+                            });
+                            if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {
                                 bind_prefix.push(Stmt::MarkReadonly(p.clone()));
                             }
                         }

@@ -1992,6 +1992,9 @@ impl Interpreter {
                 _ => format!("*{raw_key}"),
             };
             let val = self.stack.pop().unwrap_or(Value::NIL);
+            // `PROCESS::<$REPO> := $repo` arrives as a bind marker; unwrap it
+            // so the bound value (not the marker Pair) becomes the dynamic.
+            let (val, _bind_source) = Self::unwrap_bind_index_value(val);
             let val = if env_key.starts_with('@') {
                 runtime::coerce_to_array(val)
             } else if env_key.starts_with('%') {

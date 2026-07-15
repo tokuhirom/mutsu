@@ -596,6 +596,26 @@ impl Interpreter {
                     _ => Ok(Value::NIL),
                 }
             }
+            // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
+            // cell directly, bypassing accessors (roast's Test::Compile uses it
+            // to install a precomp repository into a CUR::FileSystem instance).
+            "nqp::bindattr" => {
+                let obj = args.first().cloned().unwrap_or(Value::NIL);
+                let attr = args.get(2).map(|v| v.to_string_value()).unwrap_or_default();
+                let val = args.get(3).cloned().unwrap_or(Value::NIL);
+                let attr_key = attr
+                    .trim_start_matches(['$', '@', '%', '&'])
+                    .trim_start_matches(['!', '.']);
+                if attr_key.is_empty() {
+                    return Err(RuntimeError::new("nqp::bindattr: empty attribute name"));
+                }
+                if let ValueView::Instance { attributes, .. } = obj.view() {
+                    let mut updated = attributes.to_map();
+                    updated.insert_through(attr_key, val.clone());
+                    attributes.commit_attrs(updated);
+                }
+                Ok(val)
+            }
             // Debug
             "dd" => self.builtin_dd(&args),
             // Collection constructors / queries
