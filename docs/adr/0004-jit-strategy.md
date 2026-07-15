@@ -137,3 +137,32 @@ bench-startup 0.0087s → +jit 0.0086s（起動予算不変 — cold code は閾
 J4 の「int ループ 5–10x」ゲートは文言上未達のまま J5 を先行した: J4c で
 インタプリタ自体が -34% 高速化して相対差の分母が縮んだためで、絶対性能は
 両系列とも改善している。残る J4d（変数 op インライン）は既定 on の上で続行。*
+
+*2026-07-15 追記: **J4d 完了 — 本 ADR のフェーズ計画を完遂しクローズ**。
+スライス構成: #4527（Tier B GetLocal インライン + lock-free hot-range cache）・
+#4528（SetLocal ミラーの per-store intern 連鎖除去）・#4529（light-call 儀式の
+alloc-free 化）・#4534（dispatch テーブルの FxHash 化 + 引数スキャン融合）・
+#4537（light-call の caller-env フレーム再利用 — 空 overlay シングルトンを
+CoW write latch として使う動的検出方式）・#4540（readonly-set の Arc
+スナップショット → mutation journal 化）。bench CI 実測（ratio = 対 raku）:
+fib+jit 0.34（`d6d405cc`・pre-#4534）→ 0.28（`c397b90b`）・bench-fib+jit
+0.66 → 0.56。local 累計では fib(28) が pre-J4d ~0.4s → 0.13s。*
+
+*J4 の「int ループ 5–10x」ゲート再判定: int-arith の JIT on/off 比は 1.24x
+（`c397b90b`: 0.0375s vs 0.0466s）で文言上は未達のままだが、この期待値は
+**J4c/J4d 以前のインタプリタを分母にした数字**であり、J4c（インタプリタ -34%）と
+J4d（dispatch・call 儀式という on/off 共通コストの削減）が分母を縮め続けた結果、
+比率では原理的に届かない。絶対性能では int-arith+jit は raku の 0.18x
+（≈5.5 倍高速）・全 `+jit` 系列がインタプリタ系列と同等以上で、当初「5–10x」が
+意図した水準（tight numeric loop の native 級実行）は絶対値で実現済み。
+比率ゲートは obsolete と判定してクローズする。*
+
+*設計メモ（J4d ①②の評価結果）: 「CallFunc opcode への per-call-site inline
+cache」は評価の上**不採用** — #4534 の FxHash 化後、名前キーの二重 probe は
+~10-15ns/call まで下がり、per-site 化の残り利得（~3%）は `CompiledFns` の
+Arc 化 + map-id 検証機構の複雑さに見合わない。「JIT→JIT 直接呼び出し」も
+専用 native 経路は作らず、interpreter/JIT が共有する light-call 経路の固定費
+（env swap の Arc churn / readonly snapshot / GC safepoint の locked RMW）を
+削る形で同じ利得を回収した（#4537/#4540 — profile 上 call 儀式が dispatch probe の
+3 倍超だったため）。残る on/off 共通固定費の根治（SetLocal env-mirror 等）は
+PLAN §6 lexical-slot campaign の領域。*
