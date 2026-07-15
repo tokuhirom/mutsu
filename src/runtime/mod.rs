@@ -171,6 +171,7 @@ mod calls;
 mod class;
 mod class_dispatch;
 mod class_introspection;
+pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod deprecation;
 pub(crate) mod did_you_mean;
 mod dispatch;

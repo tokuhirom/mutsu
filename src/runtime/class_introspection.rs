@@ -5,6 +5,14 @@
 
 use super::*;
 
+/// Winner of the per-MRO-level race between an explicit user method and a
+/// public attribute accessor (see `resolve_user_method_or_accessor`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum UserMethodOrAccessor {
+    Method,
+    Accessor,
+}
+
 impl Interpreter {
     pub(super) fn class_has_method(&mut self, class_name: &str, method_name: &str) -> bool {
         self.registry_mut()
@@ -218,32 +226,81 @@ impl Interpreter {
         false
     }
 
-    /// Whether the class hierarchy defines `method_name` *directly* (a method
-    /// written in a class body), as opposed to only inheriting it from a
-    /// composed role. Entities defined in a class are prioritized over role
-    /// entities: a role method must NOT shadow the class's own attribute
-    /// accessor of the same name (6.c S14-roles/attributes.t "Class
-    /// prioritization"). `role_origin.is_none()` marks a class-local method.
-    pub(crate) fn has_class_local_method(&mut self, class_name: &str, method_name: &str) -> bool {
-        let mro = self.class_mro(class_name);
-        for cn in mro {
-            if let Some(class_def) = self.registry().classes.get(&cn)
-                && let Some(defs) = class_def.methods.get(method_name)
-            {
-                return defs
-                    .iter()
-                    .any(|d| !d.is_private && d.role_origin.is_none());
-            }
-        }
-        false
-    }
-
     /// Check if a class has a public attribute accessor for the given name.
     pub(crate) fn has_public_accessor(&mut self, class_name: &str, method_name: &str) -> bool {
         let attrs = self.collect_class_attributes(class_name);
         attrs
             .iter()
             .any(|(attr_name, is_public, ..)| *is_public && attr_name == method_name)
+    }
+
+    /// Decide, per MRO level, whether an explicit user method or a public
+    /// attribute accessor handles `method_name` for `class_name`.
+    ///
+    /// In Raku the auto-generated accessor for `has $.x` is an ordinary method
+    /// of its declaring class, so it participates in the MRO like any other
+    /// method: a child's accessor shadows a parent's explicit method of the
+    /// same name (Zef::Distribution's `has $.name` vs its parent
+    /// DependencySpecification's `method name`). Within a single class level
+    /// the priority is: explicit class-local method > public attribute
+    /// accessor > role-composed method (class entities are prioritized over
+    /// role entities — 6.c S14-roles/attributes.t "Class prioritization").
+    pub(crate) fn resolve_user_method_or_accessor(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<UserMethodOrAccessor> {
+        let mro = self.class_mro(class_name);
+        for cn in &mro {
+            let is_ancestor = cn != class_name;
+            let (has_local_method, has_role_method, has_attr) = {
+                let registry = self.registry();
+                if let Some(class_def) = registry.classes.get(cn.as_str()) {
+                    let (mut local, mut role) = (false, false);
+                    if let Some(defs) = class_def.methods.get(method_name) {
+                        for d in defs {
+                            if d.is_private || (d.is_my && is_ancestor) {
+                                continue;
+                            }
+                            if d.role_origin.is_none() {
+                                local = true;
+                            } else {
+                                role = true;
+                            }
+                        }
+                    }
+                    let attr = class_def
+                        .attributes
+                        .iter()
+                        .any(|(n, is_public, ..)| *is_public && n == method_name);
+                    (local, role, attr)
+                } else if let Some(role_def) = registry.roles.get(cn.as_str()) {
+                    // A punned role used as a parent class: its own methods
+                    // and attribute accessors sit at this MRO level.
+                    let local = role_def
+                        .methods
+                        .get(method_name)
+                        .is_some_and(|defs| defs.iter().any(|d| !d.is_private));
+                    let attr = role_def
+                        .attributes
+                        .iter()
+                        .any(|(n, is_public, ..)| *is_public && n == method_name);
+                    (local, false, attr)
+                } else {
+                    (false, false, false)
+                }
+            };
+            if has_local_method {
+                return Some(UserMethodOrAccessor::Method);
+            }
+            if has_attr {
+                return Some(UserMethodOrAccessor::Accessor);
+            }
+            if has_role_method {
+                return Some(UserMethodOrAccessor::Method);
+            }
+        }
+        None
     }
 
     /// Accessor-slot promotion gate: when `method_name` is a public `is rw`

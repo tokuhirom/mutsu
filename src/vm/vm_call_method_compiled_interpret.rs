@@ -534,18 +534,24 @@ impl Interpreter {
                     result
                 }
             } {
-                // Entities defined in a class are prioritized over role
-                // entities: when resolution lands on a method that comes ONLY
-                // from a composed role (`role_origin` set) but the class has a
-                // public attribute accessor of the same name, the accessor wins.
-                // (If a class-local method of that name existed, resolution would
-                // have picked it and `role_origin` would be None.) Defer to the
-                // slow path, whose `run_instance_method` accessor block resolves
-                // it — 6.c S14-roles/attributes.t "Class prioritization".
-                if method_def.role_origin.is_some()
+                // A public attribute accessor can win over the method that
+                // resolution picked: a child class's accessor shadows a
+                // parent's explicit method (the accessor is a method at the
+                // child's MRO level), and a class accessor beats a
+                // role-composed method at its own level — 6.c
+                // S14-roles/attributes.t "Class prioritization". Both cases
+                // require an accessor candidate, which is only possible when
+                // the resolved method is role-composed or owned by an
+                // ancestor, so gate the MRO walk on that cheap check. Defer to
+                // the slow path, whose `run_instance_method` accessor block
+                // resolves it.
+                if (method_def.role_origin.is_some() || owner_class != cn)
                     && !method_def.is_private
                     && matches!(target.view(), ValueView::Instance { .. })
-                    && self.has_public_accessor(cn, method)
+                    && matches!(
+                        self.resolve_user_method_or_accessor(cn, method),
+                        Some(crate::runtime::UserMethodOrAccessor::Accessor)
+                    )
                 {
                     return self.call_method_with_values(target, method, args);
                 }
