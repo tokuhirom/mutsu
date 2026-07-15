@@ -42,11 +42,11 @@ impl Interpreter {
             {
                 class_def.mro.clone()
             } else {
-                vec![class_name.to_string()]
+                [crate::symbol::Symbol::intern(class_name)].into()
             };
             let mut result = Vec::new();
             let mut seen_names = std::collections::HashSet::new();
-            for cn in &mro {
+            for cn in mro.iter().map(|s| s.as_str()) {
                 if cn == "Any" || cn == "Mu" {
                     continue;
                 }

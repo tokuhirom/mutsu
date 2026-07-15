@@ -419,7 +419,7 @@ impl Interpreter {
                 }
             });
         let class_is_6e = class_lang_rev != "c";
-        for mro_class in mro.iter().rev() {
+        for mro_class in mro.iter().rev().map(|s| s.as_str()) {
             if mro_class == "Any" || mro_class == "Mu" {
                 continue;
             }
@@ -549,7 +549,7 @@ impl Interpreter {
                 }
             });
         let class_is_6e = class_lang_rev != "c";
-        for mro_class in mro.iter().rev() {
+        for mro_class in mro.iter().rev().map(|s| s.as_str()) {
             if mro_class == "Any" || mro_class == "Mu" {
                 continue;
             }
@@ -671,7 +671,7 @@ impl Interpreter {
                 }
             });
         let class_is_6e = class_lang_rev != "c";
-        for mro_class in mro.iter().rev() {
+        for mro_class in mro.iter().rev().map(|s| s.as_str()) {
             if mro_class == "Any" || mro_class == "Mu" {
                 continue;
             }

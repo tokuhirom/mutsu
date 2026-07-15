@@ -29,7 +29,7 @@ impl Interpreter {
         value: &Value,
     ) -> bool {
         let mro = self.class_mro(class_name);
-        for cn in &mro {
+        for cn in mro.iter() {
             let methods = match self.registry().classes.get(cn.as_str()) {
                 Some(cd) => cd.methods.get("new").cloned(),
                 None => None,
@@ -204,8 +204,8 @@ impl Interpreter {
             return true;
         }
         let mro = self.class_mro(class_name);
-        for cn in mro {
-            if let Some(class_def) = self.registry().classes.get(&cn)
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str())
                 && class_def.native_methods.contains(method_name)
             {
                 return true;
@@ -216,8 +216,8 @@ impl Interpreter {
 
     pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
-        for cn in mro {
-            if let Some(class_def) = self.registry().classes.get(&cn)
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str())
                 && let Some(defs) = class_def.methods.get(method_name)
             {
                 return defs.iter().any(|d| !d.is_private);
@@ -251,8 +251,8 @@ impl Interpreter {
         method_name: &str,
     ) -> Option<UserMethodOrAccessor> {
         let mro = self.class_mro(class_name);
-        for cn in &mro {
-            let is_ancestor = cn != class_name;
+        for cn in mro.iter() {
+            let is_ancestor = cn.as_str() != class_name;
             let (has_local_method, has_role_method, has_attr) = {
                 let registry = self.registry();
                 if let Some(class_def) = registry.classes.get(cn.as_str()) {
@@ -322,8 +322,9 @@ impl Interpreter {
         if !is_rw {
             return None;
         }
-        for cn in self.class_mro(class_name) {
-            if let Some(tc) = self.get_attr_type_constraint(&cn, method_name) {
+        let mro = self.class_mro(class_name);
+        for cn in mro.iter() {
+            if let Some(tc) = self.get_attr_type_constraint(cn.as_str(), method_name) {
                 return Some(Some(tc));
             }
         }
@@ -345,9 +346,9 @@ impl Interpreter {
         let mro = if let Some(cd) = self.registry().classes.get(class_name) {
             cd.mro.clone()
         } else {
-            Vec::new()
+            [].into()
         };
-        for parent in &mro {
+        for parent in mro.iter().map(|p| p.as_str()) {
             if parent == class_name {
                 continue;
             }
@@ -380,7 +381,7 @@ impl Interpreter {
         }
         // Walk MRO for inherited class-level attributes
         let mro = self.class_mro(class_name);
-        for parent in &mro {
+        for parent in mro.iter().map(|s| s.as_str()) {
             if parent == class_name {
                 continue;
             }
@@ -417,7 +418,7 @@ impl Interpreter {
         }
         // Walk MRO
         let mro = self.class_mro(class_name);
-        for parent in &mro {
+        for parent in mro.iter().map(|s| s.as_str()) {
             if parent == class_name {
                 continue;
             }
@@ -437,8 +438,8 @@ impl Interpreter {
     pub(super) fn collect_wildcard_handles(&mut self, class_name: &str) -> Vec<String> {
         let mro = self.class_mro(class_name);
         let mut result = Vec::new();
-        for cn in &mro {
-            if let Some(class_def) = self.registry().classes.get(cn) {
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 result.extend(class_def.wildcard_handles.iter().cloned());
             }
         }
@@ -449,8 +450,8 @@ impl Interpreter {
     /// (no twigil), so the method call dispatch can set up bidirectional aliases.
     pub(super) fn add_alias_attribute_metadata(&mut self, class_name: &str, attrs: &mut AttrMap) {
         let mro = self.class_mro(class_name);
-        for cn in &mro {
-            if let Some(class_def) = self.registry().classes.get(cn) {
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr_name in &class_def.alias_attributes {
                     attrs.insert(
                         format!("__mutsu_attr_alias::{}", attr_name),
@@ -469,7 +470,7 @@ impl Interpreter {
         self.class_mro(class_name).iter().any(|cn| {
             self.registry()
                 .classes
-                .get(cn)
+                .get(cn.as_str())
                 .is_some_and(|cd| cd.attributes.iter().any(|(n, ..)| n == bare))
         })
     }
@@ -478,7 +479,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();
         for cn in mro.iter().rev() {
-            if let Some(class_def) = self.registry().classes.get(cn) {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
                     if let Some(pos) = attrs.iter().position(|(n, ..)| n == &attr.0) {
                         attrs.remove(pos);
@@ -504,19 +505,19 @@ impl Interpreter {
         let mut result: Vec<(String, ClassAttributeDef)> = Vec::new();
         // Track which attribute names appear in multiple classes (need qualified storage)
         let mut attr_counts: HashMap<String, usize> = HashMap::new();
-        for cn in &mro {
-            if let Some(class_def) = self.registry().classes.get(cn) {
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
                     *attr_counts.entry(attr.0.clone()).or_insert(0) += 1;
                 }
             }
         }
         // Only include attrs that appear in multiple classes (duplicated across hierarchy)
-        for cn in &mro {
-            if let Some(class_def) = self.registry().classes.get(cn) {
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
                 for attr in &class_def.attributes {
                     if attr_counts.get(&attr.0).copied().unwrap_or(0) > 1 {
-                        result.push((cn.clone(), attr.clone()));
+                        result.push((cn.resolve(), attr.clone()));
                     }
                 }
             }

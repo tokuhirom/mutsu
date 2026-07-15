@@ -853,7 +853,7 @@ impl Interpreter {
             let mro = self.class_mro(&package_name.resolve());
             if mro
                 .iter()
-                .any(|parent| Self::type_matches(effective_constraint, parent))
+                .any(|parent| Self::type_matches(effective_constraint, parent.as_str()))
             {
                 return true;
             }
@@ -933,7 +933,7 @@ impl Interpreter {
                     let parent_mro = self.class_mro(&parent);
                     if parent_mro
                         .iter()
-                        .any(|p| Self::type_matches(effective_constraint, p))
+                        .any(|p| Self::type_matches(effective_constraint, p.as_str()))
                     {
                         return true;
                     }
@@ -1001,7 +1001,7 @@ impl Interpreter {
             let mro = self.class_mro(&class_name.resolve());
             if mro
                 .iter()
-                .any(|parent| Self::type_matches(constraint, parent))
+                .any(|parent| Self::type_matches(constraint, parent.as_str()))
             {
                 return true;
             }

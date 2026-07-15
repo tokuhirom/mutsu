@@ -591,7 +591,7 @@ impl Interpreter {
             attribute_built: HashMap::new(),
             methods: HashMap::new(),
             native_methods: HashSet::new(),
-            mro: Vec::new(),
+            mro: [].into(),
             wildcard_handles: Vec::new(),
             alias_attributes: HashSet::new(),
             class_level_attrs: HashMap::new(),
@@ -974,7 +974,7 @@ impl Interpreter {
                     attribute_built: HashMap::new(),
                     methods: HashMap::new(),
                     native_methods: HashSet::new(),
-                    mro: Vec::new(),
+                    mro: [].into(),
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
                     class_level_attrs: HashMap::new(),
@@ -1910,7 +1910,7 @@ impl Interpreter {
                     {
                         if !class_def.parents.iter().any(|p| p == &role_name_str) {
                             class_def.parents.insert(0, role_name_str.clone());
-                            class_def.mro.clear();
+                            class_def.mro = [].into();
                         }
                         continue;
                     }
@@ -1968,7 +1968,7 @@ impl Interpreter {
                     if !class_def.parents.iter().any(|p| p == &role_name_str) {
                         // Keep role composition visible in MRO introspection.
                         class_def.parents.insert(0, role_name_str.clone());
-                        class_def.mro.clear();
+                        class_def.mro = [].into();
                     }
                     // Transfer role's own parents (from `is` declarations) to the class
                     if let Some(rparents) =
@@ -1980,7 +1980,7 @@ impl Interpreter {
                                 && !class_def.parents.iter().any(|p| p == &rp)
                             {
                                 class_def.parents.push(rp.clone());
-                                class_def.mro.clear();
+                                class_def.mro = [].into();
                             }
                         }
                     }
@@ -2241,11 +2241,11 @@ impl Interpreter {
         // classes may be absent from the computed MRO.
         if !self.registry().has_metamodel_how_classes
             && (parents.iter().any(|c| Self::is_metamodel_class_name(c))
-                || self
-                    .registry()
-                    .classes
-                    .get(name)
-                    .is_some_and(|cd| cd.mro.iter().any(|c| Self::is_metamodel_class_name(c))))
+                || self.registry().classes.get(name).is_some_and(|cd| {
+                    cd.mro
+                        .iter()
+                        .any(|c| Self::is_metamodel_class_name(c.as_str()))
+                }))
         {
             self.registry_mut().has_metamodel_how_classes = true;
         }

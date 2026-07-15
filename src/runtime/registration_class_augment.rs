@@ -547,7 +547,7 @@ impl Interpreter {
             attribute_built: HashMap::new(),
             methods: all_methods,
             native_methods: HashSet::new(),
-            mro: vec![role_name.to_string(), "Any".to_string(), "Mu".to_string()],
+            mro: super::sym_mro(&[role_name, "Any", "Mu"]),
             wildcard_handles: Vec::new(),
             alias_attributes: HashSet::new(),
             class_level_attrs: HashMap::new(),

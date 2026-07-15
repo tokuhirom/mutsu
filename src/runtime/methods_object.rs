@@ -395,7 +395,7 @@ impl Interpreter {
             .registry()
             .class_attribute_does_roles
             .iter()
-            .filter(|((c, _), _)| mro.contains(c))
+            .filter(|((c, _), _)| mro.iter().any(|s| s.as_str() == c.as_str()))
             .map(|((_, a), roles)| (a.clone(), roles.clone()))
             .collect();
         for (attr_name, roles) in does_attrs {
@@ -417,7 +417,7 @@ impl Interpreter {
             .registry()
             .class_attribute_container_mixins
             .iter()
-            .filter(|((c, _), _)| mro.contains(c))
+            .filter(|((c, _), _)| mro.iter().any(|s| s.as_str() == c.as_str()))
             .map(|((_, a), maps)| (a.clone(), maps.clone()))
             .collect();
         for (attr_name, override_maps) in container_mixins {

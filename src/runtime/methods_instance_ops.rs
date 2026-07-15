@@ -852,7 +852,8 @@ impl Interpreter {
                     return Ok(Value::FALSE);
                 }
                 return Ok(Value::truth(
-                    self.class_mro(&class_name.resolve()).contains(&target_name),
+                    self.class_mro(&class_name.resolve())
+                        .contains(&crate::symbol::Symbol::intern(&target_name)),
                 ));
             }
             // `X::AdHoc.payload` returns the value passed to `die` (mutsu stores
@@ -1757,7 +1758,8 @@ impl Interpreter {
                     }
                 }
                 Ok(Value::truth(
-                    self.class_mro(&pkg_name).contains(&target_name),
+                    self.class_mro(&pkg_name)
+                        .contains(&crate::symbol::Symbol::intern(&target_name)),
                 ))
             }
             "REPR" if args.is_empty() => {
@@ -1949,7 +1951,8 @@ impl Interpreter {
         let mut classes = vec![type_name.clone()];
         classes.extend(
             self.class_mro(&type_name)
-                .into_iter()
+                .iter()
+                .map(|s| s.resolve())
                 .filter(|c| c != &type_name),
         );
         let name_val = Value::str(method.to_string());
@@ -2127,7 +2130,11 @@ impl Interpreter {
     fn are_specific_candidate_type_names(&mut self, value: &Value) -> Vec<String> {
         match value.view() {
             ValueView::Package(name) => vec![name.resolve()],
-            ValueView::Instance { class_name, .. } => self.class_mro(&class_name.resolve()),
+            ValueView::Instance { class_name, .. } => self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .map(|s| s.resolve())
+                .collect(),
             _ => vec![crate::runtime::utils::value_type_name(value).to_string()],
         }
     }

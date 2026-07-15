@@ -75,12 +75,12 @@ impl Interpreter {
         // Check that the qualifier class/role is in the instance's MRO or composed roles
         let inst_cn_str = inst_class.resolve();
         let inst_mro = self.class_mro(&inst_cn_str);
-        let in_mro = inst_mro.iter().any(|c| c == qualifier);
+        let in_mro = inst_mro.iter().any(|c| c.as_str() == qualifier);
         let in_composed_roles = if !in_mro {
             inst_mro.iter().any(|c| {
                 self.registry()
                     .class_composed_roles
-                    .get(c)
+                    .get(c.as_str())
                     .is_some_and(|roles| {
                         roles.iter().any(|r| {
                             r == qualifier
@@ -498,7 +498,7 @@ impl Interpreter {
             self.class_mro(cn).iter().any(|c| {
                 self.registry()
                     .class_composed_roles
-                    .get(c)
+                    .get(c.as_str())
                     .is_some_and(|roles| {
                         roles.iter().any(|r| {
                             r == qualifier
@@ -575,12 +575,12 @@ impl Interpreter {
         {
             let inst_cn_str = inner_cn.resolve();
             let inst_mro = self.class_mro(&inst_cn_str);
-            let in_mro = inst_mro.iter().any(|c| c == qualifier);
+            let in_mro = inst_mro.iter().any(|c| c.as_str() == qualifier);
             let in_composed_roles = !in_mro
                 && inst_mro.iter().any(|c| {
                     self.registry()
                         .class_composed_roles
-                        .get(c)
+                        .get(c.as_str())
                         .is_some_and(|roles| {
                             roles.iter().any(|r| {
                                 r == qualifier

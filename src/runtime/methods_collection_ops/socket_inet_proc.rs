@@ -411,7 +411,7 @@ impl Interpreter {
                     Some("Promise".to_string())
                 } else if self
                     .class_mro(&name.resolve())
-                    .contains(&"Promise".to_string())
+                    .contains(&crate::symbol::Symbol::intern("Promise"))
                 {
                     Some(name.resolve())
                 } else {

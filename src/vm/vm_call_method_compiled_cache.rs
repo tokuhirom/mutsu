@@ -60,8 +60,11 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let mut any_multi = false;
         let mut value_dependent = false;
-        'outer: for cn in &mro {
-            let Some(overloads) = self.registry().get_method_overloads(cn, method_name) else {
+        'outer: for cn in mro.iter() {
+            let Some(overloads) = self
+                .registry()
+                .get_method_overloads(cn.as_str(), method_name)
+            else {
                 continue;
             };
             for def in &overloads {

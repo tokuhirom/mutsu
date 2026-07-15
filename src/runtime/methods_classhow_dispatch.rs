@@ -209,7 +209,9 @@ impl Interpreter {
                     }
                 }
                 let mro = self.class_mro(&class_name.resolve());
-                Ok(Value::truth(mro.iter().any(|p| p == &other_resolved)))
+                Ok(Value::truth(
+                    mro.iter().any(|p| p.as_str() == other_resolved),
+                ))
             }
             "mro" if !args.is_empty() => {
                 let mut include_roles = false;
@@ -465,7 +467,7 @@ impl Interpreter {
                             alias_attributes: HashSet::new(),
                             methods: HashMap::new(),
                             native_methods: HashSet::new(),
-                            mro: vec![class_name.clone()],
+                            mro: sym_mro(&[&class_name]),
                             wildcard_handles: vec![],
                             class_level_attrs: HashMap::new(),
                         },
@@ -790,7 +792,7 @@ impl Interpreter {
                 }
                 if !local_only {
                     let mro = self.class_mro(&class_name);
-                    for cn in &mro[1..] {
+                    for cn in mro[1..].iter().map(|s| s.as_str()) {
                         if let Some(result) = check_transitive(
                             &self.registry().class_composed_roles,
                             &self.registry().role_parents,
