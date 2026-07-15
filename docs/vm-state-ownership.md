@@ -1,640 +1,683 @@
-# ③ 実行状態の VM 所有移管（interpreter ブリッジ撤去・構造設計）
+# ③ Migrating execution state to VM ownership (interpreter-bridge removal — structural design)
 
-[PLAN.md](../PLAN.md) 最終ゴール「tree-walking Interpreter 実行パス撤去 → dual-store 削除」の
-**ステップ③**。①（個別フォールバック撲滅）→ ②（宣言レジストリの VM 所有化, #2760-2775, 完了）に続く
-**最大の山**。本書は③の確定設計。前提: [vm-registry-ownership.md](vm-registry-ownership.md)（②）、
-一次台帳 [vm-interpreter-fallback-ledger.md](vm-interpreter-fallback-ledger.md)、
-[vm-dual-store.md](vm-dual-store.md)（locals↔env、レバー B）。
+**Step ③** of the [PLAN.md](../PLAN.md) final goal "remove the tree-walking Interpreter execution path → delete the dual-store".
+Following ① (eliminating individual fallbacks) → ② (VM ownership of the declaration registries, #2760-2775, done), this is
+**the biggest mountain**. This document is the finalized design for ③. Prerequisites: [vm-registry-ownership.md](vm-registry-ownership.md) (②),
+the primary ledger [vm-interpreter-fallback-ledger.md](vm-interpreter-fallback-ledger.md),
+and [vm-dual-store.md](vm-dual-store.md) (locals↔env, lever B).
 
-## ③が解くべき状態
+## The state ③ must resolve
 
-`VM` は `interpreter: Interpreter` を**値で所有**（`src/vm.rs:88`）。VM ネイティブコードが借用している
-Interpreter 状態のうち、②で移した宣言レジストリ（`Arc<RwLock<Registry>>`）以外の**実行状態**:
+`VM` **owns `interpreter: Interpreter` by value** (`src/vm.rs:88`). Of the Interpreter state borrowed by
+VM-native code, the **execution state** other than the declaration registries moved in ② (`Arc<RwLock<Registry>>`):
 
-- **env**（変数ストア本体, `Interpreter.env: Env`）— 圧倒的最ホット。`self.interpreter.env`/`env_mut` =
-  VM ツリーだけで **483 サイト**。
-- **型検査**: `type_matches_value`（VM 8 + runtime 26 ファイル）, `var_type_constraint`/`var_type_constraints`,
-  `var_hash_key_constraints`。
-- **readonly 追跡**: `readonly_vars`/`mark_readonly`/`unmark_readonly`（VM 4 + runtime 2）。
-- **let/temp 復元**: `let_saves`/`restore_let_saves`/`discard_let_saves`（VM 5 + runtime 2）。
-- **state 変数**: `state_vars`/`our_vars`/`once_values`（VM 0 + runtime 3 — ほぼ tree-walk 側）。
-- **`current_package`**（VM 8 + runtime 33）。
-- **multi 解決**: `resolve_function_with_types`/`has_multi_*`/`has_proto`。
+- **env** (the variable store itself, `Interpreter.env: Env`) — by far the hottest. `self.interpreter.env`/`env_mut` =
+  **483 sites** in the VM tree alone.
+- **Type checking**: `type_matches_value` (VM 8 + runtime 26 files), `var_type_constraint`/`var_type_constraints`,
+  `var_hash_key_constraints`.
+- **readonly tracking**: `readonly_vars`/`mark_readonly`/`unmark_readonly` (VM 4 + runtime 2).
+- **let/temp restoration**: `let_saves`/`restore_let_saves`/`discard_let_saves` (VM 5 + runtime 2).
+- **state variables**: `state_vars`/`our_vars`/`once_values` (VM 0 + runtime 3 — almost entirely on the tree-walk side).
+- **`current_package`** (VM 8 + runtime 33).
+- **multi resolution**: `resolve_function_with_types`/`has_multi_*`/`has_proto`.
 
-これらが VM へ移れば **interpreter ブリッジ自体が不要**になり、④（carrier 確定）→ ⑤（dual-store 機構削除）
-へ進める。
+Once these move to the VM, **the interpreter bridge itself becomes unnecessary**, and we can proceed to
+④ (carrier finalization) → ⑤ (dual-store mechanism removal).
 
-## 核心: ③は②と方式が決定的に異なる（共有ハンドル方式は採れない）
+## Core point: ③ differs decisively from ② in method (the shared-handle approach cannot be used)
 
-②は registry を `Arc<RwLock<Registry>>` 足場へ持ち上げた。③で同じことを env にしてはならない:
+② lifted the registry onto an `Arc<RwLock<Registry>>` scaffold. We must NOT do the same to env in ③:
 
-1. **env には「真の同時共有」が無い。** env は**ただ1つの `Interpreter` オブジェクトにだけ存在**し、
-   ping-pong（`Interpreter::run_block_raw` → `VM::new(self)` → `vm.run()` → `*self = interp`,
-   `src/runtime/run.rs:956`）で **VM ネスト間を値で往復**する。VM ネイティブ → `interpreter.call_function`
-   → 内部で新たな `VM::new` … という再帰も、その都度 Interpreter を**move**するだけで、生きた env は
-   常に1個。スレッド跨ぎは `clone_for_thread` の**スナップショット**（書き戻し無し）。
-   → ②で Arc<RwLock> が要ったのは「`Interpreter` が `spawn_user_thread` でスレッド境界を越え、registry を
-   複数スレッドが触る」から。**env は単一所有者なので、エンドステートは plain な VM フィールド一択**で、
-   足場の Arc/lock は不要。
-2. **env を Arc<RwLock> 化すると perf が破綻する。** env は全変数 read/write の最ホットパス
-   （483 サイト + runtime 深部）。②の registry でさえ遷移期 RwLock 取得で release microbench +2-4%。
-   env に lock を1アクセスごとに乗せれば桁違いの退行になる（`Env` は既に内部 `Arc<HashMap>` COW なので、
-   さらに外側 lock を被せる意味も無い）。
+1. **env has no "true concurrent sharing".** env **exists in exactly one `Interpreter` object**, and
+   ping-pongs (`Interpreter::run_block_raw` → `VM::new(self)` → `vm.run()` → `*self = interp`,
+   `src/runtime/run.rs:956`) **by value between nested VMs**. Recursion like VM-native → `interpreter.call_function`
+   → a new `VM::new` inside … also just **moves** the Interpreter each time, and the live env is
+   always a single instance. Cross-thread use is a **snapshot** via `clone_for_thread` (no write-back).
+   → ② needed `Arc<RwLock>` because "`Interpreter` crosses the thread boundary in `spawn_user_thread` and the registry
+   is touched by multiple threads". **env has a single owner, so the end state is a plain VM field — full stop** —
+   the Arc/lock scaffold is unnecessary.
+2. **Making env `Arc<RwLock>` would wreck perf.** env is the hottest path of all variable reads/writes
+   (483 sites + deep runtime). Even for ②'s registry, the transitional RwLock acquisition cost +2-4% on release microbench.
+   Putting a lock on env per-access would be a regression of a different order of magnitude (`Env` is already an internal
+   `Arc<HashMap>` COW, so layering an outer lock on top would also be pointless).
 
-→ **③は「フィールドを共有ハンドルへ持ち上げる」方式（②の playbook）では進められない。**
+→ **③ cannot proceed by the "lift the field onto a shared handle" approach (②'s playbook).**
 
-## なぜ「フィールド再配置を先に」も採れない — 強制される戦略
+## Why "field relocation first" is also not an option — the forced strategy
 
-では「env を Interpreter から VM の plain field へ今すぐ移す」が直接できるか。**できない**:
+So, can we directly "move env from Interpreter to a plain field on VM right now"? **No**:
 
-- 高価値 state は `src/runtime/` の **tree-walk コードに浸透**している（`type_matches_value` 26 ファイル、
-  `current_package` 33 ファイル、env は事実上全 runtime）。これらの tree-walk メソッドは、VM 実行中に
-  **§1/§2 フォールバック経由でユーザコードを実行**し、その最中に `self.env`/`self.type_matches_value`/
-  `self.current_package` を読む。
-- フィールドを Interpreter から物理的に抜くと、これら数千の `self.env` アクセスが全部壊れる。env を引数で
-  全 runtime tree-walk 呼び出しグラフに通すのは非現実的。
+- The high-value state is **pervasive in the tree-walk code** under `src/runtime/` (`type_matches_value` 26 files,
+  `current_package` 33 files, env is effectively the entire runtime). These tree-walk methods **run user code via
+  §1/§2 fallbacks during VM execution**, and read `self.env`/`self.type_matches_value`/
+  `self.current_package` while doing so.
+- Physically pulling the fields out of Interpreter would break all these thousands of `self.env` accesses. Threading env
+  as an argument through the entire runtime tree-walk call graph is unrealistic.
 
-→ 結論: **③はフィールド再配置駆動ではなく、フォールバック撲滅駆動である。**
-台帳 §1/§2 の tree-walk 実行パス（catch-all メソッド dispatch / 関数 dispatch / native-method）を
-**VM ネイティブ実装に置換**し、各撲滅が「その state の tree-walk 読者」を1クラスずつ消す。最後の
-tree-walk 実行パスが消えた時点で env/型/state/current_package は runtime/ に読者を持たなくなり、
-**plain な VM フィールドへ畳める**（この最終 fold が ④/⑤）。**③のスライス ＝ 台帳 §1/§2 の行**。
+→ Conclusion: **③ is driven by fallback eradication, not by field relocation.**
+Replace the tree-walk execution paths of ledger §1/§2 (catch-all method dispatch / function dispatch / native-method)
+with **VM-native implementations**; each eradication removes "the tree-walk readers of that state" one class at a time. Once the last
+tree-walk execution path disappears, env/types/state/current_package no longer have readers in runtime/ and
+**can be folded into plain VM fields** (this final fold is ④/⑤). **The slices of ③ = the rows of ledger §1/§2.**
 
-## 状態 × 結合度マップ（調査確定 2026-06-08）
+## State × coupling map (survey finalized 2026-06-08)
 
-| state | VM サイト | runtime/ 結合 | 単独移管可否 | ③での扱い |
+| state | VM sites | runtime/ coupling | Independently movable? | Treatment in ③ |
 |---|---|---|---|---|
-| `env`/`env_mut` | 483 | 全域 | 不可（最ホット・全域） | フォールバック撲滅後に最後に畳む |
-| `type_matches_value` | 8 | 26 ファイル | 不可（tree-walk 深部） | §1 撲滅で読者が減る |
-| `current_package` | 27 | 33 ファイル | **共有ハンドルで移管済**（下記） | registry dispatch read の VM 化を解禁 |
-| `var_type_constraint(s)` | 33 | 8 | 困難 | 型検査と同時 |
-| `readonly_vars`/`mark_readonly` | 8 | 3 | **比較的局所** | 早期に VM へ寄せられる候補 |
-| `let_saves`/`restore_let_saves` | 10 | 3 | **比較的局所** | 同上（が env 残存中は decoupling 価値小） |
-| `state_vars`/`our_vars`/`once_values` | 0 | 3 | runtime 専属 | tree-walk 撲滅に追従 |
+| `env`/`env_mut` | 483 | everywhere | No (hottest, everywhere) | Fold last, after fallback eradication |
+| `type_matches_value` | 8 | 26 files | No (deep in tree-walk) | Readers shrink with §1 eradication |
+| `current_package` | 27 | 33 files | **Migrated via shared handle** (below) | Unlocks VM-side registry dispatch reads |
+| `var_type_constraint(s)` | 33 | 8 | Hard | Together with type checking |
+| `readonly_vars`/`mark_readonly` | 8 | 3 | **Relatively local** | Candidate for early move to VM |
+| `let_saves`/`restore_let_saves` | 10 | 3 | **Relatively local** | Same (but low decoupling value while env remains) |
+| `state_vars`/`our_vars`/`once_values` | 0 | 3 | runtime-exclusive | Follows tree-walk eradication |
 
-要点: **局所的な state（readonly/let）を先に VM へ移しても、env が Interpreter に残る限り
-decoupling 価値は小さい**（Interpreter オブジェクトは消えない）。価値が出るのは tree-walk 実行パスが
-消えて env が畳めた瞬間。よって投資は §1/§2 撲滅に集中する。
+Key point: **even if the local states (readonly/let) are moved to the VM first, the decoupling value is small
+as long as env stays in Interpreter** (the Interpreter object does not go away). The value materializes the moment
+the tree-walk execution paths disappear and env can be folded. Therefore investment concentrates on §1/§2 eradication.
 
-## 台帳 §1/§2 = ③のスライス（撲滅順）
+## Ledger §1/§2 = the slices of ③ (eradication order)
 
-一次状態は [vm-interpreter-fallback-ledger.md](vm-interpreter-fallback-ledger.md)。残る tree-walk:
+The primary status is in [vm-interpreter-fallback-ledger.md](vm-interpreter-fallback-ledger.md). Remaining tree-walk:
 
-- **§1 catch-all メソッド dispatch**（最大）: `vm_call_method_compiled.rs:427/857`,
-  `vm_call_method_mut_ops.rs:303` の `interpreter.call_method_with_values` =
-  生きた Instance/Buf/Failure メソッド fork。**残る主 tree-walk**。
-- **§1 native-method**（IO 系）: `native_io_*` がファイルハンドル等の interpreter 所有状態を要求 →
-  state（handles）移管前提。
-- **§2 関数 dispatch**: `vm_call_func_ops.rs`（builtin-shadow / multi-dispatch / final else）,
-  `vm_call_dispatch.rs` catch-all, `vm_dispatch_helpers.rs:356-384` Routine 値の関数解決。
-  **②（registry の VM 所有）で構造前提が整った**＝ここが ③ の最初の現実的着手点。
+- **§1 catch-all method dispatch** (largest): `interpreter.call_method_with_values` at `vm_call_method_compiled.rs:427/857`,
+  `vm_call_method_mut_ops.rs:303` =
+  the live Instance/Buf/Failure method fork. **The main remaining tree-walk.**
+- **§1 native-method** (IO family): `native_io_*` requires interpreter-owned state such as file handles →
+  predicated on state (handles) migration.
+- **§2 function dispatch**: `vm_call_func_ops.rs` (builtin-shadow / multi-dispatch / final else),
+  `vm_call_dispatch.rs` catch-all, `vm_dispatch_helpers.rs:356-384` function resolution of Routine values.
+  **② (VM ownership of the registry) put the structural prerequisites in place** = this is the first realistic entry point for ③.
 
-撲滅の必須手順（②/dedup と同じ）: native 実装が authoritative であることを **EVAL 経路で同値確認**
-（`mutsu -e 'say EVAL(q{...})'` が raku と一致）してから tree-walk を外し、`make roast` で確認。
+Mandatory eradication procedure (same as ②/dedup): **confirm equivalence via the EVAL route** that the native implementation is
+authoritative (`mutsu -e 'say EVAL(q{...})'` matches raku), then remove the tree-walk, then verify with `make roast`.
 
-## スライス計画（strangler-fig・各 PR 挙動不変・CI が安全網）
+## Slice plan (strangler-fig; each PR behavior-invariant; CI is the safety net)
 
-> 順序は「②で構造前提が整った §2 関数 dispatch」→「§1 catch-all メソッド dispatch（本丸）」→
-> 「native-method（IO state 移管と同時）」→「env/型/state を plain VM フィールドへ畳む（④/⑤）」。
+> Order: "§2 function dispatch, whose structural prerequisites ② put in place" → "§1 catch-all method dispatch (the main stronghold)" →
+> "native-method (together with IO state migration)" → "fold env/types/state into plain VM fields (④/⑤)".
 
-- **PR-1（§2 関数/Routine dispatch の VM ネイティブ化）**: `vm_dispatch_helpers.rs` Routine 値解決と
-  `vm_call_func_ops.rs` の multi/sub 解決を、②で VM アクセス可能になった `Registry` メソッド
-  （`resolve_*` / `has_multi_*`）を使って VM ネイティブ dispatch へ。builtin 優先順位
-  （Routine が builtin を指す場合）を VM 側で再現。interpreter は終端（EVAL/carrier）のみ。
-- **PR-2 以降（§1 catch-all メソッド dispatch）**: 生きた Instance メソッド呼びを
-  `call_compiled_method_*` 統一 dispatch へ寄せ、ユーザ定義クラスメソッドを全て bytecode 実行に。
-  native/reflective/MOP のみが共有末端（carrier）へ。Buf/Failure の native メソッドは builtins/ へ降ろす。
-- **PR-n（native-method IO）**: `handles` を VM 所有へ移し `native_io_*` を VM ネイティブに。
-- **最終 fold（④/⑤）**: tree-walk 実行パスが消えたら env/型検査/readonly/let/state/current_package を
-  `Interpreter` から `VM` の plain フィールドへ移し、`Interpreter` オブジェクトと ping-pong を撤去、
-  `env_dirty`/`saved_env_dirty`/`ensure_locals_synced`/`sync_locals_from_env` を削除。
+- **PR-1 (VM-nativize §2 function/Routine dispatch)**: Move the Routine-value resolution in `vm_dispatch_helpers.rs` and
+  the multi/sub resolution in `vm_call_func_ops.rs` to VM-native dispatch using the `Registry` methods that became
+  VM-accessible in ② (`resolve_*` / `has_multi_*`). Reproduce the builtin priority order
+  (when a Routine points at a builtin) on the VM side. The interpreter remains only as the terminal (EVAL/carrier).
+- **PR-2 onward (§1 catch-all method dispatch)**: Route live Instance method calls to the unified
+  `call_compiled_method_*` dispatch, executing all user-defined class methods as bytecode.
+  Only native/reflective/MOP remain at the shared terminal (carrier). Move Buf/Failure native methods down into builtins/.
+- **PR-n (native-method IO)**: Move `handles` to VM ownership and make `native_io_*` VM-native.
+- **Final fold (④/⑤)**: Once the tree-walk execution paths are gone, move env/type checking/readonly/let/state/current_package
+  from `Interpreter` to plain `VM` fields, remove the Interpreter object and the ping-pong,
+  and delete `env_dirty`/`saved_env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`.
 
-## スコープ / 非ゴール
+## Scope / non-goals
 
-- スコープ = **tree-walk 実行パスの VM ネイティブ化**（台帳 §1/§2 の行を消す）。各 PR は挙動不変。
-- 非ゴール（後段）: env/state の plain フィールド畳み込み（④/⑤、Interpreter 撤去後）、§C carrier の
-  最終確定（EVAL サブ VM / 正規表現埋め込み `{}` / pseudo-package）、`type_metadata` の Arc-ptr keying 解消
-  （🟣第一級コンテナ）、スレッド間 registry の真共有（PLAN §8.3 concurrency）。
+- Scope = **VM-nativization of the tree-walk execution paths** (deleting the rows of ledger §1/§2). Each PR is behavior-invariant.
+- Non-goals (later stages): folding env/state into plain fields (④/⑤, after Interpreter removal), final determination of the
+  §C carriers (EVAL sub-VM / regex-embedded `{}` / pseudo-package), resolving the Arc-ptr keying of `type_metadata`
+  (🟣 first-class containers), true cross-thread registry sharing (PLAN §8.3 concurrency).
 
-## 進捗
+## Progress
 
-- **設計確定（本書, 2026-06-08）**: ③は②と異なり**フォールバック撲滅駆動**（共有ハンドル方式不可・
-  env は plain field 終状態）と確定。状態×結合度マップを作成。スライス計画 = 台帳 §1/§2 の撲滅。
-  次の着手 = PR-1（②解禁の §2 関数/Routine dispatch の VM ネイティブ化）。
-- **PR-1 完了（Routine dispatch, 2026-06-08）**: `vm_dispatch_helpers.rs::vm_call_on_value` の Routine 値解決の
-  3 つの生 `interpreter.call_function`（qualified / bare / 末端）を統一エントリ `call_function_compiled_first`
-  へ寄せ、ユーザ定義 sub/multi/proto を compiled bytecode 実行に。**builtin 優先保全**: builtin 名を持つ
-  Routine（`&SETTING::...::not` → `Routine{GLOBAL, "not"}`）のみ `is_builtin_function` ガードで `call_function`
-  の builtin 優先を維持（平 user `&not` は `Value::Sub` で Routine 枝に来ない）。naive 変換で
-  `S02-names/SETTING-6e.t` 回帰 → 実証して修正。pin = `t/routine-value-dispatch.t`(10)。台帳 §2 の Routine 行を消化。
-- **PR-2 完了（builtin-shadow fork, 2026-06-08）**: ユーザ sub が同名 builtin を shadow する関数 dispatch fork
-  （`vm_call_func_ops` の `exec_call_func_op` + `exec_call_func_slip_op`、`user_function_matches_call` 枝）の
-  うち **plain 単一候補かつ compilable** な def を `compile_and_call_function_def` で OTF compile し bytecode 実行に
-  （native arm へ落とさず shadow された builtin を回避）。compilable 判定を `def_is_otf_compilable` ヘルパへ集約。
-  **回帰を 2 段で発見・修正**: ① proto/multi も単一候補 OTF compile し proto'd multi 候補 dispatch が壊れた
-  （S06-multi/proto・subsignature・type-based が mid-file abort）→ `!has_proto && !has_multi_candidates` ガード。
-  ② `user_function_matches_call` 枝は builtin-shadow 専用ではなく「compiled_fns に無い args 一致ユーザ sub」全般が来る。
-  `def_is_otf_compilable` が nested `sub`+`when` 制御フローを捕捉できず Test::Util `is-deeply-junction` が壊れた →
-  **`is_builtin_function` ガードで実際の builtin shadow に限定**（教訓: フォールバック枝の*真の到達集合*を仮定せず実測せよ）。
-  pin `t/builtin-shadow-dispatch.t`(9)。**次は §1 catch-all メソッド dispatch（本丸）または §2 非proto multi fork。**
-- **PR-3 完了（§1 catch-all メソッド dispatch — 実態訂正 + compile-on-demand, 2026-06-09）**: §1 catch-all を
-  「本丸＝残る主 tree-walk（ユーザーメソッド）」として着手したが、**`MUTSU_VM_STATS` + プローブで到達集合を実測した
-  結果、その前提が誤りと判明**（PR-2 の教訓「真の到達集合を仮定せず実測せよ」がここでも効いた）。実態:
-  通常宣言メソッド（multi 含む）・submethod・role 合成・継承・`.^add_method` は**全て登録時に
-  `compile_class_methods` で bytecode 化済**（`.^add_method` は Sub リテラルの `compiled_code` を継承）。catch-all
-  到達の Instance トラフィックは native coercion（`Exception.Stringy`）/ MOP（`.does`/`.^does`）/ role-qualified
-  （resolve=None）のみで、これらは ③ state 所有 / builtins 降ろし / 別の解決バグ依存。**残る唯一の compile-gap は
-  `.^add_multi_method`**（`compiled_code: None` 固定）。対応として dispatch チョークポイントに `populate_uncompiled_method`
-  （resolve 済み def が `compiled_code==None` のとき `compile_class_methods`/`compile_role_methods` で冪等 compile→
-  再解決→`dispatch_compiled_method`）を追加し、ユーザーメソッド分を確実に bytecode 化（owner が非 user class or 空
-  ボディなら interpreter フォールバック温存）。pin `t/method-otf-dispatch.t`(14)。**結論: §1 catch-all の残りは native/
-  MOP dispatch であり、その撲滅は state 所有移管（env/handles を VM へ）と builtins への native メソッド降ろしが本体**
-  （単独の routing では消えない）。env 畳み込みの価値はこの native dispatch を VM ネイティブ化した後に出る。
-  **次は §2 非proto multi fork（VM 側 multi 候補解決）、または native メソッドの builtins 降ろし（Buf/Failure）。**
-- **PR-4 完了（§2 非proto multi fork, 2026-06-09）**: `vm_call_func_ops.rs::dispatch_func_call_inner` の
-  非proto multi fork（`has_multi_candidates && !has_proto`）を PR-2 型へ拡張: ②で VM アクセス可能になった
-  `resolve_function_with_types` で winner を解決し、`def_is_otf_compilable` かつ非state body なら
-  `compile_and_call_function_def` で OTF compile/bytecode 実行。**関数パスの ambiguity は `None`+`pending_dispatch_error`
-  で表現**（`Some(def)`=unambiguous）＝メソッド側 `dispatch_ambiguous` とは別機構。ambiguity/where/default/code-param/
-  no-match/proto/末端は `call_function_fallback` 維持（正規例外を投げる）。**nextsame/callsame/callwith は compiled 候補から
-  でも機能**（`compile_and_call_function_def` が同じ `push_multi_dispatch_frame` を張るため＝実測で redispatch 除外不要を確認）。
-  落とし穴: ① otf_call_cache の name 汚染（type-blind cache が型違い候補を誤再利用）→ insert/lookup 双方に
-  `!has_multi_candidates_cached` ガード。② signature alternates の共有 state（`(A)|(B){state $x}` の state_group 共有が
-  per-alternate fingerprint で割れる）→ `function_body_declares_state` で state 持ち multi body を OTF 除外
-  （`t/multi-signature-alternates.t` 回帰を発見・修正）。slip 経路 multi は既存の別バグ（`|ms()`=Nil）で対象外。
-  pin `t/multi-otf-dispatch.t`(25)。multi-probe fallback 5→2、S06/S12/S14 全緑、make test PASS。
-  **副次的に既存 flaky を修正**: `push_multi_dispatch_frame` が callsame の current 候補を HashMap 順 first match で
-  決めていた（最狭が後宣言だと ~50% シード依存 flake、`callsame.t` 等 whitelist の間欠 fail = CI #2788 失敗の実体）。
-  interpreter inline frame と同じ決定的 winner（`resolve_function_with_alias`）で特定するよう修正＝全 VM 多重経路を決定化。
-  redispatch 除外は不要に（callsame は OTF 候補でも正しく動く）。
-- **PR-5 完了（§1 catch-all = plain `@`-array mutators, 2026-06-09）**: §1 catch-all の**実態を計測訂正**。catch-all 受け手の
-  型名を一時計装して whitelist sample 全体で到達集合を実測した結果、PR-3 の「残りは native/Buf/Failure」推定が誤りと判明＝
-  実際の支配トラフィックは **配列ミューテータ（`Array.append`=16721, `Array.shift`=5796, `Array.splice`）+ iterator protocol
-  （`pull-one`/`skip-one`/`push-exactly`）+ coercion（`List.Set/Bag/Mix`）**。最大の `Package.new`=38698 は③コンストラクタ
-  （user BUILD/属性デフォルト実行）で③ブロック。`Package.new` を除く**最大 tractable カテゴリ＝配列ミューテータ**を着手。
-  `vm_call_method_mut_ops.rs` に `try_native_array_mut` を追加し、**plain untyped `@`-array への append/prepend/unshift/pop/shift**
-  を VM ネイティブ化（`env.get_mut`+`Arc::make_mut`＝interpreter primary branch と同一）。typed/shaped/lazy/shared/metadata持ち/
-  非env-bound は保守的に interpreter 維持＝behavior-invariant。**type_metadata の Arc-ptr keying aliasing**（既知🟣ハザード）を
-  `make_mut` 再確保が顕在化させたため、native path 出力に `unregister_container_type_metadata` を防御適用（untyped 保証下で安全）。
-  pin `t/native-array-mut.t`(31)。
-- **PR-6 完了（§2 catch-all 末端の実測 + junction constructor 降ろし, 2026-06-09）**: `call_function_compiled_first` 末端
-  （`vm_call_dispatch.rs:79`）を `END:` 計装で実測した結果、**末端はほぼ枯渇**と判明（PR-1〜4 ＋ resolve 済み def の全 OTF compile
-  により高トラフィックの fallback は消えた）。残る末端到達は diffuse な少量＝junction constructor / **lexical `&`-変数の名前呼び出し**
-  （末端残余の最大カテゴリ＝`-> &op { op(…) }`〔S03-operators/set_*.t の `END:op`〕や `my &junction = ::("&any")`〔autothreading.t〕で
-  Callable を bareword 呼び・正しく動作・将来 VM 寄せ候補）/ `__mutsu_*` 内部・並行 CAS〔lever B〕/ no-match エラー生成〔carrier〕。
-  唯一の pure-builtin カテゴリ `any`/`all`/`one`/`none` を `builtins::build_junction` へ降ろし（interpreter の `builtin_junction` も
-  同 fn へ委譲＝重複解消）、`try_native_function` の Instance-guard を junction ctor に限り bypass。pin `t/native-junction-ctor.t`(24)。
-  **教訓: §2 末端は計測すると既にほぼ drained。残りは③ state 所有（並行）/ niche / エラー carrier で「高トラフィック撲滅」フェーズは終了。**
-  **次は ③ state 所有の本丸（env/型/handles を VM plain field へ畳む④/⑤の前段）、coercion〔`List.Set/Bag/Mix`〕の builtins 降ろし、
-  または iterator protocol（`pull-one`/`skip-one`/`push-exactly`）の VM ネイティブ化。**
+- **Design finalized (this document, 2026-06-08)**: Confirmed that ③, unlike ②, is **fallback-eradication-driven**
+  (the shared-handle approach is not usable; env's end state is a plain field). Created the state×coupling map.
+  Slice plan = eradication of ledger §1/§2. Next step = PR-1 (VM-nativization of §2 function/Routine dispatch, unlocked by ②).
+- **PR-1 done (Routine dispatch, 2026-06-08)**: Consolidated the 3 raw `interpreter.call_function` calls
+  (qualified / bare / terminal) in the Routine-value resolution of `vm_dispatch_helpers.rs::vm_call_on_value`
+  into the unified entry `call_function_compiled_first`, executing user-defined sub/multi/proto as compiled bytecode.
+  **Builtin priority preserved**: only Routines carrying a builtin name
+  (`&SETTING::...::not` → `Routine{GLOBAL, "not"}`) keep `call_function`'s builtin priority via the `is_builtin_function`
+  guard (a plain user `&not` is a `Value::Sub` and never reaches the Routine branch). The naive conversion regressed
+  `S02-names/SETTING-6e.t` → reproduced and fixed. pin = `t/routine-value-dispatch.t`(10). Consumed the Routine row of ledger §2.
+- **PR-2 done (builtin-shadow fork, 2026-06-08)**: In the function-dispatch fork where a user sub shadows a same-named builtin
+  (`exec_call_func_op` + `exec_call_func_slip_op` in `vm_call_func_ops`, the `user_function_matches_call` branch),
+  defs that are **plain single-candidate and compilable** are OTF-compiled via `compile_and_call_function_def` and run as bytecode
+  (avoiding the shadowed builtin without falling into the native arm). The compilability check was consolidated into the
+  `def_is_otf_compilable` helper.
+  **Two rounds of regressions found and fixed**: ① proto/multi were also OTF-compiled as single candidates, breaking proto'd
+  multi candidate dispatch (S06-multi/proto, subsignature, type-based aborted mid-file) → added the `!has_proto && !has_multi_candidates` guard.
+  ② The `user_function_matches_call` branch is not builtin-shadow-only — it receives every "args-matching user sub absent from compiled_fns".
+  `def_is_otf_compilable` failed to capture nested `sub`+`when` control flow and Test::Util `is-deeply-junction` broke →
+  **restricted to actual builtin shadows with the `is_builtin_function` guard** (lesson: measure the *true reachable set* of a fallback branch; never assume it).
+  pin `t/builtin-shadow-dispatch.t`(9). **Next: §1 catch-all method dispatch (the main stronghold) or the §2 non-proto multi fork.**
+- **PR-3 done (§1 catch-all method dispatch — reality correction + compile-on-demand, 2026-06-09)**: Started on §1 catch-all
+  as "the main stronghold = the main remaining tree-walk (user methods)", but **measuring the reachable set with `MUTSU_VM_STATS` +
+  probes showed that premise to be wrong** (PR-2's lesson "measure the true reachable set, don't assume it" paid off here too). Reality:
+  normally declared methods (including multi), submethods, role composition, inheritance, and `.^add_method` are **all
+  bytecode-compiled at registration time by `compile_class_methods`** (`.^add_method` inherits the Sub literal's `compiled_code`).
+  The Instance traffic reaching the catch-all is only native coercion (`Exception.Stringy`) / MOP (`.does`/`.^does`) / role-qualified
+  (resolve=None), and these depend on ③ state ownership / pushing down into builtins / a separate resolution bug. **The only remaining
+  compile gap is `.^add_multi_method`** (fixed at `compiled_code: None`). As the fix, added `populate_uncompiled_method`
+  at the dispatch chokepoint (when a resolved def has `compiled_code==None`, idempotently compile via
+  `compile_class_methods`/`compile_role_methods` → re-resolve → `dispatch_compiled_method`), reliably bytecode-compiling the
+  user-method share (if the owner is a non-user class or the body is empty, the interpreter fallback is preserved).
+  pin `t/method-otf-dispatch.t`(14). **Conclusion: what remains of §1 catch-all is native/MOP dispatch, and its eradication is
+  really state-ownership migration (env/handles to VM) plus pushing native methods down into builtins**
+  (routing alone will not remove it). The value of folding env materializes only after this native dispatch is VM-nativized.
+  **Next: the §2 non-proto multi fork (VM-side multi candidate resolution), or pushing native methods down into builtins (Buf/Failure).**
+- **PR-4 done (§2 non-proto multi fork, 2026-06-09)**: Extended the non-proto multi fork
+  (`has_multi_candidates && !has_proto`) of `vm_call_func_ops.rs::dispatch_func_call_inner` to the PR-2 pattern:
+  resolve the winner with `resolve_function_with_types` (VM-accessible since ②), and if `def_is_otf_compilable` and the body is
+  state-free, OTF compile / bytecode-execute via `compile_and_call_function_def`. **Ambiguity on the function path is expressed as
+  `None`+`pending_dispatch_error`** (`Some(def)`=unambiguous) — a separate mechanism from the method-side `dispatch_ambiguous`.
+  Ambiguity/where/default/code-param/no-match/proto/terminal keep `call_function_fallback` (which throws the canonical exceptions).
+  **nextsame/callsame/callwith work even from compiled candidates**
+  (`compile_and_call_function_def` sets up the same `push_multi_dispatch_frame` — measurement confirmed no redispatch exclusion is needed).
+  Pitfalls: ① name pollution of otf_call_cache (the type-blind cache wrongly reused differently-typed candidates) → added the
+  `!has_multi_candidates_cached` guard on both insert and lookup. ② shared state across signature alternates (the state_group sharing of
+  `(A)|(B){state $x}` splits under per-alternate fingerprints) → excluded state-carrying multi bodies from OTF via
+  `function_body_declares_state` (found and fixed the `t/multi-signature-alternates.t` regression). Slip-path multis are out of scope due
+  to a pre-existing separate bug (`|ms()`=Nil).
+  pin `t/multi-otf-dispatch.t`(25). multi-probe fallback 5→2, S06/S12/S14 all green, make test PASS.
+  **As a side effect, fixed an existing flake**: `push_multi_dispatch_frame` determined the current candidate for callsame by
+  HashMap-order first match (when the narrowest candidate is declared later, a ~50% seed-dependent flake; the intermittent failures of
+  whitelisted `callsame.t` etc. = the substance of CI #2788's failure).
+  Fixed to identify it with the same deterministic winner as the interpreter inline frame (`resolve_function_with_alias`) =
+  all VM multi paths made deterministic. Redispatch exclusion became unnecessary (callsame works correctly even with OTF candidates).
+- **PR-5 done (§1 catch-all = plain `@`-array mutators, 2026-06-09)**: **Measured and corrected the reality** of §1 catch-all.
+  Temporarily instrumented the type names of catch-all receivers and measured the reachable set over the whole whitelist sample:
+  PR-3's estimate "what remains is native/Buf/Failure" was wrong — the actual dominant traffic is
+  **array mutators (`Array.append`=16721, `Array.shift`=5796, `Array.splice`) + the iterator protocol
+  (`pull-one`/`skip-one`/`push-exactly`) + coercion (`List.Set/Bag/Mix`)**. The largest, `Package.new`=38698, is the ③ constructor
+  (user BUILD / attribute-default execution) and is ③-blocked. Started on the **largest tractable category excluding `Package.new` = array mutators**.
+  Added `try_native_array_mut` to `vm_call_method_mut_ops.rs`, VM-nativizing **append/prepend/unshift/pop/shift on plain untyped `@`-arrays**
+  (`env.get_mut`+`Arc::make_mut` — identical to the interpreter primary branch). typed/shaped/lazy/shared/metadata-carrying/
+  non-env-bound conservatively keep the interpreter = behavior-invariant. The **Arc-ptr keying aliasing of type_metadata**
+  (a known 🟣 hazard) was surfaced by `make_mut` reallocation, so `unregister_container_type_metadata` is defensively applied to
+  native-path outputs (safe under the untyped guarantee).
+  pin `t/native-array-mut.t`(31).
+- **PR-6 done (measurement of the §2 catch-all terminal + pushing junction constructors down, 2026-06-09)**: Instrumented the
+  `call_function_compiled_first` terminal (`vm_call_dispatch.rs:79`) with `END:` probes; the **terminal is nearly exhausted**
+  (PR-1..4 plus full OTF compilation of resolved defs removed the high-traffic fallbacks). The remaining terminal traffic is diffuse and small =
+  junction constructors / **name-calls of lexical `&`-variables**
+  (the largest category of the terminal residue — `-> &op { op(…) }` [`END:op` in S03-operators/set_*.t] and
+  `my &junction = ::("&any")` [autothreading.t] calling a Callable as a bareword; works correctly; future VM-migration candidate) /
+  `__mutsu_*` internals / concurrent CAS [lever B] / no-match error generation [carrier].
+  Pushed the only pure-builtin category `any`/`all`/`one`/`none` down into `builtins::build_junction` (the interpreter's
+  `builtin_junction` also delegates to the same fn = deduplication), and bypassed `try_native_function`'s Instance-guard for junction
+  ctors only. pin `t/native-junction-ctor.t`(24).
+  **Lesson: measurement shows the §2 terminal is already mostly drained. The remainder is ③ state ownership (concurrency) / niche / the
+  error carrier — the "high-traffic eradication" phase is over.**
+  **Next: the main stronghold of ③ state ownership (the precursor of ④/⑤ folding env/types/handles into plain VM fields),
+  pushing coercion (`List.Set/Bag/Mix`) down into builtins,
+  or VM-nativizing the iterator protocol (`pull-one`/`skip-one`/`push-exactly`).**
 
-- **`current_package` 共有ハンドル移管（2026-06-12, registry 撤去 enabler）**: registry の VM ネイティブ dispatch read
-  （`has_proto`/`has_multi_candidates`/`resolve_function_with_types`/…）は `current_package` に結合しており
-  （`format!("{pkg}::{name}")` の FQ 名構築）、`current_package` が Interpreter の plain `String` field である限り
-  VM は `self.interpreter.current_package()` バウンス経由でしか読めず、これら dispatch read を VM 自前の `registry`
-  ハンドルで処理できなかった（`vm.rs::registry_mut` のコメントが明記していたブロッカー）。本スライスで `current_package`
-  を `registry`/`io_handles`/`output_sink` と同型の **`Arc<RwLock<String>>` 共有ハンドル**へ持ち上げた:
-  - field `String` → `Arc<RwLock<String>>`。アクセスは `current_package()`（read-clone→owned `String`）/
-    `set_current_package()`（write）のみ。ガードはアクセサ外へ出ないので**再入を跨いで lock を保持しない**
-    （registry アクセサと同じ規律＝再入安全・デッドロック無し）。型変更でコンパイラが全 ~130 read / ~27 write を強制列挙。
-  - `clone_for_thread` と埋め込み regex/grammar サブインタプリタ構築は**スナップショット**（fresh lock。thread-local
-    registry 意味論＝子はコピー、書き戻し無し）で Arc を共有しない。
-  - VM に自前ハンドル clone（`current_package_handle()`）+ VM 側 `current_package()`/`set_current_package()` を追加。
-    VM の ~55 サイトを `self.interpreter` バウンスから自前ハンドル経由へ。VM は Interpreter を値所有するため
-    両 peer は ping-pong 中も同一 lock 越しに同じ値を観測＝挙動不変。save/restore 意味論も保存。
-  - 検証: cargo test 461/0、clippy/fmt 緑、package/`our sub`/継承/multi/`module our $x`/grammar token/`start{}` threading
-    スモーク全一致。（`t/native-array-mut.t` subtest 26 は PR-5 既知の type-meta Arc-ptr keying aliasing flaky で本変更と無関係。）
-  - **registry 撤去の payoff（2026-06-12, #2929/#2933）**: `Registry::has_proto`/`has_multi_candidates`/
-    `has_declared_function`/`has_multi_function`(current_package, name) を pure `impl Registry` メソッド化し、
-    VM dispatch を `self.registry`+`self.current_package()` で native 読みへ寄せた。**pure-predicate dispatch read は枯渇**。
+- **`current_package` shared-handle migration (2026-06-12, registry-removal enabler)**: The registry's VM-native dispatch reads
+  (`has_proto`/`has_multi_candidates`/`resolve_function_with_types`/…) are coupled to `current_package`
+  (FQ-name construction via `format!("{pkg}::{name}")`), and as long as `current_package` was a plain `String` field on Interpreter,
+  the VM could only read it via the `self.interpreter.current_package()` bounce, and could not serve these dispatch reads through the
+  VM's own `registry` handle (the comment on `vm.rs::registry_mut` explicitly documented this blocker). This slice lifted `current_package`
+  to an **`Arc<RwLock<String>>` shared handle** of the same shape as `registry`/`io_handles`/`output_sink`:
+  - field `String` → `Arc<RwLock<String>>`. Access is only via `current_package()` (read-clone → owned `String`) /
+    `set_current_package()` (write). The guard never escapes the accessor, so **no lock is held across re-entry**
+    (the same discipline as the registry accessors = re-entry-safe, no deadlocks). The type change forced the compiler to enumerate
+    all ~130 reads / ~27 writes.
+  - `clone_for_thread` and construction of embedded regex/grammar sub-interpreters take a **snapshot** (fresh lock; thread-local
+    registry semantics = child gets a copy, no write-back) and do not share the Arc.
+  - Added the VM's own handle clone (`current_package_handle()`) + VM-side `current_package()`/`set_current_package()`.
+    Moved the VM's ~55 sites from the `self.interpreter` bounce to the VM's own handle. Because the VM owns the Interpreter by value,
+    both peers observe the same value through the same lock even during ping-pong = behavior-invariant. Save/restore semantics are also preserved.
+  - Verification: cargo test 461/0, clippy/fmt green, package / `our sub` / inheritance / multi / `module our $x` / grammar token /
+    `start{}` threading smoke all matching. (`t/native-array-mut.t` subtest 26 is PR-5's known type-meta Arc-ptr keying aliasing flake,
+    unrelated to this change.)
+  - **The payoff of registry removal (2026-06-12, #2929/#2933)**: Turned `Registry::has_proto`/`has_multi_candidates`/
+    `has_declared_function`/`has_multi_function`(current_package, name) into pure `impl Registry` methods and moved VM dispatch to
+    native reads via `self.registry`+`self.current_package()`. **Pure-predicate dispatch reads are exhausted.**
 
-## 重要な設計所見: env は `current_package` の共有ハンドル playbook を**使えない**（2026-06-12）
+## Key design finding: env **cannot** use `current_package`'s shared-handle playbook (2026-06-12)
 
-ユーザー方針「③ env 移管に着手」(2026-06-12) を受けた調査で、**env は registry/current_package/io_handles/output_sink
-の `Arc<RwLock>` 共有ハンドル方式が原理的に使えない**ことを確定した（current_package が doc の悲観的予想に反して移管できた
-ので env も…という期待は否定される）:
+Investigation prompted by the user directive "start the ③ env migration" (2026-06-12) established that **env fundamentally cannot use
+the `Arc<RwLock>` shared-handle approach of registry/current_package/io_handles/output_sink** (the hope that "current_package
+migrated despite the doc's pessimistic prediction, so env might too…" is refuted):
 
-1. **再入跨ぎの in-place 変異**: current_package は read-clone-drop（ガードを即 drop、再入を跨がない）だから lock 化できた。
-   env は `env_mut()` で**変異を再入跨ぎで保持**する（opcode 実行中に env を握ったままユーザコードへ再入）。
-   `Arc<RwLock<Env>>` で write guard を保持したまま再入＝**自己デッドロック**。clone-per-access は変異が伝播しない。
-2. **最ホットパスの perf**: env は全変数 read/write（VM 483 サイト + runtime 全域）。registry でさえ遷移期 RwLock で
-   +2-4%。env に lock を1アクセスごとは桁違いの退行（`Env` は既に内部 `Arc<HashMap>` COW＝外側 lock は無意味）。
+1. **In-place mutation held across re-entry**: current_package could be lock-ified because it is read-clone-drop (the guard is dropped
+   immediately and never spans re-entry).
+   env, via `env_mut()`, **holds the mutation across re-entry** (re-entering user code while holding env mid-opcode).
+   Holding a write guard on an `Arc<RwLock<Env>>` across re-entry = **self-deadlock**. Clone-per-access does not propagate mutations.
+2. **Perf on the hottest path**: env carries all variable reads/writes (VM 483 sites + the entire runtime). Even the registry cost
+   +2-4% with the transitional RwLock. A per-access lock on env would be a regression of a different magnitude (`Env` is already an
+   internal `Arc<HashMap>` COW = an outer lock is meaningless).
 
-→ **③ env はハンドル移管駆動ではなく、本書冒頭どおり「フォールバック撲滅駆動」**（§1/§2 tree-walk fallback を native 化 →
-最後の reader が消えたら env を plain VM field へ fold ＝④/⑤）が唯一の道、と再確認。
+→ **Reconfirmed: ③ env is not handle-migration-driven but "fallback-eradication-driven", exactly as stated at the top of this
+document** (§1/§2 tree-walk fallbacks nativized → once the last reader is gone, env folds into a plain VM field = ④/⑤) — this is the only path.
 
-### method-fallback landscape 実測（2026-06-12, `MUTSU_VM_STATS`、method-heavy whitelist sample）
+### method-fallback landscape measured (2026-06-12, `MUTSU_VM_STATS`, method-heavy whitelist sample)
 
-catch-all (`vm_call_method_compiled.rs` の native/Buf/Failure fork) に残る method fallback の支配カテゴリ:
-`iterator`=280（`.iterator` 取得・最大）、`new`=99（③ ctor・env/BUILD 依存）、`push-exactly/at-least/all/until-lazy`=~200
-（iterator PUSH 協定＝外部バッファ writeback＝第一級コンテナ Phase 2）、`can`=56（MOP carrier）、`raku`=40、`bool-only/count-only`、
-`map`/`grep`（lazy/block 形）、`EVAL`（carrier）、`Mix` 等。**env 非依存で tractable な最大カテゴリ＝`.iterator` 構築**。
+The dominant categories of method fallback remaining in the catch-all (the native/Buf/Failure fork of `vm_call_method_compiled.rs`):
+`iterator`=280 (`.iterator` acquisition — largest), `new`=99 (③ ctor, env/BUILD-dependent), `push-exactly/at-least/all/until-lazy`=~200
+(the iterator PUSH protocol = external-buffer writeback = first-class containers Phase 2), `can`=56 (MOP carrier), `raku`=40, `bool-only/count-only`,
+`map`/`grep` (lazy/block form), `EVAL` (carrier), `Mix`, etc. **The largest env-independent tractable category = `.iterator` construction.**
 
-### スライス: `.iterator` 構築の VM ネイティブ化（本 PR）
+### Slice: VM-nativizing `.iterator` construction (this PR)
 
-`.iterator` の主経路（Range/Set/Bag/Mix/List/Array → `Iterator` instance `{items, index:0, is_lazy?, known_count?}`）は
-**純粋な値構築**（env/再入なし）。これを `src/builtins/iterator_construct.rs::build_iterator_instance` の単一実装へ抽出し、
-interpreter (`dispatch_iterator_method` の pure tail) と VM (`try_native_iterator_construct`、catch-all 直前) が共有
-（**1 操作 = 1 実装**）。`Seq`（consumed-state 追跡 + `squish` の env 変異＝interpreter 所有）と既構築 Iterator instance
-（identity 返し）は fall through/分岐。実測 range-iterator.t の `iterator` fallback 720→120（残 120 = Seq 等）。
-挙動不変（bag/mix/range/set-iterator・gather・S32-list/iterator roast 緑、S07-hyperrace/basics の既存 3 fail は本変更無関係）。
+The main path of `.iterator` (Range/Set/Bag/Mix/List/Array → an `Iterator` instance `{items, index:0, is_lazy?, known_count?}`) is
+**pure value construction** (no env / no re-entry). Extracted this into the single implementation
+`src/builtins/iterator_construct.rs::build_iterator_instance`, shared by the interpreter (the pure tail of
+`dispatch_iterator_method`) and the VM (`try_native_iterator_construct`, just before the catch-all)
+(**1 operation = 1 implementation**). `Seq` (consumed-state tracking + `squish`'s env mutation = interpreter-owned) and already-built
+Iterator instances (identity return) fall through / branch. Measured: `iterator` fallbacks in range-iterator.t 720→120 (remaining 120 = Seq etc.).
+Behavior-invariant (bag/mix/range/set-iterator, gather, S32-list/iterator roast green; the pre-existing 3 fails in S07-hyperrace/basics
+are unrelated to this change).
 
-## 調査記録: dynamic 変数の closure 跨ぎ可視化が「instance mutation writeback」に依存（2026-06-10）
+## Investigation record: cross-closure visibility of dynamic variables depends on "instance mutation writeback" (2026-06-10)
 
-トラック A（PLAN.md 再編 Phase I）の lexical `&`-var dispatch スライスを試みたところ、`code()`/`&code()` で束縛
-Callable を VM (`vm_call_on_value`→`call_compiled_closure`) で実行すると、**caller が rebind した dynamic 変数
-（`$*ERR` 等）への書き込みが caller に伝播しない**回帰が出た。**これは私の変更前から `&code()` で再現する pre-existing
-バグ**（`sub cap(&code){ my $*ERR=FakeIO.new; &code() }` で `code` 内の `note` が rebound `$*ERR` に届かない）。
-`main` の `exec_call_func_op`（~185-207）のコメントが既にこの罠を明記し、純 lexical `&`-var を意図的に interpreter
-ターミナルに残している。
+While attempting the lexical `&`-var dispatch slice of Track A (PLAN.md reorganization Phase I), running a bound
+Callable via `code()`/`&code()` on the VM (`vm_call_on_value`→`call_compiled_closure`) produced a regression where **writes to a
+dynamic variable rebound by the caller (`$*ERR` etc.) do not propagate to the caller**. **This is a pre-existing bug reproducible
+with `&code()` before my change** (with `sub cap(&code){ my $*ERR=FakeIO.new; &code() }`, `note` inside `code` does not reach the
+rebound `$*ERR`).
+The comment in `main`'s `exec_call_func_op` (~185-207) already documents this trap and deliberately leaves pure lexical `&`-vars
+on the interpreter terminal.
 
-### 完全な根本原因（計測で確定）
+### Full root cause (confirmed by measurement)
 
-1. `note` → `write_to_named_handle("$*ERR")` → `get_dynamic_handle` → `self.interpreter.env().get("$*ERR")`。
-   env 経由で **instance を解決**（同一 instance id を確認＝別インスタンスではない）。
-2. `$*ERR.print(...)` は変異メソッド → `overwrite_instance_bindings_by_identity(class, id, updated)`
-   （`methods_mut.rs:415`）で「同 id の instance を保持する全 env binding」を更新して writeback する。
-3. **その writeback が `self.env.values_mut()` を使う＝ scoped env では overlay tier のみを走査**（`src/env.rs`:
-   「insert/remove/get_mut/iter は overlay のみ。parent は immutable `Arc<Env>`」）。closure frame の overlay には
-   caller の `$*ERR` binding が無い（それは parent tier）ので、変異が **caller の binding に届かず**、frame 復帰で消える。
-4. interpreter (`call_sub_value`) は `new_env = saved_env.clone()`（caller env の **flat clone**）で closure を走らせ、
-   exit 時に「caller に既存の変数」へ side-effect を merge（`resolution.rs` ~1317/~1564）。flat なので
-   `values_mut()` が caller binding を直接更新でき、merge で伝播する。だから interpreter 経路は正しく動く。
+1. `note` → `write_to_named_handle("$*ERR")` → `get_dynamic_handle` → `self.interpreter.env().get("$*ERR")`.
+   The **instance is resolved** via env (same instance id confirmed = not a different instance).
+2. `$*ERR.print(...)` is a mutating method → `overwrite_instance_bindings_by_identity(class, id, updated)`
+   (`methods_mut.rs:415`) writes back by updating "every env binding holding an instance of the same id".
+3. **That writeback uses `self.env.values_mut()` = in a scoped env it walks only the overlay tier** (`src/env.rs`:
+   "insert/remove/get_mut/iter touch only the overlay. parent is an immutable `Arc<Env>`"). The closure frame's overlay does not
+   contain the caller's `$*ERR` binding (that lives in the parent tier), so the mutation **never reaches the caller's binding** and
+   evaporates on frame return.
+4. The interpreter (`call_sub_value`) runs the closure with `new_env = saved_env.clone()` (a **flat clone** of the caller env) and
+   on exit merges side effects into "variables that already exist in the caller" (`resolution.rs` ~1317/~1564). Because it is flat,
+   `values_mut()` can update the caller binding directly, and the merge propagates it. That is why the interpreter path works correctly.
 
-### 結論: これは ③ dual-store + value-identity（Phase 3）の山であり quick fix ではない
+### Conclusion: this is the ③ dual-store + value-identity (Phase 3) mountain, not a quick fix
 
-「dynamic var を env に置く」だけでは不十分（env は scoped overlay で parent immutable）。本質は
-**instance/コンテナを値で保持し、変異の writeback が現フレーム overlay にしか効かない**こと。`$*ERR` に限らず、
-closure 内の任意の「caller 変数が保持する instance/配列/ハッシュへの変異メソッド」が同じ構造で壊れうる
-（map/for は **同一フレーム実行**なので overlay=caller で偶然成立しているだけ）。
+"Just put dynamic vars in env" is insufficient (env is a scoped overlay with an immutable parent). The essence is that
+**instances/containers are held by value, and mutation writeback only affects the current frame's overlay**. Not limited to `$*ERR`:
+any "mutating method on an instance/array/hash held by a caller variable" inside a closure can break with the same structure
+(map/for happen to work because they execute **in the same frame**, so overlay=caller by accident).
 
-### 修正オプション（次セッションの設計対象）
+### Fix options (design targets for the next session)
 
-- **(A) writeback を env チェーン全走査に**: `overwrite_*_bindings_by_identity` を overlay だけでなく parent tier も
-  更新。だが parent は `Arc<Env>` 共有・immutable で、`Arc::make_mut` は O(1) scoped 共有を壊し他 holder にも影響＝
-  scoped-env 設計と衝突。要再設計。
-- **(B) closure exit-writeback を instance-by-id 伝播に拡張**: 現 exit writeback（`vm_closure_dispatch.rs` ~637-700）は
-  宣言済み/捕捉ローカルのみ伝播。これを「overlay で変異された同 id instance を restored caller env へ反映」に拡張＝
-  interpreter の merge を模倣。**最も局所的**だが、変異 instance の追跡が要る（現状 untracked）。実測では overlay に
-  `$*ERR`（未 capture-skip 時の captured clone）があっても伝播しなかった＝exit writeback の対象集合に入っていない。
-- **(C) 第一級 instance/コンテナセル（Phase 3）**: instance を共有セル（`ContainerRef` 類似）で参照化し、変異を
-  by-reference に。全フレームで可視＝構造的解決。長期の正攻法だが最大の改修。
+- **(A) Make writeback walk the whole env chain**: Update `overwrite_*_bindings_by_identity` in the parent tier too, not just the
+  overlay. But the parent is a shared, immutable `Arc<Env>`, and `Arc::make_mut` breaks O(1) scoped sharing and affects other
+  holders too = conflicts with the scoped-env design. Needs redesign.
+- **(B) Extend the closure exit-writeback to instance-by-id propagation**: The current exit writeback (`vm_closure_dispatch.rs`
+  ~637-700) propagates only declared/captured locals. Extend it to "reflect same-id instances mutated in the overlay into the
+  restored caller env" = mimicking the interpreter's merge. **The most local option**, but requires tracking mutated instances
+  (currently untracked). Measurement shows that even when the overlay contains `$*ERR` (a captured clone when capture-skip is not
+  yet applied), it did not propagate = it is not in the target set of the exit writeback.
+- **(C) First-class instance/container cells (Phase 3)**: Reference-ify instances via shared cells (similar to `ContainerRef`),
+  making mutation by-reference. Visible in all frames = the structural solution. The long-term correct approach but the largest rework.
 
-### 付随して確認した正しさ事項（修正時に同梱すべき）
+### Correctness items confirmed along the way (should ship together with the fix)
 
-- dynamic var（`*` twigil）は Raku では **lexical capture されない**。`call_compiled_closure` の captured-env merge
-  （`vm_closure_dispatch.rs` ~230）が captured `$*ERR`（stale clone）を overlay に入れて live parent を shadow する。
-  capture-skip（`is_dynamic_var_name` で twigil `*` を除外）は **読み取り側の正しさには必要**だが、writeback 不達
-  （上記 3）が残るため **単独では不十分**（capture-skip だけでは依然 caller に伝播しない）。(A)/(B)/(C) と同梱が必要。
-- 制御フロー名（`return`/`take`/`emit`/`callsame`/… `call_function` の match が直接処理）は lexical `&`-var dispatch から
-  必ず除外（さもないと `&r=&return` 再束縛で無限再帰。`is_builtin_function` に無い名が複数あるので明示リスト要）。
+- Dynamic vars (`*` twigil) are **not lexically captured** in Raku. The captured-env merge of `call_compiled_closure`
+  (`vm_closure_dispatch.rs` ~230) puts a captured `$*ERR` (stale clone) into the overlay, shadowing the live parent.
+  capture-skip (excluding twigil `*` via `is_dynamic_var_name`) is **necessary for read-side correctness**, but since the writeback
+  gap (item 3 above) remains, it is **insufficient on its own** (capture-skip alone still fails to propagate to the caller).
+  Must ship together with (A)/(B)/(C).
+- Control-flow names (`return`/`take`/`emit`/`callsame`/… handled directly by `call_function`'s match) must always be excluded from
+  lexical `&`-var dispatch (otherwise `&r=&return` rebinding causes infinite recursion. Several names are absent from
+  `is_builtin_function`, so an explicit list is needed).
 
-**よってトラック A の lexical `&`-var dispatch は (A)/(B)/(C) のいずれかが入るまで保留**（[[project_lexical_amp_var_blocked]]）。
+**Therefore Track A's lexical `&`-var dispatch is on hold until one of (A)/(B)/(C) lands** ([[project_lexical_amp_var_blocked]]).
 
-## Phase II 着手: env fold feasibility 実測（2026-06-14, Phase I クローズ後）
+## Phase II kickoff: env fold feasibility measured (2026-06-14, after Phase I close)
 
-ユーザー方針「Phase II 着手（env fold 可否調査 + 第1スライス）」(2026-06-14) を受けて、env fold が今どの構造に
-ブロックされているかを **コード実測 + `MUTSU_VM_STATS` per-name histogram** で確定した。結論は本書冒頭の設計
-（③＝フォールバック撲滅駆動・env は plain field 終状態）を**より精密化**する。
+Following the user directive "start Phase II (env fold feasibility survey + first slice)" (2026-06-14), we established — by
+**code measurement + `MUTSU_VM_STATS` per-name histogram** — which structures currently block the env fold. The conclusion
+**refines** the design at the top of this document (③ = fallback-eradication-driven; env's end state is a plain field).
 
-### 実測した3つの事実
+### Three measured facts
 
-1. **VM の env 直接アクセス = 481 サイト**（`self.interpreter.env`/`env_mut`）。env が VM field 化すれば機械的
-   rename だが、`VM::env()` accessor 化は **borrow-checker 衝突**（accessor は `&self` 全体借用、現状の
-   `self.interpreter.env()` は `self.interpreter` 部分借用）を誘発し、env 読みと他 self フィールドが交錯する
-   サイトでは純 sed にならない。＝seam 化も非自明。
-2. **env fold を物理ブロックするのは残る tree-walk 委譲 ~15 サイト**（`call_sub_value`/`call_function[_fallback]`/
-   `call_method_with_values`/`run_block_raw`）。interpreter のこれら tree-walk メソッドが param-binding で
-   `self.env` を直接操作してから内側 VM を ping-pong で回すため、env を VM へ抜くと壊れる。
-3. **残 tree-walk の支配トラフィックは carrier/concurrency**（whitelist sample 実測）: method-fallback top =
-   `Promise.at`=2000 / `await`=1200（＝**concurrency = Track C**）、`WHAT`（MOP carrier）、`EVAL`（carrier）、
-   残りは niche（`map`/`CALL-ME`/`tree`/`parse` 各 ~10-20）。**汎用ユーザーコード tree-walk は枯渇**。
+1. **The VM's direct env accesses = 481 sites** (`self.interpreter.env`/`env_mut`). If env became a VM field this would be a
+   mechanical rename, but turning it into a `VM::env()` accessor **triggers borrow-checker conflicts** (the accessor borrows all of
+   `&self`, whereas the current `self.interpreter.env()` is a partial borrow of `self.interpreter`), so at sites where an env read
+   interleaves with other self fields it is not a pure sed. = Even seam-ification is non-trivial.
+2. **What physically blocks the env fold is the ~15 remaining tree-walk delegation sites** (`call_sub_value`/`call_function[_fallback]`/
+   `call_method_with_values`/`run_block_raw`). These interpreter tree-walk methods directly manipulate `self.env` during
+   param-binding and then run the inner VM via ping-pong, so pulling env out to the VM breaks them.
+3. **The dominant traffic of the remaining tree-walk is carrier/concurrency** (measured on the whitelist sample): method-fallback top =
+   `Promise.at`=2000 / `await`=1200 (= **concurrency = Track C**), `WHAT` (MOP carrier), `EVAL` (carrier);
+   the rest is niche (`map`/`CALL-ME`/`tree`/`parse` each ~10-20). **General user-code tree-walk is exhausted.**
 
-### 核心の再認識: env fold に「孤立した第1スライス」は存在しない
+### Core re-recognition: there is no "isolated first slice" for the env fold
 
-- **hot な per-call-frame state（env / readonly_vars / let_saves）は一括 fold しかできない**: いずれも関数呼び毎に
-  save/restore される最ホット state。`Arc<RwLock>` handle playbook（registry/io_handles/output_sink/current_package
-  の4実績）は **per-access lock で perf 破綻**（env と同じ理由）＝早期移管不可。plain field 化は tree-walk reader
-  撲滅後にしか不可。→ **readonly_vars/let_saves を「先に寄せる」案は perf 上も不可**（doc 旧記述の「比較的局所＝早期
-  候補」を**訂正**: これらは env と同じく hot で、最終 fold まで動かせない）。
-- **env を読む carrier は撲滅不可能な Raku セマンティクス**: `type_matches_value`（221-910行・~690行）は subset の
-  `where` 句を **`eval_block_value`/`call_sub_value` + `self.env` 読み書き**で評価する（line 514/523/533）＝
-  user code を走らせる carrier。同様に EVAL・正規表現埋め込み `{}`・`await`/Promise `.then` クロージャも env を読む。
-  これらは「消す」のではなく、**最終的に env が VM 所有になった時、carrier 実行に env を貸す（env-loan: VM が env を
-  一時 move-in→interpreter 実行→move-back、または `&mut env` を渡す）**機構が要る。＝Phase II の最終 fold は
-  「全 tree-walk 撲滅 → env を抜く」ではなく「**env を VM 所有にし、carrier には env-loan で渡す**」設計。
+- **The hot per-call-frame state (env / readonly_vars / let_saves) can only be folded all at once**: all of these are the hottest
+  state, saved/restored on every function call. The `Arc<RwLock>` handle playbook (4 precedents: registry/io_handles/output_sink/
+  current_package) **wrecks perf with per-access locks** (same reason as env) = no early migration. Plain-field-ification is only
+  possible after tree-walk reader eradication. → **The idea of "moving readonly_vars/let_saves over first" is also impossible on
+  perf grounds** (this **corrects** the doc's older wording "relatively local = early candidates": these are just as hot as env and
+  cannot move until the final fold).
+- **The carriers that read env are un-eradicable Raku semantics**: `type_matches_value` (lines 221-910, ~690 lines) evaluates a
+  subset's `where` clause via **`eval_block_value`/`call_sub_value` + `self.env` reads/writes** (lines 514/523/533) = a carrier
+  that runs user code. Likewise EVAL, regex-embedded `{}`, and `await`/Promise `.then` closures read env.
+  These are not to be "removed"; instead, **when env eventually becomes VM-owned, a mechanism is needed to lend env to carrier
+  execution (env-loan: the VM temporarily moves env in → interpreter executes → moves it back, or passes `&mut env`)**. = The final
+  fold of Phase II is not "eradicate all tree-walk → pull env out" but "**make env VM-owned and hand it to carriers via env-loan**".
 
-### 唯一クリーンに早期移管できる cool state = `instance_type_metadata`（次スライス候補）
+### The only cool state cleanly migratable early = `instance_type_metadata` (next slice candidate)
 
-型メタ副テーブルは Q2 で全コンテナ値へ埋め込み済（#2952〜2985）だが、**Instance 値の型メタだけは
-`Interpreter.instance_type_metadata: HashMap<u64, ContainerTypeInfo>` の副テーブルに残る**（mod.rs:1037）。
-アクセスは **insert(4716) / get(4787 = `container_type_metadata` 内) / clone(5589 = clone_for_thread) の 5 サイトのみ**
-＝borrow-held-across-reentry なし・cool（instance 構築時 write / 型検査時 read）＝**handle playbook が最もクリーンに効く**。
-これを VM-readable handle 化すれば、`type_matches_value` の **非 subset パス（簡単型名 = registry + value_type +
-instance_meta で判定、subset は rare）を VM-native 化** でき、41 bounce の大半を除去（subset のみ carrier fallback）。
+The type-metadata side table was embedded into all container values in Q2 (#2952–2985), but **the type metadata of Instance
+values alone remains in the side table `Interpreter.instance_type_metadata: HashMap<u64, ContainerTypeInfo>`** (mod.rs:1037).
+Access is **only 5 sites — insert(4716) / get(4787 = inside `container_type_metadata`) / clone(5589 = clone_for_thread)**
+= no borrow held across re-entry, cool (write at instance construction / read at type check) = **the handle playbook applies most
+cleanly here**. Making this a VM-readable handle would allow **VM-nativizing the non-subset path of `type_matches_value`
+(simple type names decided by registry + value_type + instance_meta; subsets are rare)**, removing most of the 41 bounces
+(only subsets keep the carrier fallback).
 
-#### DONE: cool side-table `instance_type_metadata` を handle 化 + `container_type_metadata` を VM-native 読みに（CP-3 Track 1）
+#### DONE: handle-ified the cool side table `instance_type_metadata` + made `container_type_metadata` a VM-native read (CP-3 Track 1)
 
-- **PR-1（#3068, 既存）**: `instance_type_metadata` を `Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>` へ shaping
-  （`current_package`/`io_handles` の共有ハンドル playbook）。`clone_for_thread` は明示スナップショット（map deep-copy）。
-- **PR-2（本スライス）**: `container_type_metadata`（**Instance 値の型メタ read**）を VM-native 化。
-  - READ ロジックを module-level free 関数 **`container_type_metadata_with(value, instance_meta)`** へ抽出し、
-    `Interpreter::container_type_metadata` と VM の peer-handle 読みが**単一実装を共有**（1 操作 = 1 実装）。
-    container 値（Array/Hash/Set/Bag/Mix）は埋め込みメタを読み、Instance 値だけ共有 map を id で引く。
-  - VM に peer field `instance_type_metadata`（`instance_type_metadata_handle()` で `VM::new` 時に clone・
-    registry/io_handles と同型の安定ハンドル）+ `VM::container_type_metadata(&self, value)` を追加。
-  - VM の **~29 サイト**の `loan_env!(self, container_type_metadata(...))` を `self.container_type_metadata(...)`
-    へ置換。**この read は env を一切触らない**ので env-loan も interpreter バウンスも不要だった（loan は本来
-    不要なオーバーヘッド/結合）。write（`register_container_type_metadata`）は interpreter 経由のまま＝共有 lock で
-    VM-native 読みから可視。挙動不変（typed array/hash/native-int/num・subset・declare whitelist 緑、make test PASS）。
-  - **次の cool side-table 候補**: `var_type_constraint`/`var_default`/`var_hash_key_constraint`（型/デフォルト副テーブル・
-    env-bound 型名部分が残課題）/ `state_vars`/`shared_vars`（専用 HashMap・env sync 経路が残課題）。
+- **PR-1 (#3068, existing)**: Shaped `instance_type_metadata` into `Arc<RwLock<HashMap<u64, ContainerTypeInfo>>>`
+  (the shared-handle playbook of `current_package`/`io_handles`). `clone_for_thread` takes an explicit snapshot (map deep-copy).
+- **PR-2 (this slice)**: VM-nativized `container_type_metadata` (**the type-metadata read for Instance values**).
+  - Extracted the READ logic into the module-level free function **`container_type_metadata_with(value, instance_meta)`**, so that
+    `Interpreter::container_type_metadata` and the VM's peer-handle read **share a single implementation** (1 operation = 1 implementation).
+    Container values (Array/Hash/Set/Bag/Mix) read the embedded metadata; only Instance values look up the shared map by id.
+  - Added to the VM the peer field `instance_type_metadata` (cloned at `VM::new` via `instance_type_metadata_handle()` —
+    a stable handle of the same shape as registry/io_handles) + `VM::container_type_metadata(&self, value)`.
+  - Replaced the VM's **~29 sites** of `loan_env!(self, container_type_metadata(...))` with `self.container_type_metadata(...)`.
+    **This read never touches env**, so neither env-loan nor the interpreter bounce was ever needed (the loan was pure
+    unnecessary overhead/coupling). Writes (`register_container_type_metadata`) stay via the interpreter = visible to VM-native
+    reads through the shared lock. Behavior-invariant (typed array/hash/native-int/num, subset, declare whitelist green, make test PASS).
+  - **Next cool side-table candidates**: `var_type_constraint`/`var_default`/`var_hash_key_constraint` (type/default side tables —
+    the env-bound type-name part remains an open issue) / `state_vars`/`shared_vars` (dedicated HashMaps — the env sync path remains an open issue).
 
-### Phase II の現実的な進め方（実測で確定。PLAN.md「Critical path」が正準）
+### The realistic way forward for Phase II (established by measurement. PLAN.md "Critical path" is canonical)
 
-- **critical path（本体）= carrier の env-loan 機構**: env を VM 所有にし、EVAL/subset-where/regex-`{}`/Promise-`.then`
-  が VM 所有 env を借りて実行できるようにする。これが入って初めて env を Interpreter から抜ける（→ dual-store 削除 →
-  Interpreter 撤去）。env/readonly/let の hot state はこの最終 fold で**一括**（早期分割は perf 不可）。
-- **off-critical-path（任意・並行）= cool side-table の handle 移管**: `instance_type_metadata` 等を handle 化すれば
-  VM-native dispatch（type_matches 非subset fast-path 等）を解禁できる（current_package が registry pure-predicate
-  dispatch を解禁した前例と同型）が、**これは env fold を直接進めない＝critical path ではない**（bounce 数削減の
-  perf/cleanliness 寄り）。最終 fold 面の縮小として CP-3 に同梱 or 任意で進める。
-- **concurrency tree-walk（await/Promise）は Track C** と並走（env fold とは独立の最大残トラフィック）。
-
----
-
-## CP-3 collapse PoC: ping-pong 解消（`VM::run_nested`、2026-06-15）
-
-> 前提の再確認（実測）: **tree-walk 実行エンジンは既に存在しない**（`eval_expr`/`eval_stmt` 無し・全実行は
-> compile→bytecode→VM）。∴「tree-walk interpreter 削除」＝ `Interpreter` struct を VM へ溶かす構造作業で、
-> 唯一の本物の設計課題は **ping-pong**（`Interpreter` 側 carrier が `mem::take(self)`+`VM::new(self)`+`*self=interp`
-> で都度サブ VM を起こす双方向所有）。これを「VM 上で直接再入実行」へ置換できるかが完遂可否の linchpin。
-
-**PoC = `VM::run_nested(&mut self, code, fns)`**（`src/vm.rs`）。サブ VM を起こさず、既存 VM 上でコンパイル済み
-ブロックを再入実行する:
-- `VM::new` が fresh 初期化する**実行レジスタ**（stack/locals/call_frames/resume_ip/topic 系/各 context flag）を
-  save → fresh にリセット → `run_inner` → restore。**共有状態（interpreter フィールド・env・registry/io/output
-  ハンドル）はリセットしない**（nested ブロックは同じ state を観測・変異する＝ping-pong の inner VM が move された
-  interpreter と loan された env を共有するのと同じ意味論）。caches は gen 管理なので跨いで保持して正しい。
-- **配線**: `vm_run_block_raw`（deferred role-body 文の実行）を `loan_env_for(run_block_raw)`〔ping-pong〕→
-  `interpreter.compile_block_raw`（純コンパイル・env 不要）+ `self.run_nested(...)` + DESTROY pass へ。
-  `run_block_raw` の compile 部は `compile_block_raw` として抽出し共有。
-
-**PoC が surface した重要な dual-store 相互作用（campaign で必ず効く）**: ping-pong は env 変異の
-outer への再同期を**暗黙に**行っていた（inner VM の env が interpreter 経由で戻り caller が再 sync）。in-place
-再入ではこれが起きず、**nested 実行が outer lexical（`my $x`）を env で変異 → restore した outer locals が stale**
-という回帰が出た（複数 deferred 文で `$side` の変異が消失）。修正 = `run_nested` 末尾で `env_dirty = true` を立て、
-outer 実行が次に local を読む前に env から再 sync させる。**教訓: ping-pong 撤去では各サイトで「env 変異の
-locals 反映」を明示せねばならない（dual-store は永続なので）。**
-
-**結論: linchpin は解けた**。`make test` PASS・role roast 緑・A/B で挙動不変（env_dirty 修正後）。pin =
-`t/run-nested-role-body.t`。次: 他 carrier（`eval_block_value`/`call_sub_value`/subset-where eval/…）を順次
-`run_nested` 化し、最終的に `Interpreter` 側 carrier と ping-pong/loan を撤去 → struct dissolve。
+- **critical path (the substance) = the env-loan mechanism for carriers**: make env VM-owned and let EVAL/subset-where/regex-`{}`/
+  Promise-`.then` borrow the VM-owned env for execution. Only once this lands can env be pulled out of Interpreter (→ dual-store
+  removal → Interpreter removal). The hot state env/readonly/let goes **all at once** in this final fold (early splitting is
+  impossible on perf grounds).
+- **off-critical-path (optional, parallel) = handle migration of cool side tables**: handle-ifying `instance_type_metadata` etc.
+  unlocks VM-native dispatch (the type_matches non-subset fast path, etc.) (same shape as the precedent where current_package
+  unlocked registry pure-predicate dispatch), but **this does not directly advance the env fold = not on the critical path**
+  (it is perf/cleanliness-oriented bounce-count reduction). As a shrinking of the final fold surface, bundle it into CP-3 or
+  pursue it optionally.
+- **The concurrency tree-walk (await/Promise) runs in parallel as Track C** (the largest remaining traffic, independent of the env fold).
 
 ---
 
-## CP-3 final collapse — 次セッション実行計画（2026-06-15 確定）
+## CP-3 collapse PoC: eliminating the ping-pong (`VM::run_nested`, 2026-06-15)
 
-> ### ✅ DONE（PR #3102, 2026-06-15・CI フル `make roast`+`make test` PASS, net −794 行）
+> Reconfirming the premise (measured): **a tree-walk execution engine no longer exists** (no `eval_expr`/`eval_stmt`; all execution is
+> compile→bytecode→VM). ∴ "deleting the tree-walk interpreter" = the structural work of dissolving the `Interpreter` struct into the
+> VM, and the only genuine design problem is the **ping-pong** (the bidirectional ownership where `Interpreter`-side carriers spin up
+> a sub-VM each time via `mem::take(self)`+`VM::new(self)`+`*self=interp`). Whether this can be replaced by "direct re-entrant
+> execution on the VM" is the linchpin of completability.
+
+**PoC = `VM::run_nested(&mut self, code, fns)`** (`src/vm.rs`). Re-entrantly executes a compiled block on the existing VM,
+without spinning up a sub-VM:
+- The **execution registers** that `VM::new` freshly initializes (stack/locals/call_frames/resume_ip/topic family/each context flag) are
+  saved → reset fresh → `run_inner` → restored. **Shared state (interpreter fields, env, registry/io/output handles) is NOT reset**
+  (the nested block observes and mutates the same state = the same semantics as the ping-pong's inner VM sharing the moved
+  interpreter and the loaned env). Caches are generation-managed, so keeping them across the call is correct.
+- **Wiring**: `vm_run_block_raw` (execution of deferred role-body statements) went from `loan_env_for(run_block_raw)` [ping-pong] →
+  `interpreter.compile_block_raw` (pure compilation, no env needed) + `self.run_nested(...)` + the DESTROY pass.
+  The compile part of `run_block_raw` was extracted as `compile_block_raw` and shared.
+
+**An important dual-store interaction the PoC surfaced (guaranteed to matter throughout the campaign)**: the ping-pong performed the
+re-synchronization of env mutations to the outer scope **implicitly** (the inner VM's env came back via the interpreter and the caller
+re-synced). With in-place re-entry that no longer happens, producing a regression where **nested execution mutates an outer lexical
+(`my $x`) via env → the restored outer locals are stale** (mutations of `$side` vanished across multiple deferred statements).
+Fix = set `env_dirty = true` at the end of `run_nested` so the outer execution re-syncs from env before its next local read.
+**Lesson: when removing the ping-pong, each site must make "reflecting env mutations into locals" explicit (the dual-store is permanent).**
+
+**Conclusion: the linchpin is solved.** `make test` PASS, role roast green, A/B behavior-invariant (after the env_dirty fix). pin =
+`t/run-nested-role-body.t`. Next: convert the other carriers (`eval_block_value`/`call_sub_value`/subset-where eval/…) to
+`run_nested` one by one, and finally remove the `Interpreter`-side carriers and the ping-pong/loan → struct dissolve.
+
+---
+
+## CP-3 final collapse — execution plan for the next session (finalized 2026-06-15)
+
+> ### ✅ DONE (PR #3102, 2026-06-15; CI full `make roast`+`make test` PASS, net −794 lines)
 >
-> big-bang collapse を一気通貫で実施・着地した。**`struct VM` は `Interpreter` へ溶けた**（単一 struct が bytecode VM そのもの）。
-> - **方向は doc の当初案と逆を採用**: survivor = **`Interpreter`**（公開エントリ型のため API・エントリ無改修）。`pub(crate) type VM = Interpreter`
->   alias で ~40 個の `impl VM` を無改修化（cosmetic rename は後続 cleanup）。手順 1（フィールド統合・718 サイト書換は alias で大幅圧縮）/
->   手順 2（ping-pong→`run_nested`／`with_nested_registers`、carrier 移設）/ 手順 3（loan 機構を thin self-call 化・dead 機構削除）を実施。
-> - **run_nested PoC の教訓どおりの罠を 1 件踏んで修正**: 旧 ping-pong `VM::run` が張っていた catch_unwind パニック境界が
->   `run_nested` に無く、`run_compiled_block` 経由の `dies-ok`/`try` ブロックの Rust panic が try/CATCH を通らず abort
->   （`t/vm-panic-boundary.t` で顕在化）→ 境界を `run_inner_guarded` に抽出し run_top/run_nested 双方へ配線して解決。
->   env-resync は `run_nested` の `env_dirty=true` で担保（run_reuse ループも `with_nested_registers` が同様に担保）。
-> - **残 cleanup（独立・低リスク・後続 PR）**: ① `VM` alias 撤去の cosmetic rename、② `Env::poisoned`（field+debug_assert）の完全除去。
-> - `env_dirty` dual-store は CP-2 通り存続。
+> The big-bang collapse was executed end-to-end and landed. **`struct VM` has been dissolved into `Interpreter`** (a single struct
+> that IS the bytecode VM).
+> - **The direction is the reverse of the doc's original plan**: survivor = **`Interpreter`** (it is the public entry type, so
+>   no API/entry changes). The `pub(crate) type VM = Interpreter` alias left the ~40 `impl VM` blocks untouched (the cosmetic rename
+>   is follow-up cleanup). Executed step 1 (field merge — the 718-site rewrite was largely compressed by the alias) /
+>   step 2 (ping-pong→`run_nested`/`with_nested_registers`, carrier relocation) / step 3 (thinning the loan machinery into plain
+>   self-calls, deleting the dead machinery).
+> - **Hit and fixed exactly the trap the run_nested PoC predicted**: the catch_unwind panic boundary that the old ping-pong `VM::run`
+>   established was absent from `run_nested`, so a Rust panic in a `dies-ok`/`try` block via `run_compiled_block` bypassed try/CATCH
+>   and aborted (surfaced by `t/vm-panic-boundary.t`) → extracted the boundary into `run_inner_guarded` and wired it into both
+>   run_top and run_nested. env-resync is guaranteed by `run_nested`'s `env_dirty=true` (the run_reuse loop is likewise guaranteed by
+>   `with_nested_registers`).
+> - **Remaining cleanup (independent, low-risk, follow-up PRs)**: ① the cosmetic rename removing the `VM` alias, ② complete removal
+>   of `Env::poisoned` (field+debug_assert).
+> - The `env_dirty` dual-store persists, per CP-2.
 >
-> 以下は着手前の計画（記録として保持）。
+> The pre-start plan follows (kept for the record).
 
-> ### incremental は枯渇。残りは「最終 collapse 本体」＝ big-bang（実測で確定）
+> ### incremental is exhausted. What remains is "the final collapse itself" = big-bang (established by measurement)
 >
-> 2026-06-15 のセッションで `MUTSU_VM_STATS` 計測 + コード精読により、**拾える incremental スライスは尽きた**ことを
-> 確定した。この事実が次セッションの前提:
-> - **dispatch fallback = drained**（残りは `new`=ctor〔③-blocked〕/ `isa`/`does`=既に VM-native / MOP / EVAL=carrier。
->   単桁・diffuse、native 化で稼げる hot カテゴリ無し）。
-> - **MOP メソッド（does/isa）は既に VM-native**（`vm_arith_ops`/`vm_call_method_ops`）。
-> - **hot state フィールド（env/readonly_vars/let_saves/var_defaults/state_vars…）は per-call の interpreter dispatch
->   state**。`save_readonly_vars`/`restore_readonly_vars` が **9 ファイル**の dispatch/param-binding 経路で関数呼び毎に
->   save/restore し、`&mut`-return accessor（`readonly_vars_mut`/`var_type_constraint_fast`）も絡む。**早期 fold 不可。**
-> - **循環**: hot フィールドは interpreter dispatch carrier が save/restore する → carrier を消さねば field は消せない →
->   だが carrier（call_function/call_sub_value param-binding）は VM が既に native（`call_compiled_closure`）で大半処理し
->   interpreter 版は fallback → fallback を消す＝struct を消す。**∴ 1 つずつ incremental に fold できず、collapse は一括。**
+> The 2026-06-15 session established, via `MUTSU_VM_STATS` measurement + close code reading, that **the pickable incremental slices
+> have run out**. This fact is the premise for the next session:
+> - **dispatch fallback = drained** (what remains: `new`=ctor [③-blocked] / `isa`/`does`=already VM-native / MOP / EVAL=carrier.
+>   Single-digit, diffuse; no hot category left to win by nativization).
+> - **The MOP methods (does/isa) are already VM-native** (`vm_arith_ops`/`vm_call_method_ops`).
+> - **The hot state fields (env/readonly_vars/let_saves/var_defaults/state_vars…) are per-call interpreter dispatch state**.
+>   `save_readonly_vars`/`restore_readonly_vars` are saved/restored on every function call across the dispatch/param-binding paths of
+>   **9 files**, and `&mut`-returning accessors (`readonly_vars_mut`/`var_type_constraint_fast`) are also involved. **No early fold.**
+> - **The cycle**: the hot fields are saved/restored by the interpreter dispatch carriers → the carriers must go before the fields can
+>   go → but the carriers (call_function/call_sub_value param-binding) are already mostly handled natively by the VM
+>   (`call_compiled_closure`) with the interpreter versions as fallback → removing the fallback = removing the struct.
+>   **∴ They cannot be folded incrementally one by one; the collapse is all-at-once.**
 >
-> → **残り作業 ＝ Interpreter struct の big-bang collapse そのもの。** 個別スライスの積み上げでは到達しない。
+> → **The remaining work = the big-bang collapse of the Interpreter struct itself.** It cannot be reached by stacking individual slices.
 
-### 現状（main、collapse の足場は揃っている）
+### Current state (main; the scaffolding for the collapse is in place)
 
-- **env**: VM 所有（CP-1 #3075、`loan_env!`/`loan_env_for` で carrier へ貸与）。
-- **共有ハンドル（6）**: registry / io_handles / output_sink / current_package / instance_type_metadata（+ env）。
-- **`VM::run_nested`（#3095）**: ping-pong を使わず VM 上で compiled block を再入実行する機構。**collapse の核心ツール。**
-  実行レジスタを save/reset/restore + `env_dirty=true` で env→locals 再同期。
-- **run_nested 適用済み carrier**: `vm_run_block_raw`(#3095) / `vm_eval_block_value` の pure-expr(#3096)。
-- **dual-store（`env_dirty`/`saved_env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`）は永続**（CP-2 確定。collapse 後も VM 内部に残す）。
+- **env**: VM-owned (CP-1 #3075; lent to carriers via `loan_env!`/`loan_env_for`).
+- **Shared handles (6)**: registry / io_handles / output_sink / current_package / instance_type_metadata (+ env).
+- **`VM::run_nested` (#3095)**: the mechanism for re-entrantly executing a compiled block on the VM without the ping-pong.
+  **The core tool of the collapse.** Saves/resets/restores the execution registers + `env_dirty=true` for env→locals re-sync.
+- **Carriers already on run_nested**: `vm_run_block_raw`(#3095) / the pure-expr part of `vm_eval_block_value`(#3096).
+- **The dual-store (`env_dirty`/`saved_env_dirty`/`ensure_locals_synced`/`sync_locals_from_env`) is permanent** (decided in CP-2;
+  it stays inside the VM after the collapse).
 
-### collapse の手順（long-lived branch・各サブステップを `make test`+全 roast=CI で検証）
+### Collapse procedure (long-lived branch; each substep verified by `make test` + full roast = CI)
 
-> 原則: 挙動不変を維持しつつ物理的に1つの struct へ。borrow-checker と CI が安全網。**incremental perf/carrier スライスは
-> 足さない**（完遂前は ROI ゼロ）。
+> Principle: physically converge on one struct while staying behavior-invariant. The borrow checker and CI are the safety net.
+> **Do not add incremental perf/carrier slices** (ROI is zero before completion).
 
-1. **struct マージ（機械的・最大の量）**: `Interpreter` の残り ~67 フィールドを `VM` struct へ物理移動（env+6 ハンドルは移管済）。
-   VM の **718 サイト**の `self.interpreter.X` → `self.X` へ一括書換（純機械作業＝ここは multi-agent fan-out 可）。
-   `clone_for_thread` のスナップショット意味論は保存。
-2. **carrier/dispatch メソッド移設（~192）**: `impl Interpreter` のメソッドを `impl VM`（or free 関数）へ。ping-pong
-   （`mem::take(self)`+`VM::new(self)`+`*self=interp`）は **`run_nested`/`run_reuse` による直接再入**へ置換。
-   - **★最重要の罠（run_nested PoC で実証）**: ping-pong は env 変異の outer-locals 再同期を**暗黙に**行っていた。
-     直接再入では起きないので、**各 former-ping-pong サイトで `env_dirty=true` 等の env→locals 反映を明示**せねば
-     stale-locals バグ（`$side` 変異消失の類）。ここは機械化不可・手動検証必須（A/B + roast）。
-   - 順序: 依存の浅いものから。EVAL は compile→`run_nested` で VM-native 化（別 struct 不要・残す必要なし）。
-     subset-where eval も `run_nested` 化（base-check/coerce は VM から interpreter helper を非実行 bounce）。
-3. **loan/ping-pong 機構の撤去**: `loan_env!`/`loan_env_for`/poison guard（`MUTSU_POISON_DIAG`）/ `VM::new(interp)` の
-   pull・`run`/`into_interpreter` の push-back を削除。
-4. **`Interpreter` struct 削除**: 状態ゼロ・carrier ゼロになったら `self.interpreter` field と `runtime/` の struct を撤去。
-   native builtin / 静的解析ヘルパ / registration は free 関数 or `impl VM` として `runtime/`（or `builtins/`）に残す。
-5. **dual-store は残す**: `env_dirty`/`locals↔env` 同期は VM 内部最適化として永続（CP-2）。
+1. **Struct merge (mechanical; the largest volume)**: physically move the remaining ~67 fields of `Interpreter` into the `VM` struct
+   (env + the 6 handles are already migrated). Bulk-rewrite the VM's **718 sites** of `self.interpreter.X` → `self.X`
+   (purely mechanical = multi-agent fan-out is possible here). Preserve the snapshot semantics of `clone_for_thread`.
+2. **Carrier/dispatch method relocation (~192)**: move the methods of `impl Interpreter` to `impl VM` (or free functions). The
+   ping-pong (`mem::take(self)`+`VM::new(self)`+`*self=interp`) is replaced by **direct re-entry via `run_nested`/`run_reuse`**.
+   - **★ The most important trap (proven by the run_nested PoC)**: the ping-pong performed env-mutation → outer-locals re-sync
+     **implicitly**. Direct re-entry does not, so **each former ping-pong site must make the env→locals reflection explicit
+     (`env_dirty=true` etc.)** — otherwise stale-locals bugs (of the vanishing-`$side`-mutation kind). This cannot be mechanized;
+     manual verification is mandatory (A/B + roast).
+   - Order: shallowest dependencies first. EVAL is VM-nativized via compile→`run_nested` (no separate struct needed; nothing to keep).
+     subset-where eval also goes to `run_nested` (base-check/coerce stays a non-executing bounce from the VM to interpreter helpers).
+3. **Removal of the loan/ping-pong machinery**: delete `loan_env!`/`loan_env_for`/the poison guard (`MUTSU_POISON_DIAG`)/the pull in
+   `VM::new(interp)` and the push-back in `run`/`into_interpreter`.
+4. **Delete the `Interpreter` struct**: once it holds zero state and zero carriers, remove the `self.interpreter` field and the struct
+   in `runtime/`. Native builtins / static-analysis helpers / registration remain in `runtime/` (or `builtins/`) as free functions or `impl VM`.
+5. **The dual-store stays**: `env_dirty`/`locals↔env` sync persists as a VM-internal optimization (CP-2).
 
-### リスクと緩和
+### Risks and mitigations
 
-- **borrow-checker の大変動**（struct マージ）→ long-lived branch で漸進コンパイル。`self` 全体借用 vs 部分借用の衝突は
-  ローカル束縛切り出しで個別解消（CP-1 1b/1c で実証済みの手法）。
-- **env-resync の取りこぼし**（run_nested の教訓）→ 各 carrier で明示 + A/B + 全 roast。debug build で挙動・perf 両確認
-  （MUTSU_VM_STATS は opt-level 非依存）。
-- **concurrency（`clone_for_thread`）**: スナップショット意味論（map deep-copy）を保存。
-- **perf 回帰**（最ホット env/dispatch に触る）→ `make roast` の release timeout が安全網（#2746 の教訓: perf 回帰は
-  make test で検出不能、CI release roast で顕在化）。fib/int.t 等の重量級を timed 確認。
+- **Major borrow-checker upheaval** (the struct merge) → incremental compilation on a long-lived branch. Whole-`self` borrow vs
+  partial borrow conflicts are resolved individually by extracting local bindings (the technique proven in CP-1 1b/1c).
+- **Missed env-resyncs** (the run_nested lesson) → explicit at each carrier + A/B + full roast. Verify both behavior and perf on the
+  debug build (MUTSU_VM_STATS is opt-level-independent).
+- **Concurrency (`clone_for_thread`)**: preserve the snapshot semantics (map deep-copy).
+- **Perf regression** (touching the hottest env/dispatch) → the release timeouts of `make roast` are the safety net (lesson of #2746:
+  perf regressions are undetectable by make test and surface in CI's release roast). Verify heavyweights like fib/int.t timed.
 
 ### resourcing
 
-- **手作業を主軸**（struct マージ設計・ping-pong 撤去・env-resync は罠が個別）。
-- **multi-agent fan-out は手順 1 の純機械サイト書換（718 サイト `self.interpreter.X`→`self.X`）に限定投入**。
-- 終了条件 = `Interpreter` struct 削除・VM が唯一の実行エンジン・全状態 VM 所有・`env_dirty` dual-store のみ残存。
+- **Manual work is the mainline** (struct merge design, ping-pong removal, env-resync each have individual traps).
+- **Multi-agent fan-out is deployed only for the purely mechanical site rewrite of step 1 (718 sites `self.interpreter.X`→`self.X`).**
+- Completion criteria = `Interpreter` struct deleted; VM is the sole execution engine; all state VM-owned; only the `env_dirty`
+  dual-store remains.
 
-### 着手前チェックリスト
+### Pre-start checklist
 
-- [ ] long-lived branch を main から作成（`cp3-collapse`）。
-- [ ] 手順 1（struct マージ + 718 サイト書換）を1 PR で（巨大だが機械的・挙動不変）。CI green を確認。
-- [ ] 手順 2 を carrier 群ごとに分割 PR、各々 env-resync を明示 + A/B + roast。
-- [ ] 手順 3/4 を最後にまとめて。
-- [ ] 各 PR で `make test` + 関連 roast をローカル、全 roast は CI 委譲。
+- [ ] Create a long-lived branch from main (`cp3-collapse`).
+- [ ] Step 1 (struct merge + 718-site rewrite) in one PR (huge but mechanical, behavior-invariant). Confirm CI green.
+- [ ] Split step 2 into PRs per carrier group; each with explicit env-resync + A/B + roast.
+- [ ] Steps 3/4 together at the end.
+- [ ] In each PR, run `make test` + relevant roast locally; delegate the full roast to CI.
 
 ---
 
-## CP-1 env-loan 設計（確定 2026-06-15・[PLAN.md](../PLAN.md) CP-1 step 1a）
+## CP-1 env-loan design (finalized 2026-06-15; [PLAN.md](../PLAN.md) CP-1 step 1a)
 
-> 本節は CP-1 step 1a（設計確定・doc のみ）の成果。env を VM 単一所有へ移し、tree-walk carrier が
-> 実行時だけ env を借用する機構（**env-loan**）を確定する。実コードの精読（ping-pong 機構・Env 構造・
-> 全 carrier の env read/write タイミング）に基づく。後続 1b〜1e の実装は本設計に従う。
+> This section is the deliverable of CP-1 step 1a (design finalization; doc only). It finalizes the mechanism (**env-loan**) by which
+> env moves to single VM ownership and tree-walk carriers borrow env only for the duration of execution. Based on close reading of the
+> actual code (the ping-pong machinery, the Env structure, the env read/write timing of every carrier). The subsequent 1b–1e
+> implementation follows this design.
 
-### 現状モデル（実測 2026-06-15）
+### Current model (measured 2026-06-15)
 
-- **env の住所**: `Interpreter.env: Env`（`src/runtime/mod.rs:837`、private field）。アクセサ
-  `env()`（read, `mod.rs:4345`）/ `env_mut()`（write, `accessors.rs:616`）/ `clone_env()`（= `env.flattened()`）/
-  `set_env`/`take_env`。
-- **VM の env アクセス**: VM は `interpreter: Interpreter` を**値所有**（`vm.rs:132`）。VM ツリーは env を
-  `self.interpreter.env()`（**264 サイト** read）/ `env_mut()`（**249 サイト** write）= **計 513 サイト**で読む。
-  モジュール別の偏在: `vm_var_assign_ops`=98, `vm_control_ops`=86, `vm_misc_ops`/`vm_call_dispatch`=36 ずつ, …
-- **`Env` は小さな COW 構造**: `Arc<HashMap>` overlay + `Option<Arc<Env>> parent` + `Option<HashSet> tombstones`
-  + `u16 depth`（`env.rs:88`）。clone は O(1) Arc bump、scoped overlay は per-frame の transient（`flattened()` で
-  capture 時に flat 化）。**`mem::swap`/`mem::take` は数ワードの memcpy で alloc も refcount 変化も無い**（env-loan
-  が安価な理由）。
-- **再入（VM ⇄ tree-walk）は2形態**:
-  1. **ping-pong（fresh VM）**: `let interp = mem::take(self);`（= `&mut Interpreter`）→ `VM::new(interp)` →
-     `vm.run(code, fns)` → `(interp, result)` → `*self = interp`（`run.rs:960-963` run_block_raw,
-     `resolution.rs:1930-1942` run_compiled_block, …）。**Interpreter 全体（env 内包）が入れ子 VM 間を値で往復**する。
-  2. **run_reuse（persistent VM）**: `VM::new(interp)` を1回張り（`resolution.rs:2092` eval_map_over_items,
-     2331, 2521）、`vm.run_reuse(&mut self, …)`（`vm.rs:799`）でループ body を反復実行。caller は反復間に
-     `vm.interpreter_mut().env_insert(...)`（2116-2133）で env を書き、`vm.interpreter().env().get("_")`（2141）で
-     読み、最後に `vm.into_interpreter()`（2097）で Interpreter を回収。
-- **`VM::new(interp)`** は registry/io_handles/output_sink/current_package のハンドルを clone するのみ（`vm.rs:482`）。
-  env はまだ `interp.env` に残ったまま VM が値所有。**`VM::run` は `(self.interpreter, result)` を返す**（`vm.rs:695`）。
+- **env's address**: `Interpreter.env: Env` (`src/runtime/mod.rs:837`, private field). Accessors:
+  `env()` (read, `mod.rs:4345`) / `env_mut()` (write, `accessors.rs:616`) / `clone_env()` (= `env.flattened()`) /
+  `set_env`/`take_env`.
+- **The VM's env access**: the VM **owns `interpreter: Interpreter` by value** (`vm.rs:132`). The VM tree reads env via
+  `self.interpreter.env()` (**264 sites** read) / `env_mut()` (**249 sites** write) = **513 sites total**.
+  Per-module skew: `vm_var_assign_ops`=98, `vm_control_ops`=86, `vm_misc_ops`/`vm_call_dispatch`=36 each, …
+- **`Env` is a small COW structure**: `Arc<HashMap>` overlay + `Option<Arc<Env>> parent` + `Option<HashSet> tombstones`
+  + `u16 depth` (`env.rs:88`). clone is an O(1) Arc bump; the scoped overlay is a per-frame transient (flattened via `flattened()`
+  at capture time). **`mem::swap`/`mem::take` are a few-word memcpy with no alloc and no refcount change** (the reason env-loan
+  is cheap).
+- **Re-entry (VM ⇄ tree-walk) takes 2 forms**:
+  1. **ping-pong (fresh VM)**: `let interp = mem::take(self);` (= `&mut Interpreter`) → `VM::new(interp)` →
+     `vm.run(code, fns)` → `(interp, result)` → `*self = interp` (`run.rs:960-963` run_block_raw,
+     `resolution.rs:1930-1942` run_compiled_block, …). **The whole Interpreter (env included) round-trips by value between nested VMs.**
+  2. **run_reuse (persistent VM)**: set up `VM::new(interp)` once (`resolution.rs:2092` eval_map_over_items,
+     2331, 2521), and repeatedly execute the loop body via `vm.run_reuse(&mut self, …)` (`vm.rs:799`). Between iterations the caller
+     writes env via `vm.interpreter_mut().env_insert(...)` (2116-2133), reads via `vm.interpreter().env().get("_")` (2141), and
+     finally reclaims the Interpreter via `vm.into_interpreter()` (2097).
+- **`VM::new(interp)`** only clones the registry/io_handles/output_sink/current_package handles (`vm.rs:482`).
+  env still stays in `interp.env` while the VM owns it by value. **`VM::run` returns `(self.interpreter, result)`** (`vm.rs:695`).
 
-### carrier の env 借用点（全列挙・read/write/再入タイミング）
+### The env borrow points of the carriers (full enumeration: read/write/re-entry timing)
 
-「carrier」= VM が委譲する tree-walk 実行パスで、実行中に `self.env` を読む/書くもの。**live**（生 env を
-読み書きし呼び出し元へ反映）と **snapshot**（env を clone して走らせ書き戻さない）の2種に分かれる。これが
-loan 機構の核心の分岐。
+"carrier" = a tree-walk execution path the VM delegates to, which reads/writes `self.env` during execution. They split into two
+kinds: **live** (reads/writes the live env and reflects it back to the caller) and **snapshot** (clones env, runs on it, no
+write-back). This is the core fork of the loan mechanism.
 
-| carrier | 定義 | env READ | env WRITE | 再入 | 種別 |
+| carrier | definition | env READ | env WRITE | re-entry | kind |
 |---|---|---|---|---|---|
-| **EVAL** | `builtin_eval`→`eval_eval_string`(`system.rs:1221`) | snapshot 取得・`$_`/`=pod`/`__mutsu_in_eval` 取得(1235-1244) | `__mutsu_in_eval` 等を insert/restore、**内側コードが囲みスコープの env を見て変異**(1254,1317-1336) | `parse_and_eval_with_operators`→`run_block_raw`(ping-pong) | **live** |
-| **subset `where`** | `type_matches_value`(`types/type_matching.rs:221`) | bound pkg(487)・`$_`(533) | `$_` を set/restore(534,540-542) | `eval_block_value`/`call_sub_value`(ping-pong) | **live** |
-| **regex 埋め込み式** | `eval_string_as_source`(`regex_parse.rs:6061`) | `self.env.clone()` を**fresh Interpreter** に渡す(6068) | 無し（snapshot） | 新 Interpreter→`eval_block_value` | **snapshot** |
-| **Promise/start/thread** | `clone_for_thread`(`mod.rs:5377`) | env を flatten・共有 var seed・子に `env: self.env.clone()`(120) | 無し（snapshot・書き戻し無し） | 子 fresh Interpreter→VM | **snapshot** |
-| **call_sub_value** | `resolution.rs:1096` | param 束縛で env 読み書き | param 束縛・scope save/restore | `run_compiled_block`(ping-pong) | **live** |
-| **call_function[_fallback]** | `builtins.rs:315`/`builtins_operators.rs:7` | 引数解決・束縛で env | param 束縛 | 内側 VM | **live** |
-| **call_method_with_values** | `methods.rs:310` | env | method body env | 内側 VM | **live** |
-| **run_instance_method** | `class.rs:725` | env | method body env | 内側 VM | **live** |
-| **eval_block_value** | `resolution.rs:1712` | `&`-var + callable id を capture(1721-1726)・trailing sub に `env.clone()`(1764) | block を `self.env` で実行 | `run_compiled_block`(ping-pong) | **live** |
-| **run_block_raw** | `run.rs:940` | — | block を `self.env` で実行 | `mem::take`+`VM::new`(ping-pong) | **live** |
-| **map/sort reuse** | `eval_map_over_items`(`resolution.rs:2092`) | `vm.interpreter().env()`(2141) | `vm.interpreter_mut().env_insert` per-iter(2116-2133) | `VM::new`1回 + `run_reuse` ループ | **live(外部駆動)** |
+| **EVAL** | `builtin_eval`→`eval_eval_string`(`system.rs:1221`) | takes a snapshot; reads `$_`/`=pod`/`__mutsu_in_eval`(1235-1244) | inserts/restores `__mutsu_in_eval` etc.; **the inner code sees and mutates the enclosing scope's env**(1254,1317-1336) | `parse_and_eval_with_operators`→`run_block_raw`(ping-pong) | **live** |
+| **subset `where`** | `type_matches_value`(`types/type_matching.rs:221`) | bound pkg(487), `$_`(533) | sets/restores `$_`(534,540-542) | `eval_block_value`/`call_sub_value`(ping-pong) | **live** |
+| **regex embedded expr** | `eval_string_as_source`(`regex_parse.rs:6061`) | passes `self.env.clone()` to a **fresh Interpreter**(6068) | none (snapshot) | new Interpreter→`eval_block_value` | **snapshot** |
+| **Promise/start/thread** | `clone_for_thread`(`mod.rs:5377`) | flattens env, seeds shared vars, child gets `env: self.env.clone()`(120) | none (snapshot, no write-back) | child fresh Interpreter→VM | **snapshot** |
+| **call_sub_value** | `resolution.rs:1096` | env reads/writes during param binding | param binding, scope save/restore | `run_compiled_block`(ping-pong) | **live** |
+| **call_function[_fallback]** | `builtins.rs:315`/`builtins_operators.rs:7` | env for arg resolution/binding | param binding | inner VM | **live** |
+| **call_method_with_values** | `methods.rs:310` | env | method body env | inner VM | **live** |
+| **run_instance_method** | `class.rs:725` | env | method body env | inner VM | **live** |
+| **eval_block_value** | `resolution.rs:1712` | captures `&`-vars + callable ids(1721-1726); `env.clone()` for trailing sub(1764) | runs the block on `self.env` | `run_compiled_block`(ping-pong) | **live** |
+| **run_block_raw** | `run.rs:940` | — | runs the block on `self.env` | `mem::take`+`VM::new`(ping-pong) | **live** |
+| **map/sort reuse** | `eval_map_over_items`(`resolution.rs:2092`) | `vm.interpreter().env()`(2141) | `vm.interpreter_mut().env_insert` per-iter(2116-2133) | `VM::new` once + `run_reuse` loop | **live (externally driven)** |
 
-VM→carrier 委譲のサイト数（vm/ 内の grep, 2026-06-15）: `call_function`×7, `call_function_fallback`×3,
+VM→carrier delegation site counts (grep within vm/, 2026-06-15): `call_function`×7, `call_function_fallback`×3,
 `call_sub_value`×5, `call_method_with_values`×1, `run_block_raw`×1, `run_instance_method`×1,
-`type_matches_value`×42。type_matches は大半が pure 型名判定（env 不要）で、subset `where` 経路のみ env を触る。
+`type_matches_value`×42. type_matches is mostly pure type-name checks (no env needed); only the subset `where` path touches env.
 
-### 機構の決定: **方式 A（move/swap による貸借）を採る。方式 B は却下**
+### Mechanism decision: **adopt approach A (lending via move/swap). Approach B is rejected**
 
-- **方式 A（採用）= env は普段 `VM.env` に住み、carrier 呼びの前後で interpreter へ swap 貸借**:
-  - `VM::new(interp)` が `interp.env` を `VM.env` へ**pull**（`interp.env` は `mem::take` で空に）。
-  - `VM::run`/`into_interpreter` が `VM.env` を `interp.env` へ**push back** してから Interpreter を返す
-    （回収した Interpreter が carrier/次 ping-pong で coherent な env を持つ）。
-  - carrier は今後も Interpreter メソッドとして `self.env` を読む。**VM が carrier を呼ぶ直前に
-    `mem::swap(&mut self.env, &mut self.interpreter.env)`、戻ったら swap back**。carrier 内の ping-pong
-    （`run_compiled_block`/`run_block_raw`）は `mem::take(interp)` で env を内包したまま Interpreter を取り、
-    内側 `VM::new` が env を内側 `VM.env` へ pull → 走らせ → push back → `*self = interp` → carrier が更新後 env を見る
-    → VM が swap back で回収。**首尾一貫**。
-  - **snapshot carrier**（thread/regex補間）は swap 不要 — `self.env`（= `VM.env`）の `&` を渡して `clone()` させるだけ
-    （書き戻し無し）。loan は live carrier のみ。
-  - **なぜ A か**: ping-pong が既に Interpreter を値で往復させているので、`VM::new`/`run` に env の pull/push を
-    足すのは**局所的な seam 改修**で済む。carrier 群（runtime/ 全域が `self.env` を読む前提で書かれている）は**無改修**。
-    swap は数ワード memcpy（上述）で hot path への影響は無い。
-- **方式 B（却下）= `&mut Env` をメソッド引数で carrier へ渡す**: env は runtime/ tree-walk の事実上全域で
-  `self.env` として読まれる（`type_matches_value` 26 ファイル, `current_package` 33 ファイル, env は全 runtime）。
-  `&mut Env` を全 carrier とそれが推移的に呼ぶ全関数へ通すのは非現実的（doc 冒頭「フィールド再配置を先に」が
-  不可なのと同根）。**却下**。
+- **Approach A (adopted) = env normally lives in `VM.env` and is swap-lent to the interpreter around carrier calls**:
+  - `VM::new(interp)` **pulls** `interp.env` into `VM.env` (`interp.env` is emptied via `mem::take`).
+  - `VM::run`/`into_interpreter` **push back** `VM.env` into `interp.env` before returning the Interpreter
+    (so the reclaimed Interpreter has a coherent env for carriers / the next ping-pong).
+  - Carriers keep reading `self.env` as Interpreter methods. **Right before the VM calls a carrier, it does
+    `mem::swap(&mut self.env, &mut self.interpreter.env)`, swapping back on return**. The ping-pong inside a carrier
+    (`run_compiled_block`/`run_block_raw`) takes the Interpreter with env included via `mem::take(interp)`, the inner
+    `VM::new` pulls env into the inner `VM.env` → runs → pushes back → `*self = interp` → the carrier sees the updated env
+    → the VM reclaims it via swap-back. **Fully coherent.**
+  - **Snapshot carriers** (thread/regex interpolation) need no swap — just hand them a `&` to `self.env` (= `VM.env`) and let them
+    `clone()` (no write-back). The loan applies to live carriers only.
+  - **Why A**: the ping-pong already round-trips the Interpreter by value, so adding an env pull/push to `VM::new`/`run` is a
+    **local seam change**. The carrier population (all of runtime/ is written assuming it reads `self.env`) is **untouched**.
+    swap is a few-word memcpy (see above), with no impact on the hot path.
+- **Approach B (rejected) = pass `&mut Env` to carriers as a method argument**: env is read as `self.env` across effectively the whole
+  runtime/ tree-walk (`type_matches_value` 26 files, `current_package` 33 files, env is the entire runtime).
+  Threading `&mut Env` through every carrier and every function it transitively calls is unrealistic (same root cause as why
+  "field relocation first" at the top of this doc is impossible). **Rejected.**
 
-### seam 戦略（1b〜1e・各 PR 挙動不変・CI=make test+全 roast が安全網）
+### Seam strategy (1b–1e; each PR behavior-invariant; CI = make test + full roast is the safety net)
 
-env を物理移動する前に **accessor seam** を挟むことで、513 サイトの移行を「機械的・挙動不変」と「危険な flip」に
-分離する:
+By inserting an **accessor seam** before physically moving env, the migration of the 513 sites splits into "mechanical,
+behavior-invariant" and "the dangerous flip":
 
-- **1b（seam 導入・3〜4 PR）**: `VM::env()`/`VM::env_mut()` を新設し、**当面は `self.interpreter.env()`/`env_mut()` へ
-  forward**（= 挙動完全不変）。513 サイトを accessor へ移行（borrow 衝突しないモジュール群から: var_assign → control →
-  call/dispatch → misc/helpers → 残り）。**外部駆動サイトも対象**: `resolution.rs` の `vm.interpreter().env()` /
-  `vm.interpreter_mut().env_insert()`（map/sort reuse）も `vm.env()`/`vm.env_mut()` を使うよう揃える（1e で
-  env が VM へ移ると `vm.interpreter()` から env が消えるため、ここを seam に乗せるのは必須）。
-- **1c（borrow 衝突解消・1〜2 PR）**: accessor は `&self`/`&mut self` の**全体借用**。env 読みと他 self フィールドが
-  交錯するサイト（現状は `self.interpreter.env` の部分借用で通っている）を、ローカル束縛切り出し / スコープ分割で
-  個別解消。完了時点で VM 側 env アクセスは 100% seam 経由。
-- **1d（carrier 借用点の整理・1〜2 PR）**: live carrier が `self.env` を触る箇所を、メソッド境界で env を
-  swap-in/out できる形へ整理（挙動不変）。snapshot carrier は `clone` 借りのみと確認。
-- **1e（物理移管 + loan plumbing・1〜2 PR・最大の山）**: `Interpreter.env` を削除し `VM.env` を新設。accessor 本体を
-  `self.interpreter.env` → `self.env` へ flip。`VM::new`=pull / `VM::run`+`into_interpreter`=push back を実装。
-  live carrier 呼び（前掲表の ping-pong 委譲サイト）を `mem::swap` 貸借で包む。`make test`+ローカル roast → push →
-  **全 roast を CI 委譲**。
+- **1b (seam introduction, 3-4 PRs)**: introduce `VM::env()`/`VM::env_mut()`, which **for now forward to
+  `self.interpreter.env()`/`env_mut()`** (= completely behavior-invariant). Migrate the 513 sites to the accessors (starting from
+  module groups without borrow conflicts: var_assign → control → call/dispatch → misc/helpers → the rest). **Externally driven sites
+  are also in scope**: the `vm.interpreter().env()` / `vm.interpreter_mut().env_insert()` in `resolution.rs` (map/sort reuse) are
+  also aligned to use `vm.env()`/`vm.env_mut()` (once env moves to the VM in 1e, env disappears from `vm.interpreter()`, so putting
+  these on the seam is mandatory).
+- **1c (borrow-conflict resolution, 1-2 PRs)**: the accessors are **whole borrows** of `&self`/`&mut self`. Sites where an env read
+  interleaves with other self fields (currently passing via the partial borrow of `self.interpreter.env`) are resolved individually
+  by extracting local bindings / splitting scopes. On completion, the VM-side env access is 100% via the seam.
+- **1d (organizing the carrier borrow points, 1-2 PRs)**: reorganize the places where live carriers touch `self.env` into a shape
+  where env can be swapped in/out at method boundaries (behavior-invariant). Confirm snapshot carriers use only `clone` borrows.
+- **1e (physical migration + loan plumbing, 1-2 PRs; the biggest mountain)**: delete `Interpreter.env` and introduce `VM.env`.
+  Flip the accessor bodies from `self.interpreter.env` → `self.env`. Implement `VM::new`=pull / `VM::run`+`into_interpreter`=push back.
+  Wrap the live-carrier calls (the ping-pong delegation sites in the table above) in `mem::swap` lending. `make test` + local roast →
+  push → **delegate the full roast to CI**.
 
-### 不変条件（実装時のチェックリスト）
+### Invariants (implementation-time checklist)
 
-1. **どの瞬間も env は1箇所にしか「生」で存在しない**: VM 実行中は `VM.env`、carrier 実行中は
-   `interpreter.env`（loan 中）。両方に live コピーがある状態を作らない（swap は move であって copy でない）。
-2. **ping-pong の入れ子と整合**: 内側 `VM::new` の pull / `run` の push back が、外側の loan 状態を壊さない
-   （内側は interp を丸ごと move するので、loan 済み env を内包したまま正しく往復する）。
-3. **snapshot carrier は loan しない**: thread/regex補間は `self.env.clone()` の read 借用のみ。swap-back 経路を
-   作らない（書き戻したら thread 意味論＝独立コピーが壊れる）。
-4. **run_reuse 経路**: `VM::new` で pull 済みなので、反復間の env 書き込みは `vm.env_mut()`（= `self.env`）へ。
-   `into_interpreter` が push back してから Interpreter を返す。
+1. **At every moment env exists "live" in exactly one place**: `VM.env` during VM execution, `interpreter.env` during carrier
+   execution (while on loan). Never create a state where both hold a live copy (swap is a move, not a copy).
+2. **Consistency with nested ping-pong**: the inner `VM::new`'s pull / `run`'s push back must not corrupt the outer loan state
+   (the inner side moves the interp wholesale, so it round-trips correctly with the loaned env inside).
+3. **Snapshot carriers do not take a loan**: thread/regex interpolation is a read borrow of `self.env.clone()` only. Do not create a
+   swap-back path (writing back would break thread semantics = the independent copy).
+4. **The run_reuse path**: env is already pulled by `VM::new`, so inter-iteration env writes go to `vm.env_mut()` (= `self.env`).
+   `into_interpreter` pushes back before returning the Interpreter.
 
-### ⚠️ 1e 実装試行で判明した致命的事実（2026-06-15・**設計の前提を覆す測定**）
+### ⚠️ Fatal facts discovered in the 1e implementation attempt (2026-06-15; **measurements that overturn the design's premise**)
 
-1b（seam）の上で **1e の flip を実際に実装してみた**（`VM.env` フィールド追加 + accessor を `&self.env` へ flip +
-`VM::new`=pull / `run`/`into_interpreter`=push back + carrier 用 `loan_env_for` swap ラッパ〔`type_matches_value` /
+On top of 1b (the seam), we **actually implemented the 1e flip** (adding a `VM.env` field + flipping the accessors to `&self.env` +
+`VM::new`=pull / `run`/`into_interpreter`=push back + the `loan_env_for` swap wrapper for carriers [`type_matches_value` /
 `vm_call_function` / `vm_call_sub_value` / `vm_call_function_fallback` / `vm_call_method_with_values` /
-`vm_run_instance_method` / `vm_run_block_raw`〕）。**ビルドは通った（borrow 衝突ゼロ）が、smoke で広範に壊れた**:
-`@a.map(*+1)`→`(Any)`、`my Even $e = 4`→`(Any)`、`$*dyn` 読み→空。
+`vm_run_instance_method` / `vm_run_block_raw`]). **The build passed (zero borrow conflicts), but smoke broke widely**:
+`@a.map(*+1)`→`(Any)`, `my Even $e = 4`→`(Any)`, `$*dyn` reads→empty.
 
-**根本原因（測定で確定）**: VM が呼ぶ interpreter メソッドは **227 個（distinct）**あり、そのうち
-**62 個が `self.env` を読む**（各メソッド先頭 50 行を走査。transitive まで含めればさらに多い）。
-＝ env を読む経路は前掲表の「~15 委譲サイト」では**全くなく**、`var_type_constraint`（VM 40 サイト）/
-`get_dynamic_var` / `restore_let_saves`（→`restore_let_value` 経由で transitive）/ `container_type_metadata` /
+**Root cause (confirmed by measurement)**: the interpreter methods called by the VM number **227 (distinct)**, of which
+**62 read `self.env`** (scanning the first 50 lines of each method; more when counting transitive reads).
+= The env-reading paths are **not at all** the "~15 delegation sites" of the earlier table, but **widespread**:
+`var_type_constraint` (VM 40 sites) /
+`get_dynamic_var` / `restore_let_saves` (transitively via `restore_let_value`) / `container_type_metadata` /
 `var_default` / `var_hash_key_constraint` / `get_caller_var` / `push/pop_caller_env` / `proxy_fetch` /
 `get/set_shared_var` / `sync_shared_vars_to_env` / `get/set_state_var` / `our_vars_iter` / `set_our_var` /
-`restore_var_bindings` / `resolve_indirect_type_name` / `render_*_value`（user gist 呼び＝carrier）… と**広範**。
+`restore_var_bindings` / `resolve_indirect_type_name` / `render_*_value` (user gist calls = carrier) …
 
-→ **env を物理移動すると、これら 62+ メソッドが「貸し出されて空になった interpreter.env」を読む。** carrier だけ
-swap で貸す方式では足りず、**62+ メソッド（数百サイト）全てを swap ラッパで包む**必要がある。
+→ **Physically moving env makes these 62+ methods read the "loaned-out, now-empty interpreter.env".** Lending via swap to carriers
+alone is not enough; **all 62+ methods (hundreds of sites) would need to be wrapped in swap wrappers**.
 
-#### なぜ「62 メソッド全部を包む」も筋が悪いか
+#### Why "wrap all 62 methods" is also a bad idea
 
-1. **取りこぼし＝サイレントな stale-env バグ**: transitive に env を読むメソッドを1つでも包み忘れると、空 env を読んで
-   静かに誤動作する（compile は通る）。227 メソッドの transitive env 依存を完全列挙するのは脆い。
-2. **最ホットパスの swap オーバーヘッド**: `var_type_constraint`（型付き代入・シグネチャ束縛ごと）・
-   `container_type_metadata` 等は最ホット。`Env`（≈40B）の `mem::swap` は lock より安いがゼロではなく、最ホットパスに
-   per-call で乗せると退行しうる（本書冒頭で env を Arc<RwLock> 化できない理由と同根）。
-3. **二重 swap の罠**: ラッパは VM→interpreter 境界のみ。interpreter 内部の相互呼び出しは self.env（貸出中）を直接
-   読むので二重 swap は起きないが、「ある env-読みメソッドが VM からも interpreter 内部からも呼ばれる」場合、VM 経路だけ
-   包む必要があり、両用メソッドの選別が要る。
+1. **A miss = a silent stale-env bug**: forget to wrap even one method that transitively reads env and it silently misbehaves reading
+   an empty env (compilation still succeeds). Completely enumerating the transitive env dependencies of 227 methods is brittle.
+2. **swap overhead on the hottest paths**: `var_type_constraint` (on every typed assignment / signature binding),
+   `container_type_metadata`, etc. are the hottest. A `mem::swap` of `Env` (≈40B) is cheaper than a lock but not zero, and putting it
+   per-call on the hottest paths can regress (same root cause as why env cannot be `Arc<RwLock>`-ified, at the top of this doc).
+3. **The double-swap trap**: the wrappers sit only at the VM→interpreter boundary. Interpreter-internal mutual calls read self.env
+   (on loan) directly, so no double swap occurs — but when "some env-reading method is called both from the VM and from inside the
+   interpreter", only the VM path must be wrapped, requiring a triage of the dual-use methods.
 
-#### 結論: 1e は「loan plumbing 1 PR」ではなく、**env-読み interpreter ヘルパ surface の削減が前提**
+#### Conclusion: 1e is not "one loan-plumbing PR" — **reducing the env-reading interpreter helper surface is a prerequisite**
 
-PLAN の旧 1e（「env 物理移管 + ~15 carrier に貸す」）は**測定で否定された**。env が VM 単一所有になるには、まず
-**VM から呼ばれる env-読み interpreter ヘルパ 62+ を VM-native 化する／env を引数で受け取る形へ畳む**（＝ CP-3 系の
-surface 削減）必要がある。それが進んで「VM→interpreter で env を読む経路」が carrier（EVAL/subset-where/
-正規表現`{}`/Promise.then）だけに減って初めて、carrier への env-loan（swap 貸借）で物理移動できる。
+The old PLAN 1e ("physically migrate env + lend to ~15 carriers") was **refuted by measurement**. For env to become solely VM-owned,
+first the **62+ env-reading interpreter helpers called from the VM must be VM-nativized / folded into forms that receive env as an
+argument** (= the CP-3-style surface reduction). Only once that progresses and "the VM→interpreter env-reading paths" shrink to just
+the carriers (EVAL/subset-where/regex-`{}`/Promise.then) can the physical move happen via env-loan (swap lending) to the carriers.
 
-＝ **正しい順序は「1b（seam・完了）→ env-読みヘルパ surface 削減（CP-3 前倒し）→ 1e flip + carrier loan」**。
-flip を先に強行すると 62+ サイトの whack-a-mole になり、サイレントバグと perf 退行の二重リスク。試行ブランチ
-`cp1-1e-env-loan-flip`（broken・参照用）に機構（`loan_env_for` + pull/push + carrier ラッパ）を保存済みで、surface 削減後に
-再利用できる。
+= **The correct order is "1b (seam, done) → env-reading helper surface reduction (CP-3 pulled forward) → 1e flip + carrier loan".**
+Forcing the flip first would be whack-a-mole across 62+ sites, with the double risk of silent bugs and perf regression. The trial
+branch `cp1-1e-env-loan-flip` (broken; for reference) preserves the machinery (`loan_env_for` + pull/push + carrier wrappers) and can
+be reused after the surface reduction.
 
-#### 次にやるべきこと（surface 削減の最初のスライス候補）
+#### What to do next (first slice candidates for the surface reduction)
 
-env-読みヘルパのうち **state 系副テーブルで代替できるもの**（#3068 で `instance_type_metadata` を handle 化した前例と
-同型）を VM-native 化して env 非依存にするのが安全な入口:
-- `var_type_constraint` / `var_default` / `var_hash_key_constraint` / `set_var_type_constraint` — 型/デフォルト副テーブル。
-  env から読む部分（env-bound 型名）を `registry` + value-type + `instance_type_metadata` handle で判定できれば env 非依存化。
-- `get/set_state_var` / `get/set_shared_var` / `sync_shared_vars_to_env` — state/shared は専用 HashMap。env sync 経路を切れば env 非依存。
-- `get/set_our_var` / `our_vars_iter` — our var は package stash。
-これらが env を読まなくなるごとに 1e の carrier-only loan に近づく。各スライスは挙動不変（CI 安全網）。
+VM-nativizing — and thereby making env-independent — the env-reading helpers **that can be replaced with state-family side tables**
+(the same shape as the #3068 precedent that handle-ified `instance_type_metadata`) is the safe entry point:
+- `var_type_constraint` / `var_default` / `var_hash_key_constraint` / `set_var_type_constraint` — the type/default side tables.
+  If the part read from env (env-bound type names) can be decided via `registry` + value-type + the `instance_type_metadata` handle,
+  they become env-independent.
+- `get/set_state_var` / `get/set_shared_var` / `sync_shared_vars_to_env` — state/shared are dedicated HashMaps. Cutting the env sync
+  path makes them env-independent.
+- `get/set_our_var` / `our_vars_iter` — our vars are the package stash.
+Each helper that stops reading env moves 1e closer to a carrier-only loan. Each slice is behavior-invariant (CI safety net).
