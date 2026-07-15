@@ -409,16 +409,21 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       (`current_code` raw-pointer store, `trace_log!` check) / fix the encoding where `Jump(i32)`
       carries an absolute index / merge specialized ops driven by a per-opcode histogram
       (`ContainerEq`×4, `IndexAssign*`×6 — driven by data, not aesthetics).
-- [ ] Regexes: reduce `RegexCaptures.clone()` per quantifier iteration. **Concrete pathology
-      (measured 2026-07-15)**: `JSON::Tiny::Grammar.parse` in
-      `S04-exceptions/exceptions-alternatives.t` (a 176-character JSON) takes **12.6s (raku: 2ms —
-      ~6000×)**. Adding just 2 pairs to the inner object went 0.95s → 12.6s (**~3.6× per pair**,
-      exponential blowup — sep-quantifier backtracking in `rule pairlist { <pair> * % \, }`).
-      The profile is ~40% malloc/free/memmove with `RegexCaptures::clone` at the top =
-      a full capture clone per backtrack dominates. A raku-typical 13-pair JSON would take
-      astronomical time, so this blocks grammar usability. Repro = the equivalent of
-      `tmp/ea-parse-only.raku` (the test fits within CI's 30s budget but exceeds
-      roast-history.sh's 10s).
+- [ ] Regexes: reduce `RegexCaptures.clone()` per quantifier iteration. **Update 2026-07-15:
+      the exponential half of this item is FIXED** — ratcheted (`token`/`rule`) separated
+      quantifiers (`* %`) are now possessive (single greedy chain, Rakudo semantics), and
+      ratcheted quantifiers over alternation atoms skip the bounded backtracking expansion:
+      the `S04-exceptions/exceptions-alternatives.t` JSON parse went **12.6s → ~0.9s**
+      (was ~3.6×/pair exponential, now linear), and the capture-heavy alternation case
+      `[ (<[ac]>) | (<[bc]>) ]*` over 40 chars went 372ms → 3.5ms. Pinned by
+      `t/regex-sep-quantifier-ratchet.t`; tracked by `benchmarks/bench-grammar-parse.raku`
+      (mutsu ~5.9s vs raku ~0.5s, **~12×**). Remaining (why still 12×):
+      1. **Named-subrule per-call ceremony**: the singular matcher's `Named` arm
+         (`regex_match_capture.rs`) spawns a scratch sub-interpreter + copies the tail text
+         per candidate per call, so nested rules are multiplicative — `"matrix":[[1,2],[3,4]]`
+         style nesting costs seconds. Same root as the zef populate per-call cost (§1 B2).
+      2. The original general item: non-ratchet (`regex`) quantifier iterations still clone
+         `RegexCaptures` per backtrack step.
 - Targets (numbers from bench CI, main `c8955d2e`, 2026-07-13; parentheses = JIT-on series):
   method-call <1.5x (✅ 1.19x / jit 1.16x), bench-class <1.5x (✅ 1.02x / jit 1.00x),
   fib <10x (✅ **0.82x / jit 0.65x**), bench-fib (with type constraints) <2x
