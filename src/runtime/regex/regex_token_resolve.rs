@@ -26,31 +26,36 @@ impl Interpreter {
                     out.extend(defs.clone());
                 }
             }
-            // Walk MRO for qualified names
-            if out.is_empty()
-                && let Some(pos) = name.rfind("::")
-            {
+            // Walk the MRO for qualified names, merging proto candidates from
+            // every ancestor (dedup by candidate identity, derived-first).
+            if let Some(pos) = name.rfind("::") {
                 let qual_pkg = &name[..pos];
                 let token_name = &name[pos + 2..];
+                let mut seen: std::collections::HashSet<String> = out
+                    .iter()
+                    .map(|d| Self::token_def_identity(&d.name.resolve(), token_name))
+                    .collect();
                 for ancestor in self.mro_readonly(qual_pkg) {
                     if ancestor == qual_pkg {
                         continue;
                     }
-                    self.collect_token_defs_for_scope(&ancestor, token_name, &mut out);
-                    if !out.is_empty() {
-                        break;
-                    }
+                    self.collect_token_defs_for_scope_dedup(
+                        &ancestor, token_name, &mut out, &mut seen,
+                    );
                 }
             }
             return out;
         }
         if !pkg.is_empty() {
-            // Walk MRO of pkg
+            // Walk the MRO of pkg, merging proto candidates from every class:
+            // a derived grammar adding `rule statement:sym<repeat>` keeps the
+            // base grammar's candidates (advent2009-day24).
+            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
             for scope in self.mro_readonly(pkg) {
-                self.collect_token_defs_for_scope(&scope, name, &mut out);
-                if !out.is_empty() {
-                    return out;
-                }
+                self.collect_token_defs_for_scope_dedup(&scope, name, &mut out, &mut seen);
+            }
+            if !out.is_empty() {
+                return out;
             }
         }
         self.collect_token_defs_for_scope("GLOBAL", name, &mut out);

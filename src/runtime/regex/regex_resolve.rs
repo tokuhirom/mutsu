@@ -142,6 +142,34 @@ impl Interpreter {
         }
     }
 
+    /// Like [`Self::collect_token_patterns_for_scope`], but deduplicating by
+    /// candidate identity (`None` for the exact token, `Some(sym)` for a proto
+    /// candidate) across successive calls via `seen`, so an MRO walk merges
+    /// proto candidates from every class while a same-identity redefinition in
+    /// a more-derived class overrides its ancestor's.
+    fn collect_token_patterns_for_scope_dedup(
+        &self,
+        scope: &str,
+        name: &str,
+        out: &mut Vec<(String, String, Option<String>)>,
+        seen: &mut std::collections::HashSet<Option<String>>,
+    ) {
+        // Dedupe against ancestors only: multi candidates within ONE scope
+        // legitimately share a sym key and must all be kept.
+        let seen_before = seen.clone();
+        let before = out.len();
+        self.collect_token_patterns_for_scope(scope, name, out);
+        let mut idx = before;
+        while idx < out.len() {
+            if seen_before.contains(&out[idx].2) {
+                out.remove(idx);
+            } else {
+                seen.insert(out[idx].2.clone());
+                idx += 1;
+            }
+        }
+    }
+
     /// Collect static token patterns for a given scope.
     /// Returns (pattern, package, sym_key) tuples. sym_key is Some for :sym<> variants.
     pub(super) fn collect_token_patterns_for_scope(
@@ -192,37 +220,51 @@ impl Interpreter {
                 &name[name.rfind("::").unwrap() + 2..],
                 &mut out,
             );
-            // Walk MRO for qualified names
-            if out.is_empty()
-                && let Some(pos) = name.rfind("::")
-            {
+            // Walk the MRO for qualified names, merging proto candidates from
+            // every ancestor (dedup by sym identity, derived-first).
+            if let Some(pos) = name.rfind("::") {
                 let qual_pkg = &name[..pos];
                 let token_name = &name[pos + 2..];
+                let mut seen: std::collections::HashSet<Option<String>> =
+                    out.iter().map(|e| e.2.clone()).collect();
+                let own = out.len();
                 for ancestor in self.mro_readonly(qual_pkg) {
                     if ancestor == qual_pkg {
                         continue;
                     }
-                    self.collect_token_patterns_for_scope(&ancestor, token_name, &mut out);
-                    if !out.is_empty() {
-                        // Rewrite the dispatch package to the original qualified
-                        // package so nested subrule lookups dispatch virtually
-                        // through the receiver's MRO (Liskov substitution).
-                        for entry in out.iter_mut() {
-                            entry.1 = qual_pkg.to_string();
-                        }
-                        break;
-                    }
+                    self.collect_token_patterns_for_scope_dedup(
+                        &ancestor, token_name, &mut out, &mut seen,
+                    );
+                }
+                // Rewrite ancestor entries' dispatch package to the original
+                // qualified package so nested subrule lookups dispatch
+                // virtually through the receiver's MRO (Liskov substitution).
+                for entry in out.iter_mut().skip(own) {
+                    entry.1 = qual_pkg.to_string();
                 }
             }
             return out;
         }
         if !pkg.is_empty() {
-            // Walk MRO of pkg
+            // Walk the MRO of pkg, merging proto candidates from every class:
+            // a derived grammar adding `rule statement:sym<repeat>` keeps the
+            // base grammar's candidates (advent2009-day24).
+            let mut seen: std::collections::HashSet<Option<String>> =
+                std::collections::HashSet::new();
+            let mut own = None;
             for scope in self.mro_readonly(pkg) {
-                self.collect_token_patterns_for_scope(&scope, name, &mut out);
-                if !out.is_empty() {
-                    return out;
+                if scope != pkg && own.is_none() {
+                    own = Some(out.len());
                 }
+                self.collect_token_patterns_for_scope_dedup(&scope, name, &mut out, &mut seen);
+            }
+            // Ancestor entries dispatch virtually through the receiver package.
+            let own = own.unwrap_or(out.len());
+            for entry in out.iter_mut().skip(own) {
+                entry.1 = pkg.to_string();
+            }
+            if !out.is_empty() {
+                return out;
             }
         }
         self.collect_token_patterns_for_scope("GLOBAL", name, &mut out);
