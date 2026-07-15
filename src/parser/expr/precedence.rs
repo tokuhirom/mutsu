@@ -68,7 +68,7 @@ pub(crate) use errors::{
     non_associative_pair_error, non_list_associative_error, syntax_exception,
 };
 pub(crate) use list_infix::{list_infix_expr, sequence_expr, sequence_only_expr};
-pub(crate) use list_infix_loop::parse_list_infix_loop;
+pub(crate) use list_infix_loop::{parse_list_infix_loop, parse_list_infix_loop_no_feed};
 pub(crate) use logic::{assign_not_expr_mode, or_expr_mode, or_expr_no_assign_mode};
 pub(crate) use logic2::{junctive_expr_mode, not_expr_mode, or_or_expr_mode};
 pub(crate) use ternary::{comparison_nonassoc_key, structural_comparison_expr_mode};

@@ -8,6 +8,29 @@ pub(crate) fn parse_list_infix_loop<'a>(
     left: &mut Expr,
     current_assoc_key: &mut Option<String>,
 ) -> Result<&'a str, PError> {
+    parse_list_infix_loop_impl(input, orig_input, left, current_assoc_key, true)
+}
+
+/// Like `parse_list_infix_loop`, but does NOT consume feed operators
+/// (`==>`/`<==`/`==>>`/`<<==`). Used to extend a listop *argument*: the
+/// list-infix operators (Z/X/meta/infix-func) bind tighter than the listop's
+/// comma, but a trailing feed stays outside the call (`grep {...} ==> @b`).
+pub(crate) fn parse_list_infix_loop_no_feed<'a>(
+    input: &'a str,
+    orig_input: &str,
+    left: &mut Expr,
+    current_assoc_key: &mut Option<String>,
+) -> Result<&'a str, PError> {
+    parse_list_infix_loop_impl(input, orig_input, left, current_assoc_key, false)
+}
+
+fn parse_list_infix_loop_impl<'a>(
+    input: &'a str,
+    orig_input: &str,
+    left: &mut Expr,
+    current_assoc_key: &mut Option<String>,
+    allow_feed: bool,
+) -> Result<&'a str, PError> {
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
@@ -388,7 +411,7 @@ pub(crate) fn parse_list_infix_loop<'a>(
         // operators that can never begin a statement, so crossing a newline is
         // unambiguous. (The user-defined infix *word* below keeps the newline guard: a
         // bare identifier opening the next line would otherwise be eaten as an infix.)
-        if let Some((feed_op, len)) = parse_feed_op(r) {
+        if allow_feed && let Some((feed_op, len)) = parse_feed_op(r) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = (if matches!(feed_op, FeedOp::ToLeft | FeedOp::AppendLeft) {

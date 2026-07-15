@@ -1,5 +1,7 @@
 use crate::ast::Expr;
-use crate::parser::expr::{call_arg_expr, expression, expression_no_sequence};
+use crate::parser::expr::{
+    call_arg_expr, expression, expression_no_sequence, extend_listop_arg_list_infix,
+};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, merge_expected_messages};
 use crate::parser::primary::current_line_number;
@@ -103,11 +105,16 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     // `(is-deeply $x, $y, 'desc') orelse .fail`, not `is-deeply $x, $y, ('desc'
     // orelse .fail)`. Parsing with the full `expression` took the latter reading
     // and silently dropped the right operand's side effects.
+    //
+    // The list-infix operators (Z/X/meta/infix funcs) bind TIGHTER than the
+    // listop's comma, so each argument is extended with them after the base
+    // parse (`flat @a Z @b` is `flat(@a Z @b)`); feeds stay outside the call.
     let (r, first) = call_arg_expr(input).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
         exception: None,
     })?;
+    let (r, first) = extend_listop_arg_list_infix(r, input, first)?;
     let (r, invocant_colon_call) = try_parse_no_paren_invocant_colon_call(&name, first.clone(), r)?;
     if let Some(method_call) = invocant_colon_call {
         return Ok((r, method_call));
@@ -138,6 +145,7 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
             remaining_len: err.remaining_len.or(Some(r2.len())),
             exception: None,
         })?;
+        let (r2, arg) = extend_listop_arg_list_infix(r2, input, arg)?;
         args.push(arg);
         r = r2;
     }
