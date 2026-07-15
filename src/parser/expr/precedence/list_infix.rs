@@ -1,11 +1,89 @@
 use super::*;
 
+/// The source spelling of a binary operator token that a user can also
+/// declare as `sub infix:<op>`. Only these can receive trailing adverbs.
+fn binary_token_op_str(op: &crate::token_kind::TokenKind) -> Option<&'static str> {
+    use crate::token_kind::TokenKind;
+    Some(match op {
+        TokenKind::Plus => "+",
+        TokenKind::Minus => "-",
+        TokenKind::Star => "*",
+        TokenKind::Slash => "/",
+        TokenKind::Percent => "%",
+        TokenKind::StarStar => "**",
+        TokenKind::Tilde => "~",
+        _ => return None,
+    })
+}
+
+/// A trailing colonpair adverb after a full expression binds to the
+/// expression's *outermost* operator application (Raku: the adverb applies to
+/// the preceding topmost operator — `1 + 2 - 3 :adv` adverbs `-`, and the
+/// right-associative `1 ** 2 ** 3 :adv` adverbs the leftmost/outermost `**`).
+/// Only user-defined operators can accept named arguments, so attachment is
+/// limited to a `Binary` whose token op has a user `infix:<op>` declaration in
+/// scope (rewritten to `InfixFunc`) and to an existing `InfixFunc`; anything
+/// else leaves the colonpair unconsumed.
+pub(super) fn attach_trailing_adverbs<'a>(
+    input: &'a str,
+    left: &mut Expr,
+) -> Result<&'a str, PError> {
+    let mut rest = input;
+    loop {
+        let (r_ws, _) = ws(rest)?;
+        let ws_between = &rest[..rest.len() - r_ws.len()];
+        if ws_between.is_empty()
+            || ws_between.contains('\n')
+            || !r_ws.starts_with(':')
+            || r_ws.starts_with("::")
+        {
+            break;
+        }
+        let attachable = match &*left {
+            Expr::Binary { op, .. } => binary_token_op_str(op)
+                .is_some_and(crate::parser::stmt::simple::is_user_defined_infix),
+            Expr::InfixFunc { .. } => true,
+            _ => false,
+        };
+        if !attachable {
+            break;
+        }
+        let Ok((r_next, adverb)) = crate::parser::primary::colonpair_expr(r_ws) else {
+            break;
+        };
+        match left {
+            Expr::Binary { .. } => {
+                let Expr::Binary {
+                    left: bl,
+                    op,
+                    right,
+                } = std::mem::replace(left, Expr::Literal(crate::value::Value::NIL))
+                else {
+                    unreachable!()
+                };
+                let name = binary_token_op_str(&op).expect("checked above").to_string();
+                *left = Expr::InfixFunc {
+                    name,
+                    left: bl,
+                    right: vec![*right, adverb],
+                    modifier: None,
+                };
+            }
+            Expr::InfixFunc { right, .. } => right.push(adverb),
+            _ => unreachable!(),
+        }
+        rest = r_next;
+    }
+    Ok(rest)
+}
+
 /// List-infix operators only: Z, X, meta-ops, infix funcs.
 /// Used in NoSequence mode (e.g. inside parenthesized expressions).
 pub(crate) fn list_infix_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = range_expr(input)?;
     let mut current_assoc_key = None;
     rest = parse_list_infix_loop(rest, input, &mut left, &mut current_assoc_key)?;
+    rest = attach_trailing_adverbs(rest, &mut left)?;
     Ok((rest, left))
 }
 
@@ -112,5 +190,6 @@ pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
         }
         break;
     }
+    rest = attach_trailing_adverbs(rest, &mut left)?;
     Ok((rest, left))
 }

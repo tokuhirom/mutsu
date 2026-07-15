@@ -1,16 +1,21 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether a user-declared `sub infix:<op>` is in scope for `canon`
+    /// (e.g. `"infix:<+>"`). The set is empty in the overwhelming common
+    /// case, keeping tight numeric loops free of any registry lookup.
+    #[inline]
+    fn user_infix_override(&self, canon: &str) -> bool {
+        !self.user_declared_infix_ops.is_empty() && self.user_declared_infix_ops.contains(canon)
+    }
+
     pub(super) fn exec_add_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         // A user-declared `infix:<+>` sub can override even native Int/Num
         // addition (roast S06-operator-overloading/infix.t), so the native
-        // fast paths below must be skipped whenever one is in scope. The
-        // `user_declared_infix_ops` set is empty in the overwhelming common
-        // case, keeping tight `Int + Int` loops free of any registry lookup.
-        let has_override = !self.user_declared_infix_ops.is_empty()
-            && self.user_declared_infix_ops.contains("infix:<+>");
+        // fast paths below must be skipped whenever one is in scope.
+        let has_override = self.user_infix_override("infix:<+>");
         // Fast path: Int + Int (most common case in numeric loops)
         if !has_override
             && let Some(a) = left.as_int()
@@ -47,8 +52,11 @@ impl Interpreter {
     pub(super) fn exec_sub_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A user `infix:<->` overrides the native fast paths, same as `+`.
+        let has_override = self.user_infix_override("infix:<->");
         // Fast path: Int - Int
-        if let Some(a) = left.as_int()
+        if !has_override
+            && let Some(a) = left.as_int()
             && let Some(b) = right.as_int()
             && let Some(result) = a.checked_sub(b)
         {
@@ -56,7 +64,8 @@ impl Interpreter {
             return Ok(());
         }
         // Fast path: Num - Num
-        if let Some(a) = left.as_num()
+        if !has_override
+            && let Some(a) = left.as_num()
             && let Some(b) = right.as_num()
         {
             self.stack.push(Value::num(a - b));
@@ -134,8 +143,11 @@ impl Interpreter {
     pub(super) fn exec_mul_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A user `infix:<*>` overrides the native fast paths, same as `+`.
+        let has_override = self.user_infix_override("infix:<*>");
         // Fast path: Int * Int
-        if let Some(a) = left.as_int()
+        if !has_override
+            && let Some(a) = left.as_int()
             && let Some(b) = right.as_int()
             && let Some(result) = a.checked_mul(b)
         {
@@ -143,13 +155,17 @@ impl Interpreter {
             return Ok(());
         }
         // Fast path: Num * Num
-        if let Some(a) = left.as_num()
+        if !has_override
+            && let Some(a) = left.as_num()
             && let Some(b) = right.as_num()
         {
             self.stack.push(Value::num(a * b));
             return Ok(());
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(result) = vm.try_user_infix("infix:<*>", &l, &r)? {
+                return Ok(result);
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             Ok(crate::builtins::arith_mul(l, r))
         })?;
@@ -161,6 +177,9 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(result) = vm.try_user_infix("infix:</>", &l, &r)? {
+                return Ok(result);
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             crate::builtins::arith_div(l, r)
         })?;
@@ -187,8 +206,11 @@ impl Interpreter {
     pub(super) fn exec_pow_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A user `infix:<**>` overrides the native fast path, same as `+`.
+        let has_override = self.user_infix_override("infix:<**>");
         // Fast path: Int ** small non-negative Int
-        if let Some(base) = left.as_int()
+        if !has_override
+            && let Some(base) = left.as_int()
             && let Some(exp) = right.as_int()
             && (0..=30).contains(&exp)
         {
@@ -208,6 +230,9 @@ impl Interpreter {
             }
         }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
+            if let Some(result) = vm.try_user_infix("infix:<**>", &l, &r)? {
+                return Ok(result);
+            }
             let (l, r) = vm.coerce_numeric_bridge_pair_strict(l, r)?;
             Ok(crate::builtins::arith_pow(l, r))
         })?;

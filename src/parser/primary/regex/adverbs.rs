@@ -206,6 +206,26 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             r = after;
         }
 
+        // A value-taking match adverb (`:nth`, `:th`, `:x`) takes its argument
+        // in parens only. Square brackets are regex *delimiters*, so
+        // `m:nth[5]/fo+/` would read `[5]` as the pattern and choke on the
+        // trailing `/fo+/` — Rakudo reports the cascade as X::Comp::Group.
+        // Reject the bracket form directly with the same exception type.
+        if arg.is_none()
+            && leading_digits.is_empty()
+            && matches!(name.as_str(), "nth" | "th" | "x")
+            && r.starts_with('[')
+        {
+            let message = format!(
+                "Adverb :{} takes its argument in parentheses, not square brackets",
+                name
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let ex = Value::make_instance(Symbol::intern("X::Comp::Group"), attrs);
+            return Err(PError::fatal_with_exception(message, Box::new(ex)));
+        }
+
         // A boolean-flag regex adverb (`:i`, `:s`, `:m`, ...) is a compile-time
         // switch and cannot take a runtime value. When such an adverb is given an
         // argument that references a dynamic variable (e.g. `m:i(@*ARGS[0])/`),

@@ -57,14 +57,14 @@ impl Interpreter {
     }
 
     pub(super) fn preserve_empty_slip_arg(name: &str) -> bool {
-        matches!(
-            name,
-            "infix:<andthen>"
-                | "infix:<notandthen>"
-                | "andthen"
-                | "notandthen"
-                | "__mutsu_andthen_finalize"
-        )
+        // Operator calls receive their operands as single terms — an Empty
+        // operand (`!$foo.bar()` where bar returned a false `if`'s Empty)
+        // must not vanish from the positional list the way a slipped
+        // capture does in an ordinary argument list.
+        name.starts_with("prefix:<")
+            || name.starts_with("postfix:<")
+            || name.starts_with("infix:<")
+            || matches!(name, "andthen" | "notandthen" | "__mutsu_andthen_finalize")
     }
 
     pub(super) fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
