@@ -395,6 +395,7 @@ impl Interpreter {
             pos_light_call_cache: Default::default(),
             pos_light_call_cache_gen: 0,
             amp_param_shadowed_names: std::collections::HashSet::new(),
+            empty_sig_proto_names: std::collections::HashSet::new(),
             registered_fn_fingerprints: Default::default(),
             prepared_fn_defs: HashMap::new(),
             method_resolve_cache: rustc_hash::FxHashMap::default(),

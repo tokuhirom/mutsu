@@ -496,6 +496,12 @@ impl Interpreter {
             self.user_declared_infix_ops.insert(name.to_string());
             crate::vm::vm_jit::note_user_infix_decl();
         }
+        // A plain (non-multi) `sub name` supersedes any earlier empty-signature
+        // proto of the same name (e.g. an EVAL-scoped `proto bar {*}` followed
+        // by a mainline `sub bar(...)`), so stop gating calls on it.
+        if !multi {
+            self.empty_sig_proto_names.remove(&Symbol::intern(name));
+        }
         let is_method_value_decl = custom_traits
             .iter()
             .any(|(t, _)| t == "__mutsu_method_decl");
@@ -1080,6 +1086,17 @@ impl Interpreter {
         });
         self.registry_mut().proto_subs.insert(key);
         let fq = format!("{}::{}", self.current_package(), name);
+        // `proto bar {*}` declares an empty signature; record it so dispatch
+        // can reject calls with arguments ("will never work with signature of
+        // the proto ()"), like rakudo. A body that reads @_/%_ implies a
+        // slurpy auto-signature and is NOT empty.
+        let proto_empty_sig = params.is_empty() && param_defs.is_empty() && {
+            let (use_pos, use_named) = Self::auto_signature_uses(body);
+            !use_pos && !use_named
+        };
+        if proto_empty_sig {
+            self.empty_sig_proto_names.insert(Symbol::intern(name));
+        }
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&fq),
             std::sync::Arc::new(FunctionDef {
@@ -1092,7 +1109,7 @@ impl Interpreter {
                 is_rw: false,
                 is_raw: false,
                 is_method: false,
-                empty_sig: false,
+                empty_sig: proto_empty_sig,
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,
@@ -1317,6 +1334,13 @@ impl Interpreter {
             return Ok(());
         }
         self.registry_mut().proto_subs.insert(key.clone());
+        let proto_empty_sig = params.is_empty() && param_defs.is_empty() && {
+            let (use_pos, use_named) = Self::auto_signature_uses(body);
+            !use_pos && !use_named
+        };
+        if proto_empty_sig {
+            self.empty_sig_proto_names.insert(Symbol::intern(name));
+        }
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&key),
             std::sync::Arc::new(FunctionDef {
@@ -1329,7 +1353,7 @@ impl Interpreter {
                 is_rw: false,
                 is_raw: false,
                 is_method: false,
-                empty_sig: false,
+                empty_sig: proto_empty_sig,
                 return_type: None,
                 is_default: false,
                 deprecated_message: None,

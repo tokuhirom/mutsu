@@ -78,6 +78,40 @@ impl Interpreter {
             .iter()
             .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
             .count();
+        // The proto's signature gates the whole dispatch: `proto bar {*}`
+        // declares an empty signature, so any call with positional arguments
+        // can never reach a candidate (rakudo rejects it at compile time with
+        // "Calling bar(Str) will never work with signature of the proto ()").
+        // The name set is maintained by proto registration and cleared when a
+        // plain `sub` supersedes the proto; the registry lookup re-verifies.
+        if arity > 0
+            && !self.empty_sig_proto_names.is_empty()
+            && self.empty_sig_proto_names.contains(&Symbol::intern(name))
+            && let Some(proto) = self.resolve_proto_function(name)
+            && proto.empty_sig
+        {
+            let type_names: Vec<String> = arg_values
+                .iter()
+                .filter(|v| !matches!(v.view(), ValueView::Pair(..)))
+                .map(|a| crate::value::types::what_type_name(a))
+                .collect();
+            let msg = format!(
+                "Calling {}({}) will never work with signature of the proto ()",
+                name,
+                type_names.join(", ")
+            );
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert("objname".to_string(), Value::str(name.to_string()));
+            attrs.insert("signature".to_string(), Value::str("()".to_string()));
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::TypeCheck::Argument"),
+                attrs,
+            )));
+            self.set_pending_dispatch_error(err);
+            return None;
+        }
         if name.contains("::") {
             if let Some(def) = self
                 .registry()

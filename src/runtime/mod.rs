@@ -1795,6 +1795,12 @@ pub struct Interpreter {
     /// `lexical_override` check resolves the correct callable). Populated at sub
     /// registration; checked cheaply (guarded by `is_empty()`) on each call.
     pub(crate) amp_param_shadowed_names: std::collections::HashSet<Symbol>,
+    /// Names declared with an empty-signature proto (`proto bar {*}`). Such a
+    /// proto's signature gates the whole multi dispatch: any call with
+    /// positional arguments "will never work with signature of the proto ()"
+    /// (rakudo rejects it at compile time). Populated at proto registration;
+    /// checked cheaply (guarded by `is_empty()`) on each call.
+    pub(crate) empty_sig_proto_names: std::collections::HashSet<Symbol>,
     /// Fingerprint of the sub declaration currently installed under each
     /// `package::name` (single, non-multi) routine key. A re-executed
     /// `RegisterSub` whose compile-time fingerprint matches the installed one is
