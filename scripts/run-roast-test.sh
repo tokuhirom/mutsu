@@ -63,6 +63,16 @@ per_file_timeout() {
       # This test has a 1M-iteration hot loop (test 100) that takes ~8s on release builds.
       echo 60
       ;;
+    roast/S04-exceptions/exceptions-alternatives.t)
+      # Parses a ~180-char JSON error document with a JSON::Tiny grammar.
+      # The regex engine has no implicit token ratchet yet, so the nested
+      # alternation+quantifier grammar backtracks super-linearly: ~17s on an
+      # idle release build (~100s debug). Under `prove -j4` CI contention the
+      # default 30s budget times it out mid-file (exit 124, Tests: 2) — seen
+      # on a docs-only main commit too, so it is pure load sensitivity, not a
+      # regression signal. Headroom until the token-ratchet work lands.
+      echo 90
+      ;;
     roast/S03-sequence/exhaustive.t)
       # This test runs 124 subtests covering many sequence variants including
       # infinite sequences with head() truncation. Release builds take ~15s.
