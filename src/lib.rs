@@ -3,6 +3,7 @@ mod builtins;
 mod compiler;
 pub mod doc_mode;
 pub(crate) mod env;
+pub mod error_render;
 pub(crate) mod gc;
 mod interpreter;
 mod opcode;

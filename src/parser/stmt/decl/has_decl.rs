@@ -303,6 +303,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
 
     // `is` traits (may have multiple: `is rw is required`)
     // Traits come before default value: `has $.x is rw = 42`
+    let traits_start = rest;
     let mut is_rw = false;
     let mut is_readonly = false;
     let mut is_required: Option<Option<String>> = None;
@@ -528,6 +529,18 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         }
         let (r, _) = ws(r)?;
         rest = r;
+    }
+
+    // `is rw` on a private attribute generates no accessor, so the trait does
+    // nothing — rakudo reports "Potential difficulties: useless use of 'is rw'".
+    if is_rw && !is_public && !is_alias {
+        let line = crate::parser::primary::current_line_number(traits_start);
+        let file =
+            crate::parser::stmt::simple::parser_program_path().unwrap_or_else(|| "-e".to_string());
+        crate::parser::add_parse_warning(format!(
+            "Potential difficulties:\n    useless use of 'is rw' on {}!{}\n    at {}:{}",
+            sigil as char, name, file, line
+        ));
     }
 
     // Parse `will` traits on has declarations

@@ -23,14 +23,15 @@ ok $f.file.chars > 0, 'frame .file is non-empty';
 my $str = $bt.Str;
 ok $str.contains('in block <unit>'), '.Str contains "in block <unit>"';
 
-# .gist returns "Backtrace(N frames)"
+# .gist returns "Backtrace(N frames)" (singular "frame" for exactly one,
+# matching rakudo — see roast/integration/error-reporting.t 'Backtrace.gist')
 my $gist = $bt.gist;
 ok $gist.contains('Backtrace('), '.gist starts with Backtrace(';
-ok $gist.contains('frames)'), '.gist ends with frames)';
+ok $gist.contains('frame'), '.gist mentions frame count';
 
 # say on backtrace uses gist
 # (We just check gist format, not actual say output)
-ok $gist ~~ /^ 'Backtrace(' \d+ ' frames)' $/, '.gist format is Backtrace(N frames)';
+ok $gist ~~ /^ 'Backtrace(' \d+ ' frame' 's'? ')' $/, '.gist format is Backtrace(N frames)';
 
 # Multi-frame backtrace
 sub foo { die "inner" }

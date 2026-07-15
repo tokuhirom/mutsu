@@ -473,7 +473,9 @@ impl RuntimeError {
             }
         ));
         for k in keys {
-            if k == "message" {
+            // `backtrace` is runtime bookkeeping, not an exception attribute;
+            // rakudo's JSON handler does not serialize it either.
+            if k == "message" || k == "backtrace" {
                 continue;
             }
             parts.push(format!("{}:{}", json_string(k), json_value(&attrs[k])));

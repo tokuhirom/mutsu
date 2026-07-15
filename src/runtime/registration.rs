@@ -208,10 +208,33 @@ impl Interpreter {
                         ));
                         let total = inherited_matches + accessor_match;
                         if total == 0 {
-                            return Err(RuntimeError::new(format!(
-                                "X::Role::Composition::Unimplemented: required method '{}'",
-                                method_name
-                            )));
+                            // rakudo: "Method 'o' must be implemented by A
+                            // because it is required by roles: C1, R1." — an
+                            // X::Comp-flavored compile error naming every role
+                            // that requires the method.
+                            let mut role_names: Vec<String> = class_def
+                                .methods
+                                .get(&method_name)
+                                .map(|defs| {
+                                    defs.iter()
+                                        .filter(|d| {
+                                            Self::is_stub_method_def(d) && d.role_origin.is_some()
+                                        })
+                                        .filter_map(|d| d.role_origin.clone())
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            role_names.sort();
+                            role_names.dedup();
+                            return Err(RuntimeError::typed_msg(
+                                "X::Comp::AdHoc",
+                                format!(
+                                    "Method '{}' must be implemented by {} because it is required by roles: {}.",
+                                    method_name,
+                                    class_name,
+                                    role_names.join(", ")
+                                ),
+                            ));
                         }
                         if total > 1 {
                             return Err(RuntimeError::new(format!(

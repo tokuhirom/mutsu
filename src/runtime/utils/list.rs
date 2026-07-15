@@ -414,6 +414,13 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             {
                 return items;
             }
+            // Backtrace is Positional: list context yields its frames
+            // (`$!.backtrace.any`, `$bt>>.file`, `for $e.backtrace {...}`).
+            if class_name.resolve() == "Backtrace"
+                && let Some(frames) = attributes.as_map().get("frames")
+            {
+                return value_to_list(frames);
+            }
             if let Some(ValueView::Array(items, ..)) =
                 attributes.as_map().get("__array_items").map(Value::view)
             {

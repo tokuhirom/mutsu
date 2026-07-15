@@ -1483,6 +1483,32 @@ impl Interpreter {
                                 pd.name.clone()
                             };
                             let got = crate::runtime::value_type_name(&value);
+                            // A subset failure is a *constraint* failure in raku:
+                            // "Constraint type check failed in binding to
+                            // parameter '$x'; expected Even but got Int (3)".
+                            let base = resolved_constraint
+                                .split(':')
+                                .next()
+                                .unwrap_or(&resolved_constraint);
+                            if self.registry().subsets.contains_key(base) {
+                                let param_display = if pd.name.starts_with(['$', '@', '%', '&']) {
+                                    pd.name.clone()
+                                } else {
+                                    format!("${}", pd.name)
+                                };
+                                return Err(RuntimeError::typecheck_binding_parameter(
+                                    &display_name,
+                                    &resolved_constraint,
+                                    got,
+                                    Some(format!(
+                                        "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
+                                        param_display,
+                                        resolved_constraint,
+                                        got,
+                                        crate::runtime::utils::gist_value(&value)
+                                    )),
+                                ));
+                            }
                             return Err(RuntimeError::typecheck_binding_parameter(
                                 &display_name,
                                 &resolved_constraint,

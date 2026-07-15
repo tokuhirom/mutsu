@@ -15,12 +15,12 @@ lives-ok {
 
 throws-like {
     (class :: does CompUnit::Repository { method need { }; method loaded { } }).new;
-}, X::Role::Composition::Unimplemented, 'missing id is still required';
+}, X::Comp, 'missing id is still required';
 
 throws-like {
     (class :: does CompUnit::Repository { method loaded { }; method id { } }).new;
-}, X::Role::Composition::Unimplemented, 'missing need is still required';
+}, X::Comp, 'missing need is still required';
 
 throws-like {
     (class :: does CompUnit::Repository { method need { }; method id { } }).new;
-}, X::Role::Composition::Unimplemented, 'missing loaded is still required';
+}, X::Comp, 'missing loaded is still required';

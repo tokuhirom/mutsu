@@ -60,6 +60,17 @@ impl PError {
         }
     }
 
+    /// Build a fatal parse error carrying the failure position (`input` is the
+    /// unconsumed rest at the error site), so `parse_program` can report the
+    /// source line/column like it does for recoverable errors.
+    pub fn fatal_at(message: String, input: &str) -> Self {
+        PError {
+            messages: vec![format!("{}{}", FATAL_PREFIX, message)],
+            remaining_len: Some(input.len()),
+            exception: None,
+        }
+    }
+
     /// Build a fatal parse error with a structured exception.
     pub fn fatal_with_exception(message: String, exception: Box<crate::value::Value>) -> Self {
         PError {

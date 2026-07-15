@@ -155,6 +155,8 @@ pub(crate) fn make_multi_ambiguous_error(
 pub(super) fn make_multi_no_match_error_detailed(
     method_name: &str,
     invocant_type: &str,
+    invocant_concrete: bool,
+    arg_profile: &str,
     candidate_sigs: &[String],
 ) -> RuntimeError {
     let sig_lines = if candidate_sigs.is_empty() {
@@ -167,9 +169,10 @@ pub(super) fn make_multi_no_match_error_detailed(
         }
         s
     };
+    let smiley = if invocant_concrete { ":D" } else { ":U" };
     let msg = format!(
-        "Cannot resolve caller {}({}:D: ); none of these signatures matches:{}",
-        method_name, invocant_type, sig_lines
+        "Cannot resolve caller {}({}{}: {}); none of these signatures matches:{}",
+        method_name, invocant_type, smiley, arg_profile, sig_lines
     );
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));

@@ -170,6 +170,20 @@ impl Interpreter {
     /// Stringify a value by calling .Str method (used by put/print).
     /// Falls back to to_string_value() if .Str method dispatch fails.
     pub(crate) fn render_str_value(&mut self, value: &Value) -> String {
+        // Printing a type object stringifies to "" with rakudo's
+        // uninitialized-value warning suggesting .^name/.raku/.gist/.say.
+        if let ValueView::Package(name) = value.view() {
+            let n = name.resolve();
+            let msg = format!(
+                "Use of uninitialized value of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
+                n
+            );
+            let resumed = self
+                .raise_resumable_warning(&msg, Value::str(String::new()))
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            return resumed;
+        }
         self.call_method_with_values(value.clone(), "Str", vec![])
             .map(|result| result.to_string_value())
             .unwrap_or_else(|_| value.to_string_value())

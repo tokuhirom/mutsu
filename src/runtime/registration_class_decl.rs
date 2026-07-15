@@ -538,10 +538,24 @@ impl Interpreter {
                 && !self.registry().roles.contains_key(resolved_parent)
                 && !BUILTIN_TYPES.contains(&resolved_parent)
             {
-                return Err(RuntimeError::new(format!(
-                    "'{}' cannot compose '{}' because it is not a role",
-                    name, resolved_parent
-                )));
+                let msg = format!(
+                    "{} is not composable, so {} cannot compose it",
+                    resolved_parent, name
+                );
+                let mut attrs = HashMap::new();
+                attrs.insert("target-name".to_string(), Value::str(name.to_string()));
+                attrs.insert(
+                    "composer".to_string(),
+                    Value::package(crate::symbol::Symbol::intern(resolved_parent)),
+                );
+                attrs.insert("message".to_string(), Value::str(msg.clone()));
+                let ex = Value::make_instance(
+                    crate::symbol::Symbol::intern("X::Composition::NotComposable"),
+                    attrs,
+                );
+                let mut err = RuntimeError::new(&msg);
+                err.exception = Some(Box::new(ex));
+                return Err(err);
             }
             // Check if parent is a stub (not yet composed)
             if self.registry().class_stubs.contains(resolved_parent) {

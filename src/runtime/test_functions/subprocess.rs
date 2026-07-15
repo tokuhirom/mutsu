@@ -134,7 +134,7 @@ impl Interpreter {
             nested.program_path = self.program_path.clone();
             let result = nested.run(&program);
             nested.flush_all_handles();
-            Self::extract_run_output(&nested, result)
+            Self::extract_run_output_with_source(&nested, result, Some(&program))
         };
         let mut ok = true;
         if let Some(expected) = expected_out {
@@ -347,9 +347,15 @@ impl Interpreter {
         result
     }
 
-    pub(crate) fn extract_run_output(
+    /// Extract (stdout, stderr, status) from an in-process nested run. With
+    /// the executed source available, an uncaught error renders exactly as a
+    /// real `mutsu <file>` subprocess would print it (backtrace lines for
+    /// runtime errors, `===SORRY!===` snippet for parse errors) instead of
+    /// the bare error message.
+    pub(crate) fn extract_run_output_with_source(
         nested: &Interpreter,
         result: Result<String, RuntimeError>,
+        source: Option<&str>,
     ) -> (String, String, i64) {
         let stderr_content = nested.output_sink().stderr_output.clone();
         match result {
@@ -375,6 +381,17 @@ impl Interpreter {
                 // process prints it.
                 let printed = if nested.exceptions_handler().as_deref() == Some("JSON") {
                     e.to_json_exception()
+                } else if source.is_some() {
+                    let program_name = nested
+                        .program_path
+                        .clone()
+                        .unwrap_or_else(|| "-e".to_string());
+                    let prefix = if e.code().is_some_and(|c| c.is_parse()) {
+                        "Parse error"
+                    } else {
+                        "Runtime error"
+                    };
+                    crate::error_render::render_error(prefix, &e, source, Some(&program_name))
                 } else {
                     e.message.clone()
                 };
