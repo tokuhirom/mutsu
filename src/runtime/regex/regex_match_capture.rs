@@ -3,6 +3,10 @@ use super::super::*;
 use super::regex_helpers::{is_word_char, matches_named_builtin, merge_regex_captures};
 
 impl Interpreter {
+    /// Single-candidate atom matcher: the atom's highest-priority match only.
+    /// The returned captures are a DELTA relative to an EMPTY baseline
+    /// (ADR-0007); `current_caps` is the engine's accumulated store, passed
+    /// for READS only (backrefs, code assertions, code-block contexts).
     pub(super) fn regex_match_atom_with_capture_in_pkg(
         &self,
         atom: &RegexAtom,
@@ -19,7 +23,7 @@ impl Interpreter {
                 return self
                     .regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
                     .map(|(next, mut inner_caps)| {
-                        let mut new_caps = current_caps.clone();
+                        let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
@@ -61,7 +65,7 @@ impl Interpreter {
                         self.regex_match_end_from_caps_in_pkg(goal, chars, inner_end, pkg)
                     {
                         let new_caps = merge_regex_captures(
-                            current_caps.clone(),
+                            RegexCaptures::default(),
                             merge_regex_captures(goal_caps, inner_caps),
                         );
                         return Some((goal_end, new_caps));
@@ -77,7 +81,7 @@ impl Interpreter {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        let mut new_caps = current_caps.clone();
+                        let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
@@ -132,7 +136,7 @@ impl Interpreter {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        let mut new_caps = current_caps.clone();
+                        let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().extend(v);
                         }
@@ -160,7 +164,7 @@ impl Interpreter {
             | RegexAtom::AtPosition(_) => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
-                    .map(|next| (next, current_caps.clone()));
+                    .map(|next| (next, RegexCaptures::default()));
             }
             RegexAtom::Lookaround {
                 pattern,
@@ -185,7 +189,7 @@ impl Interpreter {
                 };
                 let pass = if *negated { !matched } else { matched };
                 return if pass {
-                    Some((pos, current_caps.clone()))
+                    Some((pos, RegexCaptures::default()))
                 } else {
                     None
                 };
@@ -196,7 +200,7 @@ impl Interpreter {
                     self.regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
                 {
                     let captured: String = chars[pos..end].iter().collect();
-                    let mut new_caps = current_caps.clone();
+                    let mut new_caps = RegexCaptures::default();
                     // Named captures appearing inside a positional capture group
                     // belong to that group's sub-Match (`$/[0]<name>`), NOT to the
                     // parent Match's top-level named captures (`$/<name>`). They are
@@ -225,7 +229,7 @@ impl Interpreter {
                     let result = self.eval_regex_code_assertion(code, current_caps);
                     let pass = if *negated { !result } else { result };
                     if pass {
-                        let mut new_caps = current_caps.clone();
+                        let mut new_caps = RegexCaptures::default();
                         let matched_so_far: String =
                             chars[current_caps.match_from..pos].iter().collect();
                         new_caps.code_blocks.push(CodeBlockContext {
@@ -240,7 +244,7 @@ impl Interpreter {
                     }
                 }
                 // Plain { code } block — always succeeds, record for side effects
-                let mut new_caps = current_caps.clone();
+                let mut new_caps = RegexCaptures::default();
                 let matched_so_far: String = chars[current_caps.match_from..pos].iter().collect();
                 let ctx = CodeBlockContext {
                     code: code.clone(),
@@ -277,7 +281,7 @@ impl Interpreter {
                     if let Some((end, inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(&parsed, chars, pos, &pkg)
                     {
-                        let mut new_caps = current_caps.clone();
+                        let mut new_caps = RegexCaptures::default();
                         for v in &inner_caps.positional {
                             new_caps.positional.push(v.clone());
                         }
@@ -300,13 +304,17 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::CaptureStartMarker => {
-                let mut new_caps = current_caps.clone();
-                new_caps.capture_start = Some(pos);
+                let new_caps = RegexCaptures {
+                    capture_start: Some(pos),
+                    ..Default::default()
+                };
                 return Some((pos, new_caps));
             }
             RegexAtom::CaptureEndMarker => {
-                let mut new_caps = current_caps.clone();
-                new_caps.capture_end = Some(pos);
+                let new_caps = RegexCaptures {
+                    capture_end: Some(pos),
+                    ..Default::default()
+                };
                 return Some((pos, new_caps));
             }
             RegexAtom::Backref(idx) => {
@@ -325,7 +333,7 @@ impl Interpreter {
                     if pos + ref_chars.len() <= chars.len()
                         && chars[pos..pos + ref_chars.len()] == ref_chars[..]
                     {
-                        return Some((pos + ref_chars.len(), current_caps.clone()));
+                        return Some((pos + ref_chars.len(), RegexCaptures::default()));
                     }
                 }
                 return None;
@@ -341,7 +349,7 @@ impl Interpreter {
                     if pos + ref_chars.len() <= chars.len()
                         && chars[pos..pos + ref_chars.len()] == ref_chars[..]
                     {
-                        return Some((pos + ref_chars.len(), current_caps.clone()));
+                        return Some((pos + ref_chars.len(), RegexCaptures::default()));
                     }
                 }
                 return None;
@@ -356,7 +364,7 @@ impl Interpreter {
                     };
                     self.copy_decl_registry_into(&mut interp);
                     let _ = interp.eval_block_value(&stmts);
-                    let mut new_caps = current_caps.clone();
+                    let mut new_caps = RegexCaptures::default();
                     for (k, v) in &interp.env {
                         if !self.env.contains_key_sym(*k) || self.env.get_sym(*k) != Some(v) {
                             new_caps.regex_vars.insert(k.resolve(), v.clone());
@@ -364,7 +372,7 @@ impl Interpreter {
                     }
                     return Some((pos, new_caps));
                 }
-                return Some((pos, current_caps.clone()));
+                return Some((pos, RegexCaptures::default()));
             }
             _ => {}
         }
@@ -447,7 +455,6 @@ impl Interpreter {
                         pos,
                         chars,
                         &spec,
-                        current_caps,
                         None,
                     )
                     .pop();
@@ -463,7 +470,7 @@ impl Interpreter {
                 if !at_boundary {
                     return None;
                 }
-                return Some((pos, current_caps.clone()));
+                return Some((pos, RegexCaptures::default()));
             }
             if spec.lookup_name == "ws" && !spec.token_lookup {
                 let mut end = pos;
@@ -475,7 +482,7 @@ impl Interpreter {
                 if before_is_word && after_is_word && end == pos {
                     return None;
                 }
-                let mut new_caps = current_caps.clone();
+                let mut new_caps = RegexCaptures::default();
                 if !spec.silent {
                     let captured: String = chars[pos..end].iter().collect();
                     new_caps
@@ -514,7 +521,7 @@ impl Interpreter {
                 && matches_named_builtin(&spec.lookup_name, chars[pos])
             {
                 let end = pos + 1;
-                let mut new_caps = current_caps.clone();
+                let mut new_caps = RegexCaptures::default();
                 let captured: String = chars[pos..end].iter().collect();
                 let capture_name = spec
                     .capture_name
@@ -587,7 +594,7 @@ impl Interpreter {
                     return None;
                 }
                 let end = pos + 1;
-                let mut new_caps = current_caps.clone();
+                let mut new_caps = RegexCaptures::default();
                 let captured: String = chars[pos..end].iter().collect();
                 let capture_name = spec
                     .capture_name
@@ -672,7 +679,7 @@ impl Interpreter {
                 }
                 if chars[pos..pos + name_chars.len()] == name_chars[..] {
                     let captured: String = name_chars.iter().collect();
-                    let mut new_caps = current_caps.clone();
+                    let mut new_caps = RegexCaptures::default();
                     let capture_name = spec.capture_name.unwrap_or(literal);
                     new_caps
                         .named
@@ -685,7 +692,7 @@ impl Interpreter {
             }
             _ => self
                 .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
-                .map(|next| (next, current_caps.clone())),
+                .map(|next| (next, RegexCaptures::default())),
         }
     }
 }

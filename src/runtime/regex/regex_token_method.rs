@@ -156,7 +156,6 @@ impl Interpreter {
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,
-        current_caps: &RegexCaptures,
         pkg: &str,
         arg_values: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
@@ -266,7 +265,6 @@ impl Interpreter {
             pos,
             chars,
             spec,
-            current_caps,
             sym.as_ref(),
         ))
     }

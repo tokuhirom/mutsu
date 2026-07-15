@@ -11,6 +11,8 @@ mod regex_match_core;
 mod regex_match_find;
 mod regex_match_nocap;
 mod regex_match_public;
+mod regex_match_sep;
 mod regex_resolve;
 mod regex_token_method;
 mod regex_token_resolve;
+mod regex_trail;
