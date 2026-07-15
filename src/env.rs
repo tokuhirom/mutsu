@@ -310,8 +310,14 @@ const MAX_OVERLAY_DEPTH: u16 = 16;
 /// unaffected: two envs sharing this map are both empty, and any write
 /// un-shares the writer before it can be observed.
 fn empty_overlay() -> Arc<SymMap> {
+    empty_overlay_ref().clone()
+}
+
+/// Borrowed access to the shared empty overlay singleton, for identity checks
+/// that must not pay the `Arc` refcount round-trip a `clone` would cost.
+fn empty_overlay_ref() -> &'static Arc<SymMap> {
     static EMPTY: std::sync::OnceLock<Arc<SymMap>> = std::sync::OnceLock::new();
-    EMPTY.get_or_init(|| Arc::new(SymMap::default())).clone()
+    EMPTY.get_or_init(|| Arc::new(SymMap::default()))
 }
 
 impl Env {
@@ -415,6 +421,36 @@ impl Env {
     #[inline(always)]
     pub(crate) fn is_scoped(&self) -> bool {
         self.parent.is_some()
+    }
+
+    /// True when this scoped env's overlay is *exactly* the process-shared
+    /// empty singleton (see [`empty_overlay`]) with no tombstones: the state a
+    /// fresh `scoped_child` starts in and leaves only on the first by-name
+    /// write (`cow_mut`'s `Arc::make_mut` un-shares it) or `remove`. This is
+    /// the dynamic "did the frame ever write env?" latch the light-call frame
+    /// reuse (ADR-0004 J4d) keys on: `true` on return proves the body wrote
+    /// nothing by name, with no static analysis involved.
+    #[inline(always)]
+    pub(crate) fn overlay_is_shared_empty(&self) -> bool {
+        self.parent.is_some()
+            && self.tombstones.is_none()
+            && Arc::ptr_eq(&self.inner, empty_overlay_ref())
+    }
+
+    /// Filter this env's overlay in place, keeping only entries `keep` accepts,
+    /// and drop any tombstones. When the overlay ends up empty it is reset to
+    /// the shared empty singleton so the [`overlay_is_shared_empty`] latch
+    /// re-arms for the next frame-reuse call. Used by the light-call frame
+    /// reuse unwind: with the caller's overlay known-empty at entry, every
+    /// surviving entry is a callee write, so this is exactly the scoped-overlay
+    /// return merge performed in place.
+    pub(crate) fn retain_overlay(&mut self, keep: impl FnMut(&Symbol, &mut Value) -> bool) {
+        self.tombstones = None;
+        let map = self.cow_mut();
+        map.retain(keep);
+        if map.is_empty() {
+            self.inner = empty_overlay();
+        }
     }
 
     /// Collapse a scoped env into a flat (`parent=None`) env. For a flat env

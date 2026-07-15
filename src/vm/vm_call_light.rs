@@ -58,8 +58,29 @@ impl Interpreter {
         // This replaces the previous name-keyed save/restore juggling
         // (saved_env_locals / saved_param_env) with a single O(callee-writes)
         // merge -- the function's own params/locals never pollute the caller env.
-        let parent = self.env().clone();
-        let caller_env = std::mem::replace(self.env_mut(), crate::env::Env::scoped_child(parent));
+        //
+        // Frame reuse (ADR-0004 J4d): when the caller's live env is itself a
+        // scoped child whose overlay is still the process-shared empty
+        // singleton, a fresh scoped child over it would be observationally
+        // identical (an empty overlay is invisible to lookups; both read
+        // through the same parent chain at the same depth), so keep the
+        // caller's env in place — the clone + scoped_child + drop round-trip
+        // was ~8 `lock inc/dec`s per call, ~15% of fib(28) with the JIT on.
+        // Soundness rests on a dynamic latch, not on any static "the body
+        // never writes env" claim (that shortcut was rejected in slice 3):
+        // the shared singleton doubles as a write detector — the body's first
+        // by-name write un-shares it via `cow_mut`'s CoW (or sets a
+        // tombstone), and the unwind arm below detects that and replays the
+        // scoped-overlay return merge in place.
+        let caller_env = if self.env().overlay_is_shared_empty() {
+            None
+        } else {
+            let parent = self.env().clone();
+            Some(std::mem::replace(
+                self.env_mut(),
+                crate::env::Env::scoped_child(parent),
+            ))
+        };
 
         let num_locals = cf.code.locals.len();
         self.locals = self.take_locals_from_pool(num_locals);
@@ -109,7 +130,19 @@ impl Interpreter {
                     && !Self::fast_type_check(&val, tc)
                 {
                     self.restore_readonly_vars(saved_readonly);
-                    self.set_env(caller_env);
+                    match caller_env {
+                        Some(caller_env) => self.set_env(caller_env),
+                        // Reused frame: drop every by-name write made since
+                        // entry (the overlay was the shared empty singleton, so
+                        // all surviving entries are this call's param binds) —
+                        // the same wholesale discard the swap path gets from
+                        // dropping the scoped overlay.
+                        None => {
+                            if !self.env().overlay_is_shared_empty() {
+                                self.env_mut().retain_overlay(|_, _| false);
+                            }
+                        }
+                    }
                     let used = std::mem::replace(&mut self.locals, saved_locals);
                     self.recycle_locals(used);
                     self.loop_local_vars = saved_loop_local_vars;
@@ -242,29 +275,51 @@ impl Interpreter {
         // back: a write to a captured outer variable (not a declared local of
         // this function) persists in the caller; the function's params/locals are
         // dropped with the overlay. This replaces the prior per-name save/restore.
-        {
-            // The callee-local test reads the compile-time `Symbol` set
-            // (`is_callee_local_sym`) instead of materializing a `HashSet<&str>`
-            // per call: the old set was built even when the overlay was empty
-            // (a body whose params/locals are all slot-resolved never writes
-            // env), and hashed every local name with SipHash to build it.
-            let scoped = std::mem::replace(self.env_mut(), caller_env);
-            for (k, v) in scoped.overlay_iter() {
-                // The callee's private topic / arg array / routine id, and the
-                // per-frame contextual vars (`?LINE`/`?FILE`/...), must not
-                // propagate to the caller (which retains its own). Skipping the
-                // `?`-prefixed ones also avoids spurious `env_dirty` churn from
-                // the per-statement `?LINE` write on every recursive call.
-                if *k == "_"
-                    || *k == "@_"
-                    || *k == "%_"
-                    || *k == "__mutsu_callable_id"
-                    || k.with_str(|s| s.starts_with('?'))
-                {
-                    continue;
+        match caller_env {
+            Some(caller_env) => {
+                // The callee-local test reads the compile-time `Symbol` set
+                // (`is_callee_local_sym`) instead of materializing a `HashSet<&str>`
+                // per call: the old set was built even when the overlay was empty
+                // (a body whose params/locals are all slot-resolved never writes
+                // env), and hashed every local name with SipHash to build it.
+                let scoped = std::mem::replace(self.env_mut(), caller_env);
+                for (k, v) in scoped.overlay_iter() {
+                    // The callee's private topic / arg array / routine id, and the
+                    // per-frame contextual vars (`?LINE`/`?FILE`/...), must not
+                    // propagate to the caller (which retains its own). Skipping the
+                    // `?`-prefixed ones also avoids spurious `env_dirty` churn from
+                    // the per-statement `?LINE` write on every recursive call.
+                    if *k == "_"
+                        || *k == "@_"
+                        || *k == "%_"
+                        || *k == "__mutsu_callable_id"
+                        || k.with_str(|s| s.starts_with('?'))
+                    {
+                        continue;
+                    }
+                    if !cf.is_callee_local_sym(*k) {
+                        self.env_mut().insert_sym(*k, v.clone());
+                    }
                 }
-                if !cf.is_callee_local_sym(*k) {
-                    self.env_mut().insert_sym(*k, v.clone());
+            }
+            None => {
+                // Reused frame: the caller's overlay was the shared empty
+                // singleton at entry, so if the latch is still armed the body
+                // never wrote env — nothing to merge or restore. Otherwise
+                // every overlay entry is a write made by this call; replay the
+                // swap path's return merge in place — keep captured-outer
+                // writes (they are already sitting in the caller's env, which
+                // is where the merge would put them) and drop callee-locals
+                // and the per-frame private names.
+                if !self.env().overlay_is_shared_empty() {
+                    self.env_mut().retain_overlay(|k, _| {
+                        !(*k == "_"
+                            || *k == "@_"
+                            || *k == "%_"
+                            || *k == "__mutsu_callable_id"
+                            || k.with_str(|s| s.starts_with('?'))
+                            || cf.is_callee_local_sym(*k))
+                    });
                 }
             }
         }
