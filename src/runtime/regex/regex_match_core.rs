@@ -483,7 +483,7 @@ impl Interpreter {
         for g in 0..atom_stride {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
             let mut last_text = String::new();
-            let mut last_sub: Option<RegexCaptures> = None;
+            let mut last_sub: Option<std::sync::Arc<RegexCaptures>> = None;
             for ac in atom_caps {
                 if let Some(text) = ac.positional.get(g) {
                     let (from, to) = ac.positional_offsets.get(g).copied().unwrap_or((0, 0));
@@ -505,7 +505,7 @@ impl Interpreter {
         for g in 0..sep_stride {
             let mut list: Vec<QuantifiedCaptureEntry> = Vec::new();
             let mut last_text = String::new();
-            let mut last_sub: Option<RegexCaptures> = None;
+            let mut last_sub: Option<std::sync::Arc<RegexCaptures>> = None;
             for sc in &all_sep {
                 if let Some(text) = sc.positional.get(g) {
                     let (from, to) = sc.positional_offsets.get(g).copied().unwrap_or((0, 0));
@@ -675,7 +675,7 @@ impl Interpreter {
             // captures (named subrules etc.) so e.g. `$<family>=(<ident>)` keeps
             // `$<family><ident>` accessible — otherwise truncating the group's
             // positional entry would discard its nested subcapture.
-            let mut group_subcap: Option<RegexCaptures> = None;
+            let mut group_subcap: Option<std::sync::Arc<RegexCaptures>> = None;
             if matches!(token.atom, RegexAtom::CaptureGroup(_))
                 && updated.positional.len() > pos_base
             {
@@ -708,19 +708,20 @@ impl Interpreter {
                 if let Some(mut gs) = group_subcap.take() {
                     // Keep the group's nested captures, but pin the span/text to
                     // the aliased group's extent.
-                    gs.from = from;
-                    gs.to = to;
-                    gs.match_from = from;
-                    gs.matched = captured.clone();
+                    let gsm = std::sync::Arc::make_mut(&mut gs);
+                    gsm.from = from;
+                    gsm.to = to;
+                    gsm.match_from = from;
+                    gsm.matched = captured.clone();
                     subcaps.push(gs);
                 } else {
-                    subcaps.push(RegexCaptures {
+                    subcaps.push(std::sync::Arc::new(RegexCaptures {
                         from,
                         to,
                         matched: captured.clone(),
                         match_from: from,
                         ..Default::default()
-                    });
+                    }));
                 }
             }
             // Also capture under the secondary name (e.g., original builtin class name
@@ -1012,7 +1013,7 @@ impl Interpreter {
                                         .named_subcaps
                                         .entry(capture_name.clone())
                                         .or_default()
-                                        .push(subcap);
+                                        .push(std::sync::Arc::new(subcap));
                                     current_caps
                                         .named
                                         .entry(capture_name.clone())
@@ -1209,7 +1210,7 @@ impl Interpreter {
                                 .named_subcaps
                                 .entry(capture_name.clone())
                                 .or_default()
-                                .push(subcap);
+                                .push(std::sync::Arc::new(subcap));
                             current_caps
                                 .named
                                 .entry(capture_name.clone())
@@ -1236,7 +1237,7 @@ impl Interpreter {
                                         .named_subcaps
                                         .entry(capture_name.clone())
                                         .or_default()
-                                        .push(subcap);
+                                        .push(std::sync::Arc::new(subcap));
                                     current_caps
                                         .named
                                         .entry(capture_name.clone())

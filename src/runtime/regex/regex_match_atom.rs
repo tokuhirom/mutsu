@@ -257,7 +257,9 @@ impl Interpreter {
                 subcap.from = pos;
                 subcap.to = end;
                 new_caps.positional.push(captured);
-                new_caps.positional_subcaps.push(Some(subcap));
+                new_caps
+                    .positional_subcaps
+                    .push(Some(std::sync::Arc::new(subcap)));
                 new_caps.positional_quantified.push(None);
                 out.push((end, new_caps));
             }
@@ -671,7 +673,7 @@ impl Interpreter {
                     .named_subcaps
                     .entry(capture_name.to_string())
                     .or_default()
-                    .push(subcap);
+                    .push(std::sync::Arc::new(subcap));
                 new_caps
                     .named
                     .entry(capture_name.to_string())
@@ -684,7 +686,7 @@ impl Interpreter {
                     if let Some(subcaps) = new_caps.named_subcaps.get_mut(capture_name)
                         && let Some(last) = subcaps.last_mut()
                     {
-                        last.action_name = Some(spec.lookup_name.clone());
+                        std::sync::Arc::make_mut(last).action_name = Some(spec.lookup_name.clone());
                     }
                 }
                 if let Some(orig_subcap) = original_subcap {
@@ -692,7 +694,7 @@ impl Interpreter {
                         .named_subcaps
                         .entry(spec.lookup_name.clone())
                         .or_default()
-                        .push(orig_subcap);
+                        .push(std::sync::Arc::new(orig_subcap));
                     new_caps
                         .named
                         .entry(spec.lookup_name.clone())
@@ -734,7 +736,7 @@ impl Interpreter {
                     .named_subcaps
                     .entry(marker)
                     .or_default()
-                    .push(subcap);
+                    .push(std::sync::Arc::new(subcap));
             } else {
                 // Childless silent subrule (`<.ws>`, `<.CRLF>`, `<.sym>`, ...): no
                 // nested captures and (in practice) no action of interest, so keep
