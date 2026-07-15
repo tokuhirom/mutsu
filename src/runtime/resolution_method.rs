@@ -374,6 +374,45 @@ impl Interpreter {
         500
     }
 
+    /// Count the visible (non-private, non-ancestor-submethod) overloads of
+    /// `method_name` across `class_name`'s MRO — the same visibility filter as
+    /// `resolve_all_methods_with_owner`, but without cloning any overload Vec
+    /// or running signature matching, and with an early-out at 2. Used to skip
+    /// the remaining-candidates pass entirely for single-candidate submethod
+    /// dispatch (BUILD/TWEAK on every construction).
+    pub(crate) fn count_visible_method_candidates(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+    ) -> usize {
+        let mro = self.class_mro(class_name);
+        let registry = self.registry();
+        let mut count = 0usize;
+        for cn in &mro {
+            let is_ancestor = cn != class_name;
+            let overloads = registry
+                .classes
+                .get(cn.as_str())
+                .and_then(|c| c.methods.get(method_name))
+                .or_else(|| {
+                    registry
+                        .roles
+                        .get(cn.as_str())
+                        .and_then(|r| r.methods.get(method_name))
+                });
+            if let Some(ovs) = overloads {
+                count += ovs
+                    .iter()
+                    .filter(|d| !(d.is_private || (d.is_my && is_ancestor)))
+                    .count();
+                if count > 1 {
+                    return count;
+                }
+            }
+        }
+        count
+    }
+
     pub(crate) fn resolve_all_methods_with_owner(
         &mut self,
         class_name: &str,
