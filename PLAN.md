@@ -403,9 +403,37 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       path were deleted** (scalar locals are stored without sigils, so `name.starts_with('$')` was
       always false = it had never executed)).
 
+      **★Re-baseline 2026-07-15 (roast-wide raku-vs-mutsu wall-clock, `scripts/roast-speed-diff.sh`
+      over the 1358 runnable whitelisted tests):** mutsu beats raku (Rakudo 2022.12) on ~1348/1358
+      tests, usually 2–30× (fast startup + JIT). The **only** files where mutsu is meaningfully
+      *slower* (clean single-run ratios, release):
+      `S04-declarations/state.t` **4.2×** (`for ^2000000 { $ = foo }`), `S06-signature/named-parameters.t`
+      **2.6×** (`for ^1000000 { foo(:color($_)) }`), `S07-iterators/range-iterator.t` **1.7×**,
+      `S12-methods/private.t` **1.6×**. Isolated micro-repro: a 1M-iteration loop calling a sub is
+      **1.85× slower** than raku positional / **2.6× slower** with a named arg. **All of these converge
+      on one root: the interpreter function-call path in hot loops.** The JIT *bails at the call
+      boundary* (proven: positional 1M loop is `MUTSU_JIT=on` 0.74s ≈ `off` 0.72s — JIT does nothing),
+      so any loop that calls a sub runs the interpreter call path, whose profile is **~15% malloc/free
+      churn per call** (frame + named-args structure + `Env::cow_mut` + `Arc::drop_slow`) plus per-call
+      `current_package`/`Env::get_sym`/param-binding (`exec_set_local_op_inner`). Named args add
+      disproportionate cost (mutsu **+46%** vs raku **+6%**) = a `String`-keyed named-args structure
+      rebuilt every call. **This is the highest-value perf target** — it hits real spec tests and the
+      most common real-world shape (a loop that calls a sub), unlike the two items below which polish
+      benchmarks mutsu already wins. (`bench-grammar-parse`'s synthetic 6.4× gap does NOT surface in
+      the roast whitelist — the whitelisted grammar tests are not pathological.) See memory
+      `project_roast_speed_measurement`.
+
       **Remaining (in order of attack)**:
-      0. **★Removing the `needs_env_sync` blanket (the next main target; suited to a dedicated
-         session)** — currently `captures_env_by_name` (true if the frame contains even one
+      -1. **★Function-call path in hot loops (NEW top priority, from the re-baseline above)** — reduce
+         the per-call allocation churn: reuse the call frame / named-args storage, cut `Arc::drop_slow`
+         on teardown, cache `current_package`, and avoid rebuilding the `String`-keyed named-args
+         structure each call (intern the param names, bind by `Symbol`/slot). Because the JIT bails at
+         calls, this is interpreter-path work that no amount of JIT progress will subsume. Pins:
+         `roast/S04-declarations/state.t`, `roast/S06-signature/named-parameters.t`; micro-repro in the
+         re-baseline note.
+      0. **★Removing the `needs_env_sync` blanket (a dedicated-session fused campaign; NOT a
+         standalone change — see the four-mechanism breakage below)** — currently `captures_env_by_name`
+         (true if the frame contains even one
          `ForLoop`/`BlockScope`/`MakeGather`/`WheneverScope`) **makes every local in the frame an env
          mirror target**, so locals never read by name — like a loop body's `my $ts` — are written to
          env on every store. **Update 2026-07-15 (probed, then clean-reverted):** the actual per-store
