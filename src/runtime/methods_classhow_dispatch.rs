@@ -572,6 +572,40 @@ impl Interpreter {
                 self.native_ctor_plan_cache.clear();
                 Ok(Value::NIL)
             }
+            // `$type.HOW.add_parent($type, $parent)` — the native ClassHOW
+            // metamethod a user HOW (`class MyHOW is Metamodel::ClassHOW`) reaches
+            // via `callsame`/`nextsame` or a direct fallback. Adds `$parent` to
+            // `$type`'s parent list (idempotent — mutsu's `is Parent` already
+            // installs it during declaration, so a trait-driven re-add must not
+            // duplicate it) and recomputes the MRO.
+            "add_parent" if args.len() >= 2 => {
+                let class_name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    _ => return Ok(Value::NIL),
+                };
+                let parent_name = match args[1].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Str(name) => name.to_string(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => return Ok(Value::NIL),
+                };
+                let mut changed = false;
+                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name)
+                    && !class_def.parents.contains(&parent_name)
+                {
+                    class_def.parents.push(parent_name.clone());
+                    changed = true;
+                }
+                if changed {
+                    let mro = self.class_mro(&class_name);
+                    if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
+                        class_def.mro = mro;
+                    }
+                    self.native_ctor_plan_cache.clear();
+                }
+                Ok(Value::NIL)
+            }
             "add_attribute" if args.len() >= 2 => {
                 // ^add_attribute($type, $attr)
                 // Adds an Attribute object to a dynamically created class

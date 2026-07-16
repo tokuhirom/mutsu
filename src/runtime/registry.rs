@@ -79,6 +79,12 @@ pub(crate) struct Registry {
     /// regex engine consults this to route subrule dispatch through the custom
     /// `find_method` (Metamodel::GrammarHOW protocol).
     pub(crate) grammar_custom_how: HashMap<String, Value>,
+    /// Classes declared under a custom EXPORTHOW `class` metaclass whose HOW
+    /// class defines a user `compose` method: names queued for a post-`is`-trait
+    /// `compose` call. Drained by the class-decl VM op after custom `is` traits
+    /// run (so `@!aspects` populated by the trait is visible to `compose`), which
+    /// wraps the class's methods (`advent2011-day14` AOP).
+    pub(crate) pending_class_compose: Vec<String>,
     /// True once any user class inheriting a builtin metamodel class
     /// (Metamodel::ClassHOW / Metamodel::GrammarHOW) has been declared. Cheap
     /// gate for the per-dispatch `is_metamodel_how_class` check.

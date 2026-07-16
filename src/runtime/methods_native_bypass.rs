@@ -26,6 +26,7 @@ impl Interpreter {
                 | "add_method"
                 | "add_multi_method"
                 | "add_fallback"
+                | "add_parent"
                 | "compose"
                 | "archetypes"
                 | "name"

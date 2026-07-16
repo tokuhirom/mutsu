@@ -264,6 +264,42 @@ impl Interpreter {
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
             }
+            // Raku desugars `is Parent` to `trait_mod:<is>($type, Parent)`; when a
+            // KNOWN-class parent matches a *typed* user candidate
+            // (`multi trait_mod:<is>(Mu:U, SomeType:U)`, more specific than the
+            // default add-parent), also dispatch it so the trait runs — e.g. the
+            // AOP module's `add_aspect` on `class Example is LoggingAspect` where
+            // `LoggingAspect` does `MethodBoundaryAspect` (`advent2011-day14`).
+            // Plain inheritance already happened in `register_class_decl`; this
+            // only ADDS the trait's side effect. Runs OUTSIDE the block above (a
+            // class with only known-class parents has empty custom/deferred trait
+            // lists). Gated on a matching typed candidate, so a parent with no
+            // such candidate (ordinary inheritance) is untouched.
+            if has_trait_mod {
+                let type_obj = Value::package(Symbol::intern(&storage_name));
+                for parent in &mapped_parents {
+                    let parent_obj = Value::package(Symbol::intern(parent));
+                    let call_args = vec![type_obj.clone(), parent_obj];
+                    if self.typed_is_trait_candidate_matches(&call_args) {
+                        self.vm_call_function("trait_mod:<is>", call_args)?;
+                    }
+                }
+            }
+
+            // A class installed under a custom EXPORTHOW `class` metaclass whose
+            // HOW defines `compose`: run it NOW — after the custom `is` traits
+            // above (which populate the HOW's state, e.g. `@!aspects`) — so the
+            // user `compose` sees that state and wraps the class's methods
+            // (`advent2011-day14` AOP). `compose` receives the class type object.
+            let pending: Vec<String> =
+                std::mem::take(&mut self.registry_mut().pending_class_compose);
+            for cname in pending {
+                let how_val = self.registry().class_how_values.get(&cname).cloned();
+                if let Some(how_val) = how_val {
+                    let type_obj = Value::package(Symbol::intern(&cname));
+                    self.call_method_with_values(how_val, "compose", vec![type_obj])?;
+                }
+            }
 
             // Slice F: write the deferred body's outer-lexical mutations through
             // to this caller frame's local slots (`register_class_decl` ran the
@@ -276,6 +312,29 @@ impl Interpreter {
         } else {
             Err(RuntimeError::new("RegisterClass expects ClassDecl"))
         }
+    }
+
+    /// Whether a *typed* user `trait_mod:<is>` candidate matches `call_args`
+    /// (`[class_type, parent_type]`): a candidate whose SECOND positional
+    /// parameter carries a non-universal type constraint that the parent
+    /// satisfies. Used to route `is KnownParent` through the trait (Raku's
+    /// `is X` desugaring) only when a user overrode it for that parent type —
+    /// an unconstrained `(Mu, Mu)`-style candidate (which would match every
+    /// parent) is deliberately NOT counted, so ordinary inheritance is
+    /// untouched. See `advent2011-day14` AOP.
+    fn typed_is_trait_candidate_matches(&mut self, call_args: &[Value]) -> bool {
+        let matches = self.resolve_all_matching_candidates("trait_mod:<is>", call_args);
+        matches.iter().any(|def| {
+            def.param_defs
+                .iter()
+                .filter(|p| !p.named && !p.is_invocant)
+                .nth(1)
+                .and_then(|p| p.type_constraint.as_deref())
+                .is_some_and(|tc| {
+                    let base = tc.trim_end_matches(":U").trim_end_matches(":D");
+                    !matches!(base, "Mu" | "Any" | "Cool" | "")
+                })
+        })
     }
 
     pub(super) fn exec_augment_class_op(

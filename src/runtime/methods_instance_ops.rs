@@ -1925,10 +1925,65 @@ impl Interpreter {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
 
+                // `.wrap` on a Method object obtained from `.^methods(:local)`
+                // (a "Method" instance carrying its owning class via the
+                // `__mutsu_lookup_*` attributes): register a class-keyed wrap
+                // chain, mirroring `.wrap` on a `^lookup`/`^find_method` Sub, so
+                // the wrapper takes effect for later dispatch of that method
+                // (`advent2011-day14` AOP `compose` wraps every local method).
+                if method == "wrap"
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
+                    && class_name == "Method"
+                    && let Some(wrapper) = args.first().cloned()
+                {
+                    let am = attributes.as_map();
+                    if let (
+                        Some(ValueView::Str(cls)),
+                        Some(ValueView::Str(meth)),
+                        Some(ValueView::Int(idx)),
+                    ) = (
+                        am.get("__mutsu_lookup_class").map(Value::view),
+                        am.get("__mutsu_lookup_method").map(Value::view),
+                        am.get("__mutsu_lookup_candidate_idx").map(Value::view),
+                    ) {
+                        self.wrap_handle_counter += 1;
+                        let handle_id = self.wrap_handle_counter;
+                        let key = (cls.to_string(), meth.to_string(), idx as usize);
+                        self.method_wrap_chains
+                            .entry(key)
+                            .or_default()
+                            .push((handle_id, wrapper));
+                        let mut wh = std::collections::HashMap::new();
+                        wh.insert("handle-id".to_string(), Value::int(handle_id as i64));
+                        wh.insert("wrapped-sub".to_string(), target.clone());
+                        return Ok(Value::make_instance(
+                            Symbol::intern("Routine::WrapHandle"),
+                            wh,
+                        ));
+                    }
+                }
                 // Metamodel method fallback (`.^add_fallback`): before failing,
                 // consult any dynamic fallbacks registered for this value's class.
                 if let Some(result) = self.try_method_fallback(&target, method, &args) {
                     return result;
+                }
+                // A user HOW subclass (`class MyHOW is Metamodel::ClassHOW`)
+                // inherits the native ClassHOW meta-methods (`methods`, `wrap`
+                // sits on Method, `add_method`, ...): when the user class does
+                // NOT override the method, dispatch it to the native ClassHOW
+                // implementation. The invocant is the meta-object; the native
+                // impl operates on its first arg (the type object), so pass the
+                // call args straight through (e.g. `self.methods($obj, :local)`
+                // in a custom `compose` — `advent2011-day14` AOP).
+                if let ValueView::Instance { class_name, .. } = target.view()
+                    && Self::is_classhow_method(method)
+                    && self.is_metamodel_how_class(&class_name.resolve())
+                {
+                    return self.dispatch_classhow_method(method, args.to_vec());
                 }
                 let type_name = match target.view() {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
