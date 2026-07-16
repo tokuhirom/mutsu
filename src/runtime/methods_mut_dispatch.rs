@@ -2369,8 +2369,19 @@ impl Interpreter {
                 };
                 let temp_var = format!("{}__mutsu_delegation_tmp__", sigil);
                 self.env.insert(temp_var.clone(), delegate.clone());
-                let result =
-                    self.call_method_mut_with_values(&temp_var, delegate, target_method, args)?;
+                // A delegated method whose target class declares a `proto method`
+                // must run that proto body first (its `{*}` dispatches to the
+                // matching multi). The mut dispatch below
+                // (`call_method_mut_with_values`) skips the proto, so intercept it
+                // here — mirroring the non-mut `forward_resolved_delegation` path,
+                // which forwards through `call_method_with_values` (proto-aware).
+                let result = if let Some(proto_result) =
+                    self.try_proto_method_body(&delegate, target_method, &args)
+                {
+                    proto_result?
+                } else {
+                    self.call_method_mut_with_values(&temp_var, delegate, target_method, args)?
+                };
                 // Read back the potentially-updated delegate
                 let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
                 self.env.remove(&temp_var);
