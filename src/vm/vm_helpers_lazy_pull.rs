@@ -245,8 +245,15 @@ impl Interpreter {
         let gather_result_env = self.env().clone();
         let initial_env = &list.env;
         let mut merged_env = saved_env.clone();
+        // The body's OWN declarations (`my`, `for`-loop params) never merge
+        // back: a body loop var shadowing a same-named consumer lexical would
+        // otherwise clobber it (see CompiledCode::self_declared_names).
+        let body_declared = cc.self_declared_names();
         for (k, v) in gather_result_env.iter() {
             if !saved_env.contains_key_sym(*k) {
+                continue;
+            }
+            if body_declared.contains(k) {
                 continue;
             }
             if let Some(initial) = initial_env.get_sym(*k) {

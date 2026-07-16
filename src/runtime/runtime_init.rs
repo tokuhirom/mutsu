@@ -2226,6 +2226,7 @@ impl Interpreter {
             otf_call_cache_gen: 0,
             check_phaser_depth: 0,
             gather_for_loop_resume: None,
+            gather_resume_body_ip: None,
             gather_suspend_pending: false,
             lazy_take_boundary_defer: false,
             rw_map_topic_capture: None,

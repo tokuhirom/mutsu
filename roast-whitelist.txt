@@ -1311,6 +1311,7 @@ roast/integration/99problems-01-to-10.t
 roast/integration/99problems-11-to-20.t
 roast/integration/99problems-21-to-30.t
 roast/integration/99problems-31-to-40.t
+roast/integration/99problems-51-to-60.t
 roast/integration/advent2009-day01.t
 roast/integration/advent2009-day02.t
 roast/integration/advent2009-day03.t

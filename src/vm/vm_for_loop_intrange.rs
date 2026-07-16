@@ -47,14 +47,36 @@ impl Interpreter {
         // them per-iteration (owned_captures). Balanced by pop on every exit.
         self.push_loop_local_scope();
 
-        // When resuming a gather coroutine, start from the saved position.
-        let mut i = if let Some(crate::value::ForLoopResumeState::IntRange { current, .. }) =
-            self.gather_for_loop_resume.take()
+        // When resuming a gather coroutine, start from the saved position and
+        // restore the chained inner state (a loop nested in this body) into
+        // the slot so the next loop op encountered resumes too. A state with a
+        // different `loop_ip` belongs to a different loop op — leave it there.
+        let mut i = start;
+        let this_code_id = code.ops.as_ptr() as usize;
+        if self.gather_for_loop_resume.as_ref().is_some_and(|s| {
+            s.code_id() == Some(this_code_id) && s.loop_ip() == Some(body_start - 1)
+        }) && let Some(crate::value::ForLoopResumeState::IntRange {
+            current,
+            resume_body_ip,
+            inner,
+            ..
+        }) = self.gather_for_loop_resume.take()
         {
-            current
-        } else {
-            start
-        };
+            i = current;
+            self.gather_for_loop_resume = inner.map(|b| *b);
+            self.gather_resume_body_ip = resume_body_ip;
+        }
+        // Nested-resume entry: when the slot holds a state for a loop nested
+        // INSIDE this body (its loop_ip lies in the body range), the resumed
+        // iteration's first body run starts AT that loop op — re-running the
+        // ops before it would replay completed sibling loops / side effects.
+        let mut nested_entry: Option<usize> = self.gather_resume_body_ip.take().or_else(|| {
+            self.gather_for_loop_resume
+                .as_ref()
+                .filter(|s| s.code_id() == Some(this_code_id))
+                .and_then(|s| s.loop_ip())
+                .filter(|lip| *lip > body_start && *lip < loop_end)
+        });
 
         // Pre-mark readonly before the loop to avoid per-iteration HashSet
         // insertions. The for loop parameter is readonly for the duration.
@@ -119,7 +141,8 @@ impl Interpreter {
                 self.locals[slot as usize] = item.clone();
             }
             'body_redo: loop {
-                let body_res = self.run_range(code, body_start, loop_end, compiled_fns);
+                let run_start = nested_entry.take().unwrap_or(body_start);
+                let body_res = self.run_range(code, run_start, loop_end, compiled_fns);
                 // State mutations persist on every exit path (`next`/`redo`/
                 // `last`/exception), not just normal completion.
                 if !code.state_locals.is_empty() {
@@ -174,11 +197,39 @@ impl Interpreter {
                             == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
                     {
                         // Save for-loop state for gather coroutine resumption.
+                        // A state already in the slot belongs to a loop nested
+                        // inside this body: chain it (and re-enter the CURRENT
+                        // iteration so that loop can continue) instead of
+                        // overwriting it.
+                        let mut e = e;
+                        let code_id = code.ops.as_ptr() as usize;
+                        let nested = if self.gather_for_loop_resume.as_ref().is_some_and(|st| {
+                            st.is_lexically_nested_in(code_id, body_start, loop_end)
+                        }) {
+                            self.gather_for_loop_resume.take()
+                        } else {
+                            None
+                        };
+                        let take_site = e.take_suspend_site().filter(|(cid, t)| {
+                            *cid == code_id && *t >= body_start && *t < loop_end
+                        });
+                        if take_site.is_some() {
+                            e.set_take_suspend_site(None);
+                        }
+                        let resume_body_ip = take_site.map(|(_, t)| t + 1);
                         self.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::IntRange {
-                                current: i.saturating_add(1),
+                                current: if nested.is_some() || resume_body_ip.is_some() {
+                                    i
+                                } else {
+                                    i.saturating_add(1)
+                                },
                                 end_val,
                                 inclusive,
+                                code_id,
+                                loop_ip: body_start - 1,
+                                resume_body_ip,
+                                inner: nested.map(Box::new),
                             });
                         if !spec.is_rw
                             && let Some(ref name) = param_name

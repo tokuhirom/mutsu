@@ -92,8 +92,14 @@ impl Interpreter {
         // `Value` — LazyList's internal Value graph is traced starting in the
         // third wave (design doc §11 step 10); revisit once
         // `LazyList::visit_gc_children` exists.
-        if let Some(ForLoopResumeState::List { items, .. }) = &self.gather_for_loop_resume {
-            visit_slice(visitor, items);
+        // Walk the whole nested-resume chain: any level may be a List holding
+        // Values (see ForLoopResumeState::inner_state).
+        let mut cur = self.gather_for_loop_resume.as_ref();
+        while let Some(state) = cur {
+            if let ForLoopResumeState::List { items, .. } = state {
+                visit_slice(visitor, items);
+            }
+            cur = state.inner_state();
         }
     }
 

@@ -38,12 +38,18 @@ impl Interpreter {
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        // Check for gather coroutine resume state. A `CStyleLoop` marker belongs
-        // to a `loop`/`while` opcode, not this for-loop, so leave it in place.
-        if !matches!(
-            self.gather_for_loop_resume,
-            Some(crate::value::ForLoopResumeState::CStyleLoop)
-        ) && let Some(resume) = self.gather_for_loop_resume.take()
+        // Check for gather coroutine resume state. A state is consumed only by
+        // the loop op it belongs to (`loop_ip`): a `CStyleLoop` marker belongs
+        // to a `loop`/`while` opcode and a positional state carrying another
+        // ip belongs to a sibling loop — both are left in place. Each resume
+        // restores its chained `inner` state (a loop nested in this body) into
+        // the slot so the nested loop op reached during the replay resumes too.
+        let this_code_id = code.ops.as_ptr() as usize;
+        if self
+            .gather_for_loop_resume
+            .as_ref()
+            .is_some_and(|s| s.code_id() == Some(this_code_id) && s.loop_ip() == Some(*ip))
+            && let Some(resume) = self.gather_for_loop_resume.take()
         {
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
@@ -52,7 +58,12 @@ impl Interpreter {
                     current,
                     end_val,
                     inclusive,
+                    resume_body_ip,
+                    inner,
+                    ..
                 } => {
+                    self.gather_for_loop_resume = inner.map(|b| *b);
+                    self.gather_resume_body_ip = resume_body_ip;
                     self.exec_for_loop_int_range(
                         code,
                         spec,
@@ -66,7 +77,15 @@ impl Interpreter {
                     *ip = loop_end;
                     return Ok(());
                 }
-                crate::value::ForLoopResumeState::List { items, next_index } => {
+                crate::value::ForLoopResumeState::List {
+                    items,
+                    next_index,
+                    resume_body_ip,
+                    inner,
+                    ..
+                } => {
+                    self.gather_for_loop_resume = inner.map(|b| *b);
+                    self.gather_resume_body_ip = resume_body_ip;
                     let _ = self.exec_for_loop_body(
                         code,
                         spec,
@@ -82,7 +101,12 @@ impl Interpreter {
                 crate::value::ForLoopResumeState::LazyGather {
                     lazy_list,
                     next_index,
+                    resume_body_ip,
+                    inner,
+                    ..
                 } => {
+                    self.gather_for_loop_resume = inner.map(|b| *b);
+                    self.gather_resume_body_ip = resume_body_ip;
                     self.exec_for_loop_lazy_gather_from(
                         code,
                         spec,
@@ -96,7 +120,7 @@ impl Interpreter {
                     return Ok(());
                 }
                 // Guarded out above: a CStyleLoop marker is never taken here.
-                crate::value::ForLoopResumeState::CStyleLoop => unreachable!(),
+                crate::value::ForLoopResumeState::CStyleLoop { .. } => unreachable!(),
             }
         }
 

@@ -2680,6 +2680,41 @@ impl CompiledCode {
         }
     }
 
+    /// Names this code declares itself: `my` declarations (`SetVarDynamic`)
+    /// and `for`-loop parameters (`ForLoop`). A lazily-forced `gather` body
+    /// uses this to keep its OWN declarations out of the pull-site env merge —
+    /// a body loop var that shadows a consumer-scope lexical of the same name
+    /// (`for f() -> $a { ... }` pulling a gather whose body also loops `-> $a`)
+    /// must not clobber the consumer's binding. Mirrors the scan in
+    /// `CompiledFunction::compute_declared_locals`.
+    pub(crate) fn self_declared_names(&self) -> rustc_hash::FxHashSet<Symbol> {
+        let mut declared: rustc_hash::FxHashSet<Symbol> = rustc_hash::FxHashSet::default();
+        for op in &self.ops {
+            match op {
+                OpCode::SetVarDynamic { name_idx, .. } => {
+                    if let Some(ValueView::Str(name)) =
+                        self.constants.get(*name_idx as usize).map(Value::view)
+                    {
+                        declared.insert(Symbol::intern(&name));
+                    }
+                }
+                OpCode::ForLoop(spec) => {
+                    if let Some(idx) = spec.param_idx
+                        && let Some(ValueView::Str(name)) =
+                            self.constants.get(idx as usize).map(Value::view)
+                    {
+                        declared.insert(Symbol::intern(&name));
+                    }
+                    for name in &spec.multi_param_names {
+                        declared.insert(Symbol::intern(name));
+                    }
+                }
+                _ => {}
+            }
+        }
+        declared
+    }
+
     pub(crate) fn compute_free_vars(&mut self) {
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let mut free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
