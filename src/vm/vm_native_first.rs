@@ -82,6 +82,19 @@ impl Interpreter {
         }
 
         let items = crate::runtime::utils::value_to_list(target);
+        // Setup-once batched scan for a plain `Sub` matcher (one compile +
+        // env setup, bare `run_reuse` per element, early exit) — ~25x cheaper
+        // per element than the per-element closure call below. Falls through
+        // for matchers it cannot handle (sub-signature, composed, .assuming).
+        if let Some(func_ref) = func.as_ref()
+            && let Some(res) = self.try_first_match_batched(func_ref, &items, false)
+        {
+            return match res {
+                Ok(Some((_, value))) => Some(Ok(value)),
+                Ok(None) => Some(Ok(Value::NIL)),
+                Err(e) => Some(Err(e)),
+            };
+        }
         let mut matcher = VmFirstMatcher(self);
         match find_first_match_generic(&mut matcher, func.as_ref(), &items, false) {
             Ok(Some((_, value))) => Some(Ok(value)),
