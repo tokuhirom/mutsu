@@ -413,7 +413,7 @@ impl Interpreter {
     /// `take` once enough elements are available, and can be resumed later.
     /// Side effects (e.g. `$count++`) are correctly scoped because we pause
     /// mid-execution rather than re-running from scratch.
-    pub(super) fn force_lazy_list_vm_n(
+    pub(crate) fn force_lazy_list_vm_n(
         &mut self,
         list: &LazyList,
         needed: usize,

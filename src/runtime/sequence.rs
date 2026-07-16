@@ -314,12 +314,103 @@ impl Interpreter {
         Ok(Some(val))
     }
 
+    /// `LAZY-LIST ... endpoint` where the left is a genuinely-INFINITE lazy
+    /// sequence (a closure generator or an arithmetic/geometric `sequence_spec`):
+    /// iterate the left's elements on demand and stop at `endpoint`. Returns
+    /// `Ok(None)` for an endpoint shape this fast path does not handle (caller
+    /// falls back to the generic deduction path). A `Whatever`/`Inf` endpoint
+    /// (`@lazy ... *`) yields the lazy left unchanged.
+    fn eval_sequence_from_lazy_left(
+        &mut self,
+        ll: &crate::gc::Gc<crate::value::LazyList>,
+        right: &Value,
+        exclusive: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
+        // `@lazy ... *` — the result is the same infinite lazy list.
+        if matches!(right.view(), ValueView::Whatever)
+            || matches!(right.view(), ValueView::Num(f) if f.is_infinite())
+        {
+            return Ok(Some(Value::lazy_list(ll.clone())));
+        }
+        // A single-element endpoint list (`... (pred,)`) unwraps to its element.
+        let endpoint = match right.view() {
+            ValueView::Array(items, ..) if items.len() == 1 => items[0].clone(),
+            ValueView::Array(..) => return Ok(None),
+            _ => right.clone(),
+        };
+        enum End {
+            Value(Value),
+            Closure(Value),
+            Regex(String),
+        }
+        let end = match endpoint.view() {
+            ValueView::Sub(_) => End::Closure(endpoint.clone()),
+            ValueView::Regex(pat) => End::Regex(pat.to_string()),
+            ValueView::Whatever => return Ok(Some(Value::lazy_list(ll.clone()))),
+            _ => End::Value(endpoint.clone()),
+        };
+        // Cap the pull to avoid an unbounded loop if the endpoint is never met.
+        const LAZY_LEFT_CAP: usize = 1_000_000;
+        let mut result: Vec<Value> = Vec::new();
+        for i in 0..LAZY_LEFT_CAP {
+            let pulled = self.force_lazy_list_vm_n(ll, i + 1)?;
+            if pulled.len() <= i {
+                // Left sequence exhausted before the endpoint matched.
+                return Ok(Some(Value::array(result)));
+            }
+            let elem = pulled[i].clone();
+            let hit = match &end {
+                End::Closure(closure_val) => self
+                    .call_sub_value(closure_val.clone(), vec![elem.clone()], false)?
+                    .truthy(),
+                End::Regex(pat) => self
+                    .regex_find_first(pat, &elem.to_string_value())
+                    .is_some(),
+                End::Value(ep) => Self::seq_endpoint_value_matches(&elem, ep),
+            };
+            if hit {
+                if !exclusive {
+                    result.push(elem);
+                }
+                return Ok(Some(Value::array(result)));
+            }
+            result.push(elem);
+        }
+        Ok(Some(Value::array(result)))
+    }
+
+    /// Endpoint equality for a value-terminated `...`: numeric operands compare
+    /// by value, strings by content, everything else by structural equality.
+    fn seq_endpoint_value_matches(elem: &Value, endpoint: &Value) -> bool {
+        match (
+            Self::seq_value_to_f64(elem),
+            Self::seq_value_to_f64(endpoint),
+        ) {
+            (Some(a), Some(b)) => a == b,
+            _ => match (elem.view(), endpoint.view()) {
+                (ValueView::Str(a), ValueView::Str(b)) => *a == *b,
+                _ => elem == endpoint,
+            },
+        }
+    }
+
     pub(super) fn eval_sequence(
         &mut self,
         left: Value,
         right: Value,
         exclusive: bool,
     ) -> Result<Value, RuntimeError> {
+        // A genuinely-INFINITE lazy left operand IS itself the generator: iterate
+        // it against the endpoint instead of deducing a new pattern from its
+        // realized prefix (`@primes ...^ * > sqrt $n`, where `@primes` is the lazy
+        // `2,3,5,-> $p {…} … *`). A merely `lazy`-marked FINITE list
+        // (`lazy <a b c>`) falls through so its elements become deduction seeds.
+        if let ValueView::LazyList(ll) = left.view()
+            && (ll.closure_seq.is_some() || ll.sequence_spec.is_some() || ll.scan_spec.is_some())
+            && let Some(res) = self.eval_sequence_from_lazy_left(&ll, &right, exclusive)?
+        {
+            return Ok(res);
+        }
         if let ValueView::Array(items, ..) = right.view()
             && items.len() > 1
         {
@@ -1055,6 +1146,13 @@ impl Interpreter {
         // during initial generation. When it did, the sequence is finite and
         // must NOT be left as a resumable infinite closure sequence.
         let mut closure_generation_finished = false;
+        // Set when the generator ERRORED during eager-prefix generation of an
+        // infinite `… *` sequence — typically a re-entrant read of the
+        // not-yet-bound sequence itself (`my @primes = 2,3,5,-> $p { … @primes … } … *`).
+        // We stop eager generation, hand back a lazy closure sequence, and mark it
+        // to survive `@`-assignment un-forced so the generator re-runs on demand
+        // (after @primes is bound). A genuine error re-surfaces on that lazy pull.
+        let mut deferred_after_generator_error = false;
         'seq_gen: for _ in 0..max_gen {
             let next = match &mode {
                 SeqMode::Closure => {
@@ -1067,12 +1165,20 @@ impl Interpreter {
                         precompiled_closure.as_ref().map(|t| (&t.0, &t.1)),
                         &mut generator_closure_env,
                         suppress_generator_error,
-                    )? {
-                        Some(v) => v,
-                        None => {
+                    ) {
+                        Ok(Some(v)) => v,
+                        Ok(None) => {
                             closure_generation_finished = true;
                             break 'seq_gen;
                         }
+                        // Re-entrant (or otherwise erroring) generator on an
+                        // infinite `… *` sequence: defer to lazy instead of
+                        // failing eagerly (see `deferred_after_generator_error`).
+                        Err(_e) if endpoint_kind.is_none() => {
+                            deferred_after_generator_error = true;
+                            break 'seq_gen;
+                        }
+                        Err(e) => return Err(e),
                     }
                 }
                 SeqMode::Arithmetic(step) => {
@@ -1466,9 +1572,18 @@ impl Interpreter {
                         .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
                     finished: false,
                 };
-                Ok(Value::lazy_list(crate::gc::Gc::new(
-                    crate::value::LazyList::new_closure_sequence(result, state),
-                )))
+                let mut ll = crate::value::LazyList::new_closure_sequence(result, state);
+                // A sequence deferred after a re-entrant generator error must
+                // survive `my @x = …` un-forced (forcing it now would re-run the
+                // generator before @x is bound, re-triggering the error). Tag it
+                // with the `@`-assign-preserve marker the assignment path honours.
+                if deferred_after_generator_error {
+                    ll.env.insert(
+                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                        Value::TRUE,
+                    );
+                }
+                Ok(Value::lazy_list(crate::gc::Gc::new(ll)))
             } else {
                 Ok(Value::lazy_list(crate::gc::Gc::new(
                     crate::value::LazyList::new_cached(result),
