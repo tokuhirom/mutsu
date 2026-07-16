@@ -20,7 +20,7 @@ plan 14;
     # --- .relative ---
     is "/base/dir/sub/f".IO.relative,          "sub/f", "relative strips \$*CWD prefix";
     is "/base/dir/sub/f".IO.relative("/base"), "dir/sub/f", "relative with an explicit base";
-    is "/elsewhere/g".IO.relative,             "/elsewhere/g", "relative of a non-descendant is unchanged";
+    is "/elsewhere/g".IO.relative,             "../../elsewhere/g", "relative of a non-descendant walks up with ..";
 
     # --- variable receiver (mut dispatch path) ---
     my $p = "data/file".IO;

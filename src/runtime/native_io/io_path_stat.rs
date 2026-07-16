@@ -114,21 +114,69 @@ impl Interpreter {
                         .unwrap_or(&norm_p);
                     Ok(Value::str(rel.to_string()))
                 } else {
-                    let rel_base_arg = args.first().map(|v| v.to_string_value());
-                    let rel_base = rel_base_arg
-                        .as_ref()
-                        .map(PathBuf::from)
-                        .or_else(|| instance_cwd.as_ref().map(PathBuf::from))
-                        .unwrap_or_else(|| cwd_path.clone());
-                    let rel = path_buf
-                        .strip_prefix(&rel_base)
-                        .map(Self::stringify_path)
-                        .unwrap_or_else(|_| Self::stringify_path(&path_buf));
+                    // Compute a path relative to `base` (default `$*CWD`),
+                    // matching raku's `$*SPEC.abs2rel`: make both the receiver
+                    // and the base absolute, drop the common leading prefix, and
+                    // prepend a `..` for each remaining base component. A plain
+                    // `strip_prefix` only works when the base is a literal
+                    // ancestor of the path — for a sibling/relative base it must
+                    // walk up with `..` (raku returns e.g. `../A/x`), and the old
+                    // fall-through to the absolute path corrupted zef's extract
+                    // paths (it uses `$archive.relative($tmp)` to build `-C`).
+                    let base_buf = match args.first().map(|v| v.to_string_value()) {
+                        Some(base) => self.resolve_path(&base),
+                        None => instance_cwd
+                            .as_ref()
+                            .map(|c| self.resolve_path(c))
+                            .unwrap_or_else(|| cwd_path.clone()),
+                    };
+                    let rel = Self::lexical_abs2rel(&path_buf, &base_buf);
                     Ok(Value::str(rel))
                 }
             }
             _ => unreachable!(),
         })
+    }
+
+    /// Lexically compute the path of `target` relative to `base`, the core of
+    /// `IO::Path.relative` (raku's `$*SPEC.abs2rel`). Both are assumed absolute.
+    /// Purely lexical and the filesystem is never consulted (matching raku, which
+    /// does not resolve symlinks here). `.` segments are dropped but `..` is kept
+    /// as a literal component and compared verbatim — exactly what raku's
+    /// `abs2rel` does (it splits the two absolute strings and never collapses
+    /// `..`). Returns `.` when the two paths are equal.
+    pub(crate) fn lexical_abs2rel(target: &Path, base: &Path) -> String {
+        use std::path::Component;
+        // Component-name vector. The leading `/` (RootDir) is kept as a sentinel
+        // "" so two absolute paths always share it as a common prefix element.
+        // `Path::components()` already drops `.`; `..` stays as a `ParentDir`.
+        fn norm(p: &Path) -> Vec<String> {
+            let mut out: Vec<String> = Vec::new();
+            for c in p.components() {
+                match c {
+                    Component::RootDir => out.push(String::new()),
+                    Component::CurDir => {}
+                    Component::ParentDir => out.push("..".to_string()),
+                    Component::Normal(s) => out.push(s.to_string_lossy().to_string()),
+                    Component::Prefix(_) => {}
+                }
+            }
+            out
+        }
+        let t = norm(target);
+        let b = norm(base);
+        let mut i = 0;
+        while i < t.len() && i < b.len() && t[i] == b[i] {
+            i += 1;
+        }
+        let mut parts: Vec<String> = Vec::new();
+        parts.extend((i..b.len()).map(|_| "..".to_string()));
+        parts.extend(t[i..].iter().cloned());
+        if parts.is_empty() {
+            ".".to_string()
+        } else {
+            parts.join("/")
+        }
     }
 
     /// Filesystem `stat`-only predicates / accessors on an `IO::Path`
