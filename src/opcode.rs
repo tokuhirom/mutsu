@@ -642,6 +642,18 @@ pub(crate) enum OpCode {
         arity: u32,
         arg_sources_idx: Option<u32>,
     },
+    /// Expression-level function call whose literal named args travel
+    /// out-of-band: `arity` values on the stack, of which the positions
+    /// listed in `CompiledCode::named_arg_specs[spec_idx]` are named-arg
+    /// VALUES (no Pair boxing at the call site). The light-call fast path
+    /// binds them by `Symbol`; every other dispatch route materializes the
+    /// Pairs in place on the stack and delegates to the `CallFunc` logic.
+    CallFuncNamed {
+        name_idx: u32,
+        arity: u32,
+        spec_idx: u32,
+        arg_sources_idx: Option<u32>,
+    },
     /// Expression-level function call with capture slip: pop 1 slip + `regular_arity` args,
     /// flatten the slip into the argument list, call name, push result.
     CallFuncSlip {
@@ -1633,6 +1645,11 @@ pub(crate) struct CompiledCode {
     pub(crate) param_local_slots: Vec<u32>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
+    /// Out-of-band named-argument specs for `CallFuncNamed` sites (indexed by
+    /// the op's `spec_idx`): which of the call's stack values are named-arg
+    /// VALUES and under which keys. Lets a literal `:key(val)` call site skip
+    /// the per-call Pair boxing.
+    pub(crate) named_arg_specs: Vec<Arc<NamedArgsSpec>>,
     /// Parallel to `closure_compiled_codes`: `closure_escapes[i]` is true if the
     /// i-th child closure was created in an *escaping position* — its value is
     /// stored/returned/bound (assignment or `:=` RHS, `return`/`fail` operand,
@@ -2010,6 +2027,7 @@ impl CompiledCode {
             our_locals: Vec::new(),
             param_local_slots: Vec::new(),
             closure_compiled_codes: Vec::new(),
+            named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
             has_once: false,
@@ -2380,7 +2398,9 @@ impl CompiledCode {
                 | OpCode::SymbolicDeref(_)
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,
-                OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncSlip { name_idx, .. } => {
+                OpCode::CallFunc { name_idx, .. }
+                | OpCode::CallFuncNamed { name_idx, .. }
+                | OpCode::CallFuncSlip { name_idx, .. } => {
                     matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
                         Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
@@ -2591,6 +2611,9 @@ impl CompiledCode {
             OpCode::CallFunc {
                 arg_sources_idx, ..
             }
+            | OpCode::CallFuncNamed {
+                arg_sources_idx, ..
+            }
             | OpCode::CallFuncSlip {
                 arg_sources_idx, ..
             }
@@ -2636,6 +2659,7 @@ impl CompiledCode {
     fn op_callee_name_const_idx(op: &OpCode) -> Option<u32> {
         match op {
             OpCode::CallFunc { name_idx, .. }
+            | OpCode::CallFuncNamed { name_idx, .. }
             | OpCode::CallFuncSlip { name_idx, .. }
             | OpCode::ExecCall { name_idx, .. }
             | OpCode::ExecCallSlip { name_idx, .. } => Some(*name_idx),
@@ -3273,6 +3297,7 @@ impl CompiledCode {
                 op,
                 OpCode::CallDefined
                     | OpCode::CallFunc { .. }
+                    | OpCode::CallFuncNamed { .. }
                     | OpCode::CallFuncSlip { .. }
                     | OpCode::CallMethod { .. }
                     | OpCode::CallMethodMut { .. }
@@ -3323,6 +3348,7 @@ impl CompiledCode {
                     | OpCode::MultiDimIndexAssign { .. }
                     | OpCode::MultiDimIndexAssignGeneric(_)
                     | OpCode::CallFunc { .. }
+                    | OpCode::CallFuncNamed { .. }
                     | OpCode::CallFuncSlip { .. }
                     | OpCode::CallMethod { .. }
                     | OpCode::CallMethodMut { .. }
@@ -3646,6 +3672,14 @@ impl CompiledCode {
         idx
     }
 
+    /// Register a `CallFuncNamed` site's out-of-band named-arg spec, returning
+    /// the index the op carries as `spec_idx`.
+    pub(crate) fn add_named_arg_spec(&mut self, spec: NamedArgsSpec) -> u32 {
+        let idx = self.named_arg_specs.len() as u32;
+        self.named_arg_specs.push(Arc::new(spec));
+        idx
+    }
+
     pub(crate) fn add_stmt(&mut self, stmt: Stmt) -> u32 {
         let idx = self.stmt_pool.len() as u32;
         // Record a declaration fingerprint for SubDecls so a re-executed
@@ -3687,6 +3721,25 @@ impl CompiledCode {
 /// compiler-generated strings, so HashDoS resistance buys nothing here.
 pub(crate) type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>;
 
+/// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the
+/// call's stack values are named-arg values, and under which keys.
+#[derive(Clone, Debug)]
+pub(crate) struct NamedArgsSpec {
+    /// In argument (stack) order.
+    pub(crate) entries: Vec<NamedArgEntry>,
+}
+
+/// One named argument of a [`NamedArgsSpec`].
+#[derive(Clone, Debug)]
+pub(crate) struct NamedArgEntry {
+    /// Position among the call's `arity` stack values.
+    pub(crate) pos: u32,
+    /// The interned key, for the light path's `Symbol` compare.
+    pub(crate) sym: Symbol,
+    /// The key string, for fallback Pair materialization.
+    pub(crate) key: String,
+}
+
 /// Precomputed bind plan for the light named-call path: what
 /// `call_compiled_function_light`'s binding loop needs per call, derived once
 /// per `CompiledFunction` instead of re-deriving match keys / locals slots /
@@ -3726,6 +3779,8 @@ pub(crate) struct PositionalParamBind {
 pub(crate) struct NamedParamBind {
     /// The key a caller's `:key(value)` pair must carry (sigil/twigil stripped).
     pub(crate) match_key: String,
+    /// `match_key` interned, for the spec-based (out-of-band) named lookup.
+    pub(crate) match_key_sym: Symbol,
     /// The parameter's locals slot (by `pd.name`), when it has one.
     pub(crate) slot: Option<usize>,
     /// Whether the bound value must also be written into the overlay env
@@ -3919,6 +3974,7 @@ impl CompiledFunction {
                 }
             }
             params.push(LightParamBind::Named(NamedParamBind {
+                match_key_sym: Symbol::intern(&match_key),
                 match_key,
                 slot,
                 needs_env: needs_env_of(slot),

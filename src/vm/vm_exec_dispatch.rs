@@ -2832,6 +2832,32 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::CallFuncNamed {
+                name_idx,
+                arity,
+                spec_idx,
+                arg_sources_idx,
+            } => {
+                self.sync_source_line(code, *ip);
+                match self.exec_call_func_named_op(
+                    code,
+                    *name_idx,
+                    *arity,
+                    *spec_idx,
+                    *arg_sources_idx,
+                    compiled_fns,
+                ) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        // Same resume-point recording as CallFunc.
+                        if !e.is_resume() && self.resume_ip.is_none() {
+                            self.resume_ip = Some(*ip + 1);
+                        }
+                        return Err(e);
+                    }
+                }
+                *ip += 1;
+            }
             OpCode::CallFuncSlip {
                 name_idx,
                 regular_arity,

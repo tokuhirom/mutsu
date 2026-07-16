@@ -112,6 +112,93 @@ impl Interpreter {
         })
     }
 
+    /// `CallFuncNamed`: a call site whose literal named args travel out-of-band
+    /// (bare values on the stack + a `NamedArgsSpec`). The light-call cache hit
+    /// binds them by `Symbol` with zero Pair boxing; every other route
+    /// materializes the Pairs in place on the stack and delegates to the
+    /// ordinary `exec_call_func_op`, so behavior off the fast path is
+    /// byte-identical to the old MakePair form.
+    pub(super) fn exec_call_func_named_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arity: u32,
+        spec_idx: u32,
+        arg_sources_idx: Option<u32>,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        crate::vm::vm_stats::record_function_dispatch();
+        let arity_usize = arity as usize;
+        let spec = &code.named_arg_specs[spec_idx as usize];
+        // Fast path: light-call cache hit, spec-aware binding. Mirrors the
+        // CallFunc light-cache block, with the container/junction guards
+        // folded into one conservative scan (an Array/Hash value anywhere
+        // may need container sharing; a Junction may need autothreading —
+        // both fall back to the materializing slow path).
+        if self.light_call_cache_gen == self.fn_resolve_gen
+            && self.stack.len() >= arity_usize
+            && (self.amp_param_shadowed_names.is_empty()
+                || !self
+                    .amp_param_shadowed_names
+                    .contains(&code.const_sym(name_idx)))
+        {
+            let name_sym = code.const_sym(name_idx);
+            if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
+                && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                && cf.fingerprint == *cached_fp
+            {
+                let base = self.stack.len() - arity_usize;
+                let needs_slow = self.stack[base..].iter().any(|v| {
+                    fn is_guarded(v: &Value) -> bool {
+                        matches!(
+                            v.view(),
+                            ValueView::Array(..) | ValueView::Hash(..) | ValueView::Junction { .. }
+                        )
+                    }
+                    match v.view() {
+                        // A positional `$var` arg arrives VarRef-wrapped; the
+                        // guard is about the inner value's kind.
+                        ValueView::VarRef { value, .. } => is_guarded(value),
+                        _ => is_guarded(v),
+                    }
+                });
+                if !needs_slow {
+                    let mut args = self.take_locals_from_pool(0);
+                    args.extend(self.stack.drain(base..));
+                    let cl = crate::runtime::Interpreter::peek_callsite_line(&args);
+                    if cl.is_some() {
+                        loan_env!(self, set_pending_callsite_line(cl));
+                    }
+                    let name_str = Self::const_str(code, name_idx);
+                    let result = self.call_compiled_function_light_spec(
+                        cf,
+                        &args,
+                        compiled_fns,
+                        name_str,
+                        Some(spec),
+                    );
+                    self.recycle_locals(args);
+                    self.stack.push(result?);
+                    self.drain_and_reconcile_after_cached_call(code);
+                    return Ok(());
+                }
+            }
+        }
+        // Fallback: materialize the named Pairs in place, then run the
+        // ordinary CallFunc dispatch (which re-records the dispatch stat;
+        // subtract nothing — the double count is a stats-only artifact of
+        // the fallback and keeps this wrapper branch-free).
+        if self.stack.len() >= arity_usize {
+            let base = self.stack.len() - arity_usize;
+            for e in &spec.entries {
+                let slot = &mut self.stack[base + e.pos as usize];
+                let val = std::mem::replace(slot, Value::NIL);
+                *slot = Value::pair(e.key.clone(), val);
+            }
+        }
+        self.exec_call_func_op(code, name_idx, arity, arg_sources_idx, compiled_fns)
+    }
+
     pub(super) fn exec_call_func_op(
         &mut self,
         code: &CompiledCode,
