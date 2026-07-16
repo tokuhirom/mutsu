@@ -266,71 +266,94 @@ impl Interpreter {
         // computed for EVERY registered class, not just natively-constructible
         // ones: `dispatch_bless` consumes it too, and bless has no
         // native-eligibility gate (a custom `new` doesn't disqualify bless).
-        let (class_attrs, type_constraints, has_build, has_tweak, has_smiley, has_custom_bless) =
-            if registered {
-                let class_attrs = std::sync::Arc::new(self.collect_class_attributes(cn_resolved));
-                let type_constraints =
-                    std::sync::Arc::new(self.collect_attribute_type_constraints(cn_resolved));
-                let mro = self.mro_readonly(cn_resolved);
-                let registry = self.registry();
-                let mut has_build = mro.iter().any(|cls| {
-                    registry
-                        .classes
-                        .get(cls)
-                        .is_some_and(|cd| cd.methods.contains_key("BUILD"))
+        let (
+            class_attrs,
+            type_constraints,
+            has_build,
+            has_tweak,
+            has_smiley,
+            has_custom_bless,
+            has_container_defaults,
+        ) = if registered {
+            let class_attrs = std::sync::Arc::new(self.collect_class_attributes(cn_resolved));
+            let type_constraints =
+                std::sync::Arc::new(self.collect_attribute_type_constraints(cn_resolved));
+            let mro = self.mro_readonly(cn_resolved);
+            let registry = self.registry();
+            let mut has_build = mro.iter().any(|cls| {
+                registry
+                    .classes
+                    .get(cls)
+                    .is_some_and(|cd| cd.methods.contains_key("BUILD"))
+            });
+            let mut has_tweak = mro.iter().any(|cls| {
+                registry
+                    .classes
+                    .get(cls)
+                    .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
+            });
+            let has_smiley = mro.iter().any(|cls| {
+                registry
+                    .classes
+                    .get(cls)
+                    .is_some_and(|cd| !cd.attribute_smileys.is_empty())
+            });
+            drop(registry);
+            // Role submethods are composed into the class's own method table
+            // only when both class and role are 6.c (`compose_submethods`); a
+            // 6.e role's BUILD/TWEAK is still run by the construction phases
+            // via `ordered_role_submethods_for_class`, so probe the composed
+            // roles too — otherwise the has_build/has_tweak gates would skip
+            // those phases for such classes.
+            if !has_build {
+                has_build = mro.iter().any(|cls| {
+                    !self
+                        .ordered_role_submethods_for_class(cls, "BUILD")
+                        .is_empty()
                 });
-                let mut has_tweak = mro.iter().any(|cls| {
-                    registry
-                        .classes
-                        .get(cls)
-                        .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
+            }
+            if !has_tweak {
+                has_tweak = mro.iter().any(|cls| {
+                    !self
+                        .ordered_role_submethods_for_class(cls, "TWEAK")
+                        .is_empty()
                 });
-                let has_smiley = mro.iter().any(|cls| {
-                    registry
-                        .classes
-                        .get(cls)
-                        .is_some_and(|cd| !cd.attribute_smileys.is_empty())
-                });
-                drop(registry);
-                // Role submethods are composed into the class's own method table
-                // only when both class and role are 6.c (`compose_submethods`); a
-                // 6.e role's BUILD/TWEAK is still run by the construction phases
-                // via `ordered_role_submethods_for_class`, so probe the composed
-                // roles too — otherwise the has_build/has_tweak gates would skip
-                // those phases for such classes.
-                if !has_build {
-                    has_build = mro.iter().any(|cls| {
-                        !self
-                            .ordered_role_submethods_for_class(cls, "BUILD")
-                            .is_empty()
-                    });
-                }
-                if !has_tweak {
-                    has_tweak = mro.iter().any(|cls| {
-                        !self
-                            .ordered_role_submethods_for_class(cls, "TWEAK")
-                            .is_empty()
-                    });
-                }
-                let has_custom_bless = self.has_user_method(cn_resolved, "bless");
-                (
-                    class_attrs,
-                    type_constraints,
-                    has_build,
-                    has_tweak,
-                    has_smiley,
-                    has_custom_bless,
-                )
-            } else {
-                (
-                    std::sync::Arc::new(Vec::new()),
-                    std::sync::Arc::new(HashMap::new()),
-                    false,
-                    false,
-                    false,
-                    false,
-                )
-            };
+            }
+            let has_custom_bless = self.has_user_method(cn_resolved, "bless");
+            // Does any `is default(...)` element default exist keyed by this
+            // class? `apply_container_attribute_defaults` looks defaults up by
+            // the receiver class name only, so a key with a matching class is
+            // the exact necessary-and-sufficient condition for it to do work.
+            let registry = self.registry();
+            let has_container_defaults = registry
+                .class_attribute_defaults
+                .keys()
+                .any(|(c, _)| c == cn_resolved)
+                || registry
+                    .class_attribute_default_exprs
+                    .keys()
+                    .any(|(c, _)| c == cn_resolved);
+            drop(registry);
+            (
+                class_attrs,
+                type_constraints,
+                has_build,
+                has_tweak,
+                has_smiley,
+                has_custom_bless,
+                has_container_defaults,
+            )
+        } else {
+            (
+                std::sync::Arc::new(Vec::new()),
+                std::sync::Arc::new(HashMap::new()),
+                false,
+                false,
+                false,
+                false,
+                false,
+            )
+        };
         let attr_syms = std::sync::Arc::new(
             class_attrs
                 .iter()
@@ -347,6 +370,7 @@ impl Interpreter {
             has_tweak,
             has_smiley,
             has_custom_bless,
+            has_container_defaults,
         });
         // Don't freeze a plan for a class that is not (yet) registered: e.g. a
         // role punned to a class on first use would otherwise keep a stale
