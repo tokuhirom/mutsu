@@ -27,9 +27,22 @@ impl Interpreter {
             monkey_typing,
         )) = self.import_scope_stack.pop()
         {
-            self.registry_mut()
-                .functions
-                .retain(|key, _| func_snapshot.contains(key));
+            // Remove functions added since the push, EXCEPT a module's own
+            // fully-qualified source definitions (`Fancy::Utilities::lolgreet`,
+            // `Fancy::Utilities::EXPORT::ALL::lolgreet`). Those persist as long
+            // as the module is loaded — a later block-scoped `use Fancy...` in a
+            // sibling block re-imports from them (`import_module`), and dropping
+            // them left the re-import with nothing to alias ("Unknown function").
+            // The IMPORTED aliases (bare names and `GLOBAL::name`) are still
+            // removed, so a bare call after the block exits still dies (roast
+            // S11-modules/lexical.t: `{ use Foo } EVAL('foo()')`).
+            self.registry_mut().functions.retain(|key, _| {
+                if func_snapshot.contains(key) {
+                    return true;
+                }
+                let ks = key.resolve();
+                ks.contains("::") && !ks.starts_with("GLOBAL::")
+            });
             self.registry_mut()
                 .classes
                 .retain(|key, _| class_snapshot.contains(key));
