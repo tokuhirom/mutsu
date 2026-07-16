@@ -134,6 +134,22 @@ impl Interpreter {
                 },
             ) => ta == tb && ka == kb && ia == ib,
             (ValueView::Nil, ValueView::Nil) => true,
+            // A shared `ContainerRef` element (the rw-alias cell `.grep` leaves
+            // in its source array, or a `:=`-bound element): mutations through
+            // the alias write through the cell itself, so the source element
+            // already observes them. The loop var holds either the same cell
+            // (Gc identity) or a dereferenced plain value — compare against the
+            // cell's current content in that case. Without these arms every
+            // iteration of a read-only `for` over a cell-holding array fell
+            // through to the O(n) source rebuild (O(n^2) overall; a 20k-element
+            // array took seconds instead of milliseconds).
+            (ValueView::ContainerRef(a), ValueView::ContainerRef(b)) => {
+                crate::gc::Gc::ptr_eq(&a, &b)
+            }
+            (_, ValueView::ContainerRef(cell)) => {
+                let inner = cell.lock().unwrap().clone();
+                Self::loop_var_unchanged(current, &inner)
+            }
             _ => false,
         }
     }
