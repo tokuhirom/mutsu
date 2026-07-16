@@ -327,6 +327,21 @@ impl Interpreter {
         class_name: &str,
         attributes: &mut crate::value::AttrMap,
     ) {
+        // Fast gate: a class with no `is default(...)` element default makes every
+        // per-attribute registry probe below return `None`, so the whole scan (the
+        // keys `Vec` plus a `(String, String)` registry-key allocation per container
+        // attribute) is pure waste. The per-class flag lives on the cached
+        // `NativeCtorPlan`; `dispatch_bless` fetches (and caches) the plan before
+        // calling here, so the cache hit covers every construction including the
+        // first. A cache miss (unregistered / not-yet-planned class) falls through
+        // to the full scan, which is safe.
+        let skip = self
+            .native_ctor_plan_cache
+            .get(&crate::symbol::Symbol::intern(class_name))
+            .is_some_and(|p| !p.has_container_defaults);
+        if skip {
+            return;
+        }
         let names: Vec<crate::symbol::Symbol> = attributes.keys().copied().collect();
         for attr_name in names {
             if !matches!(

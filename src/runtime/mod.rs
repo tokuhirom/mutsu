@@ -442,6 +442,13 @@ pub(crate) struct NativeCtorPlan {
     /// MRO — such a class must take the interpreter's generic dispatch instead
     /// of the native `bless` fork.
     pub(crate) has_custom_bless: bool,
+    /// True if this class declares an `is default(...)` element default on any
+    /// attribute (keyed by the receiver class name in `class_attribute_defaults`
+    /// / `class_attribute_default_exprs`). When false, `apply_container_attribute_defaults`
+    /// is a guaranteed no-op — every per-attribute registry probe returns `None` —
+    /// so the whole scan (its keys `Vec` plus the `(String, String)` registry-key
+    /// allocs) is skipped. The overwhelmingly common case.
+    pub(crate) has_container_defaults: bool,
 }
 
 /// Kind of declaration a doc comment is attached to.
