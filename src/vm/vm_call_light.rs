@@ -402,7 +402,7 @@ impl Interpreter {
     }
 
     /// Fast type check for common types.
-    fn fast_type_check(val: &Value, type_name: &str) -> bool {
+    pub(super) fn fast_type_check(val: &Value, type_name: &str) -> bool {
         match type_name {
             "Int" => matches!(val.view(), ValueView::Int(_) | ValueView::BigInt(_)),
             "Str" => matches!(val.view(), ValueView::Str(_)),

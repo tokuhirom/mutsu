@@ -42,19 +42,19 @@ impl Interpreter {
     }
 
     /// Check if a compiled function is eligible for the light call path.
-    /// Light calls avoid the expensive env clone/restore cycle by directly
-    /// binding parameters and restoring them after the call. This is safe
-    /// for simple functions that don't need callframe/caller introspection,
-    /// don't have where constraints, state variables, or return type checks.
-    /// Check if a compiled function is eligible for the light call path.
     /// The light call skips the heavyweight env clone/restore, Sub value
     /// creation, block/routine push, and callable_id lookup. It does inline
-    /// argument binding with minimal overhead.
+    /// argument binding (via the precomputed `NamedCallPlan`) with minimal
+    /// overhead.
     ///
-    /// Currently restricted to functions where ALL param_defs are named
-    /// (no positional params) to avoid correctness issues with positional
-    /// argument binding edge cases (optional arrays, @_, VarRef unwrapping, etc.).
-    /// Also excludes functions with legacy placeholder params (cf.params).
+    /// Covers signatures with at least one named parameter — all-named or
+    /// mixed positional+named. (All-positional signatures take the
+    /// positional-light path instead; keeping them out of this one preserves
+    /// the existing routing.) Positional parameters are held to the
+    /// positional-light rules (no optionals/sub-signatures, fast-checkable
+    /// type constraints, plain `$` scalars only); named parameters to the
+    /// prior all-named light rules. Legacy placeholder params (`cf.params`)
+    /// never coexist with a non-empty `param_defs`, so they stay excluded.
     pub(super) fn is_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         !fn_name.is_empty()
             && cf.return_type.is_none()
@@ -65,17 +65,38 @@ impl Interpreter {
             // A `once` needs the clone-id setup only the full call path performs.
             && !cf.code.has_once
             && !cf.param_defs.is_empty()
+            && cf.param_defs.iter().any(|pd| pd.named)
             && cf.param_defs.iter().all(|pd| {
-                pd.named
-                    && pd.where_constraint.is_none()
+                let common = pd.where_constraint.is_none()
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && pd.default.is_none()
-                    && pd.type_constraint.is_none()
                     && pd.code_signature.is_none()
                     && !pd.sigilless
                     && !pd.is_invocant
-                    && pd.traits.is_empty()
+                    && pd.traits.is_empty();
+                if !common {
+                    return false;
+                }
+                if pd.named {
+                    pd.type_constraint.is_none()
+                } else {
+                    // Positional params in a mixed signature: the
+                    // positional-light constraints (see
+                    // `is_positional_light_call_eligible`).
+                    !pd.optional_marker
+                        && pd.sub_signature.is_none()
+                        && pd
+                            .type_constraint
+                            .as_deref()
+                            .is_none_or(Self::is_fast_type_name)
+                        && !pd.name.starts_with('@')
+                        && !pd.name.starts_with('%')
+                        && !pd.name.starts_with('&')
+                        && !pd.name.starts_with("__")
+                        && !pd.name.starts_with('*')
+                        && pd.name != "_"
+                }
             })
     }
 
