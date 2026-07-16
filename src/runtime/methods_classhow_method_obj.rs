@@ -28,12 +28,13 @@ impl Interpreter {
                 }
                 let is_multi = overloads.len() > 1;
                 let return_type = first.return_type.clone();
-                let method_obj = self.make_method_object_with_candidates(
+                let method_obj = self.make_method_object_with_owner(
                     method_name,
                     first,
                     is_multi,
                     return_type,
                     Some(overloads),
+                    Some(class_name),
                 );
                 result.push(method_obj);
             }
@@ -121,6 +122,29 @@ impl Interpreter {
         return_type: Option<String>,
         overloads: Option<&[MethodDef]>,
     ) -> Value {
+        self.make_method_object_with_owner(
+            name,
+            method_def,
+            is_dispatcher,
+            return_type,
+            overloads,
+            None,
+        )
+    }
+
+    /// As `make_method_object_with_candidates`, but records the owning class so
+    /// a `.wrap` on the returned Method object (e.g. from `.^methods(:local)` in
+    /// a custom metaclass `compose`, `advent2011-day14`) can register into the
+    /// class-keyed `method_wrap_chains` and take effect for later dispatch.
+    pub(super) fn make_method_object_with_owner(
+        &self,
+        name: &str,
+        method_def: &MethodDef,
+        is_dispatcher: bool,
+        return_type: Option<String>,
+        overloads: Option<&[MethodDef]>,
+        owner_class: Option<&str>,
+    ) -> Value {
         let mut attrs = std::collections::HashMap::new();
 
         // Store the display name (with ! prefix for private methods)
@@ -131,6 +155,23 @@ impl Interpreter {
         };
         attrs.insert("name".to_string(), Value::str(display_name));
         attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
+        // Record the owning class + method name so a `.wrap` on this Method
+        // object can register a class-keyed wrap chain (see `wrap` dispatch for
+        // Method instances). Single (non-multi) methods are candidate 0; multi
+        // methods are wrapped through their `.candidates[N]` entries instead.
+        if let Some(owner) = owner_class
+            && !is_dispatcher
+        {
+            attrs.insert(
+                "__mutsu_lookup_class".to_string(),
+                Value::str(owner.to_string()),
+            );
+            attrs.insert(
+                "__mutsu_lookup_method".to_string(),
+                Value::str(name.to_string()),
+            );
+            attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+        }
 
         // Build a Signature object for this method, threading the return type
         // so that `.signature.returns` reflects a `--> Type` declaration.

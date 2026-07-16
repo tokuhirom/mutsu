@@ -316,4 +316,44 @@ impl Interpreter {
         }
         Ok(())
     }
+
+    /// A `class` declared while an EXPORTHOW `class` metaclass mapping is
+    /// installed (`EXPORTHOW.WHO.<class> = SomeHOW`, from a `use`d module) gets
+    /// an instance of that HOW as its meta-object, so `TheClass.HOW.<method>`
+    /// dispatches to the custom HOW's user methods (e.g. the AOP example's
+    /// `add_aspect`). Returns `true` when the HOW class defines a user `compose`
+    /// method, signalling the caller to run it after the class's custom `is`
+    /// traits have been applied (see `advent2011-day14`).
+    pub(crate) fn install_custom_class_how(
+        &mut self,
+        class_name: &str,
+        how_type: Value,
+    ) -> Result<bool, RuntimeError> {
+        let how_class = match how_type.view() {
+            ValueView::Package(sym) => sym.resolve(),
+            _ => return Ok(false),
+        };
+        // The HOW type must be a user-declared class (a stale/foreign stash
+        // entry is ignored rather than failing the class declaration).
+        if !self.registry().classes.contains_key(&how_class) {
+            return Ok(false);
+        }
+        let mro = self
+            .registry()
+            .classes
+            .get(&how_class)
+            .map(|cd| cd.mro.clone())
+            .unwrap_or_default();
+        let has_user_compose = mro.iter().any(|c| {
+            self.registry()
+                .classes
+                .get(c.as_str())
+                .is_some_and(|cd| cd.methods.contains_key("compose"))
+        });
+        let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
+        self.registry_mut()
+            .class_how_values
+            .insert(class_name.to_string(), instance);
+        Ok(has_user_compose)
+    }
 }

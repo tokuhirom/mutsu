@@ -2268,6 +2268,25 @@ impl Interpreter {
         {
             self.install_custom_grammar_how(name, how_type)?;
         }
+        // A non-grammar `class` declared while an EXPORTHOW `class` metaclass
+        // mapping is installed (`EXPORTHOW.WHO.<class> = SomeHOW`, from a `use`d
+        // module) gets an instance of that HOW as its meta-object, so
+        // `TheClass.HOW.<method>` dispatches to the custom HOW (e.g. the AOP
+        // example's `add_aspect`, called by a user `trait_mod:<is>`). Installed
+        // BEFORE the caller applies this class's custom `is` traits so those
+        // reach the custom HOW; if the HOW defines a user `compose`, the class is
+        // queued for a post-trait `compose` call (`advent2011-day14`).
+        else if let Some(how_type) = self
+            .env
+            .get("EXPORTHOW::$class")
+            .or_else(|| self.env.get("EXPORTHOW::class"))
+            .cloned()
+            && self.install_custom_class_how(name, how_type)?
+        {
+            self.registry_mut()
+                .pending_class_compose
+                .push(name.to_string());
+        }
         Ok(deferred_custom_traits)
     }
 }
