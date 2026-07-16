@@ -170,6 +170,23 @@ impl Interpreter {
             }
             None
         };
+        // A parallel/lazy sequence RHS (`my T @a = seq.hyper.map(...)` /
+        // `.race` / a plain `Seq`/`Slip`) must be reified to its elements so the
+        // typed-array element coercion below type-checks each element, instead of
+        // rejecting the whole `HyperSeq`/`RaceSeq` as one opaque value ("expected
+        // T, got HyperSeq"). `Seq`/`Slip` are usually already reified to an Array
+        // upstream, but normalizing them here too is harmless. Only for `@` vars.
+        let value = if var_name.starts_with('@') {
+            match value.view() {
+                ValueView::HyperSeq(items)
+                | ValueView::RaceSeq(items)
+                | ValueView::Seq(items)
+                | ValueView::Slip(items) => Value::real_array(items.to_vec()),
+                _ => value,
+            }
+        } else {
+            value
+        };
         if var_name.starts_with('@')
             && let Some(constraint) = loan_env!(self, var_type_constraint(var_name))
             && let ValueView::Array(items, kind) = value.view()
