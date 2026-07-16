@@ -116,14 +116,20 @@ impl Interpreter {
                     .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
                     .count()
             };
-            found_key = probe(&format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(",")))
-                .or_else(|| {
-                    probe(&format!(
-                        "{}::{}/{}#{:x}",
-                        pkg, name, arity, expected_fingerprint
-                    ))
-                })
-                .or_else(|| probe(&format!("{}::{}/{}", pkg, name, arity)));
+            found_key = probe(&format!(
+                "{}::{}/{}:{}",
+                pkg,
+                name,
+                arity,
+                type_sig.join(",")
+            ))
+            .or_else(|| {
+                probe(&format!(
+                    "{}::{}/{}#{:x}",
+                    pkg, name, arity, expected_fingerprint
+                ))
+            })
+            .or_else(|| probe(&format!("{}::{}/{}", pkg, name, arity)));
             if found_key.is_none() {
                 // `key_simple` (`Pkg::name`) and the positional-only-arity key are
                 // probed but their match is intentionally *not* kept here: the
