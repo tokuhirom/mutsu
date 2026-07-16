@@ -161,6 +161,18 @@ impl Interpreter {
                 Value::array_with_kind(items.clone(), kind.decontainerize())
             }
             ValueView::Scalar(inner) => (*inner).clone(),
+            // An `is Array` subclass instance hypers as its backing array
+            // elements (`self »-« @vec` inside a Vector method): unwrap it to
+            // the `__mutsu_array_storage` list so both sides line up by length.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage") =>
+            {
+                attributes
+                    .as_map()
+                    .get("__mutsu_array_storage")
+                    .cloned()
+                    .unwrap_or_else(|| Value::real_array(Vec::new()))
+            }
             _ => v.clone(),
         }
     }

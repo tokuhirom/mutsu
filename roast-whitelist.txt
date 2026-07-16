@@ -1380,6 +1380,7 @@ roast/integration/advent2013-day02.t
 roast/integration/advent2013-day04.t
 roast/integration/advent2013-day06.t
 roast/integration/advent2013-day07.t
+roast/integration/advent2013-day08.t
 roast/integration/advent2013-day09.t
 roast/integration/advent2013-day10.t
 roast/integration/advent2013-day12.t

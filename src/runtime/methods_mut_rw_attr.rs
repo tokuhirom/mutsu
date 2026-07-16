@@ -65,6 +65,33 @@ impl Interpreter {
         None
     }
 
+    /// Detect an `is rw` method whose body returns an indexed element of the
+    /// invocant itself — `self[EXPR]` (or `self{EXPR}`) — as happens in an
+    /// `is Array` subclass accessor (`method z() is rw { self[2] }`). Returns
+    /// `(index_expr, is_positional)`; the element lives in the instance's
+    /// backing `__mutsu_array_storage`, so `$obj.z = v` writes storage[2].
+    pub(crate) fn rw_method_self_index_target(body: &[Stmt]) -> Option<(Expr, bool)> {
+        let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
+        let expr = match first {
+            Stmt::Expr(e) | Stmt::Return(e) => e,
+            _ => return None,
+        };
+        let expr = match expr {
+            Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => &args[0],
+            other => other,
+        };
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+        } = expr
+            && matches!(target.as_ref(), Expr::BareWord(w) | Expr::Var(w) if w == "self")
+        {
+            return Some(((**index).clone(), *is_positional));
+        }
+        None
+    }
+
     /// Assign `value` into element `index_value` of the array/hash attribute
     /// `attr_name` on the instance, then write the updated instance back through
     /// `target_var`. Backs `$obj.rw-method(idx) = value` where the method

@@ -426,6 +426,11 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             {
                 return items.to_vec();
             }
+            // An `is Array` subclass instance is Positional: in list context it
+            // flattens to its backing storage elements (`for @$vec { ... }`).
+            if let Some(storage) = attributes.as_map().get("__mutsu_array_storage") {
+                return value_to_list(storage);
+            }
             vec![val.clone()]
         }
         // Nil is a single scalar item in list context (e.g. `for Nil { }` does
