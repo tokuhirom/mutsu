@@ -48,11 +48,88 @@ pub(crate) static TOKEN_DEFS_GEN: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
 
 /// A pattern is cacheable iff parsing it does not depend on runtime variable
-/// state. Interpolation (`interpolate_regex_scalars`) only substitutes when the
-/// pattern contains a `$`, `@`, or `%` sigil, so a pattern free of those parses
-/// deterministically.
+/// state, i.e. it contains no `$`/`@`/`%` variable interpolation.
+///
+/// Structural uses of the sigil characters must NOT mark a pattern dynamic:
+/// the end anchors `$` / `$$`, the separated-quantifier operators `%` / `%%`,
+/// and backslash-escaped literals. A bare `pattern.contains(['$','@','%'])`
+/// check misclassified every `rule list { <item> * % ',' }` as dynamic, so the
+/// workhorse rules of a grammar were re-resolved AND re-parsed on every subrule
+/// invocation (both `PARSED_TOKEN_CANDIDATES` and `REGEX_PARSE_CACHE` gate on
+/// this predicate) — ~15% of a JSON-grammar parse profile.
+///
+/// A sigil counts as interpolation only when what follows can actually start a
+/// variable form (see `interpolate_regex_scalars` / the `<...>` tokenizer
+/// forms): an identifier start, a digit (`$0` backrefs stay conservative), a
+/// twigil (`$*x`, `$?FILE`, `$^a`, `$!x`, `$.x`), `{`/`(` contextualizers,
+/// `$<name>` capture forms, or `@$var` derefs. This stays a conservative
+/// superset of what the parser substitutes; false "dynamic" only costs cache
+/// misses, never correctness.
 pub(super) fn regex_pattern_is_static(pattern: &str) -> bool {
-    !pattern.contains(['$', '@', '%'])
+    fn starts_variable_form(c: char) -> bool {
+        c.is_alphanumeric() || matches!(c, '_' | '{' | '(' | '<' | '*' | '?' | '^' | '.' | '!')
+    }
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            i += 2;
+            continue;
+        }
+        if matches!(c, '$' | '@' | '%') {
+            let mut j = i + 1;
+            // A doubled sigil is structural (`$$` line-end anchor, `%%`
+            // separator op) — but if a variable form follows the pair, stay
+            // conservative and treat the whole thing as dynamic.
+            if chars.get(j) == Some(&c) {
+                j += 1;
+            }
+            // `@$var` scalar-deref interpolation.
+            if c == '@' && chars.get(j) == Some(&'$') {
+                return false;
+            }
+            if chars.get(j).copied().is_some_and(starts_variable_form) {
+                return false;
+            }
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+    true
+}
+
+#[cfg(test)]
+mod static_pattern_tests {
+    use super::regex_pattern_is_static;
+
+    #[test]
+    fn structural_sigils_are_static() {
+        assert!(regex_pattern_is_static("<pair> * % \\,"));
+        assert!(regex_pattern_is_static("<value> * %% [ \\, ]"));
+        assert!(regex_pattern_is_static("foo $"));
+        assert!(regex_pattern_is_static("^ foo $$"));
+        assert!(regex_pattern_is_static("a+ % ','"));
+        assert!(regex_pattern_is_static("\\$ \\@ \\% literal"));
+        assert!(regex_pattern_is_static("<[$@%]>"));
+    }
+
+    #[test]
+    fn interpolations_are_dynamic() {
+        assert!(!regex_pattern_is_static("$var"));
+        assert!(!regex_pattern_is_static("${name}"));
+        assert!(!regex_pattern_is_static("$(1 + 1)"));
+        assert!(!regex_pattern_is_static("$*dyn"));
+        assert!(!regex_pattern_is_static("$0"));
+        assert!(!regex_pattern_is_static("$<cap>"));
+        assert!(!regex_pattern_is_static("@words"));
+        assert!(!regex_pattern_is_static("@$deref"));
+        assert!(!regex_pattern_is_static("@(list())"));
+        assert!(!regex_pattern_is_static("<%hash>"));
+        assert!(!regex_pattern_is_static("a* %% %sep"));
+        assert!(!regex_pattern_is_static("$$x"));
+    }
 }
 
 /// Parsing mode for the shared regex grammar parser (`parse_regex_uncached`).
