@@ -681,6 +681,28 @@ impl Interpreter {
             self.auto_fetch_proxy_args(args)?
         };
         loan_env!(self, set_pending_callsite_line(callsite_line));
+        // A lexically-bound `&callsame`/`&callwith`/`&nextsame`/`&nextwith`/
+        // `&samewith` (`my &callwith := -> ... { ... }`) shadows the built-in
+        // dispatcher routine of the same name (roast advent2013-day21.t pointy
+        // block). These names are control-flow builtins, so the normal
+        // `lexical_amp_var_callable` path excludes them; check the binding
+        // explicitly here and call it as an ordinary sub.
+        if matches!(
+            name.as_str(),
+            "callsame" | "callwith" | "nextsame" | "nextwith" | "samewith"
+        ) {
+            let ampname = format!("&{}", name);
+            if let Some(callable) = self
+                .locals_get_by_name(code, &ampname)
+                .or_else(|| self.env().get(&ampname).cloned())
+                .filter(|v| matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_)))
+            {
+                let result = self.vm_call_sub_value(callable, args, false)?;
+                self.apply_pending_rw_writeback(code);
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         // Check if there's a CALL-ME override from trait_mod mixin
         let call_me_override =
             self.env()

@@ -79,7 +79,6 @@ noted.
 | `integration/advent2012-day14.t` | aborts at 0/6 | PASS ★ | aborts before test 1 |
 | `integration/advent2013-day08.t` | aborts at 0/11 | PASS ★ | aborts before test 1 |
 | `integration/advent2013-day18.t` | aborts at 0/10 | PASS ★ | aborts before test 1 |
-| `integration/advent2013-day21.t` | aborts at 19/24 | PASS ★ | not yet root-caused |
 | `6.c/S04-declarations/my-6c.t` | 111/112 | PASS ★ | **shortcut**: the only failure = test 57, the `OUTER::<$x>` pseudo-package |
 | `6.c/S14-roles/mixin-6c.t` | aborts at 16/57 | PASS ★ | 6.c mixin (`does`/`but`) semantics; aborts mid-file |
 | `6.c/APPENDICES/A04-experimental/01-misc.t` | 16/19 | FAIL | `:D`/`:U` DefiniteHow coercion (`Target:D(Source:U)`). #4514: 0/19 → 16/19 |
