@@ -1640,6 +1640,13 @@ pub(crate) struct CompiledCode {
     /// Maps local slot indices to qualified package names for `our` variables.
     /// Used by BlockScope restoration to sync local slots from their global values.
     pub(crate) our_locals: Vec<(usize, String)>,
+    /// Scalar locals declared with a `:=` bind (`my $x := EXPR`). Such a binding
+    /// is immutable — the local is never reassigned — so its captured snapshot in
+    /// a closure can never go stale, even when the local is also handed to a call
+    /// (which would otherwise veto it from `authoritative_free_vars` for fear of an
+    /// `is rw` writeback). See the `own_call_arg_sources` exception in
+    /// `compute_free_vars`.
+    pub(crate) scalar_bind_locals: Vec<Symbol>,
     /// Compiler-authoritative positional-parameter → local-slot mapping, in the
     /// order `precompute_param_local_slots` expects (positional `param_defs`, or
     /// `params` when `param_defs` is empty). Baked at emit time from the
@@ -2031,6 +2038,7 @@ impl CompiledCode {
             plain_locals: Vec::new(),
             state_locals: Vec::new(),
             our_locals: Vec::new(),
+            scalar_bind_locals: Vec::new(),
             param_local_slots: Vec::new(),
             closure_compiled_codes: Vec::new(),
             named_arg_specs: Vec::new(),
@@ -3158,8 +3166,19 @@ impl CompiledCode {
                     // Mutated in place as a container — invisible to `self_mutated`,
                     // but a `%h<k> = v` that copy-on-writes still strands the capture.
                     && !own_container_writes.contains(sym)
-                    // Handed to a call, where an `is rw` param can write it back.
-                    && !own_call_arg_sources.contains(sym)
+                    // Handed to a call, where an `is rw` param can write it back —
+                    // making a by-value overwrite-install go stale (`my $x = ...;
+                    // my $c = -> { $x }; mutate($x); $c()` must see the writeback).
+                    // EXCEPTION: a `:=`-bound scalar is an immutable binding — it is
+                    // never reassigned and (when bound to a value/attribute result,
+                    // the zef `my $path := $candi.uri` shape) has no source container
+                    // an rw param could write through, so its captured snapshot can
+                    // never go stale. Vouching for it lets a closure that carries it
+                    // into a foreign frame with a same-named parameter still resolve
+                    // its own lexical binding (the misresolution otherwise picks up
+                    // the callee's `$path`). See `scalar_bind_locals`.
+                    && (!own_call_arg_sources.contains(sym)
+                        || self.scalar_bind_locals.contains(sym))
             })
             .collect();
         for nested in &mut self.closure_compiled_codes {

@@ -1030,6 +1030,16 @@ impl Compiler {
                 // var was marked readonly purely as a bind signal).
                 let is_bound_container_vardecl =
                     self.bind_vardecl && (name.starts_with('@') || name.starts_with('%'));
+                // A scalar `:=` bind (`my $x := EXPR`). Captured before the RHS
+                // branches consume `bind_vardecl`; recorded on the CompiledCode so
+                // `compute_free_vars` can vouch for it despite it reaching a call as
+                // an argument (an immutable binding never goes stale). Both the
+                // MarkBind form (`my $x := $y`, sets `bind_vardecl`) and the inline
+                // `__scalar_bind` trait form (`my $x := my $y`) count.
+                let is_scalar_colon_bind = (self.bind_vardecl || scalar_bind_decont)
+                    && !name.starts_with('@')
+                    && !name.starts_with('%')
+                    && !name.starts_with('&');
                 // A `constant` initializer is evaluated at BEGIN (compile) time,
                 // so an uncaught exception while evaluating it surfaces as
                 // X::Comp::BeginTime (with the original exception nested). Wrap
@@ -1178,6 +1188,12 @@ impl Compiler {
                     }
                 }
                 let slot = self.declare_local(name);
+                if is_scalar_colon_bind {
+                    let sym = Symbol::intern(name);
+                    if !self.code.scalar_bind_locals.contains(&sym) {
+                        self.code.scalar_bind_locals.push(sym);
+                    }
+                }
                 if *is_state {
                     if let Some((guard_idx, key, key_idx)) = state_guard_idx {
                         // Patch the guard jump target to the StateVarInit instruction
