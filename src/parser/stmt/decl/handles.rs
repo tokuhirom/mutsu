@@ -46,6 +46,31 @@ fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> 
         }
         return Err(PError::expected("handles pair value after colon-pair name"));
     }
+    // Fat-arrow pair: `exposed => 'target'` / `exposed => target`
+    // (`handles (dog_name => 'name')` — rename delegation, Rakudo syntax).
+    let (after_name, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
+    let (after_name, _) = ws(after_name)?;
+    if let Some(after_arrow) = after_name.strip_prefix("=>") {
+        let (after_arrow, _) = ws(after_arrow)?;
+        let (rest, target) = if after_arrow.starts_with('\'') || after_arrow.starts_with('"') {
+            let quote = after_arrow.as_bytes()[0] as char;
+            let after_quote = &after_arrow[1..];
+            let end = after_quote
+                .find(quote)
+                .ok_or_else(|| PError::expected("closing quote in handles pair"))?;
+            (&after_quote[end + 1..], after_quote[..end].to_string())
+        } else {
+            let (r_target, target) = take_while1(after_arrow, |c: char| {
+                c.is_alphanumeric() || c == '_' || c == '-'
+            })?;
+            (r_target, target.to_string())
+        };
+        specs.push(HandleSpec::Rename {
+            exposed: name.to_string(),
+            target,
+        });
+        return Ok((rest, ()));
+    }
     Err(PError::expected("handle spec"))
 }
 
