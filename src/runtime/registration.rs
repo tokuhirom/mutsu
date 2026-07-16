@@ -540,6 +540,27 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Validate `self!method()` private calls in freshly compiled statements
+    /// (e.g. an EVAL'd string) against the class of the lexical `self` in scope.
+    /// Raku resolves private method dispatch at compile time, so a call to a
+    /// nonexistent private method is an error even when a preceding `return`
+    /// would short-circuit it at runtime — this reproduces that for EVAL bodies
+    /// running inside a method.
+    pub(crate) fn validate_private_calls_against_self(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        let class_name = match self.env.get("self").map(Value::view) {
+            Some(ValueView::Instance { class_name, .. }) => class_name.resolve(),
+            _ => return Ok(()),
+        };
+        let class_def = match self.registry().classes.get(&class_name) {
+            Some(cd) => cd.clone(),
+            None => return Ok(()),
+        };
+        self.check_private_calls_exist(&class_name, &class_def, stmts)
+    }
+
     fn check_private_calls_exist(
         &self,
         class_name: &str,

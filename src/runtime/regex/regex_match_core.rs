@@ -537,6 +537,13 @@ impl Interpreter {
         if !token.ratchet || token.named_capture.is_some() {
             return None;
         }
+        // The fast paths are possessive (commit to the maximal count). A frugal
+        // ratcheted quantifier must instead grow shortest-first until the rest
+        // of the pattern matches, so defer it to the general chain, which honors
+        // frugality even under ratchet (raku grows `\S+?` inside a `token`).
+        if token.frugal {
+            return None;
+        }
         if is_simple_atom(&token.atom) {
             // Position-only scan: no captures are produced at all.
             let mut current = pos;
@@ -699,9 +706,12 @@ impl Interpreter {
             }
             Some(next)
         };
-        if token.frugal && !token.ratchet {
+        if token.frugal {
             // Frugal: try the shortest admissible length first, growing the
-            // chain one iteration at a time on demand.
+            // chain one iteration at a time on demand. This holds under ratchet
+            // too — raku grows a frugal quantifier (`\S+?` inside a `token`)
+            // shortest-first until the rest of the pattern matches; ratchet only
+            // changes GREEDY behavior (commit-to-longest, no backtrack).
             let mut current = pos;
             let mut count = 0usize;
             loop {
