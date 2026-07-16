@@ -764,7 +764,11 @@ impl Interpreter {
         // writeback scan below compare Symbols directly (a u32 compare + hash)
         // instead of resolving every env key back to a &str via `with_str` --
         // that Symbol-to-string churn dominated the writeback profile.
-        let mut param_names: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
+        // FxHashSet, not the default SipHash: the caller-writeback scan below
+        // probes these Symbol sets against EVERY env key (~100) on every closure
+        // call, so a cryptographic hash over the small integer key dominated the
+        // profile (~5% of mzef-ctor self time in `SipHasher::hash_one<Symbol>`).
+        let mut param_names: rustc_hash::FxHashSet<Symbol> = rustc_hash::FxHashSet::default();
         for p in &data.params {
             param_names.insert(Symbol::intern(p));
         }
@@ -842,18 +846,17 @@ impl Interpreter {
         // (and the `__mutsu_*` prefix checks below) are skipped entirely.
         let meta_possible = crate::env::closure_meta_keys_possible();
         if needs_caller_writeback {
-            let rw_sources: std::collections::HashSet<Symbol> = rw_bindings
+            let rw_sources: rustc_hash::FxHashSet<Symbol> = rw_bindings
                 .iter()
                 .map(|(_, source)| Symbol::intern(source))
                 .collect();
-            let captured_names: std::collections::HashSet<Symbol> =
-                data.env.keys().copied().collect();
+            let captured_names: rustc_hash::FxHashSet<Symbol> = data.env.keys().copied().collect();
             // Write back captured-variable changes, but NOT the closure's own
             // parameters/locals (which live in cc.locals).  Without this filter,
             // recursive &?BLOCK calls clobber the outer frame's $n, etc.
             // `cc.locals_sym` is `cc.locals` pre-interned at compile time, so
             // this avoids re-interning every local on every call.
-            let local_names: std::collections::HashSet<Symbol> =
+            let local_names: rustc_hash::FxHashSet<Symbol> =
                 cc.locals_sym.iter().copied().collect();
             let underscore_sym = Symbol::intern("_");
             let at_underscore_sym = Symbol::intern("@_");
@@ -869,7 +872,7 @@ impl Interpreter {
             // integration/99problems-41-to-50.t P46 evaluated `and(...)` as `or(...)`
             // from the second truth-table row on). A free var the body *did* change
             // is still written back — that check is what `free_at_entry` is for.
-            let unchanged_free: std::collections::HashSet<Symbol> = cc
+            let unchanged_free: rustc_hash::FxHashSet<Symbol> = cc
                 .free_var_syms
                 .iter()
                 .zip(free_at_entry.iter())

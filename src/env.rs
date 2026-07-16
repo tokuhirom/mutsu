@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -286,7 +286,12 @@ pub struct Env {
     /// behave correctly under a scoped overlay. `None` for flat envs (no scope to
     /// shadow). Tombstones are dropped with the overlay on return and are never
     /// merged back (a callee-local removal must not delete the caller's key).
-    tombstones: Option<HashSet<Symbol>>,
+    // Keyed by interned `Symbol`; use `FxHashSet` (non-cryptographic hash over
+    // the small integer key), not the default `SipHash`. `is_tombstoned` runs on
+    // every env lookup that misses the overlay and walks the parent chain, so a
+    // `SipHash` here showed up as ~5% of self time on method-heavy benchmarks
+    // (mzef ctor) — the same reason `SymMap` is `FxHashMap`.
+    tombstones: Option<rustc_hash::FxHashSet<Symbol>>,
     /// Number of parent tiers below this env (0 for a flat env). Used to bound
     /// the chain length: a recursive function would otherwise grow the chain one
     /// tier per call, making `get`/`Drop`/`flattened` recurse to the recursion
@@ -611,7 +616,9 @@ impl Env {
                 .cloned();
             if parent_val.is_some() {
                 let visible = from_overlay.or(parent_val);
-                self.tombstones.get_or_insert_with(HashSet::new).insert(key);
+                self.tombstones
+                    .get_or_insert_with(rustc_hash::FxHashSet::default)
+                    .insert(key);
                 return visible;
             }
         }
