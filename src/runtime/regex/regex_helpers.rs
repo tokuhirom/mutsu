@@ -678,8 +678,18 @@ pub(super) fn matches_named_builtin(name: &str, c: char) -> bool {
         "cntrl" => c.is_control(),
         "punct" => check_unicode_property("Punctuation", c),
         "graph" => {
-            // graph: visible characters — not whitespace, not control, not unassigned surrogates
-            !c.is_whitespace() && !c.is_control()
+            // Raku's POSIX `graph` is Letters ∪ decimal digits (Nd) ∪ Punctuation.
+            // It EXCLUDES the Symbol categories (Sm/Sc/Sk/So — `^ $ ~ + = < > | °`),
+            // Marks, and non-decimal Number categories (No/Nl) — narrower than the
+            // C/POSIX "any visible char". Matching raku is required so `<+graph
+            // -punct>` (a common "word char" idiom) does not swallow `^`/`$`/…; e.g.
+            // Template::Mustache's grammar `token ident { <+ graph - punct> ... }`
+            // must reject the `^`/`$`/`<` sigils so `{{^inverted}}` / `{{<parent}}`
+            // tags dispatch to the section rule instead of the plain-var rule.
+            check_unicode_property("Letter", c)
+                || c == '_'
+                || check_unicode_property("Nd", c)
+                || check_unicode_property("Punctuation", c)
         }
         "print" => {
             // print: graph + space-like characters (but not control characters)
