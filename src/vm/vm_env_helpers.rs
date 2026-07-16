@@ -993,12 +993,35 @@ impl Interpreter {
                 // this drain. A blanket clear would wrongly drop an OUTER call's
                 // still-pending slot when a NESTED call drains first (`f($a)` whose
                 // body calls `g($b)` — g's drain must not lose f's `a` slot).
-                let baked = self
+                let baked_raw = self
                     .pending_rw_writeback_slots
                     .remove(&source)
-                    .map(|s| s as usize)
-                    .filter(|&s| s < self.locals.len());
-                if let Some(slot) = baked.or_else(|| self.find_local_slot(code, &source)) {
+                    .map(|s| s as usize);
+                // A baked slot index is only meaningful in the frame it was baked
+                // in. When a NESTED call drains a source whose slot was baked for an
+                // ANCESTOR frame (`f(@a, %h)` whose body calls `@a.map(...)` — the
+                // `.map` mut-op drains f's still-pending `@a`/`%h` writeback), that
+                // caller-frame index can collide with THIS frame's `locals` range
+                // (`s < locals.len()`) yet name a *different* variable — writing the
+                // wrong value into an unrelated slot (a Hash param clobbered by an
+                // Array source). Trust the baked slot only when THIS frame's `code`
+                // actually holds `source` at it; otherwise the source belongs to a
+                // frame further up the stack, so retain it for that frame's own
+                // drain rather than mis-applying (or draining early by name) here.
+                let baked = baked_raw.filter(|&s| {
+                    s < self.locals.len() && code.locals.get(s).is_some_and(|n| n == &source)
+                });
+                let slot = if baked.is_some() {
+                    baked
+                } else if baked_raw.is_some() {
+                    // Baked for a different frame: retain for the owning frame.
+                    None
+                } else {
+                    // No baked slot (a captured-outer free-var write, …): resolve
+                    // the owning slot by name within this frame's code.
+                    self.find_local_slot(code, &source)
+                };
+                if let Some(slot) = slot {
                     if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                         && let Some(val) = self.env().get(&source).cloned()
                     {
