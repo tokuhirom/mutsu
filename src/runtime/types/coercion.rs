@@ -178,7 +178,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && self.class_has_method(&class_name.resolve(), base_target)
+            && self.class_has_user_method(&class_name.resolve(), base_target)
         {
             let (coerced, _) = self.run_instance_method(
                 &class_name.resolve(),

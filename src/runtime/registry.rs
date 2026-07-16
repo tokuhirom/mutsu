@@ -417,6 +417,24 @@ impl Registry {
         false
     }
 
+    /// Whether `class_name` (or any class in its MRO) defines `method_name` as a
+    /// *user-declared* method (i.e. present in `.methods`), ignoring native
+    /// builtin methods. Used by the coercion path to decide whether to run a
+    /// user coercion method (e.g. `method Str {...}`) via `run_instance_method`
+    /// versus routing a native builtin method (e.g. `IO::Path.Str`) through the
+    /// native dispatcher. Pure registry MRO walk.
+    pub(crate) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        for cn in mro.iter() {
+            if let Some(class_def) = self.classes.get(cn.as_str())
+                && class_def.methods.contains_key(method_name)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// The method overloads named `method_name` defined directly on `class_name`
     /// (not inherited). Owned clone — `MethodDef` is `Arc`-backed so the clone is
     /// O(overload count) refcount bumps, matching the prior `.cloned()` call sites.

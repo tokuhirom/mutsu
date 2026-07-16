@@ -19,6 +19,11 @@ impl Interpreter {
             .class_has_method(class_name, method_name)
     }
 
+    pub(super) fn class_has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        self.registry_mut()
+            .class_has_user_method(class_name, method_name)
+    }
+
     /// Check whether the class (or its MRO ancestors) has a `new` method
     /// variant with a non-named positional parameter whose type matches the
     /// given value.  This is used by the coercion fallback: only try `new`
