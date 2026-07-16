@@ -415,11 +415,27 @@ impl Interpreter {
         {
             let name = name_sym.resolve();
             if matches!(name.as_str(), "flat" | "eager") {
-                // For `flat`, if the single argument is lazy, preserve laziness
-                // by returning the lazy list directly (flat of a lazy list is still lazy).
+                // For `flat`, a single lazy argument normally stays lazy
+                // (`flat 42 xx *` / `flat 1..Inf` propagate `.is-lazy`). The one
+                // exception is a finite `gather` coroutine: it must be forced and
+                // flattened here so `flat` descends into its nested lazy elements
+                // (`take internals($child)` in a binary-tree walk), which a raw
+                // return would leave un-descended (`('A', Seq(...), ...)`). Only
+                // a coroutine-backed, not-yet-forced gather is force-flattened;
+                // every other lazy list keeps its laziness.
+                // TODO: an actually-infinite `gather` (`flat gather { loop {
+                // take $i++ } }`) is forced eagerly here and would hang — raku
+                // keeps it lazy. A proper fix is a lazy flattening pipe that
+                // pulls+descends on demand; the eager path is correct for the
+                // finite gathers that occur in practice.
+                let is_finite_gather = |v: &Value| {
+                    matches!(v.view(), ValueView::LazyList(ll)
+                        if ll.coroutine.is_some() && ll.cache.lock().unwrap().is_none())
+                };
                 if name.as_str() == "flat"
                     && args.len() == 1
                     && matches!(args[0].view(), ValueView::LazyList(_))
+                    && !is_finite_gather(&args[0])
                 {
                     return Some(Ok(args[0].clone()));
                 }

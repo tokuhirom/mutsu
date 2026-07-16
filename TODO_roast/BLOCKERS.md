@@ -72,7 +72,6 @@ noted.
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
 | `integration/99problems-41-to-50.t` | aborts at 2/9 | PASS ★ | Parameterized `multi rule expr($p)` now WORKS (2026-07-15: multi rule/token registration, literal-exclusive dispatch, args in the LR key, lookahead arg instantiation — pin t/parameterized-rules.t; all reduced P47 shapes pass), but the full P47 grammar (3 precedence levels + `term:sym<paren>`/`term:sym<not>` recursion via `<term=.expr(3)>`) is exponentially slow in the regex engine (~9s for 1 level+paren on `(A)` in a debug build; the real input times out). The blocker is now the LR seed-growing loop re-matching all candidates per position per nesting level — needs match-position memoization of subrule results (packrat-style), a separate engine-perf campaign. P41/P46 fixed in #4510 |
-| `integration/99problems-61-to-70.t` | 12/15 | PASS ★ | `internals()` / `atlevel()` binary-tree traversal (tests 3/5/6) |
 | `integration/advent2009-day11.t` | aborts at 3/6 | PASS ★ | not yet root-caused |
 | `integration/advent2009-day12.t` | aborts at 4/9 | PASS ★ | not yet root-caused |
 | `integration/advent2010-day03.t` | aborts at 0/12 | PASS ★ | aborts before test 1 |
