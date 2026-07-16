@@ -62,6 +62,18 @@ impl Interpreter {
         // them as one chunk, exactly as the eager path does.
         let arity = spec.arity.max(1) as usize;
         let mut idx: usize = start_idx;
+        // Nested-resume entry: when the slot holds a state for a loop nested
+        // INSIDE this body (its loop_ip lies in the body range), the resumed
+        // iteration's first body run starts AT that loop op — re-running the
+        // ops before it would replay completed sibling loops / side effects.
+        let this_code_id = code.ops.as_ptr() as usize;
+        let mut nested_entry: Option<usize> = self.gather_resume_body_ip.take().or_else(|| {
+            self.gather_for_loop_resume
+                .as_ref()
+                .filter(|s| s.code_id() == Some(this_code_id))
+                .and_then(|s| s.loop_ip())
+                .filter(|lip| *lip > body_start && *lip < loop_end)
+        });
         'for_loop: loop {
             // Force enough elements for one iteration's chunk
             let items = self.force_lazy_list_vm_n(ll, idx + arity)?;
@@ -94,7 +106,8 @@ impl Interpreter {
                 self.env_mut().insert(key, Value::FALSE);
             }
             'body_redo: loop {
-                let body_res = self.run_range(code, body_start, loop_end, compiled_fns);
+                let run_start = nested_entry.take().unwrap_or(body_start);
+                let body_res = self.run_range(code, run_start, loop_end, compiled_fns);
                 // State mutations persist on every exit path (`next`/`redo`/
                 // `last`/exception), not just normal completion.
                 if !code.state_locals.is_empty() {
@@ -138,10 +151,38 @@ impl Interpreter {
                             == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL =>
                     {
                         // Save lazy-gather for-loop state for coroutine resumption.
+                        // A state already in the slot belongs to a loop nested
+                        // inside this body: chain it (and re-enter the CURRENT
+                        // chunk, which starts at idx - arity, so that loop can
+                        // continue) instead of overwriting it.
+                        let mut e = e;
+                        let code_id = code.ops.as_ptr() as usize;
+                        let nested = if self.gather_for_loop_resume.as_ref().is_some_and(|st| {
+                            st.is_lexically_nested_in(code_id, body_start, loop_end)
+                        }) {
+                            self.gather_for_loop_resume.take()
+                        } else {
+                            None
+                        };
+                        let take_site = e.take_suspend_site().filter(|(cid, t)| {
+                            *cid == code_id && *t >= body_start && *t < loop_end
+                        });
+                        if take_site.is_some() {
+                            e.set_take_suspend_site(None);
+                        }
+                        let resume_body_ip = take_site.map(|(_, t)| t + 1);
                         self.gather_for_loop_resume =
                             Some(crate::value::ForLoopResumeState::LazyGather {
                                 lazy_list: ll_arc.clone(),
-                                next_index: idx,
+                                next_index: if nested.is_some() || resume_body_ip.is_some() {
+                                    idx.saturating_sub(arity)
+                                } else {
+                                    idx
+                                },
+                                code_id,
+                                loop_ip: body_start - 1,
+                                resume_body_ip,
+                                inner: nested.map(Box::new),
                             });
                         if !spec.is_rw
                             && let Some(ref name) = param_name

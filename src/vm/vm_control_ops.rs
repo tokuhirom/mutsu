@@ -284,9 +284,15 @@ impl Interpreter {
         // re-entering from the top (cond re-check) continues correctly.
         if matches!(
             self.gather_for_loop_resume,
-            Some(crate::value::ForLoopResumeState::CStyleLoop)
+            Some(crate::value::ForLoopResumeState::CStyleLoop { .. })
         ) {
-            self.gather_for_loop_resume = None;
+            // Restore the chained inner state (a loop nested in this body)
+            // into the slot so the next loop op encountered resumes too.
+            if let Some(crate::value::ForLoopResumeState::CStyleLoop { inner }) =
+                self.gather_for_loop_resume.take()
+            {
+                self.gather_for_loop_resume = inner.map(|b| *b);
+            }
         } else if !code.state_locals.is_empty() {
             // Fresh entry to the loop statement: state variables declared in
             // the condition or body re-initialize (fresh block clone per
@@ -305,7 +311,10 @@ impl Interpreter {
             // the condition on resume continues correctly.
             if self.gather_suspend_pending {
                 self.gather_suspend_pending = false;
-                self.gather_for_loop_resume = Some(crate::value::ForLoopResumeState::CStyleLoop);
+                let nested = self.gather_for_loop_resume.take();
+                self.gather_for_loop_resume = Some(crate::value::ForLoopResumeState::CStyleLoop {
+                    inner: nested.map(Box::new),
+                });
                 self.pop_loop_local_scope(code);
                 return Err(RuntimeError::new(
                     crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL,
@@ -417,8 +426,11 @@ impl Interpreter {
                         // Park a marker so the outer forcer keeps `*ip` on this
                         // loop opcode (it stays unchanged on this Err path),
                         // letting us re-enter and continue from locals/env state.
+                        let nested = self.gather_for_loop_resume.take();
                         self.gather_for_loop_resume =
-                            Some(crate::value::ForLoopResumeState::CStyleLoop);
+                            Some(crate::value::ForLoopResumeState::CStyleLoop {
+                                inner: nested.map(Box::new),
+                            });
                         self.pop_loop_local_scope(code);
                         return Err(e);
                     }

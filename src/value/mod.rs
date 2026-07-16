@@ -1595,6 +1595,15 @@ pub(crate) struct CatPullSpec {
 }
 
 /// Saved for-loop state for resuming a gather coroutine mid-iteration.
+///
+/// `inner` chains the resume state of a loop NESTED inside this one: when the
+/// take-limit signal propagates out of nested loops, each enclosing loop wraps
+/// the already-saved deeper state instead of overwriting the single resume
+/// slot (which lost the inner position and dropped elements — see
+/// t/gather-nested-loop-pull.t). A state carrying an `inner` re-enters its
+/// CURRENT iteration so the nested loop can continue; a leaf state (no inner)
+/// advances to the next element as before. Consumers restore `inner` into the
+/// resume slot for the next loop op encountered during the body replay.
 #[derive(Debug, Clone)]
 pub(crate) enum ForLoopResumeState {
     /// Resume an integer-range for loop at the given current value.
@@ -1602,22 +1611,92 @@ pub(crate) enum ForLoopResumeState {
         current: i64,
         end_val: i64,
         inclusive: bool,
+        code_id: usize,
+        loop_ip: usize,
+        resume_body_ip: Option<usize>,
+        inner: Option<Box<ForLoopResumeState>>,
     },
     /// Resume a list-based for loop at the given index.
     List {
         items: Vec<Value>,
         next_index: usize,
+        code_id: usize,
+        loop_ip: usize,
+        resume_body_ip: Option<usize>,
+        inner: Option<Box<ForLoopResumeState>>,
     },
     /// Resume a lazy-gather for loop at the given element index.
     LazyGather {
         lazy_list: crate::gc::Gc<LazyList>,
         next_index: usize,
+        code_id: usize,
+        loop_ip: usize,
+        resume_body_ip: Option<usize>,
+        inner: Option<Box<ForLoopResumeState>>,
     },
     /// Resume a C-style / `loop` / `while` loop. These loops carry no iteration
     /// index — their state lives entirely in locals/env — so the marker only
     /// signals "we suspended inside this loop; re-enter it" and keeps the VM ip
     /// parked on the loop opcode across a gather coroutine suspend.
-    CStyleLoop,
+    CStyleLoop {
+        inner: Option<Box<ForLoopResumeState>>,
+    },
+}
+
+impl ForLoopResumeState {
+    /// The chained resume state of the loop nested inside this one, if any.
+    pub(crate) fn inner_state(&self) -> Option<&ForLoopResumeState> {
+        match self {
+            ForLoopResumeState::IntRange { inner, .. }
+            | ForLoopResumeState::List { inner, .. }
+            | ForLoopResumeState::LazyGather { inner, .. }
+            | ForLoopResumeState::CStyleLoop { inner } => inner.as_deref(),
+        }
+    }
+
+    /// The ip of the compound loop opcode this state belongs to. A loop op
+    /// only consumes a state carrying its own ip, so a state destined for a
+    /// sibling or nested loop is never mis-applied. `CStyleLoop` markers are
+    /// positionless (their loop keeps state in locals/env) and return `None`.
+    pub(crate) fn loop_ip(&self) -> Option<usize> {
+        match self {
+            ForLoopResumeState::IntRange { loop_ip, .. }
+            | ForLoopResumeState::List { loop_ip, .. }
+            | ForLoopResumeState::LazyGather { loop_ip, .. } => Some(*loop_ip),
+            ForLoopResumeState::CStyleLoop { .. } => None,
+        }
+    }
+
+    /// The identity (ops pointer) of the code object holding this loop.
+    /// `CStyleLoop` markers are positionless and return `None`.
+    pub(crate) fn code_id(&self) -> Option<usize> {
+        match self {
+            ForLoopResumeState::IntRange { code_id, .. }
+            | ForLoopResumeState::List { code_id, .. }
+            | ForLoopResumeState::LazyGather { code_id, .. } => Some(*code_id),
+            ForLoopResumeState::CStyleLoop { .. } => None,
+        }
+    }
+
+    /// True when this state's loop is lexically nested inside the body range
+    /// `[body_start, loop_end)` of a loop in code `code_id` — the only case in
+    /// which an enclosing loop chains it (re-entering its current iteration to
+    /// continue the nested loop). A state from a DIFFERENT code object (reached
+    /// via a sub call) or outside the range is a foreign suspension the
+    /// enclosing loop must NOT chain — it advances normally, exactly as it did
+    /// before nested-resume chaining existed (roast advent2010-day11.t: a
+    /// `take` inside a sub called from `gather for @a {...}`).
+    pub(crate) fn is_lexically_nested_in(
+        &self,
+        code_id: usize,
+        body_start: usize,
+        loop_end: usize,
+    ) -> bool {
+        self.code_id() == Some(code_id)
+            && self
+                .loop_ip()
+                .is_some_and(|lip| lip >= body_start && lip < loop_end)
+    }
 }
 
 /// Pre-compiled fast-path body for a closure sequence generator: the compiled

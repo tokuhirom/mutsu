@@ -3790,7 +3790,17 @@ impl Interpreter {
             // -- Take --
             OpCode::Take => {
                 self.sync_source_line(code, *ip);
-                self.exec_take_op()?;
+                if let Err(mut e) = self.exec_take_op() {
+                    // Stamp the take-limit suspension with this op's exact
+                    // location so the innermost enclosing for-loop can resume
+                    // the SAME iteration right after this take (statements
+                    // after it must not be lost). Keyed by code identity so a
+                    // loop in a different code object never claims it.
+                    if e.message == crate::runtime::Interpreter::LAZY_GATHER_TAKE_LIMIT_SIGNAL {
+                        e.set_take_suspend_site(Some((code.ops.as_ptr() as usize, *ip)));
+                    }
+                    return Err(e);
+                }
                 *ip += 1;
             }
 

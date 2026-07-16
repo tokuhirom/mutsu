@@ -107,6 +107,12 @@ pub struct RuntimeErrorCold {
     /// with the current stack as rakudo's dual-backtrace form
     /// ("...\n\nActually thrown at:\n...").
     pub failure_original_backtrace: Option<String>,
+    /// For the lazy-gather take-limit signal: the code identity (ops pointer)
+    /// and ip of the `Take` opcode that raised it. The innermost enclosing
+    /// for-loop handler in the SAME code consumes it as the exact mid-body
+    /// resume point (`resume_body_ip = ip + 1`), so statements after the take
+    /// in the same iteration are not lost on coroutine resume.
+    pub take_suspend_site: Option<(usize, usize)>,
 }
 
 #[derive(Debug)]
@@ -246,6 +252,14 @@ impl RuntimeError {
 
     pub(crate) fn set_failure_original_backtrace(&mut self, v: Option<String>) {
         self.cold_mut().failure_original_backtrace = v;
+    }
+
+    /// See `RuntimeErrorCold::take_suspend_site`.
+    pub(crate) fn take_suspend_site(&self) -> Option<(usize, usize)> {
+        self.cold.as_ref().and_then(|c| c.take_suspend_site)
+    }
+    pub(crate) fn set_take_suspend_site(&mut self, v: Option<(usize, usize)>) {
+        self.cold_mut().take_suspend_site = v;
     }
 
     /// `return` control signal (non-local return carrying `return_value`).

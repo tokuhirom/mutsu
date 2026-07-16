@@ -1977,6 +1977,10 @@ pub struct Interpreter {
     pub(crate) otf_call_cache_gen: u64,
     pub(crate) check_phaser_depth: u32,
     pub(crate) gather_for_loop_resume: Option<crate::value::ForLoopResumeState>,
+    /// Transient hand-off from a consumed `ForLoopResumeState` to its loop
+    /// executor: the mid-body ip the resumed iteration's first body run
+    /// starts at (see `ForLoopResumeState::resume_body_ip`).
+    pub(crate) gather_resume_body_ip: Option<usize>,
     /// Set by `take_value` when a lazy pull's take limit is reached inside a
     /// condition-driven loop (`while`/`until`/C-style `loop`): the suspension
     /// is DEFERRED to that loop's next iteration boundary, where re-entering
