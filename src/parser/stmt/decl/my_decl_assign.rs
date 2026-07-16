@@ -165,6 +165,36 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         custom_traits: s.custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
+    // A bare declaration may carry a `does`/`but` role mixin applied to the
+    // freshly-declared container: `my @a does R1`, `my $x but Role`. Desugar to
+    // the declaration followed by the in-place mixin expression on the variable
+    // (the same `$var does Role` operator that works on an already-declared
+    // variable). Without this, `does`/`but` here parses as a stray statement-
+    // level `DoesDecl`, which is a no-op outside a class body.
+    {
+        let (after_ws, _) = ws(rest)?;
+        let mixin = if let Some(r) = keyword("does", after_ws) {
+            Some(("does", r))
+        } else {
+            keyword("but", after_ws).map(|r| ("but", r))
+        };
+        if let Some((op, r)) = mixin {
+            let (r, _) = ws(r)?;
+            if let Ok((r2, operand)) = expression(r) {
+                let mixin_expr = Expr::Binary {
+                    left: Box::new(Expr::Var(s.name.clone())),
+                    op: crate::token_kind::TokenKind::Ident(op.to_string()),
+                    right: Box::new(operand),
+                };
+                let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+                let block = Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(mixin_expr)]);
+                if s.apply_modifier {
+                    return parse_statement_modifier(r2, block);
+                }
+                return Ok((r2, block));
+            }
+        }
+    }
     let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
     if s.apply_modifier {
         return parse_statement_modifier(rest, stmt);
