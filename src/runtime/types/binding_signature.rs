@@ -1080,13 +1080,21 @@ impl Interpreter {
                         format!("Required named parameter '{}' not passed", pd.name),
                     ));
                 } else if !found && !pd.name.is_empty() {
-                    // Only bind a default if the env doesn't already have a value
-                    // (e.g. BUILD/TWEAK attribute bindings pre-populate the env).
-                    if !self.env.contains_key(&pd.name) {
-                        let value = Self::missing_optional_param_value(pd);
-                        self.bind_param_value(&pd.name, value);
-                        self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
-                    }
+                    // An unsupplied optional named param binds its default (the
+                    // signature default expr, or the type object). It must do so
+                    // even when `self.env` ALREADY holds a value under the param
+                    // name: the callee's env is an overlay over the caller's, so a
+                    // caller's same-named named arg (`outer(:section)` calling
+                    // `inner()` whose `:$section` is unsupplied) is visible here and
+                    // would otherwise LEAK into the callee (Template::Mustache's
+                    // recursive `get(:section)` -> `format` -> `get(:encode)` had
+                    // the inner `$section` read the outer True). The one legitimate
+                    // pre-population is a BUILD/TWEAK submethod, whose attribute
+                    // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
+                    // param name — so binding the default here does not disturb them.
+                    let value = Self::missing_optional_param_value(pd);
+                    self.bind_param_value(&pd.name, value);
+                    self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                 }
                 // Check the where constraint against the *bound* value, whether it
                 // came from the supplied argument, the parameter default, or the
