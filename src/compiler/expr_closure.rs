@@ -368,6 +368,18 @@ impl Compiler {
             let saved_term = self.bind_terminal;
             self.scalar_bind_autovivify = true;
             self.bind_terminal = true;
+            // Mark the RHS as a direct bind target so an Index source
+            // (`%h{k} := %d<t>`) takes the per-site `__mutsu_bind_index_ref`
+            // wrap in `compile_call_arg` instead of the `is rw` call-arg
+            // writeback temps (`__mutsu_index_rw_arg_N` + SetGlobal). Those
+            // temps are compile-time-fixed globals reused verbatim on every
+            // loop iteration, and their "write through the existing
+            // ContainerRef" semantics corrupt the PREVIOUS iteration's bound
+            // cell (a `for ... { %s{$k} := %d<t> }` loop had the first key's
+            // element track the latest source value). There is no function
+            // call after a bind RHS, so the writeback machinery is never
+            // needed here.
+            self.bind_target_direct = true;
             self.compile_expr(value);
             self.scalar_bind_autovivify = saved_av;
             self.bind_terminal = saved_term;
