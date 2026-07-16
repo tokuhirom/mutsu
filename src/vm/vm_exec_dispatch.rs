@@ -1633,6 +1633,20 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            OpCode::EnterPointyTopic => {
+                let saved_topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+                let saved_source = self.topic_source_var.take();
+                self.topic_source_save_stack
+                    .push((saved_topic, saved_source));
+                *ip += 1;
+            }
+            OpCode::ExitPointyTopic => {
+                if let Some((saved_topic, saved_source)) = self.topic_source_save_stack.pop() {
+                    self.env_mut().insert("_".to_string(), saved_topic);
+                    self.topic_source_var = saved_source;
+                }
+                *ip += 1;
+            }
 
             // -- Arithmetic --
             OpCode::Add => {

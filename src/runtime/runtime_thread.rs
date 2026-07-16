@@ -351,6 +351,7 @@ impl Interpreter {
             substitution_in_smartmatch: false,
             last_topic_value: None,
             topic_save_stack: Vec::new(),
+            topic_source_save_stack: Vec::new(),
             container_ref_var: None,
             container_ref_reversed: false,
             topic_source_var: None,

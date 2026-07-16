@@ -107,6 +107,16 @@ impl Compiler {
         else_branch: &[Stmt],
         binding_var: &Option<String>,
     ) {
+        // A pointy `if EXPR -> $_ { }` binds a FRESH lexical `$_` (like `for ->
+        // $_`), so its topic must NOT flow back to an enclosing `given $x`'s source
+        // variable. `EnterPointyTopic` saves + clears `topic_source_var` for the
+        // branch; `ExitPointyTopic` (at the end) restores it and the outer `$_`.
+        let pointy_topic_scope = binding_var
+            .as_deref()
+            .is_some_and(|v| v.trim_start_matches('$') == "_");
+        if pointy_topic_scope {
+            self.code.emit(OpCode::EnterPointyTopic);
+        }
         if let Some(var_name) = binding_var {
             let bare_name = var_name.trim_start_matches('$').to_string();
             let var_decl = Stmt::VarDecl {
@@ -150,6 +160,9 @@ impl Compiler {
             self.compile_block_inline(else_branch);
         }
         self.code.patch_jump(jump_end);
+        if pointy_topic_scope {
+            self.code.emit(OpCode::ExitPointyTopic);
+        }
     }
 
     fn compile_collected_loop_body(&mut self, body: &[Stmt]) {

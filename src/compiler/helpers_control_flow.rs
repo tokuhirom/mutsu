@@ -134,6 +134,18 @@ impl Compiler {
         // statement-form desugar (`{ my $v = EXPR; if $v { ... } }`) that
         // `compile_do_if_expr_bound` uses. Without this a value-position pointy
         // `if`/`elsif` fell through to a Nil result (its branch value was lost).
+        // A pointy `if EXPR -> $_ { }` binds a FRESH lexical `$_` (like `for -> $_`,
+        // not like `my $_ = EXPR`), so its topic must NOT flow back to an enclosing
+        // `given $x`'s source variable. `EnterPointyTopic` saves + clears
+        // `topic_source_var` for the block; `ExitPointyTopic` (emitted after the if)
+        // restores it and the outer `$_`. Only needed when the binding var is the
+        // topic `$_` — a named pointy (`-> $v`) declares its own lexical.
+        let pointy_topic_scope = binding_var
+            .as_deref()
+            .is_some_and(|v| v.trim_start_matches('$') == "_");
+        if pointy_topic_scope {
+            self.code.emit(OpCode::EnterPointyTopic);
+        }
         if let Some(var_name) = binding_var {
             let bare_name = var_name.trim_start_matches('$').to_string();
             let var_decl = Stmt::VarDecl {
@@ -177,6 +189,9 @@ impl Compiler {
             self.compile_stmts_value(else_branch);
         }
         self.code.patch_jump(jump_end);
+        if pointy_topic_scope {
+            self.code.emit(OpCode::ExitPointyTopic);
+        }
     }
 
     /// Check if a list of statements contains a CATCH or CONTROL block.
