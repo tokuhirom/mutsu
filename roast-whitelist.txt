@@ -1334,6 +1334,7 @@ roast/integration/advent2009-day21.t
 roast/integration/advent2009-day22.t
 roast/integration/advent2009-day23.t
 roast/integration/advent2009-day24.t
+roast/integration/advent2010-day03.t
 roast/integration/advent2010-day04.t
 roast/integration/advent2010-day06.t
 roast/integration/advent2010-day07.t

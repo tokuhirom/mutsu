@@ -75,7 +75,6 @@ noted.
 | `integration/99problems-61-to-70.t` | 12/15 | PASS ★ | `internals()` / `atlevel()` binary-tree traversal (tests 3/5/6) |
 | `integration/advent2009-day11.t` | aborts at 3/6 | PASS ★ | not yet root-caused |
 | `integration/advent2009-day12.t` | aborts at 4/9 | PASS ★ | not yet root-caused |
-| `integration/advent2010-day03.t` | aborts at 0/12 | PASS ★ | aborts before test 1 |
 | `integration/advent2010-day16.t` | aborts at 8/13 | PASS ★ | not yet root-caused |
 | `integration/advent2011-day11.t` | 7/9 | PASS ★ | error-message quality for a typo'd method call ("order total with typo" / "public method sanity") — ④-adjacent |
 | `integration/advent2011-day14.t` | aborts at 4/8 | PASS ★ | not yet root-caused |
