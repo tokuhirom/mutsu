@@ -137,14 +137,16 @@ pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
 
 pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
     fn should_insert(prev: char, next: char) -> bool {
+        // Whitespace AFTER a term but BEFORE a closing `]`/`)` IS significant in
+        // Raku sigspace (`rule r { [ <w> ]**3 }` matches "a b c", not "abc" — the
+        // space before `]` becomes a required `<.ws>`). Whitespace right after an
+        // opening `[`/`(` is NOT significant, so those stay suppressed.
         !matches!(
             (prev, next),
             ('|', _)
                 | (_, '|')
                 | ('(', _)
-                | (_, ')')
                 | ('[', _)
-                | (_, ']')
                 | ('{', _)
                 | (_, '}')
                 | ('^', _)
@@ -205,6 +207,30 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                 out.push(c);
                 i += 1;
                 continue;
+            }
+            // An embedded declaration `:my … ;` / `:our …` / `:constant …` is
+            // main-slang code, not pattern text — copy it through verbatim so a
+            // `%*var` in it (`:my %*PLAYED = ()`) is not mangled by `<.ws>`
+            // injection (which would corrupt both the match and later scans of
+            // the pattern for its declared dynamic variables).
+            if c == ':' && brace_depth == 0 {
+                let rest: String = chars[i + 1..].iter().collect();
+                if rest.starts_with("my ")
+                    || rest.starts_with("our ")
+                    || rest.starts_with("constant ")
+                    || rest.starts_with("let ")
+                    || rest.starts_with("temp ")
+                {
+                    while i < chars.len() {
+                        let ch = chars[i];
+                        out.push(ch);
+                        i += 1;
+                        if ch == ';' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
             }
         }
         // Inside a code block — pass through without ws injection
@@ -286,6 +312,27 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
             out.push(c);
             i += 1;
             continue;
+        }
+        // An embedded declaration `:my … ;` is main-slang code; a `%*var` in it
+        // must not be treated as a `%` separator. Copy it through verbatim.
+        if c == ':' {
+            let rest: String = chars[i + 1..].iter().collect();
+            if rest.starts_with("my ")
+                || rest.starts_with("our ")
+                || rest.starts_with("constant ")
+                || rest.starts_with("let ")
+                || rest.starts_with("temp ")
+            {
+                while i < chars.len() {
+                    let ch = chars[i];
+                    out.push(ch);
+                    i += 1;
+                    if ch == ';' {
+                        break;
+                    }
+                }
+                continue;
+            }
         }
         // Look for `%` (or `%%`) followed by a separator expression
         if c == '%' {

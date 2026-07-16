@@ -3,6 +3,120 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// A rule/token body may declare a *dynamic* variable inline
+    /// (`rule deal { :my %*PLAYED = (); … }`). Such a variable lives in the
+    /// dynamic scope of the whole parse, so an action method invoked while the
+    /// grammar matches (`method card($/) { … %*PLAYED{$card}++ … }`) must see and
+    /// mutate the same one. Scan every rule of the grammar being parsed (its
+    /// package, MRO-walked) for `:my $*/%*/@*NAME = INIT;` declarations, evaluate
+    /// them into `self.env` (where dynamic-var lookup finds them), and return the
+    /// prior values so the caller can restore them when the parse ends.
+    fn establish_grammar_dynamic_vars(&mut self, package: &str) -> Vec<(String, Option<Value>)> {
+        // Collect the grammar's rule patterns (this package + ancestors).
+        let mut patterns: Vec<String> = Vec::new();
+        {
+            let mut packages = vec![package.to_string()];
+            packages.extend(
+                self.mro_readonly(package)
+                    .into_iter()
+                    .filter(|p| p != package),
+            );
+            let prefixes: Vec<String> = packages.iter().map(|p| format!("{p}::")).collect();
+            let defs: Vec<std::sync::Arc<FunctionDef>> = self
+                .registry()
+                .token_defs
+                .iter()
+                .filter(|(k, _)| {
+                    let ks = k.resolve();
+                    prefixes.iter().any(|pre| ks.starts_with(pre.as_str()))
+                })
+                .flat_map(|(_, v)| v.iter().cloned())
+                .collect();
+            for def in &defs {
+                if let Some(pat) = Self::token_pattern_from_def(def) {
+                    patterns.push(pat);
+                }
+            }
+        }
+        // Extract `:my $*/%*/@*NAME = INIT;` declarations from the patterns.
+        let mut decls: Vec<String> = Vec::new();
+        for pat in &patterns {
+            Self::collect_dynamic_var_decls(pat, &mut decls);
+        }
+        // Evaluate each declaration in `self.env`, saving the prior value.
+        let mut saved: Vec<(String, Option<Value>)> = Vec::new();
+        for (code, var_key) in decls
+            .iter()
+            .filter_map(|d| Self::dynamic_decl_var_key(d).map(|k| (d, k)))
+        {
+            if saved.iter().any(|(k, _)| k == &var_key) {
+                continue;
+            }
+            saved.push((var_key.clone(), self.env.get(&var_key).cloned()));
+            let source = format!("{code};");
+            if let Ok((stmts, _)) = crate::parse_dispatch::parse_source(&source) {
+                let _ = self.eval_block_value(&stmts);
+            }
+        }
+        saved
+    }
+
+    /// Collect `:my $*/%*/@*… = …;` declaration substrings (main-slang code
+    /// between `:my ` and the terminating `;`) from a rule pattern.
+    fn collect_dynamic_var_decls(pattern: &str, out: &mut Vec<String>) {
+        let bytes: Vec<char> = pattern.chars().collect();
+        let mut i = 0;
+        while i < bytes.len() {
+            let rest: String = bytes[i..].iter().collect();
+            if let Some(after) = rest
+                .strip_prefix(":my ")
+                .or_else(|| rest.strip_prefix(":our "))
+            {
+                // Only dynamic (`*`-twigil) declarations concern us.
+                let trimmed = after.trim_start();
+                if matches!(trimmed.chars().next(), Some('$' | '@' | '%'))
+                    && trimmed.chars().nth(1) == Some('*')
+                {
+                    // Collect `my … ` up to the `;`.
+                    let decl: String = rest
+                        .strip_prefix(':')
+                        .unwrap_or(&rest)
+                        .chars()
+                        .take_while(|&c| c != ';')
+                        .collect();
+                    out.push(decl.trim().to_string());
+                }
+                // Skip past this `:my`.
+                i += 4;
+                continue;
+            }
+            i += 1;
+        }
+    }
+
+    /// The env key (`%*PLAYED` → `%*PLAYED`) declared by a `my $*/%*/@*NAME …`
+    /// declaration string, or `None` if it is not a simple dynamic declaration.
+    fn dynamic_decl_var_key(decl: &str) -> Option<String> {
+        let rest = decl
+            .strip_prefix("my ")
+            .or_else(|| decl.strip_prefix("our "))?;
+        let rest = rest.trim_start();
+        let mut chars = rest.chars();
+        let sigil = chars.next()?;
+        if !matches!(sigil, '$' | '@' | '%') || chars.next()? != '*' {
+            return None;
+        }
+        let name: String = rest
+            .chars()
+            .skip(2)
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
+        if name.is_empty() {
+            return None;
+        }
+        Some(format!("{sigil}*{name}"))
+    }
+
     fn first_goal_name(pattern: &RegexPattern) -> Option<String> {
         for token in &pattern.tokens {
             match &token.atom {
@@ -161,6 +275,9 @@ impl Interpreter {
         let _dynvar_overlay_guard = actions_obj
             .is_some()
             .then(super::regex::regex_helpers::RegexDynvarOverlayGuard::activate);
+        // Establish any `:my $*/%*/@*… = …;` dynamic variables the grammar's rules
+        // declare, so action methods run during the match share them (`%*PLAYED`).
+        let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
         let result = (|| -> Result<Value, RuntimeError> {
             let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
                 Ok(Some(pattern)) => pattern,
@@ -356,6 +473,17 @@ impl Interpreter {
             Ok(match_obj)
         })();
 
+        // Restore any dynamic vars the grammar's rules established for this parse.
+        for (key, prev) in saved_grammar_dynvars {
+            match prev {
+                Some(v) => {
+                    self.env.insert(key, v);
+                }
+                None => {
+                    self.env.remove(&key);
+                }
+            }
+        }
         self.set_current_package(saved_package);
         if let Some(old_topic) = saved_topic {
             self.env.insert("_".to_string(), old_topic);

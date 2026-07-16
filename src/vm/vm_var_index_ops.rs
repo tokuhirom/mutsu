@@ -1579,7 +1579,10 @@ impl Interpreter {
                 },
                 ValueView::Sub(data),
             ) => {
-                // Get element count from the instance
+                // Get element count from the instance. Buf/Blob count their
+                // bytes; a Match (and other positional instances) count their
+                // `list` of positional captures so `$/[*-1]` resolves `*-1` to
+                // the last capture (`m/ (\d) <?{ $/[*-1] < 5 }> /`).
                 let len = if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) {
                     if let Some(ValueView::Array(bytes, ..)) =
                         attributes.as_map().get("bytes").map(Value::view)
@@ -1588,6 +1591,10 @@ impl Interpreter {
                     } else {
                         0
                     }
+                } else if let Some(ValueView::Array(list, ..)) =
+                    attributes.as_map().get("list").map(Value::view)
+                {
+                    list.len() as i64
                 } else {
                     0
                 };
@@ -1613,10 +1620,15 @@ impl Interpreter {
                 };
                 match i {
                     Some(i) if i >= 0 => {
-                        if let Some(ValueView::Array(bytes, ..)) =
-                            attributes.as_map().get("bytes").map(Value::view)
+                        let map = attributes.as_map();
+                        if let Some(ValueView::Array(bytes, ..)) = map.get("bytes").map(Value::view)
                         {
                             bytes.get(i as usize).cloned().unwrap_or(Value::NIL)
+                        } else if let Some(ValueView::Array(list, ..)) =
+                            map.get("list").map(Value::view)
+                        {
+                            // Match positional capture (`$/[*-1]`).
+                            list.get(i as usize).cloned().unwrap_or(Value::NIL)
                         } else {
                             Value::NIL
                         }

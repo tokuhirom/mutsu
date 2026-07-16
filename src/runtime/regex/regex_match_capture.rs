@@ -226,12 +226,16 @@ impl Interpreter {
                 is_assertion,
             } => {
                 if *is_assertion {
-                    let result = self.eval_regex_code_assertion(code, current_caps);
+                    // The text matched up to this assertion — becomes `$/.Str`
+                    // inside the `<?{ … }>` so `$/.lc` / `~$/` see the matched-so-far
+                    // text (e.g. the card grammar's `%*PLAYED{$/.lc}++` dup check).
+                    let matched_so_far: String =
+                        chars[current_caps.match_from..pos].iter().collect();
+                    let result =
+                        self.eval_regex_code_assertion(code, current_caps, &matched_so_far);
                     let pass = if *negated { !result } else { result };
                     if pass {
                         let mut new_caps = RegexCaptures::default();
-                        let matched_so_far: String =
-                            chars[current_caps.match_from..pos].iter().collect();
                         new_caps.code_blocks.push(CodeBlockContext {
                             code: code.clone(),
                             named: current_caps.named.clone(),

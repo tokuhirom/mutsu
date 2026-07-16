@@ -168,7 +168,12 @@ impl Interpreter {
     /// Evaluate a code assertion inside a regex.
     /// Sets up $0, $1, etc. from current captures, evaluates the code,
     /// and returns whether the result is truthy.
-    pub(super) fn eval_regex_code_assertion(&self, code: &str, caps: &RegexCaptures) -> bool {
+    pub(super) fn eval_regex_code_assertion(
+        &self,
+        code: &str,
+        caps: &RegexCaptures,
+        matched_so_far: &str,
+    ) -> bool {
         // We need to evaluate in a mutable context but `self` is &self.
         // Use unsafe interior mutability pattern via a clone-and-eval approach.
         // Parse the code first.
@@ -182,13 +187,21 @@ impl Interpreter {
         for (i, val) in caps.positional.iter().enumerate() {
             env.insert(i.to_string(), Value::str(val.clone()));
         }
-        // Build $/ as an array for $/[n] access
-        let match_list: Vec<Value> = caps
-            .positional
-            .iter()
-            .map(|s| Value::str(s.clone()))
-            .collect();
-        env.insert("/".to_string(), Value::array(match_list));
+        // Build `$/` as a proper Match object so `$/.Str`/`$/.lc`/`~$/` yield the
+        // matched-so-far text (not just an array of positional captures). A
+        // `<?{ … $/.lc … }>` assertion inside a `token` relies on this (the card
+        // grammar's dup check does `%*PLAYED{$/.lc}++`). `$/[n]` still indexes the
+        // positional captures on the Match object.
+        env.insert(
+            "/".to_string(),
+            Value::make_match_object_with_captures(
+                matched_so_far.to_string(),
+                caps.match_from as i64,
+                (caps.match_from + matched_so_far.chars().count()) as i64,
+                &caps.positional,
+                &caps.named,
+            ),
+        );
         // When the assertion references `.made` AND we are inside a
         // `Grammar.parse(:actions(...))`, run the relevant action method on each
         // just-matched named capture so `$<x>.made` is available *during* the
