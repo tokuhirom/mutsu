@@ -38,6 +38,24 @@ impl Interpreter {
             value = Value::real_array(items);
             *self.stack.last_mut().unwrap() = value.clone();
         }
+        // A parallel sequence RHS (`.hyper`/`.race`) or a `Slip` bound to a typed
+        // array is reified to a real array here so the eager-array element check
+        // below inspects each element, instead of type-checking the whole
+        // `HyperSeq`/`RaceSeq`/`Slip` against the element type ("expected T, got
+        // HyperSeq"). Replace the stack value too so the following SetLocal stores
+        // the reified array. Mirrors the `LazyList` reify just above.
+        if var_name.is_some_and(|name| name.starts_with('@')) {
+            let reified = match value.view() {
+                ValueView::HyperSeq(items) | ValueView::RaceSeq(items) | ValueView::Slip(items) => {
+                    Some(items.to_vec())
+                }
+                _ => None,
+            };
+            if let Some(items) = reified {
+                value = Value::real_array(items);
+                *self.stack.last_mut().unwrap() = value.clone();
+            }
+        }
         // Lazy values cannot be stored in native typed arrays
         if var_name.is_some_and(|name| name.starts_with('@'))
             && crate::runtime::native_types::is_native_array_element_type(base_constraint)
