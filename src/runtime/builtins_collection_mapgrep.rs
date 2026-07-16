@@ -30,7 +30,14 @@ impl Interpreter {
                 .is_some_and(|name| {
                     !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&')
                 });
-            if !is_itemized && crate::runtime::utils::is_shaped_array(arg) {
+            // A `Seq` always flattens as a map list argument, even from a
+            // scalar `$` source (`my $s = (1,2,3).Seq; map {...}, $s` iterates
+            // its three elements in Rakudo) — a Seq is a sequence, not an
+            // itemizable container. `dir` returns a Seq, so `map {...}, dir`
+            // must iterate the IO::Path entries, not the whole Seq.
+            if let ValueView::Seq(items) = arg.view() {
+                list_items.extend(items.iter().cloned());
+            } else if !is_itemized && crate::runtime::utils::is_shaped_array(arg) {
                 list_items.extend(crate::runtime::utils::shaped_array_leaves(arg));
             } else if is_itemized {
                 // Itemized containers (from $ variables) are NOT flattened

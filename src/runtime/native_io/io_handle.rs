@@ -105,7 +105,7 @@ impl Interpreter {
                 }
                 Ok(Value::NIL)
             }
-            "Str" | "gist" => {
+            "Str" => {
                 if let Some(path_val) = target.get("path") {
                     let path = match path_val.view() {
                         ValueView::Instance {
@@ -122,6 +122,30 @@ impl Interpreter {
                     return Ok(Value::str(path));
                 }
                 Ok(Value::str_from("IO::Handle()"))
+            }
+            // Rakudo: `IO::Handle<"path".IO>(opened|closed)` — distinct from
+            // `.Str` (the bare path). The path is rendered via IO::Path.raku
+            // (`"path".IO`); the open/closed suffix reflects the live state.
+            "gist" => {
+                let opened = self
+                    .with_handle_mut(&target_val, |state| Ok(state.is_opened()))
+                    .unwrap_or(false);
+                let state = if opened { "opened" } else { "closed" };
+                if let Some(path_val) = target.get("path") {
+                    let path_raku = self
+                        .call_method_with_values(path_val.clone(), "raku", vec![])
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|_| {
+                            format!(
+                                "{}.IO",
+                                crate::builtins::methods_0arg::raku_repr::escape_raku_str(
+                                    &path_val.to_string_value()
+                                )
+                            )
+                        });
+                    return Ok(Value::str(format!("IO::Handle<{path_raku}>({state})")));
+                }
+                Ok(Value::str(format!("IO::Handle<>({state})")))
             }
             "raku" | "perl" => {
                 // Reconstructable but deliberately *unopened*: matches rakudo's

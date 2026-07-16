@@ -97,7 +97,10 @@ impl Interpreter {
             let basename = entry.file_name().to_string_lossy().to_string();
             push_entry(&basename);
         }
-        Ok(Value::array(entries))
+        // `dir` returns a `Seq` in Rakudo (`dir.^name eq 'Seq'`), so it
+        // flattens as a listop argument (`map { ... }, dir`). A plain `List`
+        // would be treated as a single item by the listop map/grep arg path.
+        Ok(Value::seq(entries))
     }
 
     pub(super) fn builtin_copy(&self, args: &[Value]) -> Result<Value, RuntimeError> {
