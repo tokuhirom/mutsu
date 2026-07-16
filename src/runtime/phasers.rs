@@ -876,9 +876,21 @@ fn is_read_stmt(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Say(_) | Stmt::Put(_) | Stmt::Print(_) | Stmt::Note(_) => true,
         Stmt::Call { .. } => true,
-        Stmt::Expr(e) => !matches!(e, Expr::AssignExpr { .. }),
+        Stmt::Expr(e) => !matches!(e, Expr::AssignExpr { .. }) && !is_mixin_expr(e),
         _ => false,
     }
+}
+
+/// True if `expr` is a `does`/`but` role-mixin application (`$x does Role`,
+/// `@a but Role`). Such an expression mutates its target container as a
+/// compile-time declaration effect, so it acts as a hoisting barrier for a
+/// following BEGIN rather than as a pure read.
+fn is_mixin_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Binary { op: crate::token_kind::TokenKind::Ident(op), .. }
+            if op == "does" || op == "but"
+    )
 }
 
 /// True if a nested `BEGIN` phaser may be hoisted above `stmt`. Only pure reads
@@ -898,8 +910,12 @@ fn stmt_is_hoist_safe(stmt: &Stmt) -> bool {
         // A bare declaration (no initializer) creates a container but performs
         // no runtime work, so a BEGIN may safely run before it.
         Stmt::VarDecl { expr, .. } => is_empty_vardecl_init(expr),
-        // A plain expression statement is a read unless it is an assignment.
-        Stmt::Expr(e) => !matches!(e, Expr::AssignExpr { .. }),
+        // A plain expression statement is a read unless it is an assignment or a
+        // `does`/`but` role mixin. A declaration-level mixin (`my @a does R1`,
+        // desugared to `VarDecl @a; @a does R1`) applies the role to the
+        // container as a compile-time effect that a following BEGIN must see, so
+        // it is a barrier the BEGIN may not hoist above.
+        Stmt::Expr(e) => !matches!(e, Expr::AssignExpr { .. }) && !is_mixin_expr(e),
         _ => false,
     }
 }

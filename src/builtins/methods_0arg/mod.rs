@@ -527,6 +527,12 @@ pub(crate) fn native_method_0arg(
         {
             return Some(Ok(name_val.clone()));
         }
+        // A role-mixed value (`5 but Foo::Bar`, `$x does R`) reports its base type
+        // with a `+{Role,...}` suffix (`Int+{Foo::Bar}`). Without this, `^name`
+        // delegates to the inner value below and drops the mixed-in role names.
+        if method == "^name" && crate::value::role_mixin_suffix(mixins).is_some() {
+            return Some(Ok(Value::str(crate::value::what_type_name(target))));
+        }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
         if let Some(mixin_val) = mixins.get(method) {
