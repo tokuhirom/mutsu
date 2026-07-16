@@ -418,6 +418,7 @@ impl Interpreter {
                 source_line: data.source_line,
                 source_file: data.source_file.clone(),
                 owned_captures: data.owned_captures.clone(),
+                authoritative_captures: data.authoritative_captures.clone(),
                 upvalues: data.upvalues.clone(),
             });
             new_env.insert(
@@ -482,7 +483,7 @@ impl Interpreter {
                     .map(|cc| {
                         super::resolution_map_grep::frame_authoritative_set(
                             cc,
-                            &data.owned_captures,
+                            &data.authoritative_captures,
                         )
                     })
                     .unwrap_or_default(),

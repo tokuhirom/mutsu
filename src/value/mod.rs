@@ -662,6 +662,17 @@ pub struct SubData {
     /// the shared lexical name — Raku's per-iteration closure capture. Empty for
     /// non-loop closures and named subs.
     pub(crate) owned_captures: Vec<Symbol>,
+    /// Free variables this closure captures that the CREATING frame vouched for
+    /// (its `frame_authoritative` set): a never-written, lexically-authoritative
+    /// value. Like `owned_captures` they are installed with overwrite semantics at
+    /// call time (a same-named caller lexical must not shadow them), and they also
+    /// re-seed this frame's `frame_authoritative` so the vouch cascades to deeper
+    /// closures — the runtime counterpart of the compile-time
+    /// `propagate_authoritative_down`, which does not reach a closure the inline
+    /// `.map`/`.grep` fast path re-compiles. Kept SEPARATE from `owned_captures`
+    /// because loop captures may be concurrently mutated (shared cells) and must
+    /// NOT be propagated as authoritative — only these never-written names are.
+    pub(crate) authoritative_captures: Vec<Symbol>,
     /// Captured upvalue array, aligned with `compiled_code.upvalue_syms`. Built at
     /// closure-creation time (after `box_captured_lexicals`). An entry is
     /// `Some(cell)` only when the captured lexical is a shared `ContainerRef` cell

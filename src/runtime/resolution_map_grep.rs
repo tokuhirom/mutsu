@@ -1,44 +1,22 @@
 use super::*;
 
-/// The free-var names a map/grep block vouches for, so a closure created inside
-/// its body inherits authoritative (overwrite) capture (runtime transitive
-/// vouching — see `Interpreter::frame_authoritative`). Taken from the block's
-/// ORIGINAL compiled code: the inline map/grep fast paths re-compile the body,
-/// and that fresh copy lacks the enclosing frame's compile-time
-/// `propagate_authoritative_down`. Set on `vm.frame_authoritative` before running
-/// each iteration so a nested closure passed to a callee with a same-named
-/// parameter does not lose lexical capture of an outer free var.
-pub(super) fn block_frame_authoritative(
-    compiled_code: &Option<std::sync::Arc<CompiledCode>>,
-    owned_captures: &[crate::symbol::Symbol],
-) -> Vec<crate::symbol::Symbol> {
-    let Some(cc) = compiled_code.as_ref() else {
-        return Vec::new();
-    };
-    frame_authoritative_set(cc, owned_captures)
-}
-
-/// The set a frame vouches for so nested closures inherit authoritative
-/// (overwrite) capture: the block's own `authoritative_free_vars` plus the
-/// inherited-authoritative names carried in `owned_captures`, but NOT any free var
-/// this frame's subtree WRITES (`free_var_writes` / `free_var_container_writes`).
-/// Excluding written names is critical: `owned_captures` also holds per-iteration
-/// loop captures, and a loop var mutated concurrently (`for ^N { start { $c += 1 } }`)
-/// must stay a shared cell — overwrite-installing a frozen snapshot into each
-/// thread's frame loses updates (t/concurrent-compound-assign.t). A vouched
-/// (never-written) name is safe to overwrite; a written one must keep tracking the
-/// live cell. (`authoritative_free_vars` is already write-free by construction;
-/// only the added `owned_captures` need filtering.)
+/// The set a frame vouches for so a closure created inside it inherits
+/// authoritative (overwrite) capture (runtime transitive vouching — see
+/// `Interpreter::frame_authoritative`): the block's own `authoritative_free_vars`
+/// plus the inherited-authoritative names it carries in `authoritative_captures`.
+/// Both are never-written by construction, so propagating them is always sound —
+/// unlike loop `owned_captures`, which may be concurrently-mutated shared cells
+/// and are deliberately NOT included (a reader thread would freeze a stale
+/// snapshot — `roast/S17-lowlevel/lock.t`'s condition-variable busy-wait). Set on
+/// `vm.frame_authoritative` before each inline map/grep iteration; the inline fast
+/// path re-compiles the block body, so the fresh copy would otherwise lack the
+/// enclosing frame's compile-time `propagate_authoritative_down`.
 pub(crate) fn frame_authoritative_set(
     cc: &CompiledCode,
-    owned_captures: &[crate::symbol::Symbol],
+    authoritative_captures: &[crate::symbol::Symbol],
 ) -> Vec<crate::symbol::Symbol> {
     let mut fa = cc.authoritative_free_vars.clone();
-    fa.extend(
-        owned_captures.iter().copied().filter(|s| {
-            !cc.free_var_writes.contains(s) && !cc.free_var_container_writes.contains(s)
-        }),
-    );
+    fa.extend(authoritative_captures.iter().copied());
     fa
 }
 
@@ -359,9 +337,12 @@ impl Interpreter {
             // loop's Result; `with_nested_registers` restores the outer registers
             // and flags env_dirty. The temporary-binding env restore (`saved`) is
             // hoisted to after the call — it ran on every old exit path.
-            // Runtime transitive vouching: see `block_frame_authoritative`.
-            let block_authoritative =
-                block_frame_authoritative(&data.compiled_code, &data.owned_captures);
+            // Runtime transitive vouching: see `frame_authoritative_set`.
+            let block_authoritative = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| frame_authoritative_set(cc, &data.authoritative_captures))
+                .unwrap_or_default();
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 let mut i = 0usize;
                 while i < list_items.len() {

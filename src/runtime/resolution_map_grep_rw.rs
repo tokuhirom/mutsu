@@ -145,11 +145,17 @@ impl Interpreter {
             // returns the loop's Result; `with_nested_registers` restores the
             // outer registers and flags env_dirty. The `saved`/`topic_key` env
             // restore is hoisted to after the call (ran on every old exit).
-            // Runtime transitive vouching: see `block_frame_authoritative`.
-            let block_authoritative = super::resolution_map_grep::block_frame_authoritative(
-                &data.compiled_code,
-                &data.owned_captures,
-            );
+            // Runtime transitive vouching: see `frame_authoritative_set`.
+            let block_authoritative = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| {
+                    super::resolution_map_grep::frame_authoritative_set(
+                        cc,
+                        &data.authoritative_captures,
+                    )
+                })
+                .unwrap_or_default();
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 let mut i = 0usize;
                 while i < list_items.len() {
@@ -360,11 +366,17 @@ impl Interpreter {
             // returns Ok(()) / Err on the loop; `with_nested_registers` restores
             // the outer registers and flags env_dirty. The `saved` env restore is
             // hoisted to after the call (ran on every old exit path).
-            // Runtime transitive vouching: see `block_frame_authoritative`.
-            let block_authoritative = super::resolution_map_grep::block_frame_authoritative(
-                &data.compiled_code,
-                &data.owned_captures,
-            );
+            // Runtime transitive vouching: see `frame_authoritative_set`.
+            let block_authoritative = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| {
+                    super::resolution_map_grep::frame_authoritative_set(
+                        cc,
+                        &data.authoritative_captures,
+                    )
+                })
+                .unwrap_or_default();
             let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 let mut i = 0usize;
                 let mut stop = false;
