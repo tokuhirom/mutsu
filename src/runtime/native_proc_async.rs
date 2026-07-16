@@ -193,6 +193,34 @@ impl Interpreter {
                     cmd.stdin(Stdio::piped());
                 }
 
+                // Honor `.start(:$cwd, :$ENV)`. zef's tar/git/curl shell-outs run
+                // with `:cwd($archive.parent)` and a *relative* path
+                // (`./foo.tar.gz`), so an ignored `:cwd` made every `zef` extract
+                // (and any relative-path child) run in the wrong directory and
+                // fail. `:ENV` replaces the child's whole environment with the
+                // given hash (Raku semantics), matching Rakudo's `Proc::Async`.
+                for arg in &args {
+                    if let ValueView::Pair(key, val) = arg.view() {
+                        match key.as_str() {
+                            "cwd" => {
+                                let dir = val.to_string_value();
+                                if !dir.is_empty() {
+                                    cmd.current_dir(dir);
+                                }
+                            }
+                            "ENV" => {
+                                if let ValueView::Hash(map) = val.view() {
+                                    cmd.env_clear();
+                                    for (env_key, env_val) in map.iter() {
+                                        cmd.env(env_key, env_val.to_string_value());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
                 let child_result = cmd.spawn();
 
                 // If spawn failed, break all promises with X::OS and return
