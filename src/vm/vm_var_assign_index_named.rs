@@ -457,6 +457,37 @@ impl Interpreter {
         } else {
             val
         };
+        // `$vec[1] = x` / `$vec[1]--` on an `is Array` subclass instance held in
+        // a scalar: write into the backing `__mutsu_array_storage` element in
+        // place, instead of the associative path treating the instance as a hash
+        // store (which would spuriously create an attribute keyed by the index).
+        if is_positional
+            && !bind_mode
+            && let Some(inst) = self.env().get(&var_name).cloned()
+            && let ValueView::Instance { attributes, .. } = inst.view()
+            && attributes.contains_key("__mutsu_array_storage")
+        {
+            let idx_i = crate::runtime::utils::to_int(&idx);
+            if idx_i >= 0 {
+                let idx_u = idx_i as usize;
+                attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+                    let (mut items, kind) = match storage.view() {
+                        ValueView::Array(items, kind) => ((**items).clone(), kind),
+                        _ => (
+                            crate::value::ArrayData::new(Vec::new()),
+                            crate::value::ArrayKind::Array,
+                        ),
+                    };
+                    if idx_u >= items.items.len() {
+                        items.items.resize(idx_u + 1, Value::NIL);
+                    }
+                    items.items[idx_u] = val.clone();
+                    *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
+                });
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
         // Map containers are immutable - prevent assignment and binding to keys
         if declared_type.as_deref().is_some_and(|t| t == "Map") {
             if bind_mode {

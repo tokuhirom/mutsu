@@ -196,6 +196,19 @@ pub(crate) fn gist_value(value: &Value) -> String {
             attributes,
             ..
         } if class_name == "Match" => match_gist(&(attributes).as_map(), 0),
+        // An `is Array` subclass instance gists as its backing array elements
+        // (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic `Class.new`.
+        ValueView::Instance { attributes, .. }
+            if attributes.contains_key("__mutsu_array_storage") =>
+        {
+            gist_value(
+                &attributes
+                    .as_map()
+                    .get("__mutsu_array_storage")
+                    .cloned()
+                    .unwrap_or_else(|| crate::value::Value::real_array(Vec::new())),
+            )
+        }
         // `$(...)` itemized container: `.gist` never shows the itemization sigil,
         // so it gists exactly like its inner value (`${a=>1}.gist` → `{a => 1}`).
         ValueView::Scalar(inner) => gist_value(inner),

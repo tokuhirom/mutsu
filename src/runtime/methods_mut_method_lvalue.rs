@@ -1199,6 +1199,37 @@ impl Interpreter {
             );
         }
 
+        // `method z() is rw { self[2] }` on an `is Array` subclass — assign into
+        // the invocant's backing array storage element. The index is a literal
+        // or a positional parameter of the method.
+        if attributes.contains_key("__mutsu_array_storage")
+            && let Some((index_expr, is_pos)) = Self::rw_method_self_index_target(&method_def.body)
+        {
+            let idx_val = match &index_expr {
+                Expr::Literal(v) => v.clone(),
+                Expr::Var(param) => match method_def
+                    .params
+                    .iter()
+                    .position(|p| p == param)
+                    .and_then(|pos| method_args.get(pos).cloned())
+                {
+                    Some(v) => v,
+                    None => self.eval_block_value(&[Stmt::Expr(index_expr.clone())])?,
+                },
+                other => self.eval_block_value(&[Stmt::Expr(other.clone())])?,
+            };
+            return self.assign_rw_indexed_attr(
+                &attributes,
+                class_name,
+                target_id,
+                target_var,
+                "__mutsu_array_storage",
+                idx_val,
+                is_pos,
+                value,
+            );
+        }
+
         // Check if this is a delegation method — forward assignment to delegate
         if let Some((ref attr_var_name, ref target_method)) = method_def.delegation
             && !attr_var_name.starts_with('&')

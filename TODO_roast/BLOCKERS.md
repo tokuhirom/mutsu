@@ -48,7 +48,7 @@ Definitions of the classifications:
 
 ## Current assumptions
 
-- The whitelist stands at **1414 / 1463** (2026-07-15, `wc -l roast-whitelist.txt`) = **49** files not whitelisted.
+- The whitelist stands at **1423 / 1463** (2026-07-16, `wc -l roast-whitelist.txt`) = **40** files not whitelisted.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -76,7 +76,6 @@ noted.
 | `integration/advent2011-day14.t` | aborts at 4/8 | PASS ★ | AOP via `EXPORTHOW` + a custom `Metamodel::ClassHOW` subclass (`ClassWithAspectsHOW`) whose `compose` wraps every local method with entry/exit logging (`Advent::MetaBoundaryAspect`). Needs the `EXPORTHOW.WHO.<class> = ...` meta-class-override mechanism + `ClassHOW` subclassing + `self.methods($obj, :local)`/`$m.wrap`. Tests 1-4 (single/multi-inheritance EVAL) pass; abort at test 5 (`Example.double`) |
 | `integration/advent2012-day09.t` | fails 4+ | PASS ★ | grammar parse subtests ("greeting parse", "informal letter parse/greet/close") |
 | `integration/advent2012-day14.t` | aborts at 0/6 | PASS ★ | mutually-recursive `... *` sequence generators (`@primes = 2,3,5, -> $p {...} ... *` referencing `&is-prime-beta` before its declaration) + `is-prime-alpha($n) { $n %% none 2..sqrt $n }`. Aborts before test 1 building the lazy prime sequence |
-| `integration/advent2013-day08.t` | aborts at 0/11 | PASS ★ | `class Vector is Array` (subclassing `Array`) with `nextwith(\|@values)` in a custom `new`; the resulting instance must bind to `@vec` as `Positional` (mutsu: "Type check failed in binding; expected Positional but got Any"). Needs Array-subclass instances to be Positional-typed |
 | `integration/advent2013-day18.t` | aborts at 0/10 | PASS ★ | grammar with a rule-embedded dynamic-var declaration (`rule deal { :my %*PLAYED = (); <hand>+ % ';' }`) + `proto token suit {*}` / `token suit:sym<…>`. mutsu throws "Null regex not allowed" building the grammar. Aborts before test 1 |
 | `6.c/S04-declarations/my-6c.t` | 111/112 | PASS ★ | **shortcut**: the only failure = test 57, the `OUTER::<$x>` pseudo-package |
 | `6.c/S14-roles/mixin-6c.t` | aborts at 16/57 | PASS ★ | 6.c mixin (`does`/`but`) semantics; aborts mid-file |

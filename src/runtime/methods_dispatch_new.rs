@@ -339,6 +339,23 @@ impl Interpreter {
                 };
             }
         }
+        // Array-subclass construction: an `is Array` subclass reaches the base
+        // `Array.new(1, 2, 3)` semantics through `nextwith(|@values)` in its own
+        // `new`, which lands here as `bless` with positional (non-Pair) args.
+        // Those positional args become the elements of the backing array
+        // storage (which `Array` methods on the instance delegate to). Only
+        // touch the storage when there are positional args, so a plain
+        // named-args `bless` keeps the empty storage seeded by `dispatch_new`.
+        if self.class_mro(cn_resolved).iter().any(|n| n == "Array") {
+            let elems: Vec<Value> = args
+                .iter()
+                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .cloned()
+                .collect();
+            if !elems.is_empty() || !attributes.contains_key("__mutsu_array_storage") {
+                attributes.insert("__mutsu_array_storage", Value::real_array(elems));
+            }
+        }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
         // Build the instance BEFORE the BUILD/TWEAK phases and thread its shared

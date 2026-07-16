@@ -304,6 +304,27 @@ impl Interpreter {
             {
                 return result;
             }
+            // Array-subclass instance delegation: when the class inherits from
+            // `Array` and the method isn't user-defined, delegate array methods
+            // (AT-POS/elems/List/...) to the backing `__mutsu_array_storage`.
+            // This mirrors the CallMethod-opcode delegation (vm_call_method_ops)
+            // so callers that route through this entry (e.g. index `$v[0]` →
+            // AT-POS) also reach the storage instead of returning Nil.
+            if !self.has_user_method(class, method)
+                && let ValueView::Instance { attributes, .. } = target.view()
+                && attributes.contains_key("__mutsu_array_storage")
+                && self.mro_readonly(class).iter().any(|n| n == "Array")
+            {
+                let storage = attributes
+                    .as_map()
+                    .get("__mutsu_array_storage")
+                    .cloned()
+                    .unwrap_or(Value::real_array(Vec::new()));
+                if let Some(native_result) = self.try_native_method(&storage, method_sym, &args) {
+                    self.method_dispatch_pure = true;
+                    return native_result;
+                }
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the

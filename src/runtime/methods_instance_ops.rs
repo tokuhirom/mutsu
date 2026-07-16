@@ -933,6 +933,12 @@ impl Interpreter {
                 && args.is_empty()
                 && !self.has_user_method(&class_name.resolve(), method)
             {
+                // An `is Array` subclass instance gists/rakus as its backing
+                // array (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic
+                // `Class.new`. Delegate to the storage array's own repr method.
+                if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
+                    return self.call_method_with_values(storage, method, vec![]);
+                }
                 if class_name == Symbol::intern("ObjAt")
                     || class_name == Symbol::intern("ValueObjAt")
                 {
