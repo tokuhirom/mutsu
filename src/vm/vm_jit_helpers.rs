@@ -363,16 +363,28 @@ pub(super) unsafe extern "C" fn call_func(
     fns: *const CompiledFns,
 ) -> u32 {
     let (interp, code, fns) = unsafe { (&mut *interp, &*code, &*fns) };
-    let OpCode::CallFunc {
-        name_idx,
-        arity,
-        arg_sources_idx,
-    } = &code.ops[op_idx as usize]
-    else {
-        unreachable!("jit call_func shim on a non-CallFunc opcode")
-    };
     interp.sync_source_line(code, op_idx as usize);
-    let r = interp.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, fns);
+    let r = match &code.ops[op_idx as usize] {
+        OpCode::CallFunc {
+            name_idx,
+            arity,
+            arg_sources_idx,
+        } => interp.exec_call_func_op(code, *name_idx, *arity, *arg_sources_idx, fns),
+        OpCode::CallFuncNamed {
+            name_idx,
+            arity,
+            spec_idx,
+            arg_sources_idx,
+        } => interp.exec_call_func_named_op(
+            code,
+            *name_idx,
+            *arity,
+            *spec_idx,
+            *arg_sources_idx,
+            fns,
+        ),
+        _ => unreachable!("jit call_func shim on a non-CallFunc opcode"),
+    };
     interp.current_code = code as *const CompiledCode as usize;
     match r {
         Ok(()) => {

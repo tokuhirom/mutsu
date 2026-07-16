@@ -63,6 +63,7 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
             | OpCode::CallFunc { .. }
+            | OpCode::CallFuncNamed { .. }
             | OpCode::CallMethod { .. }
             | OpCode::CallMethodMut { .. } => {}
             OpCode::Jump(t)
@@ -391,7 +392,7 @@ fn build(
                 )?;
                 check_status(&mut b, status);
             }
-            OpCode::CallFunc { .. } => {
+            OpCode::CallFunc { .. } | OpCode::CallFuncNamed { .. } => {
                 let opidx = b.ins().iconst(types::I32, i as i64);
                 let status = call_helper(
                     &mut b,

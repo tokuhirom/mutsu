@@ -1131,15 +1131,58 @@ impl Compiler {
                 // shared `ContainerRef` cells (escape analysis). Compile its
                 // args in an escaping position.
                 let escaping_args = name.resolve() == "start";
-                for arg in args {
-                    self.compile_call_arg_with_escape(arg, escaping_args);
+                // Literal named args (`:key(val)` / `key => val` with a
+                // compile-time-known key) travel out-of-band: only the VALUE
+                // is compiled, and (position, key) goes into a NamedArgsSpec,
+                // so the call site never boxes a Pair. Constant pairs
+                // (`:flag`) stay in-band — loading them is a plain Arc bump,
+                // and the synthetic callsite-line marker must remain an
+                // in-band pair for `peek_callsite_line`.
+                let mut named_entries: Vec<crate::opcode::NamedArgEntry> = Vec::new();
+                for (i, arg) in args.iter().enumerate() {
+                    if let Expr::Binary {
+                        op: TokenKind::FatArrow,
+                        left,
+                        right,
+                    } = arg
+                        && let Expr::Literal(lit) = left.as_ref()
+                        && let crate::value::ValueView::Str(key) = lit.view()
+                    {
+                        named_entries.push(crate::opcode::NamedArgEntry {
+                            pos: i as u32,
+                            sym: Symbol::intern(&key),
+                            key: key.to_string(),
+                        });
+                        // Compile the value exactly as the in-band pair path
+                        // would: `compile_call_arg` wraps the whole pair expr
+                        // in with_escape + with_suppress_pair_capture, under
+                        // which the FatArrow compile is `left; right; MakePair`
+                        // — so the value side is a plain compile_expr.
+                        self.with_escape(escaping_args, |s| {
+                            s.with_suppress_pair_capture(true, |s| s.compile_expr(right))
+                        });
+                    } else {
+                        self.compile_call_arg_with_escape(arg, escaping_args);
+                    }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                self.code.emit(OpCode::CallFunc {
-                    name_idx,
-                    arity,
-                    arg_sources_idx,
-                });
+                if named_entries.is_empty() {
+                    self.code.emit(OpCode::CallFunc {
+                        name_idx,
+                        arity,
+                        arg_sources_idx,
+                    });
+                } else {
+                    let spec_idx = self.code.add_named_arg_spec(crate::opcode::NamedArgsSpec {
+                        entries: named_entries,
+                    });
+                    self.code.emit(OpCode::CallFuncNamed {
+                        name_idx,
+                        arity,
+                        spec_idx,
+                        arg_sources_idx,
+                    });
+                }
                 // Emit writeback for any Index expressions that were passed
                 // as `is rw` arguments (temp variable -> original slot).
                 self.emit_index_rw_writebacks();

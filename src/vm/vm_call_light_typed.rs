@@ -12,6 +12,23 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         func_name: &str,
     ) -> Result<Value, RuntimeError> {
+        self.call_compiled_function_light_spec(cf, args, compiled_fns, func_name, None)
+    }
+
+    /// [`Self::call_compiled_function_light`] with an optional out-of-band
+    /// named-args spec (a `CallFuncNamed` site): the positions listed in the
+    /// spec are named-arg VALUES (never boxed into Pairs), everything else is
+    /// positional. In-band Pair args can coexist (e.g. a constant `:flag`);
+    /// on a duplicate key the higher argument position wins, matching the
+    /// all-in-band ordering.
+    pub(super) fn call_compiled_function_light_spec(
+        &mut self,
+        cf: &CompiledFunction,
+        args: &[Value],
+        compiled_fns: &CompiledFns,
+        func_name: &str,
+        named_spec: Option<&crate::opcode::NamedArgsSpec>,
+    ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): the light-call boundary skips
         // push_call_frame, so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
@@ -77,16 +94,45 @@ impl Interpreter {
                 _ => arg,
             }
         }
-        // Find the value of the last argument pair whose key is `key`.
+        // Find the last in-band argument pair whose key is `key` (with its
+        // argument position, so a spec hit at a later position can win).
         #[inline]
-        fn find_named<'a>(args: &'a [Value], key: &str) -> Option<&'a Value> {
+        fn find_named_pos<'a>(args: &'a [Value], key: &str) -> Option<(usize, &'a Value)> {
             args.iter()
+                .enumerate()
                 .rev()
-                .find_map(|arg| match deref_arg(arg).view() {
-                    ValueView::Pair(k, v) if k.as_str() == key => Some(v),
+                .find_map(|(i, arg)| match deref_arg(arg).view() {
+                    ValueView::Pair(k, v) if k.as_str() == key => Some((i, v)),
                     _ => None,
                 })
         }
+        // Named lookup over BOTH sources — in-band Pair args and the
+        // out-of-band spec — with the higher argument position winning on a
+        // duplicate key (Raku's last-one-wins, preserved across the split).
+        // The spec compare is by `Symbol` when the caller has one interned
+        // (the plan's main match key); alias keys compare by string.
+        let find_named = |key_sym: Option<Symbol>, key: &str| -> Option<&Value> {
+            let inband = find_named_pos(args, key);
+            let spec_hit = named_spec.and_then(|s| {
+                s.entries
+                    .iter()
+                    .rev()
+                    .find(|e| match key_sym {
+                        Some(sym) => e.sym == sym,
+                        None => e.key == key,
+                    })
+                    .map(|e| (e.pos as usize, &args[e.pos as usize]))
+            });
+            match (inband, spec_hit) {
+                (Some((ip, iv)), Some((sp, sv))) => Some(if sp > ip { sv } else { iv }),
+                (Some((_, v)), None) | (None, Some((_, v))) => Some(v),
+                (None, None) => None,
+            }
+        };
+        // Whether argument position `pos` carries an out-of-band named value.
+        let in_spec = |pos: usize| {
+            named_spec.is_some_and(|s| s.entries.iter().any(|e| e.pos as usize == pos))
+        };
 
         // Bind parameters to their precomputed locals slots; mirror into
         // the overlay env only when a name-based reader needs it (reflective
@@ -119,12 +165,16 @@ impl Interpreter {
             let npb = match pb {
                 crate::opcode::LightParamBind::Named(npb) => npb,
                 crate::opcode::LightParamBind::Positional(ppb) => {
-                    // Advance past named-syntax Pair args (a parenthesized
-                    // Pair compiles to ValuePair and stays positional) and
-                    // the synthetic callsite-line marker (which can be a
-                    // ValuePair).
+                    // Advance past named args — in-band Pairs and out-of-band
+                    // spec positions — plus the synthetic callsite-line marker
+                    // (a parenthesized Pair compiles to ValuePair and stays
+                    // positional).
                     while positional_idx < args.len()
-                        && (matches!(deref_arg(&args[positional_idx]).view(), ValueView::Pair(..))
+                        && (in_spec(positional_idx)
+                            || matches!(
+                                deref_arg(&args[positional_idx]).view(),
+                                ValueView::Pair(..)
+                            )
                             || Self::is_callsite_line_marker(&args[positional_idx]))
                     {
                         positional_idx += 1;
@@ -155,8 +205,10 @@ impl Interpreter {
                     } else if ppb.required {
                         let got = args
                             .iter()
-                            .filter(|a| {
-                                !matches!(deref_arg(a).view(), ValueView::Pair(..))
+                            .enumerate()
+                            .filter(|(i, a)| {
+                                !in_spec(*i)
+                                    && !matches!(deref_arg(a).view(), ValueView::Pair(..))
                                     && !Self::is_callsite_line_marker(a)
                             })
                             .count();
@@ -177,10 +229,10 @@ impl Interpreter {
                     continue;
                 }
             };
-            let mut found_val: Option<&Value> = find_named(args, &npb.match_key);
+            let mut found_val: Option<&Value> = find_named(Some(npb.match_key_sym), &npb.match_key);
             if found_val.is_none() {
                 for key in &npb.alias_keys {
-                    found_val = find_named(args, key);
+                    found_val = find_named(None, key);
                     if found_val.is_some() {
                         break;
                     }
@@ -188,7 +240,7 @@ impl Interpreter {
             }
             if found_val.is_none() {
                 for key in &npb.outer_alias_keys {
-                    found_val = find_named(args, key);
+                    found_val = find_named(None, key);
                     if found_val.is_some() {
                         break;
                     }
@@ -238,14 +290,16 @@ impl Interpreter {
         if bind_err.is_none() && plan.positional_count > 0 {
             let mut idx = positional_idx;
             while idx < args.len() {
-                let is_named_or_marker =
-                    matches!(deref_arg(&args[idx]).view(), ValueView::Pair(..))
-                        || Self::is_callsite_line_marker(&args[idx]);
+                let is_named_or_marker = in_spec(idx)
+                    || matches!(deref_arg(&args[idx]).view(), ValueView::Pair(..))
+                    || Self::is_callsite_line_marker(&args[idx]);
                 if !is_named_or_marker {
                     let got = args
                         .iter()
-                        .filter(|a| {
-                            !matches!(deref_arg(a).view(), ValueView::Pair(..))
+                        .enumerate()
+                        .filter(|(i, a)| {
+                            !in_spec(*i)
+                                && !matches!(deref_arg(a).view(), ValueView::Pair(..))
                                 && !Self::is_callsite_line_marker(a)
                         })
                         .count();
@@ -303,9 +357,11 @@ impl Interpreter {
         if plan.uses_arg_array {
             let plain_args: Vec<Value> = args
                 .iter()
-                .map(deref_arg)
-                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
-                .cloned()
+                .enumerate()
+                .filter(|(i, a)| {
+                    !in_spec(*i) && !matches!(deref_arg(a).view(), ValueView::Pair(..))
+                })
+                .map(|(_, a)| deref_arg(a).clone())
                 .collect();
             self.env_mut()
                 .insert("@_".to_string(), Value::array(plain_args));
