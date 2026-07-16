@@ -260,6 +260,16 @@ impl Interpreter {
                 self.env_mut().insert_sym(*sym, val);
             }
         }
+        // Runtime transitive vouching (see `SubData::authoritative_captures` and
+        // `Interpreter::frame_authoritative`): free vars this closure inherited as
+        // authoritative from its creating frame. Same overwrite-install as
+        // `authoritative_free_vars` above — a never-written, lexically-authoritative
+        // value that a same-named caller lexical must not shadow.
+        for sym in &data.authoritative_captures {
+            if let Some(val) = data.env.get_sym(*sym).cloned() {
+                self.env_mut().insert_sym(*sym, val);
+            }
+        }
         // Per-iteration loop captures (Raku fresh-binding semantics): these free
         // variables were declared in an enclosing loop body when this closure was
         // created, so each iteration's closure froze a distinct value in its
@@ -334,6 +344,7 @@ impl Interpreter {
             source_line: data.source_line,
             source_file: data.source_file.clone(),
             owned_captures: data.owned_captures.clone(),
+            authoritative_captures: data.authoritative_captures.clone(),
             upvalues: data.upvalues.clone(),
         });
         self.env_mut().insert(
@@ -508,6 +519,17 @@ impl Interpreter {
         // it.) Out-of-range `GetUpvalue` indices fall back to env by name, so a
         // mismatched/empty array is always safe.
         self.upvalues = data.upvalues.clone();
+        // Runtime transitive vouching: record the free-var names this frame
+        // vouches for so a closure created inside its body inherits authoritative
+        // (overwrite) capture (see `Interpreter::frame_authoritative` and
+        // `frame_authoritative_set`), letting the vouch cascade arbitrarily deep —
+        // the compile-time `propagate_authoritative_down` does not reach a closure
+        // created inside a `.map`/`.grep`-invoked block. (`push_call_frame` saved
+        // the caller's set; `pop_call_frame` restores it.)
+        self.frame_authoritative = crate::runtime::resolution_map_grep::frame_authoritative_set(
+            cc,
+            &data.authoritative_captures,
+        );
         // Load persisted state variable values using scoped keys
         // (state_scope_id is set to data.id above, so scoped_state_key
         // will generate closure-instance-specific keys automatically).

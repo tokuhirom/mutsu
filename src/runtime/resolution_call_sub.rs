@@ -418,6 +418,7 @@ impl Interpreter {
                 source_line: data.source_line,
                 source_file: data.source_file.clone(),
                 owned_captures: data.owned_captures.clone(),
+                authoritative_captures: data.authoritative_captures.clone(),
                 upvalues: data.upvalues.clone(),
             });
             new_env.insert(
@@ -466,7 +467,30 @@ impl Interpreter {
             // assigned it) would clobber the caller's live value on return.
             // Env is copy-on-write, so this clone is O(1) until the body forks it.
             let body_entry_env = self.env.clone();
-            let result = match self.eval_block_value(&data.body) {
+            // Runtime transitive vouching (see `Interpreter::frame_authoritative`):
+            // record the free-var names this block vouches for (its own
+            // `authoritative_free_vars` plus any inherited via `owned_captures`) so
+            // a closure created inside its body inherits authoritative (overwrite)
+            // capture. This is the interpreter-path (`.map`/`.grep` block) twin of
+            // the VM's `call_compiled_closure_with_topic` set; restored right after
+            // the body runs. Without it a closure created inside a map/grep block
+            // loses lexical capture of an outer free var when the block is invoked
+            // through a callee that has a same-named parameter.
+            let saved_frame_auth = std::mem::replace(
+                &mut self.frame_authoritative,
+                data.compiled_code
+                    .as_ref()
+                    .map(|cc| {
+                        super::resolution_map_grep::frame_authoritative_set(
+                            cc,
+                            &data.authoritative_captures,
+                        )
+                    })
+                    .unwrap_or_default(),
+            );
+            let body_result = self.eval_block_value(&data.body);
+            self.frame_authoritative = saved_frame_auth;
+            let result = match body_result {
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", data.package, data.name);
                     let matches_frame = if let Some(target_id) = e.leave_callable_id() {

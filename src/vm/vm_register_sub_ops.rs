@@ -24,6 +24,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
             let upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
@@ -59,6 +60,7 @@ impl Interpreter {
                 // (`sub {...}`) have `is_pointy_block == false` and stay `Sub`.
                 is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
                 owned_captures,
+                authoritative_captures,
                 upvalues,
                 compiled_code,
                 deprecated_message: None,
@@ -83,6 +85,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
             let upvalues = self.capture_upvalues(code, &compiled_code);
             let cc_source_line = compiled_code
                 .as_ref()
@@ -105,6 +108,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: true,
                 owned_captures,
+                authoritative_captures,
                 upvalues,
                 compiled_code,
                 deprecated_message: None,

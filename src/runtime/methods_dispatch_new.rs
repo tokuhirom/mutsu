@@ -283,6 +283,20 @@ impl Interpreter {
         for ((attr_name, _is_public, default, _is_rw, _, sigil, _), &attr_sym) in
             plan.class_attrs.iter().zip(plan.attr_syms.iter())
         {
+            // A `@`/`%` attribute with no declared default that a bless named
+            // argument provides would get an empty container here only for the
+            // override loop below to immediately replace it — skip the throwaway
+            // allocation (and the GC-candidate churn its drop incurs). The args
+            // scan is cheap (bless calls carry few named args) relative to a
+            // HashData/ArrayData allocation per unfilled construction.
+            if default.is_none()
+                && (*sigil == '@' || *sigil == '%')
+                && args
+                    .iter()
+                    .any(|a| matches!(a.view(), ValueView::Pair(k, _) if k == attr_name))
+            {
+                continue;
+            }
             let val = if let Some(Expr::Literal(lit_val)) = default {
                 // Fast path: simple literal defaults (e.g. native type
                 // defaults like Int(0)) don't need interpretation.

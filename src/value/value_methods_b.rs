@@ -344,6 +344,7 @@ impl Value {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            authoritative_captures: Vec::new(),
             upvalues: Vec::new(),
         }))
     }
@@ -379,6 +380,7 @@ impl Value {
             source_line: None,
             source_file: None,
             owned_captures: Vec::new(),
+            authoritative_captures: Vec::new(),
             upvalues: Vec::new(),
         }))
     }

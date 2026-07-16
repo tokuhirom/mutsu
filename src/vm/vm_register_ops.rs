@@ -127,6 +127,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
             let mut upvalues = self.capture_upvalues(code, &compiled_code);
             let mut captured_env = self.capture_closure_env(code, &compiled_code);
             self.freeze_readonly_owned_captures(
@@ -158,6 +159,7 @@ impl Interpreter {
                 empty_sig: false,
                 is_bare_block: is_block,
                 owned_captures,
+                authoritative_captures,
                 upvalues,
                 compiled_code,
                 deprecated_message: None,
@@ -192,6 +194,7 @@ impl Interpreter {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);
             self.box_captured_lexicals(code, &compiled_code);
             let owned_captures = self.compute_owned_captures(&compiled_code);
+            let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
             let mut upvalues = self.capture_upvalues(code, &compiled_code);
             // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
             let mut env = self.capture_closure_env(code, &compiled_code);
@@ -234,6 +237,7 @@ impl Interpreter {
                 // stay `Sub`. (`WhateverCode` already overrides via callable_type.)
                 is_bare_block: compiled_code.as_ref().is_some_and(|cc| cc.is_pointy_block),
                 owned_captures,
+                authoritative_captures,
                 upvalues,
                 compiled_code,
                 deprecated_message: None,
@@ -318,9 +322,39 @@ impl Interpreter {
         let Some(cc) = compiled_code else {
             return Vec::new();
         };
+        // Per-iteration loop captures (Raku fresh-binding): a free var declared in
+        // an enclosing loop body froze a distinct value per iteration.
         cc.free_var_syms
             .iter()
             .filter(|sym| self.loop_local_vars.iter().any(|set| set.contains(*sym)))
+            .copied()
+            .collect()
+    }
+
+    /// Free vars this closure captures that the CREATING frame vouches for
+    /// (`frame_authoritative`) — a never-written, lexically-authoritative value.
+    /// Stored in `SubData::authoritative_captures`, installed with overwrite at
+    /// call time, and re-seeded into the callee's `frame_authoritative` so the
+    /// vouch cascades to deeper closures. This is the runtime counterpart of the
+    /// compile-time `propagate_authoritative_down`, which does not reach a closure
+    /// the inline `.map`/`.grep` fast path re-compiles (its runtime CompiledCode is
+    /// a distinct copy from the one the compile-time pass mutates). Kept separate
+    /// from loop `owned_captures`, which may be concurrently-mutated shared cells
+    /// and must NOT be propagated as authoritative (a reader thread would freeze a
+    /// stale snapshot — `roast/S17-lowlevel/lock.t`'s condition-variable busy-wait).
+    pub(super) fn compute_authoritative_captures(
+        &self,
+        compiled_code: &Option<std::sync::Arc<CompiledCode>>,
+    ) -> Vec<Symbol> {
+        if self.frame_authoritative.is_empty() {
+            return Vec::new();
+        }
+        let Some(cc) = compiled_code else {
+            return Vec::new();
+        };
+        cc.free_var_syms
+            .iter()
+            .filter(|sym| self.frame_authoritative.contains(sym))
             .copied()
             .collect()
     }

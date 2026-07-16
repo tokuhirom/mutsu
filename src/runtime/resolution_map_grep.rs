@@ -1,5 +1,25 @@
 use super::*;
 
+/// The set a frame vouches for so a closure created inside it inherits
+/// authoritative (overwrite) capture (runtime transitive vouching — see
+/// `Interpreter::frame_authoritative`): the block's own `authoritative_free_vars`
+/// plus the inherited-authoritative names it carries in `authoritative_captures`.
+/// Both are never-written by construction, so propagating them is always sound —
+/// unlike loop `owned_captures`, which may be concurrently-mutated shared cells
+/// and are deliberately NOT included (a reader thread would freeze a stale
+/// snapshot — `roast/S17-lowlevel/lock.t`'s condition-variable busy-wait). Set on
+/// `vm.frame_authoritative` before each inline map/grep iteration; the inline fast
+/// path re-compiles the block body, so the fresh copy would otherwise lack the
+/// enclosing frame's compile-time `propagate_authoritative_down`.
+pub(crate) fn frame_authoritative_set(
+    cc: &CompiledCode,
+    authoritative_captures: &[crate::symbol::Symbol],
+) -> Vec<crate::symbol::Symbol> {
+    let mut fa = cc.authoritative_free_vars.clone();
+    fa.extend(authoritative_captures.iter().copied());
+    fa
+}
+
 /// Convert a `CallArg` to an `Expr` for expression-level call compilation,
 /// preserving named (`k => v`) and slip (`|v`) args. Mirrors the compiler's
 /// `call_args_to_expr_args`.
@@ -317,12 +337,19 @@ impl Interpreter {
             // loop's Result; `with_nested_registers` restores the outer registers
             // and flags env_dirty. The temporary-binding env restore (`saved`) is
             // hoisted to after the call — it ran on every old exit path.
+            // Runtime transitive vouching: see `frame_authoritative_set`.
+            let block_authoritative = data
+                .compiled_code
+                .as_ref()
+                .map(|cc| frame_authoritative_set(cc, &data.authoritative_captures))
+                .unwrap_or_default();
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 let mut i = 0usize;
                 while i < list_items.len() {
                     if arity > 1 && i + arity > list_items.len() {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
+                    vm.frame_authoritative = block_authoritative.clone();
                     {
                         let assumed_count = data.assumed_positional.len();
                         // Bind assumed positional args first

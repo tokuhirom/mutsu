@@ -314,6 +314,11 @@ pub(crate) struct VmCallFrame {
     /// and get reverted at the caller's block exit — clobbering a same-named
     /// caller variable across a recursive call.
     pub saved_block_declared_vars: Vec<crate::runtime::NameSet>,
+    /// The caller frame's `frame_authoritative` set — the free-var names this
+    /// frame vouches for so a closure created inside it inherits authoritative
+    /// (overwrite) capture semantics (runtime transitive vouching). Saved here so
+    /// a nested call restores it, mirroring `saved_upvalues`.
+    pub saved_frame_authoritative: Vec<crate::symbol::Symbol>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`
