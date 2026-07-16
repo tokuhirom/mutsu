@@ -128,13 +128,18 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
         }
         let r2 = &r2[1..];
         let (r2, _) = ws(r2)?;
-        // Stop at terminators
+        // Trailing comma: a Raku listop swallows a comma with no following
+        // argument (`f $x,` == `f($x)`), so consume it into the call's arg list
+        // rather than leaving it for the outer parser to read as a list comma
+        // (which would nest the call result: `my @b = f $x,` becoming
+        // `@b = (f($x),)`).
         if r2.is_empty()
             || r2.starts_with(';')
             || r2.starts_with('}')
             || r2.starts_with(')')
             || is_stmt_modifier_ahead(r2)
         {
+            r = r2;
             break;
         }
         let (r2, arg) = call_arg_expr(r2).map_err(|err| PError {
@@ -294,12 +299,14 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
         }
         let r2 = &r2[1..];
         let (r2, _) = ws(r2)?;
+        // Trailing comma: consume it into the call (see parse_expr_listop_args).
         if r2.is_empty()
             || r2.starts_with(';')
             || r2.starts_with('}')
             || r2.starts_with(')')
             || is_stmt_modifier_ahead(r2)
         {
+            r = r2;
             break;
         }
         let (r2, arg) = parse_listop_arg(r2).map_err(|err| PError {
