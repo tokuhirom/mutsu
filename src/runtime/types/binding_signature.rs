@@ -355,7 +355,8 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            let mut consumed_named = std::collections::HashSet::new();
+            let mut consumed_named: rustc_hash::FxHashSet<String> =
+                rustc_hash::FxHashSet::default();
             let mut positional_idx = 0usize;
             for param in params.iter() {
                 // Named placeholder: $:f, @:f, %:f -- match by Pair key
@@ -439,7 +440,7 @@ impl Interpreter {
         }
         // Pre-compute the set of explicit named parameter keys so that
         // slurpy hash (*%rest) can exclude args already bound to named params.
-        let explicit_named_keys: std::collections::HashSet<String> = param_defs
+        let explicit_named_keys: rustc_hash::FxHashSet<String> = param_defs
             .iter()
             .filter(|pd| (pd.named || pd.name.starts_with(':')) && !pd.slurpy)
             .map(|pd| {
