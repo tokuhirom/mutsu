@@ -159,6 +159,28 @@ pub fn datetime_method_0arg(
             den /= gcd;
             Some(Ok(Value::rat_raw(num, den)))
         }
+        // `timezone` is the UTC offset in seconds; minutes divide it exactly
+        // for whole-minute offsets (`+0130` → 5400s → 90). Rakudo returns an
+        // Int for whole-minute offsets, a Rat otherwise.
+        "offset-in-minutes" => {
+            if timezone % 60 == 0 {
+                Some(Ok(Value::int(timezone / 60)))
+            } else {
+                let mut num = timezone;
+                let mut den = 60i64;
+                let mut a = num.abs();
+                let mut b = den;
+                while b != 0 {
+                    let t = b;
+                    b = a % b;
+                    a = t;
+                }
+                let gcd = a.max(1);
+                num /= gcd;
+                den /= gcd;
+                Some(Ok(Value::rat_raw(num, den)))
+            }
+        }
         "day-of-week" | "weekday" => Some(Ok(Value::int(day_of_week(days)))),
         "day-of-year" => Some(Ok(Value::int(day_of_year(year, month, day)))),
         "is-leap-year" => Some(Ok(Value::truth(is_leap_year(year)))),
