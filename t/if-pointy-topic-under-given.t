@@ -7,7 +7,7 @@ use Test;
 # overwrote `%h<type>` with COND — Template::Mustache's section handler relies on
 # the hunk's `<type>` surviving `elsif ... $datum -> $_`).
 
-plan 6;
+plan 7;
 
 # Scalar given topic.
 my $s = 'keep';
@@ -50,3 +50,20 @@ is $val, 'z', "the pointy elsif arm still runs and yields its value";
 my $seen;
 given 'topic' { if [7, 8] -> $_ { $seen = $_ } }
 is-deeply $seen, [7, 8], "\$_ inside the pointy block is the condition value";
+
+# A `when`-succeed inside the pointy block unwinds past the pointy scope's
+# restore; the enclosing `given`'s element writeback must still flush the given's
+# OWN topic, not the leftover pointy `$_`. (Template::Mustache's nested `{{#.}}`
+# implicit iterator hit this — the shared section hunk's `<type>` was overwritten
+# with the iterated datum.)
+my %w = type => 'section', inverted => False;
+given %w<type> {
+    when 'section' {
+        if !%w<inverted> and [5, 6] -> $_ {
+            when Iterable { 'iter' }
+            default { 'def' }
+        }
+    }
+}
+is %w<type>, 'section',
+    "a when-succeed inside a pointy block leaves the given topic intact";

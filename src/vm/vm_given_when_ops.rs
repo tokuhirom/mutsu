@@ -69,7 +69,20 @@ impl Interpreter {
             self.mark_readonly("_");
         }
 
-        let restore = |this: &mut Self, write_back: bool| {
+        // Depth of the pointy-topic scope stack at body entry. A `when`-succeed (or
+        // other control break) inside a `given`-body `if EXPR -> $_ { ... }` unwinds
+        // past that if's `ExitPointyTopic`, leaving its `(saved $_, saved source)`
+        // on the stack — so `$_` would still hold the pointy value and the given's
+        // element writeback below would flush THAT (not the real topic) back to the
+        // source. Drain any such leftover scopes here, restoring `$_` and
+        // `topic_source_var` to the given's own topic before the writeback reads it.
+        let saved_pointy_depth = self.topic_source_save_stack.len();
+        let restore = move |this: &mut Self, write_back: bool| {
+            while this.topic_source_save_stack.len() > saved_pointy_depth {
+                let (saved_topic, saved_source) = this.topic_source_save_stack.pop().unwrap();
+                this.env_mut().insert("_".to_string(), saved_topic);
+                this.topic_source_var = saved_source;
+            }
             if mark_ro {
                 this.unmark_readonly("_");
             }
