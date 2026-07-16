@@ -3034,6 +3034,25 @@ impl CompiledCode {
                         needs_cell.insert(*sym);
                     }
                 }
+                // A call-arg-source own local captured by a nested closure can
+                // never be vouched (an `is rw` / `is raw` param might write it
+                // back — see `own_call_arg_sources` and the `vouched` filter
+                // below), so it can never be overwrite-installed BY VALUE at the
+                // closure entry. Give it a shared `ContainerRef` cell instead:
+                // the cell is overwrite-installed at closure entry — fixing the
+                // dynamic misresolution where the free var resolves to a
+                // same-named parameter of the callee that eventually invokes the
+                // closure (`callee($path, -> { ... $path ... })`) — AND it
+                // live-tracks any genuine rw-writeback, so it is sound in both
+                // directions (ADR-0001 cell-vs-by-value). Deliberately NOT gated
+                // on `escapes`: a closure passed as a call argument is never
+                // classified as escaping (the #2746 perf guard), yet it is
+                // exactly such a closure that gets invoked from a foreign frame
+                // whose same-named param triggers the misresolution.
+                if is_own && own_call_arg_sources.contains(sym) {
+                    captured_mutated.insert(*sym);
+                    needs_cell.insert(*sym);
+                }
                 // An escaping child closure that captures-and-mutates a var which
                 // is NOT our local: that var needs a cell in the ancestor that
                 // owns it. Bubble it up. (Mutation is checked against the union
