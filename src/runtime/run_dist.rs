@@ -271,12 +271,29 @@ impl Interpreter {
     /// Check for unresolved package/class stubs at program end.
     /// Throws X::Package::Stubbed if any stubs remain.
     pub(crate) fn check_unresolved_stubs(&self) -> Result<(), RuntimeError> {
+        self.check_unresolved_stubs_excluding(&std::collections::HashSet::new())
+    }
+
+    /// Like `check_unresolved_stubs`, but ignores any stub whose name is in
+    /// `exclude`. Used by EVAL: an EVAL'd string is its own compilation unit
+    /// and must only report stubs it introduced itself — stubs that were
+    /// already pending in the outer program will be defined later in that
+    /// outer unit (class decls install at BEGIN time in raku), so they are
+    /// not the EVAL's concern.
+    pub(crate) fn check_unresolved_stubs_excluding(
+        &self,
+        exclude: &std::collections::HashSet<String>,
+    ) -> Result<(), RuntimeError> {
         let mut unresolved: Vec<String> = Vec::new();
         for name in &self.registry().class_stubs {
-            unresolved.push(name.clone());
+            if !exclude.contains(name) {
+                unresolved.push(name.clone());
+            }
         }
         for name in &self.registry().package_stubs {
-            unresolved.push(name.clone());
+            if !exclude.contains(name) {
+                unresolved.push(name.clone());
+            }
         }
         if unresolved.is_empty() {
             return Ok(());

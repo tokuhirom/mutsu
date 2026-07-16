@@ -126,11 +126,27 @@ impl Interpreter {
                     })
                     .copied()
                     .collect();
+                // Snapshot stubs already pending in the outer unit. Class/package
+                // decls install at BEGIN time in raku, so an outer stub that is
+                // defined later in the file is NOT undefined from the EVAL's view;
+                // only stubs the EVAL itself introduces (and leaves unresolved)
+                // should error here.
+                let eval_pre_stubs: HashSet<String> = self
+                    .registry()
+                    .class_stubs
+                    .iter()
+                    .chain(self.registry().package_stubs.iter())
+                    .cloned()
+                    .collect();
+                // Raku resolves `self!private()` at compile time, so a typo'd
+                // private call in the EVAL'd string errors even if a preceding
+                // `return` would short-circuit it at runtime.
+                self.validate_private_calls_against_self(&stmts)?;
                 let value = self.eval_block_value(&stmts)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
                 }
-                self.check_unresolved_stubs()?;
+                self.check_unresolved_stubs_excluding(&eval_pre_stubs)?;
                 // When the last statement is an assignment, the VM pops the
                 // value from the stack, so eval_block_value returns Nil/Any.
                 // In Raku, EVAL returns the value of the last expression,

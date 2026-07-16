@@ -2979,7 +2979,15 @@ impl Interpreter {
                     hash_capture: None,
                     secondary_named_capture: secondary_named,
                     force_list_capture,
-                    ratchet: token_ratchet,
+                    // The inner token already enforces ratchet semantics while the
+                    // group is matched standalone: a greedy inner commits to its
+                    // longest run (one candidate), while a FRUGAL inner must expose
+                    // every admissible length so the following pattern can drive its
+                    // growth (`$<to>=\S+? ','` inside a `token` grows to "perl6").
+                    // Keeping the outer `One` wrapper ratcheted would drain those
+                    // frugal candidates down to just the shortest and break growth,
+                    // so relax the wrapper's ratchet for the frugal case.
+                    ratchet: token_ratchet && !token_frugal,
                     frugal: token_frugal,
                     separator: None,
                 });

@@ -247,6 +247,21 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             let prev = out.chars().rev().find(|ch| !ch.is_whitespace());
             let next = chars[j..].iter().copied().find(|ch| !ch.is_whitespace());
             if let (Some(p), Some(n)) = (prev, next) {
+                // A `$` that begins a capture alias / variable (`$<name>=…`,
+                // `$0=…`, `$var`, `${…}`) is a term, not the end-of-string
+                // anchor, so whitespace before it IS significant and must
+                // become `<.ws>`. Normalize such a `$` to a plain term char so
+                // `should_insert`'s `(_, '$')` anchor suppression does not fire
+                // (while its prev-based rules — after `(`/`[`/`|` — still do).
+                let n = if n == '$'
+                    && chars
+                        .get(j + 1)
+                        .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '<' || *c == '{')
+                {
+                    'x'
+                } else {
+                    n
+                };
                 if p == '^' {
                     if !out.ends_with(' ') && !out.is_empty() {
                         out.push(' ');
