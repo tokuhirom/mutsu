@@ -37,6 +37,9 @@ impl Interpreter {
                 list_items.push(arg.clone());
             } else {
                 match arg.view() {
+                    // An itemized array/list value (`$[...]` / `$(...)`, e.g. a
+                    // sub-call result) is a single item regardless of arg source.
+                    ValueView::Array(_, kind) if kind.is_itemized() => list_items.push(arg.clone()),
                     ValueView::Array(items, ..) => list_items.extend(items.iter().cloned()),
                     ValueView::Seq(items) => list_items.extend(items.iter().cloned()),
                     ValueView::Hash(map) => {
@@ -133,12 +136,11 @@ impl Interpreter {
         for arg in args.iter().skip(1) {
             match arg.view() {
                 // Only flatten List-kind arrays (from @-sigiled variables).
-                // Array-kind (from [...] literals) are kept as individual items.
+                // Array-kind (from [...] literals) are kept as individual items,
+                // and itemized (`$(...)` / `$[...]`) values are a single item.
                 ValueView::Array(items, kind)
-                    if matches!(
-                        kind,
-                        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
-                    ) || (matches!(kind, crate::value::ArrayKind::Array) && args.len() == 2) =>
+                    if matches!(kind, crate::value::ArrayKind::List)
+                        || (matches!(kind, crate::value::ArrayKind::Array) && args.len() == 2) =>
                 {
                     list_items.extend(items.iter().cloned());
                 }
