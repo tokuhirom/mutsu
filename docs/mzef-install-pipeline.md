@@ -29,13 +29,14 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 1 | Ecosystem index (populate) | ✅ | fez index parsed: **9260 keys / 7648 dists**, ~6.5s release |
 | 2 | Resolve / find candidate | ✅ | `zef info Test::META` → full Identity/Source/Description |
 | 3 | **Fetch** (download archive) | ✅ | `zef fetch` downloads `https://360.zef.pm/.../*.tar.gz` via the **curl** backend (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617 |
-| 4 | **Extract** (untar) | ⏳ | Reached; **silent-fails in the full zef path** (see "Current frontier"). All components work in isolation |
+| 4 | **Extract** (untar) | ⏳ | Reached the real `tar -xvf` call with correct paths after #4620 + #4622 + #4627. One **call-arg sub-case** of the closure-capture bug still misroutes `$path` → `.lock` (see "Current frontier") |
 | 5 | Build | ⬜ | not reached |
 | 6 | Test | ⬜ | not reached |
 | 7 | Install into site repo | ⬜ | not reached — but the **install→`use` bridge is already done** (`t/compunit-repository-for-name.t`), so once a dist reaches here it should be resolvable |
 
-**So: 3.5 of 8 phases.** Everything through *fetch* works end-to-end against
-the live ecosystem; *extract* is the active edge.
+**So: ~3.7 of 8 phases.** Everything through *fetch* works end-to-end against
+the live ecosystem; *extract* is one narrow language bug (the call-arg vouch
+veto) away from untarring the dist.
 
 ## Fixes that got us here (this campaign)
 
@@ -50,40 +51,90 @@ the live ecosystem; *extract* is the active edge.
   applied via `Command::current_dir` / `env_clear`+envs. Pin:
   `t/proc-start-cwd-env.t`.
 
-## Current frontier — extract silent-fails in the full zef path
+### Extract phase — three language bugs, all general (2026-07-16)
 
-`zef fetch <dist>` now runs: `Searching → Found → Fetching [OK] → Extracting:` →
-then **prints usage and exits, producing no extracted files**, with **no
-exception reaching zef's `proto MAIN` `CATCH`** (`Zef/CLI.rakumod:329`) — so the
-failure is swallowed on a worker/detached context, not surfaced.
+The "silent-fail → usage" was NOT an extract-specific problem: an exception
+thrown inside `extract` is swallowed by mutsu's MAIN dispatch and surfaces as a
+usage dump. Instrumenting the copy (`note`s down `Zef::Client::!extract` →
+`Zef::Extract.ls-files`/`.extract`) found three ordinary language bugs, each
+fixed generally:
 
-What has been ruled out (each works in isolation under mutsu):
+- **#4620** — a **coercion-typed parameter** (`Str() $uri`) failed to dispatch a
+  *native* target method. zef's `tar.extract-matcher(Str() $uri)` gets a
+  `$candi.uri` `IO::Path`; `IO::Path.Str` is native, so binding threw
+  `No such method 'Str' for invocant of type 'IO::Path'`. Fix: gate the
+  "run the object's coercion method" branch on `class_has_user_method`, letting
+  native methods fall through to the native dispatcher. Pin:
+  `t/coercion-native-method-param.t`.
+- **#4622** — **`IO::Path.relative($base)`** returned the *absolute* path when
+  `$base` was not a literal ancestor. zef builds the `tar -C` target and staged
+  archive path from `$archive.relative($tmp)` / `$extract-to.relative($cwd)`.
+  Fix: implement raku's `abs2rel` (common-prefix drop + `..` ascent). Pin:
+  `t/io-path-relative-abs2rel.t`.
+- **#4627** — a **closure created inside a `.map`/`.grep` block** lost lexical
+  capture of an outer free var when invoked through a callee with a same-named
+  parameter. zef's `extract` maps over backends and, inside
+  `lock-file-protect(IO() $path, &code)`, runs `start { $extractor.extract($path,
+  …) }` — `$path` resolved to `lock-file-protect`'s `$path` param, so `tar`
+  received the `.lock` file ("This does not look like a tar archive"). Root
+  cause: the compile-time `authoritative_free_vars` propagation (#4510) does not
+  reach a closure the inline map/grep path **re-compiles**. Fix: cascade the
+  vouch at runtime via `Interpreter::frame_authoritative`. Pin:
+  `t/closure-map-block-free-var-capture.t`.
 
-- the **tar backend itself** — `Zef::Service::Shell::tar.ls-files`/`.extract`
-  return the 9 files and extract `Test-META-0.0.20` correctly (needs real
-  `:stdout`/`:stderr` Suppliers);
-- the **extract concurrency core** — `$s.Supply.act` tap + `start { try … }` +
-  `await Promise.anyof($todo, $time-up)` extracts correctly;
-- `Proc::Async` with `:ENV(%*ENV)` + `:cwd` + a relative `tar` path.
+## Current frontier — extract's remaining call-arg sub-case
 
-So the bug is in the **integration**: `Zef::Client::!extract`
-(`Zef/Client.rakumod:591`, `my Candidate @extracted = eager gather for …`) →
-`Zef::Extract.extract` (`Zef/Extract.rakumod:115`: `lock-file-protect` +
-`start { try … }` + `Promise.anyof` + `self!extractors($path).map(…)`), under
-real `Candidate`/backend objects.
+With #4620 + #4622 + #4627, `zef fetch Test::META` reaches the real
+`tar -xvf … -C …` call with the **correct** archive/extract paths in the common
+case. One narrower zef-specific sub-case of the #4627 closure bug remains and
+still makes `tar` receive the `.lock` path:
+
+`Zef::Extract.extract` binds `my $path := $candi.uri`, then passes `$path` as a
+**call argument** — `self!extractors($path)` (the map invocant) and
+`$extractor.extract($path, …)` (in the `start` block). mutsu's compile-time
+vouch analysis conservatively **vetoes** any call-arg-source from
+`authoritative_free_vars` (an `is rw` param *could* write it back — see
+`own_call_arg_sources` in `compute_free_vars`). So `$path` is never vouched, the
+#4627 runtime cascade never starts for it, and the `start` block's `$path` again
+degrades to `lock-file-protect`'s `$path` param.
+
+Minimal repro (fails; raku prints `(A:REAL B:REAL)`):
+
+```raku
+sub other($p) { 1 }
+sub callee($path, &code) { code() }
+sub extract($candi) {
+    my $path := $candi;
+    other($path);                                   # the call-arg veto trigger
+    <A B>.map(-> $b { callee("$path.lock", -> { await start { "$b:$path" } }) });
+}
+say extract("REAL");                                # mutsu: (A:REAL.lock B:REAL.lock)
+```
 
 ### Next session starts here
 
-1. Instrument the extract path to find where the silent fail is. Editing the
-   out-of-repo `zef-dbg` is blocked by the tool sandbox, so **work on a copy**
-   (a scratchpad copy `zef-dbg-instr` was used this session): add `note`s inside
-   `Zef::Client::!extract` and `Zef::Extract.extract` around `lock-file-protect`,
-   `self!extractors`, and the `start`/`await` to see which returns `Nil`/throws.
-2. Likely suspects (from the ruled-out list): `lock-file-protect` not running
-   its block, `self!extractors($path)` selecting no backend for a `Candidate`'s
-   uri, or the `eager gather` swallowing a per-candi exception.
-3. Fix the mutsu bug generally, add a `t/` pin (as with #4615/#4617), PR it, and
-   move to the next phase (build).
+The **sound** fix (per ADR-0001's by-value-vs-cell guidance): a captured free var
+that is a call-arg-source (potentially rw-mutated) should be **boxed into a
+shared `ContainerRef` cell** rather than left a by-value snapshot. A `ContainerRef`
+capture is already overwrite-installed at closure entry
+(`call_compiled_closure_with_topic`, the `ValueView::ContainerRef` arm ~line 233)
+AND tracks the live value, so it is immune to a same-named caller param and stays
+correct even under an actual `is rw` write-back.
+
+1. In `compute_free_vars` (`src/opcode.rs`), extend the `needs_cell` analysis:
+   a free var that a nested closure captures AND that is in `own_call_arg_sources`
+   should be added to `needs_cell` (its declaring frame boxes it). Today only
+   *mutated* captures are boxed (`self_mutated`/`free_writes`); this adds the
+   call-arg-source captured case.
+2. Verify the minimal repro above prints `(A:REAL B:REAL)`, then re-run the full
+   `zef fetch Test::META` — extract should now untar `Test-META-0.0.20` and the
+   pipeline advances to **build**.
+3. Watch for over-boxing regressions (perf + `=:=` identity / by-value
+   expectations) via `make test`; boxing a readonly call-arg var is sound but
+   touches a common pattern. Add a `t/` pin, PR it.
+4. Then move to phase 5 (**build**): re-run `zef fetch`/`zef install --/--build`
+   and instrument `Zef::Client.build` → `Zef::Service::Shell::DistributionBuilder`
+   the same way.
 
 ## How to run zef under mutsu (tooling)
 
@@ -92,8 +143,12 @@ real `Candidate`/backend objects.
   Debian's `/usr/share/perl6/debian-sources/raku-zef/` lacks `bin/` — do not use it.
 - **Invoke:** `target/release/mutsu -I <zef-dbg>/lib <zef-dbg>/bin/zef <args>`
   (`--debug` adds `DBG …` traces; `DBG pop-*` = populate progress).
-- **Repros built this session (in `tmp/`):** `proc-async-curl.raku` (fetch via
-  curl), `tar-ls-files.raku` (tar backend), `zef-tar-direct.raku` (tar plugin
-  ls-files/extract with real Suppliers), `extract-concurrency.raku` (the
-  `start`+`Promise.anyof` core).
+- **Instrumenting the extract path:** the out-of-repo `zef-dbg` cannot be edited
+  by the tool sandbox, so copy it into the scratchpad and add `note`s there, then
+  point `-I` at the copy: `cp -r /home/tokuhirom/work/mutsu/tmp/zef-dbg
+  <scratchpad>/zef-instr` → `target/release/mutsu -I <scratchpad>/zef-instr/lib
+  <scratchpad>/zef-instr/bin/zef fetch Test::META`. Useful note sites:
+  `Zef/Client.rakumod` `!extract`, `Zef/Extract.rakumod` `ls-files`/`extract`,
+  `Zef/Service/Shell/tar.rakumod` `extract` (print the `archive`/`-C` it hands
+  `tar` — a `.lock` suffix on the archive is the closure-capture leak).
 - Use a **release** build for anything touching populate (debug is minutes).
