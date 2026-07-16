@@ -1709,6 +1709,15 @@ pub struct Interpreter {
     /// alongside `locals`. A `None` entry (or out-of-range index) makes
     /// `GetUpvalue` fall back to a by-name env read. Empty for non-closure frames.
     pub(crate) upvalues: Vec<Option<Value>>,
+    /// Free-var names the currently-running frame vouches for (its own
+    /// `authoritative_free_vars` plus any inherited via `owned_captures`). A
+    /// closure created in this frame inherits authoritative (overwrite) capture
+    /// for any of its free vars listed here — the runtime counterpart of the
+    /// compile-time `propagate_authoritative_down`, which does not reach a closure
+    /// created inside a `.map`/`.grep`-invoked block (its runtime CompiledCode is
+    /// a different copy than the one the compile-time propagation mutates). Set on
+    /// closure entry, saved/restored across call frames like `upvalues`.
+    pub(crate) frame_authoritative: Vec<crate::symbol::Symbol>,
     pub(crate) in_smartmatch_rhs: bool,
     pub(crate) transliterate_in_smartmatch: bool,
     pub(crate) substitution_in_smartmatch: bool,

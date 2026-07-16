@@ -312,17 +312,40 @@ impl Interpreter {
         &self,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
     ) -> Vec<Symbol> {
-        if self.loop_local_vars.is_empty() {
-            return Vec::new();
-        }
         let Some(cc) = compiled_code else {
             return Vec::new();
         };
-        cc.free_var_syms
-            .iter()
-            .filter(|sym| self.loop_local_vars.iter().any(|set| set.contains(*sym)))
-            .copied()
-            .collect()
+        let mut result: Vec<Symbol> = Vec::new();
+        // Per-iteration loop captures (Raku fresh-binding): a free var declared in
+        // an enclosing loop body froze a distinct value per iteration.
+        if !self.loop_local_vars.is_empty() {
+            result.extend(
+                cc.free_var_syms
+                    .iter()
+                    .filter(|sym| self.loop_local_vars.iter().any(|set| set.contains(*sym)))
+                    .copied(),
+            );
+        }
+        // Runtime transitive vouching: a free var this closure captures that the
+        // CREATING frame vouches for (`frame_authoritative`) carries the same
+        // frozen, never-mutated value here, so install it with overwrite semantics
+        // at call time — a same-named lexical in an eventual caller frame must not
+        // shadow it (lexical scoping, not dynamic). This is the runtime counterpart
+        // of the compile-time `propagate_authoritative_down`, which does not reach a
+        // closure created inside a `.map`/`.grep`-invoked block: that block's
+        // runtime CompiledCode is a distinct copy from the one the compile-time
+        // pass mutates, so the propagated `authoritative_free_vars` never arrives.
+        // Reusing `owned_captures` is sound here because the value is a vouched
+        // non-`ContainerRef` scalar — `freeze_readonly_owned_captures` skips it
+        // (it only freezes `ContainerRef` cells), leaving just the overwrite install.
+        if !self.frame_authoritative.is_empty() {
+            for sym in &cc.free_var_syms {
+                if self.frame_authoritative.contains(sym) && !result.contains(sym) {
+                    result.push(*sym);
+                }
+            }
+        }
+        result
     }
 
     /// Capture the closure's environment as an *upvalue snapshot* (single-store

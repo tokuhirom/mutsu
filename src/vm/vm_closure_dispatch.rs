@@ -508,6 +508,15 @@ impl Interpreter {
         // it.) Out-of-range `GetUpvalue` indices fall back to env by name, so a
         // mismatched/empty array is always safe.
         self.upvalues = data.upvalues.clone();
+        // Runtime transitive vouching: record the free-var names this frame
+        // vouches for so a closure created inside its body inherits authoritative
+        // (overwrite) capture (see `Interpreter::frame_authoritative` and
+        // `frame_authoritative_set`), letting the vouch cascade arbitrarily deep —
+        // the compile-time `propagate_authoritative_down` does not reach a closure
+        // created inside a `.map`/`.grep`-invoked block. (`push_call_frame` saved
+        // the caller's set; `pop_call_frame` restores it.)
+        self.frame_authoritative =
+            crate::runtime::resolution_map_grep::frame_authoritative_set(cc, &data.owned_captures);
         // Load persisted state variable values using scoped keys
         // (state_scope_id is set to data.id above, so scoped_state_key
         // will generate closure-instance-specific keys automatically).
