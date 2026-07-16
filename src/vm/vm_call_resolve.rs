@@ -41,7 +41,7 @@ impl Interpreter {
         let use_cache = !self.has_multi_candidates_cached(name);
         if use_cache && self.fn_resolve_cache_gen == self.fn_resolve_gen {
             if let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
-                && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
             {
                 return Some(cf);
@@ -67,32 +67,29 @@ impl Interpreter {
             })
             .unwrap_or(arity);
         let matches_resolved = |cf: &CompiledFunction| cf.fingerprint == expected_fingerprint;
+        // Probe a candidate key string. The map is keyed by `Symbol`; every real
+        // key was interned at compile time, so `Symbol::lookup` (no interning)
+        // finds it, and a candidate that turns out not to exist never grows the
+        // global symbol table. Returns the matched key's `Symbol`.
+        let probe = |key: &str| -> Option<Symbol> {
+            let sym = Symbol::lookup(key)?;
+            compiled_fns
+                .get(&sym)
+                .filter(|cf| matches_resolved(cf))
+                .map(|_| sym)
+        };
         let pkg = self.current_package();
         let type_sig: Vec<String> = args
             .iter()
             .map(|v| runtime::value_type_name(v).to_string())
             .collect();
         // Try all key patterns and remember which one matched for caching
-        let mut found_key: Option<String>;
+        let mut found_key: Option<Symbol>;
         if name.contains("::") {
-            let key_typed = format!("{name}/{arity}:{}", type_sig.join(","));
-            if compiled_fns.get(&key_typed).is_some_and(&matches_resolved) {
-                found_key = Some(key_typed);
-            } else {
-                let key_fp = format!("{name}/{}#{:x}", arity, expected_fingerprint);
-                if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
-                    found_key = Some(key_fp);
-                } else {
-                    let key_arity = format!("{name}/{arity}");
-                    if compiled_fns.get(&key_arity).is_some_and(&matches_resolved) {
-                        found_key = Some(key_arity);
-                    } else if compiled_fns.get(name).is_some_and(&matches_resolved) {
-                        found_key = Some(name.to_string());
-                    } else {
-                        found_key = None;
-                    }
-                }
-            }
+            found_key = probe(&format!("{name}/{arity}:{}", type_sig.join(",")))
+                .or_else(|| probe(&format!("{name}/{}#{:x}", arity, expected_fingerprint)))
+                .or_else(|| probe(&format!("{name}/{arity}")))
+                .or_else(|| probe(name));
             // If not found directly, try qualifying with the current package
             // when the prefix package is visible in the current scope.
             if found_key.is_none() && pkg != "GLOBAL" {
@@ -107,117 +104,83 @@ impl Interpreter {
                 };
                 if prefix_visible {
                     let qname = format!("{}::{}", pkg, name);
-                    let key_typed = format!("{qname}/{arity}:{}", type_sig.join(","));
-                    if compiled_fns.get(&key_typed).is_some_and(&matches_resolved) {
-                        found_key = Some(key_typed);
-                    } else {
-                        let key_fp = format!("{qname}/{}#{:x}", arity, expected_fingerprint);
-                        if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
-                            found_key = Some(key_fp);
-                        } else {
-                            let key_arity = format!("{qname}/{arity}");
-                            if compiled_fns.get(&key_arity).is_some_and(&matches_resolved) {
-                                found_key = Some(key_arity);
-                            } else if compiled_fns.get(&qname).is_some_and(&matches_resolved) {
-                                found_key = Some(qname);
-                            }
-                        }
-                    }
+                    found_key = probe(&format!("{qname}/{arity}:{}", type_sig.join(",")))
+                        .or_else(|| probe(&format!("{qname}/{}#{:x}", arity, expected_fingerprint)))
+                        .or_else(|| probe(&format!("{qname}/{arity}")))
+                        .or_else(|| probe(&qname));
                 }
             }
         } else {
-            let key_typed = format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(","));
-            if compiled_fns.get(&key_typed).is_some_and(&matches_resolved) {
-                found_key = Some(key_typed);
-            } else {
-                let key_fp = format!("{}::{}/{}#{:x}", pkg, name, arity, expected_fingerprint);
-                if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
-                    found_key = Some(key_fp);
-                } else {
-                    let key_arity = format!("{}::{}/{}", pkg, name, arity);
-                    if compiled_fns.get(&key_arity).is_some_and(&matches_resolved) {
-                        found_key = Some(key_arity);
+            let pos_arity = || {
+                args.iter()
+                    .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                    .count()
+            };
+            found_key = probe(&format!("{}::{}/{}:{}", pkg, name, arity, type_sig.join(",")))
+                .or_else(|| {
+                    probe(&format!(
+                        "{}::{}/{}#{:x}",
+                        pkg, name, arity, expected_fingerprint
+                    ))
+                })
+                .or_else(|| probe(&format!("{}::{}/{}", pkg, name, arity)));
+            if found_key.is_none() {
+                // `key_simple` (`Pkg::name`) and the positional-only-arity key are
+                // probed but their match is intentionally *not* kept here: the
+                // original control flow gates the global fallback on their result
+                // and then discards it (the `else { found_key = None }` below).
+                // Behaviour-preserving — the def-arity fallback re-resolves.
+                let simple_or_pos = probe(&format!("{}::{}", pkg, name)).or_else(|| {
+                    let pos = pos_arity();
+                    if pos != arity {
+                        probe(&format!(
+                            "{}::{}/{}#{:x}",
+                            pkg, name, pos, expected_fingerprint
+                        ))
                     } else {
-                        let key_simple = format!("{}::{}", pkg, name);
-                        if compiled_fns.get(&key_simple).is_some_and(&matches_resolved) {
-                            found_key = Some(key_simple);
-                        } else {
-                            // Try with positional-only arity (excluding Pair named args)
-                            let pos_arity = args
-                                .iter()
-                                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
-                                .count();
-                            if pos_arity != arity {
-                                let key_pos_fp = format!(
-                                    "{}::{}/{}#{:x}",
-                                    pkg, name, pos_arity, expected_fingerprint
-                                );
-                                if compiled_fns.get(&key_pos_fp).is_some_and(&matches_resolved) {
-                                    found_key = Some(key_pos_fp);
-                                } else {
-                                    found_key = None;
-                                }
-                            } else {
-                                found_key = None;
-                            }
-                        }
-                        if found_key.is_none() && pkg != "GLOBAL" {
-                            let key_fp_global =
-                                format!("GLOBAL::{}/{}#{:x}", name, arity, expected_fingerprint);
-                            if compiled_fns
-                                .get(&key_fp_global)
-                                .is_some_and(&matches_resolved)
-                            {
-                                found_key = Some(key_fp_global);
-                            } else {
-                                let key_global = format!("GLOBAL::{}", name);
-                                if compiled_fns.get(&key_global).is_some_and(&matches_resolved) {
-                                    found_key = Some(key_global);
-                                } else {
-                                    // Try with positional-only arity (excluding Pair named args)
-                                    let pos_arity = args
-                                        .iter()
-                                        .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
-                                        .count();
-                                    if pos_arity != arity {
-                                        let key_pos = format!(
-                                            "GLOBAL::{}/{}#{:x}",
-                                            name, pos_arity, expected_fingerprint
-                                        );
-                                        if compiled_fns.get(&key_pos).is_some_and(&matches_resolved)
-                                        {
-                                            found_key = Some(key_pos);
-                                        } else {
-                                            found_key = None;
-                                        }
-                                    } else {
-                                        found_key = None;
-                                    }
-                                }
-                            }
-                        } else {
-                            found_key = None;
-                        }
+                        None
                     }
-                }
+                });
+                found_key = if simple_or_pos.is_none() && pkg != "GLOBAL" {
+                    probe(&format!(
+                        "GLOBAL::{}/{}#{:x}",
+                        name, arity, expected_fingerprint
+                    ))
+                    .or_else(|| probe(&format!("GLOBAL::{}", name)))
+                    .or_else(|| {
+                        // Try with positional-only arity (excluding Pair named args)
+                        let pos = pos_arity();
+                        if pos != arity {
+                            probe(&format!(
+                                "GLOBAL::{}/{}#{:x}",
+                                name, pos, expected_fingerprint
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                };
             }
         }
         // Fallback: when call arity differs from definition arity (e.g. optional
         // params), try the definition's param count to find the compiled function.
         if found_key.is_none() && def_arity != arity {
-            let key_fp = format!("{}::{}/{}#{:x}", pkg, name, def_arity, expected_fingerprint);
-            if compiled_fns.get(&key_fp).is_some_and(&matches_resolved) {
-                found_key = Some(key_fp);
-            } else if pkg != "GLOBAL" {
-                let key_fp_global =
-                    format!("GLOBAL::{}/{}#{:x}", name, def_arity, expected_fingerprint);
-                if compiled_fns
-                    .get(&key_fp_global)
-                    .is_some_and(&matches_resolved)
-                {
-                    found_key = Some(key_fp_global);
+            found_key = probe(&format!(
+                "{}::{}/{}#{:x}",
+                pkg, name, def_arity, expected_fingerprint
+            ))
+            .or_else(|| {
+                if pkg != "GLOBAL" {
+                    probe(&format!(
+                        "GLOBAL::{}/{}#{:x}",
+                        name, def_arity, expected_fingerprint
+                    ))
+                } else {
+                    None
                 }
-            }
+            });
         }
         if let Some(key) = found_key {
             // Cache the resolution result for future lookups
@@ -226,7 +189,7 @@ impl Interpreter {
                 .unwrap_or_else(|| self.current_package().to_string());
             if use_cache {
                 self.fn_resolve_cache
-                    .insert(cache_key, (key.clone(), expected_fingerprint, cached_pkg));
+                    .insert(cache_key, (key, expected_fingerprint, cached_pkg));
             }
             compiled_fns.get(&key)
         } else {

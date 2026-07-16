@@ -144,7 +144,7 @@ impl Interpreter {
         {
             let name_sym = code.const_sym(name_idx);
             if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
-                && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
             {
                 let base = self.stack.len() - arity_usize;
@@ -294,7 +294,7 @@ impl Interpreter {
             let name_sym = code.const_sym(name_idx);
             if self.pos_light_call_cache_gen == self.fn_resolve_gen {
                 if let Some((cached_key, cached_fp)) = self.pos_light_call_cache.get(&name_sym)
-                    && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                    && let Some(cf) = compiled_fns.get(cached_key)
                     && cf.fingerprint == *cached_fp
                 {
                     let arity_usize = arity as usize;
@@ -365,7 +365,7 @@ impl Interpreter {
             let name_sym = code.const_sym(name_idx);
             if self.light_call_cache_gen == self.fn_resolve_gen {
                 if let Some((cached_key, cached_fp)) = self.light_call_cache.get(&name_sym)
-                    && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                    && let Some(cf) = compiled_fns.get(cached_key)
                     && cf.fingerprint == *cached_fp
                 {
                     let arity_usize = arity as usize;
@@ -581,7 +581,7 @@ impl Interpreter {
                 && self.wrap_sub_id_for_name(name_str).is_none()
                 && !loan_env!(self, routine_is_test_assertion_by_name(name_str, &[]))
                 && let Some((cached_key, cached_fp, _)) = self.fn_resolve_cache.get(&cache_key)
-                && let Some(cf) = compiled_fns.get(cached_key.as_str())
+                && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
                 && Self::is_fast_call_eligible(cf, name_str)
                 && !cf.is_raw
@@ -1175,7 +1175,7 @@ impl Interpreter {
                         for (key, func) in compiled_fns {
                             if std::ptr::eq(func, cf) {
                                 self.pos_light_call_cache
-                                    .insert(name_sym, (key.clone(), cf.fingerprint));
+                                    .insert(name_sym, (*key, cf.fingerprint));
                                 break;
                             }
                         }
@@ -1204,7 +1204,7 @@ impl Interpreter {
                         for (key, func) in compiled_fns {
                             if std::ptr::eq(func, cf) {
                                 self.light_call_cache
-                                    .insert(name_sym, (key.clone(), cf.fingerprint));
+                                    .insert(name_sym, (*key, cf.fingerprint));
                                 break;
                             }
                         }

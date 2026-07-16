@@ -74,11 +74,11 @@ pub fn dump_bytecode(input: &str) -> Result<String, RuntimeError> {
     };
     let _ = writeln!(out, "== mainline ==");
     disasm(&mut out, &code);
-    let mut names: Vec<&String> = compiled_fns.keys().collect();
-    names.sort();
+    let mut names: Vec<crate::symbol::Symbol> = compiled_fns.keys().copied().collect();
+    names.sort_by_key(|s| s.resolve());
     for name in names {
-        let cf = &compiled_fns[name];
-        let _ = writeln!(out, "== sub {} ==", name);
+        let cf = &compiled_fns[&name];
+        let _ = writeln!(out, "== sub {} ==", name.as_str());
         disasm(&mut out, &cf.code);
     }
     Ok(out)

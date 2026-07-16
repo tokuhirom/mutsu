@@ -459,7 +459,8 @@ impl Compiler {
             });
             self.code.escaping_our_sub_captures.push(esc);
         }
-        self.compiled_functions.insert(key, cf);
+        self.compiled_functions
+            .insert(crate::symbol::Symbol::intern(&key), cf);
     }
 
     fn compile_routine_body_stmts(
@@ -573,8 +574,8 @@ impl Compiler {
         params: &[String],
         body: &[Stmt],
     ) -> u32 {
-        let fn_keys_before: std::collections::HashSet<String> =
-            self.compiled_functions.keys().cloned().collect();
+        let fn_keys_before: std::collections::HashSet<crate::symbol::Symbol> =
+            self.compiled_functions.keys().copied().collect();
         let analysis = self.compile_closure_body(params, &[], body);
         self.compiled_functions
             .retain(|k, _| fn_keys_before.contains(k));

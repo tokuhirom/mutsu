@@ -3754,7 +3754,15 @@ impl CompiledCode {
 /// function call (ADR-0004 J4d), where std SipHash over the string key was a
 /// measured ~5% of a recursion-heavy workload. The keys are internal,
 /// compiler-generated strings, so HashDoS resistance buys nothing here.
-pub(crate) type CompiledFns = rustc_hash::FxHashMap<String, CompiledFunction>;
+///
+/// Keyed by `Symbol` (S1b, docs/perf-callpath-scouting.md §3.1): the formatted
+/// key strings are interned once at compile time, so a light-call cache hit
+/// compares a `u32` symbol id instead of memcmp-ing a ~20-byte key string, and
+/// the caches store the resolved key as a `Copy` `Symbol` (no per-entry `String`
+/// allocation). The slow resolution path probes candidate keys via
+/// `Symbol::lookup` (no interning of names that turn out not to exist), so a
+/// missed probe never grows the global symbol table.
+pub(crate) type CompiledFns = rustc_hash::FxHashMap<crate::symbol::Symbol, CompiledFunction>;
 
 /// Out-of-band named-argument spec for a `CallFuncNamed` site: which of the
 /// call's stack values are named-arg values, and under which keys.
