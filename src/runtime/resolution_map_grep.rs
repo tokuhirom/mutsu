@@ -470,8 +470,167 @@ impl Interpreter {
         list_items: &[Value],
         from_end: bool,
     ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        if let Some(func_ref) = func.as_ref()
+            && let Some(res) = self.try_first_match_batched(func_ref, list_items, from_end)
+        {
+            return res;
+        }
         let mut matcher = InterpFirstMatcher(self);
         find_first_match_generic(&mut matcher, func.as_ref(), list_items, from_end)
+    }
+
+    /// Batched `.first` over a `Sub` matcher: one compile + closure-env setup,
+    /// then a bare `run_reuse` per element with an early exit on the first
+    /// match — the same setup-once shape as `eval_grep_over_items_with_mutated`.
+    /// The per-element full call machinery (`call_sub_value` /
+    /// `call_compiled_closure`: call frame, scoped overlay, captured-env merge,
+    /// `&?BLOCK` construction, full binder) costs ~25x more per element, which
+    /// made `.first(*.contains(...))` the single hottest line of zef's
+    /// Ecosystems populate.
+    ///
+    /// Returns `None` when the matcher needs the full per-element machinery
+    /// (destructuring sub-signature, composed callable, `.assuming` partials,
+    /// multi-param blocks), so the caller falls back unchanged.
+    pub(crate) fn try_first_match_batched(
+        &mut self,
+        func: &Value,
+        list_items: &[Value],
+        from_end: bool,
+    ) -> Option<Result<Option<(usize, Value)>, RuntimeError>> {
+        let ValueView::Sub(data) = func.view() else {
+            return None;
+        };
+        if list_items.is_empty() {
+            return Some(Ok(None));
+        }
+        let data = data.clone();
+        if data
+            .param_defs
+            .iter()
+            .any(|pd| pd.sub_signature.is_some() || pd.outer_sub_signature.is_some())
+        {
+            return None;
+        }
+        if !data.assumed_positional.is_empty() || !data.assumed_named.is_empty() {
+            return None;
+        }
+        if data.env.contains_key("__mutsu_compose_left")
+            && data.env.contains_key("__mutsu_compose_right")
+        {
+            return None;
+        }
+        // A multi-param matcher block would take element tuples; `.first` has
+        // no chunking semantics — keep it on the per-element generic path.
+        if data.params.len() > 1 {
+            return None;
+        }
+
+        // Compile once (mirrors grep: normalize the tail statement so the last
+        // expression lands on the stack as the predicate value).
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        let normalized_body = normalize_tail_stmt_for_value(&data.body);
+        let (code, compiled_fns) = compiler.compile(&normalized_body);
+
+        let underscore = "_".to_string();
+        let dollar_topic = "$_".to_string();
+        let mut touched_keys: Vec<String> = Vec::with_capacity(data.params.len() + 2);
+        for k in data.env.keys() {
+            if !self.env.contains_key_sym(*k) {
+                touched_keys.push(k.resolve());
+            }
+        }
+        for p in &data.params {
+            if !touched_keys.contains(p) {
+                touched_keys.push(p.clone());
+            }
+        }
+        if !touched_keys.iter().any(|k| k == "_") {
+            touched_keys.push(underscore.clone());
+        }
+        if !touched_keys.iter().any(|k| k == "$_") {
+            touched_keys.push(dollar_topic.clone());
+        }
+        let saved: Vec<(String, Option<Value>)> = touched_keys
+            .iter()
+            .map(|k| (k.clone(), self.env.get(k).cloned()))
+            .collect();
+
+        // Pre-insert closure env
+        for (k, v) in &data.env {
+            self.env.insert_sym(*k, v.clone());
+        }
+
+        let mut found: Option<(usize, Value)> = None;
+        let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
+            vm.set_topic_source_var(None);
+            let len = list_items.len();
+            for scan in 0..len {
+                let idx = if from_end { len - 1 - scan } else { scan };
+                let item = &list_items[idx];
+                // A Hash-sourced `Pair` element binds positionally (same as
+                // the generic path's `pair_as_positional`).
+                let call_item = crate::runtime::utils::pair_as_positional(item);
+                'body_redo: loop {
+                    if let Some(p) = data.params.first() {
+                        vm.env_mut().insert(p.clone(), call_item.clone());
+                    }
+                    vm.env_mut().insert(underscore.clone(), call_item.clone());
+                    vm.env_mut().insert(dollar_topic.clone(), call_item.clone());
+                    match vm.run_reuse(&code, &compiled_fns) {
+                        Ok(()) => {
+                            let pred = vm
+                                .last_stack_value()
+                                .cloned()
+                                .or_else(|| vm.env().get("_").cloned())
+                                .unwrap_or(Value::NIL);
+                            if pred.truthy() {
+                                found = Some((idx, item.clone()));
+                            }
+                            break 'body_redo;
+                        }
+                        Err(e) if e.is_redo() => continue 'body_redo,
+                        // `next` skips the element; `last` stops the scan and
+                        // returns the CURRENT element as the match (Rakudo
+                        // behaviour, mirrored from `find_first_match_generic`).
+                        Err(e) if e.is_next() => break 'body_redo,
+                        Err(e) if e.is_last() => {
+                            found = Some((idx, item.clone()));
+                            return Ok(());
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                if found.is_some() {
+                    return Ok(());
+                }
+            }
+            Ok(())
+        });
+
+        for (k, orig) in saved {
+            match orig {
+                Some(v) => {
+                    self.env.insert(k, v);
+                }
+                None => {
+                    self.env.remove(&k);
+                }
+            }
+        }
+        // The matcher block may mutate a captured-outer lexical (`.first({
+        // $count++; ... })` — S32-list/first-kv.t "matcher got only executed
+        // once"). Its `$count++` landed in the shared `env` during the loop,
+        // but the caller's stale `locals` slot must be refreshed on return.
+        // Queue those free-var writes for the CallMethod op to drain, exactly
+        // as `eval_grep_over_items_with_mutated` does.
+        if loop_result.is_ok() {
+            self.record_eager_block_free_var_writeback(&code, &data.params);
+        }
+        match loop_result {
+            Ok(()) => Some(Ok(found)),
+            Err(e) => Some(Err(e)),
+        }
     }
 }
 
