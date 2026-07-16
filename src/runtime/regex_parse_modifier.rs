@@ -187,6 +187,29 @@ impl Interpreter {
                 }
                 continue;
             }
+            // Skip an embedded declaration `:my $x = …;` / `:our …;` / `:constant …;`
+            // — its body is main-slang code, not a pattern, so a `%*var` / `@var`
+            // in it (`:my %*PLAYED = ()`) must NOT be interpolated as a regex
+            // variable reference. Copy through verbatim up to the `;`.
+            if ch == ':' {
+                let rest: String = chars[i + 1..].iter().collect();
+                if rest.starts_with("my ")
+                    || rest.starts_with("our ")
+                    || rest.starts_with("constant ")
+                    || rest.starts_with("let ")
+                    || rest.starts_with("temp ")
+                {
+                    while i < chars.len() {
+                        let c = chars[i];
+                        out.push(c);
+                        i += 1;
+                        if c == ';' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
             // Array interpolation in regex groups: (@name) / ( @name )
             // Expand to an alternation group from the current array value.
             if ch == '(' {

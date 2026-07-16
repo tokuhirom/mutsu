@@ -127,7 +127,7 @@ impl Interpreter {
             .replace("<sym>", &escaped)
     }
 
-    pub(super) fn token_pattern_from_def(def: &FunctionDef) -> Option<String> {
+    pub(crate) fn token_pattern_from_def(def: &FunctionDef) -> Option<String> {
         let expr = match def.body.last() {
             Some(Stmt::Expr(e)) | Some(Stmt::Return(e)) => e,
             _ => return None,

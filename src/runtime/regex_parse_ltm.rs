@@ -308,6 +308,42 @@ impl Interpreter {
                 }
                 continue;
             }
+            // Skip { ... } code blocks — a `%` inside embedded main-slang code
+            // is not a regex separator.
+            if !in_single && !in_double && ch == '{' {
+                i += 1;
+                let mut brace_depth = 1u32;
+                while i < chars_vec.len() && brace_depth > 0 {
+                    match chars_vec[i] {
+                        '{' => brace_depth += 1,
+                        '}' => brace_depth -= 1,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            // Skip an embedded declaration `:my … ;` / `:our …` / `:constant …` —
+            // its body is main-slang code, so a `%*var` in it (`:my %*PLAYED = ()`)
+            // is not a regex separator.
+            if !in_single && !in_double && ch == ':' {
+                let rest: String = chars_vec[i + 1..].iter().collect();
+                if rest.starts_with("my ")
+                    || rest.starts_with("our ")
+                    || rest.starts_with("constant ")
+                    || rest.starts_with("let ")
+                    || rest.starts_with("temp ")
+                {
+                    while i < chars_vec.len() {
+                        let c = chars_vec[i];
+                        i += 1;
+                        if c == ';' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
             if !in_single && !in_double && ch == '%' {
                 // Check if this is hash aliasing: %<name>= or %ident=
                 let mut j = i + 1;
@@ -711,7 +747,68 @@ impl Interpreter {
         out
     }
 
+    /// If `pattern` (already left-trimmed) begins with an embedded declaration
+    /// `:my … ;` / `:our …` / `:constant …` / `:let …` / `:temp …`, return the
+    /// byte length of that declaration up to and including its terminating `;`
+    /// (searching at bracket/quote depth 0). Used to hold the declaration aside
+    /// during separator (`%`) expansion so a `%*var` in it is not mistaken for a
+    /// separator.
+    fn leading_regex_decl_end(trimmed: &str) -> Option<usize> {
+        let is_decl = ["my ", "our ", "constant ", "let ", "temp "]
+            .iter()
+            .any(|kw| trimmed.strip_prefix(':').is_some_and(|r| r.starts_with(kw)));
+        if !is_decl {
+            return None;
+        }
+        let mut paren = 0i32;
+        let mut bracket = 0i32;
+        let mut brace = 0i32;
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for (idx, c) in trimmed.char_indices() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match quote {
+                Some(q) => match c {
+                    '\\' => escaped = true,
+                    _ if c == q => quote = None,
+                    _ => {}
+                },
+                None => match c {
+                    '\\' => escaped = true,
+                    '\'' | '"' => quote = Some(c),
+                    '(' => paren += 1,
+                    ')' => paren -= 1,
+                    '[' => bracket += 1,
+                    ']' => bracket -= 1,
+                    '{' => brace += 1,
+                    '}' => brace -= 1,
+                    ';' if paren == 0 && bracket == 0 && brace == 0 => {
+                        return Some(idx + c.len_utf8());
+                    }
+                    _ => {}
+                },
+            }
+        }
+        None
+    }
+
     pub(super) fn expand_ltm_pattern(pattern: &str, sigspace: bool) -> String {
+        // A leading embedded declaration (`:my %*X = (); …`) is main-slang code,
+        // not part of the separated-quantifier pattern — hold it aside so a `%` in
+        // it is never treated as a separator, then expand only the remainder.
+        let trimmed = pattern.trim_start();
+        if let Some(decl_end) = Self::leading_regex_decl_end(trimmed) {
+            let lead_ws = &pattern[..pattern.len() - trimmed.len()];
+            let decl = &trimmed[..decl_end];
+            let rest = &trimmed[decl_end..];
+            return format!(
+                "{lead_ws}{decl}{}",
+                Self::expand_ltm_pattern(rest, sigspace)
+            );
+        }
         let compact: String = Self::compact_regex_whitespace(pattern);
         if compact.is_empty() {
             return pattern.to_string();
