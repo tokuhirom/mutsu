@@ -305,7 +305,14 @@ impl Interpreter {
                 &mut state.closure_env,
                 false,
             )? {
-                Some(v) => history.push(v),
+                // A generator that `slip`s multiple values (`{ slip $^a+1, $^b*2 }`)
+                // contributes each as its own sequence element — flatten the Slip
+                // into the history so the next step's `$^a`/`$^b` see the newest
+                // elements (mirrors the eager `result.extend(items_to_add)` path).
+                Some(v) => match v.view() {
+                    crate::value::ValueView::Slip(items) => history.extend(items.iter().cloned()),
+                    _ => history.push(v),
+                },
                 None => {
                     state.finished = true;
                     break;
