@@ -1581,6 +1581,18 @@ impl Compiler {
                         return;
                     }
                 }
+                // A pointy `if EXPR -> $_ { }` binds a FRESH lexical `$_` (like
+                // `for -> $_`), so its topic must NOT flow back to an enclosing
+                // `given $x`'s source variable. `EnterPointyTopic` saves + clears
+                // `topic_source_var` for the branch; `ExitPointyTopic` (at the end)
+                // restores it and the outer `$_`. Only the topic var `$_` needs it —
+                // a named pointy (`-> $v`) declares its own lexical.
+                let pointy_topic_scope = binding_var
+                    .as_deref()
+                    .is_some_and(|v| v.trim_start_matches('$') == "_");
+                if pointy_topic_scope {
+                    self.code.emit(OpCode::EnterPointyTopic);
+                }
                 if let Some(var_name) = binding_var {
                     // Desugar: if EXPR -> $var { BODY } else { ELSE }
                     // into: { my $var = EXPR; if $var { BODY } else { ELSE } }
@@ -1646,6 +1658,9 @@ impl Compiler {
                         self.compile_body_with_implicit_try(else_branch);
                     }
                     self.code.patch_jump(jump_end);
+                }
+                if pointy_topic_scope {
+                    self.code.emit(OpCode::ExitPointyTopic);
                 }
             }
             Stmt::While { cond, body, label } => {

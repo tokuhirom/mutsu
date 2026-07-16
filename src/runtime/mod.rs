@@ -1714,6 +1714,12 @@ pub struct Interpreter {
     pub(crate) substitution_in_smartmatch: bool,
     pub(crate) last_topic_value: Option<Value>,
     pub(crate) topic_save_stack: Vec<Value>,
+    /// Saved `$_` + `topic_source_var` for a pointy-topic scope (`if COND -> $_`,
+    /// `with COND -> $_`). The pointy binding introduces a FRESH lexical `$_`
+    /// that shadows an enclosing `given`'s topic, so its writes must NOT flow
+    /// back to the given's source variable — `EnterPointyTopic` saves + clears
+    /// `topic_source_var` for the block, `ExitPointyTopic` restores it.
+    pub(crate) topic_source_save_stack: Vec<(Value, Option<String>)>,
     /// The named container the current topic/loop source came from
     /// (`TagContainerRef`), paired with its compile-time-baked local slot
     /// (§1.5; `None` = non-local or runtime-derived). The slot lets the

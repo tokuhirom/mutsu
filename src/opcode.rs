@@ -300,6 +300,12 @@ pub(crate) enum OpCode {
     SetTopic,
     SaveTopic,
     RestoreTopic,
+    /// Enter a pointy-topic scope (`if COND -> $_`, `with COND -> $_`): save the
+    /// current `$_` and `topic_source_var`, then clear `topic_source_var` so the
+    /// fresh `$_` binding shadows an enclosing `given`'s topic without writing
+    /// back to its source variable. Paired with `ExitPointyTopic`.
+    EnterPointyTopic,
+    ExitPointyTopic,
     GetArrayVar(u32),
     GetHashVar(u32),
     GetBareWord(u32),

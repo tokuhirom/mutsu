@@ -129,6 +129,8 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SetTopic
             | OpCode::SaveTopic
             | OpCode::RestoreTopic
+            | OpCode::EnterPointyTopic
+            | OpCode::ExitPointyTopic
             | OpCode::PushEnterResult
             | OpCode::LoadEnterResult
             // Always-throwing terminator (records its own resume point)
