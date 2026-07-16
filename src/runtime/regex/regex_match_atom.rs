@@ -619,6 +619,58 @@ impl Interpreter {
         }
     }
 
+    /// Shift every offset in a capture subtree by `delta`, including this node's
+    /// own `from`/`to`. Used when re-rooting an inner match (matched against a
+    /// `&chars[pos..]` slice, so its offsets are slice-relative) into the parent's
+    /// absolute coordinate system.
+    pub(super) fn shift_capture_tree(caps: &mut RegexCaptures, delta: usize) {
+        if delta == 0 {
+            return;
+        }
+        caps.from += delta;
+        caps.to += delta;
+        Self::shift_capture_descendants(caps, delta);
+    }
+
+    /// Shift the offsets of a capture node's descendants (its own positional
+    /// captures and every nested named/positional subcapture) by `delta`, WITHOUT
+    /// touching this node's own `from`/`to`. `build_named_candidates_from_inner`
+    /// sets the wrapper node's `from`/`to` explicitly (respecting `<( )>` capture
+    /// markers), then calls this so the slice-relative child offsets become
+    /// absolute — matching Rakudo, whose `.from`/`.to` are always absolute to the
+    /// original string even for a subrule matched deep inside a repetition.
+    pub(super) fn shift_capture_descendants(caps: &mut RegexCaptures, delta: usize) {
+        if delta == 0 {
+            return;
+        }
+        for (f, t) in caps.positional_offsets.iter_mut() {
+            *f += delta;
+            *t += delta;
+        }
+        for slot in caps.positional_slots.iter_mut().flatten() {
+            slot.1 += delta;
+            slot.2 += delta;
+        }
+        for entry in caps
+            .positional_quantified
+            .iter_mut()
+            .flatten()
+            .flat_map(|list| list.iter_mut())
+        {
+            entry.1 += delta;
+            entry.2 += delta;
+            if let Some(nested) = entry.3.as_mut() {
+                Self::shift_capture_tree(std::sync::Arc::make_mut(nested), delta);
+            }
+        }
+        for sub in caps.named_subcaps.values_mut().flat_map(|v| v.iter_mut()) {
+            Self::shift_capture_tree(std::sync::Arc::make_mut(sub), delta);
+        }
+        for sub in caps.positional_subcaps.iter_mut().flatten() {
+            Self::shift_capture_tree(std::sync::Arc::make_mut(sub), delta);
+        }
+    }
+
     /// Build named regex candidates from inner match results (positions relative to tail).
     /// Wraps each inner match in the appropriate capture structure for the named regex call.
     /// `pos` is the position of the named atom in `chars`. Each candidate is a
@@ -653,6 +705,11 @@ impl Interpreter {
                 subcap.matched = captured.clone();
                 subcap.from = cs;
                 subcap.to = ce;
+                // The subrule body was matched against `&chars[pos..]`, so every
+                // descendant offset (its own $0/$1 positional captures and any
+                // nested subrule captures) is slice-relative. Rebase them by `pos`
+                // so `.from`/`.to` are absolute like Rakudo's.
+                Self::shift_capture_descendants(&mut subcap, pos);
                 // sym is already set on subcap from raw_out collection loop.
                 // Fall back to sym_key parameter for the is_active (seed) path.
                 if subcap.sym.is_none() && sym_key.is_some() {
@@ -722,6 +779,8 @@ impl Interpreter {
                 subcap.matched = captured;
                 subcap.from = cs;
                 subcap.to = ce;
+                // Rebase slice-relative descendant offsets to absolute (see above).
+                Self::shift_capture_descendants(&mut subcap, pos);
                 if subcap.sym.is_none() && sym_key.is_some() {
                     subcap.sym = sym_key.cloned();
                 }
