@@ -237,7 +237,22 @@ impl Interpreter {
     }
 
     pub(super) fn exec_take_op(&mut self) -> Result<(), RuntimeError> {
-        let val = self.stack.pop().unwrap_or(Value::NIL);
+        let mut val = self.stack.pop().unwrap_or(Value::NIL);
+        // `take <gather>` (a coroutine-backed lazy `Seq`, e.g. the recursive
+        // `take internals($child)` in the P62 binary-tree walk) is reified to a
+        // concrete `Seq` here, at the point it is taken. The gather was just
+        // produced in the current (still-valid) evaluation context; deferring
+        // its force until the enclosing gather's result is flattened later
+        // re-runs it in a torn-down context and yields nothing. A later
+        // `flat`/`.flat` on the enclosing gather still flattens the reified
+        // `Seq` — the observable result is identical to raku's lazy `take`.
+        if let ValueView::LazyList(ll) = val.view()
+            && ll.coroutine.is_some()
+            && ll.cache.lock().unwrap().is_none()
+        {
+            let items = self.force_lazy_list_vm(&ll)?;
+            val = Value::seq(items);
+        }
         if self.gather_items_len() > 0 {
             self.take_value(val)
         } else {

@@ -155,7 +155,15 @@ impl Interpreter {
 
     pub(crate) fn take_value(&mut self, val: Value) -> Result<(), RuntimeError> {
         if let Some(items) = self.gather_items.last_mut() {
-            items.push(val);
+            // `take` of a Slip flattens it into the gather (`take Empty` /
+            // `take slip(1,2)` add zero / two elements — Rakudo semantics);
+            // every other value, including a List/Seq, is added as one element
+            // (a later `flat`/`.flat` on the gather result flattens those).
+            if let ValueView::Slip(elems) = val.view() {
+                items.extend(elems.iter().cloned());
+            } else {
+                items.push(val);
+            }
             if let Some(Some(limit)) = self.gather_take_limits.last()
                 && items.len() >= *limit
             {
