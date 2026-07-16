@@ -73,8 +73,7 @@ noted.
 |---|---|---|---|
 | `integration/99problems-41-to-50.t` | aborts at 2/9 | PASS ★ | Parameterized `multi rule expr($p)` now WORKS (2026-07-15: multi rule/token registration, literal-exclusive dispatch, args in the LR key, lookahead arg instantiation — pin t/parameterized-rules.t; all reduced P47 shapes pass), but the full P47 grammar (3 precedence levels + `term:sym<paren>`/`term:sym<not>` recursion via `<term=.expr(3)>`) is exponentially slow in the regex engine (~9s for 1 level+paren on `(A)` in a debug build; the real input times out). The blocker is now the LR seed-growing loop re-matching all candidates per position per nesting level — needs match-position memoization of subrule results (packrat-style), a separate engine-perf campaign. P41/P46 fixed in #4510 |
 | `integration/advent2013-day18.t` | 9/10 | PASS ★ | The rule-embedded dynamic-var declaration (`rule deal { :my %*PLAYED = (); … }`), sigspace `[ <card> ]**5`, `<?{ … $/.lc … }>` matched-so-far `$/`, and action-method + code-assertion sharing of `%*PLAYED` all work now (0/10 → 9/10; pin t/grammar-dynamic-var-decl.t). The **only** remaining failure is test 10, which needs **TWO** distinct architectural fixes, not one (2026-07-16 deep-dive): (1) **code-assertion outer-array writeback** — `<?{ … @dups.push($card) … }>` runs in `eval_regex_code_assertion`'s scratch interp (`env: self.env.clone()`); a hash element write (`%*PLAYED{$c}++`) persists because it mutates the SHARED `Gc<HashData>` node in place, but `@dups.push` resolves `@dups` to a fresh empty local (the scratch block autovivs it, ignoring the cloned env value), so the push writes a detached node discarded when the scratch drops. A post-run writeback (copy scratch `@x` items into `self`'s shared node) proved the mechanism but exposed (2). (2) **code assertions over-run during backtracking** — mutsu's matcher re-runs the `<?{}>` assertion MANY times per cursor position (repro: `%seen{k}++` reaches count 12 where raku is 2), so BOTH `%*PLAYED` counts and any `@dups` writeback are corrupted (append writeback yielded 60+ bogus `a♥` entries incl. non-dup cards, because backtracked `%*PLAYED` accumulation made valid cards look like dups). raku runs each assertion once per COMMITTED position (ratcheted tokens don't backtrack into a matched token). Fixing (1) alone can't pass test 10 — the engine must stop re-running committed-position assertions first. Both large; deferred |
-| `6.c/S04-declarations/my-6c.t` | 111/112 | PASS ★ | **shortcut**: the only failure = test 57, the `OUTER::<$x>` pseudo-package |
-| `6.c/S14-roles/mixin-6c.t` | aborts at 16/57 | PASS ★ | 6.c mixin (`does`/`but`) semantics; aborts mid-file |
+| `6.c/S04-declarations/my-6c.t` | 111/112 | PASS ★ | test 57 (`OUTER::<$x>`) needs **lexical hoisting**, not the OUTER pseudo-package alone: `EVAL('not OUTER::<$x>.defined')` must see the *enclosing block's* `my $x` declared **after** the EVAL (undefined container), but mutsu skips the not-yet-run local and resolves OUTER to the file-level `my $x = 0` (defined). Same family as mixin-6c/my-6e hoisting. Minimal repro: `my $x = 0; { { say EVAL('not OUTER::<$x>.defined'); my $x } }` → mutsu False, raku True |
 | `6.c/APPENDICES/A04-experimental/01-misc.t` | 16/19 | FAIL | `:D`/`:U` DefiniteHow coercion (`Target:D(Source:U)`). #4514: 0/19 → 16/19 |
 | `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 11/16 | PASS ★ | error-message quality for multi no-match: `.splice` with wrong offset/type, `Lock.protect` / `Lock::Async.protect` / `Proc::Async.new` with wrong args must give "sane errors" — ④-adjacent |
 | `6.c/APPENDICES/A03-older-specs/01-misc.t` | fails 4+ | 6/9 FAIL | `.open("-")` mapping to `$*IN`/`$*OUT`, deprecated `subst-mutate`. raku itself fails 3 of 9 = partially non-goal |
@@ -192,16 +191,19 @@ completed fix history lives in `news/`.
 
 ## Recommended order of attack right now
 
-1. **Shortcuts**: `6.c/S04-declarations/my-6c.t` needs only the single `OUTER::<$x>` subtest
-   (111/112). `integration/99problems-51-to-60.t` (35/37) and `99problems-61-to-70.t` (12/15)
-   are close.
-2. **④ error-message quality** (`advent2011-day11.t` 7/9, `multi-no-match.t` 11/16) — the
+1. **Shortcuts**: `6.c/S04-declarations/my-6c.t` (111/112) is now a **lexical-hoisting** task,
+   not the OUTER pseudo-package alone (see inventory row). `integration/99problems-51-to-60.t`
+   (35/37) and `99problems-61-to-70.t` (12/15) are close.
+2. **④ error-message quality** (`advent2011-day11.t` 7/9, `multi-no-match.t`) — the
    same target as the identically named task in PLAN §6, so it can be driven by roast
    pass/fail while working on that. (`error-reporting.t` and `weird-errors.t` reached the
-   whitelist 2026-07-15.)
+   whitelist 2026-07-15.) `multi-no-match.t` needs `X::Multi::NoMatch` from many independent
+   builtins (`.splice`/`Lock.protect`/`Proc::Async.new`/`.subst`/`.match`/`Pair.new`/
+   `Junction.new`/`Int.new`/`Date.new`) — no single lever; 3/16 pass today.
 3. **The 11 not-yet-root-caused `integration/` aborts** (see inventory) — history says one root
    cause usually spans several files; re-run and diff against raku before picking features.
-4. `6.c/S14-roles/mixin-6c.t` (aborts at 16/57, raku full pass) — 6.c mixin semantics.
+   (`6.c/S14-roles/mixin-6c.t` was whitelisted 2026-07-17 — the abort was a nested BEGIN
+   hoisting above a `does`/`but` declaration mixin; pin `t/decl-mixin-begin.t`.)
 - For the S\* table (non-goal / no-oracle / awaiting-infrastructure), advancing entries as a side
   effect of general mutsu improvements is fine, but do not make whitelisting those individual
   files the goal. `S32-str/format.t` and `S02-types/generics.t` gained an oracle from the raku

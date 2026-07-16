@@ -1183,7 +1183,7 @@ impl Interpreter {
                     .unwrap_or(Value::NIL);
                 if result.is_nil() { default } else { result }
             }
-            (ValueView::Mixin(..), ValueView::Int(i)) => {
+            (ValueView::Mixin(inner, _), ValueView::Int(i)) => {
                 if let ValueView::Mixin(_, mixins) = target.view()
                     && let Some(attr_key) = self.delegated_mixin_attr_key(mixins, "AT-POS")
                     && let Some(attr_value) = mixins.get(&attr_key).cloned()
@@ -1197,6 +1197,25 @@ impl Interpreter {
                     } else {
                         self.typed_container_default(&target)
                     }
+                } else if matches!(
+                    inner.view(),
+                    ValueView::Array(..)
+                        | ValueView::LazyList(_)
+                        | ValueView::Slip(_)
+                        | ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
+                ) {
+                    // A role mixed into a positional value (`(^Inf) but role {}`,
+                    // `[1,2] but R`) that supplies no AT-POS keeps the inner
+                    // value's indexing — delegate straight to the inner container.
+                    let inner = inner.as_ref().clone();
+                    self.stack.push(inner);
+                    self.stack.push(Value::int(i));
+                    self.exec_index_op()?;
+                    self.stack.pop().unwrap_or(Value::NIL)
                 } else {
                     let default = self.typed_container_default(&target);
                     let fallback = target.clone();

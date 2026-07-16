@@ -9,6 +9,7 @@ roast/6.c/S05-grammar/parse_and_parsefile-6c.t
 roast/6.c/S06-other/main-refactored.t
 roast/6.c/S12-class/mro-6c.t
 roast/6.c/S14-roles/attributes.t
+roast/6.c/S14-roles/mixin-6c.t
 roast/6.c/S14-roles/submethods.t
 roast/6.c/S32-io/file-tests.t
 roast/6.d/S02-literals/version.t

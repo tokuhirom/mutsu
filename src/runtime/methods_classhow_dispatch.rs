@@ -52,6 +52,15 @@ impl Interpreter {
                 ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_type_name__") => {
                     overrides["__mutsu_type_name__"].to_string_value()
                 }
+                // A role-mixed value (`5 but Foo::Bar`, `$x does R`) reports its
+                // base type with a `+{Role,...}` suffix, e.g. `Int+{Foo::Bar}`.
+                // `what_type_name` builds this from the recorded role keys;
+                // `value_type_name` (a `&'static str`) cannot.
+                ValueView::Mixin(_, overrides)
+                    if crate::value::role_mixin_suffix(overrides).is_some() =>
+                {
+                    crate::value::what_type_name(&args[0])
+                }
                 ValueView::Package(name) => self
                     .type_metadata
                     .get(&name.resolve())

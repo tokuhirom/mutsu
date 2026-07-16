@@ -54,11 +54,44 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         ValueView::Uni(u) if !u.form.is_empty() => u.form.clone(),
         ValueView::Uni(_) => "Uni".to_string(),
         ValueView::Mixin(inner, mixins) => {
-            allomorph_type_name(inner, mixins).unwrap_or_else(|| what_type_name(inner))
+            if let Some(name) = allomorph_type_name(inner, mixins) {
+                name
+            } else {
+                let base = what_type_name(inner);
+                match role_mixin_suffix(mixins) {
+                    Some(suffix) => format!("{base}+{{{suffix}}}"),
+                    None => base,
+                }
+            }
         }
         ValueView::ContainerRef(_) => val.with_deref(what_type_name),
         _ => "Any".to_string(),
     }
+}
+
+/// Build the `+{Role,...}` suffix for a role-mixed value, if any roles were
+/// composed in. Role mixins are recorded under `__mutsu_role__{name}` keys (a
+/// double underscore distinguishes them from the bookkeeping keys
+/// `__mutsu_role_id__` / `__mutsu_role_typeargs__` / `__mutsu_role_param__`).
+/// Returns e.g. `Foo::Bar` for `5 but Foo::Bar` so `.^name` reads `Int+{Foo::Bar}`.
+pub(crate) fn role_mixin_suffix(
+    mixins: &std::collections::HashMap<String, Value>,
+) -> Option<String> {
+    let mut names: Vec<&str> = mixins
+        .keys()
+        .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        // Anonymous roles (`but role { }`) carry a compiler-internal
+        // `__ANON_ROLE_{id}__` name; raku would show `<anon|N>` but mutsu's id
+        // does not match, so leave anon mixins un-suffixed (reporting the base
+        // type) rather than leaking the internal name.
+        .filter(|n| !n.starts_with("__ANON_ROLE_"))
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    // HashMap iteration order is non-deterministic; sort for a stable name.
+    names.sort_unstable();
+    Some(names.join(","))
 }
 
 /// Return the allomorphic type name for a Mixin value, if it is allomorphic.
