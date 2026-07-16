@@ -1,5 +1,67 @@
 # Changelog
 
+## [v0.5.0](https://github.com/tokuhirom/mutsu/compare/v0.4.0...v0.5.0) - 2026-07-16
+
+- docs: translate PLAN.md and TODO_roast ledgers to English by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4549
+- docs: record exceptions-alternatives.t as a known flaky timeout under jit-stress by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4553
+- docs(roast): retire TODO_roast/S*.md — BLOCKERS.md is the single ledger by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4555
+- fix: compile-time undeclared routine detection (X::Undeclared::Symbols) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4550
+- perf(regex): possessive ratcheted separated quantifiers — fix exponential grammar backtracking + grammar-parse benchmark by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4556
+- fix: child-class attribute accessors must shadow parent methods (per-MRO-level accessor dispatch) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4557
+- perf: construct constant definite-return values directly instead of string-EVAL per return by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4558
+- perf(regex): memoize subrule candidate resolution+parse — drop the per-call ceremony by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4559
+- feat: custom grammar metaclasses — Metamodel::GrammarHOW + EXPORTHOW find_method protocol by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4560
+- perf: gate wrap-chain candidate scan off the slow dispatch path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4561
+- feat: CompUnit need protocol pieces + per-param is-copy/is-rw in multi-param for loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4562
+- fix: error-reporting quality — say return-signal propagation, %::{''}, type-capture inheritance, adverbed like/unlike by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4563
+- test: add bench-ctor.raku (Zef::Distribution-shaped heavy constructor) to the benchmark suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4565
+- feat: backtrace frames report module files; unhandled Failures print dual backtraces by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4564
+- perf: native VM fork for bless + plan-cached class shape in dispatch_bless by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4566
+- fix: `once` fires exactly once across threads and repeated sub calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4567
+- fix: `once` in a method fires once per clone (not per call) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4570
+- perf: skip the remaining-candidates pass for single-candidate submethod dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4569
+- feat: itemized-array colonpairs, LoL argument slices, ::name lookup, indirect object notation, hash listop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4568
+- perf: single-candidate fast return in method resolution + gate the merge-path alias scan by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4571
+- docs: record why the needs_env_sync blanket resists a store-site gate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4572
+- fix: BUILD/TWEAK run against the constructed object itself (shared attribute cell) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4573
+- fix: private-attribute read on a wrong-class invocant throws (P6opaque parity) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4574
+- fix: attribute writes reach the instance after binding self to an outer variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4575
+- fix: statement-form loop phasers share the enclosing scope; sub-body INIT lifts to init time by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4577
+- refactor: legacy .new path delegates BUILD/TWEAK to the shared construction phases by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4576
+- docs: record the ctor cell-threading campaign (#4571/#4573/#4575/#4576) in news and PLAN by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4578
+- perf: record roast-wide raku-vs-mutsu speed baseline + re-prioritize the call path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4579
+- fix: map routine-callback returns, recursive index-rw temp corruption, (<=) Range coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4580
+- docs: correct the needs_env_sync blanket gatekeeper diagnosis (JIT -> method dispatch) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4581
+- perf: cache the class MRO as interned symbols (Arc<[Symbol]>) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4582
+- perf: store the resolved method owner as a Symbol in the resolve caches by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4583
+- perf: construction inserts attributes by pre-interned Symbol (NativeCtorPlan.attr_syms) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4584
+- fix: while-gather pull resume at iteration boundary; lazy bodies run under their own readonly context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4585
+- perf: share nested regex sub-captures behind Arc by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4586
+- feat: parameterized grammar rules — multi rule/token candidates, literal dispatch, LR-key args, lookahead instantiation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4587
+- docs: ADR-0007 grammar-parse trail matcher (prep) + deep bench by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4588
+- fix(gc): register runtime service threads as GC mutators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4589
+- perf: precomputed bind plan for the light named-call path by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4590
+- perf: regex matcher — single mutable capture store + undo-log trail (ADR-0007) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4591
+- perf: regex_pattern_is_static — structural sigils (separator %, anchor $) are not interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4592
+- perf: extend the light call path to mixed positional+named signatures by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4593
+- perf: literal named args travel out-of-band (CallFuncNamed, no Pair boxing) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4594
+- docs: document mixhash.t roll-bound tests as statistically flaky by design by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4595
+- fix: itemized array/list args to map/grep are a single item by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4596
+- perf: recognize ContainerRef elements in the loop-writeback unchanged guard by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4597
+- perf: batched setup-once .first matcher (compile once, run_reuse per element) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4599
+- fix: nested/sequential for-loops in a lazily-pulled gather keep every element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4598
+- fix: take of Slip/nested-gather + flat of a finite gather descends by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4600
+- fix: dir returns Seq, map/grep flatten a Seq arg, IO::Handle.gist format by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4601
+- fix: DateTime.offset-in-minutes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4602
+- fix: parse fat-arrow rename in attribute handles (a => 'b') by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4603
+- perf: convert hot per-call Symbol/String sets off SipHash (mzef ctor -10%) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4604
+- fix: lexical &callwith/&callsame/... shadow the dispatcher builtin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4606
+- fix: block-scoped module re-import keeps the module's source definitions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4605
+- docs(BLOCKERS): record root causes for the deferred advent tests by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4607
+- feat: `is Array` subclass instances behave as Positional arrays by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4608
+- perf: key compiled_fns by Symbol (remove memcmp from light-call cache hit) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4609
+- ci: bump GitHub Actions to Node 24-based major versions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4610
+
 ## [v0.4.0](https://github.com/tokuhirom/mutsu/compare/v0.3.1...v0.4.0) - 2026-07-15
 
 - perf(vm): give the argument varref a first-class Value representation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4499
