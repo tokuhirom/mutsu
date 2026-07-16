@@ -1832,14 +1832,14 @@ pub struct Interpreter {
     pub(crate) state_scope_id: Option<u64>,
     #[allow(clippy::type_complexity)]
     pub(crate) fn_resolve_cache:
-        rustc_hash::FxHashMap<(Symbol, usize, Vec<String>), (String, u64, String)>,
+        rustc_hash::FxHashMap<(Symbol, usize, Vec<String>), (Symbol, u64, String)>,
     pub(crate) fn_resolve_gen: u64,
     pub(crate) fn_resolve_cache_gen: u64,
     pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
     pub(crate) multi_candidates_cache_gen: u64,
-    pub(crate) light_call_cache: rustc_hash::FxHashMap<Symbol, (String, u64)>,
+    pub(crate) light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,
     pub(crate) light_call_cache_gen: u64,
-    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, (String, u64)>,
+    pub(crate) pos_light_call_cache: rustc_hash::FxHashMap<Symbol, (Symbol, u64)>,
     pub(crate) pos_light_call_cache_gen: u64,
     /// Bare names that appear as a `&`-sigil parameter in some registered sub
     /// (e.g. `foo` from `sub callit(&foo) {...}`). A call to such a name may be
