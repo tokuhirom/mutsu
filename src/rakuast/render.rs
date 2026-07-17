@@ -3,8 +3,10 @@
 //! Reproduces raku's constructor-form gist exactly: 2-space indent per level,
 //! named-arg keys left-padded to the class's alignment width, and
 //! `List`-valued fields printed as a parenthesised trailing-comma list. A node
-//! whose every field is a leaf literal renders inline on one line; any child
-//! node or list forces the multi-line form.
+//! renders inline on one line iff every field is a positional leaf literal (no
+//! named field, no child node, no list); any named field, child node, or list
+//! forces the multi-line form (e.g. `Postfix.new(operator => "++")` is
+//! multi-line despite its single leaf, because the field is named).
 
 use super::{Constructor, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::{Value, ValueView};
@@ -16,7 +18,11 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
         Constructor::FromIdentifier => "from-identifier",
     };
 
-    if node.fields.iter().all(is_leaf_field) {
+    if node
+        .fields
+        .iter()
+        .all(|f| f.name.is_none() && is_leaf_field(f))
+    {
         let inner = node
             .fields
             .iter()
@@ -117,6 +123,8 @@ fn render_str_literal(s: &str) -> String {
             '"' => out.push_str("\\\""),
             '$' => out.push_str("\\$"),
             '@' => out.push_str("\\@"),
+            '%' => out.push_str("\\%"),
+            '&' => out.push_str("\\&"),
             _ => out.push(c),
         }
     }

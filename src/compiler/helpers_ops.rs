@@ -1,7 +1,7 @@
 use crate::token_kind::TokenKind;
 
 /// Convert a `TokenKind` to its operator name string for runtime dispatch.
-pub(super) fn token_kind_to_op_name(op: &TokenKind) -> String {
+pub(crate) fn token_kind_to_op_name(op: &TokenKind) -> String {
     match op {
         TokenKind::Ident(name) => name.clone(),
         TokenKind::Plus => "+".to_string(),

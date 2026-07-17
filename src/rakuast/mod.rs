@@ -53,6 +53,16 @@ pub enum RakuAstClass {
     CallNameWithoutParentheses,
     Name,
     ArgList,
+    // Phase 2: variables, declarations, operators.
+    VarLexical,
+    VarDeclarationSimple,
+    InitializerAssign,
+    ApplyInfix,
+    Infix,
+    ApplyPrefix,
+    Prefix,
+    ApplyPostfix,
+    Postfix,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +86,15 @@ impl RakuAstClass {
             CallNameWithoutParentheses => "RakuAST::Call::Name::WithoutParentheses",
             Name => "RakuAST::Name",
             ArgList => "RakuAST::ArgList",
+            VarLexical => "RakuAST::Var::Lexical",
+            VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
+            InitializerAssign => "RakuAST::Initializer::Assign",
+            ApplyInfix => "RakuAST::ApplyInfix",
+            Infix => "RakuAST::Infix",
+            ApplyPrefix => "RakuAST::ApplyPrefix",
+            Prefix => "RakuAST::Prefix",
+            ApplyPostfix => "RakuAST::ApplyPostfix",
+            Postfix => "RakuAST::Postfix",
         }
     }
 
@@ -97,6 +116,10 @@ impl RakuAstClass {
             StatementExpression => 10,                  // "expression"
             QuotedString => 10,                         // "processors" (unshown) > "segments"
             CallName | CallNameWithoutParentheses => 4, // "name" / "args"
+            VarDeclarationSimple => 11,                 // "desigilname" / "initializer"
+            ApplyInfix => 5,                            // "infix" / "right"
+            ApplyPrefix | ApplyPostfix => 7,            // "operand"
+            Postfix => 8,                               // "operator"
             _ => 0,
         }
     }
