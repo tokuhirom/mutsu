@@ -137,6 +137,12 @@ pub(crate) struct Registry {
         HashMap<(String, String), Vec<HashMap<String, Value>>>,
     /// Per-attribute `is DEPRECATED` message: (class, attr) -> message.
     pub(crate) class_attribute_deprecated: HashMap<(String, String), String>,
+    /// The Attribute meta-object a custom `trait_mod:<is>` was applied to,
+    /// per (class, attr). Instance attrs are a shared cell, so mutations the
+    /// trait made (`$a does JSON::Name::NamedAttribute; $a.json-name = ...`)
+    /// live in this stored object; `^attributes` returns it (topped up with
+    /// the standard meta keys) so the mixin state survives introspection.
+    pub(crate) class_attribute_trait_objects: HashMap<(String, String), crate::value::Value>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,

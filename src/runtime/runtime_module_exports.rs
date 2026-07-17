@@ -3,6 +3,45 @@ use super::*;
 impl Interpreter {
     /// Record a trait-modified routine value for an exported sub, so that
     /// `import_module` can restore the `&name` env binding with the role mixed in.
+    /// Install an imported multi candidate under `target_key`, merging with
+    /// candidates other modules already installed there: strip any `__mN`
+    /// suffix to the base key, then walk base, `__m1`, `__m2`, ... and insert
+    /// at the first vacant slot. A slot already holding this exact `Arc`
+    /// (same-module re-import) makes the call a no-op.
+    fn import_multi_candidate_merged(&mut self, target_key: &str, def: Arc<FunctionDef>) {
+        let base = match target_key.rfind("__m") {
+            Some(pos)
+                if pos + 3 < target_key.len()
+                    && target_key[pos + 3..].chars().all(|c| c.is_ascii_digit()) =>
+            {
+                &target_key[..pos]
+            }
+            _ => target_key,
+        };
+        let mut registry = self.registry_mut();
+        let funcs = &mut registry.functions;
+        let mut idx = 0usize;
+        loop {
+            let key = if idx == 0 {
+                base.to_string()
+            } else {
+                format!("{}__m{}", base, idx)
+            };
+            match funcs.entry(Symbol::intern(&key)) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(def);
+                    return;
+                }
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if Arc::ptr_eq(entry.get(), &def) {
+                        return;
+                    }
+                }
+            }
+            idx += 1;
+        }
+    }
+
     pub(crate) fn record_exported_sub_value(&mut self, package: String, name: String, val: Value) {
         self.exported_sub_values
             .entry(package)
@@ -279,7 +318,20 @@ impl Interpreter {
                 }
             }
             for (k, v) in function_entries {
-                self.registry_mut().functions.insert(k, v);
+                let ks = k.resolve();
+                if ks.contains('/') {
+                    // A multi candidate. Two modules exporting candidates of the
+                    // same multi (JSON::OptIn / JSON::Name / JSON::Class each
+                    // export a `trait_mod:<is>`) land on the SAME target key
+                    // (`GLOBAL::trait_mod:<is>/2`), so a plain insert would let
+                    // the last `use` overwrite every earlier module's
+                    // candidates. Chain into the first free `__mN` slot
+                    // instead, and skip candidates already installed (a
+                    // re-import of the same module must stay idempotent).
+                    self.import_multi_candidate_merged(&ks, v);
+                } else {
+                    self.registry_mut().functions.insert(k, v);
+                }
             }
 
             let proto_entries: Vec<(Symbol, Arc<FunctionDef>)> = self

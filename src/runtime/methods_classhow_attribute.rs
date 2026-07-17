@@ -134,6 +134,16 @@ impl Interpreter {
 
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
         let (ref attr_name, is_public, ref default, is_rw, _, sigil, _) = *attr;
+        // A custom trait_mod:<is> was applied to this attribute at class
+        // registration: serve the SAME meta-object it mutated (role mixins,
+        // values like JSON::Name's `$.json-name`), topped up below with the
+        // standard keys the ephemeral trait-time object lacks. Returning a
+        // fresh object instead would silently drop the trait's work.
+        let stored = self
+            .registry()
+            .class_attribute_trait_objects
+            .get(&(owner.to_string(), attr_name.clone()))
+            .cloned();
         let full_name = format!("{}!{}", sigil, attr_name);
         let raw_type_name = self
             .registry()
@@ -211,7 +221,26 @@ impl Interpreter {
                 );
             }
         }
-        Value::make_instance(Symbol::intern("Attribute"), meta)
+        match stored {
+            Some(stored) => {
+                // Top up the trait-time object with the standard keys it lacks
+                // (build, is_rw, ...) without overwriting anything the trait
+                // set, and return THAT object so its mixins/values survive.
+                // The stored value is a Mixin when the trait did `$a does R`;
+                // its inner Instance shares the original attr cell.
+                let inner = match stored.view() {
+                    ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+                    _ => stored.clone(),
+                };
+                if let ValueView::Instance { attributes, .. } = inner.view() {
+                    for (k, v) in meta {
+                        attributes.insert_if_absent(k, v);
+                    }
+                }
+                stored
+            }
+            None => Value::make_instance(Symbol::intern("Attribute"), meta),
+        }
     }
 
     /// Build a minimal Attribute introspection object for a `has` declaration
@@ -284,13 +313,32 @@ impl Interpreter {
             let has_handler =
                 self.has_proto(&trait_mod_name) || self.has_multi_candidates(&trait_mod_name);
             if has_handler {
-                let attr_obj = self.make_trait_attribute_object(
-                    attr_name_str,
-                    sigil,
-                    is_public,
-                    owner,
-                    type_constraint,
-                );
+                // Reuse the Attribute meta-object across every trait applied to
+                // this attr, and store it in the registry: instance attrs are a
+                // shared cell, so whatever the trait sub does to `$a`
+                // (`$a does NamedAttribute; $a.json-name = $v` — JSON::Name)
+                // lands in this object, and `^attributes` serves it back.
+                let attr_key = (owner.to_string(), attr_name_str.to_string());
+                let attr_obj = if let Some(existing) = self
+                    .registry()
+                    .class_attribute_trait_objects
+                    .get(&attr_key)
+                    .cloned()
+                {
+                    existing
+                } else {
+                    let fresh = self.make_trait_attribute_object(
+                        attr_name_str,
+                        sigil,
+                        is_public,
+                        owner,
+                        type_constraint,
+                    );
+                    self.registry_mut()
+                        .class_attribute_trait_objects
+                        .insert(attr_key, fresh.clone());
+                    fresh
+                };
                 let trait_arg_val = if let Some(arg_expr) = trait_arg {
                     Some(self.eval_block_value(&[crate::ast::Stmt::Expr(arg_expr.clone())])?)
                 } else {
@@ -308,7 +356,23 @@ impl Interpreter {
                         Value::pair(trait_name.clone(), trait_arg_val.unwrap_or(Value::TRUE));
                     args.push(named_val);
                 }
-                self.call_function(&trait_mod_name, args)?;
+                // `$a does SomeRole` inside the trait produces a Mixin wrapper
+                // bound only to the trait sub's local `$a` — arm the same
+                // writeback DoesVar uses for `&sub` trait targets (see
+                // registration_sub.rs) and store the captured Mixin as this
+                // attribute's meta-object, so the mixin's methods/values
+                // survive to `^attributes` (JSON::Name's `is json-name`).
+                let saved_wb_key = self.trait_mod_writeback_key.take();
+                self.trait_mod_writeback_key =
+                    Some(format!("__mutsu_attr_trait__{}!{}", owner, attr_name_str));
+                let call_result = self.call_function(&trait_mod_name, args);
+                self.trait_mod_writeback_key = saved_wb_key;
+                if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
+                    self.registry_mut()
+                        .class_attribute_trait_objects
+                        .insert((owner.to_string(), attr_name_str.to_string()), mixin_val);
+                }
+                call_result?;
                 continue;
             }
             let msg = format!(

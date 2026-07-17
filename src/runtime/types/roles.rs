@@ -267,8 +267,34 @@ impl Interpreter {
             ValueView::Str(name) if self.registry().roles.contains_key(name.as_str()) => {
                 Some((name.to_string(), Vec::new()))
             }
+            // A module-scoped role referenced by its short name at runtime
+            // (`$a does NamedAttribute` inside `module NameTrait`'s
+            // trait_mod:<is>, where the role registered as
+            // `NameTrait::NamedAttribute`). Without this, `does` silently
+            // degrades to the boolean conformance check and REBINDS the
+            // variable to True/False — how JSON::Name's trait corrupted `$a`.
+            ValueView::Package(name) => self.resolve_short_role_name(&name.resolve()),
+            ValueView::Str(name) => self.resolve_short_role_name(name.as_str()),
             _ => None,
         }
+    }
+
+    /// Resolve a short role name to its registered (possibly package-qualified)
+    /// form: the current package's `{pkg}::{name}` first (the sub executing a
+    /// `does` runs with its defining module as the current package), then the
+    /// general declared-type resolution. None when neither names a role.
+    fn resolve_short_role_name(&self, name: &str) -> Option<(String, Vec<Value>)> {
+        if !name.contains("::") {
+            let qualified = format!("{}::{}", self.current_package(), name);
+            if self.registry().roles.contains_key(&qualified) {
+                return Some((qualified, Vec::new()));
+            }
+        }
+        let resolved = self.resolve_declared_type_name(name);
+        self.registry()
+            .roles
+            .contains_key(&resolved)
+            .then(|| (resolved, Vec::new()))
     }
 
     fn compose_role_on_value(
