@@ -4,7 +4,17 @@
 > See [news/](news/) for past logs, [PERFORMANCE.md](PERFORMANCE.md) for performance details,
 > and [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) for roast failure analysis.
 >
-> **Last updated 2026-07-14**:
+> **Last updated 2026-07-16 — priority reset: performance is NOT the mzef blocker.**
+> mzef already works functionally: `zef info Zef` runs to completion against the real fez index
+> (7648 dists), populate is ~6.5s, and the constructor microbench already **beats** raku (0.57×).
+> Perf tuning (§5) is therefore **polish, not a blocker** — it had been getting picked up
+> autonomously session after session past the point of usefulness. **The active mzef frontier is
+> functional, not performance:** (A) network fetch over robust async TLS from `https://360.zef.pm/`,
+> and (B) the real install + build/test pipeline (`mzef` binary shim + vendoring zef itself and its
+> deps + config). See §1 B2. §5 stays as a reference of levers/measurements but is **de-prioritized**;
+> before starting any §5 item, ask "does mzef need this to work?" — if not, don't.
+>
+> **Earlier (2026-07-14)**:
 > §4 was rewritten based on full measurement. The items listed in the old §4 (negation meta / hyper assignment /
 > `augment class` / `A::B.new` / file test / PRE·POST / signature type checks / lazy-seq ④) are
 > **all already implemented**; instead, it turned out that **the 41 `integration/` files (real-program
@@ -330,6 +340,17 @@ The only real feature gaps left in the S\* series (they do not directly lead to 
 ---
 
 ## 5. perf — execution speed (measurement-driven; MUTSU_VM_STATS / timed roast)
+
+> **De-prioritized 2026-07-16 (see header).** mutsu already beats raku on the whole roast whitelist
+> and on every benchmark here, and mzef's ctor path is faster than raku — **performance is not what is
+> blocking mzef.** This section is kept as a reference of levers and measurements, but do **not** pick
+> up a §5 item just because the profile shows a hot symbol: first confirm mzef (or another goal item)
+> actually needs it. The remaining big lever is biased reference counting (§ Lever 6 / ADR-0001 layer
+> 3c) — a multi-week, high-risk campaign that would shave the inherent per-clone atomic-refcount cost;
+> it is explicitly **not** required for mzef and should only be started as a deliberate, ADR-updating
+> decision, not autonomously. (2026-07-16 investigation: the nanbox ~20% is dominated by the two
+> atomic refcount ops per `Gc` clone / two per drop, inherent to the dual-count Bacon-Rajan-on-Arc
+> design; the drop side is already optimized; cheap wins are exhausted.)
 
 **Completed levers** (details = news/2026-06.md / news/2026-07.md): method-call hot path round 1
 (#3853/#3857/#3859/#3867/#3870) / removal of the per-call env deep clone via single-store
