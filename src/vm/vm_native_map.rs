@@ -46,9 +46,9 @@ impl Interpreter {
         let ValueView::Sub(data) = args[0].view() else {
             return None;
         };
-        // Only a plain concrete array (`my @a = ...`, `ArrayKind::Array`). On
-        // such an array mutsu's `.map` returns a `List`. Every other kind needs
-        // the interpreter's specialized dispatch and must NOT come here:
+        // Only a plain concrete array (`my @a = ...`, `ArrayKind::Array`).
+        // Every other kind needs the interpreter's specialized dispatch and must
+        // NOT come here:
         // `Shaped` maps over *leaves* (not the raw items), `Lazy` must stay lazy
         // (eager iteration could hang on an infinite source), `ItemArray`/`List`
         // and ranges/seqs have their own one-arg-rule / Seq-returning semantics.

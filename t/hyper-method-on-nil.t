@@ -25,7 +25,9 @@ is (1, 2)>>.succ.raku,     '(2, 3)',         'ordinary hyper dispatch unaffected
 dies-ok { (Any,)>>.no-such-method-anywhere }, 'Any (not Nil) still throws for an unknown method';
 dies-ok { Any.no-such-method-anywhere },      'scalar Any still throws for an unknown method';
 
-# Nested Iterables recurse to the leaves, and Nil leaves absorb there too.
-is ((Nil,), (Nil,))>>.ast.raku, '((Nil,), (Nil,))', 'nested hyper reaches Nil leaves';
+# Nested Iterables recurse to the leaves, and Nil leaves absorb there too. Each
+# descent itemizes its result, so the sub-lists come back as `$(Nil,)` — see
+# t/hyper-nested-itemize.t.
+is ((Nil,), (Nil,))>>.ast.raku, '($(Nil,), $(Nil,))', 'nested hyper reaches Nil leaves';
 
 # vim: expandtab shiftwidth=4
