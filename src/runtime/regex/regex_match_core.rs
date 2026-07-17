@@ -359,6 +359,17 @@ impl Interpreter {
         store: &mut CapStore,
         matches: &mut Vec<(usize, RegexCaptures)>,
     ) -> bool {
+        // A code atom ended the declarative prefix (LTM measurement, ADR-0009):
+        // record how far we got and stop walking. Checked before the end-of-pattern
+        // arm so `anchor_end` does not reject a prefix that legitimately stops
+        // short, and returning `true` unwinds the whole DFS — including out of a
+        // subrule, so the enclosing pattern stops here too.
+        if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+            && super::regex_helpers::LTM_PREFIX_TERMINATED.with(std::cell::Cell::get)
+        {
+            matches.push((pos, store.snapshot()));
+            return true;
+        }
         if idx == ctx.pattern.tokens.len() {
             if !ctx.pattern.anchor_end || pos == ctx.chars.len() {
                 matches.push((pos, store.snapshot()));

@@ -115,25 +115,35 @@ impl Interpreter {
             Some(ValueView::Str(s)) => Some(s.to_string()),
             _ => None,
         };
-        // Collect all matching candidates with their declarative prefix match lengths
-        let mut candidates: Vec<(usize, usize, String)> = Vec::new(); // (prefix_match_len, match_len, pattern)
+        // Collect all matching candidates with their declarative prefix match
+        // lengths. `declarative_prefix_match_len` is the ONLY trial match here:
+        // it stops at the candidate's first code block/assertion and never
+        // executes one, so measuring a candidate cannot duplicate its side
+        // effects (ADR-0009). For a candidate with no code atom it is a full
+        // match — which executes nothing — so the "does this candidate match at
+        // all?" filter is unchanged for those.
+        let mut candidates: Vec<(usize, String)> = Vec::new(); // (prefix_match_len, pattern)
         for def in defs {
             if let Some(pattern) = self.eval_token_def(&def, arg_values)? {
                 if let Some(ref text) = subject {
-                    if let Some(len) = self.regex_match_len_at_start(&pattern, text) {
-                        let prefix_match_len = self
-                            .declarative_prefix_match_len(&pattern, text)
-                            .unwrap_or(len);
-                        candidates.push((prefix_match_len, len, pattern));
+                    match self.declarative_prefix_match_len(&pattern, text) {
+                        (Some(prefix_match_len), _) => candidates.push((prefix_match_len, pattern)),
+                        // Measurement stopped at a code atom, so it proves nothing
+                        // about whether the candidate matches — keep it (ranked
+                        // last) and let the real match decide.
+                        (None, true) => candidates.push((0, pattern)),
+                        // A fully declarative candidate that does not match at all.
+                        (None, false) => {}
                     }
                 } else {
-                    candidates.push((0, 0, pattern));
+                    candidates.push((0, pattern));
                 }
             }
         }
-        // Sort by declarative prefix match length (longest first), then by match length
-        candidates.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
-        if let Some((_, _, pattern)) = candidates.into_iter().next() {
+        // Sort by declarative prefix match length (longest first). The sort is
+        // stable, so an LTM tie falls back to declaration order (as in Rakudo).
+        candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
+        if let Some((_, pattern)) = candidates.into_iter().next() {
             return Ok(Some(pattern));
         }
         if self.has_proto_token(name) {

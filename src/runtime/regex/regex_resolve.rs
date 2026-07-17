@@ -56,8 +56,12 @@ impl Interpreter {
         Some(rest[..end].to_string())
     }
 
-    /// Check if a regex pattern has a bare code block `{}` that terminates
-    /// the declarative prefix for LTM purposes.
+    /// Check if a regex pattern's own token list has a bare code block `{}`.
+    ///
+    /// Gates the eager-code-block buffer (`enable_eager_code_blocks`), which makes a
+    /// plain `{ … }` block's side effects survive a failed parse. LTM no longer uses
+    /// this: `declarative_prefix_match_len` applies the terminate/skip rules inside
+    /// the matcher, which — unlike this predicate — also sees through subrules.
     pub(crate) fn has_code_block_in_prefix(&self, pattern: &str) -> bool {
         let Some(parsed) = self.parse_regex(pattern) else {
             return false;
@@ -73,45 +77,52 @@ impl Interpreter {
         })
     }
 
-    /// Compute the declarative prefix match length against actual input text.
-    /// For patterns without code blocks, returns the full match length.
-    /// For patterns with code blocks, returns the length matched by the
-    /// prefix (atoms before the first code block).
+    /// Compute the declarative prefix match length against actual input text:
+    /// how far the candidate matches using only its *declarative* atoms.
+    ///
+    /// Rakudo builds its LTM NFA from the declarative prefix and never *executes*
+    /// anything while doing so. Measuring a length must therefore never run a code
+    /// atom, or every candidate measurement duplicates that candidate's side
+    /// effects (ADR-0009).
+    ///
+    /// The two kinds of code atom differ, per `roast/S05-grammar/protoregex.t`:
+    /// `<?{ … }>` / `<!{ … }>` do **not** terminate the prefix (the NFA treats them
+    /// as a zero-width pass and keeps measuring past them, so `a <?{1}> .+` has
+    /// prefix `a .+`), while a plain `{ … }` block **does** (`a {} .+` has prefix
+    /// `a`). Neither is run.
+    ///
+    /// This runs the ordinary matcher under `LTM_DECLARATIVE_MODE`, which applies
+    /// both rules without executing (see the `CodeAssertion` arm of
+    /// `regex_match_atom_with_capture_in_pkg` and the `LTM_PREFIX_TERMINATED` check
+    /// in `walk_tokens`). Going through the real matcher — rather than truncating
+    /// the token list — is what lets the prefix descend *into* a subrule and handle
+    /// a code atom nested inside it (`token TOP { <item> }` where `item` holds the
+    /// assertion): the flags are thread-locals, so they survive the nested
+    /// sub-interpreter dispatch a subrule match goes through.
+    ///
+    /// A pattern with no code atom anywhere therefore measures as a full match,
+    /// which executes nothing.
+    ///
+    /// Returns `(len, stopped_at_code_block)`. The flag matters because a `None`
+    /// length means two different things. With `false`, the measurement ran to the
+    /// end and `None` is real evidence the candidate cannot match — the caller may
+    /// drop it. With `true`, a plain `{ }` block cut the measurement short, so a
+    /// `None` proves nothing about whether the real match would succeed and the
+    /// candidate must be kept for the real match to judge.
     pub(crate) fn declarative_prefix_match_len(
         &mut self,
         pattern: &str,
         text: &str,
-    ) -> Option<usize> {
-        if !self.has_code_block_in_prefix(pattern) {
-            // No code block — entire pattern is the declarative prefix
-            return self.regex_match_len_at_start(pattern, text);
-        }
-        // Has code block — match only the prefix atoms
-        let parsed = self.parse_regex(pattern)?;
-        let mut prefix_tokens: Vec<RegexToken> = Vec::new();
-        for token in &parsed.tokens {
-            if matches!(
-                &token.atom,
-                RegexAtom::CodeAssertion {
-                    is_assertion: false,
-                    ..
-                }
-            ) {
-                break;
-            }
-            prefix_tokens.push(token.clone());
-        }
-        let prefix_pattern = RegexPattern {
-            tokens: prefix_tokens,
-            anchor_start: parsed.anchor_start,
-            anchor_end: false,
-            ignore_case: parsed.ignore_case,
-            ignore_mark: parsed.ignore_mark,
-        };
-        let chars: Vec<char> = text.chars().collect();
-        let pkg = self.current_package();
-        self.regex_match_end_from_caps_in_pkg(&prefix_pattern, &chars, 0, &pkg)
-            .map(|(end, _)| end)
+    ) -> (Option<usize>, bool) {
+        // Saved/restored rather than simply cleared: a subrule's own pattern can be
+        // measured while an outer measurement is still live.
+        let saved_mode = super::regex_helpers::LTM_DECLARATIVE_MODE.replace(true);
+        let saved_terminated = super::regex_helpers::LTM_PREFIX_TERMINATED.replace(false);
+        let result = self.regex_match_len_at_start(pattern, text);
+        let stopped_at_code_atom = super::regex_helpers::LTM_PREFIX_TERMINATED.get();
+        super::regex_helpers::LTM_DECLARATIVE_MODE.set(saved_mode);
+        super::regex_helpers::LTM_PREFIX_TERMINATED.set(saved_terminated);
+        (result, stopped_at_code_atom)
     }
 
     pub(in crate::runtime) fn instantiate_token_pattern(

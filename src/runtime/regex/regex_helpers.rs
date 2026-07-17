@@ -10,6 +10,22 @@ thread_local! {
     /// Collects plain (non-assertion) code blocks that should be executed eagerly
     /// during regex matching, even if the overall match fails. Used by `comb` etc.
     pub(crate) static EAGER_CODE_BLOCKS: RefCell<Option<Vec<CodeBlockContext>>> = const { RefCell::new(None) };
+    /// Declarative-prefix (LTM) mode. While set, the matcher is measuring *how far
+    /// a candidate declaratively matches*, not producing a match — so a code atom
+    /// (`{ … }`, `<?{ … }>`, `<!{ … }>`) must NOT be executed. Rakudo builds its LTM
+    /// NFA from the declarative prefix and a code atom terminates that prefix, so
+    /// on reaching one the matcher sets `LTM_PREFIX_TERMINATED` and unwinds,
+    /// reporting the position it reached. Running the code instead would duplicate
+    /// its side effects once per candidate measurement (ADR-0009).
+    ///
+    /// Set only around `declarative_prefix_match_len`, which restores the previous
+    /// value afterwards (a subrule's pattern may itself be measured while an outer
+    /// measurement is live).
+    pub(crate) static LTM_DECLARATIVE_MODE: Cell<bool> = const { Cell::new(false) };
+    /// Set by the matcher when `LTM_DECLARATIVE_MODE` made it stop at a code atom.
+    /// `walk_tokens` checks it after every token and stops walking, so the
+    /// termination propagates out through nested subrules.
+    pub(crate) static LTM_PREFIX_TERMINATED: Cell<bool> = const { Cell::new(false) };
     /// The character immediately preceding the start of the text currently being
     /// matched. A subrule (`<foo>`) is matched against a *slice* `chars[pos..]`
     /// in a fresh sub-interpreter, so position 0 of that slice is not necessarily
