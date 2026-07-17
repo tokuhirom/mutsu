@@ -60,15 +60,20 @@ backtracking. There are in fact *two independent* multipliers, and this ADR is a
 first:
 
 1. a **constant 4**, present on a match that cannot backtrack at all (the table above), and
-2. **genuine backtracking** on a *failing* parse, which is what produces day18's larger
-   numbers (`a♥` reaching 15 on `"a♥ a♥ 7♦ 8♣ j♥"`, 31 on the two-hand input). This is
-   real: those counts do not move when the constant is removed, and they appear only on
-   parses that fail. day18's *successful* parse already runs every assertion exactly once,
-   matching raku.
+2. the **failure-position probe**, which is what produces day18's larger numbers (`a♥`
+   reaching 15 on `"a♥ a♥ 7♦ 8♣ j♥"`, 31 on the two-hand input) — and which is *also* not
+   backtracking. `parse_failure_for_pattern` → `longest_complete_prefix_end` re-matches
+   the pattern against **every prefix** of the input, longest first, to report how far a
+   failed `.parse` got. Each re-match executed the grammar's assertions again. The tell is
+   exact: 14-char input → 15 runs, 31-char input → 31 runs. (15 = 2⁴−1 was a coincidence.)
+   A backtrace over `token TOP { <item>**3 }` splits the 13 runs cleanly: **3 from the
+   real match — exactly raku's count — and 10 from the probe.**
+
+**mutsu's ratchet is not at fault.** Nothing here backtracks; the real match already runs
+each assertion once per position, matching raku, on both successful and failing parses.
 
 The constant is not depth-dependent — nesting `token TOP { <a> }` … four deep leaves it at
-4, not 4ⁿ. (An early guess that it was `2^depth`, from day18's suggestive 15 = 2⁴−1 and
-31 = 2⁵−1, was measured and disproved.)
+4, not 4ⁿ.
 
 ### Consequences observed today
 
@@ -154,6 +159,25 @@ Measured after A: the constant drops **4 → 2** (`.parse`) and **2 → 2** (pla
 uniformly and independent of nesting depth. The remaining 2 are the real match plus the
 parent replay — that is B's job. raku is 1.
 
+### A2. The failure-position probe must not execute a code atom either
+
+Same principle, different caller. `longest_complete_prefix_end` re-matches the pattern
+against every prefix of the input purely to report how far a failed `.parse` got. That is
+a diagnostic; building it must not run the user's grammar code once per prefix.
+
+It runs under a `CODE_ATOMS_INERT` flag, so both kinds of code atom become zero-width
+no-ops and the probe measures the pattern's declarative skeleton. It deliberately differs
+from `LTM_DECLARATIVE_MODE`: a plain `{ }` block does *not* stop the walk here, because
+the probe wants the longest prefix the skeleton accepts, not the LTM prefix.
+
+Note the ordering interaction: **A made this worse before it was fixed.** Before A, an
+assertion-bearing candidate that failed its trial match was dropped by the LTM filter and
+`.parse` returned early with `pattern: None`, never reaching the probe. A keeps such
+candidates (correctly — a declarative measurement cannot filter), which exposed the probe
+on exactly the grammars that have assertions. Measured on `token TOP { <group>**2 % ';' }`
+over an 18-char failing input: `a` ran **19** times, `z` **31**; after A2, 1 each — raku's
+numbers exactly.
+
 ### B. Code assertions run inline in the real interpreter
 
 Flip the matcher from `&self` to `&mut self` from `regex_match_with_captures_core` down
@@ -202,13 +226,13 @@ being load-bearing.
 
 ## Status of the work
 
-- **A: done** (2026-07-17). Pinned by `t/regex-ltm-declarative-prefix.t` (which also passes
-  under raku, and fails on the pre-fix tree).
-- **B: not started.** This is what `advent2013-day18.t` test 10 actually waits on: `@dups`
-  stays empty without it, since a failing parse has no winning path to replay.
-- **Backtracking on a failing parse** (multiplier 2 in the measurement section) is a
-  *third*, separate problem, not covered by this ADR. day18 test 10 needs it too: even
-  with B, an assertion re-run by backtracking would push duplicate entries. Rakudo avoids
-  it because `token`/`rule` are ratcheted. Whether mutsu's ratchet is under-applied here
-  has not been diagnosed — do that before starting B, or B will look wrong for a reason
-  that is not B's fault.
+- **A: done** (2026-07-17, #4651). Pinned by `t/regex-ltm-declarative-prefix.t`.
+- **A2: done** (2026-07-17). Pinned by `t/grammar-parse-failure-probe.t`. With A+A2,
+  `advent2013-day18`'s assertion counts match raku **exactly** (2 and 1 on the two failing
+  parses, 1 per card on the passing one).
+- **B: not started.** This is all that `advent2013-day18.t` test 10 now waits on: `@dups`
+  stays empty because a failing parse has no winning path to replay. There is no
+  ratchet/backtracking prerequisite — that diagnosis was measured away (see above), so B
+  can be started directly.
+
+Both pins pass under raku as well as mutsu, and fail on the tree before their fix.

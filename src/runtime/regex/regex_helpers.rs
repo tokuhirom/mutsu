@@ -26,6 +26,17 @@ thread_local! {
     /// `walk_tokens` checks it after every token and stops walking, so the
     /// termination propagates out through nested subrules.
     pub(crate) static LTM_PREFIX_TERMINATED: Cell<bool> = const { Cell::new(false) };
+    /// Code atoms are inert: not executed, and treated as a zero-width pass.
+    ///
+    /// Set around `longest_complete_prefix_end`, which re-matches the pattern
+    /// against every prefix of the input (longest first) purely to report *how far*
+    /// a failed `.parse` got. That is a diagnostic, and computing a diagnostic must
+    /// not run the user's code — with `<?{ … }>` in the grammar the probe executed
+    /// it once per prefix, i.e. O(input length) times (ADR-0009). Unlike
+    /// `LTM_DECLARATIVE_MODE` a plain `{ … }` block does not stop the walk here: the
+    /// probe wants the longest prefix the pattern's declarative skeleton accepts, so
+    /// both kinds of code atom simply become no-ops.
+    pub(crate) static CODE_ATOMS_INERT: Cell<bool> = const { Cell::new(false) };
     /// The character immediately preceding the start of the text currently being
     /// matched. A subrule (`<foo>`) is matched against a *slice* `chars[pos..]`
     /// in a fresh sub-interpreter, so position 0 of that slice is not necessarily

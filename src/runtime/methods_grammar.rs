@@ -820,18 +820,35 @@ impl Interpreter {
         self.make_parse_failure_value(text, best_end)
     }
 
+    /// How far a failed `.parse` got, for the failure message: the longest prefix of
+    /// the input that the pattern matches in full.
+    ///
+    /// This re-matches the pattern once per prefix, so it must not execute the
+    /// grammar's code atoms — otherwise a `<?{ … }>` runs once per prefix, i.e.
+    /// O(input length) times, purely to build a diagnostic (ADR-0009). `advent2013-day18`
+    /// showed this exactly: its card assertion ran 15 times on a 14-char input and 31
+    /// times on a 31-char one. Under `CODE_ATOMS_INERT` the probe measures the
+    /// pattern's declarative skeleton instead, executing nothing.
+    ///
+    /// (The search is still O(input length) full matches on the failure path, and the
+    /// common case — no prefix matches — is the worst case. Pre-existing; not addressed
+    /// here.)
     pub(super) fn longest_complete_prefix_end(&mut self, pattern: &str, text: &str) -> usize {
+        let saved = super::regex::regex_helpers::CODE_ATOMS_INERT.replace(true);
         let chars: Vec<char> = text.chars().collect();
+        let mut best = 0;
         for end in (0..=chars.len()).rev() {
             let prefix: String = chars[..end].iter().collect();
             if let Some(captures) = self.regex_match_with_captures(pattern, &prefix)
                 && captures.from == 0
                 && captures.to == end
             {
-                return end;
+                best = end;
+                break;
             }
         }
-        0
+        super::regex::regex_helpers::CODE_ATOMS_INERT.set(saved);
+        best
     }
 
     pub(super) fn make_parse_failure_value(&self, text: &str, best_end: usize) -> Value {
