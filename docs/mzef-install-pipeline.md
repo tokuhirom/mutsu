@@ -133,25 +133,71 @@ never matches the candidate and each is reported `Fetching [FAIL]`. Single-dist
 `zef fetch Test::META` still works (exit 0) — it is the **concurrent** fetch that
 `install` drives (`Zef::Client.!fetch` hypers over candidates) that breaks.
 
+What the trace pins down: the `[Test::Async]` / `[META6]` prefix comes from
+`$candi` and is **correct** for every line, while the `$uri` in the same log
+message is **wrong**. Both are read at `Zef::Fetch.fetch`:
+
+```raku
+method fetch(Candidate $candi, IO() $save-to, …) {
+    my $uri      = $candi.uri;             # <- this is what diverges
+    my @fetchers = self!fetch-matcher($uri).cache;
+    …
+    my $got := @fetchers.map: -> $fetcher {   # the closure that logs $uri
+        $logger.emit({ … message => "Fetching $uri with plugin: {$fetcher.^name}" });
+```
+
+So `$candi` (a parameter) stays per-thread while `$uri` (a `my` scalar in the
+same, concurrently-entered method frame) does not. Each fetch drives
+`react`/`Proc::Async` under it, so `clone_for_thread` runs while several frames
+of this method are live.
+
 ### Next session starts here
 
-The shape — one lexical's value leaking across sibling concurrent tasks — is the
-same family as the bug fixed above, and quite possibly the *same* mechanism:
-`shared_vars` is a **process-global, bare-name** map, so N concurrent
-`start`-block frames each holding their own `$uri`/`$url` lexical all collide on
-one key, and last-writer-wins.
+**Do not assume this is the same mechanism as the fix above.** The two most
+obvious isolated forms were tried and **both pass** (mutsu matches raku):
 
-1. Instrument `Zef::Service::Shell::wget`/`curl` `.fetch` (per the tooling
-   section below) to print the `$uri` it receives vs the one it shells out with —
-   confirm where the value diverges.
-2. Reproduce in isolation first: several `start` blocks, each with a same-named
-   lexical bound from its own argument, read after a sibling has spawned. If that
-   reproduces, the fix belongs in the shared store's keying, not in zef.
-3. Note that per-name masking (`thread_redeclared_vars`) is a *band-aid on the
-   band-aid*: the real defect is that a thread-shared store keyed by bare name
-   cannot distinguish two unrelated lexicals of the same name. If the fetch bug
-   is the same mechanism, prefer fixing the keying (scope-qualified keys) over
-   adding another mask — and record it as an ADR, since it touches the dual-store
+```raku
+# (a) N start blocks, each with its own same-named lexical — PASSES
+sub fetch-one($name) {
+    my $uri = "https://example.com/$name.tar.gz";
+    start { for ^200 { }; "$name -> $uri" }
+}
+.say for await <A B C D E F>.map({ fetch-one($_) });
+
+# (b) hyper.map -> a method declaring `my $uri`, shelling out — PASSES
+class Fetcher {
+    method fetch($name, $stage-at) {
+        my $uri  = "https://example.com/$name.tar.gz";
+        my $proc = Proc::Async.new('echo', "GET $uri -> $stage-at");
+        my $out  = '';
+        $proc.stdout.tap(-> $b { $out ~= $b });
+        await $proc.start;
+        $out.trim;
+    }
+}
+my $fetcher = Fetcher.new;
+.say for <A B C D E F>.hyper(:batch(1), :degree(5)).map: -> $candi {
+    "$candi => {$fetcher.fetch($candi, "/tmp/stage-$candi/$candi.tar.gz")}"
+};
+```
+
+The bare-name shared store is still the *prime suspect* (it is process-global,
+and `$uri` is exactly the kind of plain scalar `clone_for_thread` migrates), but
+these say something further is required to trigger it.
+
+1. Go at it on the **real zef**, not through more guessing — per the last
+   session's lesson. Copy `zef-dbg` to the scratchpad (tooling below) and `note`
+   `$uri` and `$candi.uri` at entry to `Zef::Fetch.fetch`, inside the
+   `@fetchers.map` closure, and at `Zef::Service::Shell::wget.fetch`. That
+   isolates whether `$uri` is wrong *on arrival*, or only once the closure reads
+   it.
+2. Then narrow toward a repro from whatever the real trace shows, rather than
+   from the mechanism hypothesis.
+3. If it does turn out to be the bare-name store: per-name masking
+   (`thread_redeclared_vars`) is a *band-aid on a band-aid* — the real defect is
+   that a thread-shared store keyed by bare name cannot distinguish two unrelated
+   lexicals of the same name. Prefer fixing the **keying** (scope-qualified keys)
+   over adding another mask, and write an ADR, since it touches the dual-store
    campaign (PLAN §6 / `project-slice-f-reverse-sync-campaign`).
 
 ## How to run zef under mutsu (tooling)
