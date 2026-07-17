@@ -1,6 +1,17 @@
 use super::*;
+use crate::compiler::Compiler;
+use crate::compiler::lex_scope::OuterResolution;
 
 impl Interpreter {
+    /// The env/local key a symbolically-derefed `name` lives under. Scalars are
+    /// stored bare (`$::("x")` -> `x`); `@`/`%` keep their sigil.
+    fn sigiled_name(sigil: &str, name: &str) -> String {
+        match sigil {
+            "@" | "%" => format!("{}{}", sigil, name),
+            _ => name.to_string(),
+        }
+    }
+
     pub(super) fn exec_get_capture_var_op(&mut self, code: &CompiledCode, name_idx: u32) {
         let name = Self::const_str(code, name_idx);
         let val = if let Some(v) = self.env().get(name).cloned() {
@@ -90,7 +101,16 @@ impl Interpreter {
 
     /// Execute symbolic variable dereference: $::("name"), @::("name"), %::("name").
     /// Pops the name string from the stack, prepends the sigil, and looks up the variable.
-    pub(super) fn exec_symbolic_deref_op(&mut self, code: &CompiledCode, sigil_idx: u32) {
+    ///
+    /// The popped name can spell a pseudo-package the literal form resolves at
+    /// compile time (`$::($outer)::x` is the same lookup as `$OUTER::x`), so this
+    /// mirrors the prefix dispatch of `Compiler::emit_var_access`.
+    pub(super) fn exec_symbolic_deref_op(
+        &mut self,
+        code: &CompiledCode,
+        sigil_idx: u32,
+        scopes_idx: u32,
+    ) {
         let sigil = Self::const_str(code, sigil_idx).to_string();
         let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
@@ -111,24 +131,42 @@ impl Interpreter {
             remaining = rest;
         }
         if caller_depth > 0 {
-            let bare_name = match sigil.as_str() {
-                "$" => remaining.to_string(),
-                "@" => format!("@{}", remaining),
-                "%" => format!("%{}", remaining),
-                _ => remaining.to_string(),
-            };
             let val = self
-                .get_caller_var(&bare_name, caller_depth)
+                .get_caller_var(&Self::sigiled_name(&sigil, remaining), caller_depth)
                 .unwrap_or(Value::NIL);
             self.stack.push(val);
             return;
         }
-        let lookup_name = match sigil.as_str() {
-            "$" => name.to_string(),
-            "@" => format!("@{}", name),
-            "%" => format!("%{}", name),
-            _ => name.to_string(),
-        };
+        // OUTERS:: / OUTER:: — a lexical walk, so it is answered against the scope
+        // chain the compiler saw at this site (baked in `code.lex_scopes`), NOT the
+        // runtime scope stack: inside a stored closure the latter holds the CALLER's
+        // blocks, which is dynamic scope and would give a different answer. This is
+        // the same resolution `$OUTER::x` gets in `Compiler::emit_outer_var_access`;
+        // only the moment the name becomes known differs.
+        if let Some(chain) = code.lex_scopes.get(scopes_idx as usize) {
+            let resolution = if let Some(rest) = Compiler::parse_outers_prefix(&name) {
+                let bare = Self::sigiled_name(&sigil, &rest);
+                let res = chain.resolve_outers(&bare);
+                Some((bare, res))
+            } else if let Some((rest, depth)) = Compiler::parse_outer_prefix(&name) {
+                let bare = Self::sigiled_name(&sigil, &rest);
+                let res = chain.resolve_outer(&bare, depth);
+                Some((bare, res))
+            } else {
+                None
+            };
+            if let Some((bare, res)) = resolution {
+                let val = match res {
+                    OuterResolution::NotDeclared => Value::NIL,
+                    OuterResolution::Read { depth, slot } => {
+                        self.get_outer_var(code, &bare, depth, slot)
+                    }
+                };
+                self.stack.push(val);
+                return;
+            }
+        }
+        let lookup_name = Self::sigiled_name(&sigil, &name);
         let val = self
             .get_env_with_main_alias(&lookup_name)
             .unwrap_or(Value::NIL);

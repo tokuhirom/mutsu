@@ -79,7 +79,7 @@ noted.
 | `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 3/16 (2026-07-17) | PASS ★ | error-message quality for multi no-match: `.splice` with wrong offset/type, `Lock.protect` / `Lock::Async.protect` / `Proc::Async.new` with wrong args must give "sane errors" — ④-adjacent |
 | `6.c/APPENDICES/A03-older-specs/01-misc.t` | fails 4+ | 6/9 FAIL | `.open("-")` mapping to `$*IN`/`$*OUT`, deprecated `subst-mutate`. raku itself fails 3 of 9 = partially non-goal |
 | `6.c/MISC/bug-coverage-stress.t` | fails 4 | 13/14 FAIL | Supply.merge on signals, supply inside sock, SEGV-in-curries+with, &foo char collection. raku itself fails test 11 (rakudo GH#1535) = not fully passable upstream |
-| `6.c/S02-names/pseudo-6c.t` | 102/161 (2026-07-17, was 99 before #4667) | SORRY on ONE line | **The next slice here is the INDIRECT deref `$::($name)::x`.** #4667 (OUTER::/OUTERS::) took this 99 -> 102 and split the remaining failures cleanly: every DIRECT form now passes (128 `$OUTER::`, 129 `OUTER::.{}`, 131 `$OUTERS::` "keeps going until match", 133 `$OUTER::OUTER::`, 135, 138 `OUTER::<$*x>`) and only the `::("OUTER")` spelling of the SAME lookups fails (130/132/134/136/139) — i.e. a runtime-computed package name does not reach the compile-time scope walk `Compiler::emit_outer_var_access` now owns. Also failing: `OUR::`/`::("OUR")` vs GLOBAL, `::("UNIT")`, `::("SETTING")`, `::("PROCESS")`. **"No oracle" is about the FILE, not the constructs**: raku SORRYs only on line 67 (`$MY::z ::= $y`, `::=` NYI), so individual snippets are verifiable in raku exactly as #4667 did — do that first, this ledger's diagnoses have been wrong before (see news/2026-07.md) |
+| `6.c/S02-names/pseudo-6c.t` | fails 52/161 (2026-07-17, was 56 before the `$::()` slice) | SORRY on ONE line | **The next slice here is `CALLERS::` (tests 119-127, the largest remaining cluster).** The `$::($name)::x` deref is DONE for the OUTER family (130/132/134/136) — the `$::(...)::y` spelling now shares one scope-chain resolver with the literal `$OUTER::y` (`compiler/lex_scope.rs`), so the two cannot drift. What is left splits into two roads, and they are **different mechanisms — do not conflate them**: (a) the `$::($x)::y` road (SymbolicDeref, done for OUTER); (b) the `::($x)::('$y')` road, which parses to `IndirectTypeLookup($x).WHO.{'$y'}` — a *stash* lookup, and where `::("OUR")`/`::("CORE")`/`::("GLOBAL")`/`::("PROCESS")`/`::("CALLER")` (50/51/53/61/79/84/116/125/139) actually live. `CALLERS::` fails in BOTH spellings (119 direct, 121 indirect), so it is a missing *feature*, not a deref gap: it is to `CALLER` what `OUTERS` is to `OUTER` (walk callers outward to the first frame declaring the name), and `Interpreter::get_caller_var` is the place. Also failing: `::("UNIT")` (140 direct fails too), `::("SETTING")`, 137 `CALLER::OUTER::`. **"No oracle" is about the FILE, not the constructs**: raku SORRYs only on line 67 (`$MY::z ::= $y`, `::=` NYI), so individual snippets are verifiable in raku — do that first, this ledger's diagnoses have been wrong before (see news/2026-07.md). Two raku-verified facts worth keeping: a closure `{ $OUTER::c }` is itself a scope, so its OUTER is the block *enclosing the closure*, not the closure's caller; and an undeclared `$OUTER::x` is a `Failure` in raku but `Nil` in mutsu (open divergence, untested by this file) |
 | `APPENDICES/A02-some-day-maybe/misc.t` | aborts (no plan) | 5/6 FAIL | "some-day-maybe" spec aspirations; raku itself not full — non-goal |
 | `MISC/misc.t` | fails 4+ | ABORT 5/7 | `:sym<>` colonpair reservation on sub names, `$*ARGFILES` inside MAIN, native num default 0e0, `undefine` deprecation warning. raku itself aborts = partially non-goal |
 | `t/fudge.t`, `t/fudgeandrun.t` | n/a | n/a | **roast's own tooling tests, written in Perl 5** (run with `perl`, not raku/mutsu) — non-goal by definition |
@@ -199,13 +199,15 @@ not-yet-root-caused `integration/` aborts" — **all of those are whitelisted**,
 re-running it; this ledger's *diagnoses* have also been wrong (see `my-6c.t` in
 [news/2026-07.md](../news/2026-07.md), where "needs lexical hoisting" was simply false).
 
-1. **`6.c/S02-names/pseudo-6c.t` — the indirect deref `$::($name)::x`** (102/161, measured).
-   The most concrete slice left, and freshly halved: #4667 made every **direct** pseudo-package
-   lookup pass, so what remains is the **`::("OUTER")` spelling of the same lookups** plus the
-   `OUR::` / `UNIT::` / `SETTING::` / `PROCESS::` family. A runtime-computed package name does not
-   reach the compile-time scope walk that `Compiler::emit_outer_var_access` now owns — that gap
-   *is* the slice. Per-snippet oracles work (raku SORRYs only on line 67's `::=`); see the
-   inventory row.
+1. **`6.c/S02-names/pseudo-6c.t` — `CALLERS::`** (fails 52/161, measured). Still the most
+   concrete slice left. The `$::($name)::x` deref landed for the OUTER family, and the
+   *measurement it produced* reshapes what is left: the remaining failures are not one gap but
+   three, and the ledger previously lumped them together. `CALLERS::` (119-127, the largest
+   cluster) fails in the direct spelling too, so it is a missing feature — the caller-axis twin
+   of `OUTERS::`, belonging in `Interpreter::get_caller_var`. The `::("OUR")`/`::("CORE")`/
+   `::("GLOBAL")`/`::("PROCESS")` family is a *stash* road (`IndirectTypeLookup.WHO.{}`), not the
+   deref road, and is a separate slice again. Per-snippet oracles work (raku SORRYs only on line
+   67's `::=`); see the inventory row for the full split.
 2. **`APPENDICES/A02-some-day-maybe/multi-no-match.t`** (3/16, measured — NOT the 11/16 this
    file used to claim). The last ★ (raku full-pass, mutsu fails). Needs `X::Multi::NoMatch` from
    ~10 independent builtins (`.splice` / `Lock.protect` / `Lock::Async.protect` /
