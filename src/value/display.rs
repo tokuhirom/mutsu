@@ -356,6 +356,7 @@ impl Value {
             // A `VarRef` is a transient binder wrapper: it stringifies as the
             // variable's value.
             ValueView::VarRef { value, .. } => value.to_string_value(),
+            ValueView::RakuAst(node) => crate::rakuast::node_gist(node),
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
             ValueView::Num(f) => {

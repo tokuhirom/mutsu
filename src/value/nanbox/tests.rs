@@ -468,6 +468,13 @@ fn every_variant_roundtrips_losslessly() {
             form: "NFC".to_string(),
             text: "abc".to_string(),
         })),
+        ValueRepr::RakuAst(Box::new(crate::rakuast::RakuAstNode {
+            class: crate::rakuast::RakuAstClass::IntLiteral,
+            fields: vec![crate::rakuast::RakuAstField {
+                name: None,
+                value: crate::rakuast::RakuAstFieldValue::Node(Value::int(42)),
+            }],
+        })),
         ValueRepr::Proxy {
             fetcher: Box::new(Value::NIL),
             storer: Box::new(Value::NIL),

@@ -5,6 +5,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // A `VarRef` is a transient binder wrapper, not a type: report the type
         // of the variable's value.
         ValueView::VarRef { value, .. } => value_type_name(value),
+        ValueView::RakuAst(node) => node.class.printed_name(),
         ValueView::Int(_) => "Int",
         ValueView::BigInt(_) => "Int",
         ValueView::Num(_) => "Num",

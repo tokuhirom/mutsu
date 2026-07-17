@@ -1,0 +1,173 @@
+# ADR-0011: RakuAST — a reflection/model layer over the internal AST, and its phasing
+
+- **Status**: Accepted (2026-07-18). Phase 1 implemented (PR #4679); Phases 2–6 pending.
+- **Context**: The user asked to implement RakuAST. RakuAST is Raku's user-facing AST
+  representation (`RakuAST::*` classes, `Q|...|.AST`, `.DEPARSE`, `EVAL(ast)`, and the
+  macro/`quasi` machinery built on top). It has essentially **zero roast payoff today**
+  (a single skipped `isa-ok` in `roast/S32-str/format.t` is the only roast reference), so
+  this is a deliberate *new capability* direction, not a BLOCKERS-driven slice. Because it
+  is large and costly to reverse, the end-state design and phasing are fixed here before
+  any implementation.
+
+## Problem
+
+Two things are true at once and they pull in opposite directions:
+
+1. **RakuAST in Rakudo *is the compiler frontend*.** Rakudo's grammar produces RakuAST
+   nodes directly and the backend lowers them to QAST/MoarVM. The RakuAST class hierarchy
+   (~200+ classes: `RakuAST::Node` root, `RakuAST::Statement::*`, `RakuAST::Expression`,
+   `RakuAST::Call::*`, `RakuAST::VarDeclaration::*`, literals, signatures, …) is the real
+   IR, with typed attributes, `.visit-children`, `.IMPL-*` lowering hooks, and full
+   construct-and-`EVAL` support that macros depend on.
+
+2. **mutsu's frontend is not built that way and must not be rebuilt.** mutsu is
+   `source → Expr/Stmt (internal AST, ast.rs) → bytecode`. Rebuilding the parser to emit
+   RakuAST natively is a Rakudo-scale rewrite with no near-term payoff and enormous risk.
+
+The design must deliver a genuine, extensible RakuAST that can grow to construction, EVAL,
+and macros — **without** betting the interpreter's frontend on it.
+
+## Decision
+
+Treat RakuAST as a **reflection/model layer that is bidirectionally convertible with the
+internal `Expr`/`Stmt` AST**, not as mutsu's compiler IR.
+
+```
+                       .AST  (read)
+   Expr/Stmt  ───────────────────────────►  RakuAST node tree (Value::RakuAst)
+  (internal IR)                              │  .gist / .raku / .DEPARSE / .^name / accessors
+       ▲                                     │
+       │        lower  (write, Phase 5)      ▼
+       └───────────────────────────────  RakuAST node tree
+   then existing compiler → bytecode → run (EVAL)
+```
+
+- **Read direction (`.AST`)**: parse source → internal AST → convert to a RakuAST node
+  tree. This is what Phase 1 ships.
+- **Write direction (`EVAL`/construction)**: build a RakuAST node tree (programmatically or
+  from `.AST`), lower it back to internal `Expr`/`Stmt`, and feed the **existing** compiler.
+  No second execution engine — consistent with "do NOT add new slow paths".
+
+This mapping is intentionally **lossy in raku's favour, not ours**: mutsu's internal AST is
+special-cased (e.g. `say 42` → `Stmt::Say`, `say(42)` → `Expr::Call`) and does no constant
+folding (`1+2` stays a binop where raku folds to `IntLiteral(3)`). We map faithfully where
+the internal AST preserves the distinction, **document every divergence from raku's exact
+node choice**, and narrow the gaps over time. We never paper over a divergence with a
+special-case hack (per the roast working agreements).
+
+### Node representation
+
+A single new `Value` variant carries every RakuAST node:
+
+```rust
+Value::RakuAst(Box<RakuAstNode>)
+
+pub struct RakuAstNode {
+    pub class: RakuAstClass,        // enum of all known node kinds (StatementList, IntLiteral, …)
+    pub fields: Vec<RakuAstField>,  // ordered — drives gist/DEPARSE and named/positional accessors
+}
+pub struct RakuAstField {
+    pub name: Option<&'static str>, // None = positional .new() arg; Some = named arg / accessor name
+    pub value: Value,               // child RakuAst node, or a leaf (Int/Num/Str), or a List of nodes
+    pub render: FieldRender,        // Plain | ParenList (parenthesised, trailing-comma list)
+}
+```
+
+- `RakuAstClass` is a Rust enum, so the converter, the renderer, and the (future) lowerer
+  all get **exhaustive `match` coverage** — adding a node kind is a compile error until every
+  arm handles it. This is the mechanism that keeps the layer honest as it grows.
+- **One metadata table** maps `RakuAstClass → { printed_name, constructor }` where
+  `constructor ∈ { New, FromIdentifier, … }` (e.g. `RakuAST::Name` renders as
+  `.from-identifier("x")`, not `.new(...)`). gist, DEPARSE, `.^name`, and (later) `.new` all
+  read this one table — no duplicated per-class knowledge.
+- Nodes are immutable trees with no back-edges, so `Box` (deep-clone on `Value::clone`) is
+  the Phase-1 choice. **GC note (ADR-0001)**: `Value::RakuAst` is a container-kind variant
+  (it holds child `Value`s). If profiling later shows clone churn, promote it to `Gc<…>` in
+  the same type-filtered manner as the other container variants; scalar leaves inside it stay
+  GC-free. Not a Phase-1 concern.
+
+### Why a dedicated variant, not 200 registered classes up front
+
+Registering the full `RakuAST::*` class hierarchy as real user-visible classes would give
+`~~`, `.^name`, accessors, and `.new` "for free" via the class system — but 200+ classes is
+a large static cost and most of that surface is unused until construction/EVAL exist. The
+dedicated variant lets Phase 1 ship introspection with custom `.gist`/`.^name` immediately,
+and Phase 3 adds a **thin type-object registry** (one metaobject handler routing `~~ /
+.^name / accessor / .new` to the node's `class` + `fields`) **without changing the node
+representation**. Representation is decided once, here; capability grows around it.
+
+## Phasing
+
+Each phase is independently shippable and testable; later phases do not require reworking
+earlier ones.
+
+- **Phase 1 — Introspection MVP (`.AST` + gist), read-only.** *(implement now)*
+  - `Value::RakuAst`, `RakuAstNode`, `RakuAstClass` seeded with the literal + say-call
+    cluster: `StatementList`, `Statement::Expression`, `IntLiteral`, `NumLiteral`,
+    `RatLiteral`, `StrLiteral`, `QuotedString`, `Call::Name`, `Call::Name::WithoutParentheses`,
+    `Name`, `ArgList`.
+  - `ast_to_rakuast(&[Stmt]) -> RakuAstNode`.
+  - `.AST` method on `Str`: `parse_source` → convert → `Value::RakuAst`.
+  - Renderer for `.gist`/`.Str`/`.raku` matching raku exactly: 2-space indent per level,
+    named-arg keys left-padded to the max key width in that `.new(` group, `ParenList`
+    fields printed `(\n  elem,\n)` with a trailing comma. `.^name` → printed class name.
+  - Tests: `t/rakuast-ast.t` pinning each construct against captured raku output.
+- **Phase 2 — Read coverage expansion + `.DEPARSE`.** Grow the enum + converter cluster by
+  cluster: variable use (`Var::Lexical`), `VarDeclaration::Simple` + `Initializer::Assign`,
+  binary/unary ops (`ApplyInfix`/`ApplyPrefix`/`ApplyPostfix` + `Infixish`/`Prefixish`),
+  method calls, blocks & pointy blocks, `if`/`unless`/`with`, loops, sub declarations,
+  signatures & parameters. Add `.DEPARSE` (a second renderer, source form). Resolve the
+  **constant-folding divergence** here (see Open questions).
+- **Phase 3 — Type-object registry + introspection dispatch.** Register `RakuAST::*` type
+  objects; route `~~ RakuAST::Node`, `.^name`, `.WHAT`, `.isa`, and attribute accessors
+  (`$node.expression`, `$node.args`, `.statements`) to a central RakuAST metaobject over the
+  node's `class`/`fields`. Accept `use experimental :rakuast` (no-op gate).
+- **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
+  build `Value::RakuAst`, validating args against the per-class field schema.
+- **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
+  **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
+  through this. No new execution engine.
+- **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
+  splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
+
+### File layout
+
+- `src/rakuast/mod.rs` — `RakuAstNode`, `RakuAstClass`, the class-metadata table.
+- `src/rakuast/convert.rs` — internal AST → `RakuAstNode` (Phase 1+2).
+- `src/rakuast/render.rs` — `.gist`/`.raku` and (Phase 2) `.DEPARSE`.
+- `src/rakuast/lower.rs` — `RakuAstNode` → internal AST (Phase 5).
+- `Value::RakuAst` variant in `src/value/mod.rs`; `.AST` dispatch in the `Str` method path.
+- Each file stays under the 500-line cap; split per-cluster as it grows.
+
+## Consequences
+
+- **Positive**: introspection ships fast and standalone; the enum + single metadata table
+  make expansion cheap and exhaustive-checked; construction/EVAL/macros reuse the existing
+  compiler instead of a parallel engine; the frontend is never at risk.
+- **Negative / accepted**: exact node-choice parity with raku is imperfect wherever the
+  internal AST is lossy or unfolded — these are documented divergences, tracked and narrowed,
+  not hidden. The dedicated-variant choice means Phase 3 must build a small metaobject shim
+  rather than getting class semantics free.
+
+## Open questions (resolve before the phase that needs them)
+
+- **Constant folding (Phase 2).** raku folds constant sub-expressions (`1+2` → `IntLiteral(3)`)
+  before producing RakuAST; mutsu does not. Options: (a) render mutsu's `ApplyInfix` faithfully
+  and document the divergence, or (b) add a small const-fold pass in the converter for literal
+  operands. Leaning (a) for fidelity to *mutsu's* AST, revisited with data.
+- **`.AST` on `Code`/blocks (Phase 2+).** Phase 1 is `Str`-only; `.AST` on a `Block`/`Routine`
+  needs the internal AST retained on the code object.
+- **GC promotion of `Value::RakuAst`** — deferred until profiling shows clone churn (see note
+  above).
+- **`.Str` / string context (Phase 1 simplification).** raku's RakuAST `.Str` (and bare string
+  context) yields the default object form `RakuAST::X<addr>` and warns; only `.gist`/`say`/`.raku`
+  render the constructor form. Phase 1 routes mutsu's single stringification path
+  (`to_string_value`) to the gist, so `.Str`/`~` also produce the constructor form. This is a
+  harmless divergence (no existing code stringifies a RakuAST node, and the raku form embeds a
+  non-deterministic address); revisit if/when `.gist` and `.Str` need to diverge.
+
+## References
+
+- `raku-doc/doc/Type/RakuAST.rakudoc`, `raku-doc/doc/Type/RakuAST/Doc.rakudoc`.
+- Captured raku `.AST` output for the Phase-1 cluster is pinned in `t/rakuast-ast.t`.
+- ADR-0001 (GC type-filter) for the `Value::RakuAst` promotion note.

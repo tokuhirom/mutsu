@@ -38,6 +38,7 @@ impl Interpreter {
         }
         let type_name: &str = match target.view() {
             ValueView::VarRef { .. } => unreachable!("unwrapped above"),
+            ValueView::RakuAst(node) => node.class.printed_name(),
             ValueView::Int(_) => "Int",
             ValueView::BigInt(_) => "Int",
             ValueView::Num(_) => "Num",

@@ -55,6 +55,10 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
             ValueRepr::Scalar(Box::new(v))
         }
         Kind::LazyThunk => ValueRepr::LazyThunk(unsafe { take_arc::<LazyThunkData>(bits) }),
+        Kind::RakuAst => {
+            let n = Arc::unwrap_or_clone(unsafe { take_arc::<crate::rakuast::RakuAstNode>(bits) });
+            ValueRepr::RakuAst(Box::new(n))
+        }
         Kind::Uni => {
             let u = Arc::unwrap_or_clone(unsafe { take_arc::<UniData>(bits) });
             ValueRepr::Uni(Box::new(u))

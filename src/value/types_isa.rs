@@ -17,6 +17,7 @@ impl Value {
         }
         let my_type = match self.view() {
             ValueView::VarRef { .. } => unreachable!("unwrapped above"),
+            ValueView::RakuAst(node) => node.class.printed_name(),
             ValueView::Int(_) | ValueView::BigInt(_) => "Int",
             ValueView::Num(_) => "Num",
             ValueView::Str(_) => "Str",
