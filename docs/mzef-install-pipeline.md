@@ -151,54 +151,74 @@ same, concurrently-entered method frame) does not. Each fetch drives
 `react`/`Proc::Async` under it, so `clone_for_thread` runs while several frames
 of this method are live.
 
-### Next session starts here
+### Mechanism — confirmed (2026-07-17)
 
-**Do not assume this is the same mechanism as the fix above.** The two most
-obvious isolated forms were tried and **both pass** (mutsu matches raku):
+It **is** the bare-name shared store, and the missing ingredient is a **`start`
+nested inside a hyper worker**:
+
+1. `exec_hyper_race_parallel` calls `clone_for_thread()` per batch thread, which
+   migrates the parent env's lexicals into `shared_vars` **by bare name**.
+2. Each batch thread then runs the block, whose body does `my $uri = …` and
+   `start { … }`. That inner `start` calls `clone_for_thread()` **again**, from
+   the batch thread — migrating *its* `candi`/`uri` into the very same
+   **process-global** map (`shared_vars` is one `Arc<RwLock<HashMap<String, …>>>`
+   handed to every clone).
+3. All N batch threads do this concurrently on the same keys. Last writer wins,
+   and the inner `start` block resolves `$uri`/`$candi` by name — getting the
+   winner's values.
+
+Minimal repro (raku prints each letter with its own value; mutsu prints one
+worker's pair repeatedly — e.g. `F:u-F D:u-D F:u-F C:u-C E:u-E F:u-F`):
 
 ```raku
-# (a) N start blocks, each with its own same-named lexical — PASSES
-sub fetch-one($name) {
-    my $uri = "https://example.com/$name.tar.gz";
-    start { for ^200 { }; "$name -> $uri" }
+sub matcher($u) { 1 }
+sub fetch($candi) {
+    my $uri = "u-$candi";
+    matcher($uri);
+    my &code = -> {
+        my $todo = start { "$candi:$uri" };
+        await $todo;
+        $todo.result;
+    };
+    code();
 }
-.say for await <A B C D E F>.map({ fetch-one($_) });
-
-# (b) hyper.map -> a method declaring `my $uri`, shelling out — PASSES
-class Fetcher {
-    method fetch($name, $stage-at) {
-        my $uri  = "https://example.com/$name.tar.gz";
-        my $proc = Proc::Async.new('echo', "GET $uri -> $stage-at");
-        my $out  = '';
-        $proc.stdout.tap(-> $b { $out ~= $b });
-        await $proc.start;
-        $out.trim;
-    }
-}
-my $fetcher = Fetcher.new;
-.say for <A B C D E F>.hyper(:batch(1), :degree(5)).map: -> $candi {
-    "$candi => {$fetcher.fetch($candi, "/tmp/stage-$candi/$candi.tar.gz")}"
-};
+say (<A B C D E F>.hyper(:batch(1), :degree(5)).map: -> $candi { fetch($candi) }).join(' ');
 ```
 
-The bare-name shared store is still the *prime suspect* (it is process-global,
-and `$uri` is exactly the kind of plain scalar `clone_for_thread` migrates), but
-these say something further is required to trigger it.
+A sibling variant — the same shape but with the closure passed to a callee
+(`lock-file-protect("$candi.lock", -> { … })`, as zef actually writes it) — fails
+differently: `$todo` itself comes back `Any`, so `.result` dies with
+`No such method 'result' for invocant of type 'Any'`. Both are the same
+collision; only the key that loses differs.
 
-1. Go at it on the **real zef**, not through more guessing — per the last
-   session's lesson. Copy `zef-dbg` to the scratchpad (tooling below) and `note`
-   `$uri` and `$candi.uri` at entry to `Zef::Fetch.fetch`, inside the
-   `@fetchers.map` closure, and at `Zef::Service::Shell::wget.fetch`. That
-   isolates whether `$uri` is wrong *on arrival*, or only once the closure reads
-   it.
-2. Then narrow toward a repro from whatever the real trace shows, rather than
-   from the mechanism hypothesis.
-3. If it does turn out to be the bare-name store: per-name masking
-   (`thread_redeclared_vars`) is a *band-aid on a band-aid* — the real defect is
-   that a thread-shared store keyed by bare name cannot distinguish two unrelated
-   lexicals of the same name. Prefer fixing the **keying** (scope-qualified keys)
-   over adding another mask, and write an ADR, since it touches the dual-store
-   campaign (PLAN §6 / `project-slice-f-reverse-sync-campaign`).
+Note what is **not** required, contrary to the obvious guesses: the call-arg
+vouch veto (`matcher($uri)`) is **not** needed (the callee variant reproduces
+without it), and neither `hyper` alone nor `start` alone reproduces — a plain
+`hyper.map` calling a method that declares `my $uri` and shells out via
+`Proc::Async` **passes**, because without a nested `start` there is no second
+migration.
+
+### Next session starts here
+
+The fix is the shared store's **keying**, and it is architectural — write an ADR
+first. The defect is that a thread-shared store keyed by bare name and global to
+the process cannot distinguish two unrelated lexicals of the same name; sibling
+hyper workers are *unrelated* and must not share, while a `start` nested inside
+one worker *must* share with that worker.
+
+- Per-name masking (`thread_redeclared_vars`, extended in #4650 to the read side)
+  is a band-aid on a band-aid and does **not** help here: each batch thread has
+  its own `Interpreter` and therefore its own mask, but they all share the one
+  global map.
+- The shape to evaluate is a **per-lineage store**: `clone_for_thread` gives the
+  child a store that inherits the parent's entries and flows writes back on join,
+  instead of `Arc::clone`-ing one process-wide map. Weigh it against the existing
+  parent↔child sharing tests (`t/cross-thread-shared-var-writeback-coherence.t`,
+  `t/concurrent-shared-cell.t`, the 148 thread/shared/atomic `t/` files) — those
+  pin the sharing that must survive.
+- This sits squarely in the dual-store campaign (PLAN §6 /
+  `project-slice-f-reverse-sync-campaign`); coordinate with it rather than
+  bolting on a third mechanism.
 
 ## How to run zef under mutsu (tooling)
 
