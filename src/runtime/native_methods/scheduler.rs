@@ -3,6 +3,7 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::sync::atomic::Ordering;
 
+use super::interval_timer;
 use super::state::*;
 use super::state_lock::*;
 use super::state_scheduler::{self, *};
@@ -116,7 +117,9 @@ impl Interpreter {
         if delay == f64::NEG_INFINITY || delay <= 0.0 {
             return true; // run immediately
         }
-        std::thread::sleep(std::time::Duration::from_secs_f64(delay));
+        // Quiescent: a registered thread's raw sleep would starve a GC
+        // stop-the-world rendezvous.
+        crate::gc::block_quiescent(|| std::thread::sleep(interval_timer::clamp_delay_secs(delay)));
         true
     }
 
@@ -265,13 +268,34 @@ impl Interpreter {
                     // until the callback finishes (mark started before spawn so a
                     // racing `.loads` never undercounts).
                     state_scheduler::scheduler_task_started();
+                    // A finite :in/:at delay waits on the shared deadline-heap
+                    // timer instead of a sleeping worker thread; the worker is
+                    // spawned only once due. (An Inf delay keeps the direct
+                    // path — scheduler_sleep handles its run-once-for-:every
+                    // special case without sleeping.)
+                    let mut params = params;
+                    let delay = params.delay;
+                    let deferred = delay.is_finite() && delay > 0.0;
+                    if deferred {
+                        params.delay = 0.0;
+                    }
                     // Large user-code stack: the scheduled callback runs user VM
                     // code, which overflows the default thread stack on deep
                     // nesting. See `USER_THREAD_STACK_SIZE`.
-                    crate::runtime::builtins_system::spawn_user_thread(move || {
-                        thread_interp.scheduler_run_async(params);
-                        state_scheduler::scheduler_task_finished();
-                    });
+                    let run = move || {
+                        crate::runtime::builtins_system::spawn_user_thread(move || {
+                            thread_interp.scheduler_run_async(params);
+                            state_scheduler::scheduler_task_finished();
+                        });
+                    };
+                    if deferred {
+                        interval_timer::register_once(
+                            interval_timer::clamp_delay_secs(delay),
+                            Box::new(run),
+                        );
+                    } else {
+                        run();
+                    }
                 }
                 Ok(cancellation)
             }
@@ -414,7 +438,10 @@ impl Interpreter {
             if interval == f64::INFINITY {
                 break;
             } else if interval > 0.0 && interval.is_finite() {
-                std::thread::sleep(std::time::Duration::from_secs_f64(interval));
+                // Quiescent — see `scheduler_sleep`.
+                crate::gc::block_quiescent(|| {
+                    std::thread::sleep(std::time::Duration::from_secs_f64(interval))
+                });
             }
         }
         Ok(())
