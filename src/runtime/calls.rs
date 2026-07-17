@@ -442,6 +442,14 @@ impl Interpreter {
                         attrs,
                     )));
                     return Err(err);
+                } else if let Some(result) = self.try_native_json_function(name, &args) {
+                    // JSON::Fast/JSON::Tiny to-json/from-json in STATEMENT
+                    // position with named args (`from-json($t, :$immutable);`
+                    // inside a try) reaches exec_call via ExecCallPairs; the
+                    // expression path dispatches these in vm_call_func_ops.
+                    // Placed after user-sub resolution so a user-defined
+                    // from-json still wins.
+                    result?;
                 } else {
                     return Err(RuntimeError::new(format!("Unknown call: {}", name)));
                 }

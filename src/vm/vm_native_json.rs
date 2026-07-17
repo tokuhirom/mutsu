@@ -16,7 +16,7 @@ impl Interpreter {
     /// handled, `None` to let the caller fall through unchanged (so a
     /// user-defined `sub to-json { … }` still wins, since user resolution runs
     /// before this).
-    pub(super) fn try_native_json_function(
+    pub(crate) fn try_native_json_function(
         &mut self,
         name: &str,
         args: &[Value],
