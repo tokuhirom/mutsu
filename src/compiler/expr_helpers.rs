@@ -538,6 +538,21 @@ impl Compiler {
             self.code.emit(OpCode::GetLocal(slot));
             return;
         }
+        // $CALLERS:: / $CALLERS::CALLERS:: variable access ("any caller scope").
+        // Must precede the CALLER:: check: "CALLERS::x" also begins with "CALLER"
+        // but the `::` boundary makes `parse_caller_prefix` reject it, so ordering
+        // is not strictly required — but keeping the more specific prefix first is
+        // clearer.
+        if let Some((bare_name, depth)) = Self::parse_callers_prefix(name) {
+            let cascade = Self::callers_name_cascades(&bare_name);
+            let name_idx = self.code.add_constant(Value::str(bare_name));
+            self.code.emit(OpCode::GetCallersVar {
+                name_idx,
+                depth: depth as u32,
+                cascade,
+            });
+            return;
+        }
         // $CALLER:: / $CALLER::CALLER:: variable access
         if let Some((bare_name, depth)) = Self::parse_caller_prefix(name) {
             let name_idx = self.code.add_constant(Value::str(bare_name));

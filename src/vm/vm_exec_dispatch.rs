@@ -4320,6 +4320,16 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            OpCode::GetCallersVar {
+                name_idx,
+                depth,
+                cascade,
+            } => {
+                let name = Self::const_str(code, *name_idx);
+                let val = loan_env!(self, get_callers_var(name, *depth as usize, *cascade))?;
+                self.stack.push(val);
+                *ip += 1;
+            }
             OpCode::SetCallerVar { name_idx, depth } => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let name = Self::const_str(code, *name_idx);

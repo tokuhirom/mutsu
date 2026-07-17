@@ -123,6 +123,26 @@ impl Interpreter {
             self.stack.push(val);
             return;
         }
+        // Handle CALLERS:: prefix(es) — checked before CALLER:: so "CALLERS::x"
+        // is not left for the CALLER:: strip (which rejects it at the `::`
+        // boundary anyway, but the specific prefix reads clearer first).
+        {
+            let mut remaining = name.as_str();
+            let mut depth = 0usize;
+            while let Some(rest) = remaining.strip_prefix("CALLERS::") {
+                depth += 1;
+                remaining = rest;
+            }
+            if depth > 0 {
+                let bare = Self::sigiled_name(&sigil, remaining);
+                let cascade = Compiler::callers_name_cascades(&bare);
+                let val = self
+                    .get_callers_var(&bare, depth, cascade)
+                    .unwrap_or(Value::NIL);
+                self.stack.push(val);
+                return;
+            }
+        }
         // Handle CALLER:: prefix(es) for dynamic variable lookup
         let mut remaining = name.as_str();
         let mut caller_depth = 0usize;

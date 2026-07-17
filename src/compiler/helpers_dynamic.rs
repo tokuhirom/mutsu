@@ -213,6 +213,35 @@ impl Compiler {
         }
     }
 
+    /// Parse CALLERS:: prefix(es), the twin of [`parse_caller_prefix`].
+    /// "CALLERS::a" -> ("a", 1), "CALLERS::CALLERS::a" -> ("a", 2).
+    ///
+    /// `CALLERS::` differs from `CALLER::` only for a `$*`-twigil dynamic name,
+    /// which it cascades outward through the whole caller chain; a plain (non-
+    /// twigil) name resolves to the exact frame at `depth`, identically to
+    /// `CALLER::` (raku, 2026-07-17: a non-twigil `is dynamic` lexical two callers
+    /// out is NOT found by `$CALLERS::`). The `depth`/`cascade` split is decided by
+    /// the caller from the returned bare name's twigil.
+    pub(crate) fn parse_callers_prefix(name: &str) -> Option<(String, usize)> {
+        let mut remaining = name;
+        let mut depth = 0;
+        while let Some(rest) = remaining.strip_prefix("CALLERS::") {
+            depth += 1;
+            remaining = rest;
+        }
+        if depth > 0 {
+            Some((remaining.to_string(), depth))
+        } else {
+            None
+        }
+    }
+
+    /// Whether a `CALLERS::` bare name cascades: true for a `$*`-twigil dynamic
+    /// name (the sigil already stripped, so it begins with `*`), false otherwise.
+    pub(crate) fn callers_name_cascades(bare: &str) -> bool {
+        bare.starts_with('*')
+    }
+
     /// Which lexical-scope walk an `OUTER::` / `OUTERS::` pseudo-stash names.
     /// Returns `None` for any other stash (`MY::`, `CORE::`, a real package, ...).
     pub(crate) fn parse_outer_stash(stash: &str) -> Option<OuterStash> {
