@@ -1,5 +1,41 @@
 # Changelog
 
+## [v0.6.0](https://github.com/tokuhirom/mutsu/compare/v0.5.0...v0.6.0) - 2026-07-17
+
+- perf: skip apply_container_attribute_defaults for classes without is-default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4611
+- feat: infinite closure `...` sequences stay lazy end-to-end by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4612
+- fix: reify HyperSeq/RaceSeq/Slip when assigned to a typed array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4615
+- fix: honor Proc::Async.start(:cwd, :ENV) — set child working dir + environment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4617
+- feat: grammar rule-embedded dynamic variables + sigspace whitespace fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4616
+- docs: add mzef install-pipeline progress tracker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4618
+- fix: coercion-typed param dispatches native target method (IO::Path.Str) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4620
+- fix: regex <graph> excludes Symbol/Mark categories, matching raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4621
+- fix: run proto on mut-path handles delegation; scope rw-writeback slot to its frame by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4619
+- fix: IO::Path.relative computes a real relative path (abs2rel) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4622
+- Frugal-ratchet + sigspace-capture + EVAL fixes (integration day09/day11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4623
+- fix: :=-bind of an indexed source in a loop no longer corrupts the prior element by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4624
+- Declaration-time `does`/`but` role mixin (my @a does R1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4625
+- fix: `if/elsif EXPR -> $_` binds a fresh topic, not the given source by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4626
+- docs: mzef tracker — extract's 3 fixes + remaining call-arg sub-case by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4629
+- fix: unsupplied optional named param binds its default, not the caller's arg by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4628
+- fix: closure in a map/grep block keeps lexical capture of an outer free var by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4627
+- feat: EXPORTHOW class metaclass override + AOP method wrapping (advent2011-day14) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4631
+- fix: nested subrule captures report absolute .from/.to, not slice-relative by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4630
+- fix: paren-less listop call swallows a trailing comma (f $x, == f($x)) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4633
+- fix: declaration-level does/but mixin visible to BEGIN; role-suffixed .^name (mixin-6c) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4634
+- fix: vouch for a :=-bound scalar captured by a closure even when passed to a call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4635
+- fix: push-based supply event delivery — react busy-spin, lost done/emit, per-interval timer threads (ADR-0008) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4636
+- docs: record ADR-0008 push-delivery follow-up slices in PLAN §6 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4637
+- perf: move Promise.in/.at and cue(:in/:at) delays onto the shared deadline-heap timer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4638
+- perf: wake the react drive loop from mpsc supply senders (ADR-0008 follow-up) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4639
+- docs: record the ADR-0008 follow-up slices that landed (#4638, #4639) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4640
+- fix: .clone on a role mixin keeps its attributes instead of dropping them by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4641
+- fix: a punned role's .^name is the plain role name, not R+{R} by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4642
+- docs: correct PLAN §6 recursive-start entry (silent wrong answer, not a hang) and record worker-pool ADR groundwork by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4643
+- fix: regex LR seed loop no longer re-evaluates every subrule (2^depth) — 99problems-41-to-50 P47 whitelisted by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4644
+- docs: correct the recursive-start fix direction — `start` already uses per-binding cells by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4645
+- fix: `|EXPR` argument interpolation is unified onto MakeSlip, fixing multi-slip calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4646
+
 ## [v0.5.0](https://github.com/tokuhirom/mutsu/compare/v0.4.0...v0.5.0) - 2026-07-16
 
 - docs: translate PLAN.md and TODO_roast ledgers to English by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4549
