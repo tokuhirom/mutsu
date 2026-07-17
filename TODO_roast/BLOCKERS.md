@@ -54,15 +54,19 @@ Definitions of the classifications:
   first-class-container container identity / cross-thread lexical writeback) are complete, and
   what remains in S\* is only the [S\* table](#s-per-file-remaining-items) below
   (**all of them non-goal / no-oracle / awaiting-infrastructure**).
-- **The ★ frontier is `integration/` + `6.c/`** (next section): real-program compatibility.
-  The former ①(stack overflow)/②(unparseable)/③(hang) clusters are fully cleared
-  (history: [news/2026-07.md](../news/2026-07.md)); what remains is per-file feature gaps.
+- **`integration/` is fully whitelisted (0 remaining) as of 2026-07-17.** It was the ★ frontier —
+  real-program compatibility — and it is done; the last file was `advent2013-day18.t`
+  ([ADR-0009](../docs/adr/0009-regex-code-assertion-execution-model.md)). The former
+  ①(stack overflow)/②(unparseable)/③(hang)/④(error-message) clusters are all cleared
+  (history: [news/2026-07.md](../news/2026-07.md)).
+- **No cluster remains.** The 33 non-whitelisted files are nearly all non-goal / no-oracle /
+  awaiting-infrastructure (see the tables below); the few ★achievable ones each need their own
+  unrelated feature. **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
+  §5 (perf) or §6, and pick up a roast file only when such work happens to unblock it.
 
-## integration / 6.c / APPENDICES / MISC — per-file inventory (the ★achievable frontier)
+## 6.c / APPENDICES / MISC — per-file inventory
 
-`integration/` runs **real Raku programs** (Advent Calendar posts, 99 problems) and is the
-compatibility indicator closest to the project goal of "practical code just works". Nearly every
-file below has `raku_status=PASS` (raku full marks) — by definition ★achievable. "aborts at
+(`integration/` used to head this table and is now empty — all whitelisted.) "aborts at
 N/M" = a runtime error kills the file after N of M planned tests (the first unexpected
 exception aborts everything after it, so one root cause usually hides more).
 

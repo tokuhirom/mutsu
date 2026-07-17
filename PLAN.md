@@ -274,47 +274,39 @@ itself = `def_is_otf_compilable_module_single` (`vm/vm_call_func_ops.rs`). The f
 
 ---
 
-## 4. 🟢 roast backlog — the frontier is `integration/` (real-program compatibility)
+## 4. 🟢 roast backlog — `integration/` is DONE; what remains is 33 mostly-unachievable files
 
-The whitelist currently stands at **1384 / 1463** (2026-07-14) = **79 files** not whitelisted. The
+The whitelist stands at **1430 / 1463** (2026-07-17) = **33 files** not whitelisted. The
 authoritative detailed table is [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md).
 
-**What the 2026-07-14 full measurement of the 79 non-whitelisted files revealed** (the old §4 list was
-stale — mostly already-implemented items. Items eliminated by measurement = negation meta / hyper
-assignment / `augment class` / `A::B.new` / file test / PRE·POST / signature type checks /
-lazy-seq ④ — history in [news/2026-07.md](news/2026-07.md)):
+**`integration/` is fully whitelisted (0 remaining).** That was this section's headline
+target — "the bulk of the non-whitelisted files is the 41 `integration/` files", the real
+Raku programs closest to the project goal. The last one, `advent2013-day18.t`, landed
+2026-07-17 ([ADR-0009](docs/adr/0009-regex-code-assertion-execution-model.md)). The former
+①(stack overflow) / ②(unparseable) / ③(hang) / ④(error-message) clusters are all cleared —
+history in [news/2026-07.md](news/2026-07.md).
 
-- **The S\* series (synopsis feature tests) is genuinely exhausted**. All 24 remaining files are
-  non-goal / oracle-impossible / waiting on infrastructure.
-- **The bulk of the non-whitelisted files is the 41 `integration/` files** (plus 7 in `6.c/` and 4
-  APPENDICES), and **nearly every one is perfect-score under raku = by definition all ★achievable**.
-  They are **real Raku programs** — Advent Calendar and 99-problems — the compatibility metric
-  closest to the goal of "you can write practical code". They were entirely missing from the
-  BLOCKERS.md table (= they had never once been picked up as work).
+**Re-measured 2026-07-17** — the 33 remaining, by area: `6.c/` 4, `S02-names` (pseudo-package)
+3, `S12-*` 6, `S05-*` 5, `S32-str` 2, `S10-packages` 2, `S06-advanced` 2, `APPENDICES` 2,
+`roast/t/` 2 (roast's own Perl 5 tooling — non-goal by definition), and 5 singletons.
 
-The root causes collapse into a handful (counts, symptoms, and files in BLOCKERS.md §integration):
+**There is no cluster left to attack.** Per the BLOCKERS.md classification nearly all of
+these are *non-goal* (rakudo itself fails), *no oracle* (local raku SORRYs, so the correct
+answer cannot be confirmed), or *awaiting infrastructure* (RakuAST for `S32-str/format.t`,
+6.e generics for `S02-types/generics.t`). The genuinely ★achievable ones are few and each
+needs its own unrelated feature:
 
-- [ ] **① Deep recursion overflows the Rust stack and aborts the whole process (4 files)**:
-      `99problems-41-to-50.t` / `99problems-51-to-60.t` / `man-or-boy.t` /
-      `deep-recursion-initing-native-array.t` die with `fatal runtime error: stack overflow`.
-      The root is that Raku-level recursion consumes the Rust call stack = a mechanism issue
-      (heap-allocated frames / stack growth / depth control).
-      **Highest impact, and the same target as "zero panics/crashes on edge cases" (§6).**
-- [ ] **② 10 files fail to parse** (`===SORRY!===`): `q | … |` delimiters, user-defined postfix
-      (`4.7k`), heredoc indentation, `do {…} … *` sequence series, `subtest … => {}`, etc. Each
-      construct is independent = likely contains some cheap ★ wins.
-- [ ] **③ 5 hangs/timeouts**: `gather-with-loops.t` and others.
-- [ ] **④ 2 error-message-quality files**: `error-reporting.t` (**28/33**, originally 4/33) and
-      `weird-errors.t` (**31/36**, originally 26/36). #4539 implemented backtraces on all runtime
-      errors, is_run seeing the same stderr as the CLI, Backtrace.new/.full, etc. Compile-time
-      undeclared-routine detection is now implemented (breakdown of the remainder in the
-      BLOCKERS.md inventory rows).
-- [ ] **⑤ Individual feature gaps**: derived grammar extension / `nextsame` with inheritance and
-      mixins / `Rat`'s `$!numerator`/`$!denominator` / `Metamodel::GrammarHOW` inheritance /
-      `--doc` and `DOC INIT {}` / signature introspection / parameterized-role mixins / operator
-      adverbs (`:round`) / precomp.
-- [ ] **Shortcut**: `6.c/S04-declarations/my-6c.t` is at **111/112** (the only failure =
-      the `OUTER::<$x>` pseudo-package).
+- [ ] `6.c/S04-declarations/my-6c.t` — **111/112**. The one failure (`OUTER::<$x>`) needs
+      **lexical hoisting**, not the OUTER pseudo-package alone; same family as
+      mixin-6c / my-6e hoisting, so it has leverage beyond this file.
+- [ ] `APPENDICES/A02-some-day-maybe/multi-no-match.t` — **11/16**. Error-message quality for
+      multi no-match across ~10 builtins (`.splice`, `Lock.protect`, `Proc::Async.new`, …).
+      No single lever; steady per-builtin work.
+- [ ] `6.c/APPENDICES/A04-experimental/01-misc.t` — 16/19. `:D`/`:U` DefiniteHow coercion.
+
+**Implication for planning: roast is no longer the productive axis.** Prefer §1 (Batteries /
+mzef), §5 (perf) or §6 (concurrency / structural refactoring). Pick up a roast file only when
+a §1/§5/§6 change happens to unblock it.
 
 The only real feature gaps left in the S\* series (they do not directly lead to whitelisting):
 
