@@ -548,14 +548,24 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 
 ## 6. Concurrency (Track C leftovers) and structural refactoring (independent; mid-to-long term)
 
-- [ ] **ADR-0008 push-delivery follow-ups** (the core landed in #4636, 2026-07-17 — react/supply
-      snapshot polling replaced by `ReactWaker` sinks, shared interval timer, concurrent throttle;
-      see docs/adr/0008-push-based-supply-event-delivery.md and news/2026-07.md):
-  - [ ] Route the remaining mpsc receiver sources (tap channels, Proc::Async streams, zip outputs)
-        through `ReactWaker` sinks — removes the react drive loop's residual 10ms idle-wait cap
-        (today those senders cannot wake the loop, so idle rounds are capped at 10ms latency).
-  - [ ] Move `Promise.in` / scheduler `cue(:at/:in/:every)` timer threads onto the shared
-        deadline-heap timer (`native_methods/interval_timer.rs`) — one thread per pending timer today.
+- [ ] **ADR-0008 push-delivery follow-ups** (the core landed in #4636 and the first two follow-up
+      slices in #4638 / #4639, 2026-07-17; see docs/adr/0008-push-based-supply-event-delivery.md
+      and news/2026-07.md). What is left:
+  - [ ] Get the repeating `cue(:every)` loop off its dedicated worker thread. `:in`/`:at` delays
+        landed in #4638, but an `:every` cue still owns a thread that sleeps between iterations, so
+        idle `:every` cues are expensive: 50 idle `cue(:every(60))` cost **RSS +21 MB / VmSize
+        +16.4 GB** (50 × the 256 MiB `USER_THREAD_STACK_SIZE`, since each iteration runs user VM
+        code and needs the deep-recursion headroom) versus raku's **+3 MB / +25 MB**.
+        **This needs a worker pool first, not just the timer.** A timer entry cannot fire user code
+        on the driver thread, so the deadline heap would have to spawn a fresh 256 MiB-stack worker
+        (plus a `clone_for_thread`) per tick — likely a regression for short periods, and no help at
+        all for the steady-state thread count. raku gets this right because its timer hands off to a
+        `ThreadPoolScheduler`; mutsu spawns a thread per task at all ~27 `spawn_user_thread` sites.
+        So the real slice is **a shared worker pool** (write a Proposed ADR: pool sizing, the
+        deep-stack requirement, GC-mutator registration per pooled thread, and which of the 27 sites
+        migrate), after which `:every` becomes a timer entry that enqueues onto it (skipping a tick
+        when the previous iteration is still running). Also decides whether `start`/`Promise.start`
+        stop paying a thread spawn each.
   - [ ] Watch CI for the residual under-load syntax.t flake (1 notok in 18 loaded runs locally,
         unreproduced in 14 follow-ups; raku's own fixed-sleep tests also wobble at that load).
 - [ ] **Remainder of true sharing for state/lexical aggregates**: only the lost-update on
