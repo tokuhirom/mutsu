@@ -144,6 +144,29 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
     }
 }
 
+/// The inline map/grep/first paths run the block's body directly in the
+/// enclosing frame's env, so the block's own `my` declarations write a
+/// bare-name entry there. When an enclosing lexical of the same name is
+/// visible through the flattened env, the block-local binding would leak into
+/// it on exit (zef's `provides-spec-matcher` clobbered the calling method's
+/// `$spec` param this way) — save/restore those names like the other
+/// temporaries. A declared name that is also a free var refers to the outer
+/// binding (used before its declaration) and is left alone.
+pub(crate) fn push_block_declared_keys(
+    touched_keys: &mut Vec<String>,
+    code: &crate::opcode::CompiledCode,
+) {
+    for k in &code.my_declared_sym {
+        if code.free_var_syms.contains(k) {
+            continue;
+        }
+        let name = k.resolve();
+        if !touched_keys.contains(&name) {
+            touched_keys.push(name);
+        }
+    }
+}
+
 impl Interpreter {
     pub(super) fn eval_map_over_items(
         &mut self,
@@ -352,6 +375,7 @@ impl Interpreter {
             if !touched_keys.iter().any(|k| k == "$_") {
                 touched_keys.push(dollar_topic.clone());
             }
+            push_block_declared_keys(&mut touched_keys, &code);
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
@@ -600,6 +624,7 @@ impl Interpreter {
         if !touched_keys.iter().any(|k| k == "$_") {
             touched_keys.push(dollar_topic.clone());
         }
+        push_block_declared_keys(&mut touched_keys, &code);
         let saved: Vec<(String, Option<Value>)> = touched_keys
             .iter()
             .map(|k| (k.clone(), self.env.get(k).cloned()))

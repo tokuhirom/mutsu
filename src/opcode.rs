@@ -1704,6 +1704,16 @@ pub(crate) struct CompiledCode {
     /// slot's writes instead. With the gate off `alloc_local` get-or-creates by
     /// name, so names are unique and this is all-false (byte-identical).
     pub(crate) dup_named_locals: Vec<bool>,
+    /// Names `my`-declared (or `constant`-declared) in THIS code's body — the
+    /// block's own fresh lexical bindings. The closure-exit caller-writeback
+    /// scan must not propagate them to a same-named caller lexical: with the
+    /// flattened env a `.map({ my $spec = ... })` inside a method otherwise
+    /// clobbers the calling method's `$spec` parameter on block exit (how
+    /// zef's `provides-spec-matcher` corrupted `contains-spec` and dropped
+    /// JSON::OptIn from the prereq list). A declared name that is ALSO a free
+    /// var (used before its declaration, so it refers to the outer binding)
+    /// keeps the writeback.
+    pub(crate) my_declared_sym: rustc_hash::FxHashSet<Symbol>,
     /// Free variables this code (and its nested closures) reference from an
     /// enclosing scope: names used via GetGlobal-family ops that are not this
     /// code's own locals. For a closure body this is the set of captured
@@ -2050,6 +2060,7 @@ impl CompiledCode {
             may_capture_outer_vars: false,
             needs_env_sync: Vec::new(),
             dup_named_locals: Vec::new(),
+            my_declared_sym: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),

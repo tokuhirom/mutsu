@@ -922,6 +922,13 @@ impl Interpreter {
                         || (meta_possible
                             && (k.starts_with("__mutsu_predictive_seq_iter::")
                                 || k.starts_with("__mutsu_sigilless_alias::!"))))
+                    // The block's own `my` binding shadows the caller's
+                    // same-named lexical (visible here through the flattened
+                    // env) — never write it back, whether or not the name got
+                    // a local slot on this compile path. A declared name that
+                    // is also a free var refers to the outer binding for its
+                    // pre-declaration uses, so its writeback is kept.
+                    && (!cc.my_declared_sym.contains(k) || cc.free_var_syms.contains(k))
                     && (!local_names.contains(k) || captured_names.contains(k))
                 {
                     // Don't leak captured-only variables to callers that don't have

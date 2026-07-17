@@ -130,6 +130,7 @@ impl Interpreter {
             if !touched_keys.iter().any(|k| k == "$_") {
                 touched_keys.push(dollar_topic.clone());
             }
+            super::resolution_map_grep::push_block_declared_keys(&mut touched_keys, &code);
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
                 .map(|k| (k.clone(), self.env.get(k).cloned()))
@@ -352,6 +353,7 @@ impl Interpreter {
             if !touched_keys.iter().any(|k| k == &topic_source_key) {
                 touched_keys.push(topic_source_key.clone());
             }
+            super::resolution_map_grep::push_block_declared_keys(&mut touched_keys, &code);
             let saved: Vec<(String, Option<Value>)> = touched_keys
                 .iter()
                 .map(|k| (k.clone(), self.env.get(k).cloned()))

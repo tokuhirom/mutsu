@@ -796,6 +796,14 @@ impl Compiler {
                 // do-block (string-interpolation `{...}`) so it can revert
                 // exactly its own block-local declarations on exit.
                 self.record_block_decl(name);
+                // Record the block's own `my` bindings so the closure-exit
+                // caller-writeback scan can tell them apart from mutated
+                // captured outers (see CompiledCode::my_declared_sym).
+                // `state`/`our`/dynamic declarations intentionally outlive or
+                // cross the frame and are excluded.
+                if !*is_state && !*is_our && !*is_dynamic && !name.starts_with('*') {
+                    self.code.my_declared_sym.insert(Symbol::intern(name));
+                }
                 // An inline `where` constraint on a scalar/sigilless variable
                 // (e.g. `my $x where * > 0`, `my Int $n where { $_ %% 2 }`,
                 // `my $v where &predicate`) is desugared into an anonymous subset
