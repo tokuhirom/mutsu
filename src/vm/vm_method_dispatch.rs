@@ -89,7 +89,7 @@ impl Interpreter {
             self.method_shares_container_into_scalar_param(method_def, &args);
         // `cc.has_calls` (not just `has_env_writes`): a body that calls a CLOSURE
         // (`my $f = { $*x = 1 }; $f()` — `CallOnValue`/`CallOnCodeVar`) or any other
-        // call op NOT listed in `has_env_writes` (CallDefined/ExecCallSlip) can
+        // call op NOT listed in `has_env_writes` (CallDefined) can
         // write a captured-outer lexical, dynamic var, or global into this frame's
         // env. Skipping the merge would silently drop that write (e.g. a grammar
         // action `method delim { my $f = { $*L = '<' }; $f() }` — the dynamic-var

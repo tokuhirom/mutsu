@@ -392,7 +392,7 @@ impl Interpreter {
             })
             .count();
         // Also gate on `cc.has_calls`: a body that invokes a CLOSURE
-        // (`$f()` — `CallOnValue`/`CallOnCodeVar`) or a CallDefined/ExecCallSlip can
+        // (`$f()` — `CallOnValue`/`CallOnCodeVar`) or a CallDefined can
         // write a dynamic var / captured-outer lexical / global into this frame's
         // env (those call ops are NOT in `has_env_writes`). Skipping the merge would
         // drop that write — e.g. `method go { my $f = { $*x = 1 }; $f() }`. #3658.

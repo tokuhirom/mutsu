@@ -67,54 +67,38 @@ impl Interpreter {
             || matches!(name, "andthen" | "notandthen" | "__mutsu_andthen_finalize")
     }
 
-    pub(super) fn append_slip_value(args: &mut Vec<Value>, slip_val: Value) {
-        match slip_val.view() {
-            ValueView::Array(elements, ..) => {
-                args.extend(elements.iter().cloned());
-            }
-            ValueView::Seq(elements)
-            | ValueView::HyperSeq(elements)
-            | ValueView::RaceSeq(elements) => {
-                args.extend(elements.iter().cloned());
-            }
-            ValueView::Capture { positional, named } => {
-                args.extend(positional.iter().cloned());
-                for (k, v) in named.iter() {
-                    args.push(Value::pair(k.clone(), v.clone()));
-                }
-            }
-            ValueView::Slip(items) => {
-                for item in items.iter() {
-                    Self::append_slip_item(args, item);
-                }
-            }
-            ValueView::Hash(map) => {
-                for (k, v) in map.iter() {
-                    args.push(Value::pair(k.clone(), v.clone()));
-                }
-            }
-            // When a Pair or ValuePair is slipped via |, it becomes a named
-            // argument (regular Pair).  ValuePair is the "positional pair"
-            // wrapper produced by (:key(val)), but |$pair always flattens it
-            // back to a named argument in Raku.
-            ValueView::ValuePair(key, val) => {
-                if let ValueView::Str(name) = key.view() {
-                    args.push(Value::pair(name.to_string(), val.clone()));
-                } else {
-                    args.push(Value::value_pair(key.clone(), val.clone()));
-                }
-            }
-            ValueView::Range(..)
-            | ValueView::RangeExcl(..)
-            | ValueView::RangeExclStart(..)
-            | ValueView::RangeExclBoth(..)
-            | ValueView::GenericRange { .. } => {
-                args.extend(crate::runtime::utils::value_to_list(&slip_val));
-            }
-            _ => {
-                args.push(slip_val);
-            }
+    /// Does any of the top `arity` stack values need Slip flattening?
+    ///
+    /// The light-call / OTF caches bind the *compiled* arity directly against
+    /// the stack, but a Slip argument spreads into the argument list and so
+    /// changes that arity. Flattening lives on the slow dispatch path
+    /// (`flatten_call_args`), so a call carrying one must skip those caches.
+    pub(super) fn stack_args_have_slip(&self, arity: usize) -> bool {
+        self.stack.len() >= arity
+            && self.stack[self.stack.len() - arity..]
+                .iter()
+                .any(|v| matches!(v.view(), ValueView::Slip(_)))
+    }
+
+    /// Flatten every Slip-valued argument of a call into the argument list.
+    ///
+    /// `|EXPR` compiles to `MakeSlip` + an ordinary argument, so this is what
+    /// makes argument-list interpolation happen, for any number of `|` args.
+    /// It also spreads a Slip that an ordinary argument merely evaluated to
+    /// (`f(@a.Slip)`) — Rakudo keeps that one intact until slurpy binding, so
+    /// this is wider than the spec; it is long-standing mutsu behaviour and
+    /// changing it is out of scope here.
+    pub(super) fn flatten_call_args(name: &str, raw_args: Vec<Value>) -> Vec<Value> {
+        // val() uses capture semantics (Mu |) — preserve Slip as a single arg.
+        if name == "val" {
+            return raw_args;
         }
+        let preserve_empty_slip = Self::preserve_empty_slip_arg(name);
+        let mut args = Vec::with_capacity(raw_args.len());
+        for arg in raw_args {
+            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
+        }
+        args
     }
 
     /// Auto-FETCH any Proxy values in function call arguments.

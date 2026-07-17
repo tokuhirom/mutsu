@@ -1097,31 +1097,28 @@ impl Compiler {
                 )
             });
             if has_slip {
-                // Compile all args in source order, tracking the slip position
-                let mut regular_count = 0u32;
-                let mut slip_pos: Option<u32> = None;
-                let mut stack_idx = 0u32;
+                // `|EXPR` interpolates into the argument list: MakeSlip builds
+                // the Slip and CallFunc spreads it, so any number of `|` args mix
+                // freely with the other arguments.
+                // `arg_sources_idx` stays None: spreading changes the argument
+                // count, so a positional source list could not stay aligned.
                 for arg in args {
                     if let Expr::Unary {
                         op: TokenKind::Pipe,
                         expr,
                     } = arg
                     {
-                        slip_pos = Some(stack_idx);
                         self.compile_expr(expr);
-                        stack_idx += 1;
+                        self.code.emit(OpCode::MakeSlip);
                     } else {
                         self.compile_call_arg(arg);
-                        regular_count += 1;
-                        stack_idx += 1;
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                self.code.emit(OpCode::CallFuncSlip {
+                self.code.emit(OpCode::CallFunc {
                     name_idx,
-                    regular_arity: regular_count,
+                    arity: args.len() as u32,
                     arg_sources_idx: None,
-                    slip_pos,
                 });
             } else {
                 let arity = args.len() as u32;

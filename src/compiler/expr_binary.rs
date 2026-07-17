@@ -271,14 +271,15 @@ impl Compiler {
             && let Expr::BareWord(name) = left
             && !name.starts_with(char::is_uppercase)
         {
-            // Compile the slip arg (the capture variable)
+            // Compile the slip arg (the capture variable) into a Slip value;
+            // CallFunc flattens it into the argument list.
             self.compile_expr(right);
+            self.code.emit(OpCode::MakeSlip);
             let name_idx = self.code.add_constant(Value::str(name.clone()));
-            self.code.emit(OpCode::CallFuncSlip {
+            self.code.emit(OpCode::CallFunc {
                 name_idx,
-                regular_arity: 0,
+                arity: 1,
                 arg_sources_idx: None,
-                slip_pos: None,
             });
             return;
         }
