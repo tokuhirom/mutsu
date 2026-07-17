@@ -122,6 +122,40 @@ impl Interpreter {
         }
     }
 
+    /// Look up a variable through the `$CALLERS::` chain — "any caller scope".
+    ///
+    /// `cascade` (a `$*`-twigil dynamic name) walks the caller frames from the
+    /// one at `depth` outward to the oldest, returning the first that holds the
+    /// dynamic var; this is the only way `CALLERS::` reaches past the immediate
+    /// caller. A plain name (`cascade == false`) is delegated straight to
+    /// [`get_caller_var`] — raku does not cascade a non-twigil `is dynamic`
+    /// lexical, so `CALLERS::` and `CALLER::` agree there.
+    pub(crate) fn get_callers_var(
+        &self,
+        name: &str,
+        depth: usize,
+        cascade: bool,
+    ) -> Result<Value, RuntimeError> {
+        if !cascade {
+            return self.get_caller_var(name, depth);
+        }
+        let stack_len = self.caller_env_stack.len();
+        if depth == 0 || depth > stack_len {
+            return Ok(Value::NIL);
+        }
+        // caller_env_stack[stack_len - depth] is the depth-th caller (depth 1 =
+        // the immediate caller at the top); older callers are at lower indices.
+        // Cascade from there toward index 0.
+        for env in self.caller_env_stack[..=stack_len - depth].iter().rev() {
+            if let Some(val) = env.get(name)
+                && self.is_var_dynamic(name)
+            {
+                return Ok(val.clone());
+            }
+        }
+        Ok(Value::NIL)
+    }
+
     /// Set a variable through the $CALLER:: chain.
     pub(crate) fn set_caller_var(
         &mut self,

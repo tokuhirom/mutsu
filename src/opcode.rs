@@ -1421,6 +1421,16 @@ pub(crate) enum OpCode {
         depth: u32,
     },
 
+    /// Get a variable through `$CALLERS::` — the "any caller scope" twin of
+    /// [`GetCallerVar`]. A `$*`-twigil dynamic name cascades outward through the
+    /// whole caller chain (`cascade = true`); a plain name resolves to the exact
+    /// frame at `depth`, identical to `GetCallerVar` (`cascade = false`).
+    GetCallersVar {
+        name_idx: u32,
+        depth: u32,
+        cascade: bool,
+    },
+
     /// Set a variable in the caller's scope ($CALLER::varname = value).
     SetCallerVar {
         name_idx: u32,
@@ -2417,6 +2427,7 @@ impl CompiledCode {
         for op in &self.ops {
             let reflective = match op {
                 OpCode::GetCallerVar { .. }
+                | OpCode::GetCallersVar { .. }
                 | OpCode::GetOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
                 | OpCode::SymbolicDeref { .. }

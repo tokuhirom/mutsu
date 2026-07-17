@@ -357,6 +357,31 @@ impl Compiler {
         let saved_terminal = self.bind_terminal;
         self.bind_terminal = false; // inner `target` indices are intermediate
 
+        // Special case: CALLERS::<$*x> stash-subscript access — the "any caller
+        // scope" twin below. It carries the twigil case (roast `CALLERS::<$*foo>`)
+        // that the `$CALLERS::x` symbolic form cannot spell. Must precede the
+        // CALLER:: check so "CALLERS::" is not mis-parsed as "CALLER::" + "S...".
+        if let Expr::PseudoStash(stash) = target
+            && let Some((rest, depth)) = Self::parse_callers_prefix(stash)
+            && rest.is_empty()
+            && let Expr::Literal(lit) = index
+            && let ValueView::Str(key) = lit.view()
+        {
+            let bare: String = match key.chars().next() {
+                Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
+                _ => key.as_ref().clone(),
+            };
+            let cascade = Self::callers_name_cascades(&bare);
+            let name_idx = self.code.add_constant(Value::str(bare));
+            self.code.emit(OpCode::GetCallersVar {
+                name_idx,
+                depth: depth as u32,
+                cascade,
+            });
+            self.bind_terminal = saved_terminal;
+            return;
+        }
+
         // Special case: CALLER::<$x> stash-subscript access resolves a caller-frame
         // lexical, exactly like the `$CALLER::x` symbolic form. Route both to the
         // same GetCallerVar opcode so the dynamic-ness check (X::Caller::NotDynamic)
