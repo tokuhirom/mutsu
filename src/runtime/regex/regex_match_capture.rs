@@ -245,6 +245,11 @@ impl Interpreter {
                     super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
                     return Some((pos, RegexCaptures::default()));
                 }
+                // Failure-position probe: don't execute, don't stop — a code atom is
+                // a zero-width no-op so the probe measures the declarative skeleton.
+                if super::regex_helpers::CODE_ATOMS_INERT.with(std::cell::Cell::get) {
+                    return Some((pos, RegexCaptures::default()));
+                }
                 if *is_assertion {
                     // The text matched up to this assertion — becomes `$/.Str`
                     // inside the `<?{ … }>` so `$/.lc` / `~$/` see the matched-so-far
