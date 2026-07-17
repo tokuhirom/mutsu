@@ -92,7 +92,7 @@ impl Interpreter {
     /// (its parse depends on runtime variable interpolation) or fails to
     /// parse — callers fall back to the uncached per-call path.
     fn resolve_parsed_token_candidates_in_pkg(
-        &self,
+        &mut self,
         name: &str,
         pkg: &str,
     ) -> Option<std::sync::Arc<Vec<ParsedTokenCandidate>>> {
@@ -129,7 +129,7 @@ impl Interpreter {
     /// token references (notably char-class `<+name>` items) resolve against
     /// the grammar that defines them, not the outer caller's package.
     fn parse_candidate_in_pkg(
-        &self,
+        &mut self,
         sub_pat: &str,
         sub_pkg: &str,
     ) -> Option<std::sync::Arc<RegexPattern>> {
@@ -151,7 +151,7 @@ impl Interpreter {
     /// reports whether the RAW resolution found nothing — that (not an empty
     /// parsed list) drives the method-subrule fallback.
     pub(super) fn parsed_subrule_candidates(
-        &self,
+        &mut self,
         spec: &NamedRegexLookupSpec,
         pkg: &str,
         arg_values: &[Value],
@@ -284,7 +284,7 @@ impl Interpreter {
     }
 
     pub(super) fn resolve_token_patterns_with_args_in_pkg(
-        &self,
+        &mut self,
         name: &str,
         pkg: &str,
         arg_values: &[Value],
@@ -391,7 +391,7 @@ impl Interpreter {
     }
 
     pub(super) fn resolve_named_regex_candidates_in_pkg(
-        &self,
+        &mut self,
         spec: &NamedRegexLookupSpec,
         pkg: &str,
         arg_values: &[Value],

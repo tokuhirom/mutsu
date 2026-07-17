@@ -1,6 +1,6 @@
 # ADR-0009: Regex code assertions — run inline in the real interpreter, and keep LTM declarative
 
-- **Status**: Accepted (2026-07-17). Part A implemented; part B not started.
+- **Status**: Accepted (2026-07-17). Parts A, A2 and B all implemented.
 - **Context**: `roast/integration/advent2013-day18.t` test 10 (the last failure in that
   file) and PLAN §4 ⑤. Supersedes the root-cause analysis recorded in
   `TODO_roast/BLOCKERS.md` for that file, which attributed the symptom to backtracking
@@ -192,6 +192,27 @@ This deletes the scratch-plus-replay dual mechanism for assertions:
 longer needed to make failing parses have side effects, and the hash-leak accident stops
 being load-bearing.
 
+### B — as implemented (2026-07-17)
+
+The mechanical flip cost far less than feared: 47 `&self` methods, and the borrow checker
+barely fought back, because nothing in the matcher returns a reference borrowed from
+`self` (`WalkCtx` borrows the `Arc<RegexPattern>` and the `current_package()` String, both
+locals). Only two closures needed work — both captured `self` mutably and so locked out
+interleaved `self` calls: `walk_quant_chain`'s `grow_one` became the `grow_one_iter`
+method, and `match_class_item` became an explicit `FnMut`. A handful of `&self` methods
+that only read the registry (`resolve_token_patterns_static_in_pkg`,
+`collect_token_patterns_for_scope*`) were reverted from the blanket flip.
+
+`eval_regex_code_assertion` now evaluates in `self`. Only the regex-internal bindings it
+installs (`$/`, `$0`…, `$<name>`) and the assertion's own top-level `my` declarations are
+saved and restored around the body — `eval_block_value` does not scope plain lexicals
+(mutsu's env is flat), so without the latter day18's `my $card` would clobber a same-named
+outer variable. Every other write is left in place: that is the point.
+
+Assertion runs are now **1 per matched position — exactly raku's count** — for every shape
+measured (inline, one subrule down, four subrules down, plain `~~`), completing the
+4 → 2 → 1 progression from A and A2.
+
 ## Alternatives rejected
 
 - **Widen `has_code_block_in_prefix` to see nested assertions and enable the eager buffer
@@ -230,9 +251,24 @@ being load-bearing.
 - **A2: done** (2026-07-17). Pinned by `t/grammar-parse-failure-probe.t`. With A+A2,
   `advent2013-day18`'s assertion counts match raku **exactly** (2 and 1 on the two failing
   parses, 1 per card on the passing one).
-- **B: not started.** This is all that `advent2013-day18.t` test 10 now waits on: `@dups`
-  stays empty because a failing parse has no winning path to replay. There is no
-  ratchet/backtracking prerequisite — that diagnosis was measured away (see above), so B
-  can be started directly.
+- **B: done** (2026-07-17). Pinned by `t/grammar-assertion-side-effects.t`.
+  **`roast/integration/advent2013-day18.t` now passes 10/10**, test 10 included.
 
-Both pins pass under raku as well as mutsu, and fail on the tree before their fix.
+All three pins pass under raku as well as mutsu, and fail on the tree before their fix.
+
+## Known gap this does NOT close
+
+A **file-scope** variable is invisible to a code assertion: it lives in the top VM frame's
+locals and never reaches the env the regex engine reads, so the assertion sees `Nil`.
+
+```raku
+our @a = ('x','y','z');                                   # file scope
+grammar G { token TOP { (\w) <?{ … @a … }> } }            # assertion sees Nil
+{ our @b = ('x','y','z'); my grammar H { … <?{ … @b … }> } }   # block scope: sees @b
+```
+
+This is the `env_dirty` dual-store debt, is **unchanged by B** (measured identical before
+and after — the scratch cloned the same env, which also lacked the name), and is why
+day18 works: its `our @dups` is declared in a block alongside the grammar. Only `~~`
+matching syncs locals into env (`sync_regex_interpolation_env_from_locals`), and even that
+skips names not already in env. Closing it belongs with the dual-store work, not here.

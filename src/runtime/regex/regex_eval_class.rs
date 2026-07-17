@@ -3,7 +3,7 @@ use super::regex_helpers::{CaseFoldIter, matches_named_builtin};
 
 impl Interpreter {
     pub(super) fn regex_match_class_ignorecase(
-        &self,
+        &mut self,
         class: &CharClass,
         c: char,
         ignore_case: bool,
@@ -162,7 +162,7 @@ impl Interpreter {
     /// Find all non-overlapping regex matches using the capturing path,
     /// returning (start, end) pairs and captures (including code blocks).
     pub(crate) fn regex_find_all_with_caps(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
     ) -> Vec<(usize, usize, RegexCaptures)> {
@@ -214,7 +214,7 @@ impl Interpreter {
     }
 
     /// Find all non-overlapping regex matches, returning (start, end) char-index pairs.
-    pub(crate) fn regex_find_all(&self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
+    pub(crate) fn regex_find_all(&mut self, pattern: &str, text: &str) -> Vec<(usize, usize)> {
         let parsed = match self.parse_regex(pattern) {
             Some(p) => p,
             None => return Vec::new(),

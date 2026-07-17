@@ -8,13 +8,11 @@ plan 9;
 # so measuring must never execute one — otherwise every measurement duplicates
 # that candidate's side effects. See docs/adr/0009.
 #
-# Assertion runs are counted via a HASH (a hash element write inside a code
-# assertion is observable in both implementations). The bound below is 2, not 1,
-# because mutsu still runs each assertion twice for a single matched position —
-# once while matching, once replayed in the parent interpreter for its side
-# effects — which ADR-0009 part B removes. raku runs it once, so `<= 2` holds
-# there too. Before the LTM fix mutsu ran it 4 times: the two extra runs were
-# candidate-length measurements, one per LTM measurement the engine made.
+# An assertion at a single matched position runs exactly once, as in raku. Before
+# the LTM fix mutsu ran it 4 times: two of the extra runs were candidate-length
+# measurements (one per LTM measurement the engine made), the third was a replay
+# in the parent interpreter for side effects, which part B removed by running the
+# assertion inline on the real interpreter in the first place.
 
 our %n;
 
@@ -34,18 +32,18 @@ grammar Deep {
 
 %n = ();
 ok Inline.parse("a").defined, 'assertion directly in the start rule: parses';
-cmp-ok %n<inline>, '<=', 2, 'measuring the start rule does not execute its own assertion';
+is %n<inline>, 1, 'the assertion runs exactly once — no measurement executes it';
 
 # One subrule down: the start rule's measurement must not descend into the
 # subrule and execute the assertion nested there either.
 %n = ();
 ok ViaSubrule.parse("a").defined, 'assertion one subrule down: parses';
-cmp-ok %n<sub>, '<=', 2, 'measuring the start rule does not execute a subrule assertion';
+is %n<sub>, 1, 'measuring the start rule does not execute a subrule assertion';
 
 # Nesting depth must not multiply the count.
 %n = ();
 ok Deep.parse("a").defined, 'assertion three subrules down: parses';
-cmp-ok %n<deep>, '<=', 2, 'assertion run count is independent of grammar nesting depth';
+is %n<deep>, 1, 'assertion run count is independent of grammar nesting depth';
 
 # A candidate whose declarative prefix is empty (the code atom comes first) must
 # still be selectable: the measurement stops immediately and so proves nothing

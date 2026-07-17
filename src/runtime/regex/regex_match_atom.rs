@@ -34,7 +34,7 @@ impl Interpreter {
     /// baseline) on success. Used by conjunction (`&` / `&&`) matching, where
     /// every branch must cover the same substring.
     fn regex_match_branch_ending_at(
-        &self,
+        &mut self,
         branch: &RegexPattern,
         chars: &[char],
         pos: usize,
@@ -50,7 +50,7 @@ impl Interpreter {
     }
 
     pub(super) fn regex_match_atom_all_with_capture_in_pkg(
-        &self,
+        &mut self,
         atom: &RegexAtom,
         chars: &[char],
         pos: usize,
@@ -578,7 +578,7 @@ impl Interpreter {
     ///   error set, or returned an undefined/false cursor).
     /// - `Some(vec![(end, caps)])` — the method returned a defined Match/Cursor.
     fn try_regex_subrule_as_method(
-        &self,
+        &mut self,
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,

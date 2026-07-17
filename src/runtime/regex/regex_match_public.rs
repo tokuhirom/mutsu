@@ -107,7 +107,7 @@ impl Interpreter {
     /// matching. Returns Some((parsed_pattern, package)) if the Named atom
     /// resolves to exactly one token candidate with no arguments.
     pub(super) fn try_resolve_named_to_pattern(
-        &self,
+        &mut self,
         atom: &RegexAtom,
         pkg: &str,
     ) -> Option<(std::sync::Arc<RegexPattern>, String)> {
@@ -130,7 +130,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn regex_match_with_captures_core(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
     ) -> Option<RegexCaptures> {

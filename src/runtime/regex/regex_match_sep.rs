@@ -14,7 +14,7 @@ impl Interpreter {
     /// LOWEST-priority-first order (the engine iterates them in reverse):
     /// shortest match first, longest (greedy) last.
     pub(super) fn match_separated_quantifier(
-        &self,
+        &mut self,
         token: &RegexToken,
         chars: &[char],
         start: usize,
@@ -118,7 +118,7 @@ impl Interpreter {
     /// JSON object under `rule pairlist { <pair> * % \, }` took ~8s to parse;
     /// this scan parses it in microseconds).
     fn match_separated_quantifier_ratchet(
-        &self,
+        &mut self,
         token: &RegexToken,
         chars: &[char],
         start: usize,
@@ -241,7 +241,7 @@ impl Interpreter {
     /// first, and within a step separator matches follow their own priority
     /// order. `max` bounds the atom count (atom count never exceeds `max`).
     fn enumerate_separated_chains(
-        &self,
+        &mut self,
         token: &RegexToken,
         chars: &[char],
         start: usize,
@@ -296,7 +296,7 @@ impl Interpreter {
     /// highest-priority-first ordering for a greedy quantifier.
     #[allow(clippy::too_many_arguments)]
     fn extend_separated_chain(
-        &self,
+        &mut self,
         token: &RegexToken,
         chars: &[char],
         cur: usize,
