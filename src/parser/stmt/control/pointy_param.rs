@@ -1,34 +1,6 @@
 use super::*;
 
 pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
-    // Sigilless parameter: \name
-    if let Some(r) = input.strip_prefix('\\') {
-        let (rest, name) = ident(r)?;
-        return Ok((
-            rest,
-            ParamDef {
-                name,
-                default: None,
-                multi_invocant: true,
-                required: false,
-                named: false,
-                slurpy: false,
-                double_slurpy: false,
-                onearg: false,
-                sigilless: true,
-                type_constraint: None,
-                literal_value: None,
-                sub_signature: None,
-                outer_sub_signature: None,
-                code_signature: None,
-                where_constraint: None,
-                traits: Vec::new(),
-                optional_marker: false,
-                is_invocant: false,
-                shape_constraints: None,
-            },
-        ));
-    }
     // Positional destructuring sub-signature: `-> [$a, $b] { ... }`.
     // A bare `[...]` binds a single Positional argument and unpacks it — an
     // anonymous `@` param carrying the sub-signature (mirrors `sub f([$a,$b])`).
@@ -55,6 +27,7 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             || r2.starts_with('%')
             || r2.starts_with('&')
             || r2.starts_with('*')
+            || r2.starts_with('\\')
             || (r2.starts_with(':')
                 && r2.len() > 1
                 && matches!(r2.as_bytes()[1], b'$' | b'@' | b'%' | b'&'))
@@ -103,6 +76,36 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
     } else {
         rest
     };
+
+    // Sigilless parameter: \name, optionally preceded by a type constraint
+    // (`-> Mu \type { ... }` — how JSON::Unmarshal writes its `where` lambdas).
+    if let Some(r) = rest.strip_prefix('\\') {
+        let (rest, name) = ident(r)?;
+        return Ok((
+            rest,
+            ParamDef {
+                name,
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                double_slurpy: false,
+                onearg: false,
+                sigilless: true,
+                type_constraint,
+                literal_value: None,
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                is_invocant: false,
+                shape_constraints: None,
+            },
+        ));
+    }
 
     // Slurpy marker for pointy params: *@a, *%h, *$x, *&cb, and double-slurpy variants.
     let mut slurpy = false;

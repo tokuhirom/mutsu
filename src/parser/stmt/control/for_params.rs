@@ -263,8 +263,31 @@ pub(crate) fn parse_for_params(input: &str) -> PResult<'_, ForParams> {
 }
 
 fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
+    let rest = input;
+    let mut type_constraint = None;
+    // Use parse_type_constraint_expr so coercion types (`IO()`, `Int(Str)`),
+    // qualified names, generics (`Array[Int]`) and definedness smileys (:D/:U)
+    // are all consumed before the loop variable (e.g. `-> IO() $current`).
+    // A sigilless param (`\name`) may also carry one: `-> Mu \type { ... }`.
+    let rest = if let Some((r, tc)) = super::super::sub_param::parse_type_constraint_expr(rest) {
+        let (r2, _) = ws(r)?;
+        if r2.starts_with('$')
+            || r2.starts_with('@')
+            || r2.starts_with('%')
+            || r2.starts_with('&')
+            || r2.starts_with('\\')
+        {
+            type_constraint = Some(tc);
+            r2
+        } else {
+            rest
+        }
+    } else {
+        rest
+    };
+
     // Sigilless parameter: \name
-    if let Some(r) = input.strip_prefix('\\') {
+    if let Some(r) = rest.strip_prefix('\\') {
         let (rest, name) = ident(r)?;
         return Ok((
             rest,
@@ -278,7 +301,7 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
                 double_slurpy: false,
                 onearg: false,
                 sigilless: true,
-                type_constraint: None,
+                type_constraint,
                 literal_value: None,
                 sub_signature: None,
                 where_constraint: None,
@@ -291,24 +314,6 @@ fn parse_for_pointy_param(input: &str) -> PResult<'_, ParamDef> {
             },
         ));
     }
-
-    let rest = input;
-    let mut type_constraint = None;
-    // Use parse_type_constraint_expr so coercion types (`IO()`, `Int(Str)`),
-    // qualified names, generics (`Array[Int]`) and definedness smileys (:D/:U)
-    // are all consumed before the loop variable (e.g. `-> IO() $current`).
-    let rest = if let Some((r, tc)) = super::super::sub_param::parse_type_constraint_expr(rest) {
-        let (r2, _) = ws(r)?;
-        if r2.starts_with('$') || r2.starts_with('@') || r2.starts_with('%') || r2.starts_with('&')
-        {
-            type_constraint = Some(tc);
-            r2
-        } else {
-            rest
-        }
-    } else {
-        rest
-    };
 
     let for_original_sigil = rest.as_bytes().first().copied().unwrap_or(b'$');
     let (r, name) = var_name(rest)?;

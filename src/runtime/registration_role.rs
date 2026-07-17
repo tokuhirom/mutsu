@@ -478,6 +478,25 @@ impl Interpreter {
                             .push(hidden_name.to_string());
                         continue;
                     }
+                    // A sibling role referenced by its short name (`role Derived
+                    // does Base` inside `unit module M`, where Base is registered
+                    // as `M::Base`) must resolve to its qualified name — the same
+                    // resolution the class-body DoesDecl path already does.
+                    // JSON::Unmarshal composes all its CustomUnmarshaller roles
+                    // this way.
+                    let role_name_str = if !self.registry().roles.contains_key(&role_name_str)
+                        && !self.registry().classes.contains_key(&role_name_str)
+                        && !role_name_str.contains('[')
+                    {
+                        let resolved = self.resolve_declared_type_name(&role_name_str);
+                        if self.registry().roles.contains_key(&resolved) {
+                            resolved
+                        } else {
+                            role_name_str
+                        }
+                    } else {
+                        role_name_str
+                    };
                     if self.registry().classes.contains_key(&role_name_str) {
                         self.registry_mut()
                             .role_parents
