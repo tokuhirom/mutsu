@@ -12,9 +12,48 @@ use super::methods_distribution_helpers::{
 };
 
 impl Interpreter {
+    /// Resolve one of a distribution's addresses (a `provides` value such as
+    /// `lib/Foo.rakumod`, or `resources/...`) to an absolute path on disk.
+    ///
+    /// Goes through the distribution's own `.content($name-path)` — the API every
+    /// Distribution implements (`IO::Handle:D`, per S22) — rather than joining a
+    /// `prefix` attribute onto the address. Distribution classes do not agree on
+    /// that attribute: rakudo's `Distribution::Path` has `$.prefix`, but zef's
+    /// `Zef::Distribution::Local` has `$.path`/`$.IO` and no `prefix` at all, so
+    /// the join silently produced a relative path that never existed and the
+    /// install recorded `provides` entries pointing at files it never copied.
+    ///
+    /// Falls back to the `prefix` join for a distribution that has no `.content`.
+    fn dist_content_abs(
+        &mut self,
+        dist: &Value,
+        prefix: &str,
+        name_path: &str,
+    ) -> Option<std::path::PathBuf> {
+        let fallback = || {
+            let p = std::path::Path::new(prefix).join(name_path);
+            p.exists().then_some(p)
+        };
+        let Ok(handle) = self.call_method_with_values(
+            dist.clone(),
+            "content",
+            vec![Value::str(name_path.to_string())],
+        ) else {
+            return fallback();
+        };
+        let Ok(path) = self.call_method_with_values(handle, "path", vec![]) else {
+            return fallback();
+        };
+        let Ok(abs) = self.call_method_with_values(path, "absolute", vec![]) else {
+            return fallback();
+        };
+        let abs = std::path::PathBuf::from(abs.to_string_value());
+        if abs.exists() { Some(abs) } else { fallback() }
+    }
+
     /// Install a distribution.
     pub(crate) fn cur_inst_install(
-        &self,
+        &mut self,
         prefix: &str,
         dist: &Value,
     ) -> Result<Value, RuntimeError> {
@@ -83,37 +122,37 @@ impl Interpreter {
         if let Some(provides) = meta.hash_get_str("provides")
             && let ValueView::Hash(map) = provides.view()
         {
-            for (k, v) in map.iter() {
-                let source_path_str = v.to_string_value();
-                let source_full = std::path::Path::new(&dist_prefix).join(&source_path_str);
-                let source_id = format!("{:X}", hash_strings(&[k, &dist_id]));
+            let entries: Vec<(String, String)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_string_value()))
+                .collect();
+            for (k, source_path_str) in entries {
+                let source_id = format!("{:X}", hash_strings(&[&k, &dist_id]));
                 let dest = sources_dir.join(&source_id);
-                if source_full.exists() {
+                if let Some(source_full) =
+                    self.dist_content_abs(dist, &dist_prefix, &source_path_str)
+                {
                     std::fs::copy(&source_full, &dest).ok();
                 }
                 let mut inner = HashMap::new();
                 inner.insert("file".to_string(), Value::str(source_id));
-                installed_provides.insert(k.clone(), Value::hash_with_data(Value::hash_arc(inner)));
+                installed_provides.insert(k, Value::hash_with_data(Value::hash_arc(inner)));
             }
         }
         let mut installed_resources = HashMap::new();
         if let Some(resources_val) = meta.hash_get_str("resources")
             && let ValueView::Array(arr, _) = resources_val.view()
         {
-            for resource in arr.iter() {
-                let resource_str = resource.to_string_value();
-                let source_path = if resource_str.starts_with("libraries/") {
-                    let lib_name = resource_str.strip_prefix("libraries/").unwrap();
-                    let platform_name = platform_library_name(lib_name);
-                    std::path::Path::new(&dist_prefix)
-                        .join("resources")
-                        .join("libraries")
-                        .join(&platform_name)
+            let resources: Vec<String> = arr.iter().map(|r| r.to_string_value()).collect();
+            for resource_str in resources {
+                // A `libraries/` resource is named platform-independently in META
+                // but stored under its platform file name (libfoo.so / foo.dll).
+                let address = if let Some(lib_name) = resource_str.strip_prefix("libraries/") {
+                    format!("resources/libraries/{}", platform_library_name(lib_name))
                 } else {
-                    std::path::Path::new(&dist_prefix)
-                        .join("resources")
-                        .join(&resource_str)
+                    format!("resources/{resource_str}")
                 };
+                let source_path = self.dist_content_abs(dist, &dist_prefix, &address);
                 let hash_hex = format!("{:X}", hash_strings(&[&resource_str, &dist_id]));
                 // Preserve the file extension so installed paths look like HASH.ext
                 let ext = std::path::Path::new(&resource_str)
@@ -123,7 +162,7 @@ impl Interpreter {
                     .unwrap_or_default();
                 let resource_id = format!("{hash_hex}{ext}");
                 let dest = resources_dir.join(&resource_id);
-                if source_path.exists() {
+                if let Some(source_path) = source_path {
                     std::fs::copy(&source_path, &dest).ok();
                 }
                 installed_resources
