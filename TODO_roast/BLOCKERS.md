@@ -48,7 +48,7 @@ Definitions of the classifications:
 
 ## Current assumptions
 
-- The whitelist stands at **1430 / 1463** (2026-07-17, `wc -l roast-whitelist.txt`) = **33** files not whitelisted.
+- The whitelist stands at **1431 / 1463** (2026-07-17, `wc -l roast-whitelist.txt`) = **32** files not whitelisted.
 - **The S\* files (per-synopsis feature tests) are exhausted.** All of the former large campaigns
   (true lazy arrays / desugaring of dispatch and operator sugar / S17 concurrency & async /
   first-class-container container identity / cross-thread lexical writeback) are complete, and
@@ -59,7 +59,7 @@ Definitions of the classifications:
   ([ADR-0009](../docs/adr/0009-regex-code-assertion-execution-model.md)). The former
   ①(stack overflow)/②(unparseable)/③(hang)/④(error-message) clusters are all cleared
   (history: [news/2026-07.md](../news/2026-07.md)).
-- **No cluster remains.** The 33 non-whitelisted files are nearly all non-goal / no-oracle /
+- **No cluster remains.** The 32 non-whitelisted files are nearly all non-goal / no-oracle /
   awaiting-infrastructure (see the tables below); the few ★achievable ones each need their own
   unrelated feature. **roast is no longer the productive axis** — prefer PLAN.md §1 (Batteries),
   §5 (perf) or §6, and pick up a roast file only when such work happens to unblock it.
@@ -75,7 +75,6 @@ noted.
 
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
-| `6.c/S04-declarations/my-6c.t` | 111/112 | PASS ★ | test 57 (`OUTER::<$x>`) needs **lexical hoisting**, not the OUTER pseudo-package alone: `EVAL('not OUTER::<$x>.defined')` must see the *enclosing block's* `my $x` declared **after** the EVAL (undefined container), but mutsu skips the not-yet-run local and resolves OUTER to the file-level `my $x = 0` (defined). Same family as mixin-6c/my-6e hoisting. Minimal repro: `my $x = 0; { { say EVAL('not OUTER::<$x>.defined'); my $x } }` → mutsu False, raku True |
 | `6.c/APPENDICES/A04-experimental/01-misc.t` | 16/19 | FAIL | `:D`/`:U` DefiniteHow coercion (`Target:D(Source:U)`). #4514: 0/19 → 16/19 |
 | `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 11/16 | PASS ★ | error-message quality for multi no-match: `.splice` with wrong offset/type, `Lock.protect` / `Lock::Async.protect` / `Proc::Async.new` with wrong args must give "sane errors" — ④-adjacent |
 | `6.c/APPENDICES/A03-older-specs/01-misc.t` | fails 4+ | 6/9 FAIL | `.open("-")` mapping to `$*IN`/`$*OUT`, deprecated `subst-mutate`. raku itself fails 3 of 9 = partially non-goal |
@@ -193,9 +192,11 @@ completed fix history lives in `news/`.
 
 ## Recommended order of attack right now
 
-1. **Shortcuts**: `6.c/S04-declarations/my-6c.t` (111/112) is now a **lexical-hoisting** task,
-   not the OUTER pseudo-package alone (see inventory row). `integration/99problems-51-to-60.t`
-   (35/37) and `99problems-61-to-70.t` (12/15) are close.
+1. **Shortcuts**: `integration/99problems-51-to-60.t` (35/37) and
+   `99problems-61-to-70.t` (12/15) are close. (`6.c/S04-declarations/my-6c.t` reached the
+   whitelist 2026-07-17 — its test 57 was NOT the lexical-hoisting task this ledger claimed:
+   `OUTER::` was simply implemented as `OUTERS::`, cascading through every enclosing scope.
+   See news/2026-07.md; pin `t/outer-pseudo-package.t`.)
 2. **④ error-message quality** (`advent2011-day11.t` 7/9, `multi-no-match.t`) — the
    same target as the identically named task in PLAN §6, so it can be driven by roast
    pass/fail while working on that. (`error-reporting.t` and `weird-errors.t` reached the

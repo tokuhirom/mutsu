@@ -382,6 +382,18 @@ impl Interpreter {
         // Inline nested-block path: `outer_scope_locals` (runtime-saved slots)
         // reflects the lexical structure of nested bare blocks executed in place,
         // so it distinguishes multiple same-named `my $a` bindings by depth.
+        //
+        // Whether the target scope actually DECLARES `name` is not decided here:
+        // `OUTER::` names exactly one scope (packages.rakudoc), and that is a
+        // lexical, compile-time question, so `Compiler::emit_outer_var_access`
+        // settles it and emits a Nil constant instead of this opcode when the
+        // target scope does not declare the name. Re-deciding it here is not
+        // possible anyway: this stack is only reset by `run()`, not by the fast
+        // call paths, so inside a stored closure it still holds the CALLER's
+        // blocks -- dynamic, not lexical. By the time a `GetOuterVar` executes,
+        // the name is either declared in the target scope or the target lies
+        // outside this frame (a separate compilation), which is what the captured
+        // env below resolves.
         if stack_len > 0 && depth <= stack_len {
             let idx = stack_len - depth;
             let saved = &self.outer_scope_locals[idx];

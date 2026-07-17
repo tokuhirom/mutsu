@@ -91,7 +91,20 @@ impl Interpreter {
         &self,
         body: &[Stmt],
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+        self.compile_block_value_opts(body, false)
+    }
+
+    /// `compile_block_value`, with `is_eval_unit` marking the body as an EVAL'd
+    /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`).
+    pub(crate) fn compile_block_value_opts(
+        &self,
+        body: &[Stmt],
+        is_eval_unit: bool,
+    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
         let mut compiler = crate::compiler::Compiler::new();
+        if is_eval_unit {
+            compiler.mark_as_eval_unit();
+        }
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
         let scope = if let Some(frame) = self.routine_stack.last() {
@@ -114,6 +127,16 @@ impl Interpreter {
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+        self.eval_block_value_opts(body, false)
+    }
+
+    /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
+    /// compilation unit's mainline (see `Compiler::mark_as_eval_unit`).
+    pub(crate) fn eval_block_value_opts(
+        &mut self,
+        body: &[Stmt],
+        is_eval_unit: bool,
+    ) -> Result<Value, RuntimeError> {
         if body.is_empty() {
             return Ok(Value::NIL);
         }
@@ -149,7 +172,7 @@ impl Interpreter {
             .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
             .map(|(k, v)| (*k, v.clone()))
             .collect();
-        let (code, compiled_fns) = self.compile_block_value(body);
+        let (code, compiled_fns) = self.compile_block_value_opts(body, is_eval_unit);
         // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
         // scalar this carrier body writes into a shared cell across env + saved
         // frames, so the by-name write survives the owner frame's env restore.

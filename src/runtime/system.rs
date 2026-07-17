@@ -142,7 +142,7 @@ impl Interpreter {
                 // private call in the EVAL'd string errors even if a preceding
                 // `return` would short-circuit it at runtime.
                 self.validate_private_calls_against_self(&stmts)?;
-                let value = self.eval_block_value(&stmts)?;
+                let value = self.eval_block_value_opts(&stmts, true)?;
                 if self.eval_result_is_unresolved_bareword(&stmts, &value) {
                     return Err(RuntimeError::undeclared_symbols("Undeclared name"));
                 }

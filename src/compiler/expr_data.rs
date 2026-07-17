@@ -1,4 +1,5 @@
 use super::*;
+use crate::compiler::helpers_dynamic::OuterStash;
 use crate::value::ValueView;
 
 impl Compiler {
@@ -375,6 +376,31 @@ impl Compiler {
                 name_idx,
                 depth: depth as u32,
             });
+            self.bind_terminal = saved_terminal;
+            return;
+        }
+
+        // Special case: OUTER::<$x> / OUTERS::<$x> stash-subscript access resolves a
+        // lexical of an enclosing scope, exactly like the `$OUTER::x` / `$OUTERS::x`
+        // symbolic forms. Route both spellings to the same scope walk; without this
+        // the stash form degrades to a flat-env hash scan, which silently cascades
+        // through every outer scope (i.e. answers OUTER:: with OUTERS:: semantics)
+        // and leaves OUTERS:: itself unresolved. Supports OUTER::OUTER::<$x> too.
+        if let Expr::PseudoStash(stash) = target
+            && let Some(scope) = Self::parse_outer_stash(stash)
+            && let Expr::Literal(lit) = index
+            && let ValueView::Str(key) = lit.view()
+        {
+            // Only `$` is stripped: a scalar lives in `locals`/`env` under its bare
+            // name, while `@a`/`%h`/`&f` keep their sigil in the key.
+            let bare: String = match key.chars().next() {
+                Some('$') => key.chars().skip(1).collect(),
+                _ => key.as_ref().clone(),
+            };
+            match scope {
+                OuterStash::At(depth) => self.emit_outer_var_access(bare, depth),
+                OuterStash::Any => self.emit_outers_var_access(bare),
+            }
             self.bind_terminal = saved_terminal;
             return;
         }
