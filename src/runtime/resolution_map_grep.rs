@@ -1,4 +1,6 @@
 use super::*;
+use crate::env::Env;
+use crate::value::SubData;
 
 /// The set a frame vouches for so a closure created inside it inherits
 /// authoritative (overwrite) capture (runtime transitive vouching — see
@@ -18,6 +20,54 @@ pub(crate) fn frame_authoritative_set(
     let mut fa = cc.authoritative_free_vars.clone();
     fa.extend(authoritative_captures.iter().copied());
     fa
+}
+
+/// Does this callable's `$_` stay at the caller's topic instead of being
+/// topicalized to the element a map/grep/first loop is visiting?
+///
+/// A WhateverCode whose body references `$_` (`*.new($_)`, `* eq $_`) compiles
+/// its `*` placeholder to a synthetic `__wc_N` param so the element binds
+/// there, NOT to `$_`; the body's `$_` must stay the caller's topic (S02 "no
+/// scoping issues when using topic variables": `do { $_ = 42; (Int).map(*.new($_)) }`
+/// -> `Int.new(42)`). A plain `*.abs` (no `$_` in the body) keeps `_` AS its
+/// placeholder param, so it must still receive the element — hence the
+/// `_`-is-not-a-param guard.
+pub(crate) fn whatever_code_keeps_outer_topic(data: &SubData) -> bool {
+    matches!(
+        data.env.get("__mutsu_callable_type").map(Value::view),
+        Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
+    ) && !data.params.iter().any(|p| p == "_")
+}
+
+/// Bind `$_`/`_` for one iteration of a batched map/grep/first loop.
+///
+/// For a `$_`-referencing WhateverCode the topic is held at `outer_topic` for
+/// every iteration (re-set, so a prior iteration's tail value cannot leak into
+/// the next one's `$_`); otherwise the element is the topic.
+/// See [`whatever_code_keeps_outer_topic`].
+pub(crate) fn bind_loop_topic(
+    env: &mut Env,
+    item: &Value,
+    keeps_outer_topic: bool,
+    outer_topic: &Option<Value>,
+) {
+    const UNDERSCORE: &str = "_";
+    const DOLLAR_TOPIC: &str = "$_";
+    if keeps_outer_topic {
+        match outer_topic {
+            Some(t) => {
+                env.insert(UNDERSCORE.to_string(), t.clone());
+                env.insert(DOLLAR_TOPIC.to_string(), t.clone());
+            }
+            None => {
+                env.remove(UNDERSCORE);
+                env.remove(DOLLAR_TOPIC);
+            }
+        }
+    } else {
+        env.insert(UNDERSCORE.to_string(), item.clone());
+        env.insert(DOLLAR_TOPIC.to_string(), item.clone());
+    }
 }
 
 /// Convert a `CallArg` to an `Expr` for expression-level call compilation,
@@ -314,21 +364,7 @@ impl Interpreter {
                 }
             }
 
-            // A WhateverCode whose body references `$_` (`*.new($_)`) compiles its
-            // `*` placeholder to a synthetic `__wc_N` param so the element binds
-            // there, NOT to `$_`; the body's `$_` must stay the caller's topic
-            // (S02 "no scoping issues when using topic variables":
-            // `do { $_ = 42; (Int).map(*.new($_)) }` -> `Int.new(42)`). So for such
-            // a WhateverCode, instead of topicalizing `$_`/`_` to the element, hold
-            // them at the caller's outer topic for every iteration (re-set so a
-            // prior iteration's tail value can't leak into the next one's `$_`).
-            // A plain `*.abs` (no `$_` in the body) keeps `_` AS its placeholder
-            // param, so it must still receive the element — hence the
-            // `_`-is-not-a-param guard.
-            let is_whatever_code = matches!(
-                data.env.get("__mutsu_callable_type").map(Value::view),
-                Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-            ) && !data.params.iter().any(|p| p == "_");
+            let is_whatever_code = whatever_code_keeps_outer_topic(&data);
             let outer_topic = self.env.get("_").cloned();
 
             // CP-3 collapse: run the map loop with fresh execution registers
@@ -363,21 +399,7 @@ impl Interpreter {
                             if let Some(p) = data.params.get(assumed_count) {
                                 vm.env_mut().insert(p.clone(), item.clone());
                             }
-                            if is_whatever_code {
-                                match &outer_topic {
-                                    Some(t) => {
-                                        vm.env_mut().insert(underscore.clone(), t.clone());
-                                        vm.env_mut().insert(dollar_topic.clone(), t.clone());
-                                    }
-                                    None => {
-                                        vm.env_mut().remove(&underscore);
-                                        vm.env_mut().remove(&dollar_topic);
-                                    }
-                                }
-                            } else {
-                                vm.env_mut().insert(underscore.clone(), item.clone());
-                                vm.env_mut().insert(dollar_topic.clone(), item);
-                            }
+                            bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                 if i + idx < list_items.len() {
@@ -588,6 +610,9 @@ impl Interpreter {
             self.env.insert_sym(*k, v.clone());
         }
 
+        let keeps_outer_topic = whatever_code_keeps_outer_topic(&data);
+        let outer_topic = self.env.get("_").cloned();
+
         let mut found: Option<(usize, Value)> = None;
         let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
             vm.set_topic_source_var(None);
@@ -602,8 +627,7 @@ impl Interpreter {
                     if let Some(p) = data.params.first() {
                         vm.env_mut().insert(p.clone(), call_item.clone());
                     }
-                    vm.env_mut().insert(underscore.clone(), call_item.clone());
-                    vm.env_mut().insert(dollar_topic.clone(), call_item.clone());
+                    bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let pred = vm
