@@ -36,6 +36,8 @@ pub enum RakuAstFieldValue {
     Node(Value),
     /// A parenthesised, trailing-comma list of child nodes (e.g. `segments`).
     List(Vec<Value>),
+    /// A boolean colonpair adverb rendered as `:name` (e.g. `Assignment.new(:item)`).
+    Adverb(&'static str),
 }
 
 /// Every known RakuAST node kind. Exhaustive `match` on this in the converter
@@ -63,6 +65,8 @@ pub enum RakuAstClass {
     Prefix,
     ApplyPostfix,
     Postfix,
+    Assignment,
+    CallMethod,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,7 +99,16 @@ impl RakuAstClass {
             Prefix => "RakuAST::Prefix",
             ApplyPostfix => "RakuAST::ApplyPostfix",
             Postfix => "RakuAST::Postfix",
+            Assignment => "RakuAST::Assignment",
+            CallMethod => "RakuAST::Call::Method",
         }
+    }
+
+    /// raku's `Assignment` gist omits the empty `()` for the list form
+    /// (`RakuAST::Assignment.new`), unlike the generic `.new()` (e.g. an empty
+    /// `StatementList` still prints `RakuAST::StatementList.new()`).
+    pub fn empty_parens_omitted(self) -> bool {
+        matches!(self, RakuAstClass::Assignment)
     }
 
     pub fn constructor(self) -> Constructor {
@@ -120,6 +133,7 @@ impl RakuAstClass {
             ApplyInfix => 5,                            // "infix" / "right"
             ApplyPrefix | ApplyPostfix => 7,            // "operand"
             Postfix => 8,                               // "operator"
+            CallMethod => 4,                            // "name" / "args"
             _ => 0,
         }
     }
