@@ -313,6 +313,7 @@ mod value_methods_b;
 mod value_methods_c;
 mod value_setbagmix;
 mod view;
+pub(crate) mod waker;
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::arc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
@@ -1884,6 +1885,9 @@ struct ChannelState {
     failure: Option<Value>,
     closed_promise: SharedPromise,
     supplier_ids: Vec<u64>,
+    /// Drive-loop wakers to poke on every send/close/fail, so a react
+    /// polling this channel wakes immediately instead of on its poll cap.
+    wakers: Vec<crate::value::waker::ReactWaker>,
 }
 
 #[derive(Debug, Clone)]

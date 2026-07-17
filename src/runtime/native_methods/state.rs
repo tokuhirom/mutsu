@@ -160,22 +160,24 @@ pub(in crate::runtime) fn supply_channel_map_pub()
 #[derive(Debug, Default)]
 struct SupplierRuntimeState {
     emitted: Vec<Value>,
-    /// Global monotonic sequence number for each emitted value, parallel to
-    /// `emitted`. Assigned at `emit` time from a process-wide counter so the
-    /// react drive loop can merge values from several supplier-backed
-    /// subscriptions (e.g. two `whenever $s.grep(...)` derived supplies) back
-    /// into their original cross-supplier emit order.
-    emit_seqs: Vec<u64>,
     done: bool,
     quit_reason: Option<Value>,
     pending_promises: Vec<SharedPromise>,
+    /// Push sinks registered by consuming drive loops (react / `await
+    /// $supply` / control waits). Every emit/done/quit is pushed to each
+    /// registered sink under this registry's lock, so a later
+    /// `supplier_reset` cannot un-publish an event — the old snapshot-polling
+    /// scheme both busy-spun consumers and lost events when `Supplier.done`
+    /// reset the state before the consumer's next poll.
+    sinks: Vec<SupplierSink>,
 }
 
-/// Process-wide monotonic counter handing out an emit sequence number for every
-/// `supplier_emit`, so cross-supplier delivery order can be reconstructed.
-pub(crate) fn next_emit_seq() -> u64 {
-    static COUNTER: AtomicU64 = AtomicU64::new(1);
-    COUNTER.fetch_add(1, Ordering::Relaxed)
+#[derive(Debug)]
+struct SupplierSink {
+    sink_id: u64,
+    /// The consumer-side subscription index this sink feeds.
+    key: usize,
+    waker: crate::value::waker::ReactWaker,
 }
 
 type SupplierStateMap = std::sync::Mutex<HashMap<u64, SupplierRuntimeState>>;
@@ -189,6 +191,45 @@ pub(in crate::runtime) fn supplier_id_from_attrs(attributes: &AttrMap) -> Option
     match attributes.get("supplier_id").and_then(|v| v.as_int()) {
         Some(id) if id > 0 => Some(id as u64),
         _ => None,
+    }
+}
+
+/// Register a push sink on a supplier: replay everything a fresh polling
+/// subscription would have observed (the buffered values, then a pending
+/// done/quit), then subscribe the waker to all future emit/done/quit events.
+/// Replay and subscription happen under one lock acquisition, so no event can
+/// fall between them. Returns a sink id for `supplier_sink_unregister`.
+pub(crate) fn supplier_sink_register(
+    supplier_id: u64,
+    key: usize,
+    waker: &crate::value::waker::ReactWaker,
+) -> u64 {
+    static SINK_IDS: AtomicU64 = AtomicU64::new(1);
+    let sink_id = SINK_IDS.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = supplier_state_map().lock() {
+        let state = map.entry(supplier_id).or_default();
+        for v in &state.emitted {
+            waker.push(key, crate::value::waker::SinkEvent::Emit(v.clone()));
+        }
+        if let Some(reason) = &state.quit_reason {
+            waker.push(key, crate::value::waker::SinkEvent::Quit(reason.clone()));
+        } else if state.done {
+            waker.push(key, crate::value::waker::SinkEvent::Done);
+        }
+        state.sinks.push(SupplierSink {
+            sink_id,
+            key,
+            waker: waker.clone(),
+        });
+    }
+    sink_id
+}
+
+pub(crate) fn supplier_sink_unregister(supplier_id: u64, sink_id: u64) {
+    if let Ok(mut map) = supplier_state_map().lock()
+        && let Some(state) = map.get_mut(&supplier_id)
+    {
+        state.sinks.retain(|s| s.sink_id != sink_id);
     }
 }
 
@@ -241,6 +282,9 @@ pub(in crate::runtime) fn visit_supply_state_roots(visitor: &mut dyn crate::gc::
             }
             for p in &state.pending_promises {
                 visitor.visit_value(&Value::promise(p.clone()));
+            }
+            for s in &state.sinks {
+                s.waker.visit_roots(visitor);
             }
         }
     }
@@ -341,32 +385,16 @@ pub(crate) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise
 }
 
 pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
-    let seq = next_emit_seq();
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if state.done || state.quit_reason.is_some() {
             return;
         }
+        for s in &state.sinks {
+            s.waker
+                .push(s.key, crate::value::waker::SinkEvent::Emit(value.clone()));
+        }
         state.emitted.push(value);
-        state.emit_seqs.push(seq);
-    }
-}
-
-/// Like [`supplier_snapshot`], but also returns the per-value emit sequence
-/// numbers (parallel to the values), for cross-supplier order reconstruction.
-pub(crate) fn supplier_snapshot_seqs(
-    supplier_id: u64,
-) -> (Vec<Value>, Vec<u64>, bool, Option<Value>) {
-    if let Ok(mut map) = supplier_state_map().lock() {
-        let state = map.entry(supplier_id).or_default();
-        (
-            state.emitted.clone(),
-            state.emit_seqs.clone(),
-            state.done,
-            state.quit_reason.clone(),
-        )
-    } else {
-        (Vec::new(), Vec::new(), false, None)
     }
 }
 
@@ -377,6 +405,9 @@ pub(in crate::runtime) fn supplier_done(supplier_id: u64) {
             return;
         }
         state.done = true;
+        for s in &state.sinks {
+            s.waker.push(s.key, crate::value::waker::SinkEvent::Done);
+        }
         let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
         for promise in pending {
@@ -397,6 +428,9 @@ pub(in crate::runtime) fn supplier_done_deferred(
             return Vec::new();
         }
         state.done = true;
+        for s in &state.sinks {
+            s.waker.push(s.key, crate::value::waker::SinkEvent::Done);
+        }
         let result = state.emitted.last().cloned().unwrap_or(Value::NIL);
         let pending = std::mem::take(&mut state.pending_promises);
         pending.into_iter().map(|p| (p, result.clone())).collect()
@@ -412,6 +446,10 @@ pub(in crate::runtime) fn supplier_quit(supplier_id: u64, reason: Value) {
             return;
         }
         state.quit_reason = Some(reason.clone());
+        for s in &state.sinks {
+            s.waker
+                .push(s.key, crate::value::waker::SinkEvent::Quit(reason.clone()));
+        }
         let pending = std::mem::take(&mut state.pending_promises);
         for promise in pending {
             promise.break_with(reason.clone(), String::new(), String::new());
@@ -427,7 +465,6 @@ pub(in crate::runtime) fn supplier_reset(supplier_id: u64) {
         state.done = false;
         state.quit_reason = None;
         state.emitted.clear();
-        state.emit_seqs.clear();
     }
 }
 

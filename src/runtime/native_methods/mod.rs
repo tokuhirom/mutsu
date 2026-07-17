@@ -1,6 +1,7 @@
 // Native method dispatch submodules, split from the original native_methods.rs
 mod concurrency;
 mod encoding;
+pub(crate) mod interval_timer;
 mod proc;
 mod scheduler;
 mod socket_async;
@@ -38,8 +39,8 @@ pub(in crate::runtime) use state::{
 };
 // Supplier registry accessors driven by the VM-side react/supply loop.
 pub(crate) use state::{
-    next_supplier_id, supplier_register_promise, supplier_snapshot, supplier_snapshot_seqs,
-    take_promise_combinator_sources,
+    next_supplier_id, supplier_register_promise, supplier_sink_register, supplier_sink_unregister,
+    supplier_snapshot, take_promise_combinator_sources,
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;

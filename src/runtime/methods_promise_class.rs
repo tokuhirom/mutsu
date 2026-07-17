@@ -180,20 +180,15 @@ impl Interpreter {
                 promise.keep(Value::TRUE, String::new(), String::new());
                 return Some(Ok(ret));
             }
-            // Registered spawn + quiescent poll sleep — this thread drops its
-            // `Gc` promise handles at exit (see `spawn_gc_helper_thread`).
-            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                // Poll until any promise resolves
-                loop {
-                    for p in &promises {
-                        if p.status() != "Planned" {
-                            promise.keep(Value::TRUE, String::new(), String::new());
-                            return;
-                        }
-                    }
-                    crate::gc::block_quiescent(|| std::thread::sleep(Duration::from_millis(1)));
-                }
-            });
+            // Resolve on the first input to settle, via each input's
+            // `on_resolve` waiter queue — no polling thread. `try_keep` makes
+            // the first resolver win and later ones no-ops.
+            for p in &promises {
+                let anyof = promise.clone();
+                let _ = p.on_resolve(Box::new(move |_, _, _, _| {
+                    let _ = anyof.try_keep(Value::TRUE);
+                }));
+            }
             return Some(Ok(ret));
         }
         None
