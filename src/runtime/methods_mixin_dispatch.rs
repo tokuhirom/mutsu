@@ -14,6 +14,45 @@ impl Interpreter {
             return None;
         };
 
+        // `.clone` on a role mixin. A punned role's attributes live in
+        // `__mutsu_attr__*` mixin markers, not the inner instance's attr map (see
+        // `dispatch_new` — a bare-role `.new` returns `Mixin(empty-instance,
+        // {__mutsu_attr__x: ...})`). The generic instance clone unwraps to the
+        // inner value and drops every marker, so the clone lost all attributes
+        // (`Zef::Client.fetch`'s `$candi.clone(:$dist)` then had no `.as`). Clone
+        // the mixin instead: recursively clone the inner value, copy every marker,
+        // and apply each `:attr(val)` override to its `__mutsu_attr__` marker.
+        // Restricted to role mixins (a `__mutsu_role__`/`__mutsu_attr__` marker is
+        // present) so allomorph / non-role `but` mixins keep their existing path.
+        if method == "clone"
+            && mixins
+                .keys()
+                .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
+        {
+            let inner_owned = inner.as_ref().clone();
+            let mut new_mixins: HashMap<String, Value> = mixins.as_ref().clone();
+            // An override names either a role attribute (a `__mutsu_attr__`
+            // marker) or an attribute of the inner class. Apply the former to the
+            // marker; forward the rest to the inner clone so `$w.clone(:id(99))`
+            // on a `Widget but Named` still overrides Widget's own `$.id`.
+            let mut inner_args: Vec<Value> = Vec::new();
+            for arg in &args {
+                if let ValueView::Pair(key, val) = arg.view()
+                    && let std::collections::hash_map::Entry::Occupied(mut e) =
+                        new_mixins.entry(format!("__mutsu_attr__{}", key))
+                {
+                    e.insert(val.clone());
+                    continue;
+                }
+                inner_args.push(arg.clone());
+            }
+            let inner_clone = match self.call_method_with_values(inner_owned, "clone", inner_args) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
+            };
+            return Some(Ok(Value::mixin(inner_clone, new_mixins)));
+        }
+
         if args.is_empty() {
             if let Some(mixin_val) = mixins.get(method) {
                 return Some(Ok(mixin_val.clone()));
