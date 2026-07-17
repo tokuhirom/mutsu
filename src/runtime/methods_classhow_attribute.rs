@@ -285,6 +285,37 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
+    /// The nearest package (walking `current_package` up through its `::`
+    /// ancestors, ending at the current package's registry view of GLOBAL) that
+    /// has a proto or multi candidates for `name`. None when no package in the
+    /// chain has a handler.
+    fn nearest_package_with_trait_handler(&self, name: &str) -> Option<String> {
+        let current = self.current_package();
+        let mut pkg = current.as_str();
+        // Local candidates only at each level — has_proto/has_multi_candidates
+        // also match GLOBAL, which would stop the walk at the innermost package
+        // whenever some module exported a same-named trait, hiding the
+        // enclosing package's own candidates. GLOBAL is the last resort; the
+        // dispatch probes {pkg}:: AND GLOBAL:: anyway, so dispatching as the
+        // nearest local package still sees the imported candidates too.
+        loop {
+            let local_proto = self
+                .registry()
+                .proto_subs
+                .contains(&format!("{}::{}", pkg, name));
+            if local_proto || self.registry().has_multi_function(pkg, name) {
+                return Some(pkg.to_string());
+            }
+            match pkg.rsplit_once("::") {
+                Some((parent, _)) => pkg = parent,
+                None => break,
+            }
+        }
+        (self.registry().has_proto("GLOBAL", name)
+            || self.registry().has_multi_candidates("GLOBAL", name))
+        .then(|| current.clone())
+    }
+
     /// Dispatch unknown attribute traits to user-defined `trait_mod:<...>` subs,
     /// or raise X::Comp::Trait::Unknown if no handler is registered. Called at
     /// class registration for each `has` declaration that carries unknown traits.
@@ -310,8 +341,15 @@ impl Interpreter {
                 continue;
             }
             let trait_mod_name = format!("trait_mod:<{}>", kind);
-            let has_handler =
-                self.has_proto(&trait_mod_name) || self.has_multi_candidates(&trait_mod_name);
+            // The trait multi may be declared in an ENCLOSING package's body:
+            // META6 declares `multi sub trait_mod:<is>(Attribute, Optionality
+            // :$specification!)` in `class META6`'s own body and uses it inside
+            // nested classes (current_package "META6::Support"). Multi lookup
+            // probes current_package + GLOBAL only, so walk up the package
+            // chain to the nearest package that has a handler and dispatch as
+            // that package.
+            let dispatch_pkg = self.nearest_package_with_trait_handler(&trait_mod_name);
+            let has_handler = dispatch_pkg.is_some();
             if has_handler {
                 // Reuse the Attribute meta-object across every trait applied to
                 // this attr, and store it in the registry: instance attrs are a
@@ -365,7 +403,14 @@ impl Interpreter {
                 let saved_wb_key = self.trait_mod_writeback_key.take();
                 self.trait_mod_writeback_key =
                     Some(format!("__mutsu_attr_trait__{}!{}", owner, attr_name_str));
+                let saved_pkg = self.current_package();
+                if let Some(pkg) = &dispatch_pkg
+                    && *pkg != saved_pkg
+                {
+                    self.set_current_package(pkg.clone());
+                }
                 let call_result = self.call_function(&trait_mod_name, args);
+                self.set_current_package(saved_pkg);
                 self.trait_mod_writeback_key = saved_wb_key;
                 if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
                     self.registry_mut()

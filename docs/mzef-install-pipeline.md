@@ -164,38 +164,53 @@ All 16 candidates now fetch their own archive. See
 [ADR-0010](adr/0010-cross-thread-lexical-sharing-scope.md); the analysis that
 found it is kept below.
 
-## Current frontier — the installed dists don't all load
+## Current frontier — `use Test::META` LOADS; next is *running* it
 
-`zef install --/test Test::META` completes: 16 candidates resolve, fetch,
-extract, and **13 dists install** into the site repo. The frontier is now
-*using* them. Fixed so far (each: minimal repro → general fix → `t/` pin):
+`zef install --/test Test::META` completes (16 candidates resolve, fetch,
+extract, **13 dists install**), and the whole load chain is now fixed:
+**`use Test::META` loads**, as do JSON::Unmarshal, JSON::Marshal, JSON::Class
+(jonathanstowe), License::SPDX and META6. Load-frontier fixes (each: minimal
+repro → general fix → `t/` pin):
 
 - ~~`-> Mu \type { ... }` typed sigilless pointy param~~ (#4661) — unblocked
   `use JSON::Unmarshal`'s `subset ... where` lambdas.
 - ~~sibling-role short-name composition inside a module~~ (#4661) — unblocked
   JSON::Unmarshal's `CustomUnmarshaller` role family; JSON::Marshal loads.
-- ~~`use` dist selectors discarded / first-found dist loaded~~ — two installed
-  dists provide `JSON::Class` (zef:jonathanstowe vs zef:vrurg); resolution now
-  filters by `:auth`/`:ver`/`:api` and picks the highest version. Pin:
-  `t/use-dist-selectors.t`.
-- ~~`role Name:ver<...>:auth<...>[SIGNATURE]`~~ — adverbs before the parametric
-  signature failed to parse (jonathanstowe JSON::Class line 121). Pin:
-  `t/role-decl-adverbs-signature.t`.
+- ~~`use` dist selectors discarded / first-found dist loaded~~ (#4662) — two
+  installed dists provide `JSON::Class` (zef:jonathanstowe vs zef:vrurg);
+  resolution now filters by `:auth`/`:ver`/`:api` and picks the highest
+  version. Pin: `t/use-dist-selectors.t`.
+- ~~`role Name:ver<...>:auth<...>[SIGNATURE]`~~ (#4662) — adverbs before the
+  parametric signature failed to parse (jonathanstowe JSON::Class line 121).
+  Pin: `t/role-decl-adverbs-signature.t`.
+- ~~Attribute role-mixin dropped by `trait_mod:<is>`~~ (#4663) — three defects
+  (ephemeral Attribute object; short role name degrading `does` to a boolean
+  check that REBOUND `$a`; imported multi candidates from two modules
+  colliding on one key). Pin: `t/attr-trait-role-mixin.t`. Unblocked
+  License::SPDX.
+- ~~class-body trait multis invisible to nested classes~~ — during a nested
+  class's registration, multi lookup probed only current_package + GLOBAL, so
+  `class META6 { multi sub trait_mod:<is>(...) ...; class Support { has ...
+  is specification(Optional) } }` failed; the trait dispatch now walks up the
+  package chain. Pin: `t/class-body-trait-multi.t`. Unblocked META6 and with
+  it **Test::META**.
+- ~~a named ARRAY param matched a scalar value~~ — `:@specification!
+  (Optionality $o, Version $v)` out-dispatched `Optionality :$specification!`
+  for a single enum value and died in the destructure. Named `@`/`%` params
+  now require Positional/Associative arguments. Same pin.
 
-Still open, in chain order:
+Still open:
 
-- **Attribute role-mixin does not persist out of `trait_mod:<is>`** — blocks
-  `use License::SPDX` (its `is json-name(...)` attributes). Repro:
-  a custom `multi sub trait_mod:<is>(Attribute $a, :$myname!) { $a does R;
-  $a.n = $myname }` — the mixin/assignment do not survive onto
-  `C.^attributes[0]` (works via `my $attr = C.^attributes[0]; $attr does R`
-  outside a trait). tmp repro: `tmp/attr-does-rw2.raku`. Under the module's
-  imported multi the same shape errors `X::Assignment::RO: cannot assign
-  through .json-name on non-instance`.
-- **`use Test::META`** — not re-bisected past License::SPDX yet.
 - **`use URI; URI.new("https://raku.org/x").host`** → `Type check failed for
   return value; expected Host but got Str ("raku.org")` — a
   coercion/subset-typed **return** value is checked against the raw Str.
+- **Running Test::META's actual test functions** (`meta6-ok`) end-to-end is
+  unexercised — the next milestone is `zef install --/test` WITHOUT
+  `--/test`, i.e. the Test phase (pipeline row 6).
+- **CALLING a named-array destructure candidate** (`is specification([...])`)
+  still fails in binding (`Calling trait_mod:<is>(Any) will never work ...`,
+  then binds the whole Array to the first destructure param). Not used by
+  META6 itself; noted in `t/class-body-trait-multi.t`.
 - **vrurg JSON::Class (`use v6.e.PREVIEW`) line 40 parse error** — no longer
   in the default chain (the selector fix routes to jonathanstowe's), but the
   dist is installed and still cannot load.
