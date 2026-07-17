@@ -551,21 +551,59 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 - [ ] **ADR-0008 push-delivery follow-ups** (the core landed in #4636 and the first two follow-up
       slices in #4638 / #4639, 2026-07-17; see docs/adr/0008-push-based-supply-event-delivery.md
       and news/2026-07.md). What is left:
-  - [ ] Get the repeating `cue(:every)` loop off its dedicated worker thread. `:in`/`:at` delays
-        landed in #4638, but an `:every` cue still owns a thread that sleeps between iterations, so
-        idle `:every` cues are expensive: 50 idle `cue(:every(60))` cost **RSS +21 MB / VmSize
-        +16.4 GB** (50 × the 256 MiB `USER_THREAD_STACK_SIZE`, since each iteration runs user VM
-        code and needs the deep-recursion headroom) versus raku's **+3 MB / +25 MB**.
-        **This needs a worker pool first, not just the timer.** A timer entry cannot fire user code
-        on the driver thread, so the deadline heap would have to spawn a fresh 256 MiB-stack worker
-        (plus a `clone_for_thread`) per tick — likely a regression for short periods, and no help at
-        all for the steady-state thread count. raku gets this right because its timer hands off to a
-        `ThreadPoolScheduler`; mutsu spawns a thread per task at all ~27 `spawn_user_thread` sites.
-        So the real slice is **a shared worker pool** (write a Proposed ADR: pool sizing, the
-        deep-stack requirement, GC-mutator registration per pooled thread, and which of the 27 sites
-        migrate), after which `:every` becomes a timer entry that enqueues onto it (skipping a tick
-        when the previous iteration is still running). Also decides whether `start`/`Promise.start`
-        stop paying a thread spawn each.
+  - [ ] **Write a Proposed ADR for a shared worker pool** (groundwork done 2026-07-17; all figures
+        below are release builds on main 159a30cb0, 12 cores, raku 2026.06 on the same host).
+        mutsu has no pool at all: it spawns a thread per task at each of the **19
+        `spawn_user_thread` sites** (`ThreadPoolScheduler` is a bare type name in
+        `runtime_init.rs:67` with nothing behind it). What that costs:
+
+        | probe | mutsu | raku |
+        |---|---|---|
+        | 500 × trivial `start {}` | 0.232–0.262s | 0.051–0.07s |
+        | 50 idle `cue(:every(60))` | RSS +20.7 MB, **VmSize +16.4 GB**, threads 2→**52** | RSS +4.3 MB, VmSize +25 MB, threads 2→**5** |
+        | 200 × `start { sleep 2 }` | 2.09s (unbounded concurrency) | 6.1s (bounded, 3 batches) |
+        | nested `start`+`await`, depth 500 | 0.99s (500 real OS threads) | **0.12s** |
+
+        **The ADR's central question is not pool sizing — it is what `await` does to a pooled
+        worker.** raku's `max_threads` defaults to 96 here (8 × cpu-cores) and genuinely-blocking
+        tasks *do* serialize against it (200 × `sleep 2` takes 6.1s, not 2s), yet nested `await` at
+        depth 500 does **not** deadlock on those 96 workers: Rakudo's `await` yields a MoarVM
+        continuation (`$*AWAITER`) and hands the worker back. mutsu has no continuations, so a
+        **bounded pool + blocking `await` deadlocks** (depth-500 pins every worker). The ADR must
+        choose between (a) an **elastic** pool that grows on starvation, Rakudo-supervisor-style —
+        which still re-explodes to ~500 threads on that shape, so it wins for idle `cue`/short tasks
+        but not there — and (b) continuation-ifying `await`, a VM-scale project.
+
+        Other decisions the ADR must record:
+        - **Stack tiering.** `spawn_user_thread` reserves 256 MiB (`builtins_system.rs:9`) for
+          deep-recursion headroom. Five sites (`Proc::Async` ×4, `signal_watcher.rs:47`) take that
+          stack while running **no user VM code** — they only need GC registration, so
+          reclassifying them to `spawn_gc_helper_thread` is free. Conversely 256 MiB *reserved* per
+          pooled worker makes the steady-state pool size an address-space decision.
+        - **Task-boundary invariants.** `clone_for_thread` (`runtime_thread.rs:8`) is per-*task*,
+          not per-thread — a pooled worker cannot reuse the previous task's `Interpreter`. Likewise
+          `drop_thread_local_gc_state` (`value/mod.rs:553`) must run **between tasks**, or task N's
+          pending DESTROYs leak into task N+1 while the thread stays registered. `WorkerGuard`'s
+          drop order (drain → `mark_thread_registered(false)` → `exit_mutator_worker`,
+          `builtins_system.rs:65-80`) becomes a task-boundary rule rather than a thread-exit one.
+        - **★The biggest correctness risk**: an idle pooled worker parked on a raw `recv()` is
+          permanently non-quiescent and would defeat **every** STW in the process — strictly worse
+          than today. The task-queue wait must use `stw_aware_wait` / `block_quiescent`.
+        - **An argument in favour**: `preregister_worker_quiescent` and `notify_worker_exit`
+          (`stw.rs:141/195`) exist *only* to survive spawn/exit churn; a pool makes
+          `mutator_worker_count()` near-constant and both near-moot.
+        - The shape to mirror is `interval_timer.rs` (leaked `OnceLock` state + one long-lived
+          registered driver + actions run with the heap lock released). Its stated contract
+          (`:13-14`, `:160`) is that actions must never run user VM code on the driver thread, and
+          its escape hatch is "spawn a worker" — exactly where the pool slots in.
+
+        Only once that lands does `cue(:every)` become a timer entry that enqueues onto the pool
+        (skipping a tick while the previous iteration still runs). Today an `:every` cue owns a
+        thread for its whole lifetime (`scheduler.rs:286` → `scheduler_run_every_loop`,
+        `:415-446`), which is what the 16.4 GB / 52-thread row above measures; `:in`/`:at` delays
+        already moved onto the deadline heap in #4638. Moving `:every` onto the timer *without* a
+        pool would be a regression: every iteration runs user VM code, so the heap would have to
+        spawn a fresh 256 MiB worker plus a `clone_for_thread` per tick.
   - [ ] Watch CI for the residual under-load syntax.t flake (1 notok in 18 loaded runs locally,
         unreproduced in 14 follow-ups; raku's own fixed-sleep tests also wobble at that load).
 - [ ] **Remainder of true sharing for state/lexical aggregates**: only the lost-update on
@@ -575,12 +613,39 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       in Track B slices 2+3 and T6 (news/2026-07.md; pin = the 18 tests in
       t/state-aggregate-shared-cell.t).
 - [ ] Semaphore / nonblocking await / lock contention (S17; hard; separate axis).
-- [ ] **Running a recursive start/await sub twice in a row hangs the second one (found 2026-07-11;
-      reproduces on main ef5cd62e)**: after running
-      `sub f($n){ start { $n<=0 ?? "b" !! await(f($n-1)) ~ "|$n" } }; await(f(3));`, awaiting a
-      start sub with 2-branch recursion (`await(fib($n-2)) + await(fib($n-1))`) hangs
-      deterministically (fib alone, or two consecutive single-branch recursions, are OK). Suspicion:
-      the preceding start chain does not release thread-pool workers. raku returns both 4/8.
+- [ ] **★Recursion through a `start` block silently returns the wrong answer** (re-characterized
+      2026-07-17 on release main 159a30cb0; this entry previously claimed "running a recursive
+      start/await sub twice in a row *hangs the second one*", which understates it — the hang is a
+      later symptom, the first one is silent corruption):
+
+      ```raku
+      sub f($n) { start { $n <= 0 ?? "b" !! await(f($n-1)) ~ "|$n" } }
+      say await f(3);   # mutsu: b|1|2|3  (raku: same)
+      say await f(3);   # mutsu: b|3|3|3  -- WRONG, no error   (raku: b|1|2|3)
+      say await f(2);   # mutsu: b|2|2    -- WRONG             (raku: b|1|2)
+
+      sub k($n) { $n <= 0 ?? "b" !! (await start { k($n-1) }) ~ "|$n" }
+      say k(3);         # mutsu: b|1|1|1  -- WRONG ON THE FIRST CALL (raku: b|1|2|3)
+      ```
+
+      Every frame reads a single `$n` (collapsing to the innermost value for `k`, the outermost for
+      `f`'s second call). A two-branch `fib` (`await(fib($n-2)) + await(fib($n-1))` inside `start`)
+      then hangs deterministically — that is the previously-recorded symptom. Plain recursion
+      without `start`, and non-recursive `start`, are both correct.
+
+      **Root cause**: `clone_for_thread` seeds `shared_vars` — a flat **name-keyed**
+      `HashMap<String, Value>` keyed by the bare name (`runtime_thread.rs:18-53`) — so it cannot
+      represent **two concurrently-live bindings of the same name**, which is exactly what a
+      recursive frame chain is. It is *not* a naive name collision: sequential same-name frames are
+      fine (`sub a($x)` / `sub b($x)` interleaved, and `p(1); p(2); p(3)`, all match raku) — the
+      corruption needs same-name frames simultaneously live across a thread boundary.
+
+      **Fix direction**: this is the name-keyed env that §1.3 exists to remove. `start` should
+      capture through the same per-binding cells as ordinary closures
+      (docs/captured-outer-cell-sharing.md) instead of the parallel name-keyed `shared_vars`
+      mechanism — i.e. "1 operation = 1 implementation". Worth doing before the worker-pool ADR
+      above: a silent wrong answer outranks a perf/footprint change, and the fix retires a
+      name-keyed mechanism rather than building on it.
 - [ ] Eliminate raw-pointer aliased writes: the old `arc_contents_mut` is dead code now, and the
       production path moved to `gc::gc_contents_mut` / `Gc::{get,make}_mut` (the unsoundness was
       moved, not resolved — ANALYSIS rev8 §2.1). With Track B T4–T6 done (news/2026-07.md), start
