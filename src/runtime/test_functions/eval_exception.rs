@@ -424,23 +424,26 @@ impl Interpreter {
     pub(crate) fn test_fn_use_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let module = Self::positional_string(args, 0);
         let todo = Self::named_bool(args, "todo");
-        let desc = format!("{} module can be use-d ok", module);
-        let mut found = false;
-        let module_file = module.replace("::", "/");
-        for lib_path in &self.lib_paths.clone() {
-            for ext in &[".rakumod", ".pm6", ".pm"] {
-                let full = format!("{}/{}{}", lib_path, module_file, ext);
-                if std::path::Path::new(&full).exists() {
-                    found = true;
-                    break;
-                }
+        let desc = {
+            let explicit = Self::positional_string(args, 1);
+            if explicit.is_empty() {
+                format!("{} module can be use-d ok", module)
+            } else {
+                explicit
             }
-            if found {
-                break;
-            }
+        };
+        // Rakudo's use-ok EVALs `use $module`: the module must actually load
+        // (resolve through the full repo chain — plain dirs AND inst#
+        // installation repos — parse, and run its mainline), not merely exist
+        // as a file. The old filesystem probe here could not see inst# repos,
+        // so every staged-dist `use-ok` under `zef install` failed.
+        let load_result = self.use_module(&module);
+        let ok = load_result.is_ok();
+        self.test_ok(ok, &desc, todo)?;
+        if let Err(err) = load_result {
+            self.emit_output(&format!("# {}\n", err.message));
         }
-        self.test_ok(found, &desc, todo)?;
-        Ok(Value::truth(found))
+        Ok(Value::truth(ok))
     }
 
     pub(crate) fn test_fn_does_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
