@@ -58,7 +58,12 @@ pub(crate) fn what_type_name(val: &Value) -> String {
                 name
             } else {
                 let base = what_type_name(inner);
-                match role_mixin_suffix(mixins) {
+                // A punned role (`R.new`) is `Mixin(Instance{R}, {__mutsu_role__R})`
+                // — the role composed onto its OWN same-named (empty) instance, not
+                // a mixin onto a different base. Raku names that plain `R`, so drop
+                // a suffix entry that merely repeats the base type. A role mixed
+                // onto a different base still gets the suffix (`W but R` -> `W+{R}`).
+                match role_mixin_suffix_excluding(mixins, &base) {
                     Some(suffix) => format!("{base}+{{{suffix}}}"),
                     None => base,
                 }
@@ -77,9 +82,20 @@ pub(crate) fn what_type_name(val: &Value) -> String {
 pub(crate) fn role_mixin_suffix(
     mixins: &std::collections::HashMap<String, Value>,
 ) -> Option<String> {
+    role_mixin_suffix_excluding(mixins, "")
+}
+
+/// [`role_mixin_suffix`], but skipping the role whose name equals `base` — the
+/// role-punning case, where `R.new` builds `Mixin(Instance{R}, __mutsu_role__R)`
+/// and raku reports plain `R` rather than `R+{R}`. Pass `""` to exclude nothing.
+pub(crate) fn role_mixin_suffix_excluding(
+    mixins: &std::collections::HashMap<String, Value>,
+    base: &str,
+) -> Option<String> {
     let mut names: Vec<&str> = mixins
         .keys()
         .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        .filter(|n| *n != base)
         // Anonymous roles (`but role { }`) carry a compiler-internal
         // `__ANON_ROLE_{id}__` name; raku would show `<anon|N>` but mutsu's id
         // does not match, so leave anon mixins un-suffixed (reporting the base
