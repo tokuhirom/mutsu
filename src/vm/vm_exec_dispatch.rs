@@ -4011,8 +4011,11 @@ impl Interpreter {
                 self.exec_indirect_code_lookup_op(code, *name_idx);
                 *ip += 1;
             }
-            OpCode::SymbolicDeref(sigil_idx) => {
-                self.exec_symbolic_deref_op(code, *sigil_idx);
+            OpCode::SymbolicDeref {
+                sigil_idx,
+                scopes_idx,
+            } => {
+                self.exec_symbolic_deref_op(code, *sigil_idx, *scopes_idx);
                 *ip += 1;
             }
             OpCode::SymbolicDerefStore(sigil_idx) => {

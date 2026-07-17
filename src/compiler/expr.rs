@@ -826,7 +826,11 @@ impl Compiler {
             Expr::SymbolicDeref { sigil, expr } => {
                 self.compile_expr(expr);
                 let sigil_idx = self.code.add_constant(Value::str(sigil.clone()));
-                self.code.emit(OpCode::SymbolicDeref(sigil_idx));
+                let scopes_idx = self.bake_lex_scope_chain();
+                self.code.emit(OpCode::SymbolicDeref {
+                    sigil_idx,
+                    scopes_idx,
+                });
             }
             Expr::SymbolicDerefAssign { sigil, expr, value } => {
                 self.compile_expr(value);

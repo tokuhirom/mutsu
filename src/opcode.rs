@@ -1460,8 +1460,14 @@ pub(crate) enum OpCode {
     IndirectCodeLookup(u32),
 
     /// Symbolic variable dereference: pop name string from stack, look up variable by sigil+name.
-    /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
-    SymbolicDeref(u32),
+    /// `sigil_idx` indexes the constant pool for the sigil string ("$", "@", or "%").
+    /// `scopes_idx` indexes [`CompiledCode::lex_scopes`] for the lexical scope chain
+    /// visible at this site, which the popped name needs when it turns out to spell
+    /// an `OUTER::` / `OUTERS::` lookup.
+    SymbolicDeref {
+        sigil_idx: u32,
+        scopes_idx: u32,
+    },
 
     /// Symbolic variable dereference store: pop value and name from stack, store value into variable.
     /// The u32 indexes the constant pool for the sigil string ("$", "@", or "%").
@@ -1642,6 +1648,12 @@ pub(crate) struct CompiledCode {
     /// record it (e.g. hand-built `CompiledCode::new()` chunks), in which case
     /// precompute falls back to the by-name search.
     pub(crate) param_local_slots: Vec<u32>,
+    /// Out-of-band lexical scope chains for `SymbolicDeref` sites (indexed by the
+    /// op's `scopes_idx`). `$::($name)::x` can only be recognised as an `OUTER::`
+    /// lookup once the name string exists, by which time the compile-time scope
+    /// shape it must be answered against is gone — so the emit point bakes it here.
+    /// See [`crate::compiler::lex_scope::LexScopeChain`].
+    pub(crate) lex_scopes: Vec<Arc<crate::compiler::lex_scope::LexScopeChain>>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
     /// Out-of-band named-argument specs for `CallFuncNamed` sites (indexed by
@@ -2026,6 +2038,7 @@ impl CompiledCode {
             our_locals: Vec::new(),
             scalar_bind_locals: Vec::new(),
             param_local_slots: Vec::new(),
+            lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
@@ -2395,7 +2408,7 @@ impl CompiledCode {
                 OpCode::GetCallerVar { .. }
                 | OpCode::GetOuterVar { .. }
                 | OpCode::GetPseudoStash(_)
-                | OpCode::SymbolicDeref(_)
+                | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,
                 OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
@@ -2888,6 +2901,29 @@ impl CompiledCode {
                     free.insert(Symbol::intern(name));
                 }
             }
+            // `$::($name)::x` is the same lexical read, with the target name known
+            // only at run time — so, unlike the `GetOuterVar` case above, there is
+            // no single name to snapshot. Claim every name the site's baked scope
+            // chain declares, which is exactly the set the deref could resolve to.
+            // Without this the enclosing binding is never snapshotted and
+            // `get_outer_var` falls through to the runtime scope stack, which inside
+            // a stored closure holds the CALLER's blocks — dynamic scope, and a
+            // different answer than the literal spelling gives.
+            //
+            // Only `outer_ref_names` is claimed, not `free`: a symbolic deref sets
+            // the reflective-access flag, which already makes `capture_closure_env`
+            // fall back to a whole-env `clone_env`, so every enclosing name is in the
+            // captured env regardless. Adding them to `free` would buy nothing and
+            // would freeze snapshots of names the body never reads.
+            if let OpCode::SymbolicDeref { scopes_idx, .. } = op
+                && let Some(chain) = self.lex_scopes.get(*scopes_idx as usize)
+            {
+                for name in chain.declared_names() {
+                    if !outer_ref_names.iter().any(|n| n == name) {
+                        outer_ref_names.push(name.to_string());
+                    }
+                }
+            }
             // Self-capturing declaration: `my $f = -> $n { ... $f($n-1) ... }`.
             // The initializer's closure-creation op snapshots the env BEFORE the
             // declaration's store runs, so the closure captures `$f` while it is
@@ -3317,6 +3353,18 @@ impl CompiledCode {
         let idx = self.closure_compiled_codes.len() as u32;
         self.closure_compiled_codes.push(Arc::new(code));
         self.closure_escapes.push(escapes);
+        idx
+    }
+
+    /// Bake one emit point's lexical scope chain, returning the index a
+    /// `SymbolicDeref` carries. Not deduped: symbolic deref is rare, and two
+    /// sites almost never share a chain anyway.
+    pub(crate) fn add_lex_scope_chain(
+        &mut self,
+        chain: crate::compiler::lex_scope::LexScopeChain,
+    ) -> u32 {
+        let idx = self.lex_scopes.len() as u32;
+        self.lex_scopes.push(Arc::new(chain));
         idx
     }
 

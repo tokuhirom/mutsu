@@ -52,6 +52,7 @@ mod helpers_ops;
 mod helpers_phasers;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
+pub(crate) mod lex_scope;
 mod stmt;
 
 #[derive(Clone)]
@@ -75,6 +76,13 @@ pub(crate) struct Compiler {
     /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
     local_scopes: Vec<HashMap<String, Option<u32>>>,
+    /// The ENCLOSING compilation's scope chain (outermost first), for compilers
+    /// that are compiling a nested body. `local_scopes` stops at the routine /
+    /// closure boundary because slot allocation does, but the *lexical* chain does
+    /// not — and `$::($name)::x` has to be answered against the whole thing, since
+    /// it learns its target name too late to be answered any other way. Empty for a
+    /// compilation unit's own compiler. See [`lex_scope::LexScopeChain`].
+    enclosing_scopes: Vec<lex_scope::ScopeFrame>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
     compiled_functions: CompiledFns,
@@ -266,6 +274,7 @@ impl Compiler {
             local_map: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
             local_scopes: vec![HashMap::new()],
+            enclosing_scopes: Vec::new(),
             local_types: HashMap::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
@@ -465,31 +474,31 @@ impl Compiler {
         self.code.add_closure_code(compiled, esc)
     }
 
-    /// Resolve the local slot of the binding of `name` visible `depth` lexical
-    /// scopes out from the current one (`$OUTER::name` = depth 1), by unwinding
-    /// the shadow records in `local_scopes`: each frame that declares `name`
-    /// stores the pre-declaration slot (`Some(outer)` for a genuine ancestor
-    /// shadow, `None` for a first declaration), so unwinding the frames deeper
-    /// than the target scope leaves the slot the target scope sees. Returns
-    /// `None` when the depth crosses this frame's boundary or the name is not
-    /// a local binding at that scope (the runtime falls back to its existing
-    /// by-name / env resolution). §1.3 S14 (GetOuterVar slot bake) — only
-    /// meaningful under `MUTSU_SHADOW_SLOTS` (the default build records `None`
-    /// for every declaration, so this resolves `None` whenever a shadow is
-    /// involved, and the runtime read is gated anyway).
-    fn resolve_outer_var_slot(&self, name: &str, depth: usize) -> Option<u32> {
-        let n = self.local_scopes.len();
-        if depth >= n {
-            return None;
-        }
-        let target = n - 1 - depth;
-        let mut slot = self.local_map.get(name).copied();
-        for frame in self.local_scopes[target + 1..].iter().rev() {
-            if let Some(prev) = frame.get(name) {
-                slot = *prev;
-            }
-        }
-        slot
+    /// The full lexical scope chain visible right here, outermost first: the
+    /// enclosing compilation's scopes followed by this one's.
+    fn full_scope_chain(&self) -> Vec<lex_scope::ScopeFrame> {
+        self.enclosing_scopes
+            .iter()
+            .chain(self.local_scopes.iter())
+            .cloned()
+            .collect()
+    }
+
+    /// Hand a nested body's compiler the chain it is being compiled inside, so a
+    /// symbolic deref in that body still sees the enclosing scopes.
+    fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
+        sub.enclosing_scopes = self.full_scope_chain();
+    }
+
+    /// Bake the scope chain visible right here into the code chunk, and return
+    /// the index the reading opcode carries.
+    ///
+    /// Only the indirect spelling `$::($name)::x` needs this — see
+    /// [`lex_scope::LexScopeChain`]. It is emitted per symbolic-deref site, which
+    /// is a construct that appears a handful of times in a program at most.
+    fn bake_lex_scope_chain(&mut self) -> u32 {
+        let chain = lex_scope::LexScopeChain::new(self.full_scope_chain(), self.local_map.clone());
+        self.code.add_lex_scope_chain(chain)
     }
 
     /// Record the compiler-authoritative positional-parameter → local-slot map
@@ -621,64 +630,37 @@ impl Compiler {
 
     /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
     /// `OUTER::<$x>`, and their `OUTER::OUTER::` chains).
-    ///
-    /// `OUTER` names exactly ONE scope -- packages.rakudoc: "Symbols in the next
-    /// outer lexical scope" -- so a name the target scope does not declare is Nil,
-    /// NOT whatever an enclosing scope happens to bind under the same name (that
-    /// cascade is `OUTERS`). Whenever the target scope is inside this frame the
-    /// compiler settles the lookup outright: `local_scopes` records which names
-    /// each scope declares, so "declared there?" is answered exactly, with no
-    /// runtime guessing. Only a `depth` that crosses this frame's outermost scope
-    /// is unknowable here (the enclosing frame is a separate compilation), and is
-    /// left to the runtime's captured-env walk in `get_outer_var`.
     fn emit_outer_var_access(&mut self, bare: String, depth: usize) {
-        let n = self.local_scopes.len();
-        // The topic is exempt: EVERY block and routine scope declares its own `$_`
-        // (a block's implicitly as `$_ is raw = OUTER::<$_>`, a routine's as a fresh
-        // undefined one), so "does the target scope declare it?" is always yes and
-        // the question is only ever what that `$_` holds -- which the runtime path
-        // answers. `_` is never in `local_scopes` because it is never spelled as a
-        // declaration, so without this it would compile to a constant Nil.
-        let implicitly_declared = bare == "_";
-        if depth < n
-            && !implicitly_declared
-            && !self.local_scopes[n - 1 - depth].contains_key(&bare)
-        {
-            let idx = self.code.add_constant(Value::NIL);
-            self.code.emit(OpCode::LoadConst(idx));
-            return;
-        }
-        let slot = self.resolve_outer_var_slot(&bare, depth);
-        let name_idx = self.code.add_constant(Value::str(bare));
-        self.code.emit(OpCode::GetOuterVar {
-            name_idx,
-            depth: depth as u32,
-            slot,
-        });
+        let res = lex_scope::resolve_outer(&self.full_scope_chain(), &self.local_map, &bare, depth);
+        self.emit_outer_resolution(bare, res);
     }
 
-    /// Emit a read of `bare` via `OUTERS::` -- packages.rakudoc: "Symbols in any
-    /// outer lexical scope".
-    ///
-    /// Where `OUTER` names one scope, `OUTERS` searches outward and stops at the
-    /// innermost ENCLOSING scope that declares the name; the current scope is
-    /// excluded, so `my $y = 7; { my $y = 8; say $OUTERS::y }` is 7, not 8. That
-    /// makes it exactly an `OUTER` at the depth of the first enclosing declaration,
-    /// which is a question `local_scopes` already answers -- so the two spell the
-    /// same read, and only the choice of depth differs.
+    /// Emit a read of `bare` via `OUTERS::` ("Symbols in any outer lexical scope").
     fn emit_outers_var_access(&mut self, bare: String) {
-        let n = self.local_scopes.len();
-        for depth in 1..n {
-            if self.local_scopes[n - 1 - depth].contains_key(&bare) {
-                self.emit_outer_var_access(bare, depth);
-                return;
+        let res = lex_scope::resolve_outers(&self.full_scope_chain(), &self.local_map, &bare);
+        self.emit_outer_resolution(bare, res);
+    }
+
+    /// Emit the read [`lex_scope`] resolved to. A scope that does not declare the
+    /// name is settled here as a constant Nil rather than handed to the runtime:
+    /// `OUTER` names exactly one scope, and "does that scope declare it?" is a
+    /// lexical question the VM has no sound way to re-ask (see
+    /// [`lex_scope::LexScopeChain`]).
+    fn emit_outer_resolution(&mut self, bare: String, res: lex_scope::OuterResolution) {
+        match res {
+            lex_scope::OuterResolution::NotDeclared => {
+                let idx = self.code.add_constant(Value::NIL);
+                self.code.emit(OpCode::LoadConst(idx));
+            }
+            lex_scope::OuterResolution::Read { depth, slot } => {
+                let name_idx = self.code.add_constant(Value::str(bare));
+                self.code.emit(OpCode::GetOuterVar {
+                    name_idx,
+                    depth: depth as u32,
+                    slot,
+                });
             }
         }
-        // No enclosing scope of THIS frame declares it. The search continues in the
-        // enclosing frame, which is a separate compilation: depth `n` crosses this
-        // frame's boundary, which is precisely the case `get_outer_var` resolves
-        // against the captured env -- itself an outward cascade, i.e. OUTERS.
-        self.emit_outer_var_access(bare, n);
     }
 
     /// Compile this unit as an `EVAL`'d compilation unit's mainline.
