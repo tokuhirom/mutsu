@@ -28,15 +28,16 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 0 | CLI load + command dispatch | ✅ | `zef --version` → 1.1.3; `--help` prints usage |
 | 1 | Ecosystem index (populate) | ✅ | fez index parsed: **9260 keys / 7648 dists**, ~6.5s release |
 | 2 | Resolve / find candidate | ✅ | `zef info Test::META` → full Identity/Source/Description |
-| 3 | **Fetch** (download archive) | ✅ | `zef fetch` downloads `https://360.zef.pm/.../*.tar.gz` via the **curl** backend (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617 |
-| 4 | **Extract** (untar) | ⏳ | Reached the real `tar -xvf` call with correct paths after #4620 + #4622 + #4627. One **call-arg sub-case** of the closure-capture bug still misroutes `$path` → `.lock` (see "Current frontier") |
+| 3 | **Fetch** (download archive) | ⏳ | Single-dist `zef fetch` downloads `https://360.zef.pm/.../*.tar.gz` via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617. **The concurrent multi-candidate fetch that `install` drives still fails** (see "Current frontier") |
+| 4 | **Extract** (untar) | ✅ | Untars the real dist after #4620 + #4622 + #4627 + #4635/#4641/#4642 |
 | 5 | Build | ⬜ | not reached |
 | 6 | Test | ⬜ | not reached |
 | 7 | Install into site repo | ⬜ | not reached — but the **install→`use` bridge is already done** (`t/compunit-repository-for-name.t`), so once a dist reaches here it should be resolvable |
 
-**So: ~3.7 of 8 phases.** Everything through *fetch* works end-to-end against
-the live ecosystem; *extract* is one narrow language bug (the call-arg vouch
-veto) away from untarring the dist.
+**So: ~4.5 of 8 phases.** Resolution, dependency collection, single-dist fetch
+and extract all work against the live ecosystem. `install` now gets all the way
+to fetching its 16 resolved candidates; the frontier is that those *concurrent*
+fetches clobber each other's URL.
 
 ## Fixes that got us here (this campaign)
 
@@ -82,59 +83,76 @@ fixed generally:
   vouch at runtime via `Interpreter::frame_authoritative`. Pin:
   `t/closure-map-block-free-var-capture.t`.
 
-## Current frontier — extract's remaining call-arg sub-case
+### Dependency resolution — the bare-name shared-store collision (2026-07-17)
 
-With #4620 + #4622 + #4627, `zef fetch Test::META` reaches the real
-`tar -xvf … -C …` call with the **correct** archive/extract paths in the common
-case. One narrower zef-specific sub-case of the #4627 closure bug remains and
-still makes `tar` receive the `.lock` path:
+`zef install` aborted with `Invalid dependency specification: True`:
+`Zef::Distribution.depends-specs` does `my $depends := system-collapse($.depends)`,
+and when `system-collapse` returned `Nil` the bind produced **`True`** — the value
+of the *caller's* (`Zef::Client`) unrelated `$!depends` flag.
 
-`Zef::Extract.extract` binds `my $path := $candi.uri`, then passes `$path` as a
-**call argument** — `self!extractors($path)` (the map invocant) and
-`$extractor.extract($path, …)` (in the `start` block). mutsu's compile-time
-vouch analysis conservatively **vetoes** any call-arg-source from
-`authoritative_free_vars` (an `is rw` param *could* write it back — see
-`own_call_arg_sources` in `compute_free_vars`). So `$path` is never vouched, the
-#4627 runtime cascade never starts for it, and the `start` block's `$path` again
-degrades to `lock-file-protect`'s `$path` param.
+Root cause: the cross-thread shared store (`shared_vars`) is keyed by **bare name**
+and is **global to the process**. Every `start`/`Proc::Async` spawn makes
+`clone_for_thread` migrate all env lexicals it can see into it, so zef's early
+spawns left a `depends => True` entry behind. `GetLocal` treated a `Nil` slot as
+"uninitialized — refresh from the shared store" and read that foreign entry by
+bare name. `set_shared_var_sym` already masked the **write** side on
+`thread_redeclared_vars` (a re-declared name is a fresh binding shadowing the
+migrated one); the read path did not, and that asymmetry *was* the bug. It
+explains every symptom: `:=`-only (a `=` wraps the value in a `Scalar` container,
+so the slot is a `ContainerRef` and returns before the Nil branch), `Nil`-only
+(the fallback is gated on `is_nil()`), and name-sensitive (only names that some
+spawn actually migrated collide). Fixed by gating the read on the same
+`thread_redeclared_vars` mask. Pin: `t/shared-var-nil-redeclared-mask.t`.
 
-Minimal repro (fails; raku prints `(A:REAL B:REAL)`):
+Repro (`victim` prints `Bool::True` on the second call before the fix):
 
 ```raku
-sub other($p) { 1 }
-sub callee($path, &code) { code() }
-sub extract($candi) {
-    my $path := $candi;
-    other($path);                                   # the call-arg veto trigger
-    <A B>.map(-> $b { callee("$path.lock", -> { await start { "$b:$path" } }) });
-}
-say extract("REAL");                                # mutsu: (A:REAL.lock B:REAL.lock)
+sub nil-returner() { Nil }
+sub spawner() { my $depends = True; await start { $depends }; }
+sub victim()  { my $depends := nil-returner(); say $depends.raku; }
+victim();    # Nil
+spawner();   # migrates `depends => True` into the global shared store
+victim();    # was Bool::True, now Nil
 ```
+
+## Current frontier — concurrent fetch clobbers the URL
+
+With dependency resolution fixed, `zef install Test::META` resolves **15
+prereqs / 16 candidates** and reaches the fetch phase for all of them — then
+every fetch fails. The `--debug` trace shows why: the candidates are fetching
+**each other's URL**.
+
+```
+[Test::Async]     Fetching https://360.zef.pm/J/SO/JSON_OPTIN/7ada0a9….tar.gz with plugin: …wget
+[JSON::Unmarshal] Fetching https://360.zef.pm/J/SO/JSON_OPTIN/7ada0a9….tar.gz with plugin: …wget
+[META6]           Fetching https://360.zef.pm/J/SO/JSON_OPTIN/7ada0a9….tar.gz with plugin: …wget
+```
+
+Six unrelated dists all request `JSON::OptIn`'s archive, so the downloaded file
+never matches the candidate and each is reported `Fetching [FAIL]`. Single-dist
+`zef fetch Test::META` still works (exit 0) — it is the **concurrent** fetch that
+`install` drives (`Zef::Client.!fetch` hypers over candidates) that breaks.
 
 ### Next session starts here
 
-The **sound** fix (per ADR-0001's by-value-vs-cell guidance): a captured free var
-that is a call-arg-source (potentially rw-mutated) should be **boxed into a
-shared `ContainerRef` cell** rather than left a by-value snapshot. A `ContainerRef`
-capture is already overwrite-installed at closure entry
-(`call_compiled_closure_with_topic`, the `ValueView::ContainerRef` arm ~line 233)
-AND tracks the live value, so it is immune to a same-named caller param and stays
-correct even under an actual `is rw` write-back.
+The shape — one lexical's value leaking across sibling concurrent tasks — is the
+same family as the bug fixed above, and quite possibly the *same* mechanism:
+`shared_vars` is a **process-global, bare-name** map, so N concurrent
+`start`-block frames each holding their own `$uri`/`$url` lexical all collide on
+one key, and last-writer-wins.
 
-1. In `compute_free_vars` (`src/opcode.rs`), extend the `needs_cell` analysis:
-   a free var that a nested closure captures AND that is in `own_call_arg_sources`
-   should be added to `needs_cell` (its declaring frame boxes it). Today only
-   *mutated* captures are boxed (`self_mutated`/`free_writes`); this adds the
-   call-arg-source captured case.
-2. Verify the minimal repro above prints `(A:REAL B:REAL)`, then re-run the full
-   `zef fetch Test::META` — extract should now untar `Test-META-0.0.20` and the
-   pipeline advances to **build**.
-3. Watch for over-boxing regressions (perf + `=:=` identity / by-value
-   expectations) via `make test`; boxing a readonly call-arg var is sound but
-   touches a common pattern. Add a `t/` pin, PR it.
-4. Then move to phase 5 (**build**): re-run `zef fetch`/`zef install --/--build`
-   and instrument `Zef::Client.build` → `Zef::Service::Shell::DistributionBuilder`
-   the same way.
+1. Instrument `Zef::Service::Shell::wget`/`curl` `.fetch` (per the tooling
+   section below) to print the `$uri` it receives vs the one it shells out with —
+   confirm where the value diverges.
+2. Reproduce in isolation first: several `start` blocks, each with a same-named
+   lexical bound from its own argument, read after a sibling has spawned. If that
+   reproduces, the fix belongs in the shared store's keying, not in zef.
+3. Note that per-name masking (`thread_redeclared_vars`) is a *band-aid on the
+   band-aid*: the real defect is that a thread-shared store keyed by bare name
+   cannot distinguish two unrelated lexicals of the same name. If the fetch bug
+   is the same mechanism, prefer fixing the keying (scope-qualified keys) over
+   adding another mask — and record it as an ADR, since it touches the dual-store
+   campaign (PLAN §6 / `project-slice-f-reverse-sync-campaign`).
 
 ## How to run zef under mutsu (tooling)
 
