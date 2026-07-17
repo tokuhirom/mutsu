@@ -72,6 +72,19 @@ impl Interpreter {
             names.insert(name.clone());
         }
         Self::collect_named_captures_in_atom(&token.atom, &mut names);
+        // A `%` separator's own captures are quantified too: `<a> *% <sep>`
+        // matching a single atom (zero separators) must leave `$<sep>` an empty
+        // list, not an absent capture, exactly as a zero-iteration `[ <sep> ]*`
+        // does. Every caller is a quantified context, and a token with no
+        // separator adds nothing here.
+        if let Some(sep) = token.separator.as_ref() {
+            for tok in &sep.pattern.tokens {
+                if let Some(name) = tok.named_capture.as_ref() {
+                    names.insert(name.clone());
+                }
+                Self::collect_named_captures_in_atom(&tok.atom, &mut names);
+            }
+        }
         names
     }
 

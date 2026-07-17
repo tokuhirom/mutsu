@@ -488,6 +488,17 @@ impl Interpreter {
                         )?;
                         *item = sub_mutated;
                         results.push(sub_result);
+                    } else if !skip_native
+                        && item.is_nil()
+                        && crate::vm::vm_call_method_ops::nil_absorbs_method(&method)
+                    {
+                        // Raku's `Nil.FALLBACK` yields Nil for any method Nil does
+                        // not define, so `(Nil,)».ast` is `(Nil,)` — the same answer
+                        // the scalar `Nil.ast` path already gives. Without this the
+                        // leaf raised "No such method 'ast' for ... 'Any'", which
+                        // silently aborted grammar action methods doing
+                        // `@<op>».ast` over an absent capture (99problems P47).
+                        results.push(Value::NIL);
                     } else {
                         let val = if !skip_native {
                             if let Some(native_result) =
@@ -768,6 +779,14 @@ impl Interpreter {
             }
             _ => {
                 // Leaf: apply the method, mirroring the non-recursive leaf path.
+                // Nil absorbs methods it does not define (Raku's `Nil.FALLBACK`);
+                // see the matching branch in `exec_hyper_method_call_op`.
+                if !skip_native
+                    && item.is_nil()
+                    && crate::vm::vm_call_method_ops::nil_absorbs_method(method)
+                {
+                    return Ok((Value::NIL, item.clone()));
+                }
                 if !skip_native
                     && let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), args)

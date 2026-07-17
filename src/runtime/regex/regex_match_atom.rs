@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::super::*;
 use super::regex_helpers::{NamedRegexLookupSpec, merge_regex_captures};
@@ -19,6 +19,13 @@ thread_local! {
     /// When a recursive call sees its key here, it returns the current seed.
     static LR_ACTIVE: RefCell<HashMap<(String, usize), ()>>
         = RefCell::new(HashMap::new());
+
+    /// Keys whose seed was actually CONSULTED (read by a recursive re-entry)
+    /// while they were active — i.e. the keys that are genuinely
+    /// left-recursive at this position. Only those need the seed-growing
+    /// loop's second iteration; see the `seed_was_consulted` check below.
+    static LR_SEED_READ: RefCell<HashSet<(String, usize)>>
+        = RefCell::new(HashSet::new());
 }
 
 impl Interpreter {
@@ -397,6 +404,9 @@ impl Interpreter {
                 // Check if this call is currently active (left recursion detected).
                 let is_active = LR_ACTIVE.with(|a| a.borrow().contains_key(&lr_key));
                 if is_active {
+                    // Genuine left recursion: this key's evaluation depends on
+                    // its own seed, so the owner must keep growing it.
+                    LR_SEED_READ.with(|s| s.borrow_mut().insert(lr_key.clone()));
                     // Return the current seed for this (name, position).
                     // The seed is stored in HIGHEST FIRST order (raw inner positions relative to tail).
                     let seed =
@@ -421,6 +431,10 @@ impl Interpreter {
                 // Initialize with empty seed (= no match yet).
                 LR_MEMO.with(|m| m.borrow_mut().insert(lr_key.clone(), Vec::new()));
                 LR_ACTIVE.with(|a| a.borrow_mut().insert(lr_key.clone(), ()));
+                // This key starts out un-consulted for THIS activation; a stale
+                // entry from an earlier activation at the same key must not be
+                // read as "left-recursive" here.
+                let outer_seed_read = LR_SEED_READ.with(|s| s.borrow_mut().remove(&lr_key));
 
                 // best_inner_max: max inner_end seen so far (None = nothing matched yet).
                 let mut best_inner_max: Option<usize> = None;
@@ -483,6 +497,19 @@ impl Interpreter {
 
                     let new_max: Option<usize> = deduped_raw.iter().map(|(e, _)| *e).max();
 
+                    // Nothing re-entered this key, so the evaluation never read
+                    // the seed and cannot change if the seed grows: this rule is
+                    // not left-recursive at this position and the first result is
+                    // already final. Re-running the candidates would recompute the
+                    // identical set — and since every nested subrule did the same,
+                    // that redundant second pass compounded to 2^depth over a
+                    // precedence-climbing grammar (99problems-41-to-50.t P47).
+                    let seed_was_consulted = LR_SEED_READ.with(|s| s.borrow().contains(&lr_key));
+                    if !seed_was_consulted {
+                        best_raw = deduped_raw;
+                        break;
+                    }
+
                     if new_max > best_inner_max {
                         // Seed grew: store the raw matches (HIGHEST FIRST) as the seed.
                         best_inner_max = new_max;
@@ -497,6 +524,16 @@ impl Interpreter {
                 // Clean up active/memo state.
                 LR_ACTIVE.with(|a| a.borrow_mut().remove(&lr_key));
                 LR_MEMO.with(|m| m.borrow_mut().remove(&lr_key));
+                // Restore the enclosing activation's consulted flag: an inner
+                // activation of the same key must not mask the outer one's.
+                LR_SEED_READ.with(|s| {
+                    let mut s = s.borrow_mut();
+                    if outer_seed_read {
+                        s.insert(lr_key.clone());
+                    } else {
+                        s.remove(&lr_key);
+                    }
+                });
 
                 // Wrap best_raw into outer captures and return.
                 // best_raw is HIGHEST FIRST; build_named_candidates_from_inner returns in

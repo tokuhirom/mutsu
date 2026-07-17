@@ -161,17 +161,51 @@ impl Interpreter {
         // returned grammar type object fails with "Unknown method parse". Preserve
         // newly-registered tokens (keys absent from the snapshot) so the EVAL'd
         // grammar stays usable, mirroring how EVAL'd classes/roles persist.
+        //
+        // The same applies to a `grammar`/`class` declared inside a BARE BLOCK:
+        // a `token`/`rule` in its body is a METHOD of that package, and Raku
+        // scopes a package declaration to the package (`our`), not to the
+        // enclosing block — so `{ grammar B { token id {...} } }` must leave
+        // `B`'s tokens usable afterwards (`grammar D is B { rule TOP { <id> } }`
+        // declared later still resolves `<id>`). The class itself already
+        // survives; dropping only its tokens left `<id>` unresolvable, and the
+        // engine then fell back to method dispatch — "No such method 'id' for
+        // invocant of type 'Match'" (99problems-41-to-50.t P47, whose P46 block
+        // declares the base grammar that P47's block subclasses).
+        //
+        // A block-local `my token` is owned by no declared package, so it is not
+        // preserved here and still drops with the block, as before.
         let mut new_tokens: Vec<(Symbol, Vec<std::sync::Arc<FunctionDef>>)> = Vec::new();
         let mut new_proto_tokens: Vec<String> = Vec::new();
-        if is_eval {
+        {
             let registry = self.registry();
+            let token_owned_by_package = |defs: &[std::sync::Arc<FunctionDef>]| {
+                defs.iter()
+                    .any(|d| registry.classes.contains_key(&d.package.resolve()))
+            };
             for (key, defs) in &registry.token_defs {
-                if !token_defs.contains_key(key) {
+                if token_defs.contains_key(key) {
+                    continue;
+                }
+                if is_eval || token_owned_by_package(defs) {
                     new_tokens.push((*key, defs.clone()));
                 }
             }
             for pt in &registry.proto_tokens {
-                if !proto_tokens.contains(pt) {
+                if proto_tokens.contains(pt) {
+                    continue;
+                }
+                // Keep a proto declaration exactly when its candidates survive.
+                let kept = is_eval
+                    || registry
+                        .token_defs
+                        .get(&Symbol::intern(pt))
+                        .is_some_and(|defs| token_owned_by_package(defs))
+                    || new_tokens.iter().any(|(k, _)| {
+                        let n = k.resolve();
+                        n == *pt || n.starts_with(&format!("{pt}:sym"))
+                    });
+                if kept {
                     new_proto_tokens.push(pt.clone());
                 }
             }

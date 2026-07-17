@@ -2,6 +2,84 @@ use super::*;
 use crate::symbol::Symbol;
 use std::sync::Arc;
 
+/// True when a method call on `Nil` is absorbed by Raku's `Nil.FALLBACK` — i.e.
+/// `Nil` does not actually define it, so the call yields `Nil` instead of a
+/// "No such method" error (`Nil.ast` is `Nil`).
+///
+/// The listed names are the ones `Nil` really answers (or answers specially):
+/// they must reach normal dispatch / their own handling instead of being
+/// absorbed. This mirrors, and is kept in sync with, the `target.is_nil()`
+/// match in the `MethodCall` opcode handler below; the hyper-method leaf
+/// (`».foo`) consults it so `(Nil,)».ast` agrees with `Nil.ast`.
+pub(crate) fn nil_absorbs_method(method: &str) -> bool {
+    !matches!(
+        method,
+        // Mutators that error on a Nil invocant.
+        "BIND-POS"
+            | "BIND-KEY"
+            | "ASSIGN-POS"
+            | "ASSIGN-KEY"
+            | "STORE"
+            // Any:U autovivification.
+            | "push"
+            | "append"
+            | "unshift"
+            | "prepend"
+            // Introspection/coercion Nil genuinely defines.
+            | "defined"
+            | "Bool"
+            | "so"
+            | "not"
+            | "gist"
+            | "Str"
+            | "raku"
+            | "perl"
+            | "WHAT"
+            | "WHICH"
+            | "WHERE"
+            | "HOW"
+            | "WHY"
+            | "VAR"
+            | "DEFINITE"
+            | "isa"
+            | "does"
+            | "can"
+            | "^name"
+            | "^mro"
+            | "^pun"
+            | "new"
+            | "bless"
+            | "clone"
+            | "item"
+            | "self"
+            | "sink"
+            | "pending"
+            // List/iteration methods inherited from Any.
+            | "grep"
+            | "map"
+            | "first"
+            | "sort"
+            | "reverse"
+            | "list"
+            | "List"
+            | "Slip"
+            | "flat"
+            | "Seq"
+            | "cache"
+            | "head"
+            | "tail"
+            | "elems"
+            // Numeric/string coercions that warn rather than absorb.
+            | "Rat"
+            | "FatRat"
+            | "Int"
+            | "Num"
+            | "Complex"
+            | "ords"
+            | "chrs"
+    )
+}
+
 impl Interpreter {
     /// Build an X::Multi::NoMatch error for a `print`/`say`/`put`/`note` call
     /// made with a positional argument on an invocant whose only candidate is
@@ -1244,6 +1322,10 @@ impl Interpreter {
                 // Certain mutating methods throw exceptions.
                 // This must be in the Interpreter path (not the interpreter's call_method_with_values)
                 // to avoid affecting internal dispatch (e.g. max :by comparators).
+                //
+                // The method categories below are mirrored by `nil_absorbs_method`,
+                // which lets the hyper-method path (`».foo`) reach the same
+                // Nil-absorbing verdict without duplicating this dispatch.
                 if target.is_nil() {
                     match method {
                         "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
