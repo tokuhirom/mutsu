@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::resolution_map_grep::bind_loop_topic;
 use crate::value::ValueView;
 
 impl Interpreter {
@@ -361,6 +362,10 @@ impl Interpreter {
                 self.env.insert_sym(*k, v.clone());
             }
 
+            let keeps_outer_topic =
+                super::resolution_map_grep::whatever_code_keeps_outer_topic(&data);
+            let outer_topic = self.env.get("_").cloned();
+
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
             // returns Ok(()) / Err on the loop; `with_nested_registers` restores
@@ -402,21 +407,35 @@ impl Interpreter {
                                 if let Some(p) = data.params.get(assumed_count) {
                                     vm.env_mut().insert(p.clone(), chunk[0].clone());
                                 }
-                                vm.env_mut().insert(underscore.clone(), chunk[0].clone());
-                                vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
-                                vm.env_mut()
-                                    .insert(topic_source_key.clone(), chunk[0].clone());
+                                bind_loop_topic(
+                                    vm.env_mut(),
+                                    &chunk[0],
+                                    keeps_outer_topic,
+                                    &outer_topic,
+                                );
+                                if !keeps_outer_topic {
+                                    vm.env_mut()
+                                        .insert(topic_source_key.clone(), chunk[0].clone());
+                                }
                             } else {
                                 for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                     if idx < chunk.len() {
                                         vm.env_mut().insert(p.clone(), chunk[idx].clone());
                                     }
                                 }
-                                vm.env_mut().insert(underscore.clone(), chunk[0].clone());
-                                vm.env_mut().insert(dollar_topic.clone(), chunk[0].clone());
+                                bind_loop_topic(
+                                    vm.env_mut(),
+                                    &chunk[0],
+                                    keeps_outer_topic,
+                                    &outer_topic,
+                                );
                             }
                         }
-                        vm.set_topic_source_var((arity == 1).then_some(topic_source_key.clone()));
+                        // `$_` holding the caller's topic is not an alias for the
+                        // element, so it must not write back to it.
+                        vm.set_topic_source_var(
+                            (arity == 1 && !keeps_outer_topic).then_some(topic_source_key.clone()),
+                        );
                         match vm.run_reuse(&code, &compiled_fns) {
                             Ok(()) => {
                                 let pred = vm
