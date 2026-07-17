@@ -396,23 +396,26 @@ impl Interpreter {
         let subset = self.registry().subsets.get(spec).cloned();
         if let Some(subset) = subset {
             // For subsets with coercion base types, coerce first then check predicate
-            let coerced = if subset.base.contains('(') && subset.base.ends_with(')') {
-                self.enforce_coercion_return(&subset.base, value)?
-            } else {
-                // Non-coercion subset: just check the base type
-                if !self.type_matches_value(&subset.base, &value) {
-                    return Err(self.throw_type_check_return(spec, &value));
+            if subset.base.contains('(') && subset.base.ends_with(')') {
+                let coerced = self.enforce_coercion_return(&subset.base, value)?;
+                if let Some(ref pred) = subset.predicate {
+                    let pred_clone = pred.clone();
+                    if !self.check_where_constraint(&pred_clone, &coerced) {
+                        return Err(self.throw_type_check_return(spec, &coerced));
+                    }
                 }
-                value
-            };
-            // Check the where predicate if present
-            if let Some(ref pred) = subset.predicate {
-                let pred_clone = pred.clone();
-                if !self.check_where_constraint(&pred_clone, &coerced) {
-                    return Err(self.throw_type_check_return(spec, &coerced));
-                }
+                return Ok(coerced);
             }
-            return Ok(coerced);
+            // Non-coercion subset: delegate base + predicate to the standard
+            // subset matcher (the `~~` path). The local check_where_constraint
+            // only understands callable predicates; a regex `where` (URI's
+            // `subset Host of Str where /^ ... $/`) evaluated through it came
+            // back false, failing every `--> Host` return while `~~ Host` was
+            // True.
+            if !self.type_matches_value(spec, &value) {
+                return Err(self.throw_type_check_return(spec, &value));
+            }
+            return Ok(value);
         }
 
         // Check if this is a coercion type like Str(Numeric:D) or Foo:D()
