@@ -323,7 +323,15 @@ impl Interpreter {
                 self.env.insert(key.to_string(), value.clone());
             }
         }
-        if self.shared_vars_active {
+        // The `thread_redeclared_vars` gate is NOT subsumed by ADR-0010's
+        // lineage scoping: lineage scoping isolates *sibling* threads, but a
+        // child's `my` re-declaration of a name its PARENT lineage owns would
+        // still write through the chain to the parent (`SharedStore::set`
+        // resolves to the nearest ancestor that has the name). A re-declared
+        // name is a fresh binding shadowing the captured outer lexical, so its
+        // writes stay env-local; the next `clone_for_thread` binds the current
+        // value into this lineage (`declare`) and clears the mask.
+        if self.shared_vars_active && !self.thread_redeclared_vars.contains(key) {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
             // mechanism and expects non-flattening Array semantics. This must
@@ -412,6 +420,7 @@ impl Interpreter {
                 .iter()
                 // A name re-declared in this thread is a fresh local binding;
                 // pulling the shared (outer) value in would clobber it.
+                .filter(|k| !self.thread_redeclared_vars.contains(*k))
                 .cloned()
                 .collect()
         };

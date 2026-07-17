@@ -72,19 +72,33 @@ struct SharedStore {
   write there, so a child's mutation of the parent's `$counter` reaches the
   parent (the property `t/cross-thread-shared-var-writeback-coherence.t` and
   friends pin). If no ancestor has it, the name is this lineage's own.
-- **Declaration** (`SetVarDynamic`, i.e. `my $x`): binds the name into the
-  **current** lineage's `own`, shadowing any ancestor entry.
+- **Declaration** (`SetVarDynamic`, i.e. `my $x`): a fresh binding that shadows
+  any ancestor entry. Implemented in two steps, not by an eager store write:
+  the declaration marks the name in `thread_redeclared_vars`, which keeps its
+  writes/reads env-local (the #4650 gates); the binding only enters the store at
+  the **next spawn**, when `clone_for_thread` `declare`s the current env value
+  into this lineage's `own` and clears the mask. Eagerly `declare`-ing at
+  `SetVarDynamic` looks cleaner but is wrong without block-exit cleanup: the
+  `own` entry would outlive the block that declared it, and the dirty-key sync
+  would resurrect the dead shadow into the restored env
+  (`t/shared-store-lineage-scope.t` test 8 pins this).
 
 Sibling lineages have no path to each other, which is exactly the fix: hyper
 workers W1..W5 are siblings, so W1's `uri` and W2's `uri` are different entries
 and cannot collide. The nested `start` inside W1 chains to W1, so it still sees
 W1's `uri` — the sharing that must work still works.
 
-The declaration rule subsumes `thread_redeclared_vars`: "this name was
-re-declared here, so its writes must not leak to the parent" becomes structural
-(the name lives in this lineage) instead of a per-name flag consulted at two
-call sites that must be kept in agreement — an agreement that was in fact broken,
-and was #4650.
+Lineage scoping does **not** subsume `thread_redeclared_vars`. The first draft
+of this ADR claimed it did and removed the #4650 gates; that regressed
+`roast/integration/advent2013-day14.t` deterministically. The two mechanisms are
+orthogonal: lineage scoping isolates **siblings** (two hyper workers' same-named
+lexicals live in different lineages), while the mask handles **parent-child
+shadowing** — a child's `my` re-declaration of a name its parent lineage owns.
+Without the mask, the child's write walks the chain, finds the parent's entry
+(`set` resolves to the nearest ancestor owning the name), and clobbers it: in
+day14, `if INIFile.parse(...) -> $parsed { }` inside a `start` block (desugared
+to `my $parsed = ...`) replaced the parent's `my $parsed = Channel.new` with a
+Match. Both mechanisms are needed.
 
 ## Alternatives considered
 
@@ -159,30 +173,33 @@ migrated those keys from the env either, so this is not a special case bolted on
 Landed. The hyper repro prints each worker's own value, and the invariants hold
 (child→parent writeback, atomics, #4650's pin) — verified against raku.
 
-**The mask is mostly gone, but not entirely** — recording this honestly rather
-than claiming the clean result. Two of `thread_redeclared_vars`' four uses were
-removed and the decision is what removed them:
+**The mask stays.** The first draft removed the `set_shared_var_sym` write gate,
+the `GetLocal` read gate, and the `sync_shared_vars_to_env` dirty-key filter,
+on the theory that a re-declared name lives in this lineage structurally. That
+theory was wrong — nothing binds the re-declaration into the store at
+declaration time (and eager binding would break block-scoped shadowing, see the
+Declaration rule above) — and its cost was the day14 regression described under
+"Design". All three gates are reinstated; `thread_redeclared_vars` keeps all
+four uses:
 
 - the `set_shared_var_sym` **write** gate and the `GetLocal` **read** gate (the
-  asymmetric pair that *was* #4650) are gone — a re-declared name now lives in
-  this lineage structurally, so there is nothing to mask;
-- the `sync_shared_vars_to_env` dirty-key filter is gone.
-
-One use remains, and it is a **different concern** from the one this ADR
-addresses: `clone_for_thread` still consults the set to decide `declare` vs
-`seed_if_absent` when migrating the env. That is about **seed freshness** — if
-the parent re-declared `my $x` since its last spawn, the store still holds the
-old binding's value and `seed_if_absent` would skip, handing the child a stale
-value. It is not about a write leaking to the wrong lineage. Retiring it needs
-declaration to push into the store eagerly at `SetVarDynamic` rather than lazily
-at the next spawn; out of scope here.
+  asymmetric pair that was #4650) keep a re-declared name's writes and reads
+  env-local until the next spawn;
+- the `sync_shared_vars_to_env` dirty-key filter stops a dirty ancestor entry
+  from being pulled over the fresh local binding;
+- `clone_for_thread` consults the set to decide `declare` vs `seed_if_absent`
+  when migrating the env (**seed freshness**: if the parent re-declared `my $x`
+  since its last spawn, `seed_if_absent` would skip and hand the child the old
+  binding's value).
 
 ## Validation
 
 - `t/shared-store-lineage-scope.t` — the new pin (hyper siblings, nested `start`,
-  child→parent writeback, atomics).
-- `t/shared-var-nil-redeclared-mask.t` (#4650's pin) passes **with both gates
-  removed** — the proof the declaration rule subsumes them.
+  child→parent writeback, atomics, child `my`/pointy-binding shadowing, shadow
+  death at block exit).
+- `t/shared-var-nil-redeclared-mask.t` (#4650's pin).
+- `roast/integration/advent2013-day14.t` — the parent-child shadowing case the
+  gate removal regressed (Channels section).
 - The 149 thread/shared/atomic/promise/lock/supply/state `t/` files: all pass.
 - `make test`: 1785 files / 17461 tests, all pass.
 - Full `make roast`, plus the gc-stress/jit-stress jobs, via CI.

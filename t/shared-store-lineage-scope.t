@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 8;
 
 # ADR-0010: the cross-thread store is scoped to a spawn lineage, not the process.
 # It used to be one process-global map keyed by bare name, so sibling threads
@@ -64,3 +64,39 @@ is nested-sees-own(), 'outer',
 my atomicint $hits = 0;
 await (^4).map: { start { $hits⚛++ for ^250 } };
 is $hits, 1000, 'atomics stay process-wide shared across sibling threads';
+
+# The other direction of shadowing: a child's `my` RE-declaration of a name its
+# parent lineage owns is a fresh binding — its writes must NOT chain through to
+# the parent (the chained write resolves to the nearest ancestor owning the
+# name, so without the re-declaration mask this clobbered the parent's value).
+# Regressed advent2013-day14.t: `if INIFile.parse(...) -> $parsed { }` inside a
+# start block desugars to `my $parsed = ...` and replaced the parent's
+# `my $parsed = Channel.new` with a Match.
+sub child-my-shadows() {
+    my $c = Channel.new;
+    await start { my $c = 42; $c };
+    $c;
+}
+isa-ok child-my-shadows(), Channel,
+    'a child `my` re-declaration does not clobber the parent lexical';
+
+sub child-pointy-shadows() {
+    my $parsed = Channel.new;
+    await start { if 42 -> $parsed { $parsed } };
+    $parsed;
+}
+isa-ok child-pointy-shadows(), Channel,
+    'a pointy-if binding in a child does not clobber the parent lexical';
+
+# Within the child, the shadow is block-scoped: after the inner block exits the
+# name must resolve to the captured parent value again (the store must not
+# resurrect the dead shadow into the restored env).
+sub child-shadow-block-exits() {
+    my $c = 'parent';
+    await start {
+        { my $c = 'shadow'; }
+        $c;
+    };
+}
+is child-shadow-block-exits(), 'parent',
+    'the child shadow dies at block exit; the captured outer value is back';
