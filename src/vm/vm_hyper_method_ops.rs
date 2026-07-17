@@ -1,6 +1,26 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// Itemize the hyper result of an element the hyper *descended into*.
+///
+/// Rakudo's `deepmap` (which non-nodal `>>.foo` is built on) recurses into an
+/// element that is `Iterable` and itemizes what comes back, but applies the
+/// method directly to a leaf and leaves that result alone. So `((1,),)>>.succ`
+/// is `($(2,),)` while `(1,2)>>.Array` stays `([1], [2])` — the deciding factor
+/// is the *source* element's shape, not the result's.
+fn itemize_if_descended(source: &Value, result: Value) -> Value {
+    if !matches!(
+        source.view(),
+        ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) | ValueView::Hash(_)
+    ) {
+        return result;
+    }
+    match result.view() {
+        ValueView::Array(items, kind) => Value::array_with_kind(items.clone(), kind.itemize()),
+        _ => Value::scalar(result.clone()),
+    }
+}
+
 impl Interpreter {
     /// Write a mutating hyper's result back to its *named* `@`/`%` target
     /// variable precisely. If the variable is bound (holds a shared
@@ -368,7 +388,10 @@ impl Interpreter {
                     // (e.g., .join, .elems, .sort, .reverse, .unique, .squish).
                     let is_iterable_item = matches!(
                         item.view(),
-                        ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
+                        ValueView::Array(..)
+                            | ValueView::Seq(..)
+                            | ValueView::Slip(..)
+                            | ValueView::Hash(..)
                     );
                     // A qualified dispatch (`».Any::elems`) still names a
                     // plain list-native method once the owner prefix is
@@ -486,6 +509,7 @@ impl Interpreter {
                             &item_args,
                             skip_native,
                         )?;
+                        let sub_result = itemize_if_descended(item, sub_result);
                         *item = sub_mutated;
                         results.push(sub_result);
                     } else if !skip_native
@@ -727,7 +751,7 @@ impl Interpreter {
                 for sub in elems.iter() {
                     let (r, m) =
                         self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
-                    results.push(r);
+                    results.push(itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
                 Ok((
@@ -747,7 +771,7 @@ impl Interpreter {
                 for sub in elems.iter() {
                     let (r, m) =
                         self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
-                    results.push(r);
+                    results.push(itemize_if_descended(sub, r));
                     mutated.push(m);
                 }
                 Ok((
@@ -769,7 +793,7 @@ impl Interpreter {
                     let v = map.get(&k).cloned().unwrap_or(Value::NIL);
                     let (r, m) =
                         self.hyper_method_apply_recursive(&v, method, args, skip_native)?;
-                    res_map.insert(k.clone(), r);
+                    res_map.insert(k.clone(), itemize_if_descended(&v, r));
                     mut_map.insert(k, m);
                 }
                 Ok((

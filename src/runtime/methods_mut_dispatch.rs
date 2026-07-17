@@ -1599,6 +1599,12 @@ impl Interpreter {
                 Self::value_to_list(&target)
             };
             let result = self.eval_map_over_items_rw(args.first().cloned(), &mut items)?;
+            // `.map` returns a Seq (same contract as `dispatch_map_method` and the
+            // native fast path); only the rw writeback below is special here.
+            let result = match result.view() {
+                ValueView::Array(items, _) => Value::seq_arc(std::sync::Arc::new(items.to_vec())),
+                _ => result.clone(),
+            };
             // Write mutated elements back to the source array. `.map(* *= 2)`
             // rw-binds `$_` to each element, so element mutations persist (Raku
             // semantics). A shaped array keeps its shape/structure — only the leaf
