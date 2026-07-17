@@ -170,6 +170,17 @@ no-ops and the probe measures the pattern's declarative skeleton. It deliberatel
 from `LTM_DECLARATIVE_MODE`: a plain `{ }` block does *not* stop the walk here, because
 the probe wants the longest prefix the skeleton accepts, not the LTM prefix.
 
+The per-prefix loop itself is gone too. "The pattern matches `text[0..end]` in full" is the
+same statement as "the pattern has a complete match starting at 0 that ends at `end`" once
+the trailing `$` is dropped — on a *truncated* string `$` is satisfied exactly when the
+match ends at the truncation point, which is what enumerating the ends already gives. So
+one all-ends walk (`regex_match_ends_from_caps_in_pkg` with `anchor_end: false`) answers
+for every prefix at once. The equality assumes success at a given end depends only on the
+characters consumed; a look-ahead near the boundary can see text the truncated string would
+not have, and may now succeed where the loop failed. The answer is a diagnostic position
+either way, and `roast/S05-grammar/parse_and_parsefile-6e.t` pins the exact numbers
+(`line == 3`, `pos == 14`, `pre == '# l3'`) — it still passes.
+
 Note the ordering interaction: **A made this worse before it was fixed.** Before A, an
 assertion-bearing candidate that failed its trial match was dropped by the LTM filter and
 `.parse` returned early with `pattern: None`, never reaching the probe. A keeps such
@@ -177,6 +188,15 @@ candidates (correctly — a declarative measurement cannot filter), which expose
 on exactly the grammars that have assertions. Measured on `token TOP { <group>**2 % ';' }`
 over an 18-char failing input: `a` ran **19** times, `z` **31**; after A2, 1 each — raku's
 numbers exactly.
+
+That LTM filter also bounds which grammars can reach the probe at all, which is why the
+cost is easy to mis-measure: if the declarative skeleton does not match, the candidate is
+dropped and `parse_failure_for_pattern` is called with `pattern: None`, so no probe runs.
+The probe is reached only when the skeleton matches but the real match fails — i.e. when a
+code atom rejects, day18's shape. On that shape (`^ <item>+ $`, `item` rejecting the final
+char), debug build, before → after: len 50 **234 ms / 149 assertion runs → 48 ms / 50**;
+len 400 **2165 ms / 1199 → 218 ms / 400**. The run count is now exactly the input length —
+raku's count.
 
 ### B. Code assertions run inline in the real interpreter
 

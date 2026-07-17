@@ -823,32 +823,46 @@ impl Interpreter {
     /// How far a failed `.parse` got, for the failure message: the longest prefix of
     /// the input that the pattern matches in full.
     ///
-    /// This re-matches the pattern once per prefix, so it must not execute the
-    /// grammar's code atoms — otherwise a `<?{ … }>` runs once per prefix, i.e.
-    /// O(input length) times, purely to build a diagnostic (ADR-0009). `advent2013-day18`
-    /// showed this exactly: its card assertion ran 15 times on a 14-char input and 31
-    /// times on a 31-char one. Under `CODE_ATOMS_INERT` the probe measures the
-    /// pattern's declarative skeleton instead, executing nothing.
+    /// This is a diagnostic, so it must not execute the grammar's code atoms —
+    /// otherwise a `<?{ … }>` runs purely to build an error message (ADR-0009).
+    /// `CODE_ATOMS_INERT` makes both kinds of code atom zero-width no-ops, so the
+    /// probe measures the pattern's declarative skeleton.
     ///
-    /// (The search is still O(input length) full matches on the failure path, and the
-    /// common case — no prefix matches — is the worst case. Pre-existing; not addressed
-    /// here.)
+    /// "The pattern matches `text[0..end]` in full" is the same statement as "the
+    /// pattern has a complete match starting at 0 that ends at `end`", once the
+    /// trailing `$` is dropped: on a *truncated* string `$` is satisfied exactly
+    /// when the match ends at the truncation point, which is what enumerating the
+    /// ends already gives. So one all-ends walk answers for every prefix at once,
+    /// replacing a per-prefix re-match loop that was O(input length) *full matches*
+    /// on the failure path — and whose common case (no prefix matches, so the loop
+    /// runs to the end) was its worst case.
+    ///
+    /// The equality assumes the pattern's success at a given end depends only on the
+    /// characters it consumed. A look-ahead near the boundary can see text the
+    /// truncated string would not have, so it may now succeed where the old loop
+    /// failed; the answer is a diagnostic position either way.
     pub(super) fn longest_complete_prefix_end(&mut self, pattern: &str, text: &str) -> usize {
         let saved = super::regex::regex_helpers::CODE_ATOMS_INERT.replace(true);
-        let chars: Vec<char> = text.chars().collect();
-        let mut best = 0;
-        for end in (0..=chars.len()).rev() {
-            let prefix: String = chars[..end].iter().collect();
-            if let Some(captures) = self.regex_match_with_captures(pattern, &prefix)
-                && captures.from == 0
-                && captures.to == end
-            {
-                best = end;
-                break;
-            }
-        }
+        let best = self.all_complete_match_ends_max(pattern, text);
         super::regex::regex_helpers::CODE_ATOMS_INERT.set(saved);
         best
+    }
+
+    fn all_complete_match_ends_max(&mut self, pattern: &str, text: &str) -> usize {
+        let Some(parsed) = self.parse_regex(pattern) else {
+            return 0;
+        };
+        let probe = RegexPattern {
+            anchor_end: false,
+            ..(*parsed).clone()
+        };
+        let chars: Vec<char> = text.chars().collect();
+        let pkg = self.current_package();
+        self.regex_match_ends_from_caps_in_pkg(&probe, &chars, 0, &pkg)
+            .into_iter()
+            .map(|(end, _)| end)
+            .max()
+            .unwrap_or(0)
     }
 
     pub(super) fn make_parse_failure_value(&self, text: &str, best_end: usize) -> Value {

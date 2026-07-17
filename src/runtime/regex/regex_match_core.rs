@@ -103,7 +103,7 @@ impl Interpreter {
             .next()
     }
 
-    pub(super) fn regex_match_ends_from_caps_in_pkg(
+    pub(in crate::runtime) fn regex_match_ends_from_caps_in_pkg(
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
