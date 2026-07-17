@@ -238,7 +238,12 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             return Ok((r, p));
         }
         let (r, _) = ws(r)?;
-        if r.starts_with('$') || r.starts_with('@') || r.starts_with('%') {
+        if r.starts_with('$')
+            || r.starts_with('@')
+            || r.starts_with('%')
+            || r.starts_with('&')
+            || r.starts_with('\\')
+        {
             type_constraint = Some(tc);
             rest = r;
         } else {

@@ -1472,6 +1472,19 @@ impl Interpreter {
                     };
                     let mut effective_param_defs =
                         Self::effective_method_param_defs(param_defs, is_hidden);
+                    // Resolve the ::?CLASS pseudo-type in parameter type
+                    // constraints to the enclosing class (raku fixes ::?CLASS
+                    // at compile time to the declaring class), mirroring the
+                    // attribute-type resolution above. Without this, binding a
+                    // non-invocant `::?CLASS:U \t` param type-checks against
+                    // the literal string "::?CLASS:U" and always fails.
+                    for pd in effective_param_defs.iter_mut() {
+                        if let Some(tc) = &pd.type_constraint
+                            && tc.contains("::?CLASS")
+                        {
+                            pd.type_constraint = Some(tc.replace("::?CLASS", name));
+                        }
+                    }
                     // Auto-detect @_ usage in methods without explicit signatures
                     if param_defs.is_empty() {
                         let (use_positional, _) = Self::auto_signature_uses(method_body);
