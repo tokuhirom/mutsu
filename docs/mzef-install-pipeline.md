@@ -30,14 +30,29 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 2 | Resolve / find candidate | ✅ | `zef info Test::META` → full Identity/Source/Description |
 | 3 | **Fetch** (download archive) | ⏳ | Single-dist `zef fetch` downloads `https://360.zef.pm/.../*.tar.gz` via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617. **The concurrent multi-candidate fetch that `install` drives still fails** (see "Current frontier") |
 | 4 | **Extract** (untar) | ✅ | Untars the real dist after #4620 + #4622 + #4627 + #4635/#4641/#4642 |
-| 5 | Build | ⬜ | not reached |
-| 6 | Test | ⬜ | not reached |
-| 7 | Install into site repo | ⬜ | not reached — but the **install→`use` bridge is already done** (`t/compunit-repository-for-name.t`), so once a dist reaches here it should be resolvable |
+| 5 | Build | ✅ | reached; a pure-Raku dist has nothing to build and passes through |
+| 6 | Test | ⬜ | not exercised yet (runs have used `--/test`) |
+| 7 | Install into site repo | ✅ | **a dependency-free dist installs and is then `use`-able** (see below) |
 
-**So: ~4.5 of 8 phases.** Resolution, dependency collection, single-dist fetch
-and extract all work against the live ecosystem. `install` now gets all the way
-to fetching its 16 resolved candidates; the frontier is that those *concurrent*
-fetches clobber each other's URL.
+**So: ~6 of 8 phases for a dependency-free dist.** A real dist from the live fez
+ecosystem downloads, extracts, installs into the mutsu site repo, and `use`
+resolves it:
+
+```
+$ mutsu -e 'use JSON::OptIn'        # Could not find JSON::OptIn in: ...
+$ mutsu -I <zef>/lib <zef>/bin/zef install --/depends --/test JSON::OptIn
+===> Installing: JSON::OptIn:ver<0.0.2>:auth<zef:jonathanstowe>
+$ mutsu -e 'use JSON::OptIn; say "LOADED"'
+LOADED
+```
+
+**Pick a non-bundled dist when verifying this.** mutsu bundles JSON::Fast (and
+others), so `use JSON::Fast` succeeds on a clean HOME with no install at all and
+proves nothing. `JSON::OptIn` is not bundled.
+
+Dists **with dependencies** still fail earlier, at the concurrent-fetch collision
+("Current frontier" below) — that is now the only thing between mzef and a real
+`zef install Test::META`.
 
 ## Fixes that got us here (this campaign)
 
@@ -114,6 +129,30 @@ victim();    # Nil
 spawner();   # migrates `depends => True` into the global shared store
 victim();    # was Bool::True, now Nil
 ```
+
+### Install phase — the silent no-op (2026-07-17)
+
+`zef install` printed `===> Installing: …` and exited **0** having installed
+nothing loadable. Three false leads worth not repeating:
+
+- `.can("install")` returns **False** on `CompUnit::Repository::Installation` —
+  a false negative. `.can` does not know natively-dispatched methods; `install`
+  *was* implemented and *was* being called.
+- `@curs` was **not** empty (the `DBG cli-6 to=1` trace) — `===> Installing:` is
+  printed *before* the `for @curs` loop in `Zef::Client.install`, so an empty
+  `@curs` was the obvious suspect and the wrong one.
+- The install *did* write a file. `find $HOME -type f | head` showed only the
+  `.zef` store and precomp cache, which read as "nothing written" — the dist
+  JSON was further down the list.
+
+The real defect (#4655): install joined the dist's **`prefix` attribute** onto
+each `provides` address to find the sources, but `Zef::Distribution::Local` has
+`$.path`/`$.IO` and **no `prefix`**, so the join produced a relative path that
+never existed and `std::fs::copy(..).ok()` swallowed it — the metadata recorded
+`provides` entries naming files it had never copied. Fixed by resolving each
+address through the distribution's own `.content($name-path)` (the API every
+Distribution implements, S22), with the `prefix` join kept as a fallback.
+Pin: `t/cur-install-content-api.t`.
 
 ## Current frontier — concurrent fetch clobbers the URL
 
