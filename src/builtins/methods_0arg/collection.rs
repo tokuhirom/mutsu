@@ -351,14 +351,21 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 None
             }
             // Type objects for setty/baggy types: .hash returns empty hash
-            ValueView::Package(name)
-                if matches!(
-                    name.resolve().as_str(),
-                    "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
-                ) =>
-            {
-                Some(Ok(Value::hash(std::collections::HashMap::new())))
-            }
+            // A type object has no contents, so `Any.hash` (which every type
+            // object below Any inherits) is the empty hash — NOT a one-element
+            // hash initializer, which is what the list path below would make of
+            // it ("Odd number of elements ... last element seen: (Any)").
+            ValueView::Package(name) => match name.resolve().as_str() {
+                // Mu is the root type and does not inherit Any's `.hash` at all.
+                // Raise here rather than returning None: the slow-path `.hash`
+                // would take over and report the "Odd number of elements" error
+                // instead of the missing method.
+                "Mu" => Some(Err(RuntimeError::method_not_found("hash", "Mu"))),
+                // An Associative's `.hash` is itself, and the Hash *type object*
+                // is no exception (`Hash.hash` is `Hash`, not `{}`).
+                "Hash" => Some(Ok(target.clone())),
+                _ => Some(Ok(Value::hash(std::collections::HashMap::new()))),
+            },
             // `.hash` on a hash (`%$h`) IS that hash in Associative context:
             // return it de-itemized (a `$`-held itemized hash contextualized as
             // `%$h` spills to the hash, not an opaque single element), preserving
