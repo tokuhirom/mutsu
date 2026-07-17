@@ -495,6 +495,12 @@ impl Interpreter {
                             } else if let Some(p) = close_done_promise {
                                 // Async body: the drive loop fires the callbacks
                                 // once the emitter's done-signal promise resolves.
+                                // Wake the loop when that happens so it doesn't
+                                // wait out its idle cap to notice.
+                                if let Some(w) = &self.current_react_waker {
+                                    let w = w.clone();
+                                    let _ = p.on_resolve(Box::new(move |_, _, _, _| w.notify()));
+                                }
                                 self.pending_tap_closes.push((p, own_close_cbs));
                                 if !outer_tap_registered
                                     && Self::supply_has_active_callback(&tap_cb)

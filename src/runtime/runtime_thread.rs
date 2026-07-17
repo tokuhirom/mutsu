@@ -296,6 +296,7 @@ impl Interpreter {
             supply_stream_consumers: Vec::new(),
             react_active: 0,
             pending_tap_closes: Vec::new(),
+            current_react_waker: None,
             shared_vars: Arc::clone(&self.shared_vars),
             shared_vars_active: true,
             sigilless_attrs_active: self.sigilless_attrs_active,

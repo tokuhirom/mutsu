@@ -4,7 +4,6 @@ use std::net::TcpStream;
 use std::process::ChildStdin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc;
 
 type StdinMap = std::sync::Mutex<HashMap<u32, Arc<std::sync::Mutex<Option<ChildStdin>>>>>;
 
@@ -127,7 +126,7 @@ fn udp_bound_socket_map() -> &'static UdpBoundSocketMap {
 
 /// Supply channel registry: supply_id -> Receiver for streaming data from
 /// Proc::Async stdout/stderr reader threads.
-type SupplyChannelMap = std::sync::Mutex<HashMap<u64, mpsc::Receiver<SupplyEvent>>>;
+type SupplyChannelMap = std::sync::Mutex<HashMap<u64, super::supply_channel::SupplyReceiver>>;
 
 pub(in crate::runtime) fn supply_channel_map() -> &'static SupplyChannelMap {
     static MAP: OnceLock<SupplyChannelMap> = OnceLock::new();
@@ -143,7 +142,7 @@ pub(crate) enum SupplyEvent {
 }
 
 /// Take a receiver from the supply channel registry (can only be consumed once)
-pub(crate) fn take_supply_channel(supply_id: u64) -> Option<mpsc::Receiver<SupplyEvent>> {
+pub(crate) fn take_supply_channel(supply_id: u64) -> Option<super::supply_channel::SupplyReceiver> {
     if let Ok(mut map) = supply_channel_map().lock() {
         map.remove(&supply_id)
     } else {
@@ -152,8 +151,7 @@ pub(crate) fn take_supply_channel(supply_id: u64) -> Option<mpsc::Receiver<Suppl
 }
 
 /// Public access to the supply channel map for signal registration
-pub(in crate::runtime) fn supply_channel_map_pub()
--> &'static std::sync::Mutex<HashMap<u64, mpsc::Receiver<SupplyEvent>>> {
+pub(in crate::runtime) fn supply_channel_map_pub() -> &'static SupplyChannelMap {
     supply_channel_map()
 }
 

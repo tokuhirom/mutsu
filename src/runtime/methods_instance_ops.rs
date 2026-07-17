@@ -1348,7 +1348,7 @@ impl Interpreter {
                 }
 
                 let supply_id = super::native_methods::next_supply_id();
-                let (tx, rx) = std::sync::mpsc::channel();
+                let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
                 if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {
                     map.insert(supply_id, rx);
                 }

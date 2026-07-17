@@ -16,7 +16,6 @@ use crate::runtime::native_methods::SupplyEvent;
 use crate::value::Value;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::sync::mpsc::Sender;
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -139,7 +138,7 @@ pub(crate) fn clamp_delay_secs(secs: f64) -> Duration {
 pub(crate) fn register_interval(
     period: Duration,
     initial_delay: Duration,
-    tx: Sender<SupplyEvent>,
+    tx: super::supply_channel::SupplySender,
 ) {
     let mut tick: i64 = 0;
     register_entry(

@@ -1530,6 +1530,11 @@ pub struct Interpreter {
     /// promise resolves (the emitter signalled `done`), so per-tap
     /// `closing => { ... }` runs on the react thread rather than a worker thread.
     pub(super) pending_tap_closes: Vec<(crate::value::SharedPromise, Vec<Value>)>,
+    /// The waker of the innermost running react/await drive loop on this
+    /// thread, so sources wired up mid-loop (a nested `whenever` tapping an
+    /// async on-demand supply -> `pending_tap_closes`) can wake the loop when
+    /// they become ready instead of waiting out its idle cap.
+    pub(super) current_react_waker: Option<crate::value::waker::ReactWaker>,
     /// Shared variables between threads. When `start` spawns a thread,
     /// variables are stored here so both parent and child can see mutations.
     shared_vars: Arc<RwLock<HashMap<String, Value>>>,

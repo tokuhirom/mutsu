@@ -164,16 +164,17 @@ impl Interpreter {
     /// Create a channel-based zip supply when at least one source is channel-based.
     /// Spawns a coordination thread that reads from all sources and emits zipped values.
     fn create_channel_zip_supply(supplies: &[Value]) -> Result<Value, RuntimeError> {
+        use super::native_methods::supply_channel::{SupplyReceiver, supply_event_channel};
         use super::native_methods::{
             SupplyEvent, next_supply_id, supply_channel_map_pub, take_supply_channel,
         };
         use std::sync::mpsc;
 
         let zip_supply_id = next_supply_id();
-        let (zip_tx, zip_rx) = mpsc::channel();
+        let (zip_tx, zip_rx) = supply_event_channel();
 
         enum SourceKind {
-            Channel(mpsc::Receiver<SupplyEvent>),
+            Channel(SupplyReceiver),
             Static(Vec<Value>),
         }
         let mut sources: Vec<SourceKind> = Vec::with_capacity(supplies.len());
@@ -214,7 +215,16 @@ impl Interpreter {
                 }
             }
 
-            let timeout = std::time::Duration::from_millis(10);
+            // Sources poke this waker on every send/hangup; the loop blocks
+            // on it when a poll round makes no progress (the timeout is only
+            // a safety net, not the delivery latency).
+            let waker = crate::value::waker::ReactWaker::new();
+            for source in &sources {
+                if let SourceKind::Channel(rx) = source {
+                    rx.register_waker(&waker);
+                }
+            }
+            let timeout = std::time::Duration::from_millis(100);
 
             loop {
                 crate::gc::gc_park_point();
@@ -234,25 +244,30 @@ impl Interpreter {
                     return;
                 }
 
-                // Poll channel sources for new values
+                // Drain channel sources without blocking
+                let mut progressed = false;
                 for (i, source) in sources.iter().enumerate() {
                     if done[i] {
                         continue;
                     }
                     if let SourceKind::Channel(rx) = source {
-                        match rx.recv_timeout(timeout) {
-                            Ok(SupplyEvent::Emit(v)) => {
-                                buffers[i].push_back(v);
-                            }
-                            Ok(SupplyEvent::Done) => {
-                                done[i] = true;
-                            }
-                            Ok(SupplyEvent::Quit(_)) => {
-                                done[i] = true;
-                            }
-                            Err(mpsc::RecvTimeoutError::Timeout) => {}
-                            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                                done[i] = true;
+                        loop {
+                            match rx.try_recv() {
+                                Ok(SupplyEvent::Emit(v)) => {
+                                    buffers[i].push_back(v);
+                                    progressed = true;
+                                }
+                                Ok(SupplyEvent::Done) | Ok(SupplyEvent::Quit(_)) => {
+                                    done[i] = true;
+                                    progressed = true;
+                                    break;
+                                }
+                                Err(mpsc::TryRecvError::Empty) => break,
+                                Err(mpsc::TryRecvError::Disconnected) => {
+                                    done[i] = true;
+                                    progressed = true;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -262,6 +277,9 @@ impl Interpreter {
                 if done.iter().all(|d| *d) {
                     let _ = zip_tx.send(SupplyEvent::Done);
                     return;
+                }
+                if !progressed {
+                    waker.wait_activity(timeout);
                 }
             }
         });

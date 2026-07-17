@@ -3,7 +3,6 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 use std::io::{Read, Write};
-use std::sync::mpsc;
 
 /// Create a Buf Value from raw bytes.
 fn make_buf_value(bytes: &[u8]) -> Value {
@@ -24,7 +23,7 @@ fn make_buf_value(bytes: &[u8]) -> Value {
 fn feed_utf8_incremental(
     pending: &mut Vec<u8>,
     new: &[u8],
-    tx: &Option<mpsc::Sender<SupplyEvent>>,
+    tx: &Option<super::native_methods::supply_channel::SupplySender>,
     collected: &mut String,
 ) -> bool {
     pending.extend_from_slice(new);
@@ -244,14 +243,16 @@ impl Interpreter {
 
                     // Send Quit to stdout/stderr supply channels so react blocks die
                     if let Some(sid) = stdout_supply_id {
-                        let (tx, rx) = mpsc::channel();
+                        let (tx, rx) =
+                            super::native_methods::supply_channel::supply_event_channel();
                         if let Ok(mut map) = supply_channel_map().lock() {
                             map.insert(sid, rx);
                         }
                         let _ = tx.send(SupplyEvent::Quit(os_error.clone()));
                     }
                     if let Some(sid) = stderr_supply_id {
-                        let (tx, rx) = mpsc::channel();
+                        let (tx, rx) =
+                            super::native_methods::supply_channel::supply_event_channel();
                         if let Ok(mut map) = supply_channel_map().lock() {
                             map.insert(sid, rx);
                         }
@@ -371,14 +372,14 @@ impl Interpreter {
                 // Create streaming channels for stdout/stderr
                 // These will be consumed by the react event loop
                 let stdout_channel = stdout_supply_id.map(|sid| {
-                    let (tx, rx) = mpsc::channel();
+                    let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
                     if let Ok(mut map) = supply_channel_map().lock() {
                         map.insert(sid, rx);
                     }
                     tx
                 });
                 let stderr_channel = stderr_supply_id.map(|sid| {
-                    let (tx, rx) = mpsc::channel();
+                    let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
                     if let Ok(mut map) = supply_channel_map().lock() {
                         map.insert(sid, rx);
                     }

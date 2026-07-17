@@ -4,7 +4,6 @@
 /// and a reader thread picks it up and sends it through the Supply channel.
 use crate::runtime::native_methods::SupplyEvent;
 use crate::value::Value;
-use std::sync::mpsc;
 
 #[cfg(unix)]
 mod unix_impl {
@@ -15,7 +14,7 @@ mod unix_impl {
     struct SignalRegistration {
         #[allow(dead_code)]
         supply_id: u64,
-        tx: mpsc::Sender<SupplyEvent>,
+        tx: crate::runtime::native_methods::supply_channel::SupplySender,
         value: Value,
     }
 
@@ -96,7 +95,7 @@ mod unix_impl {
     pub(in crate::runtime) fn register_signal(
         signum: i32,
         supply_id: u64,
-        tx: mpsc::Sender<SupplyEvent>,
+        tx: crate::runtime::native_methods::supply_channel::SupplySender,
         value: Value,
     ) {
         // Ensure signal pipe is set up
@@ -131,7 +130,7 @@ pub(super) use unix_impl::register_signal;
 pub(super) fn register_signal(
     _signum: i32,
     _supply_id: u64,
-    _tx: mpsc::Sender<SupplyEvent>,
+    _tx: crate::runtime::native_methods::supply_channel::SupplySender,
     _value: Value,
 ) {
     // Signal handling is not available on non-Unix platforms
