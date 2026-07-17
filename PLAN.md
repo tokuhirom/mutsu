@@ -548,6 +548,16 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 
 ## 6. Concurrency (Track C leftovers) and structural refactoring (independent; mid-to-long term)
 
+- [ ] **ADR-0008 push-delivery follow-ups** (the core landed in #4636, 2026-07-17 — react/supply
+      snapshot polling replaced by `ReactWaker` sinks, shared interval timer, concurrent throttle;
+      see docs/adr/0008-push-based-supply-event-delivery.md and news/2026-07.md):
+  - [ ] Route the remaining mpsc receiver sources (tap channels, Proc::Async streams, zip outputs)
+        through `ReactWaker` sinks — removes the react drive loop's residual 10ms idle-wait cap
+        (today those senders cannot wake the loop, so idle rounds are capped at 10ms latency).
+  - [ ] Move `Promise.in` / scheduler `cue(:at/:in/:every)` timer threads onto the shared
+        deadline-heap timer (`native_methods/interval_timer.rs`) — one thread per pending timer today.
+  - [ ] Watch CI for the residual under-load syntax.t flake (1 notok in 18 loaded runs locally,
+        unreproduced in 14 follow-ups; raku's own fixed-sleep tests also wobble at that load).
 - [ ] **Remainder of true sharing for state/lexical aggregates**: only the lost-update on
       high-contention concurrent "structural" inserts (real rakudo crashes with a MoarVM oops on the
       same shape = outside the language guarantee. mutsu doesn't break, which is an advantage — keep
