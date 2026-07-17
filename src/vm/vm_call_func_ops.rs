@@ -152,7 +152,12 @@ impl Interpreter {
                     fn is_guarded(v: &Value) -> bool {
                         matches!(
                             v.view(),
-                            ValueView::Array(..) | ValueView::Hash(..) | ValueView::Junction { .. }
+                            ValueView::Array(..)
+                                | ValueView::Hash(..)
+                                | ValueView::Junction { .. }
+                                // A Slip spreads into the argument list; only the
+                                // slow path flattens it.
+                                | ValueView::Slip(..)
                         )
                     }
                     match v.view() {
@@ -306,11 +311,19 @@ impl Interpreter {
                         // them into a single scan.
                         let stack_args = &self.stack[self.stack.len() - arity_usize..];
                         let mut has_junction = false;
+                        let mut has_slip = false;
                         let mut cl: Option<i64> = None;
                         for v in stack_args {
                             let view = v.view();
                             if matches!(view, ValueView::Junction { .. }) {
                                 has_junction = true;
+                                break;
+                            }
+                            // A Slip argument spreads into the argument list, so the
+                            // arity this path binds is not the compiled arity — the
+                            // slow path's `flatten_call_args` must run instead.
+                            if matches!(view, ValueView::Slip(_)) {
+                                has_slip = true;
                                 break;
                             }
                             if cl.is_none() {
@@ -321,7 +334,7 @@ impl Interpreter {
                         // caller's container -> fall through to the slow path.
                         let share_into_scalar =
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
-                        if !has_junction && !share_into_scalar {
+                        if !has_junction && !has_slip && !share_into_scalar {
                             let start = self.stack.len() - arity_usize;
                             // Pooled args buffer (J4d): `drain(..).collect()`
                             // was one malloc/free per call on the hottest call
@@ -392,9 +405,11 @@ impl Interpreter {
                         && self.stack[self.stack.len() - arity_usize..]
                             .iter()
                             .any(|v| matches!(v.view(), ValueView::Junction { .. }));
+                    let has_slip = self.stack_args_have_slip(arity_usize);
                     if self.stack.len() >= arity_usize
                         && !named_share
                         && !has_junction
+                        && !has_slip
                         && !Self::call_shares_container_into_scalar_param(
                             cf,
                             &self.stack[self.stack.len() - arity_usize..],
@@ -450,7 +465,7 @@ impl Interpreter {
                     && !cf.has_inner_subs
                 {
                     let arity_usize = arity as usize;
-                    if self.stack.len() >= arity_usize {
+                    if self.stack.len() >= arity_usize && !self.stack_args_have_slip(arity_usize) {
                         let start = self.stack.len() - arity_usize;
                         let args: Vec<Value> = self.stack.drain(start..).collect();
 
@@ -532,7 +547,8 @@ impl Interpreter {
                         // return merge. No blanket mark needed.
                         return Ok(());
                     }
-                    // Put CF back if we couldn't use it (stack underflow)
+                    // Put CF back if we couldn't use it (stack underflow, or a Slip
+                    // arg that must be flattened by the slow path below).
                     self.otf_call_cache.insert(name_sym, cf);
                 }
             } else {
@@ -636,19 +652,9 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip values in the argument list (from |capture slipping)
-        // val() uses capture semantics (Mu |) — preserve Slip as a single arg.
-        let preserve_slip_entirely = name == "val";
-        let preserve_empty_slip = Self::preserve_empty_slip_arg(&name);
-        let args = if preserve_slip_entirely {
-            raw_args
-        } else {
-            let mut args = Vec::new();
-            for arg in raw_args {
-                Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
-            }
-            args
-        };
+        // Flatten any Slip-valued argument (`|capture` slipping, or an ordinary
+        // argument that evaluated to a Slip).
+        let args = Self::flatten_call_args(&name, raw_args);
         let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
         let arg_sources = if arg_sources.as_ref().is_some_and(|sources| {
             sources.len() != args.len()
@@ -822,186 +828,6 @@ impl Interpreter {
         // only when a captured-outer write actually happened. This stops a pure
         // compiled call (e.g. `fib`) from forcing a redundant locals pull per
         // call.
-        Ok(())
-    }
-
-    /// Expression-level call with capture slip: regular args + 1 slip arg on stack.
-    /// The slip arg is flattened into the argument list, result is pushed.
-    pub(super) fn exec_call_func_slip_op(
-        &mut self,
-        code: &CompiledCode,
-        name_idx: u32,
-        regular_arity: u32,
-        _arg_sources_idx: Option<u32>,
-        slip_pos: Option<u32>,
-        compiled_fns: &CompiledFns,
-    ) -> Result<(), RuntimeError> {
-        crate::vm::vm_stats::record_function_dispatch();
-        let name = Self::const_str(code, name_idx).to_string();
-        let total = regular_arity as usize + 1; // +1 for the slip value
-        if self.stack.len() < total {
-            return Err(RuntimeError::new(
-                "Interpreter stack underflow in CallFuncSlip",
-            ));
-        }
-        // When slip_pos is known, args are in source order on the stack.
-        // Pop all values, expand the slip at its position.
-        let stack_start = self.stack.len() - total;
-        let raw_args: Vec<Value> = self.stack.drain(stack_start..).collect();
-        let mut args: Vec<Value> = Vec::new();
-        if let Some(pos) = slip_pos {
-            let pos = pos as usize;
-            for (i, val) in raw_args.into_iter().enumerate() {
-                if i == pos {
-                    Self::append_slip_value(&mut args, val);
-                } else {
-                    args.push(val);
-                }
-            }
-        } else {
-            // Legacy behavior: slip is last on stack (compiled last)
-            let slip_val = raw_args.last().cloned().unwrap_or(Value::NIL);
-            args.extend(raw_args.into_iter().take(regular_arity as usize));
-            Self::append_slip_value(&mut args, slip_val);
-        }
-        let args = self.normalize_call_args_for_target(&name, args);
-        let (args, callsite_line) = self.sanitize_call_args(&args);
-        loan_env!(self, set_pending_callsite_line(callsite_line));
-        // A lexical `&name` parameter (or `my &name`) that shadows a same-named
-        // package sub wins over the package sub, even when the call slips its
-        // args (`op(|@args)`). This mirrors the `lexical_override` handling in
-        // `exec_call_func_op`; without it the `find_compiled_function` branch
-        // below would pick the package sub and ignore the shadow. Only grabbed
-        // when a same-named package sub actually exists (otherwise the
-        // pure-lexical path in the final `else` handles it).
-        if self.has_function(&name) && !self.has_proto(&name) && !self.has_multi_candidates(&name) {
-            let ampname = format!("&{}", name);
-            let from_local = self.locals_get_by_name(code, &ampname);
-            let candidate = from_local.or_else(|| self.env().get(&ampname).cloned());
-            if let Some(callable) =
-                candidate.filter(|v| Self::env_callable_is_lexical_override(v, &name))
-            {
-                let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
-                self.stack.push(result);
-                return Ok(());
-            }
-        }
-        if self.has_proto(&name)
-            && let Some(def) = self.vm_resolve_trivial_proto_candidate(&name, &args)
-        {
-            // VM-native trivial-proto dispatch with slipped args (`proto pp(|){*};
-            // multi pp($a,$b); pp(1, |@x)`). Mirrors the non-slip proto branch in
-            // `dispatch_func_call_inner`: resolve the winning candidate via the
-            // VM-owned registry and run it as compiled bytecode. Without this the
-            // slip path tree-walks every proto'd call whose args slip.
-            let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
-            self.stack.push(result);
-        } else if self.has_proto(&name)
-            && let Some(result) =
-                self.vm_try_run_nontrivial_proto_body(&name, args.clone(), compiled_fns)
-        {
-            // Non-trivial proto body (`proto pp($x){ ...; {*} }`) run as compiled
-            // bytecode; the `{*}` still redispatches to the winning candidate.
-            self.stack.push(result?);
-        } else if !self.has_proto(&name)
-            && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
-        {
-            let cf_auto_fetch = !cf.is_raw;
-            let pkg = self.current_package().to_string();
-            let result = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
-            let result = self.maybe_fetch_rw_proxy(result, cf_auto_fetch)?;
-            self.stack.push(result);
-            // Slice 6.3 step 2: precise env_dirty from the named-call merge.
-        } else if self.has_multi_candidates_cached(&name) && !self.has_proto(&name) {
-            // User-defined multi candidates reached with *slipped* args
-            // (`multi f($a,$b); f(1, |@x)`). The non-slip path resolves and
-            // OTF-compiles the winning candidate in `dispatch_func_call_inner`;
-            // the slip path lacked that branch, so the `user_function_matches_call`
-            // arm below swallowed the multi call and always tree-walked. Mirror
-            // the non-slip multi branch: resolve the unambiguous winner (the
-            // resolver already flattened/saw the slipped args) and run it as
-            // compiled bytecode when OTF-compilable, else fall back. Ambiguity is
-            // signalled by `None` + a pending dispatch error, so clear any stale
-            // one first.
-            let _ = self.take_pending_dispatch_error();
-            if !self.is_interpreter_handled_function(&name)
-                && let Some(def) = loan_env!(self, resolve_function_with_types(&name, &args))
-                && Self::def_is_otf_compilable_multi_candidate(&def)
-                && !self.multi_candidate_state_forces_interpreter(&name, &def)
-            {
-                let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                self.stack.push(result);
-            } else {
-                crate::vm::vm_stats::record_function_fallback(&name);
-                let result = self.vm_call_function_fallback(&name, &args)?;
-                let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
-                self.stack.push(result);
-            }
-        } else if loan_env!(self, user_function_matches_call(&name, &args)) {
-            // A user-defined sub shadows a same-named builtin (③ PR-2). OTF-compile
-            // the resolved def to bytecode when it is a plain single candidate and
-            // simple enough; otherwise keep tree-walking. Restricted to genuine
-            // builtin shadows (this branch also catches ordinary module/dynamic user
-            // subs whose args match — those keep tree-walking, since
-            // def_is_otf_compilable doesn't catch every interpreter-needing
-            // construct). proto / multi keep going through call_function_fallback so
-            // candidate dispatch stays correct. Must not fall through to the native
-            // arm below (the shadowed builtin).
-            if !self.has_proto(&name)
-                && !self.has_multi_candidates_cached(&name)
-                && let Some(def) = loan_env!(self, resolve_function_with_types(&name, &args))
-            {
-                let is_builtin = crate::runtime::Interpreter::is_builtin_function(&name);
-                if !is_builtin && let Some(shared) = self.imported_state_body_for_def(&def) {
-                    // Cross-thread shared captured body for a `state`-bearing module
-                    // sub (compiled_fns expansion) — keeps its `state` cell shared
-                    // across threads, unlike the per-call OTF recompile below.
-                    let pkg = self.current_package().to_string();
-                    let result =
-                        self.call_shared_state_body(&shared, args, compiled_fns, &pkg, &name)?;
-                    let result = loan_env!(self, maybe_fetch_rw_proxy(result, !shared.is_raw))?;
-                    self.stack.push(result);
-                    return Ok(());
-                }
-                let gate_ok = if is_builtin {
-                    // Genuine builtin shadow: strict gate (no default param —
-                    // name-cache pollution hazard, PR #3546).
-                    Self::def_is_otf_compilable(&def)
-                } else {
-                    // Non-builtin module/dynamic single sub: defaults are
-                    // name-cache-safe here (no builtin to mis-bind); interpreter-
-                    // coupled bodies/signatures stay excluded.
-                    Self::def_is_otf_compilable_module_single(&def)
-                };
-                if gate_ok {
-                    let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
-                    self.stack.push(result);
-                    return Ok(());
-                }
-            }
-            crate::vm::vm_stats::record_function_fallback(&name);
-            let result = self.vm_call_function_fallback(&name, &args)?;
-            let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
-            self.stack.push(result);
-        } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
-            self.stack.push(native_result?);
-        } else if let Some(callable) = self.lexical_amp_var_callable(Some(code), &name) {
-            // Pure lexical `&name` callable invoked with a slip (`op(|@args)`):
-            // dispatch Interpreter-natively via vm_call_on_value, same as the non-slip
-            // case in `dispatch_func_call_inner` (Track A). Builtin priority is
-            // preserved because try_native_function already ran above, and
-            // lexical_amp_var_callable excludes builtin / package-sub names.
-            let result = self.vm_call_on_value(callable, args, Some(compiled_fns))?;
-            self.stack.push(result);
-        } else {
-            // Sync Interpreter locals to env before spawning threads so closures capture them
-            if name == "start" {
-                self.sync_env_from_locals(code);
-            }
-            let result = self.call_function_compiled_first(&name, args, compiled_fns)?;
-            let result = loan_env!(self, maybe_fetch_rw_proxy(result, true))?;
-            self.stack.push(result);
-        }
         Ok(())
     }
 

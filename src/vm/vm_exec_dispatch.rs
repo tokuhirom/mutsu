@@ -2872,23 +2872,6 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            OpCode::CallFuncSlip {
-                name_idx,
-                regular_arity,
-                arg_sources_idx,
-                slip_pos,
-            } => {
-                self.sync_source_line(code, *ip);
-                self.exec_call_func_slip_op(
-                    code,
-                    *name_idx,
-                    *regular_arity,
-                    *arg_sources_idx,
-                    *slip_pos,
-                    compiled_fns,
-                )?;
-                *ip += 1;
-            }
             OpCode::CallMethod {
                 name_idx,
                 arity,
@@ -3137,25 +3120,18 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            OpCode::ExecCallPairs { name_idx, arity } => {
-                self.sync_source_line(code, *ip);
-                self.exec_exec_call_pairs_op(code, compiled_fns, *name_idx, *arity)?;
-                *ip += 1;
-            }
-            OpCode::ExecCallSlip {
+            OpCode::ExecCallPairs {
                 name_idx,
-                regular_arity,
-                arg_sources_idx,
-                slip_pos,
+                arity,
+                slip_positions_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_exec_call_slip_op(
+                self.exec_exec_call_pairs_op(
                     code,
                     compiled_fns,
                     *name_idx,
-                    *regular_arity,
-                    *arg_sources_idx,
-                    *slip_pos,
+                    *arity,
+                    *slip_positions_idx,
                 )?;
                 *ip += 1;
             }

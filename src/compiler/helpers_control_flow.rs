@@ -446,59 +446,6 @@ impl Compiler {
                             continue;
                         }
 
-                        let has_slip = rewritten_args
-                            .iter()
-                            .any(|arg| matches!(arg, CallArg::Slip(_)));
-                        if has_slip {
-                            let mut regular_count = 0u32;
-                            let mut slip_pos: Option<u32> = None;
-                            let mut stack_idx = 0u32;
-                            for arg in &rewritten_args {
-                                match arg {
-                                    CallArg::Slip(expr) => {
-                                        slip_pos = Some(stack_idx);
-                                        self.compile_expr(expr);
-                                        stack_idx += 1;
-                                    }
-                                    CallArg::Positional(expr) => {
-                                        self.compile_call_arg(expr);
-                                        regular_count += 1;
-                                        stack_idx += 1;
-                                    }
-                                    CallArg::Named {
-                                        name: n,
-                                        value: Some(expr),
-                                    } => {
-                                        self.compile_expr(&Expr::Literal(Value::str(n.clone())));
-                                        self.compile_expr(expr);
-                                        self.code.emit(OpCode::MakePair);
-                                        regular_count += 1;
-                                        stack_idx += 1;
-                                    }
-                                    CallArg::Named {
-                                        name: n,
-                                        value: None,
-                                    } => {
-                                        self.compile_expr(&Expr::Literal(Value::str(n.clone())));
-                                        self.compile_expr(&Expr::Literal(Value::TRUE));
-                                        self.code.emit(OpCode::MakePair);
-                                        regular_count += 1;
-                                        stack_idx += 1;
-                                    }
-                                    CallArg::Invocant(_) => {}
-                                }
-                            }
-                            let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                            self.code.emit(OpCode::CallFuncSlip {
-                                name_idx,
-                                regular_arity: regular_count,
-                                arg_sources_idx: None,
-                                slip_pos,
-                            });
-                            main_leaves_value = true;
-                            continue;
-                        }
-
                         for arg in &rewritten_args {
                             match arg {
                                 CallArg::Positional(expr) => self.compile_call_arg(expr),
@@ -515,7 +462,14 @@ impl Compiler {
                                     self.compile_expr(&Expr::Literal(Value::TRUE));
                                     self.code.emit(OpCode::MakePair);
                                 }
-                                CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
+                                // `|EXPR` interpolates into the argument list:
+                                // MakeSlip builds the Slip and the call op spreads
+                                // it, so any number of `|` args work.
+                                CallArg::Slip(expr) => {
+                                    self.compile_expr(expr);
+                                    self.code.emit(OpCode::MakeSlip);
+                                }
+                                CallArg::Invocant(_) => unreachable!(),
                             }
                         }
                         let name_idx = self.code.add_constant(Value::str(name.resolve()));

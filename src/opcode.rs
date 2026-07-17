@@ -660,16 +660,6 @@ pub(crate) enum OpCode {
         spec_idx: u32,
         arg_sources_idx: Option<u32>,
     },
-    /// Expression-level function call with capture slip: pop 1 slip + `regular_arity` args,
-    /// flatten the slip into the argument list, call name, push result.
-    CallFuncSlip {
-        name_idx: u32,
-        regular_arity: u32,
-        arg_sources_idx: Option<u32>,
-        /// Position of the slip argument among all compiled args (0-based).
-        /// When None, slip is compiled last (legacy behavior).
-        slip_pos: Option<u32>,
-    },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
         name_idx: u32,
@@ -725,19 +715,15 @@ pub(crate) enum OpCode {
         arg_sources_idx: Option<u32>,
     },
     /// Statement-level call with positional/named values encoded as Pair.
+    ///
+    /// `slip_positions_idx` indexes a constant `Array` of the argument
+    /// positions written as `|EXPR`. Those — and only those — spread into the
+    /// argument list: a Slip an ordinary argument merely evaluated to
+    /// (`is-deeply $s.Slip, $t.Slip, 'name'`) stays one argument, as in Rakudo.
     ExecCallPairs {
         name_idx: u32,
         arity: u32,
-    },
-    /// Call with capture slip: `regular_arity` normal args + 1 slip arg on stack.
-    /// The slip arg (top of stack) is an Array whose elements are flattened into
-    /// the argument list before the call.
-    ExecCallSlip {
-        name_idx: u32,
-        regular_arity: u32,
-        arg_sources_idx: Option<u32>,
-        /// Position of the slip argument among all compiled args (0-based).
-        slip_pos: Option<u32>,
+        slip_positions_idx: Option<u32>,
     },
     BlockScope {
         pre_end: u32,
@@ -2412,9 +2398,7 @@ impl CompiledCode {
                 | OpCode::SymbolicDeref(_)
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,
-                OpCode::CallFunc { name_idx, .. }
-                | OpCode::CallFuncNamed { name_idx, .. }
-                | OpCode::CallFuncSlip { name_idx, .. } => {
+                OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
                     matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
                         Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
@@ -2628,9 +2612,6 @@ impl CompiledCode {
             | OpCode::CallFuncNamed {
                 arg_sources_idx, ..
             }
-            | OpCode::CallFuncSlip {
-                arg_sources_idx, ..
-            }
             | OpCode::CallMethod {
                 arg_sources_idx, ..
             }
@@ -2638,9 +2619,6 @@ impl CompiledCode {
                 arg_sources_idx, ..
             }
             | OpCode::ExecCall {
-                arg_sources_idx, ..
-            }
-            | OpCode::ExecCallSlip {
                 arg_sources_idx, ..
             }
             | OpCode::CallOnValue {
@@ -2674,9 +2652,7 @@ impl CompiledCode {
         match op {
             OpCode::CallFunc { name_idx, .. }
             | OpCode::CallFuncNamed { name_idx, .. }
-            | OpCode::CallFuncSlip { name_idx, .. }
-            | OpCode::ExecCall { name_idx, .. }
-            | OpCode::ExecCallSlip { name_idx, .. } => Some(*name_idx),
+            | OpCode::ExecCall { name_idx, .. } => Some(*name_idx),
             _ => None,
         }
     }
@@ -3358,14 +3334,12 @@ impl CompiledCode {
                 OpCode::CallDefined
                     | OpCode::CallFunc { .. }
                     | OpCode::CallFuncNamed { .. }
-                    | OpCode::CallFuncSlip { .. }
                     | OpCode::CallMethod { .. }
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }
                     | OpCode::CallMethodDynamicMut { .. }
                     | OpCode::ExecCall { .. }
                     | OpCode::ExecCallPairs { .. }
-                    | OpCode::ExecCallSlip { .. }
                     | OpCode::CallOnValue { .. }
                     | OpCode::CallOnCodeVar { .. }
                     | OpCode::HyperMethodCall { .. }
@@ -3409,7 +3383,6 @@ impl CompiledCode {
                     | OpCode::MultiDimIndexAssignGeneric(_)
                     | OpCode::CallFunc { .. }
                     | OpCode::CallFuncNamed { .. }
-                    | OpCode::CallFuncSlip { .. }
                     | OpCode::CallMethod { .. }
                     | OpCode::CallMethodMut { .. }
                     | OpCode::CallMethodDynamic { .. }

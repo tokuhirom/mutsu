@@ -2121,60 +2121,6 @@ impl Compiler {
                     return;
                 }
 
-                // Check for capture slip args (|var)
-                let has_slip = rewritten_args
-                    .iter()
-                    .any(|arg| matches!(arg, CallArg::Slip(_)));
-                if has_slip {
-                    // Compile all args in source order, tracking the slip position
-                    let mut regular_count = 0u32;
-                    let mut slip_pos: Option<u32> = None;
-                    let mut stack_idx = 0u32;
-                    for arg in &rewritten_args {
-                        match arg {
-                            CallArg::Slip(expr) => {
-                                slip_pos = Some(stack_idx);
-                                self.compile_expr(expr);
-                                stack_idx += 1;
-                            }
-                            CallArg::Positional(expr) => {
-                                self.compile_call_arg(expr);
-                                regular_count += 1;
-                                stack_idx += 1;
-                            }
-                            CallArg::Named {
-                                name: n,
-                                value: Some(expr),
-                            } => {
-                                self.compile_expr(&Expr::Literal(Value::str(n.clone())));
-                                self.compile_expr(expr);
-                                self.code.emit(OpCode::MakePair);
-                                regular_count += 1;
-                                stack_idx += 1;
-                            }
-                            CallArg::Named {
-                                name: n,
-                                value: None,
-                            } => {
-                                self.compile_expr(&Expr::Literal(Value::str(n.clone())));
-                                self.compile_expr(&Expr::Literal(Value::TRUE));
-                                self.code.emit(OpCode::MakePair);
-                                regular_count += 1;
-                                stack_idx += 1;
-                            }
-                            CallArg::Invocant(_) => {}
-                        }
-                    }
-                    let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                    self.code.emit(OpCode::ExecCallSlip {
-                        name_idx,
-                        regular_arity: regular_count,
-                        arg_sources_idx: None,
-                        slip_pos,
-                    });
-                    return;
-                }
-
                 // Statement-level call with named args: compile values and encode
                 // named args as Pair(name => value), then dispatch without stmt_pool.
                 for arg in &rewritten_args {
@@ -2193,13 +2139,21 @@ impl Compiler {
                             self.compile_expr(&Expr::Literal(Value::TRUE));
                             self.code.emit(OpCode::MakePair);
                         }
-                        CallArg::Slip(_) | CallArg::Invocant(_) => unreachable!(),
+                        // `|EXPR` interpolates into the argument list: MakeSlip
+                        // builds the Slip, which spreads when bound.
+                        CallArg::Slip(expr) => {
+                            self.compile_expr(expr);
+                            self.code.emit(OpCode::MakeSlip);
+                        }
+                        CallArg::Invocant(_) => unreachable!(),
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                let slip_positions_idx = self.add_slip_positions_constant(&rewritten_args);
                 self.code.emit(OpCode::ExecCallPairs {
                     name_idx,
                     arity: rewritten_args.len() as u32,
+                    slip_positions_idx,
                 });
             }
             // Loop control
