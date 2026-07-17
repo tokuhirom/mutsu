@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.7.0](https://github.com/tokuhirom/mutsu/compare/v0.6.0...v0.7.0) - 2026-07-17
+
+- fix: `@a.map` returns a Seq on the rw path, and nested hyper results are itemized by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4647
+- fix: `$_` inside a WhateverCode stays the caller's topic in first/grep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4649
+- fix: a Nil local no longer reads a foreign lexical out of the shared store by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4650
+- perf: LTM candidate measurement no longer runs the candidate's code, or a second trial match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4651
+- docs: root-cause the mzef concurrent-fetch collision to the process-global shared store by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4652
+- fix: `.hash` on a type object is the empty hash, not "Odd number of elements" by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4653
+- fix: CURI.install finds sources via the distribution's .content API by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4655
+- fix: the parse-failure position probe no longer executes the grammar's code atoms by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4656
+- fix: regex code assertions run inline on the real interpreter — advent2013-day18.t 10/10 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4657
+- perf: the parse-failure probe answers for every prefix in one walk, not one match per prefix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4659
+- docs: roast's `integration/` frontier is done — re-point PLAN §4 at the real state by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4660
+- fix: scope the cross-thread lexical store to a spawn lineage (ADR-0010) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4658
+- fix: two mzef module-load blockers - typed sigilless pointy params, sibling-role short-name composition by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4661
+- fix: `use` dist selectors pick the right installed distribution; role adverbs may precede the signature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4662
+- docs(PLAN): de-prioritize perf — gate §5 on "does mzef need this to work?" by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4614
+- fix: custom attribute traits survive to ^attributes (the JSON::Name shape) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4663
+- fix: class-body trait multis reach nested classes; named @/% params require Positional/Associative by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4664
+- fix: a regex-where subset accepts matching return values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4665
+- docs: the mzef load frontier is closed; the Test phase is the new one by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4666
+- fix: OUTER:: names the next outer scope, not every outer scope by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4667
+- docs: re-measure the roast ledger's "what to do next" — every item was stale by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4668
+- fix: ::?CLASS pseudo-type works on non-invocant parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4669
+- fix: use-ok performs a real module load instead of a filesystem probe by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4670
+- fix: $::($name)::x resolves OUTER:: against the lexical chain, like $OUTER::x by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4673
+- docs: correct the CALLERS:: diagnosis in BLOCKERS.md — measured, not guessed by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4674
+- docs: measure the last two pseudo-6c CALLER:: claims — both were wrong by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4675
+
 ## [v0.6.0](https://github.com/tokuhirom/mutsu/compare/v0.5.0...v0.6.0) - 2026-07-17
 
 - perf: skip apply_container_attribute_defaults for classes without is-default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4611
