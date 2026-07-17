@@ -1,11 +1,13 @@
 //! Internal AST (`Stmt`/`Expr`) → RakuAST node tree (read direction, ADR-0011).
 //!
-//! Phase 1 covers the literal + say-call cluster. Constructs outside that set
-//! produce an explicit `RuntimeError` (the documented Phase-1 boundary) rather
-//! than a silently-wrong node.
+//! Covered so far: the literal + say-call cluster (Phase 1) and variables,
+//! plain `my` declarations, and infix/prefix/postfix operators (Phase 2).
+//! Constructs outside that set produce an explicit `RuntimeError` (the
+//! documented coverage boundary) rather than a silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn unsupported(what: &str) -> RuntimeError {
@@ -55,7 +57,78 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         Stmt::Put(args) => Ok(Some(statement_expression(listop_call("put", args)?))),
         Stmt::Print(args) => Ok(Some(statement_expression(listop_call("print", args)?))),
         Stmt::Note(args) => Ok(Some(statement_expression(listop_call("note", args)?))),
+        Stmt::VarDecl {
+            name,
+            expr,
+            type_constraint,
+            is_state,
+            is_our,
+            is_dynamic,
+            custom_traits,
+            where_constraint,
+            ..
+        } => {
+            // Phase 2 covers only the plain `my $x [= expr]` form; scoped/typed
+            // declarations map to extra RakuAST fields not yet modelled.
+            if type_constraint.is_some()
+                || *is_state
+                || *is_our
+                || *is_dynamic
+                || where_constraint.is_some()
+            {
+                return Err(unsupported("scoped/typed variable declaration"));
+            }
+            let has_initializer = custom_traits
+                .iter()
+                .any(|(name, _)| name == "__has_initializer");
+            Ok(Some(statement_expression(var_declaration(
+                name,
+                expr,
+                has_initializer,
+            )?)))
+        }
         other => Err(unsupported(&format!("{other:?}"))),
+    }
+}
+
+/// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
+/// implicit (`$`) when mutsu already stripped it from the name; otherwise the
+/// name carries its `@`/`%`/`&` sigil.
+fn var_declaration(
+    name: &str,
+    init_expr: &Expr,
+    has_initializer: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let (sigil, desigil) = split_sigil(name);
+    let name_node = RakuAstNode {
+        class: RakuAstClass::Name,
+        fields: vec![leaf_field(None, Value::str(desigil.to_string()))],
+    };
+    let mut fields = vec![
+        leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+        node_field(Some("desigilname"), name_node),
+    ];
+    if has_initializer {
+        let assign = RakuAstNode {
+            class: RakuAstClass::InitializerAssign,
+            fields: vec![node_field(None, convert_expr(init_expr)?)],
+        };
+        fields.push(node_field(Some("initializer"), assign));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::VarDeclarationSimple,
+        fields,
+    })
+}
+
+/// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
+/// on `@`/`%`/`&` declarations but strips it from `$` ones.
+fn split_sigil(name: &str) -> (&str, &str) {
+    match name.as_bytes().first() {
+        Some(b'@') => ("@", &name[1..]),
+        Some(b'%') => ("%", &name[1..]),
+        Some(b'&') => ("&", &name[1..]),
+        _ => ("$", name),
     }
 }
 
@@ -70,7 +143,60 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
+        Expr::Var(name) => Ok(var_lexical("$", name)),
+        Expr::ArrayVar(name) => Ok(var_lexical("@", name)),
+        Expr::HashVar(name) => Ok(var_lexical("%", name)),
+        Expr::CodeVar(name) => Ok(var_lexical("&", name)),
+        Expr::Binary { left, op, right } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(Some("left"), convert_expr(left)?),
+                node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+                node_field(Some("right"), convert_expr(right)?),
+            ],
+        }),
+        Expr::Unary { op, expr } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyPrefix,
+            fields: vec![
+                node_field(Some("prefix"), operator_node(RakuAstClass::Prefix, op)),
+                node_field(Some("operand"), convert_expr(expr)?),
+            ],
+        }),
+        Expr::PostfixOp { op, expr } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyPostfix,
+            fields: vec![
+                node_field(Some("operand"), convert_expr(expr)?),
+                node_field(Some("postfix"), postfix_node(op)),
+            ],
+        }),
         other => Err(unsupported(&format!("{other:?}"))),
+    }
+}
+
+/// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
+fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::VarLexical,
+        fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
+    }
+}
+
+/// `Infix`/`Prefix` — a single positional operator string (e.g. `Infix.new("+")`).
+fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> RakuAstNode {
+    RakuAstNode {
+        class,
+        fields: vec![leaf_field(None, Value::str(token_kind_to_op_name(op)))],
+    }
+}
+
+/// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).
+fn postfix_node(op: &crate::token_kind::TokenKind) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::Postfix,
+        fields: vec![leaf_field(
+            Some("operator"),
+            Value::str(token_kind_to_op_name(op)),
+        )],
     }
 }
 

@@ -747,8 +747,14 @@ so it is tracked separately from the roast backlog.
 - [ ] **Phase 1 — introspection MVP**: `Value::RakuAst` + `RakuAstClass` enum + class-metadata table;
       `Q|...|.AST` on `Str` for the literal + say-call cluster; `.gist`/`.raku`/`.^name` renderer
       matching raku exactly. Tests in `t/rakuast-ast.t`.
-- [ ] **Phase 2** — read-coverage expansion (var/decl/ops/calls/blocks/conditionals/loops/subs/sigs)
-      + `.DEPARSE`; resolve the constant-folding divergence.
+- **Phase 2 (in progress)** — read-coverage expansion.
+  - [x] Slice 1: Var::Lexical (all sigils), VarDeclaration::Simple + Initializer::Assign (plain
+        `my $x [= expr]`), ApplyInfix/ApplyPrefix/ApplyPostfix + Infix/Prefix/Postfix. Tests in
+        `t/rakuast-expr.t`.
+  - [ ] Slice 2+: assignment (`Assignment` node), method calls, blocks & pointy blocks,
+        `if`/`unless`/`with`, loops, sub declarations, signatures & parameters; scoped/typed
+        `my`; then `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to
+        `IntLiteral(3)`, mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

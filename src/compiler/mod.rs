@@ -48,7 +48,7 @@ mod helpers_call_args;
 mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
-mod helpers_ops;
+pub(crate) mod helpers_ops;
 mod helpers_phasers;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
