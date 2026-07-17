@@ -1,13 +1,11 @@
 use v6;
 use Test;
 
-plan 7;
+plan 9;
 
-# A failed `.parse` reports how far it got by re-matching the pattern against
-# every prefix of the input (`longest_complete_prefix_end`). That is a
-# diagnostic, and computing it must not execute the grammar's code atoms —
-# otherwise a `<?{ … }>` runs once per prefix, i.e. O(input length) times.
-# See docs/adr/0009.
+# A failed `.parse` reports how far it got (`longest_complete_prefix_end`). That
+# is a diagnostic, so computing it must neither execute the grammar's code atoms
+# nor cost a re-match per prefix of the input. See docs/adr/0009.
 #
 # The tell is that the run count for a FIXED atom scales with the length of the
 # input, even though that atom is only ever reached once. raku runs it once
@@ -50,3 +48,23 @@ my $nshort = %n<a>;
 %n = ();
 nok Nested.parse("ab;zcdefghijklmnop").defined, 'nested: long input fails as expected';
 is %n<a>, $nshort, 'nested: run count does not scale with input length either';
+
+# The probe must also not re-match once per prefix. This is the shape that
+# reaches it: the declarative skeleton matches (so LTM keeps the candidate and the
+# real match runs) but the assertion rejects at the very end, and no prefix
+# matches in full either. Each item's assertion is reached exactly once by the
+# real match, so the total is the input length — in both implementations. A
+# per-prefix probe made it grow with n on top of that.
+our %total;
+sub runs_for($len) {
+    my grammar Late {
+        token TOP  { ^ <item>+ $ }
+        token item { (\w) <?{ %total<c>++; ~$0 ne 'z' }> }
+    }
+    %total = ();
+    Late.parse(('a' x ($len - 1)) ~ 'z');
+    return %total<c> // 0;
+}
+is runs_for(20), 20, 'assertion runs once per item, not once per item per prefix';
+is runs_for(40), 40, '...and it stays exactly the input length as the input grows';
+
