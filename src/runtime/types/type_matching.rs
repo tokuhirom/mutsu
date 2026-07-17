@@ -1085,6 +1085,18 @@ impl Interpreter {
             if mixins.contains_key(constraint) {
                 return true;
             }
+            // A mixed-in role may itself compose other roles
+            // (`role R1 does R2 {}`): `$x but R1` / `$attr does R1` must
+            // then match R2 as well. Walk the transitive role-composition
+            // graph from every mixed-in role marker.
+            for key in mixins.keys() {
+                if let Some(role_name) = key.strip_prefix("__mutsu_role__")
+                    && (self.role_is_subtype(role_name, effective_constraint)
+                        || self.role_is_subtype(role_name, constraint))
+                {
+                    return true;
+                }
+            }
         }
         // For Package (type object) values, use the package name as the type
         // so that e.g. Junction (which is Mu, not Any) is correctly rejected

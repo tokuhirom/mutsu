@@ -15,10 +15,16 @@ impl Interpreter {
             }
             if let Some(parents) = self.registry().role_parents.get(&role) {
                 for parent in parents {
-                    if parent == rhs_role {
+                    // A parent may be recorded in parametric form ("P2[Int]");
+                    // compare and continue the walk on its base name.
+                    let parent_base = parent
+                        .split_once('[')
+                        .map(|(base, _)| base)
+                        .unwrap_or(parent.as_str());
+                    if parent_base == rhs_role {
                         return true;
                     }
-                    stack.push(parent.clone());
+                    stack.push(parent_base.to_string());
                 }
             }
         }
