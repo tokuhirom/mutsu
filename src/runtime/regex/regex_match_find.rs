@@ -17,7 +17,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn regex_match_with_captures_full_from_start(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
     ) -> Option<RegexCaptures> {
@@ -191,7 +191,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn regex_match_all_with_captures(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
     ) -> Vec<RegexCaptures> {
@@ -256,7 +256,7 @@ impl Interpreter {
     /// Returns (from, to) as char indices in the full text.
     /// Unlike `regex_find_first`, this preserves full-text context for zero-width assertions.
     pub(crate) fn regex_find_first_from(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
         min_pos: usize,
@@ -303,7 +303,7 @@ impl Interpreter {
 
     /// Like `regex_find_first_from` but also returns positional captures.
     pub(crate) fn regex_find_first_from_with_captures(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
         min_pos: usize,
@@ -354,7 +354,7 @@ impl Interpreter {
         None
     }
 
-    pub(crate) fn regex_find_first(&self, pattern: &str, text: &str) -> Option<(usize, usize)> {
+    pub(crate) fn regex_find_first(&mut self, pattern: &str, text: &str) -> Option<(usize, usize)> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package();
 
@@ -417,7 +417,7 @@ impl Interpreter {
     }
 
     pub(super) fn regex_match_len_at_start_in_pkg(
-        &self,
+        &mut self,
         pattern: &str,
         text: &str,
         pkg: &str,

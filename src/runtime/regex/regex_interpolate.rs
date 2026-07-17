@@ -75,7 +75,7 @@ impl Interpreter {
     /// regex code blocks see token parameters that would otherwise be lost
     /// when the pattern is matched in the caller's environment.
     pub(in crate::runtime) fn bake_bound_params_into_regex_code_blocks(
-        &self,
+        &mut self,
         pattern: &str,
         param_names: &[String],
     ) -> String {
@@ -385,7 +385,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn instantiate_named_regex_arg_calls(
-        &self,
+        &mut self,
         pattern: &str,
     ) -> Result<String, RuntimeError> {
         let chars: Vec<char> = pattern.chars().collect();

@@ -2,7 +2,7 @@ use super::super::*;
 
 impl Interpreter {
     pub(super) fn regex_match_end_from_in_pkg(
-        &self,
+        &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,

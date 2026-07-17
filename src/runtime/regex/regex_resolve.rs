@@ -477,7 +477,7 @@ impl Interpreter {
     /// values produced by the `|` prefix. Returns `None` if any argument
     /// fails to evaluate.
     pub(in crate::runtime) fn eval_regex_arg_list(
-        &self,
+        &mut self,
         exprs: &[String],
         caps: &RegexCaptures,
     ) -> Option<Vec<Value>> {
@@ -505,7 +505,7 @@ impl Interpreter {
     }
 
     pub(in crate::runtime) fn eval_regex_expr_value(
-        &self,
+        &mut self,
         expr_src: &str,
         caps: &RegexCaptures,
     ) -> Option<Value> {

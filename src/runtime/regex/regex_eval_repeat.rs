@@ -7,7 +7,7 @@ impl Interpreter {
     /// Returns None if the code fails to evaluate or produces an invalid/infinite value;
     /// in invalid cases a pending error is set via PENDING_REGEX_ERROR for the caller to propagate.
     pub(super) fn eval_regex_repeat_code(
-        &self,
+        &mut self,
         code: &str,
         caps: &RegexCaptures,
     ) -> Option<(usize, Option<usize>)> {

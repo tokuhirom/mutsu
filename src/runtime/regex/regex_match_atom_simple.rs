@@ -7,7 +7,7 @@ use super::regex_helpers::{
 impl Interpreter {
     #[allow(dead_code)]
     pub(super) fn regex_match_from_in_pkg(
-        &self,
+        &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
@@ -160,7 +160,7 @@ impl Interpreter {
     }
 
     pub(super) fn regex_match_atom_in_pkg(
-        &self,
+        &mut self,
         atom: &RegexAtom,
         chars: &[char],
         pos: usize,
@@ -591,7 +591,9 @@ impl Interpreter {
                 } else {
                     vec![effective_c]
                 };
-                let match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {
+                // `mut`: resolving a class item can dispatch a grammar token, which
+                // now takes `&mut self`, making this an `FnMut`.
+                let mut match_class_item = |item: &ClassItem, chars_to_check: &[char]| -> bool {
                     match item {
                         ClassItem::NamedBuiltin(n) => {
                             let builtin_match = chars_to_check

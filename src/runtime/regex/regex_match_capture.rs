@@ -8,7 +8,7 @@ impl Interpreter {
     /// (ADR-0007); `current_caps` is the engine's accumulated store, passed
     /// for READS only (backrefs, code assertions, code-block contexts).
     pub(super) fn regex_match_atom_with_capture_in_pkg(
-        &self,
+        &mut self,
         atom: &RegexAtom,
         chars: &[char],
         pos: usize,
@@ -256,18 +256,15 @@ impl Interpreter {
                     // text (e.g. the card grammar's `%*PLAYED{$/.lc}++` dup check).
                     let matched_so_far: String =
                         chars[current_caps.match_from..pos].iter().collect();
+                    // Runs on THIS interpreter, with real side effects, right here
+                    // (ADR-0009 part B). It is therefore NOT recorded as a code block
+                    // for `execute_regex_code_blocks` to replay on the winning path —
+                    // that replay would run it a second time.
                     let result =
                         self.eval_regex_code_assertion(code, current_caps, &matched_so_far);
                     let pass = if *negated { !result } else { result };
                     if pass {
-                        let mut new_caps = RegexCaptures::default();
-                        new_caps.code_blocks.push(CodeBlockContext {
-                            code: code.clone(),
-                            named: current_caps.named.clone(),
-                            matched_so_far,
-                            positional: current_caps.positional.clone(),
-                        });
-                        return Some((pos, new_caps));
+                        return Some((pos, RegexCaptures::default()));
                     } else {
                         return None;
                     }

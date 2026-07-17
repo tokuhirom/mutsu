@@ -89,7 +89,7 @@ impl Interpreter {
     }
 
     pub(super) fn regex_match_end_from_caps_in_pkg(
-        &self,
+        &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
@@ -104,7 +104,7 @@ impl Interpreter {
     }
 
     pub(super) fn regex_match_ends_from_caps_in_pkg(
-        &self,
+        &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
@@ -117,7 +117,7 @@ impl Interpreter {
     /// captures) at `start`, in DFS-completion order (highest priority first).
     /// When `first_only` is true the walk stops after the first complete match.
     fn regex_match_ends_from_caps_in_pkg_impl(
-        &self,
+        &mut self,
         pattern: &RegexPattern,
         chars: &[char],
         start: usize,
@@ -331,7 +331,7 @@ impl Interpreter {
     /// the token after `idx`, rewinding the fold afterwards.
     #[allow(clippy::too_many_arguments)]
     fn descend_folded(
-        &self,
+        &mut self,
         ctx: &WalkCtx,
         idx: usize,
         at: usize,
@@ -352,7 +352,7 @@ impl Interpreter {
     /// Depth-first walk from token `idx` at position `pos`. Returns `true`
     /// when the walk should stop (first_only found a match).
     fn walk_tokens(
-        &self,
+        &mut self,
         ctx: &WalkCtx,
         idx: usize,
         pos: usize,
@@ -549,7 +549,7 @@ impl Interpreter {
     /// non-silent Named): possessive linear scans that avoid the general
     /// chain. Returns `None` when no fast path applies.
     fn walk_ratchet_fast_paths(
-        &self,
+        &mut self,
         ctx: &WalkCtx,
         idx: usize,
         pos: usize,
@@ -673,6 +673,58 @@ impl Interpreter {
     }
 
     /// General chain quantifier (`*`, `+`, `**min..max`) over a single-match
+    /// Grow a quantifier's iteration chain by one: match `token`'s atom at
+    /// `current` and apply the resulting captures to the store. `None` when the
+    /// atom does not match, or matches empty (which would not make progress).
+    ///
+    /// A method rather than a closure inside `walk_quant_chain`: matching an atom
+    /// takes `&mut self` (a code assertion runs on this interpreter), and a
+    /// closure capturing `self` mutably would lock out the `descend_folded` calls
+    /// interleaved with it.
+    #[allow(clippy::too_many_arguments)]
+    fn grow_one_iter(
+        &mut self,
+        ctx: &WalkCtx,
+        idx: usize,
+        store: &mut CapStore,
+        current: usize,
+        pos_base: usize,
+        hash_per_iter: bool,
+    ) -> Option<usize> {
+        let token = &ctx.pattern.tokens[idx];
+        let iter_pos_base = store.caps().positional.len();
+        let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
+            &token.atom,
+            ctx.chars,
+            current,
+            store.caps(),
+            ctx.pkg,
+            ctx.pattern.ignore_case,
+        )?;
+        if next == current {
+            return None;
+        }
+        store.merge_delta(delta);
+        Self::store_apply_named_capture(store, ctx.chars, token, current, next, pos_base);
+        let hash_base = if hash_per_iter {
+            iter_pos_base
+        } else {
+            pos_base
+        };
+        Self::store_apply_hash_capture(store, ctx.chars, token, current, next, hash_base);
+        if hash_per_iter {
+            // Reduce-time grammar action: when a `<subrule>` quantifier
+            // iteration commits inside an action-driven parse whose
+            // matching depends on a `$*` dynamic var, run this iteration's
+            // subrule action now so any dyn-var write (e.g. a delimiter
+            // finalizer) is visible to the next iteration's pattern
+            // interpolation. Gated on the SEEN flag so plain grammars pay
+            // nothing.
+            self.maybe_run_reduce_time_dynvar_action(token, store.caps());
+        }
+        Some(next)
+    }
+
     /// atom: grow the iteration chain on the store (one mark per iteration),
     /// then descend longest-first (greedy) / shortest-first (frugal) /
     /// longest-only (ratchet). `hash_per_iter` selects the `%<h>=` hash
@@ -680,7 +732,7 @@ impl Interpreter {
     /// grammar actions per iteration), token-start for `**`.
     #[allow(clippy::too_many_arguments)]
     fn walk_quant_chain(
-        &self,
+        &mut self,
         ctx: &WalkCtx,
         idx: usize,
         pos: usize,
@@ -697,39 +749,6 @@ impl Interpreter {
         for n in Self::collect_quantified_names_for_token(token) {
             store.insert_named_quantified(n);
         }
-        let grow_one = |store: &mut CapStore, current: usize| -> Option<usize> {
-            let iter_pos_base = store.caps().positional.len();
-            let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
-                &token.atom,
-                ctx.chars,
-                current,
-                store.caps(),
-                ctx.pkg,
-                ctx.pattern.ignore_case,
-            )?;
-            if next == current {
-                return None;
-            }
-            store.merge_delta(delta);
-            Self::store_apply_named_capture(store, ctx.chars, token, current, next, pos_base);
-            let hash_base = if hash_per_iter {
-                iter_pos_base
-            } else {
-                pos_base
-            };
-            Self::store_apply_hash_capture(store, ctx.chars, token, current, next, hash_base);
-            if hash_per_iter {
-                // Reduce-time grammar action: when a `<subrule>` quantifier
-                // iteration commits inside an action-driven parse whose
-                // matching depends on a `$*` dynamic var, run this iteration's
-                // subrule action now so any dyn-var write (e.g. a delimiter
-                // finalizer) is visible to the next iteration's pattern
-                // interpolation. Gated on the SEEN flag so plain grammars pay
-                // nothing.
-                self.maybe_run_reduce_time_dynvar_action(token, store.caps());
-            }
-            Some(next)
-        };
         if token.frugal {
             // Frugal: try the shortest admissible length first, growing the
             // chain one iteration at a time on demand. This holds under ratchet
@@ -748,7 +767,9 @@ impl Interpreter {
                 if max.is_some_and(|mx| count >= mx) {
                     break;
                 }
-                let Some(next) = grow_one(store, current) else {
+                let Some(next) =
+                    self.grow_one_iter(ctx, idx, store, current, pos_base, hash_per_iter)
+                else {
                     break;
                 };
                 count += 1;
@@ -762,7 +783,8 @@ impl Interpreter {
         let mut iter_marks = vec![store.mark()];
         let mut current = pos;
         while max.is_none_or(|mx| ends.len() - 1 < mx) {
-            let Some(next) = grow_one(store, current) else {
+            let Some(next) = self.grow_one_iter(ctx, idx, store, current, pos_base, hash_per_iter)
+            else {
                 break;
             };
             ends.push(next);
@@ -794,7 +816,7 @@ impl Interpreter {
     /// match *more* iterations (deeper) outrank stopping there. Frugal is the
     /// exact mirror. Bounded to avoid catastrophic backtracking.
     fn walk_quant_alt(
-        &self,
+        &mut self,
         ctx: &WalkCtx,
         idx: usize,
         pos: usize,
@@ -851,7 +873,7 @@ impl Interpreter {
     /// quantifier at this length — or the mirror order for frugal.
     #[allow(clippy::too_many_arguments)]
     fn quant_alt_dfs(
-        &self,
+        &mut self,
         ctx: &WalkCtx,
         idx: usize,
         current: usize,

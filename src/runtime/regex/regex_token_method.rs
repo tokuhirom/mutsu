@@ -152,7 +152,7 @@ impl Interpreter {
     /// TODO: left-recursive rules bypass the LR seed-growing loop on this
     /// path; a left-recursive grammar under a profiling HOW would recurse.
     pub(super) fn try_custom_how_subrule_dispatch(
-        &self,
+        &mut self,
         spec: &NamedRegexLookupSpec,
         chars: &[char],
         pos: usize,
