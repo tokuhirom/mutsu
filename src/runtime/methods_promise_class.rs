@@ -26,6 +26,22 @@ impl Interpreter {
         None
     }
 
+    /// Keep `promise` with True once `secs` have elapsed, via the shared
+    /// deadline-heap timer — no per-timer OS thread. `keep` never runs user
+    /// code on the resolver (waiters dispatch to their own thread), so it is
+    /// safe on the timer driver. `+Inf` means the promise never resolves.
+    fn keep_promise_after(promise: SharedPromise, secs: f64) {
+        if secs == f64::INFINITY {
+            return;
+        }
+        super::native_methods::interval_timer::register_once(
+            super::native_methods::interval_timer::clamp_delay_secs(secs),
+            Box::new(move || {
+                promise.keep(Value::TRUE, String::new(), String::new());
+            }),
+        );
+    }
+
     /// Promise.in dispatch
     pub(super) fn dispatch_promise_in(
         &mut self,
@@ -33,20 +49,10 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
-            let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0).max(0.0);
+            let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             let ret = Value::promise(promise.clone());
-            // Registered spawn: this thread drops a `Gc` promise handle at
-            // exit (see `spawn_gc_helper_thread`); the sleep is a quiescent
-            // safe region so a long timer never starves a stop-the-world.
-            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                if secs > 0.0 {
-                    crate::gc::block_quiescent(|| {
-                        std::thread::sleep(Duration::from_secs_f64(secs))
-                    });
-                }
-                promise.keep(Value::TRUE, String::new(), String::new());
-            });
+            Self::keep_promise_after(promise, secs);
             return Some(Ok(ret));
         }
         None
@@ -81,18 +87,10 @@ impl Interpreter {
                 None => 0.0,
             };
             let now = crate::value::current_time_secs_f64();
-            let delay = (at_time - now).max(0.0);
+            let delay = at_time - now;
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
             let ret = Value::promise(promise.clone());
-            // Registered spawn + quiescent sleep — see `dispatch_promise_in`.
-            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                if delay > 0.0 {
-                    crate::gc::block_quiescent(|| {
-                        std::thread::sleep(Duration::from_secs_f64(delay))
-                    });
-                }
-                promise.keep(Value::TRUE, String::new(), String::new());
-            });
+            Self::keep_promise_after(promise, delay);
             return Some(Ok(ret));
         }
         None
