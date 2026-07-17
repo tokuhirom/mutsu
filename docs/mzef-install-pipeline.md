@@ -31,7 +31,7 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 3 | **Fetch** (download archive) | ✅ | Downloads via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617; the **concurrent** multi-candidate fetch `install` drives by #4658 (ADR-0010) — all 16 of Test::META's candidates now fetch their own archive |
 | 4 | **Extract** (untar) | ✅ | Single-dist: #4620 + #4622 + #4627 + #4635/#4641/#4642. Concurrent: fixed by restoring the #4650 `thread_redeclared_vars` gates on top of ADR-0010 (the "extract-matcher rejects the archive" symptom was a child `my` re-declaration clobbering the parent's staged path through the lineage chain) |
 | 5 | Build | ✅ | reached; a pure-Raku dist has nothing to build and passes through |
-| 6 | Test | ⬜ | not exercised yet (runs have used `--/test`) |
+| 6 | Test | ⏳ | The phase RUNS: `zef install JSON::OptIn` (no `--/test`) does `Testing [OK] → Installing`, and `zef install Test::META` runs all 16 dists' suites concurrently. But **13/16 suites FAIL** — see "Test-phase frontier" below |
 | 7 | Install into site repo | ✅ | **a dependency-free dist installs and is then `use`-able**; a dependency-ful one too: `zef install --/test Test::META` installs **all 13 dists** end-to-end |
 
 **So: the whole install pipeline works, including for a dependency-ful dist.**
@@ -52,9 +52,16 @@ $ mutsu -I <zef>/lib <zef>/bin/zef install --/test Test::META
 others), so `use JSON::Fast` succeeds on a clean HOME with no install at all and
 proves nothing. `JSON::OptIn` is not bundled.
 
-The frontier has moved past install, to **running what was installed** ("Current
-frontier" below): `use Test::META` hits a parse error in one of the installed
-modules, and `URI.host` hits a coercion-return-type bug.
+**The whole load chain works too** (as of #4661–#4665): `use Test::META` and
+every dist below it — JSON::Unmarshal, JSON::Marshal, JSON::Class
+(jonathanstowe), License::SPDX, META6, URI — load, and `URI.new(...).host`
+returns. The frontier is the **Test phase** ("Test-phase frontier" below).
+
+> **Verification trap:** `use Test::META; say "LOADED"` proves NOTHING on its
+> own — `use_module` has a compat branch that silently succeeds for any
+> missing `Test::*` module (runtime_module.rs). Verify with a symbol the
+> module actually exports: `::("&meta6-ok")` must not be an error. The
+> non-`Test::` dists in the chain (`use META6` etc.) fail honestly.
 
 ## Fixes that got us here (this campaign)
 
@@ -164,7 +171,7 @@ All 16 candidates now fetch their own archive. See
 [ADR-0010](adr/0010-cross-thread-lexical-sharing-scope.md); the analysis that
 found it is kept below.
 
-## Current frontier — `use Test::META` LOADS; next is *running* it
+## Load frontier — CLOSED (2026-07-17, #4661–#4665)
 
 `zef install --/test Test::META` completes (16 candidates resolve, fetch,
 extract, **13 dists install**), and the whole load chain is now fixed:
@@ -199,14 +206,33 @@ repro → general fix → `t/` pin):
   for a single enum value and died in the destructure. Named `@`/`%` params
   now require Positional/Associative arguments. Same pin.
 
-Still open:
+- ~~`use URI; URI.new(...).host` return type check~~ (#4665) — URI's
+  `subset Host of Str where /regex/` passed `~~` but failed every `--> Host`
+  return: the return check's own predicate evaluator only understood callable
+  predicates. It now delegates to the same subset matcher `~~` uses. Pin:
+  `t/subset-regex-return-check.t`.
 
-- **`use URI; URI.new("https://raku.org/x").host`** → `Type check failed for
-  return value; expected Host but got Str ("raku.org")` — a
-  coercion/subset-typed **return** value is checked against the raw Str.
-- **Running Test::META's actual test functions** (`meta6-ok`) end-to-end is
-  unexercised — the next milestone is `zef install --/test` WITHOUT
-  `--/test`, i.e. the Test phase (pipeline row 6).
+## Test-phase frontier (2026-07-17, the current one)
+
+`zef install Test::META` (tests ON) runs all 16 dists' test suites
+concurrently and **13/16 FAIL** (OK: JSON::OptIn; the debug-build run also
+overran a 570s timeout — use release for E2E):
+
+- **The dominant symptom is environmental, not per-test**: nearly every
+  suite's `t/010-use.t` fails at `use-ok` ("JSON::Name module can be use-d
+  ok" etc.) even though the same `use` works interactively against the
+  installed repo. zef runs each suite in a subprocess against the STAGED
+  (pre-install) dist plus its already-installed dependencies; suspect the
+  `-I`/env handoff for that staging layout, or cross-contamination between
+  the 16 concurrent test subprocesses. Investigate one suite in isolation
+  first (`zef test <path>` or run the staged `prove` command by hand).
+- **Test::Async (vrurg) fails to parse**: `Failed to parse module
+  'Test::Async::Hub': X::Redeclaration: Redeclaration of symbol '$self'` —
+  a real language bug, plus sink-context warnings. Test::Async is the test
+  framework several vrurg dists use, so it gates their suites.
+
+Still open (load-side leftovers):
+
 - **CALLING a named-array destructure candidate** (`is specification([...])`)
   still fails in binding (`Calling trait_mod:<is>(Any) will never work ...`,
   then binds the whole Array to the first destructure param). Not used by
