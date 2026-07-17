@@ -28,15 +28,15 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 0 | CLI load + command dispatch | ✅ | `zef --version` → 1.1.3; `--help` prints usage |
 | 1 | Ecosystem index (populate) | ✅ | fez index parsed: **9260 keys / 7648 dists**, ~6.5s release |
 | 2 | Resolve / find candidate | ✅ | `zef info Test::META` → full Identity/Source/Description |
-| 3 | **Fetch** (download archive) | ⏳ | Single-dist `zef fetch` downloads `https://360.zef.pm/.../*.tar.gz` via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617. **The concurrent multi-candidate fetch that `install` drives still fails** (see "Current frontier") |
-| 4 | **Extract** (untar) | ✅ | Untars the real dist after #4620 + #4622 + #4627 + #4635/#4641/#4642 |
+| 3 | **Fetch** (download archive) | ✅ | Downloads via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617; the **concurrent** multi-candidate fetch `install` drives by #4658 (ADR-0010) — all 16 of Test::META's candidates now fetch their own archive |
+| 4 | **Extract** (untar) | ⏳ | Single-dist: ✅ (#4620 + #4622 + #4627 + #4635/#4641/#4642). **The concurrent path fails**: `extract-matcher` rejects the archive (see "Current frontier") |
 | 5 | Build | ✅ | reached; a pure-Raku dist has nothing to build and passes through |
 | 6 | Test | ⬜ | not exercised yet (runs have used `--/test`) |
 | 7 | Install into site repo | ✅ | **a dependency-free dist installs and is then `use`-able** (see below) |
 
-**So: ~6 of 8 phases for a dependency-free dist.** A real dist from the live fez
-ecosystem downloads, extracts, installs into the mutsu site repo, and `use`
-resolves it:
+**So: ~6 of 8 phases for a dependency-free dist, and fetch now works for a
+dependency-ful one too.** A real dist from the live fez ecosystem downloads,
+extracts, installs into the mutsu site repo, and `use` resolves it:
 
 ```
 $ mutsu -e 'use JSON::OptIn'        # Could not find JSON::OptIn in: ...
@@ -50,9 +50,9 @@ LOADED
 others), so `use JSON::Fast` succeeds on a clean HOME with no install at all and
 proves nothing. `JSON::OptIn` is not bundled.
 
-Dists **with dependencies** still fail earlier, at the concurrent-fetch collision
-("Current frontier" below) — that is now the only thing between mzef and a real
-`zef install Test::META`.
+Dists **with dependencies** now resolve and fetch all their candidates (#4658)
+and fail one phase later, in **extract** ("Current frontier" below) — that is the
+remaining thing between mzef and a real `zef install Test::META`.
 
 ## Fixes that got us here (this campaign)
 
@@ -174,11 +174,28 @@ Enabled extracting backends [git tar unzip path] don't understand
 ```
 
 `Zef::Extract!extractors($path)` finds no backend whose `extract-matcher($path)`
-accepts the archive — though `tar.extract-matcher` accepts exactly this shape in
-the single-dist path (`zef install --/depends JSON::OptIn` extracts fine). So the
-matcher is being handed something other than the real path, or is being evaluated
-under a condition the concurrent path creates. Start by printing `$path` and each
-backend's `extract-matcher` verdict inside `!extractors` on the instrumented copy.
+accepts the archive — though the single-dist path extracts the same shape fine
+(`zef install --/depends --/test JSON::OptIn` works end-to-end).
+
+**The strongest lead:** `tar.extract-matcher(Str() $uri)` returns True only if
+`$uri` **is an existing local file** *and* ends with `.tar.gz`/`.tgz`. The `.tar.gz`
+suffix is plainly there in the error, so the likely failure is the `.e` half —
+i.e. **nothing is actually at that path**. So suspect the fetch→extract handoff,
+not the matcher: each worker builds `my $tmp = %!config<TempDir>.IO.child(
+"{time}.{$*PID}.{(^10000).rand}")` and `my $stage-at = $tmp.child(...)`, then
+`$candi.uri` is set to where it saved. Check whether the file exists where extract
+looks, and whether 16 concurrent workers really got 16 distinct `$tmp` dirs
+(`time` has 1s resolution and `$*PID` is shared — the only thing separating them
+is `(^10000).rand`).
+
+Next steps:
+1. On the instrumented copy, print `$path`, `$path.IO.e` and each backend's
+   `extract-matcher` verdict inside `!extractors`, plus `$tmp`/`$stage-at`/
+   `$save-to` per worker in `Zef::Client!fetch`.
+2. If the paths collide or the file is missing, the bug is in fetch's staging (or
+   in mutsu's `rand`/`time`/`$*PID` under concurrency), not in extract.
+3. Only if the file *does* exist should you look at `extract-matcher` itself
+   (`Str()` coercion of an `IO::Path`, `.e` under a different `$*CWD`, …).
 
 ## Superseded analysis — concurrent fetch clobbers the URL
 
