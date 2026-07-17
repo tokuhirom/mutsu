@@ -15,9 +15,13 @@ impl Interpreter {
         // Copy user variables into shared_vars so both parent and child see mutations.
         // The compiler stores locals with bare names (no sigil), so we share everything
         // except internal/special variables that should remain thread-local.
+        // ADR-0010: seed into THIS lineage's store. The parent's lexicals belong
+        // to the parent's lineage; the child (created below) chains to it, so it
+        // sees them and its writes resolve back here. A sibling thread seeds into
+        // its OWN store, which is why two hyper workers that each declare
+        // `my $uri` no longer collide on one bare-name entry.
         let shared = Arc::clone(&self.shared_vars);
         {
-            let mut sv = shared.write().unwrap();
             for (key, val) in &self.env {
                 // Skip internal variables and topic variables.
                 // Also skip $*CWD/*CWD — in Raku, dynamic variables like $*CWD
@@ -38,17 +42,16 @@ impl Interpreter {
                 {
                     continue;
                 }
-                // Only insert if not already present — existing values may have
-                // been updated by earlier threads that are already running.
-                // EXCEPT names this thread re-declared: their shared entry (if
-                // any) belongs to the shadowed outer binding and was frozen at
-                // its pre-declaration value (writes were masked), so the child
-                // must see the parent's *current* binding instead.
+                // Only seed if not already visible — an entry an earlier thread
+                // already updated must not be reset to this env's copy.
+                // EXCEPT names this thread re-declared: their entry (if any)
+                // belongs to the shadowed outer binding, so bind the current one
+                // into this lineage, shadowing the ancestor's.
                 let key = key.resolve();
                 if self.thread_redeclared_vars.contains(&key) {
-                    sv.insert(key, val.clone());
+                    shared.declare(&key, val.clone());
                 } else {
-                    sv.entry(key).or_insert_with(|| val.clone());
+                    shared.seed_if_absent(&key, || val.clone());
                 }
             }
             // Track C: migrate the parent's existing `state` variables into shared
@@ -63,8 +66,7 @@ impl Interpreter {
                 }
                 let shared_key =
                     format!("__mutsu_shared_state::{}", Self::normalize_state_key(skey));
-                sv.entry(shared_key)
-                    .or_insert_with(|| sval.clone().into_container_ref());
+                shared.seed_if_absent(&shared_key, || sval.clone().into_container_ref());
             }
         }
         self.shared_vars_active = true;
@@ -297,7 +299,8 @@ impl Interpreter {
             react_active: 0,
             pending_tap_closes: Vec::new(),
             current_react_waker: None,
-            shared_vars: Arc::clone(&self.shared_vars),
+            // ADR-0010: a child lineage, not a share of one process-wide map.
+            shared_vars: crate::runtime::shared_store::SharedStore::child_of(&self.shared_vars),
             shared_vars_active: true,
             sigilless_attrs_active: self.sigilless_attrs_active,
             shared_vars_dirty: Arc::clone(&self.shared_vars_dirty),
@@ -449,7 +452,7 @@ impl Interpreter {
     pub(crate) fn push_to_shared_var(
         &mut self,
         key: &str,
-        values: Vec<Value>,
+        mut values: Vec<Value>,
         target_fallback: &Value,
     ) -> Value {
         // A plain lexical `@name` already present in the shared store routes
@@ -458,12 +461,14 @@ impl Interpreter {
         if key.starts_with('@') && self.shared_vars_active && Self::is_plain_lexical_array_name(key)
         {
             let in_shared = {
-                let sv = self.shared_vars.read().unwrap();
                 let atomic_key = format!("__mutsu_atomic_arr::{key}");
-                matches!(
-                    sv.get(&atomic_key).map(Value::view),
-                    Some(ValueView::Array(..))
-                ) || matches!(sv.get(key).map(Value::view), Some(ValueView::Array(..)))
+                self.shared_vars
+                    .get(&atomic_key)
+                    .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
+                    || self
+                        .shared_vars
+                        .get(key)
+                        .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
             };
             if in_shared {
                 return self.shared_array_extend(key, values, false);
@@ -476,32 +481,39 @@ impl Interpreter {
             // shared pushes in-place instead of degenerating into O(n²) COW.
             self.env.remove(key);
             let is_thread_clone = self.is_thread_clone();
-            let mut sv = self.shared_vars.write().unwrap();
-            // Try in-place mutation via get_mut first (avoids remove+insert overhead)
-            if matches!(sv.get(key).map(Value::view), Some(ValueView::Array(..))) {
-                let result = sv
-                    .get_mut(key)
-                    .and_then(|v| {
-                        v.with_array_mut(|arc_items, kind| {
-                            let items = crate::gc::Gc::make_mut(arc_items);
-                            items.extend(values);
-                            if *kind == ArrayKind::List {
-                                *kind = ArrayKind::Array;
-                            }
-                            Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
-                        })
+            // In-place read-modify-write under the owning lineage's lock, so
+            // concurrent pushes stay safe and O(1) amortised instead of O(n).
+            // Lend the values to the in-place attempt and take them back if the
+            // closure never ran (the branch below can still fall through).
+            let mut pending = Some(std::mem::take(&mut values));
+            let in_place = self
+                .shared_vars
+                .with_entry_mut(key, |v| {
+                    v.with_array_mut(|arc_items, kind| {
+                        let items = crate::gc::Gc::make_mut(arc_items);
+                        items.extend(pending.take().unwrap_or_default());
+                        if *kind == ArrayKind::List {
+                            *kind = ArrayKind::Array;
+                        }
+                        Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
                     })
-                    .expect("array checked above");
-                drop(sv);
+                })
+                .flatten();
+            if let Some(result) = in_place {
                 self.mark_shared_var_dirty(key);
                 if !is_thread_clone {
                     self.env.insert(key.to_string(), result.clone());
                 }
                 return result;
             }
+            // `with_array_mut` did not run (absent, or not an Array yet), so the
+            // values were never consumed — take them back.
+            values = pending.take().unwrap_or_default();
             // Fallback: the value might exist but not be an Array yet
-            if let Some(shared_value) = sv.remove(key) {
-                if matches!(shared_value.view(), ValueView::Array(..)) {
+            if let Some(shared_value) = self.shared_vars.get(key)
+                && matches!(shared_value.view(), ValueView::Array(..))
+            {
+                {
                     let (mut arc_items, kind) = shared_value.into_array().unwrap();
                     let items = crate::gc::Gc::make_mut(&mut arc_items);
                     items.extend(values);
@@ -512,18 +524,14 @@ impl Interpreter {
                     };
                     let result =
                         Value::array_with_kind(crate::gc::Gc::clone(&arc_items), normalized_kind);
-                    sv.insert(
-                        key.to_string(),
-                        Value::array_with_kind(arc_items, normalized_kind),
-                    );
-                    drop(sv);
+                    self.shared_vars
+                        .set(key, Value::array_with_kind(arc_items, normalized_kind));
                     self.mark_shared_var_dirty(key);
                     if !is_thread_clone {
                         self.env.insert(key.to_string(), result.clone());
                     }
                     return result;
                 }
-                sv.insert(key.to_string(), shared_value);
             }
         }
         // Fallback for non-shared arrays: write through the shared node so
@@ -573,12 +581,14 @@ impl Interpreter {
         // only handle a var already present in the shared store.
         if Self::is_plain_lexical_array_name(key) {
             let in_shared = {
-                let sv = self.shared_vars.read().unwrap();
                 let atomic_key = format!("__mutsu_atomic_arr::{key}");
-                matches!(
-                    sv.get(&atomic_key).map(Value::view),
-                    Some(ValueView::Array(..))
-                ) || matches!(sv.get(key).map(Value::view), Some(ValueView::Array(..)))
+                self.shared_vars
+                    .get(&atomic_key)
+                    .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
+                    || self
+                        .shared_vars
+                        .get(key)
+                        .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
             };
             if !in_shared {
                 return None;
@@ -593,18 +603,19 @@ impl Interpreter {
         if is_thread_clone {
             self.env.remove(key);
         }
-        let mut sv = self.shared_vars.write().unwrap();
-        let result = sv.get_mut(key).and_then(|v| {
-            v.with_array_mut(|arc_items, kind| {
-                let items = crate::gc::Gc::make_mut(arc_items);
-                items.extend(values);
-                if *kind == ArrayKind::List {
-                    *kind = ArrayKind::Array;
-                }
-                Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
+        let result = self
+            .shared_vars
+            .with_entry_mut(key, |v| {
+                v.with_array_mut(|arc_items, kind| {
+                    let items = crate::gc::Gc::make_mut(arc_items);
+                    items.extend(values);
+                    if *kind == ArrayKind::List {
+                        *kind = ArrayKind::Array;
+                    }
+                    Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
+                })
             })
-        })?;
-        drop(sv);
+            .flatten()?;
         if is_thread_clone {
             let dirty_marker = format!("__mutsu_shared_dirty::{key}");
             if !self.env.contains_key(&dirty_marker) {

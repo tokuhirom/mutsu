@@ -154,7 +154,33 @@ address through the distribution's own `.content($name-path)` (the API every
 Distribution implements, S22), with the `prefix` join kept as a fallback.
 Pin: `t/cur-install-content-api.t`.
 
-## Current frontier — concurrent fetch clobbers the URL
+## Solved — the concurrent-fetch collision (2026-07-17, ADR-0010)
+
+Fixed by scoping the cross-thread store to a spawn lineage instead of one
+process-global bare-name map: sibling hyper workers no longer share a `uri` key.
+All 16 candidates now fetch their own archive. See
+[ADR-0010](adr/0010-cross-thread-lexical-sharing-scope.md); the analysis that
+found it is kept below.
+
+## Current frontier — the extract matcher rejects a concurrently-fetched archive
+
+`zef install Test::META` now resolves 16 candidates, fetches them all, and dies
+in **extract**:
+
+```
+Enabled extracting backends [git tar unzip path] don't understand
+  /tmp/.zef.…/….tar.gz
+  in sub !extractors … in sub ls-files … in sub !extract
+```
+
+`Zef::Extract!extractors($path)` finds no backend whose `extract-matcher($path)`
+accepts the archive — though `tar.extract-matcher` accepts exactly this shape in
+the single-dist path (`zef install --/depends JSON::OptIn` extracts fine). So the
+matcher is being handed something other than the real path, or is being evaluated
+under a condition the concurrent path creates. Start by printing `$path` and each
+backend's `extract-matcher` verdict inside `!extractors` on the instrumented copy.
+
+## Superseded analysis — concurrent fetch clobbers the URL
 
 With dependency resolution fixed, `zef install Test::META` resolves **15
 prereqs / 16 candidates** and reaches the fetch phase for all of them — then

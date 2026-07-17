@@ -324,22 +324,16 @@ impl Interpreter {
     /// is atomic under the `shared_vars` write lock, so the first caller seeds the
     /// cell (from `initial`) and the rest observe it. Returns the cell value.
     pub(crate) fn get_or_init_shared_state_cell(&self, key: &str, initial: Value) -> Value {
-        let mut sv = self.shared_vars.write().unwrap();
-        if let Some(existing) = sv.get(key)
-            && matches!(existing.view(), ValueView::ContainerRef(_))
-        {
-            return existing.clone();
-        }
-        // Track B slice 3: aggregates are celled at StateVarInit in every mode,
-        // so the pre-thread seed may already BE a cell — adopt it rather than
-        // double-wrapping (a cell inside a cell would break every deref path).
-        let cell = if initial.is_container_ref() {
-            initial
-        } else {
-            initial.into_container_ref()
-        };
-        sv.insert(key.to_string(), cell.clone());
-        cell
+        self.shared_vars.get_or_init_cell(key, || {
+            // Track B slice 3: aggregates are celled at StateVarInit in every mode,
+            // so the pre-thread seed may already BE a cell — adopt it rather than
+            // double-wrapping (a cell inside a cell would break every deref path).
+            if initial.is_container_ref() {
+                initial
+            } else {
+                initial.into_container_ref()
+            }
+        })
     }
 
     /// Read per-closure-instance captured-variable state (hot closure-call path).

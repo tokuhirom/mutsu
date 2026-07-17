@@ -18,12 +18,13 @@ impl Interpreter {
             return Some(c);
         }
         let node = {
-            let shared = self.shared_vars.read().unwrap();
-            shared
+            self.shared_vars
                 .get(&format!("__mutsu_atomic_arr::{name}"))
-                .or_else(|| shared.get(&format!("__mutsu_atomic_hash::{name}")))
-                .or_else(|| shared.get(name))
-                .cloned()
+                .or_else(|| {
+                    self.shared_vars
+                        .get(&format!("__mutsu_atomic_hash::{name}"))
+                })
+                .or_else(|| self.shared_vars.get(name))
         }
         .or_else(|| self.env.get(name).cloned())?;
         match node.view() {
