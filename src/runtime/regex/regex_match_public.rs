@@ -310,8 +310,11 @@ impl Interpreter {
                 // `<IETF::RFC_Grammar::URI::query>`).
                 let saved_pkg = self.current_package();
                 self.set_current_package(sub_pkg);
+                // Ordering only — this loop already runs the real match below and
+                // filters on its result, so a `None` length just ranks last.
                 let prefix_match_len = self
                     .declarative_prefix_match_len(&sub_pat, text)
+                    .0
                     .unwrap_or(0);
                 let mut caps = self.regex_match_with_captures(&sub_pat, text);
                 self.set_current_package(saved_pkg);

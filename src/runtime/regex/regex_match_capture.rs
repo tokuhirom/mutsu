@@ -225,6 +225,26 @@ impl Interpreter {
                 negated,
                 is_assertion,
             } => {
+                // Declarative-prefix (LTM) measurement: never execute the code
+                // (ADR-0009). The two kinds are treated differently, per
+                // roast/S05-grammar/protoregex.t:
+                if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+                    if *is_assertion {
+                        // "<?{...}> does not terminate LTM" / "<!{...}> does not
+                        // terminate LTM": Rakudo's NFA treats an assertion as a
+                        // zero-width pass and keeps measuring the atoms after it, so
+                        // `token ass1:sym<a> { a <?{ 1 }> .+ }` has declarative
+                        // prefix `a .+` and beats a bare `aa` candidate on 'aaa'.
+                        return Some((pos, RegexCaptures::default()));
+                    }
+                    // "However, code blocks do terminate LTM": `token
+                    // block:sym<a> { a {} .+ }` has declarative prefix `a` only, so
+                    // on 'aaa' the bare `aa` candidate wins. Stop the walk and let
+                    // it unwind — including out of a subrule, so an enclosing
+                    // pattern stops here too.
+                    super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return Some((pos, RegexCaptures::default()));
+                }
                 if *is_assertion {
                     // The text matched up to this assertion — becomes `$/.Str`
                     // inside the `<?{ … }>` so `$/.lc` / `~$/` see the matched-so-far
