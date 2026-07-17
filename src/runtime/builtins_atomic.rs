@@ -135,7 +135,9 @@ impl Interpreter {
             return existing.to_string();
         }
         let value_key = {
-            let mut shared = self.shared_vars.write().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let mut shared = atomic_root.own_map().write().unwrap();
             if let Some(existing) = shared.get(&name_key).and_then(|v| v.as_str()) {
                 existing.to_string()
             } else {
@@ -192,7 +194,9 @@ impl Interpreter {
             return Ok(val);
         }
         let value_key = self.atomic_value_key_for_name(&name);
-        let shared = self.shared_vars.read().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let shared = atomic_root.own_map().read().unwrap();
         Ok(self.atomic_current_value(&shared, &name, &value_key))
     }
 
@@ -217,6 +221,8 @@ impl Interpreter {
         let value_key = self.atomic_value_key_for_name(&name);
         self.env.insert(name.clone(), value.clone());
         self.shared_vars
+            .root_store()
+            .own_map()
             .write()
             .unwrap()
             .insert(value_key.clone(), value.clone());
@@ -250,7 +256,9 @@ impl Interpreter {
             return Ok(next);
         }
         let value_key = self.atomic_value_key_for_name(&name);
-        let mut shared = self.shared_vars.write().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let mut shared = atomic_root.own_map().write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current, delta)?;
         self.env.insert(name.clone(), next.clone());
@@ -290,7 +298,9 @@ impl Interpreter {
             return Ok(old);
         }
         let value_key = self.atomic_value_key_for_name(&name);
-        let mut shared = self.shared_vars.write().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let mut shared = atomic_root.own_map().write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current.clone(), delta)?;
         self.env.insert(name.clone(), next.clone());
@@ -338,7 +348,9 @@ impl Interpreter {
             return if return_old { Ok(current) } else { Ok(next) };
         }
         let value_key = self.atomic_value_key_for_name(&name);
-        let mut shared = self.shared_vars.write().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let mut shared = atomic_root.own_map().write().unwrap();
         let current = self.atomic_current_value(&shared, &name, &value_key);
         let next = crate::builtins::arith_add(current.clone(), Value::int(delta))?;
         self.env.insert(name.clone(), next.clone());

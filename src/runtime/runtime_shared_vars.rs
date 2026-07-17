@@ -32,8 +32,7 @@ impl Interpreter {
         if Self::is_plain_lexical_name(key) {
             let atomic_key = format!("__mutsu_atomic_hash::{key}");
             let is_shared = {
-                let sv = self.shared_vars.read().unwrap();
-                sv.contains_key(&atomic_key) || sv.contains_key(key)
+                self.shared_vars.contains_key(&atomic_key) || self.shared_vars.contains_key(key)
             };
             if is_shared {
                 return Some(self.shared_hash_elem_set(key, elem_key, value));
@@ -45,8 +44,11 @@ impl Interpreter {
         // assignment — and crucially must NOT have its env copy dropped, which
         // would discard accumulated element writes.
         {
-            let sv = self.shared_vars.read().unwrap();
-            if !matches!(sv.get(key).map(|v| v.view()), Some(ValueView::Hash(_))) {
+            if !self
+                .shared_vars
+                .get(key)
+                .is_some_and(|v| matches!(v.view(), ValueView::Hash(_)))
+            {
                 return None;
             }
         }
@@ -56,17 +58,19 @@ impl Interpreter {
             // make_mut mutates in place (the thread's env is discarded anyway).
             self.env.remove(key);
         }
-        let mut sv = self.shared_vars.write().unwrap();
-        let val = sv.get_mut(key)?;
-        let result = val.with_hash_mut(|arc| {
-            Value::hash_insert_through(
-                &mut crate::gc::Gc::make_mut(arc).map,
-                elem_key,
-                value.clone(),
-            );
-            Value::hash_with_data(arc.clone())
-        })?;
-        drop(sv);
+        let result = self
+            .shared_vars
+            .with_entry_mut(key, |val| {
+                val.with_hash_mut(|arc| {
+                    Value::hash_insert_through(
+                        &mut crate::gc::Gc::make_mut(arc).map,
+                        elem_key,
+                        value.clone(),
+                    );
+                    Value::hash_with_data(arc.clone())
+                })
+            })
+            .flatten()?;
         if is_thread_clone {
             // Mark dirty once per key (a per-key env marker avoids re-locking the
             // dirty set on every element write).
@@ -110,8 +114,7 @@ impl Interpreter {
         if Self::is_plain_lexical_name(key) {
             let atomic_key = format!("__mutsu_atomic_arr::{key}");
             let is_shared = {
-                let sv = self.shared_vars.read().unwrap();
-                sv.contains_key(&atomic_key) || sv.contains_key(key)
+                self.shared_vars.contains_key(&atomic_key) || self.shared_vars.contains_key(key)
             };
             if is_shared {
                 return Some(self.shared_array_elem_set(key, idx, value));
@@ -121,8 +124,11 @@ impl Interpreter {
         // array takes the write-through path; otherwise fall through without
         // dropping the local env copy.
         {
-            let sv = self.shared_vars.read().unwrap();
-            if !matches!(sv.get(key).map(|v| v.view()), Some(ValueView::Array(..))) {
+            if !self
+                .shared_vars
+                .get(key)
+                .is_some_and(|v| matches!(v.view(), ValueView::Array(..)))
+            {
                 return None;
             }
         }
@@ -132,20 +138,22 @@ impl Interpreter {
             // make_mut mutates in place (the thread's env is discarded anyway).
             self.env.remove(key);
         }
-        let mut sv = self.shared_vars.write().unwrap();
-        let val = sv.get_mut(key)?;
-        let result = val.with_array_mut(|arc, kind| {
-            let data = crate::gc::Gc::make_mut(arc);
-            if idx >= data.items.len() {
-                data.items.resize(idx + 1, Value::NIL);
-            }
-            data.items[idx] = value.clone();
-            if *kind == ArrayKind::List {
-                *kind = ArrayKind::Array;
-            }
-            Value::array_with_kind(crate::gc::Gc::clone(arc), *kind)
-        })?;
-        drop(sv);
+        let result = self
+            .shared_vars
+            .with_entry_mut(key, |val| {
+                val.with_array_mut(|arc, kind| {
+                    let data = crate::gc::Gc::make_mut(arc);
+                    if idx >= data.items.len() {
+                        data.items.resize(idx + 1, Value::NIL);
+                    }
+                    data.items[idx] = value.clone();
+                    if *kind == ArrayKind::List {
+                        *kind = ArrayKind::Array;
+                    }
+                    Value::array_with_kind(crate::gc::Gc::clone(arc), *kind)
+                })
+            })
+            .flatten()?;
         if is_thread_clone {
             let dirty_marker = format!("__mutsu_shared_dirty::{key}");
             if !self.env.contains_key(&dirty_marker) {
@@ -163,8 +171,7 @@ impl Interpreter {
     /// the shared version (which may have been mutated by another thread).
     #[allow(dead_code)]
     pub(crate) fn get_shared_var(&self, key: &str) -> Option<Value> {
-        let sv = self.shared_vars.read().unwrap();
-        sv.get(key).cloned()
+        self.shared_vars.get(key)
     }
 
     /// Snapshot the set of keys currently present in `shared_vars`. Used by the
@@ -172,8 +179,7 @@ impl Interpreter {
     /// its ephemeral env->shared migrations can be rolled back after all batch
     /// threads join (see `retain_shared_var_keys`).
     pub(crate) fn shared_var_keys_snapshot(&self) -> std::collections::HashSet<String> {
-        let sv = self.shared_vars.read().unwrap();
-        sv.keys().cloned().collect()
+        self.shared_vars.visible_keys().into_iter().collect()
     }
 
     /// Drop every `shared_vars` entry whose key is not in `keep`. Used by the
@@ -181,8 +187,8 @@ impl Interpreter {
     /// parallel op migrated in, so a later op's freshly-bound same-named lexical
     /// isn't shadowed by the stale value.
     pub(crate) fn retain_shared_var_keys(&mut self, keep: &std::collections::HashSet<String>) {
-        let mut sv = self.shared_vars.write().unwrap();
-        sv.retain(|k, _| keep.contains(k));
+        // Only this lineage's own entries: an ancestor's are not ours to retract.
+        self.shared_vars.retain_own(|k| keep.contains(k));
     }
 
     /// Returns true if the given key is in the shared_vars_dirty set
@@ -268,10 +274,9 @@ impl Interpreter {
             }
             d.iter().cloned().collect()
         };
-        let sv = self.shared_vars.read().unwrap();
         for key in keys {
-            if let Some(val) = sv.get(&key) {
-                self.env.insert(key, val.clone());
+            if let Some(val) = self.shared_vars.get(&key) {
+                self.env.insert(key, val);
             }
         }
     }
@@ -318,6 +323,14 @@ impl Interpreter {
                 self.env.insert(key.to_string(), value.clone());
             }
         }
+        // The `thread_redeclared_vars` gate is NOT subsumed by ADR-0010's
+        // lineage scoping: lineage scoping isolates *sibling* threads, but a
+        // child's `my` re-declaration of a name its PARENT lineage owns would
+        // still write through the chain to the parent (`SharedStore::set`
+        // resolves to the nearest ancestor that has the name). A re-declared
+        // name is a fresh binding shadowing the captured outer lexical, so its
+        // writes stay env-local; the next `clone_for_thread` binds the current
+        // value into this lineage (`declare`) and clears the mask.
         if self.shared_vars_active && !self.thread_redeclared_vars.contains(key) {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
@@ -337,13 +350,12 @@ impl Interpreter {
             } else {
                 value
             };
-            let mut sv = self.shared_vars.write().unwrap();
             // Skip overwriting @-variables that have an active CAS atomic
             // copy — the atomic copy is the authoritative source of truth
             // and must not be clobbered by stale local snapshots.
             if key.starts_with('@') {
                 let atomic_key = format!("__mutsu_atomic_arr::{key}");
-                if sv.contains_key(&atomic_key) {
+                if self.shared_vars.contains_key(&atomic_key) {
                     return;
                 }
             } else if key.starts_with('%') {
@@ -351,12 +363,14 @@ impl Interpreter {
                 // entry (concurrent element assignment) must not be clobbered
                 // by a stale local snapshot during env sync.
                 let atomic_key = format!("__mutsu_atomic_hash::{key}");
-                if sv.contains_key(&atomic_key) {
+                if self.shared_vars.contains_key(&atomic_key) {
                     return;
                 }
             }
-            if sv.contains_key(key) {
-                sv.insert(key.to_string(), value);
+            if self.shared_vars.contains_key(key) {
+                // ADR-0010: resolves to the lineage that owns the name, so a
+                // child's write to a lexical its parent shared reaches the parent.
+                self.shared_vars.set(key, value);
                 // Mark this key as explicitly updated so sync_shared_vars_to_env
                 // knows to propagate it (vs keys only initialized by clone_for_thread).
                 self.mark_shared_var_dirty(key);
@@ -376,9 +390,7 @@ impl Interpreter {
             return;
         }
         let atomic_key = format!("__mutsu_atomic_arr::{key}");
-        if let Ok(mut sv) = self.shared_vars.write() {
-            sv.remove(&atomic_key);
-        }
+        self.shared_vars.remove(&atomic_key);
     }
 
     /// Hash analogue of `clear_atomic_array_state`: drop the
@@ -390,9 +402,7 @@ impl Interpreter {
             return;
         }
         let atomic_key = format!("__mutsu_atomic_hash::{key}");
-        if let Ok(mut sv) = self.shared_vars.write() {
-            sv.remove(&atomic_key);
-        }
+        self.shared_vars.remove(&atomic_key);
     }
 
     /// Sync shared variables back from shared_vars into the local env.
@@ -418,7 +428,7 @@ impl Interpreter {
             return;
         }
         let updates: Vec<(String, Value)> = {
-            let sv = self.shared_vars.read().unwrap();
+            let sv = &self.shared_vars;
             let mut updates = Vec::new();
             for key in &dirty_keys {
                 // Atomic ops store the value under an internal shared key, while
@@ -426,7 +436,7 @@ impl Interpreter {
                 let name_key = format!("__mutsu_atomic_name::{key}");
                 let value_key = sv
                     .get(&name_key)
-                    .or_else(|| self.env.get(&name_key))
+                    .or_else(|| self.env.get(&name_key).cloned())
                     .and_then(|v| match v.view() {
                         ValueView::Str(vk) => Some(vk.as_ref().clone()),
                         _ => None,
@@ -434,26 +444,26 @@ impl Interpreter {
                 if let Some(value_key) = value_key
                     && let Some(val) = sv.get(value_key.as_str())
                 {
-                    updates.push((key.clone(), val.clone()));
+                    updates.push((key.clone(), val));
                     continue;
                 }
 
                 // Check for atomic array CAS storage
                 let atomic_arr_key = format!("__mutsu_atomic_arr::{key}");
                 if let Some(val) = sv.get(&atomic_arr_key) {
-                    updates.push((key.clone(), val.clone()));
+                    updates.push((key.clone(), val));
                     continue;
                 }
 
                 // Check for atomic hash CAS storage
                 let atomic_hash_key = format!("__mutsu_atomic_hash::{key}");
                 if let Some(val) = sv.get(&atomic_hash_key) {
-                    updates.push((key.clone(), val.clone()));
+                    updates.push((key.clone(), val));
                     continue;
                 }
 
                 if let Some(val) = sv.get(key) {
-                    updates.push((key.clone(), val.clone()));
+                    updates.push((key.clone(), val));
                 }
             }
             updates
@@ -495,14 +505,15 @@ impl Interpreter {
         if !self.shared_vars_active {
             return;
         }
-        let sv = self.shared_vars.read().unwrap();
-        for name in names {
-            if let Some(val) = sv.get(name) {
-                if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
-                    self.env.remove(name);
-                } else {
-                    self.env.insert(name.to_string(), val.clone());
-                }
+        let entries: Vec<(String, Value)> = names
+            .into_iter()
+            .filter_map(|n| self.shared_vars.get(n).map(|v| (n.to_string(), v)))
+            .collect();
+        for (name, val) in entries {
+            if matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                self.env.remove(&name);
+            } else {
+                self.env.insert(name, val);
             }
         }
     }
@@ -537,8 +548,8 @@ impl Interpreter {
         {
             Some(vk) => vk,
             None => {
-                let shared = self.shared_vars.read().unwrap();
-                match shared
+                match self
+                    .shared_vars
                     .get(&name_key)
                     .and_then(|v| v.as_str().map(str::to_string))
                 {
@@ -547,9 +558,8 @@ impl Interpreter {
                 }
             }
         };
-        let mut shared = self.shared_vars.write().unwrap();
-        shared.remove(value_key.as_str());
-        shared.remove(&name_key);
+        self.shared_vars.remove(value_key.as_str());
+        self.shared_vars.remove(&name_key);
     }
 
     pub(crate) fn reset_atomic_var_key_decl(&mut self, name: &str) {
@@ -560,12 +570,12 @@ impl Interpreter {
         }
         let name_key = format!("__mutsu_atomic_name::{name}");
         self.env.remove(&name_key);
-        let mut shared = self.shared_vars.write().unwrap();
-        if let Some(v) = shared.remove(&name_key)
+        if let Some(v) = self.shared_vars.get(&name_key)
             && let Some(value_key) = v.as_str()
         {
-            shared.remove(value_key);
+            self.shared_vars.remove(value_key);
         }
+        self.shared_vars.remove(&name_key);
     }
 
     pub(crate) fn merge_sigilless_alias_writes(&self, saved_env: &mut Env, current_env: &Env) {

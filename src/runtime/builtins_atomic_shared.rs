@@ -37,7 +37,9 @@ impl Interpreter {
     /// sort, stringify — probed before this slice landed).
     pub(super) fn init_celled_atomic_store(&mut self, atomic_key: &str, name: &str) {
         {
-            let shared = self.shared_vars.read().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let shared = atomic_root.own_map().read().unwrap();
             if shared.contains_key(atomic_key) {
                 return;
             }
@@ -75,7 +77,9 @@ impl Interpreter {
                 }
             }
         };
-        let mut shared = self.shared_vars.write().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let mut shared = atomic_root.own_map().write().unwrap();
         if !shared.contains_key(atomic_key) {
             shared.insert(atomic_key.to_string(), celled.clone());
             shared.insert(name.to_string(), celled.clone());
@@ -100,14 +104,18 @@ impl Interpreter {
         key: &str,
     ) -> crate::gc::Gc<std::sync::Mutex<Value>> {
         {
-            let shared = self.shared_vars.read().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let shared = atomic_root.own_map().read().unwrap();
             if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = h.get(key).map(Value::view)
             {
                 return c.clone();
             }
         }
-        let mut shared = self.shared_vars.write().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let mut shared = atomic_root.own_map().write().unwrap();
         // Re-check under the write lock (a racer may have boxed it).
         if let Some(ValueView::Hash(h)) = shared.get(atomic_key).map(Value::view)
             && let Some(ValueView::ContainerRef(c)) = h.get(key).map(Value::view)
@@ -163,7 +171,9 @@ impl Interpreter {
                 }
             };
         {
-            let shared = self.shared_vars.read().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let shared = atomic_root.own_map().read().unwrap();
             if let Some(arr) = shared.get(atomic_key) {
                 let (_, cell) = resolve(arr, index);
                 if let Some(c) = cell {
@@ -171,7 +181,9 @@ impl Interpreter {
                 }
             }
         }
-        let mut shared = self.shared_vars.write().unwrap();
+        // ADR-0010: atomics are process-wide shared state -> the root lineage.
+        let atomic_root = self.shared_vars.root_store();
+        let mut shared = atomic_root.own_map().write().unwrap();
         let arr = shared
             .get(atomic_key)
             .cloned()
@@ -262,6 +274,8 @@ impl Interpreter {
         let atomic_key = format!("__mutsu_atomic_arr::{arr_name}");
         matches!(
             self.shared_vars
+                .root_store()
+                .own_map()
                 .read()
                 .unwrap()
                 .get(&atomic_key)
@@ -293,7 +307,9 @@ impl Interpreter {
             self.env.remove(arr_name);
         }
         let (result, updated) = {
-            let mut shared = self.shared_vars.write().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let mut shared = atomic_root.own_map().write().unwrap();
             // Seed the atomic entry once from the base key (or this thread's
             // local snapshot), preserving ArrayData metadata (default/
             // initialized/type). Afterwards the atomic entry is authoritative
@@ -368,7 +384,9 @@ impl Interpreter {
         // its cell in place — every snapshot holder sees it, no COW, no
         // republish.
         {
-            let shared = self.shared_vars.read().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let shared = atomic_root.own_map().read().unwrap();
             if let Some(ValueView::Array(elems, _)) = shared.get(&atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = elems.get(idx).map(Value::view)
             {
@@ -382,7 +400,9 @@ impl Interpreter {
             }
         }
         let updated = {
-            let mut shared = self.shared_vars.write().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let mut shared = atomic_root.own_map().write().unwrap();
             let mut elements: Vec<Value> = match shared.get(&atomic_key).map(Value::view) {
                 Some(ValueView::Array(elems, _)) => elems.to_vec(),
                 _ => match shared
@@ -427,7 +447,9 @@ impl Interpreter {
         let atomic_key = format!("__mutsu_atomic_hash::{hash_name}");
         // Track B cell fast path — see `shared_array_elem_set`.
         {
-            let shared = self.shared_vars.read().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let shared = atomic_root.own_map().read().unwrap();
             if let Some(ValueView::Hash(h)) = shared.get(&atomic_key).map(Value::view)
                 && let Some(ValueView::ContainerRef(c)) = h.get(&elem_key).map(Value::view)
             {
@@ -441,7 +463,9 @@ impl Interpreter {
             }
         }
         let updated = {
-            let mut shared = self.shared_vars.write().unwrap();
+            // ADR-0010: atomics are process-wide shared state -> the root lineage.
+            let atomic_root = self.shared_vars.root_store();
+            let mut shared = atomic_root.own_map().write().unwrap();
             let mut map = match shared.get(&atomic_key).map(Value::view) {
                 Some(ValueView::Hash(h)) => h.as_ref().clone(),
                 _ => match shared

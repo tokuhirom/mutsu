@@ -183,13 +183,22 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
 - [ ] Known small difference: coercion of CLI numeric strings to `Int $n` is more eager than raku
       (`7` matches `MAIN(Int $n,…)`; raku falls back to slurpy). In practice the mutsu behavior is
       more intuitive.
-- [ ] **network fetch**: fetching from the fez ecosystem (`https://360.zef.pm/`). Robust async TLS is
-      a prerequisite.
-- [ ] **Real install + build/test execution**, an `mzef` binary shim + vendoring of zef itself +
-      dependencies + config (debian's zef lacks `resources/bin/zef`; a known-good vendoring is needed).
+- [x] **network fetch** — done. **No native TLS was needed**: zef shells out to the system
+      `curl`/`wget` and mutsu drives that via `Proc::Async`, so the old "robust async TLS is the
+      biggest prerequisite" assumption was simply wrong. Concurrent multi-candidate fetch works as of
+      #4658 (ADR-0010).
+- [x] **Real install** — done for a dependency-free dist: a real fez dist downloads, extracts,
+      installs into the site repo and is then `use`-able (#4655). Verify with a **non-bundled** dist
+      (`JSON::OptIn`); `use JSON::Fast` succeeds without any install because mutsu bundles it.
+- [ ] **A dist WITH dependencies** — the remaining gap. Resolution (#4650) and fetch (#4658) are done;
+      `zef install Test::META` now dies in **extract**. See `docs/mzef-install-pipeline.md`
+      ("Current frontier") for the lead and the next steps.
+- [ ] **build/test execution**, an `mzef` binary shim + vendoring of zef itself + dependencies +
+      config (debian's zef lacks `resources/bin/zef`; a known-good vendoring is needed). The test
+      phase (6) has not been exercised yet — runs have used `--/test`.
 
-Split: **"keep running the real Zef as a test target" has high immediate value — continue it**. For
-real installs as the bundled installer, network fetch (TLS) is the biggest prerequisite work.
+**`docs/mzef-install-pipeline.md` is the live tracker** — phase table, what each fix unblocked, and
+the current frontier with its next steps. Read it before picking up mzef work.
 
 ### B3. Distribution and tooling
 

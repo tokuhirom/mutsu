@@ -2103,7 +2103,7 @@ impl Interpreter {
             react_active: 0,
             pending_tap_closes: Vec::new(),
             current_react_waker: None,
-            shared_vars: Arc::new(RwLock::new(HashMap::new())),
+            shared_vars: crate::runtime::shared_store::SharedStore::root(),
             shared_vars_active: false,
             sigilless_attrs_active: false,
             shared_vars_dirty: Arc::new(RwLock::new(HashSet::new())),

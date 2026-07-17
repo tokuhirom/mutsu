@@ -329,6 +329,7 @@ mod runtime_thread;
 mod runtime_var_meta;
 mod seq_helpers;
 mod sequence;
+pub(crate) mod shared_store;
 mod signal_watcher;
 pub(super) mod sprintf;
 mod sprintf_helpers;
@@ -1535,9 +1536,13 @@ pub struct Interpreter {
     /// async on-demand supply -> `pending_tap_closes`) can wake the loop when
     /// they become ready instead of waiting out its idle cap.
     pub(super) current_react_waker: Option<crate::value::waker::ReactWaker>,
-    /// Shared variables between threads. When `start` spawns a thread,
-    /// variables are stored here so both parent and child can see mutations.
-    shared_vars: Arc<RwLock<HashMap<String, Value>>>,
+    /// Cross-thread lexical store for THIS spawn lineage (ADR-0010). `start`
+    /// and friends give the child a store chained to this one, so a child sees
+    /// and can write the parent's lexicals while its own declarations stay
+    /// private to it — sibling threads (e.g. hyper workers each declaring
+    /// `my $uri`) cannot clobber each other, which one process-global bare-name
+    /// map allowed.
+    shared_vars: Arc<crate::runtime::shared_store::SharedStore>,
     /// True when this interpreter participates in cross-thread variable sharing.
     /// Set by `clone_for_thread` on both parent and child.
     pub(crate) shared_vars_active: bool,

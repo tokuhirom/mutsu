@@ -28,3 +28,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0007](0007-grammar-parse-trail-matcher.md) | Grammar/regex matcher — cursor + undo-log (trail) to kill capture-threading churn | Accepted |
 | [0008](0008-push-based-supply-event-delivery.md) | Push-based supply event delivery (ReactWaker sinks) | Accepted |
 | [0009](0009-regex-code-assertion-execution-model.md) | Regex code assertions — run inline in the real interpreter, and keep LTM declarative | Accepted |
+| [0010](0010-cross-thread-lexical-sharing-scope.md) | Cross-thread lexical sharing is scoped to a spawn lineage, not the process | Accepted |

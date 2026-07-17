@@ -50,7 +50,9 @@ impl Interpreter {
             }
             let mut did_swap = false;
             let current = {
-                let mut shared = self.shared_vars.write().unwrap();
+                // ADR-0010: atomics are process-wide shared state -> the root lineage.
+                let atomic_root = self.shared_vars.root_store();
+                let mut shared = atomic_root.own_map().write().unwrap();
                 let current = self.atomic_current_value(&shared, &name, &value_key);
                 if Self::cas_retry_matches(&current, expected) {
                     shared.insert(value_key.clone(), coerced.clone());
@@ -161,7 +163,9 @@ impl Interpreter {
                         .cloned()
                         .unwrap_or(Value::NIL)
                 } else {
-                    let shared = self.shared_vars.read().unwrap();
+                    // ADR-0010: atomics are process-wide shared state -> the root lineage.
+                    let atomic_root = self.shared_vars.root_store();
+                    let shared = atomic_root.own_map().read().unwrap();
                     self.atomic_current_value(&shared, &name, &value_key)
                 };
                 self.env.insert(name.clone(), current.clone());
@@ -282,7 +286,9 @@ impl Interpreter {
                     }
                     swapped
                 } else {
-                    let mut shared = self.shared_vars.write().unwrap();
+                    // ADR-0010: atomics are process-wide shared state -> the root lineage.
+                    let atomic_root = self.shared_vars.root_store();
+                    let mut shared = atomic_root.own_map().write().unwrap();
                     let seen = self.atomic_current_value(&shared, &name, &value_key);
                     if Self::cas_retry_matches(&current, &seen) {
                         shared.insert(value_key.clone(), coerced.clone());

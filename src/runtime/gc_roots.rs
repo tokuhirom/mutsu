@@ -211,9 +211,12 @@ impl Interpreter {
         // `shared_vars` is genuinely live-shared across threads (not a
         // per-thread snapshot — see `clone_for_thread`), so a `Promise`/
         // `Channel`/container stored under a shared key is reachable from
-        // every interpreter that shares this `Arc`.
-        if let Ok(guard) = self.shared_vars.read() {
-            visit_map_values(visitor, &guard);
+        // every interpreter whose lineage reaches it. Walk the WHOLE chain
+        // (ADR-0010): an ancestor lineage's entries are just as reachable from
+        // here as this one's, and missing them would under-approximate the root
+        // set — i.e. collect live data.
+        for value in self.shared_vars.chain_values() {
+            visitor.visit_value(&value);
         }
         visit_map_values(visitor, &self.rebless_map);
         for meta in self.squish_iterator_meta.values() {
@@ -260,11 +263,7 @@ mod tests {
     #[test]
     fn visit_roots_finds_env_and_shared_vars() {
         let interp = Interpreter::new();
-        interp
-            .shared_vars
-            .write()
-            .unwrap()
-            .insert("x".to_string(), Value::int(42));
+        interp.shared_vars.declare("x", Value::int(42));
 
         let mut visitor = CountingVisitor { count: 0 };
         interp.visit_roots(&mut visitor);

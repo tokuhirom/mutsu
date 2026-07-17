@@ -355,12 +355,12 @@ impl Interpreter {
     /// variables that the dirty tracking didn't capture.
     fn full_sync_shared_vars_to_env(&mut self) {
         let updates: Vec<(String, Value)> = {
-            let sv = self.shared_vars.read().unwrap();
-            sv.iter()
+            self.shared_vars
+                .visible_entries()
+                .into_iter()
                 .filter(|(k, _)| {
                     !k.starts_with("__mutsu_") && !k.starts_with('&') && k.as_str() != "_"
                 })
-                .map(|(k, v)| (k.clone(), v.clone()))
                 .collect()
         };
         for (key, val) in updates {

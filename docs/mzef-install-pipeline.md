@@ -28,15 +28,15 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 0 | CLI load + command dispatch | ✅ | `zef --version` → 1.1.3; `--help` prints usage |
 | 1 | Ecosystem index (populate) | ✅ | fez index parsed: **9260 keys / 7648 dists**, ~6.5s release |
 | 2 | Resolve / find candidate | ✅ | `zef info Test::META` → full Identity/Source/Description |
-| 3 | **Fetch** (download archive) | ⏳ | Single-dist `zef fetch` downloads `https://360.zef.pm/.../*.tar.gz` via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617. **The concurrent multi-candidate fetch that `install` drives still fails** (see "Current frontier") |
-| 4 | **Extract** (untar) | ✅ | Untars the real dist after #4620 + #4622 + #4627 + #4635/#4641/#4642 |
+| 3 | **Fetch** (download archive) | ✅ | Downloads via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617; the **concurrent** multi-candidate fetch `install` drives by #4658 (ADR-0010) — all 16 of Test::META's candidates now fetch their own archive |
+| 4 | **Extract** (untar) | ✅ | Single-dist: #4620 + #4622 + #4627 + #4635/#4641/#4642. Concurrent: fixed by restoring the #4650 `thread_redeclared_vars` gates on top of ADR-0010 (the "extract-matcher rejects the archive" symptom was a child `my` re-declaration clobbering the parent's staged path through the lineage chain) |
 | 5 | Build | ✅ | reached; a pure-Raku dist has nothing to build and passes through |
 | 6 | Test | ⬜ | not exercised yet (runs have used `--/test`) |
-| 7 | Install into site repo | ✅ | **a dependency-free dist installs and is then `use`-able** (see below) |
+| 7 | Install into site repo | ✅ | **a dependency-free dist installs and is then `use`-able**; a dependency-ful one too: `zef install --/test Test::META` installs **all 13 dists** end-to-end |
 
-**So: ~6 of 8 phases for a dependency-free dist.** A real dist from the live fez
-ecosystem downloads, extracts, installs into the mutsu site repo, and `use`
-resolves it:
+**So: the whole install pipeline works, including for a dependency-ful dist.**
+A real dist from the live fez ecosystem downloads, extracts, installs into the
+mutsu site repo, and `use` resolves it:
 
 ```
 $ mutsu -e 'use JSON::OptIn'        # Could not find JSON::OptIn in: ...
@@ -44,15 +44,17 @@ $ mutsu -I <zef>/lib <zef>/bin/zef install --/depends --/test JSON::OptIn
 ===> Installing: JSON::OptIn:ver<0.0.2>:auth<zef:jonathanstowe>
 $ mutsu -e 'use JSON::OptIn; say "LOADED"'
 LOADED
+$ mutsu -I <zef>/lib <zef>/bin/zef install --/test Test::META
+===> Installing: JSON::Fast … (13 dists) … Test::META:ver<0.0.20>
 ```
 
 **Pick a non-bundled dist when verifying this.** mutsu bundles JSON::Fast (and
 others), so `use JSON::Fast` succeeds on a clean HOME with no install at all and
 proves nothing. `JSON::OptIn` is not bundled.
 
-Dists **with dependencies** still fail earlier, at the concurrent-fetch collision
-("Current frontier" below) — that is now the only thing between mzef and a real
-`zef install Test::META`.
+The frontier has moved past install, to **running what was installed** ("Current
+frontier" below): `use Test::META` hits a parse error in one of the installed
+modules, and `URI.host` hits a coercion-return-type bug.
 
 ## Fixes that got us here (this campaign)
 
@@ -154,7 +156,44 @@ address through the distribution's own `.content($name-path)` (the API every
 Distribution implements, S22), with the `prefix` join kept as a fallback.
 Pin: `t/cur-install-content-api.t`.
 
-## Current frontier — concurrent fetch clobbers the URL
+## Solved — the concurrent-fetch collision (2026-07-17, ADR-0010)
+
+Fixed by scoping the cross-thread store to a spawn lineage instead of one
+process-global bare-name map: sibling hyper workers no longer share a `uri` key.
+All 16 candidates now fetch their own archive. See
+[ADR-0010](adr/0010-cross-thread-lexical-sharing-scope.md); the analysis that
+found it is kept below.
+
+## Current frontier — the installed dists don't all load
+
+`zef install --/test Test::META` completes: 16 candidates resolve, fetch,
+extract, and **13 dists install** into the site repo. The frontier is now
+*using* them:
+
+- **`use Test::META`** → `expected statement: … '{' or expression statement, at
+  -e:40` — a parse error inside one of the installed modules (line 40 of some
+  file in the `use` chain; identify which module by bisecting the chain:
+  `use META6`, `use License::SPDX`, … individually).
+- **`use URI; URI.new("https://raku.org/x").host`** → `Type check failed for
+  return value; expected Host but got Str ("raku.org")` — a
+  coercion/subset-typed **return** value (`Host` is a URI subset/type) is
+  checked against the raw Str instead of coercing/accepting it.
+
+Both are ordinary language-compat bugs, unrelated to the install machinery.
+Follow the campaign method: minimal repro → general fix → `t/` pin → PR.
+
+### Resolved: the extract matcher rejection was the shared-store parent-child clobber
+
+The previous frontier — `Enabled extracting backends [git tar unzip path] don't
+understand /tmp/.zef.…/….tar.gz` on the concurrent path only — disappeared with
+the ADR-0010 gate fix (restoring the #4650 `thread_redeclared_vars` gates). The
+suspected mechanism held: nothing was at the staged path because a hyper
+worker's `my` re-declaration (e.g. its `$tmp`/`$stage-at`/pointy-block bindings
+inside a nested `start`) wrote through the lineage chain to an ancestor's
+same-named lexical, corrupting another worker's staging state. Same defect
+class as the day14 `-> $parsed` clobber; see ADR-0010's "mask stays" section.
+
+## Superseded analysis — concurrent fetch clobbers the URL
 
 With dependency resolution fixed, `zef install Test::META` resolves **15
 prereqs / 16 candidates** and reaches the fetch phase for all of them — then
