@@ -548,14 +548,14 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 
 ## 6. Concurrency (Track C leftovers) and structural refactoring (independent; mid-to-long term)
 
-- [ ] **ADR-0008 push-delivery follow-ups** (the core landed in #4636, 2026-07-17 — react/supply
-      snapshot polling replaced by `ReactWaker` sinks, shared interval timer, concurrent throttle;
-      see docs/adr/0008-push-based-supply-event-delivery.md and news/2026-07.md):
-  - [ ] Route the remaining mpsc receiver sources (tap channels, Proc::Async streams, zip outputs)
-        through `ReactWaker` sinks — removes the react drive loop's residual 10ms idle-wait cap
-        (today those senders cannot wake the loop, so idle rounds are capped at 10ms latency).
-  - [ ] Move `Promise.in` / scheduler `cue(:at/:in/:every)` timer threads onto the shared
-        deadline-heap timer (`native_methods/interval_timer.rs`) — one thread per pending timer today.
+- [ ] **ADR-0008 push-delivery follow-ups** (the core landed in #4636 and the first two follow-up
+      slices in #4638 / #4639, 2026-07-17; see docs/adr/0008-push-based-supply-event-delivery.md
+      and news/2026-07.md). What is left:
+  - [ ] Move the repeating `cue(:every)` loop onto the shared deadline-heap timer. `:in`/`:at`
+        delays landed in #4638, but an `:every` cue still owns a worker thread that sleeps between
+        iterations. Each iteration runs user VM code, so it cannot fire on the timer driver itself —
+        the timer entry must hand off to a worker (and skip a tick if the previous one is still
+        running), which is why this was split out rather than done with the one-shot path.
   - [ ] Watch CI for the residual under-load syntax.t flake (1 notok in 18 loaded runs locally,
         unreproduced in 14 follow-ups; raku's own fixed-sleep tests also wobble at that load).
 - [ ] **Remainder of true sharing for state/lexical aggregates**: only the lost-update on
