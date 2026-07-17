@@ -1151,6 +1151,9 @@ pub(in crate::value) enum ValueRepr {
     /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".
     /// `text` is the normalized string. Boxed to keep `Value` small.
     Uni(Box<UniData>),
+    /// A RakuAST node — a user-facing AST node (ADR-0011). Immutable tree of
+    /// child `Value`s. Boxed to keep `Value` small.
+    RakuAst(Box<crate::rakuast::RakuAstNode>),
     /// A Proxy container with FETCH and STORE callbacks.
     Proxy {
         fetcher: Box<Value>,
@@ -1429,6 +1432,10 @@ impl Value {
     #[inline]
     pub(in crate::value) fn Uni(data: Box<UniData>) -> Value {
         Value::from_repr(ValueRepr::Uni(data))
+    }
+    #[inline]
+    pub(in crate::value) fn RakuAst(data: Box<crate::rakuast::RakuAstNode>) -> Value {
+        Value::from_repr(ValueRepr::RakuAst(data))
     }
     #[inline]
     pub(in crate::value) fn CustomType(data: Box<CustomTypeData>) -> Value {

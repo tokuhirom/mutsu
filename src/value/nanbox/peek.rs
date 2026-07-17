@@ -271,6 +271,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::Scalar => ValueView::Scalar(peek_arc::<Value>(bits)),
             Kind::LazyThunk => ValueView::LazyThunk(arc_guard(bits)),
             Kind::Uni => ValueView::Uni(peek_arc::<UniData>(bits)),
+            Kind::RakuAst => ValueView::RakuAst(peek_arc::<crate::rakuast::RakuAstNode>(bits)),
             Kind::RegexWithAdverbs => ValueView::RegexWithAdverbs(peek_arc::<RegexAdverbs>(bits)),
             Kind::CustomType => ValueView::CustomType(peek_arc::<CustomTypeData>(bits)),
             Kind::CustomTypeInstance => {

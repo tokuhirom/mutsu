@@ -164,6 +164,7 @@ impl NanBox {
                 }),
             ),
             ValueRepr::Uni(u) => pack_arc(Kind::Uni, Arc::new(*u)),
+            ValueRepr::RakuAst(n) => pack_arc(Kind::RakuAst, Arc::new(*n)),
             ValueRepr::Proxy {
                 fetcher,
                 storer,

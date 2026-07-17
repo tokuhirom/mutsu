@@ -990,6 +990,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         _ => {}
     }
 
+    // `Str.AST` — parse the string as Raku source and return its RakuAST tree
+    // (ADR-0010). Applies to string values only.
+    // `Str.AST` — parse the string as Raku source and return its RakuAST tree.
+    // Non-string invocants fall through to normal dispatch.
+    if let ValueView::Str(s) = target.view()
+        && method == "AST"
+    {
+        return Some(crate::rakuast::str_dot_ast(&s));
+    };
+
     // Instant.Instant returns self (identity coercion)
     if method == "Instant" {
         match target.view() {

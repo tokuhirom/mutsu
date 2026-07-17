@@ -737,6 +737,26 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
 
 ---
 
+## 7. RakuAST — user-facing AST (new capability track)
+
+Design and phasing are fixed in **[docs/adr/0011](docs/adr/0011-rakuast-model-layer-and-phasing.md)**.
+RakuAST is a **reflection/model layer bidirectionally convertible with the internal `Expr`/`Stmt`
+AST** — NOT a frontend rewrite. Near-zero roast payoff today (this is a new-capability direction),
+so it is tracked separately from the roast backlog.
+
+- [ ] **Phase 1 — introspection MVP**: `Value::RakuAst` + `RakuAstClass` enum + class-metadata table;
+      `Q|...|.AST` on `Str` for the literal + say-call cluster; `.gist`/`.raku`/`.^name` renderer
+      matching raku exactly. Tests in `t/rakuast-ast.t`.
+- [ ] **Phase 2** — read-coverage expansion (var/decl/ops/calls/blocks/conditionals/loops/subs/sigs)
+      + `.DEPARSE`; resolve the constant-folding divergence.
+- [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
+      `use experimental :rakuast` gate.
+- [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
+- [ ] **Phase 5** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
+- [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
+
+---
+
 ## Metrics
 
 | Metric | Current | Target |

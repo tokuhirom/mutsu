@@ -105,6 +105,7 @@ pub enum ValueView<'a> {
         index: Option<u32>,
     },
     Uni(&'a UniData),
+    RakuAst(&'a crate::rakuast::RakuAstNode),
     Proxy {
         fetcher: &'a Value,
         storer: &'a Value,

@@ -121,6 +121,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         // long-lived value (a thread payload, a phaser capture): if one somehow
         // does, serialize the variable's value.
         ValueView::VarRef { value, .. } => value_to_ser(value),
+        ValueView::RakuAst(_) => Err("cannot serialize a RakuAST node".to_string()),
         ValueView::Int(n) => Ok(SerValue::Int(n)),
         ValueView::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
         ValueView::Num(n) => Ok(SerValue::Num(n)),

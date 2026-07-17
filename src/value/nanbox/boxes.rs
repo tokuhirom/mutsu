@@ -145,6 +145,7 @@ const _: () = {
         Value,
         LazyThunkData,
         UniData,
+        crate::rakuast::RakuAstNode,
         RegexAdverbs,
         CustomTypeData,
         CustomTypeInstanceData,

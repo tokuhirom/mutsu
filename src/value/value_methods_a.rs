@@ -33,6 +33,9 @@ impl Value {
     pub fn regex(s: String) -> Self {
         Value::Regex(Arc::new(s))
     }
+    pub fn rakuast(node: Box<crate::rakuast::RakuAstNode>) -> Self {
+        Value::RakuAst(node)
+    }
     pub fn mixin(inner: Value, overrides: HashMap<String, Value>) -> Self {
         Value::Mixin(Arc::new(inner), Arc::new(overrides))
     }
