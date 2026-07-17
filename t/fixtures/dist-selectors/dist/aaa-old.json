@@ -1,0 +1,11 @@
+{
+    "name": "SelTest",
+    "version": "0.0.6",
+    "auth": "zef:alice",
+    "api": "0",
+    "provides": {
+        "SelTest": {
+            "file": "seltest-alice"
+        }
+    }
+}

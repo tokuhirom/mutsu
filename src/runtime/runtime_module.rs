@@ -65,7 +65,45 @@ impl Interpreter {
         self.use_module_with_tags(module, &[])
     }
 
+    /// Split `Name:auth<zef:foo>:ver<0.0.20+>` into the bare module name and
+    /// its distribution selectors. The parser only appends the three dist
+    /// adverbs (`ver`/`auth`/`api`) in this literal angle form, so the split is
+    /// unambiguous: a `::`-qualified name never contains a lone `:`.
+    pub(crate) fn split_dist_selectors(module: &str) -> (&str, Vec<(String, String)>) {
+        let mut selectors = Vec::new();
+        let mut bare_end = module.len();
+        for key in ["ver", "auth", "api"] {
+            let pat = format!(":{}<", key);
+            if let Some(pos) = module.find(&pat) {
+                bare_end = bare_end.min(pos);
+                let after = &module[pos + pat.len()..];
+                if let Some(end) = after.find('>') {
+                    selectors.push((key.to_string(), after[..end].to_string()));
+                }
+            }
+        }
+        (&module[..bare_end], selectors)
+    }
+
     pub fn use_module_with_tags(
+        &mut self,
+        module: &str,
+        tags: &[String],
+    ) -> Result<(), RuntimeError> {
+        // The parser rides dist selectors on the module name
+        // (`JSON::Class:auth<zef:jonathanstowe>:api<1.0>`). Split them off here
+        // so every registry/loaded_modules key below uses the bare name, and
+        // only distribution resolution sees the constraints. Save/restore
+        // around the load: a transitive `use` inside the module body must
+        // resolve with ITS OWN (usually absent) selectors, not the outer ones.
+        let (module, dist_selectors) = Self::split_dist_selectors(module);
+        let saved = std::mem::replace(&mut self.pending_dist_selectors, dist_selectors);
+        let result = self.use_module_with_tags_inner(module, tags);
+        self.pending_dist_selectors = saved;
+        result
+    }
+
+    fn use_module_with_tags_inner(
         &mut self,
         module: &str,
         tags: &[String],

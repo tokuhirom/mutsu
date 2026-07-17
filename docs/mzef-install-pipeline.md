@@ -168,19 +168,41 @@ found it is kept below.
 
 `zef install --/test Test::META` completes: 16 candidates resolve, fetch,
 extract, and **13 dists install** into the site repo. The frontier is now
-*using* them:
+*using* them. Fixed so far (each: minimal repro → general fix → `t/` pin):
 
-- **`use Test::META`** → `expected statement: … '{' or expression statement, at
-  -e:40` — a parse error inside one of the installed modules (line 40 of some
-  file in the `use` chain; identify which module by bisecting the chain:
-  `use META6`, `use License::SPDX`, … individually).
+- ~~`-> Mu \type { ... }` typed sigilless pointy param~~ (#4661) — unblocked
+  `use JSON::Unmarshal`'s `subset ... where` lambdas.
+- ~~sibling-role short-name composition inside a module~~ (#4661) — unblocked
+  JSON::Unmarshal's `CustomUnmarshaller` role family; JSON::Marshal loads.
+- ~~`use` dist selectors discarded / first-found dist loaded~~ — two installed
+  dists provide `JSON::Class` (zef:jonathanstowe vs zef:vrurg); resolution now
+  filters by `:auth`/`:ver`/`:api` and picks the highest version. Pin:
+  `t/use-dist-selectors.t`.
+- ~~`role Name:ver<...>:auth<...>[SIGNATURE]`~~ — adverbs before the parametric
+  signature failed to parse (jonathanstowe JSON::Class line 121). Pin:
+  `t/role-decl-adverbs-signature.t`.
+
+Still open, in chain order:
+
+- **Attribute role-mixin does not persist out of `trait_mod:<is>`** — blocks
+  `use License::SPDX` (its `is json-name(...)` attributes). Repro:
+  a custom `multi sub trait_mod:<is>(Attribute $a, :$myname!) { $a does R;
+  $a.n = $myname }` — the mixin/assignment do not survive onto
+  `C.^attributes[0]` (works via `my $attr = C.^attributes[0]; $attr does R`
+  outside a trait). tmp repro: `tmp/attr-does-rw2.raku`. Under the module's
+  imported multi the same shape errors `X::Assignment::RO: cannot assign
+  through .json-name on non-instance`.
+- **`use Test::META`** — not re-bisected past License::SPDX yet.
 - **`use URI; URI.new("https://raku.org/x").host`** → `Type check failed for
   return value; expected Host but got Str ("raku.org")` — a
-  coercion/subset-typed **return** value (`Host` is a URI subset/type) is
-  checked against the raw Str instead of coercing/accepting it.
-
-Both are ordinary language-compat bugs, unrelated to the install machinery.
-Follow the campaign method: minimal repro → general fix → `t/` pin → PR.
+  coercion/subset-typed **return** value is checked against the raw Str.
+- **vrurg JSON::Class (`use v6.e.PREVIEW`) line 40 parse error** — no longer
+  in the default chain (the selector fix routes to jonathanstowe's), but the
+  dist is installed and still cannot load.
+- **`R[:b]` named-arg role parameterization binds the Pair, not its value**
+  (mutsu prints `b => True` where raku prints `True`) — noticed while fixing
+  the role-adverb parse; harmless for truthiness uses like
+  `JSON::Class[:opt-in]` but wrong.
 
 ### Resolved: the extract matcher rejection was the shared-store parent-child clobber
 

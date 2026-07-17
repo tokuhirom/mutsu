@@ -1253,6 +1253,12 @@ pub struct Interpreter {
     /// happen after this flag is consumed, run the proto body again (matching raku).
     pub(crate) proto_method_skip: Option<String>,
     pending_dispatch_error: Option<RuntimeError>,
+    /// Distribution selectors (`:ver`/`:auth`/`:api`) of the `use` currently
+    /// being resolved, split off the module name by `use_module_with_tags` and
+    /// consulted by `resolve_module_path` to pick among installed dists that
+    /// provide the same short name. Saved/restored around each load so a
+    /// transitive `use` resolves with its own (usually absent) selectors.
+    pending_dist_selectors: Vec<(String, String)>,
     end_phasers: Vec<(Vec<Stmt>, Env)>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     end_phaser_sites: HashSet<u64>,

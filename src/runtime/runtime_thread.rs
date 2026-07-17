@@ -217,6 +217,7 @@ impl Interpreter {
             proto_dispatch_stack: Vec::new(),
             proto_method_skip: None,
             pending_dispatch_error: None,
+            pending_dist_selectors: Vec::new(),
             end_phasers: Vec::new(),
             end_phaser_sites: HashSet::new(),
             chroot_root: self.chroot_root.clone(),
