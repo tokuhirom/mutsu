@@ -1,6 +1,6 @@
 use Test;
 
-plan 25;
+plan 29;
 
 # `|EXPR` interpolates into the argument list, and a Slip-valued argument
 # spreads when it is bound into a slurpy/list. Both must keep working when
@@ -71,4 +71,14 @@ s2(|@n, |@s);
 is $got, 4, 'stmt-level: two slips';
 s2(|@n, @s.Slip);
 is $got, 4, 'stmt-level: slip + Slip positional';
+
+# --- interpolation is a property of the syntax, not of the value ---
+# `|EXPR` spreads into a builtin's fixed positionals, so the two-element list
+# below supplies is-deeply's $got and $expected and the string is its name.
+is-deeply |( ('a', 'a') ), '|(...) spreads into is-deeply positionals';
+is-deeply |( (@s, @s) ), '|(...) of two arrays spreads';
+# A Slip an ordinary argument merely evaluated to stays one argument, so these
+# keep three: two Slips to compare and a name.
+is-deeply @s.Slip, @s.Slip, 'Slip-valued args stay separate arguments';
+is-deeply (1, 2).Slip, (1, 2).Slip, 'literal Slip values stay separate';
 

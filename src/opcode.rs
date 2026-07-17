@@ -715,9 +715,15 @@ pub(crate) enum OpCode {
         arg_sources_idx: Option<u32>,
     },
     /// Statement-level call with positional/named values encoded as Pair.
+    ///
+    /// `slip_positions_idx` indexes a constant `Array` of the argument
+    /// positions written as `|EXPR`. Those — and only those — spread into the
+    /// argument list: a Slip an ordinary argument merely evaluated to
+    /// (`is-deeply $s.Slip, $t.Slip, 'name'`) stays one argument, as in Rakudo.
     ExecCallPairs {
         name_idx: u32,
         arity: u32,
+        slip_positions_idx: Option<u32>,
     },
     BlockScope {
         pre_end: u32,

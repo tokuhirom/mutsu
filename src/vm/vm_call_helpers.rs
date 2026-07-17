@@ -80,6 +80,39 @@ impl Interpreter {
                 .any(|v| matches!(v.view(), ValueView::Slip(_)))
     }
 
+    /// Spread the arguments the *source* wrote as `|EXPR` into the argument list.
+    ///
+    /// `slip_positions_idx` indexes a constant list of those positions, so a
+    /// Slip an ordinary argument evaluated to is left alone — `is-deeply
+    /// $s.Slip, $t.Slip, 'name'` keeps its three arguments while `is-deeply
+    /// |($got, $expected), 'name'` spreads into three.
+    pub(super) fn spread_slip_positions(
+        code: &CompiledCode,
+        args: Vec<Value>,
+        slip_positions_idx: Option<u32>,
+    ) -> Vec<Value> {
+        let Some(idx) = slip_positions_idx else {
+            return args;
+        };
+        let ValueView::Array(entries, _) = code.constants[idx as usize].view() else {
+            unreachable!("expected slip-position array constant")
+        };
+        let slip_at: Vec<usize> = entries
+            .iter()
+            .filter_map(|v| v.as_int())
+            .map(|i| i as usize)
+            .collect();
+        let mut out = Vec::with_capacity(args.len());
+        for (i, arg) in args.into_iter().enumerate() {
+            if slip_at.contains(&i) {
+                Self::append_flattened_call_arg(&mut out, arg, false);
+            } else {
+                out.push(arg);
+            }
+        }
+        out
+    }
+
     /// Flatten every Slip-valued argument of a call into the argument list.
     ///
     /// `|EXPR` compiles to `MakeSlip` + an ordinary argument, so this is what

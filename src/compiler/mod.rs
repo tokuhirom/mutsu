@@ -775,6 +775,26 @@ impl Compiler {
         }
     }
 
+    /// Bake the positions of the `|EXPR` arguments into the constant pool.
+    ///
+    /// Argument-list interpolation is a property of the *syntax*, not of the
+    /// value: `f(|@a)` spreads, while `f(@a.Slip)` passes one Slip. Only the
+    /// compiler can tell the two apart, so the call op carries the positions
+    /// it must spread. `None` (no `|` argument) is the common case.
+    fn add_slip_positions_constant(&mut self, args: &[CallArg]) -> Option<u32> {
+        let entries: Vec<Value> = args
+            .iter()
+            .enumerate()
+            .filter(|(_, arg)| matches!(arg, CallArg::Slip(_)))
+            .map(|(i, _)| Value::int(i as i64))
+            .collect();
+        if entries.is_empty() {
+            None
+        } else {
+            Some(self.code.add_constant(Value::array(entries)))
+        }
+    }
+
     fn build_for_bind_stmts(
         param: &Option<String>,
         param_def: &Option<crate::ast::ParamDef>,

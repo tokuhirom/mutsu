@@ -111,6 +111,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         name_idx: u32,
         arity: u32,
+        slip_positions_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -121,6 +122,7 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
+        let args = Self::spread_slip_positions(code, args, slip_positions_idx);
         // Auto-FETCH Proxy args
         let args = if self.in_lvalue_assignment {
             args

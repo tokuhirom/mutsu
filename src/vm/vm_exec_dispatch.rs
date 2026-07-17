@@ -3120,9 +3120,19 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            OpCode::ExecCallPairs { name_idx, arity } => {
+            OpCode::ExecCallPairs {
+                name_idx,
+                arity,
+                slip_positions_idx,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_exec_call_pairs_op(code, compiled_fns, *name_idx, *arity)?;
+                self.exec_exec_call_pairs_op(
+                    code,
+                    compiled_fns,
+                    *name_idx,
+                    *arity,
+                    *slip_positions_idx,
+                )?;
                 *ip += 1;
             }
 
