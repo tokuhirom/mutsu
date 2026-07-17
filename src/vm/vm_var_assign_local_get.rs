@@ -201,7 +201,19 @@ impl Interpreter {
         }
         // Fast path: non-Nil values are always valid — skip env lookup
         if val.is_nil() {
-            if let Some(shared_val) = self.get_shared_var(name) {
+            // The cross-thread shared store is keyed by BARE NAME and is global to
+            // the process, so its `depends` entry may belong to an entirely
+            // unrelated scope's lexical that some earlier `start`/Proc::Async spawn
+            // migrated in (`clone_for_thread` seeds every env var it can see). A
+            // name this frame re-declared is a fresh binding that shadows it, and
+            // its Nil is a real Nil — not a stale snapshot to refresh from the
+            // shared store. `set_shared_var_sym` already masks the WRITE side on
+            // exactly this set; without the same gate here the read resurrects the
+            // foreign value (`my $x := f()` yielding Nil would see the other
+            // scope's `$x`).
+            if !self.thread_redeclared_vars.contains(name)
+                && let Some(shared_val) = self.get_shared_var(name)
+            {
                 self.stack.push(shared_val);
                 return Ok(());
             }
