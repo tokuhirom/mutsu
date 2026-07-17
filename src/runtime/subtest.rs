@@ -7,7 +7,6 @@ use std::sync::mpsc;
 pub(crate) struct ReactSubscription {
     pub receiver: Option<mpsc::Receiver<SupplyEvent>>,
     pub supplier_id: Option<u64>,
-    pub supplier_next_index: usize,
     pub callback: Value,
     pub close_callbacks: Vec<Value>,
     pub last_callbacks: Vec<Value>,
@@ -44,7 +43,6 @@ impl ReactSubscription {
         ReactSubscription {
             receiver: None,
             supplier_id: None,
-            supplier_next_index: 0,
             callback,
             close_callbacks: Vec::new(),
             last_callbacks: Vec::new(),

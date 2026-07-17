@@ -5,6 +5,33 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
 
+/// Block until the control supplier emits a `limit:N` directive (or the 30s
+/// bound elapses), consuming it through a push sink — registration replays a
+/// directive that was emitted before we started listening, and later emits
+/// wake the wait instantly (the old 10ms snapshot poll both lagged and could
+/// miss a directive cleared by a supplier reset).
+fn wait_for_control_limit(ctrl_id: u64) -> i64 {
+    let waker = crate::value::waker::ReactWaker::new();
+    let sink_id = supplier_sink_register(ctrl_id, 0, &waker);
+    let mut current_limit: i64 = 0;
+    let start = std::time::Instant::now();
+    while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
+        for (_, event) in waker.drain() {
+            if let crate::value::waker::SinkEvent::Emit(val) = event
+                && let Some(rest) = val.to_string_value().strip_prefix("limit:")
+                && let Ok(n) = rest.trim().parse::<i64>()
+            {
+                current_limit = n;
+            }
+        }
+        if current_limit == 0 {
+            waker.wait_activity(std::time::Duration::from_millis(100));
+        }
+    }
+    supplier_sink_unregister(ctrl_id, sink_id);
+    current_limit
+}
+
 impl Interpreter {
     /// Implement Supply.throttle($limit, $seconds-or-block, :$control, :$status)
     pub(super) fn supply_throttle(
@@ -49,51 +76,77 @@ impl Interpreter {
                 let blk = block;
                 let mut thread_interp = self.clone_for_thread();
                 // Runs a full interpreter (VM safepoints park it during
-                // execution): registered GC mutator; idle poll sleeps are
-                // quiescent safe regions.
+                // execution): registered GC mutator; the control wait and the
+                // worker joins are quiescent safe regions.
                 crate::runtime::builtins_system::spawn_user_thread(move || {
-                    let mut current_limit: i64 = 0;
-                    let start = std::time::Instant::now();
-                    while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30)
-                    {
-                        let (emitted, _, _) = supplier_snapshot(ctrl_id);
-                        for val in &emitted {
-                            let s = val.to_string_value();
-                            if let Some(rest) = s.strip_prefix("limit:")
-                                && let Ok(n) = rest.trim().parse::<i64>()
-                            {
-                                current_limit = n;
-                            }
-                        }
-                        if current_limit == 0 {
-                            crate::gc::block_quiescent(|| {
-                                std::thread::sleep(std::time::Duration::from_millis(10))
-                            });
-                        }
-                    }
+                    let current_limit = wait_for_control_limit(ctrl_id);
                     let effective_limit = if current_limit > 0 {
                         current_limit
                     } else {
                         vals.len() as i64
                     };
-                    let mut emitted_count = 0i64;
-                    for val in &vals {
-                        if let Ok(result) =
-                            thread_interp.call_sub_value(blk.clone(), vec![val.clone()], false)
-                        {
-                            let promise = SharedPromise::new_kept(result);
-                            let pval = Value::promise(promise);
-                            supplier_emit(out_supplier_id, pval.clone());
-                            let actions = supplier_emit_callbacks(out_supplier_id, &pval);
-                            for action in actions {
-                                if let SupplierEmitAction::Call(tap, emitted, delay) = action {
-                                    Self::sleep_for_supply_delay(delay);
-                                    let _ = thread_interp.call_sub_value(tap, vec![emitted], true);
+                    // Run the process block with `effective_limit`-way
+                    // concurrency (Raku semantics: throttle limits how many
+                    // jobs run at once, it does not serialize them). Each
+                    // completed job emits its kept promise immediately, so
+                    // emission order is completion order; delivery itself is
+                    // serialized per Raku's per-tap guarantee.
+                    let n_workers = (effective_limit.max(1) as usize).min(vals.len().max(1));
+                    let next_idx = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                    let emit_lock = Arc::new(std::sync::Mutex::new(()));
+                    let emitted_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                    let vals = Arc::new(vals);
+                    let mut handles = Vec::with_capacity(n_workers);
+                    for _ in 0..n_workers {
+                        let mut winterp = thread_interp.clone_for_thread();
+                        let vals = Arc::clone(&vals);
+                        let blk = blk.clone();
+                        let next_idx = Arc::clone(&next_idx);
+                        let emit_lock = Arc::clone(&emit_lock);
+                        let emitted_count = Arc::clone(&emitted_count);
+                        handles.push(crate::runtime::builtins_system::spawn_user_thread(
+                            move || {
+                                loop {
+                                    let idx =
+                                        next_idx.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    if idx >= vals.len() {
+                                        break;
+                                    }
+                                    if let Ok(result) = winterp.call_sub_value(
+                                        blk.clone(),
+                                        vec![vals[idx].clone()],
+                                        false,
+                                    ) {
+                                        let promise = SharedPromise::new_kept(result);
+                                        let pval = Value::promise(promise);
+                                        let _guard = emit_lock.lock().unwrap();
+                                        supplier_emit(out_supplier_id, pval.clone());
+                                        let actions =
+                                            supplier_emit_callbacks(out_supplier_id, &pval);
+                                        for action in actions {
+                                            if let SupplierEmitAction::Call(tap, emitted, delay) =
+                                                action
+                                            {
+                                                Self::sleep_for_supply_delay(delay);
+                                                let _ = winterp.call_sub_value(
+                                                    tap,
+                                                    vec![emitted],
+                                                    true,
+                                                );
+                                            }
+                                        }
+                                        emitted_count
+                                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    }
                                 }
-                            }
-                            emitted_count += 1;
-                        }
+                            },
+                        ));
                     }
+                    for handle in handles {
+                        let _ = crate::gc::block_quiescent(|| handle.join());
+                    }
+                    let emitted_count =
+                        emitted_count.load(std::sync::atomic::Ordering::Relaxed) as i64;
                     if let Some(status_id) = status_sid {
                         let mut status_hash = HashMap::new();
                         status_hash.insert("allowed".to_string(), Value::int(effective_limit));
@@ -151,34 +204,20 @@ impl Interpreter {
             let vals = source_values;
             let secs = seconds;
             let mut thread_interp = self.clone_for_thread();
-            // Registered GC mutator (runs a full interpreter); idle poll
-            // sleeps are quiescent safe regions.
+            // Registered GC mutator (runs a full interpreter); the control
+            // wait is a quiescent safe region.
             crate::runtime::builtins_system::spawn_user_thread(move || {
-                let mut current_limit: i64 = 0;
-                let start = std::time::Instant::now();
-                while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
-                    let (emitted, _, _) = supplier_snapshot(ctrl_id);
-                    for val in &emitted {
-                        let s = val.to_string_value();
-                        if let Some(rest) = s.strip_prefix("limit:")
-                            && let Ok(n) = rest.trim().parse::<i64>()
-                        {
-                            current_limit = n;
-                        }
-                    }
-                    if current_limit == 0 {
-                        crate::gc::block_quiescent(|| {
-                            std::thread::sleep(std::time::Duration::from_millis(10))
-                        });
-                    }
-                }
+                let current_limit = wait_for_control_limit(ctrl_id);
                 let effective_limit = if current_limit > 0 {
                     current_limit as usize
                 } else {
                     vals.len()
                 };
                 for (idx, val) in vals.iter().enumerate() {
-                    if secs > 0.0 && effective_limit > 0 && idx % effective_limit == 0 {
+                    // The first batch vents immediately once the limit is
+                    // known (Rakudo emits as soon as capacity allows); the
+                    // inter-batch delay applies between subsequent batches.
+                    if secs > 0.0 && effective_limit > 0 && idx > 0 && idx % effective_limit == 0 {
                         Self::sleep_for_supply_delay(secs);
                     }
                     supplier_emit(out_supplier_id, val.clone());

@@ -1353,29 +1353,14 @@ impl Interpreter {
                     map.insert(supply_id, rx);
                 }
 
-                // Registered spawn (emits `Value`s into a supply channel);
-                // the interval sleeps are quiescent safe regions — see
-                // `spawn_gc_helper_thread`.
-                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                    let period = std::time::Duration::from_secs_f64(period_secs);
-                    let mut tick = 0i64;
-                    // Initial delay before first emission (default 0 = immediate)
-                    if initial_delay > 0.0 {
-                        crate::gc::block_quiescent(|| {
-                            std::thread::sleep(std::time::Duration::from_secs_f64(initial_delay))
-                        });
-                    }
-                    loop {
-                        if tx
-                            .send(super::native_methods::SupplyEvent::Emit(Value::int(tick)))
-                            .is_err()
-                        {
-                            break;
-                        }
-                        tick = tick.saturating_add(1);
-                        crate::gc::block_quiescent(|| std::thread::sleep(period));
-                    }
-                });
+                // Ticks are driven by the process-wide shared interval timer
+                // (one deadline-heap thread), not a sleep-loop thread per
+                // interval instance. The entry dies when the receiver drops.
+                super::native_methods::interval_timer::register_interval(
+                    std::time::Duration::from_secs_f64(period_secs),
+                    std::time::Duration::from_secs_f64(initial_delay),
+                    tx,
+                );
 
                 let mut attrs = HashMap::new();
                 attrs.insert("values".to_string(), Value::array(Vec::new()));

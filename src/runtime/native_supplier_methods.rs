@@ -371,10 +371,21 @@ impl Interpreter {
                 Ok(Value::NIL)
             }
             "quit" => {
+                // Raku wraps a non-exception quit reason (a plain Str) in
+                // X::AdHoc, so a `QUIT { default { .message } }` handler works
+                // either way. Object instances (user exception classes like
+                // `my class OMGBears is Exception`) pass through untouched —
+                // `as_exception_value`'s name-based check cannot see `is
+                // Exception` ancestry, so gate on the value shape instead.
                 let reason = args
                     .first()
                     .cloned()
                     .unwrap_or_else(|| Value::str_from("Died"));
+                let reason = if matches!(reason.view(), ValueView::Instance { .. }) {
+                    reason
+                } else {
+                    Self::as_exception_value(reason)
+                };
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
                     supplier_quit(supplier_id, reason.clone());
                     close_supplier_channel_taps(supplier_id, Some(reason.clone()));
@@ -803,10 +814,21 @@ impl Interpreter {
                 Ok((Value::NIL, attrs))
             }
             "quit" => {
+                // Raku wraps a non-exception quit reason (a plain Str) in
+                // X::AdHoc, so a `QUIT { default { .message } }` handler works
+                // either way. Object instances (user exception classes like
+                // `my class OMGBears is Exception`) pass through untouched —
+                // `as_exception_value`'s name-based check cannot see `is
+                // Exception` ancestry, so gate on the value shape instead.
                 let reason = args
                     .first()
                     .cloned()
                     .unwrap_or_else(|| Value::str_from("Died"));
+                let reason = if matches!(reason.view(), ValueView::Instance { .. }) {
+                    reason
+                } else {
+                    Self::as_exception_value(reason)
+                };
                 attrs.insert("done".to_string(), Value::TRUE);
                 attrs.insert("quit_reason".to_string(), reason.clone());
                 if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {

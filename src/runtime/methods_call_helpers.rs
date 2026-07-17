@@ -69,30 +69,38 @@ impl Interpreter {
             } else {
                 None
             };
-            let mut seen_emitted = 0usize;
-            loop {
-                let (emitted, done, quit_reason) =
-                    crate::runtime::native_methods::supplier_snapshot(supplier_id);
-                if emitted.len() > seen_emitted {
-                    items.extend_from_slice(&emitted[seen_emitted..]);
-                    seen_emitted = emitted.len();
+            // Consume the supplier through a push sink: registration replays
+            // the already-buffered values, then emit/done/quit arrive as
+            // events — a blocking wait instead of the old 1ms snapshot poll
+            // (which also lost a done that `Supplier.done`'s reset cleared
+            // before the next poll).
+            let waker = crate::value::waker::ReactWaker::new();
+            let sink_id =
+                crate::runtime::native_methods::supplier_sink_register(supplier_id, 0, &waker);
+            let collected: Result<(), RuntimeError> = 'collect: loop {
+                for (_, event) in waker.drain() {
+                    match event {
+                        crate::value::waker::SinkEvent::Emit(v) => items.push(v),
+                        crate::value::waker::SinkEvent::Quit(reason) => {
+                            let message = reason.to_string_value();
+                            let mut err = RuntimeError::new(message);
+                            err.exception = Some(Box::new(reason));
+                            break 'collect Err(err);
+                        }
+                        crate::value::waker::SinkEvent::Done => break 'collect Ok(()),
+                    }
                 }
-                if let Some(reason) = quit_reason {
-                    let message = reason.to_string_value();
-                    let mut err = RuntimeError::new(message);
-                    err.exception = Some(Box::new(reason));
-                    return Err(err);
+                let Some(limit) = deadline else {
+                    break Ok(());
+                };
+                let now = std::time::Instant::now();
+                if now >= limit {
+                    break Ok(());
                 }
-                if done || deadline.is_none() {
-                    break;
-                }
-                if let Some(limit) = deadline
-                    && std::time::Instant::now() >= limit
-                {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
+                waker.wait_activity((limit - now).min(std::time::Duration::from_millis(100)));
+            };
+            crate::runtime::native_methods::supplier_sink_unregister(supplier_id, sink_id);
+            collected?;
         }
 
         Ok(items)

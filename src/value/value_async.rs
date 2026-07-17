@@ -262,6 +262,7 @@ impl SharedChannel {
                     failure: None,
                     closed_promise,
                     supplier_ids: Vec::new(),
+                    wakers: Vec::new(),
                 }),
                 Condvar::new(),
             )),
@@ -276,6 +277,9 @@ impl SharedChannel {
         }
         state.queue.push_back(value);
         cvar.notify_one();
+        for w in &state.wakers {
+            w.notify();
+        }
     }
 
     fn finish_if_drained(state: &mut ChannelState) {
@@ -335,6 +339,9 @@ impl SharedChannel {
         state.send_closed = true;
         Self::finish_if_drained(&mut state);
         cvar.notify_all();
+        for w in &state.wakers {
+            w.notify();
+        }
     }
 
     pub(crate) fn fail(&self, error: Value) {
@@ -344,6 +351,9 @@ impl SharedChannel {
         state.failure = Some(error);
         Self::finish_if_drained(&mut state);
         cvar.notify_all();
+        for w in &state.wakers {
+            w.notify();
+        }
     }
 
     pub(crate) fn closed_promise(&self) -> SharedPromise {
@@ -366,6 +376,22 @@ impl SharedChannel {
     pub(crate) fn is_drained_closed(&self) -> bool {
         let (lock, _) = &*self.inner;
         lock.lock().unwrap().drained_closed
+    }
+
+    /// Register a drive-loop waker to poke on future send/close/fail (no-op
+    /// if this exact waker is already registered).
+    pub(crate) fn register_waker(&self, waker: &crate::value::waker::ReactWaker) {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        if !state.wakers.iter().any(|w| w.id() == waker.id()) {
+            state.wakers.push(waker.clone());
+        }
+    }
+
+    pub(crate) fn unregister_waker(&self, waker_id: usize) {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        state.wakers.retain(|w| w.id() != waker_id);
     }
 
     pub(crate) fn add_supplier(&self, supplier_id: u64) {
