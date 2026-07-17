@@ -539,6 +539,20 @@ impl Interpreter {
                     }
                 }
 
+                // A named array/hash param can only bind a Positional/
+                // Associative argument. Without this, `:@specification!
+                // (Optionality $o, Version $v)` matched a single enum value and
+                // out-dispatched the `Optionality :$specification!` candidate
+                // (META6's trait pair), then died binding the destructure.
+                if let Some(ref val) = arg_val {
+                    if pd.name.starts_with('@') && !self.type_matches_value("Positional", val) {
+                        return false;
+                    }
+                    if pd.name.starts_with('%') && !self.type_matches_value("Associative", val) {
+                        return false;
+                    }
+                }
+
                 // Check where constraint on named param. When the named arg is
                 // absent, the constraint is still evaluated against the value the
                 // parameter would bind to (its default, or the type-object
