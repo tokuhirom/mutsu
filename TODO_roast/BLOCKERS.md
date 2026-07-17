@@ -76,10 +76,10 @@ noted.
 | File | mutsu | raku | Blocker / note |
 |---|---|---|---|
 | `6.c/APPENDICES/A04-experimental/01-misc.t` | 16/19 | FAIL | `:D`/`:U` DefiniteHow coercion (`Target:D(Source:U)`). #4514: 0/19 → 16/19 |
-| `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 11/16 | PASS ★ | error-message quality for multi no-match: `.splice` with wrong offset/type, `Lock.protect` / `Lock::Async.protect` / `Proc::Async.new` with wrong args must give "sane errors" — ④-adjacent |
+| `APPENDICES/A02-some-day-maybe/multi-no-match.t` | 3/16 (2026-07-17) | PASS ★ | error-message quality for multi no-match: `.splice` with wrong offset/type, `Lock.protect` / `Lock::Async.protect` / `Proc::Async.new` with wrong args must give "sane errors" — ④-adjacent |
 | `6.c/APPENDICES/A03-older-specs/01-misc.t` | fails 4+ | 6/9 FAIL | `.open("-")` mapping to `$*IN`/`$*OUT`, deprecated `subst-mutate`. raku itself fails 3 of 9 = partially non-goal |
 | `6.c/MISC/bug-coverage-stress.t` | fails 4 | 13/14 FAIL | Supply.merge on signals, supply inside sock, SEGV-in-curries+with, &foo char collection. raku itself fails test 11 (rakudo GH#1535) = not fully passable upstream |
-| `6.c/S02-names/pseudo-6c.t` | 102/161 | SORRY | `OUR::` binding/pseudo-package deref family. No oracle (raku SORRYs) |
+| `6.c/S02-names/pseudo-6c.t` | 102/161 (2026-07-17, was 99 before #4667) | SORRY on ONE line | **The next slice here is the INDIRECT deref `$::($name)::x`.** #4667 (OUTER::/OUTERS::) took this 99 -> 102 and split the remaining failures cleanly: every DIRECT form now passes (128 `$OUTER::`, 129 `OUTER::.{}`, 131 `$OUTERS::` "keeps going until match", 133 `$OUTER::OUTER::`, 135, 138 `OUTER::<$*x>`) and only the `::("OUTER")` spelling of the SAME lookups fails (130/132/134/136/139) — i.e. a runtime-computed package name does not reach the compile-time scope walk `Compiler::emit_outer_var_access` now owns. Also failing: `OUR::`/`::("OUR")` vs GLOBAL, `::("UNIT")`, `::("SETTING")`, `::("PROCESS")`. **"No oracle" is about the FILE, not the constructs**: raku SORRYs only on line 67 (`$MY::z ::= $y`, `::=` NYI), so individual snippets are verifiable in raku exactly as #4667 did — do that first, this ledger's diagnoses have been wrong before (see news/2026-07.md) |
 | `APPENDICES/A02-some-day-maybe/misc.t` | aborts (no plan) | 5/6 FAIL | "some-day-maybe" spec aspirations; raku itself not full — non-goal |
 | `MISC/misc.t` | fails 4+ | ABORT 5/7 | `:sym<>` colonpair reservation on sub names, `$*ARGFILES` inside MAIN, native num default 0e0, `undefine` deprecation warning. raku itself aborts = partially non-goal |
 | `t/fudge.t`, `t/fudgeandrun.t` | n/a | n/a | **roast's own tooling tests, written in Perl 5** (run with `perl`, not raku/mutsu) — non-goal by definition |
@@ -192,21 +192,31 @@ completed fix history lives in `news/`.
 
 ## Recommended order of attack right now
 
-1. **Shortcuts**: `integration/99problems-51-to-60.t` (35/37) and
-   `99problems-61-to-70.t` (12/15) are close. (`6.c/S04-declarations/my-6c.t` reached the
-   whitelist 2026-07-17 — its test 57 was NOT the lexical-hoisting task this ledger claimed:
-   `OUTER::` was simply implemented as `OUTERS::`, cascading through every enclosing scope.
-   See news/2026-07.md; pin `t/outer-pseudo-package.t`.)
-2. **④ error-message quality** (`advent2011-day11.t` 7/9, `multi-no-match.t`) — the
-   same target as the identically named task in PLAN §6, so it can be driven by roast
-   pass/fail while working on that. (`error-reporting.t` and `weird-errors.t` reached the
-   whitelist 2026-07-15.) `multi-no-match.t` needs `X::Multi::NoMatch` from many independent
-   builtins (`.splice`/`Lock.protect`/`Proc::Async.new`/`.subst`/`.match`/`Pair.new`/
-   `Junction.new`/`Int.new`/`Date.new`) — no single lever; 3/16 pass today.
-3. **The 11 not-yet-root-caused `integration/` aborts** (see inventory) — history says one root
-   cause usually spans several files; re-run and diff against raku before picking features.
-   (`6.c/S14-roles/mixin-6c.t` was whitelisted 2026-07-17 — the abort was a nested BEGIN
-   hoisting above a `does`/`but` declaration mixin; pin `t/decl-mixin-begin.t`.)
+**Re-measured 2026-07-17.** The previous version of this section was stale in every item
+(it pointed at `99problems-51-to-60`/`61-to-70`, `advent2011-day11.t` and "the 11
+not-yet-root-caused `integration/` aborts" — **all of those are whitelisted**, and
+`integration/` has been at 0 remaining since 2026-07-17). Trust nothing here without
+re-running it; this ledger's *diagnoses* have also been wrong (see `my-6c.t` in
+[news/2026-07.md](../news/2026-07.md), where "needs lexical hoisting" was simply false).
+
+1. **`6.c/S02-names/pseudo-6c.t` — the indirect deref `$::($name)::x`** (102/161, measured).
+   The most concrete slice left, and freshly halved: #4667 made every **direct** pseudo-package
+   lookup pass, so what remains is the **`::("OUTER")` spelling of the same lookups** plus the
+   `OUR::` / `UNIT::` / `SETTING::` / `PROCESS::` family. A runtime-computed package name does not
+   reach the compile-time scope walk that `Compiler::emit_outer_var_access` now owns — that gap
+   *is* the slice. Per-snippet oracles work (raku SORRYs only on line 67's `::=`); see the
+   inventory row.
+2. **`APPENDICES/A02-some-day-maybe/multi-no-match.t`** (3/16, measured — NOT the 11/16 this
+   file used to claim). The last ★ (raku full-pass, mutsu fails). Needs `X::Multi::NoMatch` from
+   ~10 independent builtins (`.splice` / `Lock.protect` / `Lock::Async.protect` /
+   `Proc::Async.new` / `.subst` / `.match` / `Pair.new` / `Junction.new` / `Int.new` /
+   `Date.new`) — **no single lever**, so it is a grind, not a shortcut. Same target as the
+   error-message-quality task in PLAN §6, so it can be driven by roast pass/fail while working
+   on that.
+3. **Everything else in the tables is non-goal / no-oracle / awaiting-infrastructure.** Per the
+   Current assumptions above, **roast is no longer the productive axis** — prefer PLAN.md §1
+   (Batteries) and pick up a roast file only when that work happens to unblock it.
+
 - For the S\* table (non-goal / no-oracle / awaiting-infrastructure), advancing entries as a side
   effect of general mutsu improvements is fine, but do not make whitelisting those individual
   files the goal. `S32-str/format.t` and `S02-types/generics.t` gained an oracle from the raku
