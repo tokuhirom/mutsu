@@ -114,8 +114,11 @@ impl Compiler {
     /// loop used to fire the same collected output a second time, which a
     /// by-value snapshot silently swallowed but a shared cell keeps —
     /// S17-procasync/basic.t test 37).
+    /// `.start` spawns a thread (`Thread.start`, `Promise.start`), so its block
+    /// outlives the calling frame exactly like the `start { ... }` statement
+    /// prefix handled in `expr_call.rs`.
     pub(super) fn method_escapes_closure_args(name: &str) -> bool {
-        matches!(name, "then" | "tap" | "act")
+        matches!(name, "then" | "tap" | "act" | "start")
     }
 
     /// Compile a method call argument. Named args (AssignExpr) are

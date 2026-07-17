@@ -176,7 +176,7 @@ impl Interpreter {
 
         let promise = SharedPromise::new_with_class(class_name);
         let ret = Value::promise(promise.clone());
-        let thread_interp = self.clone_for_thread();
+        let thread_interp = self.clone_for_thread_for_block(&block);
         let parent_handles_snapshot: std::collections::HashSet<usize> =
             self.io_handles().map.keys().copied().collect();
 

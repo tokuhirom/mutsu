@@ -1711,28 +1711,6 @@ impl Interpreter {
         // execution.
         let name_sym = code.const_sym(name_idx);
         loan_env!(self, set_var_dynamic(name, dynamic));
-        // While the cross-thread shared store is active, a re-declaration is a
-        // fresh binding shadowing the captured outer lexical: mark the name so
-        // subsequent writes stay thread-local instead of leaking to the parent
-        // through the shared store (`start { my $x ... }` / a pointy-if
-        // binding must not clobber the caller's same-named lexical). Scalars
-        // only: `@`/`%` names back the name-keyed atomic element stores
-        // (concurrent push/unshift), which need the shared entry maintained on
-        // every write, and `state` sharing goes through the dedicated
-        // shared-state cells — both must keep propagating.
-        if self.shared_vars_active
-            && !name.starts_with('@')
-            && !name.starts_with('%')
-            && !name.starts_with('&')
-        {
-            let is_state = code
-                .state_locals
-                .iter()
-                .any(|(_, key)| key.contains(&format!("::{}@", name)));
-            if !is_state {
-                self.thread_redeclared_vars.insert(name.to_string());
-            }
-        }
         // A fresh declaration without an explicit type must not inherit stale
         // constraints from an earlier lexical with the same name.
         self.vm_set_var_type_constraint(name, None);

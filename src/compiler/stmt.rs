@@ -3089,6 +3089,10 @@ impl Compiler {
                         return;
                     }
                 }
+                // A method installed by RegisterClass outlives this frame and has
+                // no closure-creation op, so a frame lexical it writes must be
+                // boxed at its declaration site.
+                self.record_type_body_captures(body);
                 // Pre-qualify the class name when compiling inside a
                 // `unit module`/`unit class` body so that the runtime
                 // registers it under the correct nested package
@@ -3102,7 +3106,9 @@ impl Compiler {
                 self.code.emit(OpCode::AugmentClass(idx));
             }
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
-            Stmt::RoleDecl { .. } => {
+            Stmt::RoleDecl { body, .. } => {
+                // Same as RegisterClass above: a role method has no creation op.
+                self.record_type_body_captures(body);
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.code.add_stmt(stmt);
                 self.code.emit(OpCode::RegisterRole(idx));

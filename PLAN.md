@@ -613,79 +613,35 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
       in Track B slices 2+3 and T6 (news/2026-07.md; pin = the 18 tests in
       t/state-aggregate-shared-cell.t).
 - [ ] Semaphore / nonblocking await / lock contention (S17; hard; separate axis).
-- [ ] **★Recursion through a `start` block silently returns the wrong answer** (re-characterized
-      2026-07-17 on release main 159a30cb0; this entry previously claimed "running a recursive
-      start/await sub twice in a row *hangs the second one*", which understates it — the hang is a
-      later symptom, the first one is silent corruption):
-
-      ```raku
-      sub f($n) { start { $n <= 0 ?? "b" !! await(f($n-1)) ~ "|$n" } }
-      say await f(3);   # mutsu: b|1|2|3  (raku: same)
-      say await f(3);   # mutsu: b|3|3|3  -- WRONG, no error   (raku: b|1|2|3)
-      say await f(2);   # mutsu: b|2|2    -- WRONG             (raku: b|1|2)
-
-      sub k($n) { $n <= 0 ?? "b" !! (await start { k($n-1) }) ~ "|$n" }
-      say k(3);         # mutsu: b|1|1|1  -- WRONG ON THE FIRST CALL (raku: b|1|2|3)
-      ```
-
-      Every frame reads a single `$n` (collapsing to the innermost value for `k`, the outermost for
-      `f`'s second call). A two-branch `fib` (`await(fib($n-2)) + await(fib($n-1))` inside `start`)
-      then hangs deterministically — that is the previously-recorded symptom. Plain recursion
-      without `start`, and non-recursive `start`, are both correct.
-
-      **Root cause**: `clone_for_thread` seeds `shared_vars` — a flat **name-keyed**
-      `HashMap<String, Value>` keyed by the bare name (`runtime_thread.rs:18-53`) — so it cannot
-      represent **two concurrently-live bindings of the same name**, which is exactly what a
-      recursive frame chain is. It is *not* a naive name collision: sequential same-name frames are
-      fine (`sub a($x)` / `sub b($x)` interleaved, and `p(1); p(2); p(3)`, all match raku) — the
-      corruption needs same-name frames simultaneously live across a thread boundary.
-
-      Routing the value through a `my` instead of a parameter is **worse, not better**:
-      `sub g($m) { my $n = $m; start { $n <= 0 ?? "b" !! await(g($n-1)) ~ "|$n" } }` gives
-      `b|0|0|0` on the *first* call. `thread_redeclared_vars` (the `my` mask) is interpreter-global
-      and cleared at every spawn (`runtime_thread.rs:76`), so a recursive chain force-`insert`s the
-      innermost `n` and unmasks the parent — it is the same name-keyed disease, not a lever.
-
-      **Mechanism** (traced 2026-07-17). Each recursive frame *does* get a correct distinct slot and
-      env; the flat map and the writeback that feeds it back into slots are what corrupt them:
-      - **write**: every plain lexical store runs `flush_local_to_env` (`vm_env_helpers.rs:963`) →
-        `set_env_plain_lexical` → `set_shared_var_sym` (`runtime_shared_vars.rs:306-370`), so each
-        frame's `$n` bind overwrites `shared_vars["n"]` and marks it dirty.
-      - **read-back**: `await` calls `sync_shared_vars_to_env` (`runtime_shared_vars.rs:402-486`),
-        which pulls every dirty key into `env` *and* queues it in `pending_caller_var_writeback`;
-        `apply_pending_caller_var_writeback` (`vm_env_helpers.rs:1055-1074`) is retain-on-miss and
-        deliberately **walks up the frame chain** until some frame owns a slot named `"n"`.
-        Innermost write → every outer frame's slot. `k`/`g` are the `insert`-overwrite direction;
-        `f`'s 2nd call is the `or_insert_with` direction (the stale `3` from run 1 survives).
-
-      **Fix direction — narrower than it first looked; NOT the full §1.3 campaign.** `start` already
-      compiles its block argument as escaping (`compiler/expr_call.rs`, `escaping_args = name ==
-      "start"`), so `box_captured_lexicals` (`vm/vm_register_ops.rs:570-695`) already gives it
-      correct per-binding cells, and `$n` (read-only in the block) is correctly captured by value
-      per frame. `shared_vars`' plain-scalar lane runs **in parallel with a mechanism that already
-      works, and overwrites its correct answer** — precisely the "1 operation = 1 implementation"
-      violation. So the fix is to **retire the plain-scalar lane of `shared_vars`** and keep the
-      `@`/`%`, `__mutsu_*` atomic, and `state` lanes:
-      1. stop seeding bare-name scalar keys in `clone_for_thread` (`runtime_thread.rs:21-53`);
-      2. drop the scalar mirror in `set_shared_var_sym` (its `sv.contains_key` guard may make this a
-         no-op once seeding stops — verify);
-      3. `sync_shared_vars_to_env` then never marks a scalar param dirty, so the frame-walking
-         writeback stops force-feeding `"n"` into ancestor frames;
-      4. `thread_redeclared_vars` becomes scalar-only dead code (set only at
-         `vm_var_assign_set_local.rs:1723`) — delete it, retiring a *second* name-keyed mechanism.
-
-      Realistic edit surface ~5 files (the 49 `shared_vars` accesses across 9 files are mostly the
-      `@`/`%`/atomic/`state`/CAS lanes, which are untouched). **Pin these before touching the
-      seeding** — they are the shapes `box_captured_lexicals` declines to box, i.e. where
-      cross-thread scalar *mutation* visibility would regress: type-constrained scalars
-      (`my Int $c = 0; await start { $c = 5 }`, skipped at `vm_register_ops.rs:650-656`), scalars
-      holding `Instance`/`Proxy`/`Package` (`:669-679`), and the empty-`needs_cell_locals` early
-      return (`:601-607`). If the typed case regresses, the smallest honest patch is to relax the
-      `var_type_constraint` skip for the escaping-to-thread case, re-checking the constraint at the
-      `ContainerRef` write-through chokepoint.
-
-      Worth doing before the worker-pool ADR above: a silent wrong answer outranks a
-      perf/footprint change, and the fix retires name-keyed mechanisms rather than building on them.
+- [ ] **Finish retiring the name-keyed `shared_vars` scalar lane** (the recursion corruption itself
+      was fixed 2026-07-17 — see news/2026-07.md; `t/recursive-start-await.t` pins it). A `start`
+      block's own captured scalars no longer go through the flat name-keyed map, but two lanes of it
+      survive on purpose and want a real owner:
+  - [ ] **Lexicals a registered class/role method writes** keep the name lane
+        (`CompiledCode::type_body_written_lexicals`, fed by `record_type_body_captures`). Such a
+        write is invisible to the capture analysis — the method is installed by
+        `RegisterClass`/`RegisterRole` and has no closure-creation op — so
+        `box_captured_lexicals` never sees it. The honest fix is to give those methods real
+        per-binding cells, like `escaping_our_sub_captures` already does for an `our sub`.
+        Pins: `t/destroy-cross-thread-writeback-coherence.t`, `roast/S12-construction/roles-6e.t`
+        (its `$order` holds a List — a shape `box_captured_lexicals` declines to box at all).
+  - [ ] **The boxing skips are wrong for *rebinding*.** `box_captured_lexicals` declines to box a
+        scalar holding an `Instance`/`Array`/`Hash`/`Sub`/`Proxy`/`Package` because those are
+        reference-shared — true for in-place mutation (`$obj.v = 42`), false for rebinding the
+        holder (`$obj = Foo.new`), which needs a cell like any other scalar. Boxing `Instance` was
+        tried and reverted: `my Lock $l .= new` (the `.=` counts as a capture-mutation) breaks when
+        two sibling blocks declare the same name, because `resolve_capture_slot`'s `rposition` name
+        search resolves the capture to the LAST same-named slot. That duplicate-slot hazard is the
+        `dup_shadow_possible` gate's territory → the lexical-scope slot campaign below. The
+        resulting gap is the `todo` in `t/thread-shared-scalar-visibility.t`.
+  - [ ] **`cas` is only half cell-aware.** `builtin_cas_var` now swaps through a boxed scalar's
+        `ContainerRef` (`scalar_cell_target`), but the `builtin_atomic_add_var` fast paths and the
+        array/hash forms still resolve the variable by name through `shared_vars`. Pin:
+        `roast/S17-lowlevel/cas.t`.
+  - [ ] **A Proxy bound in the parent does not receive a worker's STORE**
+        (`my $p := Proxy.new(...); await start { $p = 9 }` leaves the backing var untouched; raku
+        stores). Pre-existing, unrelated to the lane retirement — the `todo` in
+        `t/thread-shared-scalar-visibility.t`.
 - [ ] Eliminate raw-pointer aliased writes: the old `arc_contents_mut` is dead code now, and the
       production path moved to `gc::gc_contents_mut` / `Gc::{get,make}_mut` (the unsoundness was
       moved, not resolved — ANALYSIS rev8 §2.1). With Track B T4–T6 done (news/2026-07.md), start
