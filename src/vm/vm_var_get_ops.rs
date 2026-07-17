@@ -15,6 +15,20 @@ impl Interpreter {
                 "Undeclared name:\n    _ used at line 1",
             ));
         }
+        // A bareword with a type smiley whose base is a bound generic type
+        // parameter (`T:D` inside a role method where `T` -> `Int`) resolves to
+        // the parameterized type with the smiley applied (`Int:D`). Plain
+        // built-in types like `Int:D` are NOT env-bound, so they fall through to
+        // the normal resolution below and are unaffected.
+        if let (base, Some(smiley)) = crate::runtime::types::strip_type_smiley(name)
+            && !base.is_empty()
+            && let Some(v) = self.env().get(base)
+            && let ValueView::Package(pkg) = v.view()
+        {
+            let resolved = format!("{}{}", pkg.resolve(), smiley);
+            self.stack.push(Value::package(Symbol::intern(&resolved)));
+            return Ok(());
+        }
         let val = if name == "Bool::True" {
             Value::TRUE
         } else if name == "Bool::False" {

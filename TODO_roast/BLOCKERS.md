@@ -123,14 +123,19 @@ completed fix history lives in `news/`.
   (`::<$x> := $y`); `X::NoSuchSymbol` exception type; `is dynamic` trait for CALLERS visibility;
   `CORE::v6c/v6d/v6e` namespaces. Note: raku itself fails to parse this test due to `$?` twigil
   constants.
-- **`S02-types/generics.t`** — a deep multi-feature 6.e stack, deferred per user (2026-06-28):
-  (1) **coercion type TERMS are unimplemented** — `Int()` returns `Nil` (parsed as a 0-arg call),
-  should be the coercion type `Int(Any)`; `Int:D()` → "Unknown function". raku 6.d supports these,
-  so this sub-feature is independently validatable. (2) **`class A is Array[Int] {}` subclassing
-  is broken** — `.push` fails with "No such method 'push'"; prerequisite for most assertions.
-  (3) nested generic package `my package G { class A is Array[T] {} }`; (4) typed attribute from
-  a generic class (`has @.a is G::A`); (5) per-composition re-instantiation of role bodies
-  (`my T $v .= new;` — role body code is evaluated eagerly, not deferred until composition).
+- **`S02-types/generics.t`** — a deep multi-feature 6.e stack. Subtests 1-2 now PASS (progress
+  2026-07-18). Done: (1) **coercion type TERMS** — `Int()` -> `Int(Any)`, `Int:D()` ->
+  `Int:D(Any)`, and the same forms over a bound generic type parameter (`T()`, `T:D()`).
+  (2) **`class A is Array[Int] {}` subclassing** — a parametric native parent now contributes
+  its base type to the MRO, so `.push` and typed-element checks are inherited. (3) nested generic
+  class parent-substitution — `class A is Array[T] {}` inside a parametric role composes with the
+  concrete `Array[Int]` parent (type captures resolved at class registration).
+  Remaining blockers for subtests 3-6: (a) **per-composition parameterized naming** — the nested
+  class `.^name` is `G::A`, must be `R::G::A[Int]` (role-qualified + pinned to the instantiation
+  type; the nested `my package G` decl is not routed through the role package, and the class is
+  registered once globally rather than re-instantiated per composition); (b) **typed attribute
+  element checking from a generic class** — `has @.a is G::A` does not propagate `Array[Int]`'s
+  element type, so a wrong-typed `.new(a => <bad>)` is not rejected.
 - **`S05-mass/rx.t`** — the per-token ratchet (`:`) core is fixed (commits to the atom's
   highest-priority match; leading null `||`/`|` alternatives ignored). Remaining: `<commit>`
   named assertion is NYI and its runtime error aborts the file at test 20; later subtests need

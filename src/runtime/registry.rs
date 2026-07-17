@@ -278,6 +278,24 @@ impl Registry {
                     "Any".to_string(),
                     "Mu".to_string(),
                 ]);
+            } else if let Some((base, _)) = parent.split_once('[')
+                && parent.ends_with(']')
+                && !self.roles.contains_key(base)
+            {
+                // A parametric CLASS/native parent (e.g. `Array[Int]`) contributes
+                // both the parameterized name and its base type's MRO, so that a
+                // subclass of `Array[Int]` is recognized as array-backed (`Array`
+                // in the MRO). A parametric ROLE parent (`does R[Int]`) is left as
+                // just the parameterized name: its base must NOT enter the MRO, or
+                // a qualified `self.R::meth` call would resolve against the bare
+                // base and skip the two-concretization ambiguity check.
+                let mut seq = vec![parent.clone()];
+                if self.classes.contains_key(base) {
+                    seq.extend(self.compute_class_mro(base, stack)?);
+                } else {
+                    seq.push(base.to_string());
+                }
+                seqs.push(seq);
             } else {
                 seqs.push(vec![parent.clone()]);
             }
