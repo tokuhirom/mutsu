@@ -838,11 +838,20 @@ impl Interpreter {
                         },
                         value.clone(),
                     );
+                    let new_mixin =
+                        Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
                     if let Some(var_name) = target_var {
-                        self.env.insert(
-                            var_name.to_string(),
-                            Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins)),
-                        );
+                        self.env.insert(var_name.to_string(), new_mixin.clone());
+                    }
+                    // Inside a trait_mod the rebuilt Mixin must also refresh the
+                    // writeback capture (same convention as DoesVar): the value
+                    // DoesVar captured predates this assignment and would hand
+                    // the trait's caller a mixin missing it (JSON::Name's
+                    // `$a.json-name = $json-name` right after `$a does ...`).
+                    if self.trait_mod_writeback_key.is_some()
+                        && self.trait_mod_writeback_value.is_some()
+                    {
+                        self.trait_mod_writeback_value = Some(new_mixin);
                     }
                     return Ok(value);
                 }
@@ -852,11 +861,17 @@ impl Interpreter {
             if mixins.contains_key(&mixin_attr_key) {
                 let mut updated_mixins = (**mixins).clone();
                 updated_mixins.insert(mixin_attr_key, value.clone());
+                let new_mixin =
+                    Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins));
                 if let Some(var_name) = target_var {
-                    self.env.insert(
-                        var_name.to_string(),
-                        Value::mixin_parts(inner.clone(), std::sync::Arc::new(updated_mixins)),
-                    );
+                    self.env.insert(var_name.to_string(), new_mixin.clone());
+                }
+                // See the role-attribute branch above: refresh the trait_mod
+                // writeback capture so the assignment survives past the trait.
+                if self.trait_mod_writeback_key.is_some()
+                    && self.trait_mod_writeback_value.is_some()
+                {
+                    self.trait_mod_writeback_value = Some(new_mixin);
                 }
                 return Ok(value);
             }
