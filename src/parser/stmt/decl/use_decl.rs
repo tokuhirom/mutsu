@@ -67,6 +67,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let mut rest = rest;
     let mut use_tags: Vec<String> = Vec::new();
     let mut condition: Option<Box<Expr>> = None;
+    let mut dist_selectors = String::new();
     loop {
         if rest.starts_with(':') && !rest.starts_with("::") {
             let r = &rest[1..];
@@ -99,10 +100,14 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 // 'ver'` / `'auth'`).
                 let is_dist_selector = matches!(tag_name.as_str(), "ver" | "auth" | "api");
                 if is_dist_selector && r.starts_with('<') {
-                    let after = match r[1..].find('>') {
-                        Some(end) => &r[end + 2..],
+                    let (value, after) = match r[1..].find('>') {
+                        Some(end) => (&r[1..end + 1], &r[end + 2..]),
                         None => return Err(PError::expected("closing '>' in version adverb")),
                     };
+                    // Keep the literal selector: it refines which installed
+                    // distribution `use` resolves (`use JSON::Class:auth<...>`),
+                    // carried to the runtime appended to the module name.
+                    dist_selectors.push_str(&format!(":{}<{}>", tag_name, value));
                     let (after, _) = ws(after)?;
                     let after = after.strip_prefix(',').unwrap_or(after);
                     let (after, _) = ws(after)?;
@@ -154,6 +159,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     // Register exported function names so they are recognized as calls without parens.
     super::super::simple::register_module_exports(&module);
+    // Dist selectors ride on the module name (`Name:auth<...>:ver<...>`); the
+    // runtime's use_module splits them back off before any registry keying.
+    let module = if dist_selectors.is_empty() {
+        module
+    } else {
+        format!("{}{}", module, dist_selectors)
+    };
     Ok((
         rest,
         Stmt::Use {

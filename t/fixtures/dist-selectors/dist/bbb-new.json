@@ -1,0 +1,11 @@
+{
+    "name": "SelTest",
+    "version": "0.0.21",
+    "auth": "zef:bob",
+    "api": "1.0",
+    "provides": {
+        "SelTest": {
+            "file": "seltest-bob"
+        }
+    }
+}

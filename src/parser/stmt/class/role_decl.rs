@@ -297,11 +297,20 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
     check_pseudo_package_in_decl(&name)?;
-    let (mut rest, (type_params, type_param_defs)) = parse_optional_role_type_params(rest)?;
+    let (mut rest, (mut type_params, mut type_param_defs)) = parse_optional_role_type_params(rest)?;
     // Parse optional type adverbs (:ver<...>, :auth<...>, :api<...>)
     let (rest2, traits) = parse_declarator_traits(rest)?;
     let (rest2, _) = ws(rest2)?;
     rest = rest2;
+    // The signature may also FOLLOW the adverbs — the order Raku itself uses:
+    // `role JSON::Class:ver<0.0.21>:auth<zef:jonathanstowe>[Bool :$opt-in]`.
+    if type_params.is_empty() && rest.starts_with('[') {
+        let (rest2, (tp, tpd)) = parse_optional_role_type_params(rest)?;
+        let (rest2, _) = ws(rest2)?;
+        type_params = tp;
+        type_param_defs = tpd;
+        rest = rest2;
+    }
     let mut parent_roles: Vec<String> = Vec::new();
     let mut is_hidden_role = false;
     let mut role_is_rw = false;

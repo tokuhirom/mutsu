@@ -12,6 +12,13 @@ impl Interpreter {
         let extensions = [".rakumod", ".pm6", ".pm"];
 
         // Check inst# paths (CompUnit::Repository::Installation) first.
+        // Several installed dists may provide the same short name (two
+        // JSON::Class dists exist on fez, by different authors). Collect every
+        // candidate, filter by the `use` statement's dist selectors
+        // (`:ver`/`:auth`/`:api`, in pending_dist_selectors), and pick the
+        // highest version — the first-JSON-found behavior this replaces
+        // effectively loaded a random one.
+        let mut inst_candidates: Vec<(std::path::PathBuf, String)> = Vec::new();
         for base in &self.lib_paths {
             if let Some(prefix) = base.strip_prefix("inst#") {
                 let prefix_path = Path::new(prefix);
@@ -34,11 +41,21 @@ impl Interpreter {
                     {
                         let source_path = prefix_path.join("sources").join(&file_id);
                         if source_path.exists() {
-                            return Some((source_path, Some(json_str)));
+                            inst_candidates.push((source_path, json_str));
                         }
                     }
                 }
             }
+        }
+        if !inst_candidates.is_empty() {
+            if let Some((source_path, json_str)) =
+                self.select_dist_candidate(inst_candidates, &self.pending_dist_selectors)
+            {
+                return Some((source_path, Some(json_str)));
+            }
+            // Candidates existed but none matched the selectors: the dependency
+            // is unsatisfied, not "pick a wrong one".
+            return None;
         }
 
         let mut candidates: Vec<std::path::PathBuf> = Vec::new();
@@ -133,6 +150,70 @@ impl Interpreter {
             .into_iter()
             .find(|path| path.exists())
             .map(|p| (p, None))
+    }
+
+    /// Pick one installed dist among several that provide the requested module:
+    /// filter by the `use` statement's dist selectors (`:auth` = exact match,
+    /// `:ver`/`:api` = Version smartmatch, so `0.0.14+` means at-least), then
+    /// take the highest version. Returns None when selectors exclude them all.
+    fn select_dist_candidate(
+        &self,
+        candidates: Vec<(std::path::PathBuf, String)>,
+        selectors: &[(String, String)],
+    ) -> Option<(std::path::PathBuf, String)> {
+        let mut best: Option<(std::path::PathBuf, String, Vec<crate::value::VersionPart>)> = None;
+        for (path, json_str) in candidates {
+            let meta: serde_json::Value = serde_json::from_str(&json_str).unwrap_or_default();
+            let meta_str = |key: &str| -> String {
+                match &meta[key] {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    _ => String::new(),
+                }
+            };
+            let mut matches = true;
+            for (key, want) in selectors {
+                let have = meta_str(key);
+                match key.as_str() {
+                    "auth" => {
+                        if have != *want {
+                            matches = false;
+                        }
+                    }
+                    "ver" | "api" => {
+                        // The dist JSON stores the version under "version"
+                        // (zef/S22 meta), while the api is under "api".
+                        let have = if key == "ver" {
+                            meta_str("version")
+                        } else {
+                            have
+                        };
+                        let (want_parts, plus, minus) = Value::parse_version_string(want);
+                        let (have_parts, _, _) = Value::parse_version_string(&have);
+                        let have_val = Value::version(have_parts, false, false);
+                        if !Self::version_smart_match(&have_val, &want_parts, plus, minus) {
+                            matches = false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !matches {
+                continue;
+            }
+            let (ver_parts, _, _) = Value::parse_version_string(&meta_str("version"));
+            let better = match &best {
+                None => true,
+                Some((_, _, best_parts)) => {
+                    crate::runtime::version_cmp_parts(&ver_parts, best_parts)
+                        == std::cmp::Ordering::Greater
+                }
+            };
+            if better {
+                best = Some((path, json_str, ver_parts));
+            }
+        }
+        best.map(|(p, j, _)| (p, j))
     }
 
     /// Default install directory for a well-known repository name
@@ -336,7 +417,6 @@ impl Interpreter {
             let prefix = base.strip_prefix("inst#")?;
             let prefix_path = Path::new(prefix);
             let dist_dir = prefix_path.join("dist");
-            let resources_dir = prefix_path.join("resources");
             if !dist_dir.is_dir() {
                 continue;
             }
@@ -357,52 +437,57 @@ impl Interpreter {
                 if let Some(provides) = meta_val.hash_get_str("provides")
                     && provides.hash_get_str(module).is_some()
                 {
-                    // Build a distribution instance with files resolved to absolute paths
-                    // Remap the "files" entries to full paths
-                    use std::collections::HashMap;
-
-                    let mut resolved_files: HashMap<String, Value> = HashMap::new();
-                    if let Some(files_val) = meta_val.hash_get_str("files")
-                        && let ValueView::Hash(fmap) = files_val.view()
-                    {
-                        for (k, v) in fmap.iter() {
-                            let hash_id = v.to_string_value();
-                            // Determine full path based on key prefix
-                            let full_path = if k.starts_with("resources/") {
-                                resources_dir.join(&hash_id).to_string_lossy().to_string()
-                            } else {
-                                prefix_path.join(&hash_id).to_string_lossy().to_string()
-                            };
-                            resolved_files.insert(k.clone(), Value::str(full_path));
-                        }
-                    }
-                    let mut meta_map = match meta_val.view() {
-                        ValueView::Hash(m) => m.map.clone(),
-                        _ => HashMap::new(),
-                    };
-                    meta_map.insert(
-                        "files".to_string(),
-                        Value::hash_with_data(Value::hash_arc(resolved_files)),
-                    );
-                    meta_map.insert("prefix".to_string(), Value::str(prefix.to_string()));
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "meta".to_string(),
-                        Value::hash_with_data(Value::hash_arc(meta_map)),
-                    );
-                    attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
-                    return Some(Value::make_instance_without_destroy(
-                        crate::symbol::Symbol::intern("Distribution::Installation"),
-                        attrs,
-                    ));
+                    return Some(Self::build_inst_distribution(prefix, &meta_val));
                 }
             }
         }
         None
     }
 
+    /// Build a `Distribution::Installation` instance from an installed dist's
+    /// meta, with its "files" entries resolved to absolute paths under `prefix`.
+    fn build_inst_distribution(prefix: &str, meta_val: &Value) -> Value {
+        use std::collections::HashMap;
+        let prefix_path = Path::new(prefix);
+        let resources_dir = prefix_path.join("resources");
+        let mut resolved_files: HashMap<String, Value> = HashMap::new();
+        if let Some(files_val) = meta_val.hash_get_str("files")
+            && let ValueView::Hash(fmap) = files_val.view()
+        {
+            for (k, v) in fmap.iter() {
+                let hash_id = v.to_string_value();
+                // Determine full path based on key prefix
+                let full_path = if k.starts_with("resources/") {
+                    resources_dir.join(&hash_id).to_string_lossy().to_string()
+                } else {
+                    prefix_path.join(&hash_id).to_string_lossy().to_string()
+                };
+                resolved_files.insert(k.clone(), Value::str(full_path));
+            }
+        }
+        let mut meta_map = match meta_val.view() {
+            ValueView::Hash(m) => m.map.clone(),
+            _ => HashMap::new(),
+        };
+        meta_map.insert(
+            "files".to_string(),
+            Value::hash_with_data(Value::hash_arc(resolved_files)),
+        );
+        meta_map.insert("prefix".to_string(), Value::str(prefix.to_string()));
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "meta".to_string(),
+            Value::hash_with_data(Value::hash_arc(meta_map)),
+        );
+        attrs.insert("prefix".to_string(), Value::str(prefix.to_string()));
+        Value::make_instance_without_destroy(
+            crate::symbol::Symbol::intern("Distribution::Installation"),
+            attrs,
+        )
+    }
+
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
-        let (source_path, _inst_dist_json) = self
+        let (source_path, inst_dist_json) = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?;
         // Track operator subs exported by this module so EVAL can see them.
@@ -415,8 +500,20 @@ impl Interpreter {
         // For installed modules (inst# paths), use the dist JSON directly.
         // Otherwise fall back to META6.json detection.
         let saved_distribution = self.current_distribution.clone();
-        // First try inst# installation repos (source files have no META6.json nearby)
-        let inst_dist = self.detect_inst_distribution(module);
+        // Prefer the dist JSON of the distribution resolve_module_path actually
+        // selected (selectors / highest-version pick): a by-name rescan could
+        // land on a DIFFERENT dist that also provides this short name. The
+        // source lives at <prefix>/sources/<id>, so prefix is two levels up.
+        let inst_dist = inst_dist_json
+            .and_then(|json_str| {
+                let prefix = source_path.parent()?.parent()?;
+                let meta_val = self.parse_json_to_value(&json_str).ok()?;
+                Some(Self::build_inst_distribution(
+                    &prefix.to_string_lossy(),
+                    &meta_val,
+                ))
+            })
+            .or_else(|| self.detect_inst_distribution(module));
         // Classes/roles this module declares belong to its distribution too, so a
         // later OTF compile of one of their methods can resolve `$?DISTRIBUTION`
         // (e.g. a role method reads `$?DISTRIBUTION.meta` — zef's `Pluggable`).
