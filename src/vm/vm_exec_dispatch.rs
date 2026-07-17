@@ -4232,6 +4232,7 @@ impl Interpreter {
             }
             OpCode::RegisterClass(idx) => {
                 self.sync_source_line(code, *ip);
+                self.note_type_body_written_lexicals(code);
                 self.exec_register_class_op(code, *idx)?;
                 *ip += 1;
             }
@@ -4242,6 +4243,7 @@ impl Interpreter {
             }
             OpCode::RegisterRole(idx) => {
                 self.sync_source_line(code, *ip);
+                self.note_type_body_written_lexicals(code);
                 self.exec_register_role_op(code, *idx)?;
                 *ip += 1;
             }

@@ -1712,10 +1712,10 @@ impl Interpreter {
         let name_sym = code.const_sym(name_idx);
         loan_env!(self, set_var_dynamic(name, dynamic));
         // While the cross-thread shared store is active, a re-declaration is a
-        // fresh binding shadowing the captured outer lexical: mark the name so
-        // subsequent writes stay thread-local instead of leaking to the parent
-        // through the shared store (`start { my $x ... }` / a pointy-if
-        // binding must not clobber the caller's same-named lexical). Scalars
+        // fresh binding shadowing whatever else lives under this bare name in
+        // the process-global store: mark it so subsequent writes stay
+        // thread-local instead of leaking (`start { my $x ... }` / a pointy
+        // binding must not clobber an unrelated same-named lexical). Scalars
         // only: `@`/`%` names back the name-keyed atomic element stores
         // (concurrent push/unshift), which need the shared entry maintained on
         // every write, and `state` sharing goes through the dedicated

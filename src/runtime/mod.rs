@@ -1412,15 +1412,30 @@ pub struct Interpreter {
     /// variable's name must keep resolving through its own live env capture.
     pub(crate) escaped_our_sub_names: std::collections::HashSet<String>,
     state_vars: HashMap<String, Value>,
-    /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
-    /// cross-thread shared store is active. A re-declaration is a fresh
-    /// binding shadowing the captured outer lexical, so subsequent writes to
-    /// the name must stay thread-local: `set_shared_var_sym` skips the shared
-    /// write and `sync_shared_vars_to_env` skips the pull for these names.
-    /// Reset to empty in `clone_for_thread` (a child thread captures the
-    /// parent's *current* bindings). Only populated while
+    /// Names this thread re-declared (`my $x`, a pointy-block binding) while the
+    /// cross-thread shared store was active. The store is keyed by BARE NAME and
+    /// is global to the process, so a re-declaration is a FRESH binding that must
+    /// not be fused with whatever else lives under that name: without this mask a
+    /// worker's `if G.parse($_) -> $parsed {...}` overwrites the parent's
+    /// unrelated `my $parsed = Channel.new` (roast integration/advent2013-day14.t).
+    /// `set_shared_var_sym` skips the shared write, `sync_shared_vars_to_env`
+    /// skips the pull, and `exec_get_local_op` skips the Nil-refresh read for
+    /// these names. Scalars only — `@`/`%` back the name-keyed atomic element
+    /// stores, which must keep propagating. Reset in `clone_for_thread` (a child
+    /// captures the parent's *current* bindings). Only populated while
     /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
+    ///
+    /// NARROWED, not retired, by the §6 lane work: a spawned block's own captured
+    /// scalars never reach the store now, but every other scalar in scope still
+    /// does, so same-name collisions between *different routines* still need this.
     pub(crate) thread_redeclared_vars: std::collections::HashSet<String>,
+    /// Union of every executed `CompiledCode::type_body_written_lexicals`:
+    /// lexicals written by a registered class/role method body. These keep the
+    /// name-keyed `shared_vars` lane even when a spawned block also captures
+    /// them — the capture analysis cannot see such a write (PLAN.md §6).
+    /// Populated at `RegisterClass` / `RegisterRole`, which always run before
+    /// the type can be instantiated.
+    pub(crate) type_body_written_lexicals: std::collections::HashSet<String>,
     /// Per-closure-instance captured-variable state, keyed by
     /// (closure instance id, captured variable Symbol). This is the hot
     /// closure-call persistence store (loaded/saved on every closure call for

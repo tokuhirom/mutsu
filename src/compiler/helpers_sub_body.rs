@@ -569,6 +569,58 @@ impl Compiler {
     /// scoping if a loose lookup resolved to it.
     /// Returns the analysis closure's index into `closure_compiled_codes` so
     /// the emitting op can hand it to `box_captured_lexicals` at runtime.
+    /// Record the frame lexicals that a `class`/`role` body's methods WRITE
+    /// (see `CompiledCode::type_body_written_lexicals`), so that
+    /// `clone_for_thread_for_block` keeps them on the name-keyed `shared_vars`
+    /// lane instead of assuming the closure machinery owns them.
+    ///
+    /// A method is installed into the type's method table by `RegisterClass` /
+    /// `RegisterRole` and — unlike a closure — has no runtime creation op, so
+    /// `box_captured_lexicals` never sees it. `my $a = 0; class Foo { submethod
+    /// DESTROY { $a++ } }` reaches the outer `$a` ONLY through that lane (pins:
+    /// t/destroy-cross-thread-writeback-coherence.t, roast
+    /// S12-construction/roles-6e.t, where `$order` holds a List and so is a
+    /// shape `box_captured_lexicals` declines to box at all).
+    ///
+    /// Analysis-only, exactly like `surface_stashed_body_free_vars`: the method
+    /// bodies are compiled purely for their free-var metadata and any named subs
+    /// that compile registers are dropped again.
+    pub(crate) fn record_type_body_captures(&mut self, body: &[Stmt]) {
+        let fn_keys_before: std::collections::HashSet<crate::symbol::Symbol> =
+            self.compiled_functions.keys().copied().collect();
+        let mut writes: Vec<crate::symbol::Symbol> = Vec::new();
+        for stmt in body {
+            let Stmt::MethodDecl {
+                params,
+                param_defs,
+                body,
+                ..
+            } = stmt
+            else {
+                continue;
+            };
+            let cf = self.compile_closure_body(params, param_defs, body);
+            writes.extend(cf.free_var_writes.iter().copied());
+            writes.extend(cf.free_var_container_writes.iter().copied());
+            writes.extend(cf.needs_cell_named_sub_free.iter().copied());
+        }
+        self.compiled_functions
+            .retain(|k, _| fn_keys_before.contains(k));
+        // Only genuine `my` lexicals are captured this way — mirrors the
+        // `escaping_our_sub_captures` filter: dynamic (`$*X`), attribute
+        // (`$!x`/`$.x`) and special (`$/`, `$_`, ...) names resolve through their
+        // own stores, and boxing them would break those paths.
+        writes.retain(|sym| {
+            sym.with_str(|s| {
+                s.trim_start_matches(['$', '@', '%', '&'])
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic())
+            })
+        });
+        self.code.type_body_written_lexicals.extend(writes);
+    }
+
     pub(crate) fn surface_stashed_body_free_vars(
         &mut self,
         params: &[String],

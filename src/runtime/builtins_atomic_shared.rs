@@ -601,6 +601,25 @@ impl Interpreter {
     /// disambiguation, matching the VM's cell-direct access). Returns `None`
     /// when not in an instance method context, falling back to the shared_vars
     /// atomic machinery for plain variables.
+    /// The shared `ContainerRef` cell backing a plain lexical, if a closure
+    /// boxed it (`box_captured_lexicals`). See the call site in `builtin_cas_var`.
+    pub(super) fn scalar_cell_target(
+        &self,
+        name: &str,
+    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+        if name.starts_with('@') || name.starts_with('%') || name.starts_with('&') {
+            return None;
+        }
+        let v = self
+            .env
+            .get(name)
+            .or_else(|| self.env.get(name.trim_start_matches('$')))?;
+        match v.view() {
+            ValueView::ContainerRef(c) => Some(c.clone()),
+            _ => None,
+        }
+    }
+
     pub(super) fn self_attr_cell_target(
         &self,
         name: &str,

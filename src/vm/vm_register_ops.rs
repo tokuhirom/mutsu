@@ -637,22 +637,28 @@ impl Interpreter {
                 if !needs_cell && !is_dup_shadow {
                     continue;
                 }
-                // A type/`where`-constrained scalar must keep flowing through
-                // the assignment chokepoint so each mutation re-checks the
-                // constraint; the ContainerRef write-through bypasses it. Skip
-                // boxing it (inline `where` desugars to an anonymous subset, so
-                // var_type_constraint catches block/whatever/`&pred` forms).
-                // Applied to (B) only — the loop path (A) is left unchanged.
-                // EXCEPTION: `Mu` is the universal type — every value satisfies
-                // it, so the ContainerRef write-through bypasses no real check.
-                // Box `my Mu $s` so captured-outer thunks (metaop `Xxx`/`Zand`)
-                // share its cell and stay coherent without the blanket reconcile.
-                let mut tc = loan_env!(self, var_type_constraint(&s));
-                if tc.is_none() {
-                    tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
-                }
-                if matches!(tc.as_deref(), Some(t) if t != "Mu") {
-                    continue;
+                // A type/`where`-constrained scalar is boxed ONLY when the
+                // closure is handed to a thread. Boxing is safe for the
+                // constraint itself -- the check runs at the assignment op,
+                // which looks the constraint up BY NAME in
+                // `var_type_constraints` (cloned into a spawned thread) before
+                // any write-through, and the loop path (A) has always boxed
+                // constrained scalars. But a cell breaks `cas`, which resolves
+                // its target by name and is not cell-aware (roast
+                // S17-lowlevel/cas.t does `cas` on a `my LittleNodey $head`
+                // captured by a same-frame `throws-like` block). For a thread
+                // the cell is required: without it the parent could only observe
+                // a worker's write through the name-keyed `shared_vars` lane
+                // retired in PLAN.md §6.
+                // Pin: t/thread-shared-scalar-visibility.t.
+                if !cc.thread_escaping {
+                    let mut tc = loan_env!(self, var_type_constraint(&s));
+                    if tc.is_none() {
+                        tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
+                    }
+                    if matches!(tc.as_deref(), Some(t) if t != "Mu") {
+                        continue;
+                    }
                 }
             }
             let Some(idx) = baked_idx else {
@@ -666,6 +672,19 @@ impl Interpreter {
             }
             // Only box plain scalar containers. Reference types share already;
             // type objects / proxies must not be hidden behind a ContainerRef.
+            // Only box plain scalar containers. Reference types share already;
+            // type objects / proxies must not be hidden behind a ContainerRef.
+            // `Instance` stays in this list even though REBINDING the holder
+            // (`$obj = Foo.new`) genuinely wants a cell: boxing it regressed
+            // `my Lock $l .= new` (`.=` counts as a capture-mutation, so the
+            // holder gets boxed) whenever two sibling blocks declare the same
+            // name -- `resolve_capture_slot`'s `rposition` name search then
+            // resolves the capture to the LAST same-named slot. That is the
+            // pre-existing duplicate-slot hazard the `dup_shadow_possible` gate
+            // above documents, and unblocking it belongs to the lexical-scope
+            // slot campaign, not here. Pin: t/lock-protect-shared-scalar.t;
+            // the resulting gap is the `todo` in
+            // t/thread-shared-scalar-visibility.t.
             if matches!(
                 cur.view(),
                 ValueView::Package(_)
@@ -689,6 +708,14 @@ impl Interpreter {
             // `set_shared_var` only updates entries that already exist, so this
             // is a no-op when the name was never snapshotted.
             if self.shared_vars_active {
+                // The cell now OWNS this binding, which is exactly what the
+                // re-declaration mask was standing in for, so the mask must not
+                // block the replacement below: leaving the stale plain snapshot
+                // in place lets `sync_shared_vars_to_env` write it back over the
+                // cell after the next await and disconnect the parent.
+                self.thread_redeclared_vars.remove(&s);
+                self.thread_redeclared_vars
+                    .remove(s.trim_start_matches('$'));
                 loan_env!(self, set_shared_var(&s, container.clone()));
             }
         }
