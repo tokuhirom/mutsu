@@ -26,7 +26,6 @@ use crate::runtime::native_methods::{
     SupplyEvent, next_supplier_id, supplier_register_promise, take_supply_channel,
 };
 use crate::runtime::subtest::{ReactSubscription, StreamConsumer, SupplyDrivePolicy};
-use std::sync::mpsc;
 
 impl Interpreter {
     /// Dispatch a `whenever` body or one of its `LAST` / `QUIT` / `CLOSE` phaser
@@ -377,7 +376,8 @@ impl Interpreter {
                     // Promise source
                     ValueView::Promise(shared) => {
                         // Create a one-shot channel for the promise
-                        let (tx, rx) = mpsc::channel();
+                        let (tx, rx) =
+                            crate::runtime::native_methods::supply_channel::supply_event_channel();
                         let shared_clone = shared.clone();
                         // Registered spawn: `wait()` clones the resolved
                         // result `Value` and the promise handle drops at

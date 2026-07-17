@@ -451,8 +451,6 @@ impl Interpreter {
     /// `signal(SIGINT, ...)` — returns a Supply that emits Signal enum values
     /// when the process receives the specified OS signals.
     pub(super) fn builtin_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        use std::sync::mpsc;
-
         // Extract signal numbers and their enum representations
         let signals: Vec<(i64, Value)> = args
             .iter()
@@ -466,7 +464,7 @@ impl Interpreter {
         let supply_id = super::native_methods::next_supply_id();
 
         // Create channel for the Supply
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
 
         // Register the channel in the supply channel map
         if let Ok(mut map) = super::native_methods::supply_channel_map_pub().lock() {

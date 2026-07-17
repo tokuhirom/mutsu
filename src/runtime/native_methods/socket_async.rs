@@ -2,7 +2,6 @@ use crate::runtime::*;
 use crate::symbol::Symbol;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 
 use super::state::*;
 use super::state_supplier::*;
@@ -352,7 +351,7 @@ impl Interpreter {
                 // Create a supply channel so the react event loop can
                 // receive accepted connections
                 let supply_id = next_supply_id();
-                let (tx, rx) = mpsc::channel::<SupplyEvent>();
+                let (tx, rx) = super::supply_channel::supply_event_channel();
                 if let Ok(mut map) = supply_channel_map().lock() {
                     map.insert(supply_id, rx);
                 }

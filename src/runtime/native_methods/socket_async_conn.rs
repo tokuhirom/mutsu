@@ -1,8 +1,6 @@
 use crate::runtime::*;
 use crate::symbol::Symbol;
 
-use std::sync::mpsc;
-
 use super::state::*;
 use crate::value::AttrMap;
 
@@ -118,7 +116,7 @@ impl Interpreter {
         // feeds the emitted value to `parse-http-request`, which expects a Blob.
         let is_bin = Self::named_bool(args, "bin");
         let supply_id = next_supply_id();
-        let (tx, rx) = mpsc::channel::<SupplyEvent>();
+        let (tx, rx) = super::supply_channel::supply_event_channel();
         if let Ok(mut map) = supply_channel_map().lock() {
             map.insert(supply_id, rx);
         }

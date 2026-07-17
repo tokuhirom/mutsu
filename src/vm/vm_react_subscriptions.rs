@@ -19,11 +19,11 @@ use crate::value::waker::{ReactWaker, SinkEvent};
 use std::sync::mpsc;
 use std::time::Duration;
 
-/// Idle-wait cap for one drive-loop round. Supplier events, promise
-/// resolutions and channel sends wake the loop instantly; this cap only
-/// bounds the latency of the remaining polled sources (mpsc receivers,
-/// pending tap-close promises) and the Promise-policy deadline check.
-const REACT_IDLE_WAIT: Duration = Duration::from_millis(10);
+/// Idle-wait cap for one drive-loop round. Every source now wakes the loop
+/// (supplier sinks, promise/on-demand-done/tap-close `on_resolve` hooks,
+/// channel and mpsc-receiver `SupplySender` pokes), so this is a safety net
+/// against a missed wake-up, not a delivery-latency bound.
+const REACT_IDLE_WAIT: Duration = Duration::from_millis(250);
 
 impl Interpreter {
     /// Deliver every event queued on the drive loop's waker to its
@@ -216,25 +216,39 @@ impl Interpreter {
                 sink_regs.push((sid, supplier_sink_register(sid, i, &waker)));
             }
         }
-        // Promise / channel sources still deliver their payloads through the
-        // existing receiver / poll paths, but wake the loop instantly instead
-        // of waiting out the idle cap.
+        // Promise / channel / mpsc-receiver sources still deliver their
+        // payloads through the existing receiver / poll paths, but wake the
+        // loop instantly instead of waiting out the idle cap.
         for sub in &react_subs {
             if let Some(p) = &sub.promise {
+                let w = waker.clone();
+                let _ = p.on_resolve(Box::new(move |_, _, _, _| w.notify()));
+            }
+            if let Some(p) = &sub.on_demand_done {
                 let w = waker.clone();
                 let _ = p.on_resolve(Box::new(move |_, _, _, _| w.notify()));
             }
             if let Some(ch) = &sub.channel {
                 ch.register_waker(&waker);
             }
+            if let Some(rx) = &sub.receiver {
+                rx.register_waker(&waker);
+            }
         }
+        // Publish this loop's waker so sources wired up mid-loop (a nested
+        // `whenever` tapping an async on-demand supply) can wake it too.
+        let prev_waker = self.current_react_waker.replace(waker.clone());
         let result = self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker);
+        self.current_react_waker = prev_waker;
         for (sid, sink_id) in sink_regs {
             supplier_sink_unregister(sid, sink_id);
         }
         for sub in &react_subs {
             if let Some(ch) = &sub.channel {
                 ch.unregister_waker(waker.id());
+            }
+            if let Some(rx) = &sub.receiver {
+                rx.unregister_waker(waker.id());
             }
         }
         result

@@ -12,6 +12,7 @@ pub(crate) mod state;
 pub(crate) mod state_lock;
 pub(crate) mod state_scheduler;
 pub(crate) mod state_supplier;
+pub(crate) mod supply_channel;
 mod system;
 
 // Re-export public items from state submodules so that

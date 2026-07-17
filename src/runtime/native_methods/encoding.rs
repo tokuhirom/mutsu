@@ -312,7 +312,7 @@ impl Interpreter {
     /// If the callback calls `exit`, terminates the entire process.
     pub(in crate::runtime) fn run_supply_act_loop(
         interp: &mut Interpreter,
-        rx: &std::sync::mpsc::Receiver<SupplyEvent>,
+        rx: &super::supply_channel::SupplyReceiver,
         cb: &Value,
         delay_seconds: f64,
     ) {

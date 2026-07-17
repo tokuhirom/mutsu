@@ -1,11 +1,10 @@
 use super::*;
-use crate::runtime::native_methods::SupplyEvent;
+use crate::runtime::native_methods::supply_channel::SupplyReceiver;
 use crate::symbol::Symbol;
-use std::sync::mpsc;
 
 /// A subscription registered by a `whenever` block inside a `react` block.
 pub(crate) struct ReactSubscription {
-    pub receiver: Option<mpsc::Receiver<SupplyEvent>>,
+    pub receiver: Option<SupplyReceiver>,
     pub supplier_id: Option<u64>,
     pub callback: Value,
     pub close_callbacks: Vec<Value>,
