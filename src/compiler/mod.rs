@@ -600,6 +600,106 @@ impl Compiler {
         slot
     }
 
+    /// Declaration entry point for a routine/block PARAMETER.
+    ///
+    /// Slot allocation is plain [`alloc_local`], exactly as before; the added work
+    /// is recording the name in the innermost [`local_scopes`] frame, because a
+    /// parameter *is* a declaration of its routine's scope. `OUTER::` resolution
+    /// asks that question directly ("does the target scope declare this name?"),
+    /// and a signature binding must answer yes: `sub f($p) { { $OUTER::p } }` sees
+    /// 42. Plain [`alloc_local`] deliberately does NOT record, since it is also how
+    /// a *free* variable and compiler temporaries get a slot, and a free variable
+    /// mentioned in a body is not a declaration of it (raku: `my $y = 7;
+    /// sub f { say $y; { say $OUTER::y } }` prints 7 then Nil).
+    fn declare_param(&mut self, name: &str) -> u32 {
+        let slot = self.alloc_local(name);
+        if let Some(frame) = self.local_scopes.last_mut() {
+            frame.entry(name.to_string()).or_insert(None);
+        }
+        slot
+    }
+
+    /// Emit a read of `bare` from the scope `depth` levels out (`$OUTER::x`,
+    /// `OUTER::<$x>`, and their `OUTER::OUTER::` chains).
+    ///
+    /// `OUTER` names exactly ONE scope -- packages.rakudoc: "Symbols in the next
+    /// outer lexical scope" -- so a name the target scope does not declare is Nil,
+    /// NOT whatever an enclosing scope happens to bind under the same name (that
+    /// cascade is `OUTERS`). Whenever the target scope is inside this frame the
+    /// compiler settles the lookup outright: `local_scopes` records which names
+    /// each scope declares, so "declared there?" is answered exactly, with no
+    /// runtime guessing. Only a `depth` that crosses this frame's outermost scope
+    /// is unknowable here (the enclosing frame is a separate compilation), and is
+    /// left to the runtime's captured-env walk in `get_outer_var`.
+    fn emit_outer_var_access(&mut self, bare: String, depth: usize) {
+        let n = self.local_scopes.len();
+        // The topic is exempt: EVERY block and routine scope declares its own `$_`
+        // (a block's implicitly as `$_ is raw = OUTER::<$_>`, a routine's as a fresh
+        // undefined one), so "does the target scope declare it?" is always yes and
+        // the question is only ever what that `$_` holds -- which the runtime path
+        // answers. `_` is never in `local_scopes` because it is never spelled as a
+        // declaration, so without this it would compile to a constant Nil.
+        let implicitly_declared = bare == "_";
+        if depth < n
+            && !implicitly_declared
+            && !self.local_scopes[n - 1 - depth].contains_key(&bare)
+        {
+            let idx = self.code.add_constant(Value::NIL);
+            self.code.emit(OpCode::LoadConst(idx));
+            return;
+        }
+        let slot = self.resolve_outer_var_slot(&bare, depth);
+        let name_idx = self.code.add_constant(Value::str(bare));
+        self.code.emit(OpCode::GetOuterVar {
+            name_idx,
+            depth: depth as u32,
+            slot,
+        });
+    }
+
+    /// Emit a read of `bare` via `OUTERS::` -- packages.rakudoc: "Symbols in any
+    /// outer lexical scope".
+    ///
+    /// Where `OUTER` names one scope, `OUTERS` searches outward and stops at the
+    /// innermost ENCLOSING scope that declares the name; the current scope is
+    /// excluded, so `my $y = 7; { my $y = 8; say $OUTERS::y }` is 7, not 8. That
+    /// makes it exactly an `OUTER` at the depth of the first enclosing declaration,
+    /// which is a question `local_scopes` already answers -- so the two spell the
+    /// same read, and only the choice of depth differs.
+    fn emit_outers_var_access(&mut self, bare: String) {
+        let n = self.local_scopes.len();
+        for depth in 1..n {
+            if self.local_scopes[n - 1 - depth].contains_key(&bare) {
+                self.emit_outer_var_access(bare, depth);
+                return;
+            }
+        }
+        // No enclosing scope of THIS frame declares it. The search continues in the
+        // enclosing frame, which is a separate compilation: depth `n` crosses this
+        // frame's boundary, which is precisely the case `get_outer_var` resolves
+        // against the captured env -- itself an outward cascade, i.e. OUTERS.
+        self.emit_outer_var_access(bare, n);
+    }
+
+    /// Compile this unit as an `EVAL`'d compilation unit's mainline.
+    ///
+    /// Rakudo does not splice an EVAL'd unit straight into the invoking scope: it
+    /// runs the compiled unit behind wrapper scopes that hold no user lexicals, so
+    /// `OUTER::` from EVAL'd mainline code finds nothing (`EVAL 'OUTER::.keys'` is
+    /// empty, and `my $y = 7; { say EVAL(q{OUTER::<$y>}) }` is Nil even though `$y`
+    /// is right there in the invoking block). Model that by giving the unit an
+    /// empty enclosing scope frame: the unit's own declarations then land one frame
+    /// in, and an `OUTER::` reaching past them lands on the empty wrapper -- Nil,
+    /// exactly as raku reports. Plain (unqualified) lookups are unaffected: they
+    /// resolve through the runtime env, which EVAL still shares with its caller, so
+    /// `my $z = 3; { say EVAL(q{$z}) }` still prints 3.
+    ///
+    /// This is the lexical-axis twin of [`Interpreter::push_eval_caller_frames`],
+    /// which already models the same layout on the caller axis for `CALLER::`.
+    pub(crate) fn mark_as_eval_unit(&mut self) {
+        self.push_local_scope();
+    }
+
     /// Enter a nested lexical scope for local-slot allocation. Paired with
     /// [`pop_local_scope`]; driven by the block-boundary hooks
     /// (`push_dynamic_scope_lexical`/`pop_dynamic_scope_lexical`).

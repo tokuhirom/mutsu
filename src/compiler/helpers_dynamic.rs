@@ -2,6 +2,16 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+/// Which enclosing lexical scope an `OUTER::` / `OUTERS::` access names
+/// (packages.rakudoc: "OUTER  Symbols in the next outer lexical scope" /
+/// "OUTERS  Symbols in any outer lexical scope").
+pub(crate) enum OuterStash {
+    /// `OUTER::` (chained: `OUTER::OUTER::` is depth 2) -- exactly `depth` scopes out.
+    At(usize),
+    /// `OUTERS::` -- the innermost enclosing scope that declares the name.
+    Any,
+}
+
 /// Snapshot of the compiler's lexical-scope-sensitive state, saved on block
 /// entry and restored on block exit.
 pub(super) struct LexicalScopeSnapshot {
@@ -201,6 +211,29 @@ impl Compiler {
         } else {
             None
         }
+    }
+
+    /// Which lexical-scope walk an `OUTER::` / `OUTERS::` pseudo-stash names.
+    /// Returns `None` for any other stash (`MY::`, `CORE::`, a real package, ...).
+    pub(crate) fn parse_outer_stash(stash: &str) -> Option<OuterStash> {
+        if let Some((rest, depth)) = Self::parse_outer_prefix(stash)
+            && rest.is_empty()
+        {
+            return Some(OuterStash::At(depth));
+        }
+        if Self::parse_outers_prefix(stash).is_some_and(|rest| rest.is_empty()) {
+            return Some(OuterStash::Any);
+        }
+        None
+    }
+
+    /// Parse a single `OUTERS::` prefix from a variable name, returning the bare
+    /// name. Unlike `OUTER::`, `OUTERS::` does not chain: it already means "any
+    /// outer scope", so raku reports `$OUTERS::OUTERS::y` as Nil. Stripping only
+    /// the one prefix reproduces that -- the leftover `OUTERS::y` is not a
+    /// declared name anywhere, so the lookup misses.
+    pub(crate) fn parse_outers_prefix(name: &str) -> Option<String> {
+        name.strip_prefix("OUTERS::").map(str::to_string)
     }
 
     /// Parse `OUTER::` / `OUTER::OUTER::` prefix from a variable name.

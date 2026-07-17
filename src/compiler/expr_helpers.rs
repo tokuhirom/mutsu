@@ -547,15 +547,14 @@ impl Compiler {
             });
             return;
         }
+        // $OUTERS:: variable access ("any outer lexical scope")
+        if let Some(bare_name) = Self::parse_outers_prefix(name) {
+            self.emit_outers_var_access(bare_name);
+            return;
+        }
         // $OUTER:: / $OUTER::OUTER:: variable access
         if let Some((bare_name, depth)) = Self::parse_outer_prefix(name) {
-            let slot = self.resolve_outer_var_slot(&bare_name, depth);
-            let name_idx = self.code.add_constant(Value::str(bare_name));
-            self.code.emit(OpCode::GetOuterVar {
-                name_idx,
-                depth: depth as u32,
-                slot,
-            });
+            self.emit_outer_var_access(bare_name, depth);
             return;
         }
         // $DYNAMIC:: variable access

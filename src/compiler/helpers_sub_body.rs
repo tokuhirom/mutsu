@@ -7,7 +7,7 @@ impl Compiler {
     fn alloc_sub_signature_locals(compiler: &mut Compiler, sub_params: &[crate::ast::ParamDef]) {
         for sp in sub_params {
             if !sp.name.is_empty() {
-                compiler.alloc_local(&sp.name);
+                compiler.declare_param(&sp.name);
             }
             if let Some(nested) = &sp.sub_signature {
                 Self::alloc_sub_signature_locals(compiler, nested);
@@ -168,12 +168,12 @@ impl Compiler {
         sub_compiler.set_current_package(state_scope);
         // Pre-allocate locals for parameters
         for param in params {
-            sub_compiler.alloc_local(param);
+            sub_compiler.declare_param(param);
         }
         // Also allocate from param_defs in case param names differ
         for pd in param_defs {
             if !pd.name.is_empty() {
-                sub_compiler.alloc_local(&pd.name);
+                sub_compiler.declare_param(&pd.name);
                 // Track sigilless parameters so BareWord resolution uses
                 // GetLocal for them but not for `$`-sigiled params.
                 if pd.sigilless {
@@ -659,11 +659,11 @@ impl Compiler {
         sub_compiler.set_current_package(closure_package);
         // Pre-allocate locals for parameters
         for param in params {
-            sub_compiler.alloc_local(param);
+            sub_compiler.declare_param(param);
         }
         for pd in param_defs {
             if !pd.name.is_empty() {
-                sub_compiler.alloc_local(&pd.name);
+                sub_compiler.declare_param(&pd.name);
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                 }
