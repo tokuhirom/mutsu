@@ -1806,6 +1806,24 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// Frame lexicals that a `class`/`role` body's methods WRITE. A method is
+    /// installed by `RegisterClass`/`RegisterRole` and is invoked with no
+    /// closure-creation op, so the capture analysis behind
+    /// `box_captured_lexicals` never sees these writes. Such a name therefore
+    /// keeps the flat name-keyed `shared_vars` lane that `clone_for_thread`
+    /// otherwise retires for a block's own captures (PLAN.md §6): it is the only
+    /// mechanism that carries a `submethod DESTROY { $a++ }` write on a worker
+    /// back to the parent. Populated by `record_type_body_captures`.
+    pub(crate) type_body_written_lexicals: Vec<Symbol>,
+    /// True when this closure was compiled in a position that hands it to a
+    /// THREAD (`start { ... }`, `Thread.start`, `Promise.start`). A plain
+    /// escaping position (stored/returned) is not enough: this gates boxing a
+    /// type-constrained scalar into a shared cell, which is required for the
+    /// parent to observe a worker's write (the flat name-keyed `shared_vars`
+    /// lane that used to carry it was retired in PLAN.md §6) but must NOT
+    /// happen for a same-frame closure, because `cas` resolves its target BY
+    /// NAME and is not cell-aware (roast S17-lowlevel/cas.t).
+    pub(crate) thread_escaping: bool,
     /// The subset of this code's own `free_var_syms` whose captured value is
     /// **authoritative**: the CREATING frame declares them as plain lexicals and
     /// provably never mutates them after this closure captured them, so the
@@ -2051,6 +2069,8 @@ impl CompiledCode {
             needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            type_body_written_lexicals: Vec::new(),
+            thread_escaping: false,
             authoritative_free_vars: Vec::new(),
             self_capture_decl_locals: Vec::new(),
             outer_code_var_names: std::collections::HashSet::new(),

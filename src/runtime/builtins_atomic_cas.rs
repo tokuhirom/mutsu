@@ -26,7 +26,20 @@ impl Interpreter {
         // primitive and every alias shares the cell, so the swap is visible to
         // all frames and threads without the legacy shared_vars side channel.
         let attr_cell = self.self_attr_cell_target(&name);
-        let value_key = if attr_cell.is_none() {
+        // A plain lexical that a closure boxed into a shared `ContainerRef`
+        // (`box_captured_lexicals`) is the same shape as the attribute cell
+        // above: the cell IS the atomic primitive and every alias -- including a
+        // spawned thread's clone -- shares it. Swapping through the name-keyed
+        // `shared_vars` lane instead would write a plain value over the cell in
+        // `env` and leave the owning slot holding the old cell, silently losing
+        // the swap. Reached by a role/class method that `cas`es an outer lexical
+        // (roast S12-construction/roles-6e.t).
+        let scalar_cell = if attr_cell.is_none() {
+            self.scalar_cell_target(&name)
+        } else {
+            None
+        };
+        let value_key = if attr_cell.is_none() && scalar_cell.is_none() {
             self.atomic_value_key_for_name(&name)
         } else {
             String::new()
@@ -46,6 +59,14 @@ impl Interpreter {
                 // Keep the frame's env copy coherent for legacy env readers.
                 let env_val = if swapped { coerced } else { current.clone() };
                 self.env.insert(name, env_val);
+                return Ok(current);
+            }
+            if let Some(cell) = scalar_cell {
+                let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+                let current = guard.clone();
+                if Self::cas_retry_matches(&current, expected) {
+                    *guard = coerced;
+                }
                 return Ok(current);
             }
             let mut did_swap = false;
@@ -71,6 +92,12 @@ impl Interpreter {
         } else {
             // 2-arg form: cas($var, &code)
             let code = args[1].clone();
+            // The celled lexical swaps through its cell. Taken before the
+            // `atomic_add_var` fast paths below: those resolve the variable by
+            // name through `shared_vars` and would bypass the cell.
+            if let Some(cell) = scalar_cell {
+                return self.cas_cell_code_loop(&name, &cell, &code);
+            }
             // Skip leading SetLine statements (inserted by pointy block parsing)
             // to find the effective body for the optimization check.
             let sub_data = if let ValueView::Sub(sub) = code.view() {

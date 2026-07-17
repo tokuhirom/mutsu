@@ -221,6 +221,8 @@ pub(crate) struct Compiler {
     /// non-escaping (immediately-invoked) classification, so call arguments and
     /// control-construct blocks never over-box (the #2746 perf guard).
     escaping_position: bool,
+    /// Subset of `escaping_position`: the closure is handed to a thread.
+    thread_escaping_position: bool,
     /// True while compiling the body of an `our`-scoped named sub. An `our sub` is
     /// installed into the package registry and stays callable after its declaring
     /// block exits, so the lexicals it reads/writes must be boxed into shared cells
@@ -296,6 +298,7 @@ impl Compiler {
             pending_index_rw_writebacks: Vec::new(),
             current_distribution: None,
             escaping_position: false,
+            thread_escaping_position: false,
             compiling_our_sub: false,
             is_mainline: false,
             suppress_pair_capture: false,
@@ -331,6 +334,20 @@ impl Compiler {
         self.escaping_position = escaping;
         let r = f(self);
         self.escaping_position = saved;
+        r
+    }
+
+    /// Run `f` with the thread-escaping flag set (see
+    /// `CompiledCode::thread_escaping`). Always a subset of `with_escape`.
+    pub(super) fn with_thread_escape<R>(
+        &mut self,
+        thread_escaping: bool,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let saved = self.thread_escaping_position;
+        self.thread_escaping_position = thread_escaping;
+        let r = f(self);
+        self.thread_escaping_position = saved;
         r
     }
 
@@ -452,6 +469,7 @@ impl Compiler {
     /// ("x") and `@`/`%`/`&` keep their sigil — the same convention `local_map`
     /// uses, so a direct lookup lines up.
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
+        compiled.thread_escaping = self.thread_escaping_position;
         compiled.free_var_parent_slots = compiled
             .free_var_syms
             .iter()
