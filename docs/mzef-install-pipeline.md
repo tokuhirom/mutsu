@@ -215,21 +215,48 @@ repro → general fix → `t/` pin):
 ## Test-phase frontier (2026-07-17, the current one)
 
 `zef install Test::META` (tests ON) runs all 16 dists' test suites
-concurrently and **13/16 FAIL** (OK: JSON::OptIn; the debug-build run also
-overran a 570s timeout — use release for E2E):
+concurrently; the baseline was **13/16 FAIL** (OK: JSON::OptIn; the
+debug-build run also overran a 570s timeout — use release for E2E). The
+2026-07-17 (late) session root-caused the dominant failures — none were
+environmental; all four were ordinary mutsu bugs, each fixed generally:
 
-- **The dominant symptom is environmental, not per-test**: nearly every
-  suite's `t/010-use.t` fails at `use-ok` ("JSON::Name module can be use-d
-  ok" etc.) even though the same `use` works interactively against the
-  installed repo. zef runs each suite in a subprocess against the STAGED
-  (pre-install) dist plus its already-installed dependencies; suspect the
-  `-I`/env handoff for that staging layout, or cross-contamination between
-  the 16 concurrent test subprocesses. Investigate one suite in isolation
-  first (`zef test <path>` or run the staged `prove` command by hand).
-- **Test::Async (vrurg) fails to parse**: `Failed to parse module
-  'Test::Async::Hub': X::Redeclaration: Redeclaration of symbol '$self'` —
-  a real language bug, plus sink-context warnings. Test::Async is the test
-  framework several vrurg dists use, so it gates their suites.
+- ~~`use-ok` never did a real load~~ (the "dominant symptom"): mutsu's
+  `use-ok` probed `lib_paths` for `Module/Name.rakumod` as literal files —
+  it could not see `inst#` installation repos, and the staged dist zef
+  tests against is exactly that, so every suite's `t/010-use.t` failed
+  while interactive `use` worked. Fixed: `use-ok` now delegates to the
+  real `use_module()` loader (Rakudo EVALs `use $module`). Pin:
+  `t/use-ok-real-load.t`.
+- ~~Test::Async (vrurg) `X::Redeclaration: '$self'`~~ (#4669): TWO
+  `::?CLASS` param bugs — a `\`-sigilless param after the pseudo-type fell
+  into the bare-invocant branch and created a second `self` param
+  (`create-suite(::?CLASS:D: ::?CLASS:U \suiteType = self.WHAT)`), and a
+  non-invocant `::?CLASS` constraint was type-checked as a literal string
+  so it never bound. Pin: `t/class-pseudo-type-param.t`. **Test::Async's
+  next blocker is custom Metamodel HOW inheritance**
+  (`'Test::Async::Metamodel::BundleHOW' cannot inherit from
+  'Metamodel::ParametricRoleHOW' because it is unknown`) — a real MOP
+  feature, campaign-sized; not started.
+- ~~a mixed-in role's composed roles invisible to `.does`/`~~`~~:
+  `role NamedAttribute does JSON::OptIn::OptedInAttribute` mixed into an
+  attribute answered False for the composed role, failing JSON::Name's
+  `t/020-trait.t` `does-ok`. Class composition already walked the role
+  graph; only the mixin path lost it. Pin:
+  `t/mixin-role-transitive-does.t`.
+- ~~map-block `my` clobbered a caller lexical → JSON::OptIn dropped from
+  prereqs~~: the inline map/grep/first paths run the block's body directly
+  in the enclosing frame's env, so `provides-specs`'s
+  `.map({ my $spec = ...; $spec })` overwrote `provides-spec-matcher`'s
+  `$spec` PARAMETER — `contains-spec` then matched the dist against itself
+  and `zef install JSON::Name` silently skipped installing JSON::OptIn
+  (cache-cold first call only, which made it look nondeterministic). Fixed
+  by recording each block's own `my` declarations
+  (`CompiledCode::my_declared_sym`) and masking them from the
+  closure-exit/inline writeback (a declared name that is also a free var
+  keeps its writeback). Pin: `t/map-block-my-shadow-leak.t`.
+
+Re-run the full `zef install Test::META` E2E after these land to get the
+new pass/fail count.
 
 Still open (load-side leftovers):
 
