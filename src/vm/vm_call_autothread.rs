@@ -53,6 +53,7 @@ impl Interpreter {
                     | "cmp-ok"
                     | "dies-ok"
                     | "lives-ok"
+                    | "exits-ok"
                     | "eval-dies-ok"
                     | "eval-lives-ok"
                     | "throws-like"

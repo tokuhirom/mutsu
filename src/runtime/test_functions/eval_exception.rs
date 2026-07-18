@@ -82,6 +82,65 @@ impl Interpreter {
         Ok(Value::truth(ok))
     }
 
+    /// `exits-ok($code, $exit, $reason)` — passes iff running `$code` exits
+    /// (via `exit`) with the given `$exit` code (default 0). A block that
+    /// returns normally without calling `exit` fails, even when `$exit` is 0.
+    pub(crate) fn test_fn_exits_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let block = Self::positional_value_required(args, 0, "exits-ok expects block")?.clone();
+        let expected = Self::positional_value(args, 1)
+            .map(|v| match v.view() {
+                ValueView::Int(i) => i,
+                ValueView::Num(f) => f as i64,
+                _ => v.to_f64() as i64,
+            })
+            .unwrap_or(0);
+        let desc = Self::positional_string(args, 2);
+        let todo = Self::named_bool(args, "todo");
+        let ok = match block.view() {
+            ValueView::Sub(data) => {
+                self.push_caller_env();
+                // Save both "$_" (sigiled) and "_" (bare) since eval_block_value sets "_".
+                let saved_topic_sigil = self.env.get("$_").cloned();
+                let saved_topic_bare = self.env.get("_").cloned();
+                // Run the block with `exit` captured in-process. `nested_mode`
+                // makes `builtin_exit` set only `halted`/`exit_code` instead of
+                // raising the global exit flag or calling `std::process::exit`,
+                // so the surrounding test file keeps running afterwards.
+                let saved_nested = self.nested_mode;
+                let saved_exit_code = self.exit_code;
+                let saved_halted = self.halted;
+                self.nested_mode = true;
+                let _ = self.eval_test_block_value(&data.body);
+                let exited = self.halted;
+                let got = self.exit_code;
+                self.nested_mode = saved_nested;
+                self.exit_code = saved_exit_code;
+                self.halted = saved_halted;
+                match saved_topic_sigil {
+                    Some(v) => {
+                        self.env.insert("$_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("$_");
+                    }
+                }
+                match saved_topic_bare {
+                    Some(v) => {
+                        self.env.insert("_".to_string(), v);
+                    }
+                    None => {
+                        self.env.remove("_");
+                    }
+                }
+                self.pop_caller_env();
+                exited && got == expected
+            }
+            _ => false,
+        };
+        self.test_ok(ok, &desc, todo)?;
+        Ok(Value::truth(ok))
+    }
+
     pub(crate) fn test_fn_isa_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // isa-ok uses the first non-named-pair arg as value.
         // We need special handling because positional_value filters out ALL Pairs,

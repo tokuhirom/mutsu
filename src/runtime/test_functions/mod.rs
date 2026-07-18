@@ -162,6 +162,7 @@ impl Interpreter {
                 | "is-approx"
                 | "lives-ok"
                 | "dies-ok"
+                | "exits-ok"
                 | "isa-ok"
                 | "force_todo"
                 | "force-todo"
@@ -228,6 +229,7 @@ impl Interpreter {
             "is-approx" => self.test_fn_is_approx(args).map(Some),
             "lives-ok" => self.test_fn_lives_ok(args).map(Some),
             "dies-ok" => self.test_fn_dies_ok(args).map(Some),
+            "exits-ok" => self.test_fn_exits_ok(args).map(Some),
             "isa-ok" => self.test_fn_isa_ok(args).map(Some),
             "force_todo" | "force-todo" => self.test_fn_force_todo(args).map(Some),
             "eval-lives-ok" => self.test_fn_eval_lives_ok(args).map(Some),
