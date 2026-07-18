@@ -77,7 +77,18 @@ impl Interpreter {
                 .len()
                 .max(captures.positional.len());
             for i in 0..positional_len {
-                let value = if let Some(Some((capture, _, _))) = captures.positional_slots.get(i) {
+                // A quantified capture group (`( ... )+`) exposes the LIST of
+                // per-iteration matches as `$N`; the flat slot only holds the
+                // last iteration's text (t/uri-unescape shape:
+                // `.subst(:g, /['%' (<.xdigit>**2)]+/, -> $/ { $0.flatmap... })`).
+                let value = if let Some(Some(qlist)) = captures.positional_quantified.get(i) {
+                    Value::array(
+                        qlist
+                            .iter()
+                            .map(|(text, _, _, _)| Value::str(text.clone()))
+                            .collect(),
+                    )
+                } else if let Some(Some((capture, _, _))) = captures.positional_slots.get(i) {
                     Value::str(capture.clone())
                 } else if let Some(capture) = captures.positional.get(i) {
                     Value::str(capture.clone())
