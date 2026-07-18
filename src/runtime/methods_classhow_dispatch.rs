@@ -258,11 +258,25 @@ impl Interpreter {
                     .split_once('[')
                     .map(|(base, _)| base)
                     .unwrap_or(invocant_name.as_str());
+                let is_role = self.registry().roles.contains_key(base_name);
+                let is_subset = self.registry().subsets.contains_key(base_name);
+                // A coercion type (`Str(Int)`) carries parens in its name.
+                let is_coercive = base_name.contains('(') || invocant_name.contains('(');
                 let mut attrs = HashMap::new();
+                attrs.insert("composable".to_string(), Value::truth(is_role));
+                // Classes, enums, and roles are nominal; subsets and coercion
+                // types are not (JSON::Unmarshal's ClassLike subset — rakudo
+                // reports roles as nominal too).
                 attrs.insert(
-                    "composable".to_string(),
-                    Value::truth(self.registry().roles.contains_key(base_name)),
+                    "nominal".to_string(),
+                    Value::truth(!is_subset && !is_coercive),
                 );
+                // Subsets and coercion types can be nominalized (^nominalize).
+                attrs.insert(
+                    "nominalizable".to_string(),
+                    Value::truth(is_subset || is_coercive),
+                );
+                attrs.insert("coercive".to_string(), Value::truth(is_coercive));
                 Ok(Value::make_instance(
                     Symbol::intern("Perl6::Metamodel::Archetypes"),
                     attrs,

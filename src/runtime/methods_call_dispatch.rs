@@ -3267,19 +3267,30 @@ impl Interpreter {
             return self.dispatch_classhow_method(method, how_args);
         }
 
-        // Archetypes.composable
+        // Archetypes flag accessors (composable/nominal/nominalizable/coercive/...)
         if let ValueView::Instance {
             class_name,
             attributes,
             ..
         } = target.view()
             && class_name == "Perl6::Metamodel::Archetypes"
-            && method == "composable"
+            && matches!(
+                method,
+                "composable"
+                    | "nominal"
+                    | "nominalizable"
+                    | "coercive"
+                    | "generic"
+                    | "parametric"
+                    | "inheritable"
+                    | "inheritalizable"
+                    | "definite"
+            )
             && args.is_empty()
         {
             return Ok(attributes
                 .as_map()
-                .get("composable")
+                .get(method)
                 .cloned()
                 .unwrap_or(Value::FALSE));
         }

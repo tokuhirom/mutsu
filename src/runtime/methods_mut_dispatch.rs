@@ -251,6 +251,19 @@ impl Interpreter {
             && args.is_empty()
             && (target_var.starts_with('@') || target_var.starts_with('%'))
         {
+            // An `@`/`%` param bound to a parametric TYPE OBJECT
+            // (`sub g(@x) { @x.of }` called with `Positional[Dog]` — the
+            // JSON::Unmarshal attribute-type shape) reads the element type
+            // from the parametric name itself.
+            if let ValueView::Package(name) = target.view() {
+                let n = name.resolve();
+                if let Some(inner) = n
+                    .split_once('[')
+                    .and_then(|(_, rest)| rest.strip_suffix(']'))
+                {
+                    return Ok(Value::package(Symbol::intern(inner)));
+                }
+            }
             let type_name = self
                 .var_type_constraint(target_var)
                 .or_else(|| {
@@ -269,6 +282,32 @@ impl Interpreter {
             // Update the variable in the environment to reflect the mutation
             self.env.insert(target_var.to_string(), result.clone());
             return Ok(result);
+        }
+
+        // SetHash.set(*@keys) / SetHash.unset(*@keys) — add/remove keys in
+        // place (JSON::Unmarshal's `$used-json-keys.set($json-name)`).
+        if matches!(method, "set" | "unset")
+            && let ValueView::Set(data, true) = target.view()
+        {
+            let mut elements = data.elements.clone();
+            for arg in &args {
+                let keys: Vec<Value> = match arg.view() {
+                    ValueView::Array(items, _) => items.to_vec(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                    _ => vec![arg.clone()],
+                };
+                for key in keys {
+                    let k = key.to_string_value();
+                    if method == "set" {
+                        elements.insert(k);
+                    } else {
+                        elements.remove(&k);
+                    }
+                }
+            }
+            self.env
+                .insert(target_var.to_string(), Value::set_hash(elements));
+            return Ok(Value::NIL);
         }
 
         if let ValueView::Instance {
