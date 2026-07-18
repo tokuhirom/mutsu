@@ -782,7 +782,10 @@ so it is tracked separately from the roast backlog.
         deferred.)
   - [x] Slice 12: explicit-signature `for @a -> $x` (body becomes a `PointyBlock` carrying the
         signature). Tests in `t/rakuast-for-signature.t`.
-  - [ ] Slice 13+: method decls (needs `RakuAST::Class`), labelled loops, method-call modifiers
+  - [x] Slice 13: class and method declarations (`RakuAST::Class`, `RakuAST::Method`; class body is
+        an ordinary `Block`, methods reuse the `Sub` routine helper). Tests in `t/rakuast-class.t`.
+        (Attributes `has $.x`, inheritance, roles/grammars deferred.)
+  - [ ] Slice 14+: attributes (`has $.x`), roles/grammars, labelled loops, method-call modifiers
         (`.?`/`.+`/`.*`), parameterised/definite types (`Array[Int]`/`Int:D`); then `.DEPARSE`;
         resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does
         not).

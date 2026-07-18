@@ -204,6 +204,15 @@ earlier ones.
   cannot distinguish from a multi-param pointy block (`-> $a, $b`), so a parameterised anonymous sub
   still renders as a `PointyBlock` — a documented divergence, unfixable without a distinguishing
   flag in the internal AST. `is rw` blocks remain the boundary.
+- **Class and method declarations (Phase 2 slice 13).** `class NAME { body }` (`Stmt::ClassDecl`)
+  → `Statement::Expression(Class(name => Name, body => Block(Blockoid(StatementList))))` — the class
+  body is an ordinary `Block` whose statements convert recursively. `method NAME (params) { body }`
+  (`Stmt::MethodDecl`) inside → `RakuAST::Method`, built by the same `routine_node` helper as `Sub`
+  (parameters carry the implicit `type => Type::Setting(Any)`). Boundary (explicit `RuntimeError`):
+  inheritance (`is`/`does`), `my`/`unit` scope, `repr`, `rw`, class traits; and for methods,
+  private/submethod/multi/`our`/`my` forms, traits, delegation (`handles`), and return types.
+  Attributes (`has $.x`, `Stmt::HasDecl`) are not yet converted, so a class body containing one hits
+  the boundary. Roles/grammars (`RakuAST::Role` with a distinct `RoleBody`) are deferred.
 - **Comma lists and `:=` binding (Phase 2 slice 9).** A bare comma list `1, 2, 3`
   (`Expr::ArrayLiteral`) → `ApplyListInfix(infix => Infix(","), operands => (...))`. A `:=` bind
   (`Stmt::Assign { op: Bind }`) → `ApplyInfix(left, infix => Infix(":="), right)` — a plain `Infix`,
