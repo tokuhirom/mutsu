@@ -28,10 +28,13 @@ plan 6;
         'parenthesized fake-infix adverbs with () values';
 }
 
-# A single fake-infix adverb inside parens.
+# A single fake-infix adverb inside parens. (Uses a user class rather than
+# Pair: `Pair.new(:key<foo>)` with no `:value` matches no candidate and throws
+# X::Multi::NoMatch in raku, so it cannot double as the single-adverb probe.)
 {
-    my Pair $p;
-    is-deeply ($p .= new :key<foo>), Pair.new(:key<foo>),
+    my class SingleAdverb { has $.k };
+    my SingleAdverb $o;
+    is-deeply ($o .= new :k<foo>), SingleAdverb.new(:k<foo>),
         'single parenthesized fake-infix adverb';
 }
 
