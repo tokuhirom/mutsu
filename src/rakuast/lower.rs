@@ -45,6 +45,11 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
+        RakuAstClass::StatementIf => lower_if(node),
+        RakuAstClass::StatementLoopWhile => lower_while(node),
+        // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
+        // a `Stmt::Assign`, not a general binary expression.
+        RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
         // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
         // statements in the internal AST.
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => {
@@ -60,6 +65,74 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         _ => Ok(Stmt::Expr(lower_expr(node)?)),
     }
+}
+
+/// Lower `if COND { … } else { … }` to `Stmt::If`. `elsif` chains (which carry
+/// an `elsifs` list) are the current coverage boundary.
+fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if node.fields.iter().any(|f| f.name == Some("elsifs")) {
+        return Err(unsupported(node));
+    }
+    let cond = lower_expr(named_child(node, "condition")?)?;
+    let then_branch = lower_block(named_child(node, "then")?)?;
+    let else_branch = match node.fields.iter().find(|f| f.name == Some("else")) {
+        Some(_) => lower_block(named_child(node, "else")?)?,
+        None => Vec::new(),
+    };
+    Ok(Stmt::If {
+        cond,
+        then_branch,
+        else_branch,
+        binding_var: None,
+    })
+}
+
+/// Lower `while COND { … }` to `Stmt::While`.
+fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let cond = lower_expr(named_child(node, "condition")?)?;
+    let body = lower_block(named_child(node, "body")?)?;
+    Ok(Stmt::While {
+        cond,
+        body,
+        label: None,
+    })
+}
+
+/// Lower a `Block` (`body => Blockoid` wrapping a positional `StatementList`) to a
+/// statement list.
+fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    let blockoid = named_child(block, "body")?;
+    lower(named_child_or_positional(blockoid)?)
+}
+
+/// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
+fn infix_is_assignment(node: &RakuAstNode) -> bool {
+    named_child(node, "infix")
+        .map(|c| c.class == RakuAstClass::Assignment)
+        .unwrap_or(false)
+}
+
+/// Lower `$x = EXPR` to `Stmt::Assign`. The `$` sigil is stripped (matching the
+/// parser's naming); `@`/`%`/`&` are kept.
+fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let left = named_child(node, "left")?;
+    if left.class != RakuAstClass::VarLexical {
+        return Err(unsupported(node));
+    }
+    let raw = match positional_leaf(left)?.view() {
+        ValueView::Str(s) => s.to_string(),
+        _ => return Err(unsupported(node)),
+    };
+    let name = match raw.strip_prefix('$') {
+        Some(bare) => bare.to_string(),
+        None => raw,
+    };
+    let expr = lower_expr(named_child(node, "right")?)?;
+    Ok(Stmt::Assign {
+        name,
+        expr,
+        op: crate::ast::AssignOp::Assign,
+    })
 }
 
 /// The identifier string of a call node's `name` (a `Name`) child.

@@ -204,6 +204,12 @@ earlier ones.
     work. (The *return value* of a bare trailing `say` differs between mutsu and raku — a pre-existing
     mutsu EVAL behaviour also seen with a string EVAL, unrelated to RakuAST.) Tests in
     `t/rakuast-eval-call.t`. Next: `if`/loops, sub declarations.
+  - **Slice 5 (control flow + assignment) — done.** `Statement::If` lowers to `Stmt::If`,
+    `Statement::Loop::While` to `Stmt::While`, and an `ApplyInfix` whose infix is an `Assignment`
+    lowers to `Stmt::Assign` (its block bodies via a `lower_block` `Block → Blockoid → StatementList`
+    helper). `EVAL(Q[my $n = 5; my $f = 1; while $n > 1 { $f = $f * $n; $n = $n - 1 }; $f].AST)` → `120`.
+    `elsif` chains stay the boundary. Tests in `t/rakuast-eval-control.t`. Next: `for`/`given`, sub
+    declarations.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
