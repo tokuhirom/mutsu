@@ -188,9 +188,15 @@ earlier ones.
     `Expr::Unary`; the operator string of the `Infix`/`Prefix` child maps back to a `TokenKind` via a
     new `op_name_to_token_kind` (the reverse of `token_kind_to_op_name`, covering the common
     arithmetic/comparison infixes). `EVAL(Q[3 * 4 + 1].AST)` → `13`. Operators outside the reverse map
-    are an explicit `RuntimeError`. Tests in `t/rakuast-eval-infix.t`. Next: variables (`Var::Lexical`
-    → `Expr::Var`), method calls, then statements/declarations — the inverse of the Phase-2 converter,
-    grown cluster by cluster.
+    are an explicit `RuntimeError`. Tests in `t/rakuast-eval-infix.t`.
+  - **Slice 3 (variables & declarations) — done.** `Var::Lexical("$x")` lowers to the sigil-specific
+    variable expression (`Expr::Var`/`ArrayVar`/`HashVar`/`CodeVar`), and a plain `my $x = EXPR`
+    (`VarDeclaration::Simple`) lowers to `Stmt::VarDecl` (declaration-inside-`Statement::Expression`
+    becomes its own statement, not a `Stmt::Expr`). `EVAL(Q[my $x = 5; $x * 2].AST)` → `10` — a
+    multi-statement program round-trips. Scoped/typed/attribute declarations and non-scalar
+    initializers (comma lists) stay the boundary. Tests in `t/rakuast-eval-var.t`. Next: method
+    calls, `if`/loops, sub declarations — the inverse of the Phase-2 converter, grown cluster by
+    cluster.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

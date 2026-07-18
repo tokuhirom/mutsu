@@ -880,9 +880,11 @@ so it is tracked separately from the roast backlog.
         42, `EVAL(Q[42].AST)` round-trips). Tests in `t/rakuast-eval.t`.
   - [x] Slice 2: EVAL of `ApplyInfix`/`ApplyPrefix` (`op_name_to_token_kind` reverse map;
         `EVAL(Q[3 * 4 + 1].AST)` → 13). Tests in `t/rakuast-eval-infix.t`.
-  - [ ] Slice 3+: variables (`Var::Lexical` → `Expr::Var`), method calls, statements, declarations —
-        the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a
-        large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 3: EVAL of `Var::Lexical` (→ `Expr::Var`/etc.) and `my $x = EXPR` (→ `Stmt::VarDecl`);
+        `EVAL(Q[my $x = 5; $x * 2].AST)` → 10. Tests in `t/rakuast-eval-var.t`.
+  - [ ] Slice 4+: method calls, `if`/loops, sub declarations — the inverse of the Phase-2 converter,
+        grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring
+        Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
