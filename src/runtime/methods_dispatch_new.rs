@@ -348,7 +348,18 @@ impl Interpreter {
                     .iter()
                     .position(|(n, ..)| n.as_str() == &**key)
                 {
-                    Some(i) => attributes.insert(plan.attr_syms[i], value.clone()),
+                    Some(i) => {
+                        // Sigil-coerce like `dispatch_new` does: a `%`-attribute
+                        // provided as a (list of) Pair(s) becomes a Hash, a
+                        // `@`-attribute provided as a List becomes an Array
+                        // (META6's `multi method new(*%items) { self.bless(|%items) }`
+                        // passes `provides => ("Test::META" => "lib/...",)`).
+                        let sigil = plan.class_attrs[i].5;
+                        attributes.insert(
+                            plan.attr_syms[i],
+                            Self::coerce_attr_value_by_sigil(value.clone(), sigil),
+                        )
+                    }
                     None => attributes.insert(key.clone(), value.clone()),
                 };
             }

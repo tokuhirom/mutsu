@@ -212,6 +212,17 @@ impl Interpreter {
             // class registered as `Foo::Params` and `mk` runs from another
             // package's call site.
             Value::package(Symbol::intern(&qualified))
+        } else if let Some(enum_val) = self.resolve_enum_member_in_current_package(name) {
+            // A bare enum member read from inside the package that declared the
+            // enum (`unit class URI::Query; our enum HashFormat <… Lists>;
+            // method new(:$h = Lists)`). The bare env key exists after a
+            // top-level `use`, but when the class was loaded inside another
+            // module's package block, that block's exit rolls back all new
+            // bare env keys (only `::`-qualified keys survive —
+            // `exec_package_scope_op`), so the member must resolve through the
+            // current package's qualified entry, not fall through to the Str
+            // fallback.
+            enum_val
         } else if self.wrap_sub_id_for_name(name).is_some()
             && let Some(sub_val) = self.get_wrapped_sub(name)
         {

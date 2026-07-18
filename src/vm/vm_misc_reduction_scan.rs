@@ -291,6 +291,27 @@ impl Interpreter {
         for (k, v) in current_env.iter() {
             if !saved_env.contains_key_sym(*k) && !k.contains_str("::") && !k.starts_with("__") {
                 let bare = k.resolve();
+                // Per-frame special variables are never package-block lexicals a
+                // named sub closes over: the topic `$_` (env "_"), `$/` ("/"),
+                // `$!` ("!"), `?`-compile-time / `*`-dynamic names, `self`, and
+                // digit capture keys ("0", "1", ...). A `use`/`for`/`given` in
+                // the module body can leave a load-time topic in env; recording
+                // it would make `package_scope_lexical` (consulted BEFORE env in
+                // GetGlobal) permanently shadow every later per-call topic bind
+                // inside this package's subs (Test::META's
+                // `.map({ dist-dir.add($_) })` read the module-load leftover).
+                // Mirrors the class-body static exclusion in
+                // `register_class_decl`.
+                if bare == "_"
+                    || bare == "/"
+                    || bare == "self"
+                    || bare.starts_with('?')
+                    || bare.starts_with('!')
+                    || bare.starts_with('*')
+                    || bare.chars().next().is_some_and(|c| c.is_ascii_digit())
+                {
+                    continue;
+                }
                 // Record ONLY genuine `my` lexicals. An `our` package variable also
                 // leaves a bare env key here, but it has a qualified twin in the
                 // `our` store (`Pkg::name`) that is the authoritative value — and it
