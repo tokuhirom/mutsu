@@ -932,7 +932,10 @@ so it is tracked separately from the roast backlog.
         side emits `Call::Name` (WithoutParentheses, `args` omitted when empty) and the write side lowers
         such a call back to `Stmt::Return`/`Last`/`Next`. `EVAL(Q[sub f($x){ if $x>0 { return 5 }; -1 };
         f(3)].AST)` → 5. Tests in `t/rakuast-eval-return.t`.
-  - [ ] Slice 11+: multi-param/typed/named/slurpy params, `unless`/`until` — the inverse of the Phase-2
+  - [x] Slice 11: `unless`/`until` (which desugar to `if !X` / `while !X`) and the prefix `!`/`?`
+        operators (added to `op_name_to_token_kind`); `EVAL(Q[my $i=0; until $i>=3 { $i=$i+1 }; $i].AST)`
+        → 3. Tests in `t/rakuast-eval-unless-until.t`.
+  - [ ] Slice 12+: multi-param/typed/named/slurpy params, `repeat`/`while` — the inverse of the Phase-2
         converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort
         mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).

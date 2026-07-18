@@ -241,6 +241,11 @@ earlier ones.
     back to the internal control-flow statement. `EVAL(Q[sub f($x) { if $x > 0 { return 5 }; -1 }; f(3)].AST)`
     → `5`; `last`/`next` control loops. Labelled `last LABEL`/`next LABEL` stay the boundary. Tests in
     `t/rakuast-eval-return.t`. Next: multi/typed/named parameters, `unless`/`until`.
+  - **Slice 11 (`unless`/`until` + prefix `!`/`?`) — done.** mutsu desugars `unless X` to `if !X` and
+    `until X` to `while !X`, so lowering these only needed the prefix `!` (and `?`) operator added to the
+    reverse operator map (`op_name_to_token_kind`, used solely by the lowerer). `EVAL(Q[my $i = 0; until
+    $i >= 3 { $i = $i + 1 }; $i].AST)` → `3`; `EVAL(Q[my $x = 0; !$x].AST)` → `True`. Tests in
+    `t/rakuast-eval-unless-until.t`. Next: multi/typed/named parameters, `repeat`/`while`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
