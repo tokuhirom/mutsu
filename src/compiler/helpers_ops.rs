@@ -109,6 +109,9 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "!" => TokenKind::Bang,
         "?" => TokenKind::Question,
         "~~" => TokenKind::SmartMatch,
+        // `x => 5` — the pair constructor renders with its Debug name (there is
+        // no `=>` spelling in `token_kind_to_op_name`).
+        "FatArrow" => TokenKind::FatArrow,
         // Any remaining operator name is a named infix (`x`, `xx`, `eq`, `ne`,
         // `lt`/`gt`/`le`/`ge`, `cmp`, `leg`, `div`, `mod`, ...), which mutsu
         // represents with a generic `Ident` token (the inverse of

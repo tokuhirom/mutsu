@@ -964,7 +964,11 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 21: parenthesised expressions `(EXPR)` (both directions) via a new
         `Circumfix::Parentheses` node — `Expr::Grouped` ↔ `Circumfix::Parentheses(SemiList(...))`.
         `EVAL(Q/my $x = 0; my $y = ($x = 5); $x + $y/.AST)` → 10. Tests in `t/rakuast-eval-paren.t`.
-  - [ ] Slice 22+: bareword type terms, named/slurpy params, array/hash literals, code-block (`{…}`)
+  - [x] Slice 22: named parameters `:$x` (both directions) — a named `Parameter` carries a `names`
+        list; the write side sets the `ParamDef` `named` flag, and the `x => 5` call arg (`FatArrow`)
+        lowers too. `EVAL(Q[sub f(:$x) { $x*2 }; f(x => 5)].AST)` → 10. Tests in
+        `t/rakuast-eval-named-param.t`.
+  - [ ] Slice 23+: bareword type terms, slurpy params (`*@a`), array/hash literals, code-block (`{…}`)
         interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full
         lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
