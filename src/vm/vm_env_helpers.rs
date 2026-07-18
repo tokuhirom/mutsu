@@ -172,6 +172,49 @@ impl Interpreter {
         Some(candidate)
     }
 
+    /// Resolve a bare enum-member name through the current package chain
+    /// (`EnumC::Lists` for `Lists` read with `current_package == "EnumC"`).
+    /// Qualified enum-member env keys survive a loading module's package-block
+    /// rollback (only bare keys are dropped), so this recovers members that a
+    /// nested `use` made invisible under their bare name. Walks up the package
+    /// chain like `resolve_type_in_current_package`.
+    pub(super) fn resolve_enum_member_in_current_package(&self, name: &str) -> Option<Value> {
+        if name.is_empty() || name.contains("::") {
+            return None;
+        }
+        let probe_chain = |root: &str| -> Option<Value> {
+            let mut pkg: &str = root;
+            loop {
+                if pkg.is_empty() || pkg == "GLOBAL" {
+                    return None;
+                }
+                let qualified = format!("{pkg}::{name}");
+                if let Some(v) = self.env().get(&qualified)
+                    && matches!(v.view(), ValueView::Enum { .. })
+                {
+                    return Some(v.clone());
+                }
+                match pkg.rsplit_once("::") {
+                    Some((parent, _)) => pkg = parent,
+                    None => return None,
+                }
+            }
+        };
+        if let Some(v) = probe_chain(&self.current_package().to_string()) {
+            return Some(v);
+        }
+        // Inside a method body the runtime package is often GLOBAL; the
+        // declaring scope is the invocant's class (`self`), so probe its
+        // package chain too (`unit class EnumC; our enum HF <… Lists>;
+        // method new(:$h = Lists)` reads `Lists` as `EnumC::Lists`).
+        let invocant_class = match self.env().get("self").map(|v| v.view()) {
+            Some(ValueView::Instance { class_name, .. }) => Some(class_name.to_string()),
+            Some(ValueView::Package(p)) => Some(p.resolve().to_string()),
+            _ => None,
+        }?;
+        probe_chain(&invocant_class)
+    }
+
     /// Read a bare free-variable name from the enclosing package's variable
     /// store: the `our` store via the reconstructed `Pkg::name` key, or the
     /// package-block `my` lexical store (`package_lexicals`). Mirrors the

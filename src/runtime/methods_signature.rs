@@ -130,14 +130,29 @@ impl Interpreter {
                     map.insert(k.clone(), v.clone());
                     Value::hash(map)
                 }
+                // A general-key Pair (`"A" => "b"` builds ValuePair, not the
+                // interned-Str-key Pair variant) coerces the same way, with the
+                // hash-key stringification `build_hash_from_items` uses.
+                ValueView::ValuePair(k, v) => {
+                    let mut map = HashMap::new();
+                    map.insert(Value::hash_key_encode(k), v.clone());
+                    Value::hash(map)
+                }
                 ValueView::Array(arr, _) => {
                     // Convert array of pairs to hash
                     let mut map = HashMap::new();
                     let mut has_pairs = false;
                     for item in arr.iter() {
-                        if let ValueView::Pair(k, v) = item.view() {
-                            map.insert(k.clone(), v.clone());
-                            has_pairs = true;
+                        match item.view() {
+                            ValueView::Pair(k, v) => {
+                                map.insert(k.clone(), v.clone());
+                                has_pairs = true;
+                            }
+                            ValueView::ValuePair(k, v) => {
+                                map.insert(Value::hash_key_encode(k), v.clone());
+                                has_pairs = true;
+                            }
+                            _ => {}
                         }
                     }
                     if has_pairs {
