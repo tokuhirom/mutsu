@@ -519,12 +519,22 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_rw,
             is_block,
         } => {
-            // Only the bare-block form maps to `RakuAST::Block`; `sub { }`
-            // (is_block == false) is `RakuAST::Sub`, deferred to the sub slice.
-            if *is_rw || !*is_block {
-                return Err(unsupported("`sub {}` / `is rw` block"));
+            if *is_rw {
+                return Err(unsupported("`is rw` block"));
             }
-            block_node(body)
+            if *is_block {
+                // A bare `{ ... }` block.
+                block_node(body)
+            } else {
+                // An anonymous, parameter-less `sub { ... }`. (`sub ($x) { }`
+                // parses to `AnonSubParams`, which mutsu cannot distinguish from
+                // a multi-param pointy block, so those still render as
+                // `PointyBlock` — a documented divergence.)
+                Ok(RakuAstNode {
+                    class: RakuAstClass::Sub,
+                    fields: vec![node_field(Some("body"), blockoid(body)?)],
+                })
+            }
         }
         Expr::Lambda {
             param,
