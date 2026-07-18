@@ -403,18 +403,18 @@ impl Interpreter {
         // Save idx for unmark step (idx is consumed by delete_from_container)
         let idx_for_unmark = idx.clone();
         let result = if let Some(container) = self.env_mut().get_mut(&var_name) {
-            // Check immutability for Set/Bag/Mix (immutable variants)
-            match container.view() {
-                ValueView::Mix(_, is_mutable) if !is_mutable => {
-                    return Err(RuntimeError::immutable("Mix", "delete"));
-                }
-                ValueView::Set(_, is_mutable) if !is_mutable => {
-                    return Err(RuntimeError::immutable("Set", "delete"));
-                }
-                ValueView::Bag(_, is_mutable) if !is_mutable => {
-                    return Err(RuntimeError::immutable("Bag", "delete"));
-                }
-                _ => {}
+            // Deleting a key from an immutable Set/Bag/Mix is a read-only
+            // modification: raku throws X::Assignment::RO (not X::Immutable),
+            // e.g. `Cannot modify an immutable Bag (Bag(a(2) b))`.
+            let ro_type = match container.view() {
+                ValueView::Mix(_, false) => Some("Mix"),
+                ValueView::Set(_, false) => Some("Set"),
+                ValueView::Bag(_, false) => Some("Bag"),
+                _ => None,
+            };
+            if let Some(typename) = ro_type {
+                let repr = crate::runtime::utils::gist_value(container);
+                return Err(RuntimeError::assignment_ro_typename(typename, &repr));
             }
             Self::delete_from_container(container, idx, &hole_type)?
         } else {
