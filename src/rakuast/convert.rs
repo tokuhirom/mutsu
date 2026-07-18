@@ -763,6 +763,18 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
         Expr::Var(name) => Ok(var_lexical("$", name)),
+        // `($x = EXPR)` as an expression -> the same `ApplyInfix(Assignment)` as a
+        // statement assignment. `:=` binding stays the boundary.
+        Expr::AssignExpr {
+            name,
+            expr,
+            is_bind,
+        } => {
+            if *is_bind {
+                return Err(unsupported("`:=` binding expression"));
+            }
+            assignment_infix(name, expr)
+        }
         Expr::ArrayVar(name) => Ok(var_lexical("@", name)),
         Expr::HashVar(name) => Ok(var_lexical("%", name)),
         Expr::CodeVar(name) => Ok(var_lexical("&", name)),

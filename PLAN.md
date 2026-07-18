@@ -955,9 +955,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 18: named infix operators — the write side maps `~~` → `SmartMatch` and any other
         operator name → the generic `Ident` token, so `x`/`xx`/`eq`/`ne`/`lt`/`gt`/`cmp`/… all lower.
         `EVAL(Q["ab" x 3].AST)` → `ababab`. Tests in `t/rakuast-eval-named-infix.t`.
-  - [ ] Slice 19+: bareword type terms (`Int` as a value/smartmatch RHS), named/slurpy params, C-style
-        `loop`, code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
-        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 19: assignment expressions `$x = EXPR` in value position (both directions) — an
+        `AssignExpr` ↔ `ApplyInfix(Assignment)`; `EVAL(Q[my $a; my $b; $a = $b = 5; $a + $b].AST)` → 10.
+        Tests in `t/rakuast-eval-assign-expr.t`.
+  - [ ] Slice 20+: C-style `loop`, parenthesisation (`Circumfix::Parentheses`), bareword type terms,
+        named/slurpy params, code-block (`{…}`) interpolation — the inverse of the Phase-2 converter,
+        grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

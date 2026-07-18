@@ -292,6 +292,13 @@ earlier ones.
     `EVAL(Q["ab" x 3].AST)` → `ababab`; `EVAL(Q[my $x = 5; $x ~~ 5].AST)` → `True`. Bareword type terms
     (`Int` as a smartmatch RHS) stay the boundary. Tests in `t/rakuast-eval-named-infix.t`. Next:
     bareword type terms, named/slurpy parameters, C-style `loop`.
+  - **Slice 19 (assignment expressions) — done, both directions.** An `AssignExpr` in value position
+    (e.g. the inner `$b = 5` of a chained `$a = $b = 5`) converts to the same `ApplyInfix(Assignment)`
+    as a statement assignment (reusing `assignment_infix`), and the write side lowers an
+    `ApplyInfix(Assignment)` in expression position back to an `AssignExpr` (a shared `lower_assign_parts`
+    backs both the statement and expression forms). `EVAL(Q[my $a; my $b; $a = $b = 5; $a + $b].AST)` →
+    `10`. Explicitly-parenthesised `($x = 5)` (a `Circumfix::Parentheses`) and `:=` binding stay the
+    boundary. Tests in `t/rakuast-eval-assign-expr.t`. Next: C-style `loop`, bareword type terms.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
