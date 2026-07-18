@@ -968,7 +968,10 @@ so it is tracked separately from the roast backlog.
         list; the write side sets the `ParamDef` `named` flag, and the `x => 5` call arg (`FatArrow`)
         lowers too. `EVAL(Q[sub f(:$x) { $x*2 }; f(x => 5)].AST)` → 10. Tests in
         `t/rakuast-eval-named-param.t`.
-  - [ ] Slice 23+: bareword type terms, slurpy params (`*@a`), array/hash literals, code-block (`{…}`)
+  - [x] Slice 23: slurpy parameters `*@a`/`**@a` (both directions) via new `Parameter::Slurpy::
+        Flattened`/`Unflattened` bare-class-name nodes; the write side sets the `ParamDef` slurpy flag.
+        `EVAL(Q[sub f(*@a) { @a.elems }; f(1,2,3)].AST)` → 3. Tests in `t/rakuast-eval-slurpy.t`.
+  - [ ] Slice 24+: bareword type terms, array/hash literals, `+@a` onearg, code-block (`{…}`)
         interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full
         lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).

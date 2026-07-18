@@ -1237,9 +1237,7 @@ fn signature(param_defs: &[ParamDef], type_setting: bool) -> Result<RakuAstNode,
 /// modelled; anything richer (typed, named, slurpy, `where`, sub-signature,
 /// traits, optional-marker, invocant, shaped) is the coverage boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
-    if pd.slurpy
-        || pd.double_slurpy
-        || pd.onearg
+    if pd.onearg
         || pd.literal_value.is_some()
         || pd.sub_signature.is_some()
         || pd.where_constraint.is_some()
@@ -1253,6 +1251,13 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         return Err(unsupported("non-trivial signature parameter"));
     }
     let (sigil, desigil) = split_sigil(&pd.name);
+    if pd.slurpy || pd.double_slurpy {
+        // A typed slurpy carries richer shape; defer for now.
+        if pd.type_constraint.is_some() {
+            return Err(unsupported("typed slurpy parameter"));
+        }
+        return slurpy_parameter(sigil, desigil, pd.double_slurpy);
+    }
     if pd.named {
         // A typed/defaulted named param carries richer shape; defer for now.
         if pd.type_constraint.is_some() || pd.default.is_some() {
@@ -1267,6 +1272,34 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         pd.default.as_ref(),
         type_setting,
     )
+}
+
+/// A slurpy parameter `*@a` / `**@a` -> `Parameter(target => …, slurpy =>
+/// RakuAST::Parameter::Slurpy::{Flattened,Unflattened})`. A slurpy carries no
+/// `type`/`optional` field.
+fn slurpy_parameter(sigil: &str, desigil: &str, double: bool) -> Result<RakuAstNode, RuntimeError> {
+    let target = RakuAstNode {
+        class: RakuAstClass::ParameterTargetVar,
+        fields: vec![leaf_field(
+            Some("name"),
+            Value::str(format!("{sigil}{desigil}")),
+        )],
+    };
+    let slurpy = RakuAstNode {
+        class: if double {
+            RakuAstClass::ParameterSlurpyUnflattened
+        } else {
+            RakuAstClass::ParameterSlurpyFlattened
+        },
+        fields: Vec::new(),
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields: vec![
+            node_field(Some("target"), target),
+            node_field(Some("slurpy"), slurpy),
+        ],
+    })
 }
 
 /// A named parameter `:$x` -> `Parameter(type => Type::Setting(Any),

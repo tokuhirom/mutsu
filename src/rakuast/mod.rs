@@ -129,6 +129,9 @@ pub enum RakuAstClass {
     TermEnum,
     // Phase 2 slice 31: parenthesised expressions (`($x = 5)`).
     CircumfixParentheses,
+    // Phase 2 slice 32: slurpy parameter markers (`*@a` / `**@a`).
+    ParameterSlurpyFlattened,
+    ParameterSlurpyUnflattened,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,6 +202,8 @@ impl RakuAstClass {
             TermReduce => "RakuAST::Term::Reduce",
             TermEnum => "RakuAST::Term::Enum",
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
+            ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
+            ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
         }
     }
 
@@ -207,6 +212,16 @@ impl RakuAstClass {
     /// `StatementList` still prints `RakuAST::StatementList.new()`).
     pub fn empty_parens_omitted(self) -> bool {
         matches!(self, RakuAstClass::Assignment)
+    }
+
+    /// Whether the node renders as a bare class name with no constructor call at
+    /// all (e.g. `RakuAST::Parameter::Slurpy::Flattened`), unlike the usual
+    /// `Class.new(...)` / `Class.new` forms.
+    pub fn renders_bare(self) -> bool {
+        matches!(
+            self,
+            RakuAstClass::ParameterSlurpyFlattened | RakuAstClass::ParameterSlurpyUnflattened
+        )
     }
 
     pub fn constructor(self) -> Constructor {
