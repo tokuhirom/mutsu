@@ -785,10 +785,13 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 13: class and method declarations (`RakuAST::Class`, `RakuAST::Method`; class body is
         an ordinary `Block`, methods reuse the `Sub` routine helper). Tests in `t/rakuast-class.t`.
         (Attributes `has $.x`, inheritance, roles/grammars deferred.)
-  - [ ] Slice 14+: attributes (`has $.x`), roles/grammars, labelled loops, method-call modifiers
-        (`.?`/`.+`/`.*`), parameterised/definite types (`Array[Int]`/`Int:D`); then `.DEPARSE`;
-        resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does
-        not).
+  - [x] Slice 14: class attributes `has [Type] $.x` (`VarDeclaration::Simple` with `scope => "has"`
+        and a `twigil`). Tests in `t/rakuast-attribute.t`. (Explicit defaults → `Trait::WillBuild`,
+        deferred.)
+  - [ ] Slice 15+: roles/grammars, labelled loops, method-call modifiers (`.?`/`.+`/`.*`),
+        parameterised/definite types (`Array[Int]`/`Int:D`), attribute defaults (`Trait::WillBuild`);
+        then `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to
+        `IntLiteral(3)`, mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

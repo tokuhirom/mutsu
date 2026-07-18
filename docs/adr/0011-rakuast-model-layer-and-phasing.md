@@ -211,8 +211,16 @@ earlier ones.
   (parameters carry the implicit `type => Type::Setting(Any)`). Boundary (explicit `RuntimeError`):
   inheritance (`is`/`does`), `my`/`unit` scope, `repr`, `rw`, class traits; and for methods,
   private/submethod/multi/`our`/`my` forms, traits, delegation (`handles`), and return types.
-  Attributes (`has $.x`, `Stmt::HasDecl`) are not yet converted, so a class body containing one hits
-  the boundary. Roles/grammars (`RakuAST::Role` with a distinct `RoleBody`) are deferred.
+  Roles/grammars (`RakuAST::Role` with a distinct `RoleBody`) are deferred.
+- **Attributes (Phase 2 slice 14).** `has [Type] $.x` (`Stmt::HasDecl`) → a `VarDeclaration::Simple`
+  with `scope => "has"` and a `twigil` leaf (`.` public accessor / `!` private), reusing the slice-10
+  `var_declaration` helper (extended with a `twigil` field, and its initializer arg generalised to
+  `Option<&Expr>`). A **typed** attribute (`has Int $.z`) carries an *implicit*
+  `BareWord(<TypeName>)` default in mutsu's AST that is NOT an initializer and is filtered out
+  (compared against the type name); an **explicit** default (`has $.x = 5`) becomes a
+  `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
+  smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
+  other traits.
 - **Comma lists and `:=` binding (Phase 2 slice 9).** A bare comma list `1, 2, 3`
   (`Expr::ArrayLiteral`) → `ApplyListInfix(infix => Infix(","), operands => (...))`. A `:=` bind
   (`Stmt::Assign { op: Bind }`) → `ApplyInfix(left, infix => Infix(":="), right)` — a plain `Infix`,
