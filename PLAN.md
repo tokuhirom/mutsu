@@ -934,14 +934,25 @@ was "effective with Rakudo 2026.01"). Prefer the stronger signal **"mutsu differ
 the documented expectation"** over a raw raku diff, so version skew and aspirational docs do not flood
 the backlog.
 
-### 8.1 Differential harness (the backbone — build first)
+### 8.1 Differential harness (the backbone) — ✅ prototype landed
 
-- [ ] Build a `raku`-vs-`mutsu` differential runner: feed a program to both, capture
-      stdout/stderr/exit, diff, and emit only mismatches with a minimal repro. This is the reusable
-      substrate for 8.2 / 8.3 / 8.4 and any future fuzz corpus. Handle version fudging and per-run
-      timeouts. **Gate before scaling:** first prototype it on a small corpus and confirm the signal is
-      dense enough to justify a full campaign — do not stand up a large agent fleet on an unmeasured
-      signal.
+- [x] **`scripts/doc-diff-harness.raku`** — a `raku`-vs-`mutsu` differential runner: feeds each
+      extracted `raku-doc` example to both, uses raku as the oracle (compares only blocks raku runs
+      cleanly), and reports mismatches as ready-made minimal repros, bucketing `raku-drift-from-doc`
+      (version drift) separately from true `output-mismatch` / `mutsu-error`. See
+      [docs/qa-doc-diff-harness.md](docs/qa-doc-diff-harness.md).
+      **Signal gate passed** (2026-07-18, 8 core Type files): 270 raku-clean comparisons → **50
+      high-signal divergences (18.5%)**, genuine and clustering by root cause. The premise holds; the
+      campaign is justified.
+- [ ] Reusable substrate for 8.2 / 8.3 / 8.4 and any future fuzz corpus — extend the corpus beyond the
+      core Type files (all of `Type/` + `Language/`, then a real-module corpus), and grow the
+      non-determinism / error-example skip heuristics as new noise shows up.
+- [ ] **First backlog item from the run: sequence/lazy argument truncation** — `1, 3 ... 11` (and lazy
+      `gather`/`Seq`) passed as a routine/method argument is materialised to only its first two
+      elements (`@foo.prepend: 1,3...11` → `[1 3 …]`; `600.polymod(lazy …)` → `(600)`). One root cause,
+      several doc examples. Other confirmed findings: autoviv-hole `.List`/`.Slip` renders `(Any)`
+      instead of `Nil`; empty-`Array` `pop` does not throw `X::Cannot::Empty`; lazy `.elems` does not
+      throw `X::Cannot::Lazy`.
 
 ### 8.2 Documented-surface coverage (doc examples + method matrix)
 
