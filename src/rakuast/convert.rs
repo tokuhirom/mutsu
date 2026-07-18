@@ -516,6 +516,18 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             AssignOp::Bind => Ok(Some(statement_expression(bind_infix(name, expr)?))),
             AssignOp::MatchAssign => Err(unsupported("`~~` match-assignment")),
         },
+        // A `LABEL: STMT` wrapper (mutsu uses this for labelled `repeat`/C-style
+        // loops, where the inner loop's own `label` field is None). Convert the
+        // inner statement and prepend its `labels` field — raku renders labels
+        // first, matching the inline-label loops of slice 17.
+        Stmt::Label { name, stmt } => {
+            let mut node =
+                convert_stmt(stmt)?.ok_or_else(|| unsupported("labelled empty statement"))?;
+            let mut fields = label_fields(&Some(name.clone()));
+            fields.append(&mut node.fields);
+            node.fields = fields;
+            Ok(Some(node))
+        }
         other => Err(unsupported(&format!("{other:?}"))),
     }
 }

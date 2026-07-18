@@ -178,9 +178,10 @@ earlier ones.
   binding (`if EXPR -> $v` / `elsif EXPR -> $v`) remain the coverage boundary (explicit
   `RuntimeError`), deferred to a later slice. Loop labels are handled (slice 17): a
   `LABEL: while/for/loop` prepends a `labels => (Label(name => "..."),)` field (raku renders labels
-  first). mutsu stores the label inline on `while`/`for`/bare-`loop`, but wraps a labelled `repeat`
-  (and C-style `loop`) in a separate `Stmt::Label` node it does not yet convert (C-style-labelled
-  does not even parse), so those remain the boundary. Implicit-topic `for`
+  first). mutsu stores the label inline on `while`/`for`/bare-`loop`; a labelled `repeat` is wrapped
+  in a separate `Stmt::Label { name, stmt }` node (slice 28) — the converter converts the inner
+  statement and prepends its `labels` field. A labelled C-style `loop` does not parse in mutsu yet,
+  so it remains the boundary. Implicit-topic `for`
   is handled (slice 6): `for SRC { ... }` (no explicit signature) → `Statement::For(mode =>
   "serial", source, body)` where the body is a topic-taking `Block` marked `implicit-topic => True`
   / `required-topic => 1`. `with`/`without` are NOT mappable — mutsu desugars them at parse time
