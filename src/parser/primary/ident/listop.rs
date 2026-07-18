@@ -109,6 +109,14 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     // The list-infix operators (Z/X/meta/infix funcs) bind TIGHTER than the
     // listop's comma, so each argument is extended with them after the base
     // parse (`flat @a Z @b` is `flat(@a Z @b)`); feeds stay outside the call.
+    // A sequence operator (`...`/`…`) is looser than comma, so `say a, b ... limit`
+    // is ONE sequence argument (seed `a, b`), not `a` plus `b ... limit`. Absorb the
+    // whole comma level like the parenthesized-list parser does.
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
+        let (r, seq) = result?;
+        return Ok((r, make_call_expr(name, input, vec![seq])));
+    }
+
     let (r, first) = call_arg_expr(input).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
@@ -272,6 +280,20 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
     input: &'a str,
     name: String,
 ) -> PResult<'a, Expr> {
+    // A sequence operator (`...`/`…`) is looser than comma, so `say a, b ... limit`
+    // is ONE sequence argument (seed `a, b`). Absorb the whole comma level like the
+    // parenthesized-list parser. (Guarded against the `meth: args` invocant-colon
+    // form below by requiring the list to actually contain a sequence operator.)
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(rest) {
+        let (r, seq) = result?;
+        // Only when no invocant colon follows — a `name arg: ...` form is a method
+        // call, handled by the normal path.
+        let (r_ws, _) = ws(r)?;
+        if !r_ws.starts_with(':') || r_ws.starts_with("::") {
+            return Ok((r, make_call_expr(name, input, vec![seq])));
+        }
+    }
+
     let (r, first) = parse_listop_arg(rest).map_err(|err| PError {
         messages: merge_expected_messages("expected listop argument expression", &err.messages),
         remaining_len: err.remaining_len.or(Some(rest.len())),

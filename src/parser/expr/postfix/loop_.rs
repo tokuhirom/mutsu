@@ -936,6 +936,29 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     r.starts_with(' ') || r.starts_with('\t') || r.starts_with('\n');
                 let (r2, _) = ws(r)?;
                 if r2.starts_with(':') && !r2.starts_with("::") {
+                    // A sequence operator (`...`/`…`) is looser than comma, so a
+                    // colon-arg list `.m: a, b ... limit` is ONE sequence argument
+                    // (seed `a, b`). Absorb the whole comma level, matching the
+                    // parenthesized-list parser. (Only for the no-space colon-arg
+                    // form; a space before `:` is an adverb colon-pair.)
+                    if !has_space_before_colon {
+                        let after_colon = &r2[1..];
+                        let (after_colon, _) = ws(after_colon)?;
+                        if let Some(result) =
+                            crate::parser::primary::try_parse_sequence_arg_list(after_colon)
+                        {
+                            let (r_seq, seq) = result?;
+                            expr = Expr::MethodCall {
+                                target: Box::new(expr),
+                                name,
+                                args: vec![seq],
+                                modifier,
+                                quoted: false,
+                            };
+                            rest = r_seq;
+                            continue;
+                        }
+                    }
                     // If there was space before ':', treat as adverb (colon-pair)
                     let (r3, first_arg) = if has_space_before_colon {
                         colonpair_expr(r2)?

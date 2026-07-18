@@ -152,6 +152,13 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
 }
 
 fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
+    // A sequence operator (`...`/`…`) is looser than comma, so `say a, b ... limit`
+    // is ONE sequence argument (seed `a, b`), not `a` plus `b ... limit`. Absorb the
+    // whole comma level like the parenthesized-list parser does.
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
+        let (rest, seq) = result?;
+        return Ok((rest, vec![seq]));
+    }
     match parse_expr_list(input) {
         Ok(ok) => Ok(ok),
         Err(err)

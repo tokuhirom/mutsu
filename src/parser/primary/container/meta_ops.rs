@@ -1,7 +1,9 @@
 use crate::ast::{Expr, Stmt};
-use crate::parser::expr::{contains_whatever, expression, expression_no_sequence};
+use crate::parser::expr::{
+    contains_whatever, expression, expression_no_sequence, wrap_whatevercode,
+};
 use crate::parser::helpers::ws;
-use crate::parser::parse_result::{PResult, parse_char};
+use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -455,6 +457,160 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
 
 pub(crate) fn starts_with_sequence_op(input: &str) -> bool {
     input.starts_with("...") || input.starts_with('\u{2026}')
+}
+
+fn maybe_wrap_whatever(expr: Expr) -> Expr {
+    if contains_whatever(&expr) && !matches!(expr, Expr::Whatever) {
+        wrap_whatevercode(&expr)
+    } else {
+        expr
+    }
+}
+
+/// Raku's list-infix precedence makes the sequence operators (`...`/`…`/`...^`/`…^`)
+/// LOOSER than comma, so in an argument list `a, b ... limit` the whole comma list
+/// `a, b` is the sequence's seed and the entire list collapses into ONE sequence
+/// argument (exactly like `(a, b ... limit)` in parentheses — see
+/// [`try_parse_sequence_in_paren`]). Call/listop sites parse each comma-separated
+/// argument individually, which would otherwise split the seed and drop the
+/// endpoint. This helper detects a sequence operator at the top comma level and,
+/// when present, returns the single sequence `Expr` spanning the whole list.
+///
+/// Returns `None` for an ordinary comma list with no top-level sequence operator,
+/// so the caller keeps its normal per-argument handling. Terminator-agnostic (it
+/// stops at the natural argument boundary via `expression_no_sequence`), so it
+/// serves parenthesized calls, unparenthesized listops, and the `meth: args`
+/// colon form alike.
+pub(crate) fn try_parse_sequence_arg_list(input: &str) -> Option<PResult<'_, Expr>> {
+    // A leading sequence operator with no seed is the `{ ... }`-style yada stub
+    // used as an argument (`f(...)`), not a sequence — leave it to the normal path.
+    if starts_with_sequence_op(input) {
+        return None;
+    }
+    let (mut rest, first) = expression_no_sequence(input).ok()?;
+    let mut seeds = vec![first];
+    let op_input = loop {
+        let (rws, _) = ws(rest).ok()?;
+        if starts_with_sequence_op(rws) {
+            break rws;
+        }
+        if !rws.starts_with(',') || rws.starts_with(",,") {
+            return None; // ordinary list — no top-level sequence operator
+        }
+        let after = &rws[1..];
+        let (after, _) = ws(after).ok()?;
+        // End of the argument list (trailing comma) before any sequence operator,
+        // or a colonpair / named argument — not a positional seed list.
+        if after.is_empty()
+            || after.starts_with(')')
+            || after.starts_with(';')
+            || after.starts_with('}')
+            || (after.starts_with(':') && !after.starts_with("::"))
+        {
+            return None;
+        }
+        let (r2, item) = expression_no_sequence(after).ok()?;
+        seeds.push(item);
+        rest = r2;
+    };
+    Some(build_sequence_from_seeds(op_input, seeds))
+}
+
+/// Build a sequence `Expr` from already-parsed `seeds`, with `input` positioned at
+/// the sequence operator. Parses the endpoint and any extra endpoint items
+/// (`a ... limit, extra`), stopping at the natural argument boundary. Unlike
+/// [`try_parse_sequence_in_paren`] it does NOT require a closing paren.
+fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr> {
+    let (is_excl, rest) = if let Some(s) = input.strip_prefix("...^") {
+        (true, s)
+    } else if let Some(s) = input.strip_prefix("\u{2026}^") {
+        (true, s)
+    } else if input.starts_with("...") && !input.starts_with("....") {
+        (false, &input[3..])
+    } else if let Some(s) = input.strip_prefix('\u{2026}') {
+        (false, s)
+    } else {
+        return Err(PError::expected("expected sequence operator"));
+    };
+    let (rest, _) = ws(rest)?;
+    // Bare `*` endpoint = infinite sequence.
+    let (mut rest, endpoint) = if rest.starts_with('*')
+        && !rest[1..].starts_with(|c: char| c.is_alphanumeric() || c == '_')
+    {
+        let after_star = rest[1..].trim_start();
+        if after_star.is_empty()
+            || after_star.starts_with(')')
+            || after_star.starts_with(',')
+            || after_star.starts_with(';')
+            || after_star.starts_with('}')
+        {
+            (&rest[1..], Expr::Whatever)
+        } else {
+            expression_no_sequence(rest)?
+        }
+    } else {
+        expression_no_sequence(rest)?
+    };
+    // Extra endpoint items after the first (`a ... limit, extra1, extra2`) are
+    // absorbed into the sequence, since the operator owns the whole comma level.
+    // Parse each with the FULL expression parser (like `try_parse_sequence_in_paren`)
+    // so a chained/waypoint sequence in an extra (`1 ... 3, 5 ... 7`) is consumed;
+    // a nested `a ... b` waypoint becomes an `[a, b]` pair, matching the paren form.
+    let mut extra_items = Vec::new();
+    loop {
+        let (rws, _) = ws(rest)?;
+        if !rws.starts_with(',') || rws.starts_with(",,") {
+            rest = rws;
+            break;
+        }
+        let after = &rws[1..];
+        let (after_ws, _) = ws(after)?;
+        if after_ws.is_empty()
+            || after_ws.starts_with(')')
+            || after_ws.starts_with(';')
+            || after_ws.starts_with('}')
+            || (after_ws.starts_with(':') && !after_ws.starts_with("::"))
+        {
+            rest = rws; // leave the trailing comma for the caller
+            break;
+        }
+        let (r2, item) = expression(after_ws)?;
+        let item = match item {
+            Expr::Binary {
+                left,
+                op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
+                right,
+            } => Expr::ArrayLiteral(vec![*left, *right]),
+            other => other,
+        };
+        extra_items.push(item);
+        rest = r2;
+    }
+    let op = if is_excl {
+        TokenKind::DotDotDotCaret
+    } else {
+        TokenKind::DotDotDot
+    };
+    let left = if seeds.len() == 1 {
+        maybe_wrap_whatever(seeds.into_iter().next().unwrap())
+    } else {
+        Expr::ArrayLiteral(seeds.into_iter().map(maybe_wrap_whatever).collect())
+    };
+    let right = if extra_items.is_empty() {
+        maybe_wrap_whatever(endpoint)
+    } else {
+        let mut v = vec![maybe_wrap_whatever(endpoint)];
+        v.extend(extra_items.into_iter().map(maybe_wrap_whatever));
+        Expr::ArrayLiteral(v)
+    };
+    Ok((
+        rest,
+        Expr::Binary {
+            left: Box::new(left),
+            op,
+            right: Box::new(right),
+        },
+    ))
 }
 
 /// Try to parse an inline statement modifier inside parenthesized expression.
