@@ -7,7 +7,7 @@
 //! silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{AssignOp, Expr, Stmt};
+use crate::ast::{AssignOp, Expr, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -88,6 +88,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 has_initializer,
             )?)))
         }
+        // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
+        Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
         Stmt::Assign { name, expr, op } => {
             // Phase 2 slice 2 covers only plain `=`; `:=` (Bind) and match-assign
             // map to distinct RakuAST nodes.
@@ -224,8 +226,166 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
+        // A bare `{ ... }` block in expression position.
+        Expr::Block(body) => block_node(body),
+        Expr::AnonSub {
+            body,
+            is_rw,
+            is_block,
+        } => {
+            // Only the bare-block form maps to `RakuAST::Block`; `sub { }`
+            // (is_block == false) is `RakuAST::Sub`, deferred to the sub slice.
+            if *is_rw || !*is_block {
+                return Err(unsupported("`sub {}` / `is rw` block"));
+            }
+            block_node(body)
+        }
+        Expr::Lambda {
+            param,
+            body,
+            is_whatever_code,
+        } => {
+            if *is_whatever_code {
+                return Err(unsupported("Whatever-code closure"));
+            }
+            pointy_block_from_lambda(param, body)
+        }
+        Expr::AnonSubParams {
+            param_defs,
+            body,
+            is_rw,
+            is_whatever_code,
+            return_type,
+            ..
+        } => {
+            if *is_rw || *is_whatever_code || return_type.is_some() {
+                return Err(unsupported("`is rw` / Whatever / typed pointy block"));
+            }
+            pointy_block(param_defs, body)
+        }
         other => Err(unsupported(&format!("{other:?}"))),
     }
+}
+
+/// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.
+fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::Blockoid,
+        fields: vec![node_field(None, statement_list(body)?)],
+    })
+}
+
+/// A bare `{ ... }` block -> `Block(body => Blockoid)`.
+fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::Block,
+        fields: vec![node_field(Some("body"), blockoid(body)?)],
+    })
+}
+
+/// A multi/zero-parameter pointy block (`-> $a, $b { }`, `-> { }`). An empty
+/// parameter list omits the `signature` field entirely (matching raku).
+fn pointy_block(param_defs: &[ParamDef], body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = Vec::new();
+    if !param_defs.is_empty() {
+        fields.push(node_field(Some("signature"), signature(param_defs)?));
+    }
+    fields.push(node_field(Some("body"), blockoid(body)?));
+    Ok(RakuAstNode {
+        class: RakuAstClass::PointyBlock,
+        fields,
+    })
+}
+
+/// A single-parameter pointy block (`-> $x { }`). mutsu's `Lambda` node strips
+/// the sigil from its single param and does NOT preserve `@`/`%` for a single
+/// non-scalar param (`-> @a` becomes `param: "a"`), so we assume `$` — a
+/// documented divergence from raku, which shows the real sigil.
+fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let sig = RakuAstNode {
+        class: RakuAstClass::Signature,
+        fields: vec![RakuAstField {
+            name: Some("parameters"),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(simple_parameter(
+                "$", param, None,
+            )?))]),
+        }],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::PointyBlock,
+        fields: vec![
+            node_field(Some("signature"), sig),
+            node_field(Some("body"), blockoid(body)?),
+        ],
+    })
+}
+
+/// `Signature(parameters => (Parameter, ...))`.
+fn signature(param_defs: &[ParamDef]) -> Result<RakuAstNode, RuntimeError> {
+    let mut params = Vec::with_capacity(param_defs.len());
+    for pd in param_defs {
+        params.push(Value::rakuast(Box::new(parameter(pd)?)));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::Signature,
+        fields: vec![RakuAstField {
+            name: Some("parameters"),
+            value: RakuAstFieldValue::List(params),
+        }],
+    })
+}
+
+/// One `Parameter`. Only plain positional params (name + optional default) are
+/// modelled; anything richer (typed, named, slurpy, `where`, sub-signature,
+/// traits, optional-marker, invocant, shaped) is the coverage boundary.
+fn parameter(pd: &ParamDef) -> Result<RakuAstNode, RuntimeError> {
+    if pd.named
+        || pd.slurpy
+        || pd.double_slurpy
+        || pd.onearg
+        || pd.type_constraint.is_some()
+        || pd.literal_value.is_some()
+        || pd.sub_signature.is_some()
+        || pd.where_constraint.is_some()
+        || !pd.traits.is_empty()
+        || pd.optional_marker
+        || pd.is_invocant
+        || pd.shape_constraints.is_some()
+        || pd.code_signature.is_some()
+        || pd.outer_sub_signature.is_some()
+    {
+        return Err(unsupported("non-trivial signature parameter"));
+    }
+    let (sigil, desigil) = split_sigil(&pd.name);
+    simple_parameter(sigil, desigil, pd.default.as_ref())
+}
+
+/// Build a `Parameter(target => ParameterTarget::Var, ...)`. A param with a
+/// default renders `default => <expr>`; a required one renders `optional => False`.
+fn simple_parameter(
+    sigil: &str,
+    desigil: &str,
+    default: Option<&Expr>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let target = RakuAstNode {
+        class: RakuAstClass::ParameterTargetVar,
+        fields: vec![leaf_field(
+            Some("name"),
+            Value::str(format!("{sigil}{desigil}")),
+        )],
+    };
+    let mut fields = vec![node_field(Some("target"), target)];
+    match default {
+        Some(d) => fields.push(node_field(Some("default"), convert_expr(d)?)),
+        None => fields.push(RakuAstField {
+            name: Some("optional"),
+            value: RakuAstFieldValue::Node(Value::truth(false)),
+        }),
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    })
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.

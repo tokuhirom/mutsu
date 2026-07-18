@@ -157,6 +157,12 @@ earlier ones.
   operands. Leaning (a) for fidelity to *mutsu's* AST, revisited with data.
 - **`.AST` on `Code`/blocks (Phase 2+).** Phase 1 is `Str`-only; `.AST` on a `Block`/`Routine`
   needs the internal AST retained on the code object.
+- **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
+  block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
+  for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`
+  for `Lambda`, so `-> @a { }`/`-> %h { }` render `ParameterTarget::Var(name => "$a")` instead of
+  raku's `"@a"`. Multi-parameter pointy blocks (`Expr::AnonSubParams`) keep the sigil and render
+  correctly. Documented divergence; narrows if `Lambda` grows a sigil field.
 - **GC promotion of `Value::RakuAst`** — deferred until profiling shows clone churn (see note
   above).
 - **`.Str` / string context (Phase 1 simplification).** raku's RakuAST `.Str` (and bare string

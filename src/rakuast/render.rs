@@ -41,7 +41,7 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
         return format!("{name}.{ctor}({inner})");
     }
 
-    let width = node.class.named_align_width();
+    let width = field_align_width(node);
     let mut s = format!("{name}.{ctor}(\n");
     let child_indent = indent + 2;
     let pad = " ".repeat(child_indent);
@@ -56,6 +56,19 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     s.push_str(&" ".repeat(indent));
     s.push(')');
     s
+}
+
+/// The `key => value` alignment width for a node: the max length over its
+/// *shown* named-field keys, floored by the class's `min_align_width` (which
+/// covers the few classes that pad to a declared-but-omitted attribute).
+fn field_align_width(node: &RakuAstNode) -> usize {
+    let shown = node
+        .fields
+        .iter()
+        .filter_map(|f| f.name.map(str::len))
+        .max()
+        .unwrap_or(0);
+    shown.max(node.class.min_align_width())
 }
 
 fn is_inline_field(f: &RakuAstField) -> bool {

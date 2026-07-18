@@ -67,6 +67,13 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     CallMethod,
+    // Phase 2 slice 3: blocks & pointy blocks.
+    Block,
+    Blockoid,
+    PointyBlock,
+    Signature,
+    Parameter,
+    ParameterTargetVar,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +108,12 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             CallMethod => "RakuAST::Call::Method",
+            Block => "RakuAST::Block",
+            Blockoid => "RakuAST::Blockoid",
+            PointyBlock => "RakuAST::PointyBlock",
+            Signature => "RakuAST::Signature",
+            Parameter => "RakuAST::Parameter",
+            ParameterTargetVar => "RakuAST::ParameterTarget::Var",
         }
     }
 
@@ -118,22 +131,15 @@ impl RakuAstClass {
         }
     }
 
-    /// Field width for aligning named `key => value` fields. raku's gist pads to
-    /// the max length over ALL of the class's declared attributes — including
-    /// ones omitted when at their default (e.g. `QuotedString` pads `segments`
-    /// to 10 to align with its unshown `processors`). These constants are
-    /// captured from raku's output; 0 = the class has no named fields.
-    pub fn named_align_width(self) -> usize {
-        use RakuAstClass::*;
+    /// Minimum width for aligning named `key => value` fields. raku's gist pads
+    /// keys to the max length over the *shown* named fields of a node (computed
+    /// per-instance in the renderer), but a few classes pad further to align
+    /// with a declared-but-omitted attribute. `QuotedString` pads `segments`
+    /// (8) to 10 to align with its unshown `processors`. This floor captures
+    /// those exceptions; 0 = no floor (use the shown-field max directly).
+    pub fn min_align_width(self) -> usize {
         match self {
-            StatementExpression => 10,                  // "expression"
-            QuotedString => 10,                         // "processors" (unshown) > "segments"
-            CallName | CallNameWithoutParentheses => 4, // "name" / "args"
-            VarDeclarationSimple => 11,                 // "desigilname" / "initializer"
-            ApplyInfix => 5,                            // "infix" / "right"
-            ApplyPrefix | ApplyPostfix => 7,            // "operand"
-            Postfix => 8,                               // "operator"
-            CallMethod => 4,                            // "name" / "args"
+            RakuAstClass::QuotedString => 10, // "processors" (unshown) > "segments"
             _ => 0,
         }
     }
