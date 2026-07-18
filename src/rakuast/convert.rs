@@ -780,21 +780,34 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             modifier,
             quoted,
         } => {
-            // Plain `.method(...)` and modifier forms (`.?`/`.+`/`.*`, slice 15);
-            // and quoted names (`."foo"()`, slice 23) -> Call::QuotedMethod.
-            let postfix = if *quoted {
-                if modifier.is_some() {
-                    return Err(unsupported("quoted method name with a modifier"));
-                }
-                call_quoted_method(name.as_str(), args)?
-            } else {
-                call_method(name.as_str(), args, *modifier)?
-            };
+            let postfix = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
                     node_field(Some("operand"), convert_expr(target)?),
                     node_field(Some("postfix"), postfix),
+                ],
+            })
+        }
+        // Hyper method call `@a>>.abs` -> ApplyPostfix(operand,
+        // postfix => MetaPostfix::Hyper(Call::Method(...))).
+        Expr::HyperMethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } => {
+            let inner = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
+            let hyper = RakuAstNode {
+                class: RakuAstClass::MetaPostfixHyper,
+                fields: vec![node_field(None, inner)],
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyPostfix,
+                fields: vec![
+                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("postfix"), hyper),
                 ],
             })
         }
@@ -1185,6 +1198,25 @@ fn simple_parameter(
         class: RakuAstClass::Parameter,
         fields,
     })
+}
+
+/// The postfix `Call::Method` / `Call::QuotedMethod` node shared by plain and
+/// hyper method calls: a quoted name -> `Call::QuotedMethod` (no modifier), an
+/// unquoted name -> `Call::Method` (with an optional `.?`/`.+`/`.*` dispatch).
+fn method_call_postfix(
+    name: &str,
+    args: &[Expr],
+    modifier: Option<char>,
+    quoted: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    if quoted {
+        if modifier.is_some() {
+            return Err(unsupported("quoted method name with a modifier"));
+        }
+        call_quoted_method(name, args)
+    } else {
+        call_method(name, args, modifier)
+    }
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.

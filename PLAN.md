@@ -849,9 +849,12 @@ so it is tracked separately from the roast backlog.
         Tests in `t/rakuast-list-infix.t`.
   - [x] Slice 25: reduction metaoperator `[+]`/`[\+]` (`Term::Reduce`). Tests in
         `t/rakuast-reduction.t`.
-  - [ ] Slice 26+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
-        `.=` method-assign, coercion types (`Str()`), hyper `>>.method`; then `.DEPARSE`; resolve
-        the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
+  - [x] Slice 26: hyper method calls `@a>>.method` (`MetaPostfix::Hyper`). Tests in
+        `t/rakuast-hyper-method.t`.
+  - [ ] Slice 27+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
+        `.=` method-assign, coercion types (`Str()`), other hyper forms (`<<.m`, `>>+<<`); then
+        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
+        mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

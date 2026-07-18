@@ -69,6 +69,8 @@ pub enum RakuAstClass {
     CallMethod,
     // Phase 2 slice 23: quoted method names.
     CallQuotedMethod,
+    // Phase 2 slice 26: hyper method calls.
+    MetaPostfixHyper,
     // Phase 2 slice 3: blocks & pointy blocks.
     Block,
     Blockoid,
@@ -151,6 +153,7 @@ impl RakuAstClass {
             Assignment => "RakuAST::Assignment",
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
+            MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
             Block => "RakuAST::Block",
             Blockoid => "RakuAST::Blockoid",
             PointyBlock => "RakuAST::PointyBlock",
