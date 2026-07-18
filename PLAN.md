@@ -863,8 +863,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 1: node accessors — `.condition`/`.expression`/`.args`/… return field values, and
         `.statements` returns a `StatementList`'s children as a `List`, so the tree is walkable.
         Tests in `t/rakuast-accessors.t`.
-  - [ ] Slice 2+: `~~ RakuAST::Node` smartmatch + `RakuAST::*` type objects; positional leaf
-        accessors (`IntLiteral.value`); `use experimental :rakuast` no-op gate; `.WHAT`/`.isa`.
+  - [x] Slice 2: `~~ RakuAST::Node` / `.isa` hierarchy — base `RakuAST::Node` + `::`-namespace
+        ancestors (`Statement::If isa RakuAST::Statement`). Tests in `t/rakuast-smartmatch.t`.
+        (`use experimental :rakuast` already parsed as a no-op.)
+  - [ ] Slice 3+: positional leaf accessors (`IntLiteral.value`); the semantic Expression/Term
+        hierarchy (`IntLiteral isa RakuAST::Expression`); registering `RakuAST::*` as first-class
+        type objects; `.WHAT`. Then Phase 4 (construction), Phase 5 (EVAL).
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
 - [ ] **Phase 5** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).

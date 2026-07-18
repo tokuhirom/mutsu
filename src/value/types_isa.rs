@@ -144,6 +144,21 @@ impl Value {
         if my_type == type_name {
             return true;
         }
+        // RakuAST node hierarchy (Phase 3): every node isa `RakuAST::Node`, and a
+        // node isa any `::`-namespace ancestor of its printed class name (e.g.
+        // `Statement::If` isa `RakuAST::Statement`). The `::` boundary avoids a
+        // false `StatementList isa Statement`. (The semantic Expression/Term
+        // hierarchy — `IntLiteral isa RakuAST::Expression` — is not yet modelled.)
+        if matches!(self.view(), ValueView::RakuAst(_)) {
+            if type_name == "RakuAST::Node" {
+                return true;
+            }
+            if let Some(rest) = my_type.strip_prefix(type_name)
+                && rest.starts_with("::")
+            {
+                return true;
+            }
+        }
         // The X::Await::Died role is mixed into the original exception when
         // `await` observes a broken Promise (see `await_died_error`): the cause
         // keeps its own class but also does X::Await::Died.

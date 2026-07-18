@@ -1112,6 +1112,12 @@ impl Interpreter {
                 }
             }
         }
+        // RakuAST nodes carry their own hierarchy (base `RakuAST::Node`, plus
+        // `::`-namespace ancestors); route through `isa_check` rather than the
+        // static `type_matches` name table (Phase 3).
+        if matches!(value.view(), ValueView::RakuAst(_)) && constraint.starts_with("RakuAST::") {
+            return value.isa_check(constraint);
+        }
         // For Package (type object) values, use the package name as the type
         // so that e.g. Junction (which is Mu, not Any) is correctly rejected
         // when the constraint is Any.

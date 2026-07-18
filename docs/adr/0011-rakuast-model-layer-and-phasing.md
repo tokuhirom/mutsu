@@ -127,8 +127,16 @@ earlier ones.
     `List` for list-valued fields), and `.statements` returns a `StatementList`'s positional
     children as a `List`. This makes the tree walkable (`.AST.statements[0].condition.^name`), not
     just renderable. `.gist`/`.raku`/`.^name` are unaffected (not field names). Tests in
-    `t/rakuast-accessors.t`. Still pending: `~~ RakuAST::Node` smartmatch, positional leaf
-    accessors (`IntLiteral.value`), `use experimental :rakuast` gate.
+    `t/rakuast-accessors.t`.
+  - **Slice 2 (smartmatch hierarchy) — done.** `$node ~~ RakuAST::TypeName` and `.isa(...)` now
+    honour the RakuAST hierarchy: `isa_check` returns true for the base `RakuAST::Node` (any node)
+    and for any `::`-namespace ancestor of the node's printed class (`Statement::If isa
+    RakuAST::Statement`); the `::` boundary avoids a false `StatementList isa Statement`. The
+    smartmatch path was already routing exact-class matches through `isa_check`; `type_matches_value`
+    now delegates `RakuAST::*` constraints to `isa_check` instead of the static name table. Tests in
+    `t/rakuast-smartmatch.t`. Still pending: the semantic `IntLiteral isa RakuAST::Expression`
+    hierarchy (needs a per-class ancestor table), positional leaf accessors (`IntLiteral.value`),
+    registering `RakuAST::*` as first-class type objects (they currently resolve as bare type names).
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
