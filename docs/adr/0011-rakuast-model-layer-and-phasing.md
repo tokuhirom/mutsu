@@ -277,6 +277,14 @@ earlier ones.
     lowers a multi-segment `QuotedString` back to a `StringInterpolation`. `EVAL(Q[my $x = 5;
     "val=$x"].AST)` → `val=5`. Code-block (`{…}`) interpolation stays the boundary. Tests in
     `t/rakuast-eval-interp.t`. Next: typed/named parameters, C-style `loop`.
+  - **Slice 17 (typed positional parameters) — done, both directions.** A `Parameter` with an explicit
+    type (`Int $x`) now carries `type => Type::Simple(Name)` (replacing the implicit
+    `Type::Setting(Any)`) on the read side, and the write side extracts a `Type::Simple` name into the
+    `ParamDef`'s `type_constraint` (the implicit `Type::Setting` is ignored; definite/coercion/
+    parameterised type forms defer). `EVAL(Q[sub f(Int $x) { $x * 2 }; f(5)].AST)` → `10`; a type
+    mismatch throws, and a typed parameter can also carry a default. Tests in
+    `t/rakuast-eval-typed-param.t`. Next: named/slurpy parameters, more infix operators (`x`/`eq`/…),
+    C-style `loop`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
