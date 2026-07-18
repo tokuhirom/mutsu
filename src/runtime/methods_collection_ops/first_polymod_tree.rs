@@ -200,9 +200,23 @@ impl Interpreter {
         let mut has_infinite = false;
         for arg in args {
             match arg.view() {
-                ValueView::LazyList(_) => {
-                    has_infinite = true;
-                    divisors.extend(flatten_to_list(arg));
+                ValueView::LazyList(ll) => {
+                    // A lazy divisor source (`gather {...}`, `.map`, a `…∞` sequence)
+                    // must be reified. An infinite sequence keeps a non-empty cache
+                    // of its produced prefix; polymod pulls from it and stops once n
+                    // reaches 0 (the has_infinite path below). A FINITE unforced
+                    // source (a plain `gather` block) has an empty cache, so force it
+                    // fully — otherwise its elements never become divisors and the
+                    // number falls through unchanged (`600.polymod(gather {...})`
+                    // wrongly returned `(600)`).
+                    let cached = ll.cache.lock().unwrap().clone().unwrap_or_default();
+                    if cached.is_empty() {
+                        let items = self.force_lazy_list_bridge(&ll)?;
+                        divisors.extend(items);
+                    } else {
+                        has_infinite = true;
+                        divisors.extend(cached);
+                    }
                 }
                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
                     divisors.extend(flatten_to_list(arg));
