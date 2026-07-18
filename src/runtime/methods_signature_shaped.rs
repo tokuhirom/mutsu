@@ -55,9 +55,11 @@ impl Interpreter {
                 // raku's `my Int @a[2.5]` -> a 2-element array.
                 ValueView::Rat(n, d) if d != 0 && n / d > 0 => (n / d) as usize,
                 ValueView::Rat(n, d) => {
-                    return Err(RuntimeError::illegal_dimension_in_shape(
-                        if d != 0 { n / d } else { 0 },
-                    ));
+                    return Err(RuntimeError::illegal_dimension_in_shape(if d != 0 {
+                        n / d
+                    } else {
+                        0
+                    }));
                 }
                 // A dimension that overflows i64 (parsed as a BigInt) is always
                 // illegal: either negative, or far too large to allocate.
