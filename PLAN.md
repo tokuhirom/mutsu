@@ -946,9 +946,12 @@ so it is tracked separately from the roast backlog.
         $i+1; last if $i>=3 }; $i].AST)` → 3. Tests in `t/rakuast-eval-bool.t`.
   - [x] Slice 15: ternary lowering (`RakuAST::Ternary` → `Expr::Ternary`); `EVAL(Q[1 ?? 10 !! 20].AST)`
         → 10, nested right-associative ternaries work. Tests in `t/rakuast-eval-ternary.t`.
-  - [ ] Slice 16+: typed/named/slurpy params (need read + write), C-style `loop`, string interpolation
-        — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a
-        large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 16: interpolated strings `"a $x b"` (both directions) — `Expr::StringInterpolation` ↔ a
+        `QuotedString` with a `StrLiteral`/interpolated-term segment per part. `EVAL(Q[my $x=5;
+        "val=$x"].AST)` → `val=5`. Tests in `t/rakuast-eval-interp.t`.
+  - [ ] Slice 17+: typed/named/slurpy params (need read + write), C-style `loop`, code-block (`{…}`)
+        interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full
+        lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

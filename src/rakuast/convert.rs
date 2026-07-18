@@ -976,7 +976,38 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             pointy_block(param_defs, body)
         }
+        // An interpolated string `"a $x b"` -> QuotedString with a segment per
+        // part (a literal run is a `StrLiteral`, an interpolated term keeps its
+        // own node).
+        Expr::StringInterpolation(parts) => {
+            let mut segments = Vec::with_capacity(parts.len());
+            for p in parts {
+                segments.push(Value::rakuast(Box::new(interp_segment(p)?)));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::QuotedString,
+                fields: vec![RakuAstField {
+                    name: Some("segments"),
+                    value: RakuAstFieldValue::List(segments),
+                }],
+            })
+        }
         other => Err(unsupported(&format!("{other:?}"))),
+    }
+}
+
+/// One segment of an interpolated string. A literal-string part is a bare
+/// `StrLiteral` (not a nested `QuotedString`); any other part keeps its normal
+/// converted node.
+fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match expr {
+        Expr::Literal(v) | Expr::LiteralSrc(v, _) if matches!(v.view(), ValueView::Str(_)) => {
+            Ok(RakuAstNode {
+                class: RakuAstClass::StrLiteral,
+                fields: vec![leaf_field(None, v.clone())],
+            })
+        }
+        other => convert_expr(other),
     }
 }
 

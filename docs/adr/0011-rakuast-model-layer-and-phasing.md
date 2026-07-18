@@ -270,6 +270,13 @@ earlier ones.
     conditional expression evaluates its chosen branch. `EVAL(Q[sub even($n) { $n %% 2 ?? True !! False
     }; even(4)].AST)` → `True`; nested (right-associative) ternaries work. Tests in
     `t/rakuast-eval-ternary.t`. Next: typed/named parameters, C-style `loop`.
+  - **Slice 16 (interpolated strings) — done, both directions.** An interpolated string `"a $x b"` is a
+    `QuotedString` with one segment per part (a literal run is a `StrLiteral`, an interpolated term
+    keeps its own node). The read side (`.AST`) converts `Expr::StringInterpolation` to that node (a
+    literal segment stays a bare `StrLiteral`, not a nested `QuotedString`) and the write side (`EVAL`)
+    lowers a multi-segment `QuotedString` back to a `StringInterpolation`. `EVAL(Q[my $x = 5;
+    "val=$x"].AST)` → `val=5`. Code-block (`{…}`) interpolation stays the boundary. Tests in
+    `t/rakuast-eval-interp.t`. Next: typed/named parameters, C-style `loop`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
