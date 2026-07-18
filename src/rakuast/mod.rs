@@ -94,6 +94,9 @@ pub enum RakuAstClass {
     // Phase 2 slice 13: class and method declarations.
     Class,
     Method,
+    // Phase 2 slice 16: role declarations.
+    Role,
+    RoleBody,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,6 +149,8 @@ impl RakuAstClass {
             TypeSimple => "RakuAST::Type::Simple",
             Class => "RakuAST::Class",
             Method => "RakuAST::Method",
+            Role => "RakuAST::Role",
+            RoleBody => "RakuAST::RoleBody",
         }
     }
 

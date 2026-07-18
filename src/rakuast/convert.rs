@@ -392,6 +392,39 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 ],
             })))
         }
+        Stmt::RoleDecl {
+            name,
+            type_params,
+            is_export,
+            export_tags,
+            body,
+            is_rw,
+            custom_traits,
+            ..
+        } => {
+            // Plain `role NAME { body }`. Parameterised roles (`role R[::T]`),
+            // export, `rw`, and traits carry extra RakuAST shape, deferred. The
+            // role body is a `RoleBody` (not a plain `Block`).
+            if !type_params.is_empty()
+                || *is_export
+                || !export_tags.is_empty()
+                || *is_rw
+                || !custom_traits.is_empty()
+            {
+                return Err(unsupported("role with type params / export / traits"));
+            }
+            let role_body = RakuAstNode {
+                class: RakuAstClass::RoleBody,
+                fields: vec![node_field(Some("body"), blockoid(body)?)],
+            };
+            Ok(Some(statement_expression(RakuAstNode {
+                class: RakuAstClass::Role,
+                fields: vec![
+                    node_field(Some("name"), name_from_identifier(&name.resolve())),
+                    node_field(Some("body"), role_body),
+                ],
+            })))
+        }
         Stmt::HasDecl {
             name,
             is_public,
