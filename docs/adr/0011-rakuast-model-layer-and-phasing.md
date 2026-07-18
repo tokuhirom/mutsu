@@ -305,6 +305,12 @@ earlier ones.
     $s = $s + $i }; $s].AST)` → `10`; a bare `loop { … }` broken by `last`, and `next`/`last` inside,
     all work. Tests in `t/rakuast-eval-cstyle-loop.t`. Next: bareword type terms, named/slurpy
     parameters, parenthesisation.
+  - **Slice 21 (parenthesised expressions) — done, both directions.** A new `Circumfix::Parentheses`
+    node class models a standalone `(EXPR)` (wrapping a single-statement `SemiList`). The read side
+    (`.AST`) converts `Expr::Grouped` to it and the write side (`EVAL`) unwraps it to the inner
+    expression. This closes the slice-19 boundary: `EVAL(Q/my $x = 0; my $y = ($x = 5); $x + $y/.AST)` →
+    `10`. Multi-statement parenthesised lists stay the boundary. Tests in `t/rakuast-eval-paren.t`.
+    Next: bareword type terms, named/slurpy parameters, array/hash literals.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

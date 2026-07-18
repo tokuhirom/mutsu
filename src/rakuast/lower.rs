@@ -535,6 +535,14 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::StringInterpolation(parts))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        // `(EXPR)` -> its inner expression (parens are transparent for EVAL). The
+        // node wraps a `SemiList` of `Statement::Expression`s; only the
+        // single-statement form is handled.
+        RakuAstClass::CircumfixParentheses => {
+            let semilist = named_child_or_positional(node)?;
+            let inner = named_child_or_positional(semilist)?;
+            lower_expr(inner)
+        }
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
             ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),

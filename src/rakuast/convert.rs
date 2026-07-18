@@ -763,6 +763,17 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
         Expr::Var(name) => Ok(var_lexical("$", name)),
+        // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
+        Expr::Grouped(inner) => {
+            let semilist = RakuAstNode {
+                class: RakuAstClass::SemiList,
+                fields: vec![node_field(None, statement_expression(convert_expr(inner)?))],
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::CircumfixParentheses,
+                fields: vec![node_field(None, semilist)],
+            })
+        }
         // `($x = EXPR)` as an expression -> the same `ApplyInfix(Assignment)` as a
         // statement assignment. `:=` binding stays the boundary.
         Expr::AssignExpr {
