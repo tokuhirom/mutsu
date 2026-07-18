@@ -266,6 +266,10 @@ earlier ones.
     value. `EVAL(Q[my $i = 0; while True { $i = $i + 1; last if $i >= 3 }; $i].AST)` → `3`. Other enum
     identifiers stay the boundary. Tests in `t/rakuast-eval-bool.t`. Next: ternary lowering (`?? !!`),
     typed/named parameters, C-style `loop`.
+  - **Slice 15 (ternary `?? !!`) — done.** `RakuAST::Ternary` lowers to `Expr::Ternary`, so a
+    conditional expression evaluates its chosen branch. `EVAL(Q[sub even($n) { $n %% 2 ?? True !! False
+    }; even(4)].AST)` → `True`; nested (right-associative) ternaries work. Tests in
+    `t/rakuast-eval-ternary.t`. Next: typed/named parameters, C-style `loop`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

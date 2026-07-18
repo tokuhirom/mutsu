@@ -507,6 +507,12 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 expr: Box::new(operand),
             })
         }
+        // `COND ?? THEN !! ELSE` -> the ternary expression.
+        RakuAstClass::Ternary => Ok(Expr::Ternary {
+            cond: Box::new(lower_expr(named_child(node, "condition")?)?),
+            then_expr: Box::new(lower_expr(named_child(node, "then")?)?),
+            else_expr: Box::new(lower_expr(named_child(node, "else")?)?),
+        }),
         // A named call `f(1, 2)` -> Expr::Call (the listop I/O calls are handled
         // as statements in `lower_stmt_inner`; here they are ordinary calls too).
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => Ok(Expr::Call {
