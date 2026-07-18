@@ -270,12 +270,14 @@ impl Interpreter {
                     return Ok(Value::package(Symbol::intern(of_type)));
                 }
             }
+            // Embedded metadata first: it travels with the value, so it stays
+            // correct when a recursive call clobbers the name-keyed constraint
+            // store (`my @ret := Array[T].new` re-bound in an inner frame).
             let type_name = self
-                .var_type_constraint(target_var)
-                .or_else(|| {
-                    self.container_type_metadata(&target)
-                        .map(|info| info.value_type)
-                })
+                .container_type_metadata(&target)
+                .map(|info| info.value_type)
+                .filter(|t| !t.is_empty())
+                .or_else(|| self.var_type_constraint(target_var))
                 .unwrap_or_else(|| "Mu".to_string());
             return Ok(Value::package(Symbol::intern(&type_name)));
         }
@@ -660,7 +662,7 @@ impl Interpreter {
             match method {
                 "push" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
-                    self.check_container_element_types(&key, &normalized_args)?;
+                    self.check_container_element_types(&key, &target, &normalized_args)?;
                     let result = self.push_to_shared_var(&key, normalized_args, &target);
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
@@ -671,7 +673,7 @@ impl Interpreter {
                     // are flattened. With multiple arguments, each is appended
                     // as-is (no recursive flattening).
                     let flat_values = flatten_append_args(args);
-                    self.check_container_element_types(&key, &flat_values)?;
+                    self.check_container_element_types(&key, &target, &flat_values)?;
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
@@ -696,7 +698,7 @@ impl Interpreter {
                 }
                 "unshift" => {
                     let normalized_args = Self::normalize_push_unshift_args(args);
-                    self.check_container_element_types(&key, &normalized_args)?;
+                    self.check_container_element_types(&key, &target, &normalized_args)?;
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
@@ -724,7 +726,7 @@ impl Interpreter {
                 }
                 "prepend" => {
                     let flat_values = flatten_append_args(args);
-                    self.check_container_element_types(&key, &flat_values)?;
+                    self.check_container_element_types(&key, &target, &flat_values)?;
                     let result = if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
@@ -936,7 +938,7 @@ impl Interpreter {
                     // Type-check splice replacement values against the array's
                     // declared element type (`my Int @a` splice must reject a Str),
                     // mirroring the element check applied to typed-array assignment.
-                    if let Some(constraint) = self.var_type_constraint(&key)
+                    if let Some(constraint) = self.element_constraint_for(&key, &target)
                         && !matches!(constraint.as_str(), "" | "Any" | "Mu")
                     {
                         for arg in args.iter().skip(2) {

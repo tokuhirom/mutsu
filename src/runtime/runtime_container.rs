@@ -313,15 +313,35 @@ impl Interpreter {
         self.var_type_constraints = snapshot;
     }
 
+    /// Element type constraint for a container variable, preferring the
+    /// metadata embedded in the value itself over the name-keyed
+    /// `var_type_constraints` side table. The embedded metadata travels with
+    /// the value through frame save/restore, so it stays correct when a
+    /// recursive call re-binds a same-named variable to a differently-typed
+    /// container (`my @ret := Array[T].new` in a recursive sub) — the
+    /// name-keyed store is clobbered by the inner frame in that case.
+    pub(crate) fn element_constraint_for(&self, var_name: &str, value: &Value) -> Option<String> {
+        if let Some(info) = self.container_type_metadata(value) {
+            if info.value_type.is_empty() {
+                return None;
+            }
+            return Some(info.value_type);
+        }
+        self.var_type_constraint(var_name)
+    }
+
     /// Check that all values satisfy the element type constraint for a
     /// container variable (e.g. `my Int @a`). Returns Ok(()) if no constraint
     /// exists or all values pass; returns a type-check error otherwise.
+    /// `target` is the variable's current value: its embedded metadata takes
+    /// priority over the name-keyed constraint (see `element_constraint_for`).
     pub(crate) fn check_container_element_types(
         &mut self,
         var_name: &str,
+        target: &Value,
         values: &[Value],
     ) -> Result<(), RuntimeError> {
-        if let Some(constraint) = self.var_type_constraint(var_name) {
+        if let Some(constraint) = self.element_constraint_for(var_name, target) {
             for val in values {
                 if !val.is_nil() && !self.type_matches_value(&constraint, val) {
                     return Err(crate::runtime::utils::type_check_element_typed_error(
