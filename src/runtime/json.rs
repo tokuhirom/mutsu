@@ -133,7 +133,23 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
             out.push('"');
         }
         ValueView::Scalar(inner) => jsonify(inner, opts, level, out),
-        ValueView::Mixin(inner, _) => jsonify(inner, opts, level, out),
+        ValueView::Mixin(inner, mixins) => {
+            // A punned Rational-role instance is Real; JSON::Fast's Real:D
+            // candidate serializes it numerically (0.3), not as an opaque
+            // string. Its attrs ride in the mixin map.
+            if mixins.contains_key("__mutsu_role__Rational")
+                && let (Some(n), Some(d)) = (
+                    mixins.get("__mutsu_attr__numerator"),
+                    mixins.get("__mutsu_attr__denominator"),
+                )
+            {
+                let rat =
+                    crate::value::make_rat(n.as_int().unwrap_or(0), d.as_int().unwrap_or(1).max(1));
+                jsonify(&rat, opts, level, out);
+            } else {
+                jsonify(inner, opts, level, out);
+            }
+        }
         ValueView::Array(arr, _) => jsonify_seq(&arr.items, opts, level, out),
         ValueView::Seq(items)
         | ValueView::Slip(items)
