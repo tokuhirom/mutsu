@@ -326,13 +326,19 @@ pub(crate) enum FromJsonError {
 }
 
 /// Parse a JSON string into a `Value`. With `immutable`, arrays decode as
-/// `List` and objects as `Map` (JSON::Fast `:immutable`).
-pub(crate) fn from_json(text: &str, immutable: bool) -> Result<Value, FromJsonError> {
+/// `List` and objects as `Map` (JSON::Fast `:immutable`). With `allow_jsonc`,
+/// `//` line and `/* */` block comments are skipped (JSONC).
+pub(crate) fn from_json(
+    text: &str,
+    immutable: bool,
+    allow_jsonc: bool,
+) -> Result<Value, FromJsonError> {
     let mut p = Parser {
         bytes: text.as_bytes(),
         chars: text,
         pos: 0,
         immutable,
+        allow_jsonc,
     };
     p.skip_ws();
     let value = p.parse_value().map_err(FromJsonError::Parse)?;
@@ -353,6 +359,7 @@ struct Parser<'a> {
     chars: &'a str,
     pos: usize,
     immutable: bool,
+    allow_jsonc: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -385,6 +392,25 @@ impl<'a> Parser<'a> {
         while self.pos < self.bytes.len() {
             match self.bytes[self.pos] {
                 b' ' | b'\t' | b'\n' | b'\r' => self.pos += 1,
+                b'/' if self.allow_jsonc => {
+                    // JSONC comments: `// ...` to end of line, `/* ... */`
+                    // (non-overlapping: `/*/` is NOT a complete comment). An
+                    // invalid or unterminated comment leaves pos at the `/` so
+                    // the value parser reports it as an unexpected character.
+                    if self.bytes.get(self.pos + 1) == Some(&b'/') {
+                        self.pos += 2;
+                        while self.pos < self.bytes.len() && self.bytes[self.pos] != b'\n' {
+                            self.pos += 1;
+                        }
+                    } else if self.bytes.get(self.pos + 1) == Some(&b'*') {
+                        match self.chars[self.pos + 2..].find("*/") {
+                            Some(end) => self.pos += 2 + end + 2,
+                            None => break,
+                        }
+                    } else {
+                        break;
+                    }
+                }
                 _ => break,
             }
         }

@@ -770,6 +770,19 @@ impl Interpreter {
     /// Dispatch "values" method.
     fn dispatch_values_method(&self, target: Value) -> Result<Value, RuntimeError> {
         match target.view() {
+            // `Foo::.values` — the stash's symbol values (enum members, nested
+            // packages, ...), mirroring the Stash arm of dispatch_keys_method.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Stash" => {
+                let vals = match attributes.as_map().get("symbols").map(Value::view) {
+                    Some(ValueView::Hash(map)) => map.values().cloned().collect(),
+                    _ => Vec::new(),
+                };
+                Ok(Value::seq(vals))
+            }
             ValueView::Capture { positional, named } => {
                 let mut vals = positional.clone();
                 vals.extend(named.values().cloned());

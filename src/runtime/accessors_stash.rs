@@ -288,6 +288,15 @@ impl Interpreter {
             return Self::make_stash_instance(package, symbols);
         }
 
+        // Bool is a built-in enum whose members are not registered through the
+        // usual enum path; its stash still exposes them (`Bool::.values`).
+        if package_name == "Bool" {
+            let mut symbols: HashMap<String, Value> = HashMap::new();
+            symbols.insert("False".to_string(), Value::FALSE);
+            symbols.insert("True".to_string(), Value::TRUE);
+            return Self::make_stash_instance(package, symbols);
+        }
+
         if let Some((module, tag)) = Self::package_export_tag_parts(package) {
             let mut symbols: HashMap<String, Value> = HashMap::new();
             if let Some(subs) = self.exported_subs.get(module) {

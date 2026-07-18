@@ -36,12 +36,129 @@ impl Interpreter {
             .map(crate::runtime::types::unwrap_varref_value)
             .collect();
         match name {
-            "to-json" => Some(native_to_json(&clean_args, self.base_to_json_opts())),
+            "to-json" => {
+                let clean_args = self.prepare_to_json_args(clean_args);
+                Some(native_to_json(&clean_args, self.base_to_json_opts()))
+            }
             "from-json" => Some(native_from_json(
                 &clean_args,
                 self.json_import_defaults.immutable,
             )),
             _ => None,
+        }
+    }
+
+    /// Pre-convert to-json subject args: user instances doing Associative
+    /// (or Positional) serialize via their `.list` (JSON::Fast's
+    /// pretty/unpretty-associative and -positional iterate exactly that), so
+    /// deep-replace them with plain Hash/Array values the pure serializer
+    /// understands. Named (Pair) args are left alone.
+    fn prepare_to_json_args(&mut self, args: Vec<Value>) -> Vec<Value> {
+        args.into_iter()
+            .map(|a| match a.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => a,
+                _ if self.json_subject_needs_prepare(&a) => self.prepare_to_json_subject(&a),
+                _ => a,
+            })
+            .collect()
+    }
+
+    /// Cheap read-only scan: does the subject contain an Associative/Positional
+    /// user instance anywhere? Avoids deep-rebuilding plain data.
+    fn json_subject_needs_prepare(&mut self, val: &Value) -> bool {
+        match val.view() {
+            ValueView::Instance { .. }
+            | ValueView::Mixin(..)
+            | ValueView::CustomTypeInstance(..) => {
+                self.type_matches_value("Associative", val)
+                    || self.type_matches_value("Positional", val)
+            }
+            ValueView::Array(arr, _) => {
+                let items = arr.items.clone();
+                items.iter().any(|i| self.json_subject_needs_prepare(i))
+            }
+            ValueView::Seq(items) | ValueView::Slip(items) => {
+                let items = items.to_vec();
+                items.iter().any(|i| self.json_subject_needs_prepare(i))
+            }
+            ValueView::Hash(h) => {
+                let values: Vec<Value> = h.map.values().cloned().collect();
+                values.iter().any(|v| self.json_subject_needs_prepare(v))
+            }
+            ValueView::Scalar(inner) => {
+                let inner = inner.clone();
+                self.json_subject_needs_prepare(&inner)
+            }
+            _ => false,
+        }
+    }
+
+    fn prepare_to_json_subject(&mut self, val: &Value) -> Value {
+        match val.view() {
+            ValueView::Instance { .. }
+            | ValueView::Mixin(..)
+            | ValueView::CustomTypeInstance(..) => {
+                let assoc = self.type_matches_value("Associative", val);
+                let positional = self.type_matches_value("Positional", val);
+                if !assoc && !positional {
+                    return val.clone();
+                }
+                let Ok(listed) = self.call_method_with_values(val.clone(), "list", vec![]) else {
+                    return val.clone();
+                };
+                let items: Vec<Value> = match listed.view() {
+                    ValueView::Array(arr, _) => arr.items.clone(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                    _ => return val.clone(),
+                };
+                if assoc {
+                    // Associative wins over Positional (JSON::Fast dispatch
+                    // order); elements are Pairs.
+                    let mut map = std::collections::HashMap::new();
+                    for item in &items {
+                        match item.view() {
+                            ValueView::Pair(k, v) => {
+                                map.insert(k.clone(), self.prepare_to_json_subject(v));
+                            }
+                            ValueView::ValuePair(k, v) => {
+                                map.insert(k.to_string_value(), self.prepare_to_json_subject(v));
+                            }
+                            _ => {}
+                        }
+                    }
+                    Value::hash_with_data(Value::hash_arc(map))
+                } else {
+                    let items = items
+                        .iter()
+                        .map(|i| self.prepare_to_json_subject(i))
+                        .collect();
+                    Value::real_array(items)
+                }
+            }
+            ValueView::Array(arr, kind) => {
+                let items: Vec<Value> = arr
+                    .items
+                    .iter()
+                    .map(|i| self.prepare_to_json_subject(i))
+                    .collect();
+                Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                    kind,
+                )
+            }
+            ValueView::Hash(h) => {
+                let map: std::collections::HashMap<String, Value> = h
+                    .map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), self.prepare_to_json_subject(v)))
+                    .collect();
+                Value::hash_with_data(Value::hash_arc(map))
+            }
+            ValueView::Scalar(inner) => {
+                let inner = inner.clone();
+                self.prepare_to_json_subject(&inner)
+            }
+            _ => val.clone(),
         }
     }
 
@@ -126,15 +243,18 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
 
 fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, RuntimeError> {
     let mut immutable = default_immutable;
+    let mut allow_jsonc = false;
     let mut text = String::new();
     let mut have_text = false;
+    let mut named = |name: &str, val: &Value| match name {
+        "immutable" => immutable = val.truthy(),
+        "allow-jsonc" => allow_jsonc = val.truthy(),
+        _ => {}
+    };
     for arg in args {
         match arg.view() {
-            ValueView::Pair(name, val) if name == "immutable" => immutable = val.truthy(),
-            ValueView::ValuePair(key, val) if key.to_string_value() == "immutable" => {
-                immutable = val.truthy()
-            }
-            ValueView::Pair(..) | ValueView::ValuePair(..) => {}
+            ValueView::Pair(name, val) => named(name, val),
+            ValueView::ValuePair(key, val) => named(&key.to_string_value(), val),
             _ if !have_text => {
                 text = arg.to_string_value();
                 have_text = true;
@@ -142,7 +262,7 @@ fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, Ru
             _ => {}
         }
     }
-    json::from_json(&text, immutable).map_err(|e| match e {
+    json::from_json(&text, immutable, allow_jsonc).map_err(|e| match e {
         json::FromJsonError::Parse(msg) => RuntimeError::new(msg),
         json::FromJsonError::AdditionalContent {
             parsed,

@@ -789,7 +789,7 @@ impl Interpreter {
             }
         }
         if !skip_native
-            && matches!(method, "AT-KEY" | "keys")
+            && matches!(method, "AT-KEY" | "keys" | "values")
             && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
         {
             skip_native = true;
