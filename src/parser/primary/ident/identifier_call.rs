@@ -1398,6 +1398,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // List operators (grep, map, sort, etc.) parse full expressions as args
             // (up to comma/feed precedence), matching Raku's "list prefix" semantics.
             // e.g. `grep $_ == 1, 1, 2, 3` → `grep(($_ == 1), 1, 2, 3)`.
+            // A sequence operator (`...`/`…`) is looser than comma, so
+            // `say a, b ... limit` is ONE sequence argument (seed `a, b`). Absorb the
+            // whole comma level like the parenthesized-list parser, unless a method
+            // invocant colon follows (`name arg: ...`), which the normal path handles.
+            if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(r)
+                && !is_stmt_modifier_ahead(r)
+            {
+                let (r2, seq) = result?;
+                let (r2_ws, _) = ws(r2)?;
+                if !r2_ws.starts_with(':') || r2_ws.starts_with("::") {
+                    return Ok((r2, make_call_expr(name, input, vec![seq])));
+                }
+            }
             let parse_arg = |input| {
                 if is_stmt_modifier_ahead(input) {
                     return Err(PError::expected("listop argument"));

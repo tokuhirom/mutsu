@@ -33,3 +33,4 @@ pub(super) use sigil_context::{
 
 // pub(crate) re-exports — visible throughout the crate
 pub(crate) use allomorph::{angle_word_value, angle_word_value_full_allomorphic};
+pub(crate) use meta_ops::try_parse_sequence_arg_list;

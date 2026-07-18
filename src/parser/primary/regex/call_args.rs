@@ -105,6 +105,13 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
     if input.starts_with(')') {
         return Ok((input, Vec::new()));
     }
+    // A sequence operator (`...`/`…`) is looser than comma, so `f(a, b ... limit)`
+    // is ONE sequence argument (seed `a, b`), not `a` plus `b ... limit`. Absorb the
+    // whole comma level into a single sequence, matching the parenthesized-list parser.
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
+        let (rest, seq) = result?;
+        return Ok((rest, vec![seq]));
+    }
     // A LEADING semicolon starts with an empty group: `f(;x)` is the
     // two-slice list ((), (x,)) — rakudo's LoL argument form
     // (integration/weird-errors.t 11 EVALs `say(;:[])`).

@@ -1575,7 +1575,7 @@ pub(crate) struct MapGrepSpec {
 }
 
 /// Index-based transform applied lazily to a positional source, used by
-/// `.pairs`/`.antipairs`/`.kv` over a lazy list so they don't force it.
+/// `.pairs`/`.antipairs`/`.kv`/`flat` over a lazy list so they don't force it.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum IndexTransform {
     /// `.pairs`: element `i` → `Pair(i, elem)`.
@@ -1584,6 +1584,10 @@ pub(crate) enum IndexTransform {
     AntiPairs,
     /// `.kv`: element `i` → two flat outputs `i, elem`.
     Kv,
+    /// `flat`: each pulled element is flattened (`flat_val` in List context),
+    /// so `flat [2,3,4], 10, 11 ... *` spills the nested array's elements
+    /// while the sequence stays lazy. The index is unused.
+    Flat,
 }
 
 /// What a [`CatPullSpec`] lazy list pulls from its backing `IO::CatHandle`.

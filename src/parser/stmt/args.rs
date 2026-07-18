@@ -663,6 +663,15 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
         }
     }
 
+    // A sequence operator (`...`/`…`) is looser than comma, so `f(a, b ... limit)`
+    // is ONE sequence argument (seed `a, b`), not `a` plus `b ... limit`. Detect and
+    // absorb the whole comma level into a single sequence expression, matching the
+    // parenthesized-list behaviour.
+    if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
+        let (rest, seq) = result?;
+        return Ok((rest, CallArg::Positional(seq)));
+    }
+
     // Positional argument — try assignment expression first ($x = expr).
     // But do not consume a prefix before a fat-arrow chain (e.g. `2 => "x" => {...}`).
     let parsed_expr = expression(input).or_else(|_| reduction_call_style_expr(input));
