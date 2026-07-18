@@ -97,6 +97,8 @@ pub enum RakuAstClass {
     TypeSimple,
     // Phase 2 slice 20: definite types (`Int:D` / `Int:U`).
     TypeDefinedness,
+    // Phase 2 slice 27: attribute build-time defaults.
+    TraitWillBuild,
     // Phase 2 slice 21: parameterised types (`Array[Int]`).
     TypeParameterized,
     // Phase 2 slice 13: class and method declarations.
@@ -171,6 +173,7 @@ impl RakuAstClass {
             ApplyListInfix => "RakuAST::ApplyListInfix",
             TypeSimple => "RakuAST::Type::Simple",
             TypeDefinedness => "RakuAST::Type::Definedness",
+            TraitWillBuild => "RakuAST::Trait::WillBuild",
             TypeParameterized => "RakuAST::Type::Parameterized",
             Class => "RakuAST::Class",
             Method => "RakuAST::Method",
