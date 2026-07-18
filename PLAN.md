@@ -204,13 +204,13 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
       end-to-end (resolution #4650, concurrent fetch #4658, concurrent extract fixed on top of
       ADR-0010), and `use Test::META` resolves from the site repo afterwards.
 - [x] **Test-phase frontier closed (2026-07-19)**: on a fresh HOME, `zef install Test::META` with
-      tests ON runs all 13 suites concurrently and reports **12/13 Testing [OK]** (Test::META
-      itself, META6, License::SPDX, URI, JSON::Unmarshal/Marshal/Class/Name/OptIn, Test-Helpers).
-      The only FAIL is **JSON::Fast t/07-datetime.t**, blocked on `augment class DateTime` for a
-      builtin native class (MONKEY-TYPING — campaign-sized, tracked in
-      `docs/mzef-install-pipeline.md`); zef then correctly aborts, and `--force-test` completes the
-      full install with `use Test::META` loading from the fresh site repo. The four JSON::Fast
-      parity PRs (#4762/#4765/#4768/#4770) took that suite 3/14 → 13/14 files.
+      tests ON (no `--force-test`) runs every dependency suite concurrently, reports
+      **Testing [OK] for all of them — including JSON::Fast — and completes the install** (exit 0,
+      `use Test::META` loads from the fresh site repo). The five JSON::Fast parity PRs
+      (#4762/#4765/#4768/#4770/#4777) took that suite 3/14 → **14/14 files**; the last one added
+      `augment class DateTime/Date` on builtin native classes (an augmented `multi method new`
+      candidate participates in construction dispatch, falling back to the native ctor on
+      no-match), Instant-as-ISO-string serialization, and the hyper `»=~=«`/`»=:=«` fix.
 - [ ] **An `mzef` binary shim** + vendoring of zef itself + dependencies + config (debian's zef
       lacks `resources/bin/zef`; a known-good vendoring is needed — the working copy lives outside
       this repo today).
