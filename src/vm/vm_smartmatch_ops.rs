@@ -116,6 +116,13 @@ impl Interpreter {
             // (carrier log + env_dirty). Otherwise a carrier dropping its blanket
             // net loses the `~~ s///` writeback (Slice C', open-question #2).
             self.note_caller_env_write(var_name);
+            // A scalar-attribute LHS (`$!query ~~ s/...//`) lives in self's
+            // shared attribute cell, not just the env copy — mirror the
+            // substitution result there so the mutation persists past the
+            // method frame.
+            if var_name.starts_with('!') || var_name.starts_with('.') {
+                self.write_self_attr_cell(var_name, modified_topic.clone());
+            }
             // When the topic itself was modified (`$_ ~~ s///` inside a
             // `given $x` / `with $x` block), `$_` aliases the source scalar
             // variable, so the in-place substitution must propagate back to it —

@@ -204,6 +204,40 @@ impl Interpreter {
             }
             _ => idx,
         };
+        // A user-defined Positional/Associative object (`$q[1]:delete` /
+        // `$q<k>:delete`) dispatches the raku subscript protocol
+        // (DELETE-POS/DELETE-KEY). The opcode does not carry the subscript
+        // kind, so pick by the index's type, falling back to whichever
+        // protocol method the class declares.
+        if let Some(target) = self.env().get(&var_name).cloned()
+            && let ValueView::Instance { class_name, .. } = target.view()
+        {
+            let (primary, secondary) = if matches!(idx.view(), ValueView::Int(_)) {
+                ("DELETE-POS", "DELETE-KEY")
+            } else {
+                ("DELETE-KEY", "DELETE-POS")
+            };
+            let cn = class_name.resolve();
+            let method = if self.has_user_method(&cn, primary) {
+                Some(primary)
+            } else if self.has_user_method(&cn, secondary) {
+                Some(secondary)
+            } else {
+                None
+            };
+            if let Some(m) = method {
+                let idx_arg = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
+                        items[0].clone()
+                    }
+                    _ => idx.clone(),
+                };
+                let out = self.call_method_with_values(target, m, vec![idx_arg])?;
+                self.stack.push(out);
+                return Ok(());
+            }
+        }
         // Fast path for simple hash delete
         if let Some(result) = self.try_fast_hash_delete(code, &var_name, slot, &idx) {
             self.stack.push(result?);

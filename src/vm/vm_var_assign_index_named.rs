@@ -305,6 +305,43 @@ impl Interpreter {
         let declared_shape_key = format!("__mutsu_shaped_array_dims::{var_name}");
         let has_declared_shape = self.env().contains_key(&declared_shape_key);
         let idx = self.stack.pop().unwrap_or(Value::NIL);
+        // A user-defined Associative/Positional object in a scalar
+        // (`my $q = URI::Query.new(...); $q<baz> = v` / `$q[0] = v`) dispatches
+        // the raku subscript protocol (ASSIGN-KEY/ASSIGN-POS) — without this
+        // the plain-Hash fallback below would REPLACE the instance with a
+        // fresh Hash. Only fires when the class actually declares the method,
+        // so `class MyHash is Hash {}` keeps the container-subclass path.
+        if let Some(target) = self.env().get(&var_name).cloned()
+            && let ValueView::Instance { class_name, .. } = target.view()
+        {
+            let method = if is_positional {
+                "ASSIGN-POS"
+            } else {
+                "ASSIGN-KEY"
+            };
+            if self.has_user_method(&class_name.resolve(), method) {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                // Unwrap a single-element subscript list (`<baz>` parses as a
+                // one-element list) to the bare key/index.
+                let idx_arg = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
+                        items[0].clone()
+                    }
+                    _ => idx.clone(),
+                };
+                // A Pair VALUE must arrive as a positional argument, not be
+                // eaten as a named arg (`$q[0] = 'qux' => 4` passes the Pair
+                // to `ASSIGN-POS($i, Pair $p)`).
+                let val_arg = match val.view() {
+                    ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+                    _ => val.clone(),
+                };
+                self.call_method_with_values(target, method, vec![idx_arg, val_arg])?;
+                self.stack.push(val);
+                return Ok(());
+            }
+        }
         // A subscript that names exactly ONE element assigns to a scalar slot, so
         // the assignment's rvalue is itemized just like a scalar-variable
         // assignment (`@z = (@a[0] = 1, 2)` => `@z.elems == 1`, and likewise for
@@ -2176,6 +2213,49 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A user-defined Associative/Positional object as the chained-subscript
+        // base (`$q<foo>[0] = v` where `$q` is a URI::Query instance): read the
+        // inner collection via AT-KEY/AT-POS; a Proxy element routes the write
+        // through its STORE (URI's read-only lists throw X::Assignment::RO
+        // from there).
+        if let Some(target) = self.env().get(&var_name).cloned()
+            && let ValueView::Instance { class_name, .. } = target.view()
+        {
+            let cn = class_name.resolve();
+            let (p, s) = if inner_positional {
+                ("AT-POS", "AT-KEY")
+            } else {
+                ("AT-KEY", "AT-POS")
+            };
+            let at = if self.has_user_method(&cn, p) {
+                Some(p)
+            } else if self.has_user_method(&cn, s) {
+                Some(s)
+            } else {
+                None
+            };
+            if let Some(at) = at {
+                let inner = self
+                    .call_method_with_values(target, at, vec![inner_idx.clone()])?
+                    .deref_container();
+                let idx_u = crate::runtime::to_int(&outer_idx) as usize;
+                let elem = match inner.view() {
+                    ValueView::Array(items, _) => items.get(idx_u).cloned(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => items.get(idx_u).cloned(),
+                    _ => None,
+                };
+                if let Some(elem) = elem
+                    && let ValueView::Proxy { storer, .. } = elem.view()
+                {
+                    if storer.is_nil() {
+                        return Err(RuntimeError::assignment_ro(None));
+                    }
+                    self.call_sub_value(storer.clone(), vec![elem.clone(), val.clone()], true)?;
+                    self.stack.push(val);
+                    return Ok(());
+                }
+            }
+        }
         let inner_key = inner_idx.to_string_value();
         // A WhateverCode array index (`%h<k>[*-0] = v` / `@a[0][*-1] = v`) must be
         // resolved against the inner container's current length before it becomes

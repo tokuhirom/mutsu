@@ -42,9 +42,99 @@ impl Interpreter {
             if fetcher.is_nil() {
                 return Ok(Value::NIL);
             }
-            return self.call_sub_value(fetcher.clone(), vec![value.clone()], true);
+            // merge_all=true gives the FETCH body caller-priority inputs (it
+            // must see the CURRENT value of a captured lexical the STORE side
+            // mutates — substr-rw's `$str`). But its post-call whole-env merge
+            // would leak the body's captures into the caller: two map-produced
+            // Proxies sharing a captured `$v` name would both freeze to the
+            // first FETCHed value. FETCH is a READ, so run with caller-priority
+            // inputs and DISCARD every env effect afterwards.
+            let saved_env = self.env.clone();
+            let result = self.call_sub_value(fetcher.clone(), vec![value.clone()], true);
+            self.env = saved_env;
+            return result;
         }
         Ok(value.clone())
+    }
+
+    /// Whether a value is (or contains, one container level deep per recursion
+    /// step) a `Proxy` element that a value-context read must FETCH.
+    fn value_has_proxy(value: &Value) -> bool {
+        match value.view() {
+            ValueView::Proxy { .. } => true,
+            ValueView::Array(items, _) => items.iter().any(Self::value_has_proxy),
+            ValueView::Seq(items) | ValueView::Slip(items) => {
+                items.iter().any(Self::value_has_proxy)
+            }
+            ValueView::Hash(map) => map.values().any(Self::value_has_proxy),
+            ValueView::Pair(_, v) => Self::value_has_proxy(v),
+            ValueView::ValuePair(k, v) => Self::value_has_proxy(k) || Self::value_has_proxy(v),
+            _ => false,
+        }
+    }
+
+    /// Deep-resolve `Proxy` values for a value-context read: every Proxy —
+    /// top-level or inside an Array/List/Seq/Slip/Hash/Pair — is replaced by
+    /// its FETCHed value (raku semantics: reading through a container FETCHes;
+    /// `((1,2).map({ Proxy.new(...) }).List).raku` renders the values). The
+    /// no-Proxy common case is a cheap scan with no allocation. Mirrors
+    /// `resolve_bound_array_elements` (the ContainerRef twin), but needs
+    /// `&mut self` for the FETCH closure calls.
+    pub(crate) fn resolve_proxies_in_value(
+        &mut self,
+        value: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if !Self::value_has_proxy(value) {
+            return Ok(value.clone());
+        }
+        match value.view() {
+            ValueView::Proxy { .. } => {
+                let fetched = self.auto_fetch_proxy(value)?;
+                // A FETCH may itself return a Proxy-bearing structure.
+                self.resolve_proxies_in_value(&fetched)
+            }
+            ValueView::Array(items, kind) => {
+                let resolved: Result<Vec<Value>, RuntimeError> = items
+                    .iter()
+                    .map(|v| self.resolve_proxies_in_value(v))
+                    .collect();
+                Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(resolved?)),
+                    kind,
+                ))
+            }
+            ValueView::Seq(items) => {
+                let resolved: Result<Vec<Value>, RuntimeError> = items
+                    .iter()
+                    .map(|v| self.resolve_proxies_in_value(v))
+                    .collect();
+                Ok(Value::seq_arc(std::sync::Arc::new(resolved?)))
+            }
+            ValueView::Slip(items) => {
+                let resolved: Result<Vec<Value>, RuntimeError> = items
+                    .iter()
+                    .map(|v| self.resolve_proxies_in_value(v))
+                    .collect();
+                Ok(Value::slip_arc(std::sync::Arc::new(resolved?)))
+            }
+            ValueView::Hash(map) => {
+                let mut resolved = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    resolved.insert(k.clone(), self.resolve_proxies_in_value(v)?);
+                }
+                Ok(Value::hash(resolved))
+            }
+            ValueView::Pair(k, v) => {
+                let rv = self.resolve_proxies_in_value(v)?;
+                Ok(Value::pair(k.clone(), rv))
+            }
+            ValueView::ValuePair(k, v) => {
+                let rk = self.resolve_proxies_in_value(k)?;
+                let rv = self.resolve_proxies_in_value(v)?;
+                Ok(Value::value_pair(rk, rv))
+            }
+            _ => Ok(value.clone()),
+        }
     }
 
     fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
