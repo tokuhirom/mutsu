@@ -611,8 +611,11 @@ impl Interpreter {
     }
 
     /// Snapshot the slot-backing env values before a `lives-ok`/`dies-ok` carrier
-    /// runs, for the locals whose slot is overwritable. `None` entries (cell /
-    /// Array / Hash slots, or absent env keys) are never written back.
+    /// runs. Overwritable slots use it for the changed-value diff; plain
+    /// Array/Hash slots also snapshot (their writeback additionally requires
+    /// the pre-carrier env to have been in sync with the slot — see
+    /// `carrier_writeback_changed_aggregates`). `None` entries (binding cells,
+    /// `!attr`, absent env keys) are never written back.
     pub(super) fn snapshot_carrier_overwritable_env(
         &self,
         code: &CompiledCode,
@@ -621,7 +624,12 @@ impl Interpreter {
             .iter()
             .enumerate()
             .map(|(i, name)| {
-                if name.starts_with('!') || !Self::slot_carrier_overwritable(&self.locals[i]) {
+                if name.starts_with('!')
+                    || matches!(
+                        self.locals[i].view(),
+                        ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_)
+                    )
+                {
                     None
                 } else {
                     self.carrier_env_value(name)
@@ -654,11 +662,22 @@ impl Interpreter {
             if !Self::slot_carrier_overwritable(&self.locals[i]) {
                 // A plain Array/Hash slot: overwriting from env normally risks
                 // clobbering a live interior `:=` element cell (env may hold a
-                // COW-detached copy). The one safe case is a *type change away* from
-                // the container — `$a does Role` turns a Hash `$a` into a `Mixin`,
-                // discarding the old container wholesale — so write through only
-                // when the env value's variant differs from the slot's.
+                // COW-detached copy). Two safe cases:
+                // - a *type change away* from the container (`$a does Role`
+                //   turns a Hash `$a` into a `Mixin`), discarding the old
+                //   container wholesale;
+                // - a clean observed REBIND: the slot and env were in sync
+                //   before the carrier and the carrier produced a different
+                //   value (`lives-ok { $parsed = %h{$k} }` re-run — the second
+                //   Hash assignment was silently dropped, JSON::Marshal
+                //   t/030-trait.t / t/080-type-constraints.t). A pre-carrier
+                //   divergence (a live-cell copy) keeps the skip.
                 if !self.locals[i].same_variant(&cur) {
+                    self.locals[i] = cur;
+                } else if let Some(Some(prev)) = pre_env.get(i)
+                    && *prev == self.locals[i]
+                    && *prev != cur
+                {
                     self.locals[i] = cur;
                 }
                 continue;

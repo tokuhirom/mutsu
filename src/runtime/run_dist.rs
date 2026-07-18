@@ -20,22 +20,22 @@ impl Interpreter {
         // Priority 1: the executing routine's defining package (innermost first).
         for frame in self.routine_stack.iter().rev() {
             if let Some(dist) = self.package_distributions.get(&frame.package) {
-                return Self::build_resources_from_dist(dist);
+                return self.build_resources_from_dist(&dist.clone());
             }
         }
         // Priority 2: current_distribution (set during module loading) — the
         // right answer for top-level module code that is not inside any routine.
         if let Some(dist) = &self.current_distribution {
-            return Self::build_resources_from_dist(dist);
+            return self.build_resources_from_dist(&dist.clone());
         }
         // Priority 3: Look up by current package
         if let Some(dist) = self.package_distributions.get(&self.current_package()) {
-            return Self::build_resources_from_dist(dist);
+            return self.build_resources_from_dist(&dist.clone());
         }
         Value::hash_with_data(Value::hash_arc(HashMap::new()))
     }
 
-    fn build_resources_from_dist(dist: &Value) -> Value {
+    fn build_resources_from_dist(&self, dist: &Value) -> Value {
         use std::collections::HashMap;
 
         let meta = match dist.view() {
@@ -77,7 +77,10 @@ impl Interpreter {
                     if let Some(ref fv) = files_val
                         && let Some(path_val) = fv.hash_get_str(&files_key)
                     {
-                        result.insert(key, path_val);
+                        // IO::Path-like entry: `%?RESOURCES<x>.slurp` works
+                        // (rakudo's Distribution::Resource — License::SPDX
+                        // slurps its licenses.json this way).
+                        result.insert(key, self.make_io_path_instance(&path_val.to_string_value()));
                         continue;
                     }
                     let actual_path = if key.starts_with("libraries/") {
@@ -99,7 +102,7 @@ impl Interpreter {
                     } else {
                         format!("{prefix}/resources/{key}")
                     };
-                    result.insert(key, Value::str(actual_path));
+                    result.insert(key, self.make_io_path_instance(&actual_path));
                 }
             }
             ValueView::Hash(map) => {

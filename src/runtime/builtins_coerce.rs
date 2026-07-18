@@ -49,6 +49,13 @@ impl Interpreter {
             return Ok(Value::package(Symbol::intern(&format!("{name}({source})"))));
         }
         let coerced = match name {
+            // `Rat($x)` / `FatRat($x)` / `Complex($x)` delegate to the method
+            // form (`$x.Rat` …), which carries the full native coercion logic
+            // incl. Failure semantics for invalid strings (JSON::Unmarshal's
+            // `multi _unmarshal(Any:D $json, Rat) { Rat($json) }`).
+            "Rat" | "FatRat" | "Complex" => {
+                return self.call_method_with_values(value.clone(), name, vec![]);
+            }
             "Int" => match value.view() {
                 ValueView::Int(i) => Value::int(i),
                 ValueView::Num(f) => Value::int(f as i64),

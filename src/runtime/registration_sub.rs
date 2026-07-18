@@ -1025,8 +1025,16 @@ impl Interpreter {
         {
             Some(Value::package(Symbol::intern(name)))
         } else if let Some(val) = self.env.get(name) {
-            // Also check env for type objects (e.g. lexical roles/classes)
-            if matches!(val.view(), ValueView::Package(_)) {
+            // Also check env for type objects (e.g. lexical roles/classes).
+            // Exclude the `my TYPE $name` declaration placeholder: SetVarType
+            // seeds env[name] with the TYPE object under the scalar's key, but
+            // that does not make `name` a type — `my Str $json;` in scope must
+            // not turn the `is json` attribute trait into a positional-type
+            // dispatch (JSON::Marshal t/140-opt-in.t). A declared variable is
+            // recognizable by its recorded type constraint.
+            if matches!(val.view(), ValueView::Package(_))
+                && (self.var_type_constraint(name).is_none() || self.has_type_direct(name))
+            {
                 Some(val.clone())
             } else {
                 None

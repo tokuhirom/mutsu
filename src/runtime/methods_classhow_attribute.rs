@@ -195,6 +195,17 @@ impl Interpreter {
             Value::package(Symbol::intern(&type_name)),
         );
         meta.insert("has_accessor".to_string(), Value::truth(is_public));
+        // `is_built`: whether `.new` initializes the attribute from a named
+        // arg — true for public attrs, false for `has $!x` privates, and
+        // overridable by the `is built(...)` trait (rakudo; JSON::Marshal's
+        // `_marshal` probes it to include `has $!half-priv is built`).
+        let is_built = self
+            .registry()
+            .classes
+            .get(owner)
+            .and_then(|cd| cd.attribute_built.get(attr_name).copied())
+            .unwrap_or(is_public);
+        meta.insert("is_built".to_string(), Value::truth(is_built));
         if let Some(default_expr) = default {
             meta.insert("__mutsu_has_build".to_string(), Value::TRUE);
             if let crate::ast::Expr::Literal(v) = default_expr {
@@ -289,6 +300,7 @@ impl Interpreter {
         );
         meta.insert("is_public".to_string(), Value::truth(is_public));
         meta.insert("has_accessor".to_string(), Value::truth(is_public));
+        meta.insert("is_built".to_string(), Value::truth(is_public));
         meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
         meta.insert(
             "type".to_string(),
