@@ -164,10 +164,19 @@ impl Interpreter {
     }
 
     /// Enforce type smiley constraints (`:U`, `:D`) on attribute values during `.new`.
+    ///
+    /// `provided` — the attribute names explicitly passed to the constructor,
+    /// when the call site knows them (pre-BUILD assembly). An `is required`
+    /// `:D` attribute that WAS provided with an undefined value throws
+    /// X::TypeCheck::Assignment; one that is merely still unset is left to the
+    /// required check (X::Attribute::Required). Pass `None` post-BUILD or when
+    /// the arg list is unavailable — then required attrs are skipped entirely
+    /// (the old behavior).
     pub(crate) fn enforce_attribute_smiley_constraints(
         &mut self,
         class_name: &str,
         attrs: &AttrMap,
+        provided: Option<&std::collections::HashSet<String>>,
     ) -> Result<(), RuntimeError> {
         // Collect smileys and required status from this class and all parent classes in the MRO
         let mut smileys: HashMap<String, String> = HashMap::new();
@@ -190,9 +199,46 @@ impl Interpreter {
         }
 
         for (attr_name, smiley) in &smileys {
-            // Skip smiley check for required attributes — the required check
-            // should take priority (it fires separately and produces a better error)
+            // For required attributes the missing-value case is left to the
+            // required check (it produces the better error) — but a required
+            // `:D` attribute that WAS supplied with an undefined value fails
+            // the assignment typecheck, like rakudo (JSON::Unmarshal 040:
+            // `unmarshal('{"attr": null}', IntDClass)`).
             if required_attrs.contains(attr_name) {
+                if smiley == "D"
+                    && provided.is_some_and(|p| p.contains(attr_name))
+                    && let Some(value) = attrs.get(attr_name)
+                    && !super::types::value_is_defined(value)
+                {
+                    let base_type = self
+                        .registry()
+                        .classes
+                        .get(class_name)
+                        .and_then(|cd| cd.attribute_types.get(attr_name))
+                        .cloned()
+                        .unwrap_or_else(|| "Any".to_string());
+                    let got_type = super::value_type_name(value).to_string();
+                    let msg = format!(
+                        "Type check failed in assignment to $!{}; expected {}:D but got {} ({}) (perhaps Nil was assigned to a :D which had no default?)",
+                        attr_name,
+                        base_type.trim_end_matches(":D").trim_end_matches(":U"),
+                        got_type,
+                        crate::runtime::utils::gist_value(value),
+                    );
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+                    ex_attrs.insert("operation".to_string(), Value::str_from("assignment"));
+                    ex_attrs.insert("got".to_string(), value.clone());
+                    ex_attrs.insert(
+                        "expected".to_string(),
+                        Value::package(Symbol::intern(&format!("{base_type}:D"))),
+                    );
+                    let ex =
+                        Value::make_instance(Symbol::intern("X::TypeCheck::Assignment"), ex_attrs);
+                    let mut err = RuntimeError::new(msg);
+                    err.exception = Some(Box::new(ex));
+                    return Err(err);
+                }
                 continue;
             }
             let Some(value) = attrs.get(attr_name) else {

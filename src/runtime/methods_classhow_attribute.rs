@@ -111,6 +111,8 @@ impl Interpreter {
     /// Build an Attribute introspection object for a modelled built-in type
     /// attribute (private `$!name`, no accessor, read-only).
     fn make_builtin_attribute_object(attr_name: &str, type_name: &str, owner: &str) -> Value {
+        let has_accessor =
+            crate::builtins::builtin_type_methods::builtin_type_attr_has_accessor(owner, attr_name);
         let mut meta = HashMap::new();
         meta.insert("name".to_string(), Value::str(format!("$!{}", attr_name)));
         meta.insert(
@@ -121,14 +123,14 @@ impl Interpreter {
             "__mutsu_attr_owner".to_string(),
             Value::str(owner.to_string()),
         );
-        meta.insert("is_public".to_string(), Value::FALSE);
+        meta.insert("is_public".to_string(), Value::truth(has_accessor));
         meta.insert("is_rw".to_string(), Value::FALSE);
         meta.insert("sigil".to_string(), Value::str("$".to_string()));
         meta.insert(
             "type".to_string(),
             Value::package(Symbol::intern(type_name)),
         );
-        meta.insert("has_accessor".to_string(), Value::FALSE);
+        meta.insert("has_accessor".to_string(), Value::truth(has_accessor));
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 

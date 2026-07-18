@@ -729,8 +729,27 @@ pub(crate) fn builtin_type_attributes(type_name: &str) -> &'static [(&'static st
             ("infinite", "Bool"),
             ("is-int", "Bool"),
         ],
+        // DateTime's public-accessor attributes (rakudo also has `&!formatter`,
+        // omitted here so a JSON round-trip's null formatter is simply unused).
+        // `second` is Mu so a fractional value passes through unchanged.
+        "DateTime" => &[
+            ("hour", "Int"),
+            ("minute", "Int"),
+            ("second", "Mu"),
+            ("timezone", "Int"),
+            ("year", "Int"),
+            ("month", "Int"),
+            ("day", "Int"),
+            ("daycount", "Int"),
+        ],
         _ => &[],
     }
+}
+
+/// Whether a modelled built-in attribute has a public accessor (`.year` on
+/// DateTime, ...). The numeric internals (`Rat.$!numerator`, ...) stay private.
+pub(crate) fn builtin_type_attr_has_accessor(type_name: &str, _attr_name: &str) -> bool {
+    matches!(type_name, "DateTime")
 }
 
 /// The built-in MRO (parent chain) for `type_name`, up to but not including

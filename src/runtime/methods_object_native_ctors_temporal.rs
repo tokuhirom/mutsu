@@ -191,7 +191,12 @@ impl Interpreter {
                         }
                     }
                     "formatter" => {
-                        formatter = Some(value.clone());
+                        // An undefined formatter (`:formatter(Callable)` — e.g.
+                        // JSON round-tripping a null formatter) means "no
+                        // formatter", same as rakudo.
+                        if !matches!(value.view(), ValueView::Package(_) | ValueView::Nil) {
+                            formatter = Some(value.clone());
+                        }
                         has_named = true;
                     }
                     _ => {}

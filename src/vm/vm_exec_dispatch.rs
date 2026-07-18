@@ -2846,7 +2846,7 @@ impl Interpreter {
                         // control signal (e.g. `warn`) can be resumed after
                         // the call site by `.resume` in a CONTROL block.
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -2872,7 +2872,7 @@ impl Interpreter {
                     Err(e) => {
                         // Same resume-point recording as CallFunc.
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -2904,7 +2904,7 @@ impl Interpreter {
                         // re-raises a control signal, the original resume
                         // point (e.g. after `warn`) must be preserved.
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -2929,7 +2929,7 @@ impl Interpreter {
                         // control signal (e.g. a resumable `warn`) can be
                         // resumed after the call site by `.resume`.
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -2955,7 +2955,7 @@ impl Interpreter {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -3007,7 +3007,7 @@ impl Interpreter {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -3074,7 +3074,7 @@ impl Interpreter {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -3097,7 +3097,7 @@ impl Interpreter {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -3120,7 +3120,7 @@ impl Interpreter {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -3563,7 +3563,7 @@ impl Interpreter {
                     *ip += 1;
                 } else {
                     let val = spec.error.clone();
-                    self.resume_ip = Some(*ip + 1);
+                    self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                     let mut err = self.runtime_error_from_exception_value(val, "Died", false);
                     self.attach_backtrace_to_error(&mut err);
                     return Err(err);
@@ -3573,7 +3573,7 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 // Store the resume point (instruction after Die) for .resume support
-                self.resume_ip = Some(*ip + 1);
+                self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                 // die() with empty array (from parsing die() with parens) should
                 // check $! first, falling back to "Died" default
                 let val = if matches!(val.view(), ValueView::Array(items, _) if items.is_empty()) {
@@ -3885,7 +3885,7 @@ impl Interpreter {
                         // hyper op re-raises it carrying the full result); record
                         // the resume point so `.resume` continues after the call.
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }
@@ -3901,7 +3901,7 @@ impl Interpreter {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
-                            self.resume_ip = Some(*ip + 1);
+                            self.resume_ip = Some((Self::resume_code_fp(code), *ip + 1));
                         }
                         return Err(e);
                     }

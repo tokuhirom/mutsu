@@ -1576,7 +1576,7 @@ impl Interpreter {
                     }
                 }
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
-                self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
+                self.enforce_attribute_smiley_constraints(class_key, &attrs, None)?;
                 let int_ctor_val = if matches!(
                     positional_ctor_args.first().map(Value::view),
                     Some(ValueView::Package(_))
@@ -1821,7 +1821,13 @@ impl Interpreter {
                 // Add alias metadata for `has $x` (no twigil) attributes
                 self.add_alias_attribute_metadata(class_key, &mut attrs);
                 self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
-                self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
+                self.enforce_attribute_smiley_constraints(
+                    class_key,
+                    &attrs,
+                    // With a BUILD submethod the pre-BUILD attrs are not final;
+                    // the provided-and-undefined `:D` check must wait.
+                    (!any_build).then_some(&provided_attr_names),
+                )?;
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
                 let mut restored_env = saved_default_env.clone();
@@ -1884,7 +1890,7 @@ impl Interpreter {
                         }
                     }
                     self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
-                    self.enforce_attribute_smiley_constraints(class_key, &attrs)?;
+                    self.enforce_attribute_smiley_constraints(class_key, &attrs, None)?;
                 }
                 let any_tweak = mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"

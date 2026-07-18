@@ -284,7 +284,7 @@ pub(super) unsafe extern "C" fn call_method(
         }
         Err(e) => {
             if !e.is_resume() && interp.resume_ip.is_none() {
-                interp.resume_ip = Some(op_idx as usize + 1);
+                interp.resume_ip = Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
             }
             park_err(interp, e)
         }
@@ -344,7 +344,7 @@ pub(super) unsafe extern "C" fn call_method_mut(
         }
         Err(e) => {
             if !e.is_resume() && interp.resume_ip.is_none() {
-                interp.resume_ip = Some(op_idx as usize + 1);
+                interp.resume_ip = Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
             }
             park_err(interp, e)
         }
@@ -396,7 +396,7 @@ pub(super) unsafe extern "C" fn call_func(
         }
         Err(e) => {
             if !e.is_resume() && interp.resume_ip.is_none() {
-                interp.resume_ip = Some(op_idx as usize + 1);
+                interp.resume_ip = Some((Interpreter::resume_code_fp(code), op_idx as usize + 1));
             }
             park_err(interp, e)
         }

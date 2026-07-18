@@ -261,7 +261,13 @@ impl Interpreter {
                     .split_once('[')
                     .and_then(|(_, rest)| rest.strip_suffix(']'))
                 {
-                    return Ok(Value::package(Symbol::intern(inner)));
+                    // `ValueType{KeyType}` object-hash form: `.of` is the value
+                    // type only (the key type may contain commas, so split the
+                    // braces before any comma handling).
+                    let (value_type, key) =
+                        crate::runtime::types::split_object_hash_constraint(inner);
+                    let of_type = if key.is_some() { value_type } else { inner };
+                    return Ok(Value::package(Symbol::intern(of_type)));
                 }
             }
             let type_name = self

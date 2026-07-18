@@ -622,6 +622,14 @@ impl Interpreter {
             // Clear any stale `where`-`fail` message; captured below if this
             // subset's predicate fails by throwing (see `subset_where_fail`).
             self.subset_where_fail = None;
+            // A subset check is a pure predicate evaluated during type checks
+            // and multi dispatch: NO env effect of its body may survive. The
+            // per-name saves below cover the bind variable, but a sub call
+            // inside the predicate can write back same-named caller lexicals
+            // (JSON::Unmarshal: `maybe-nominalize` inside ClassLike's `where`
+            // clobbered the dispatching frame's `%json`), so snapshot and
+            // restore the whole env around the evaluation (CoW — cheap).
+            let saved_predicate_env = subset.predicate.is_some().then(|| self.env.clone());
             let ok = if let Some(pred) = &subset.predicate {
                 // A predicate that takes its candidate value through a single
                 // simple variable is equivalent to running its body with that
@@ -735,6 +743,9 @@ impl Interpreter {
             } else {
                 true
             };
+            if let Some(saved_env) = saved_predicate_env {
+                self.env = saved_env;
+            }
             return ok;
         }
         if let Some((constraint_base, constraint_args)) =

@@ -541,6 +541,9 @@ impl Interpreter {
                 if k != "_"
                     && k != "@_"
                     && k != "%_"
+                    // Per-frame non-local-return target marker: writing the callee's
+                    // id back would retarget blocks the caller creates afterwards.
+                    && k != "__mutsu_callable_id"
                     && ((restored_env.contains_key_sym(*k)
                         && !excluded_names.contains(&k_str)
                         && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))

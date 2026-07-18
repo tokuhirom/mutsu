@@ -2,6 +2,38 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Resolve a nominalizable type name to its nominal base type
+    /// (`^nominalize`): strip `:D`/`:U`/`:_` definiteness, unwrap a coercion
+    /// type (`Int(Rat)` -> `Int`), and walk a subset chain to the first
+    /// non-subset base. Plain nominal types return themselves.
+    pub(crate) fn nominalize_type_name(&self, name: &str) -> String {
+        let mut current = name.to_string();
+        loop {
+            let stripped = current
+                .strip_suffix(":D")
+                .or_else(|| current.strip_suffix(":U"))
+                .or_else(|| current.strip_suffix(":_"));
+            if let Some(s) = stripped {
+                current = s.to_string();
+                continue;
+            }
+            if crate::runtime::types::is_coercion_constraint(&current)
+                && let Some((target, _)) = crate::runtime::types::parse_coercion_type(&current)
+            {
+                current = target.to_string();
+                continue;
+            }
+            if let Some(subset) = self.registry().subsets.get(&current) {
+                let base = subset.base.clone();
+                if !base.is_empty() && base != current {
+                    current = base;
+                    continue;
+                }
+            }
+            return current;
+        }
+    }
+
     pub(super) fn dispatch_classhow_method(
         &mut self,
         method: &str,
@@ -260,27 +292,44 @@ impl Interpreter {
                     .unwrap_or(invocant_name.as_str());
                 let is_role = self.registry().roles.contains_key(base_name);
                 let is_subset = self.registry().subsets.contains_key(base_name);
-                // A coercion type (`Str(Int)`) carries parens in its name.
-                let is_coercive = base_name.contains('(') || invocant_name.contains('(');
+                // A coercion type (`Str(Int)`) carries parens in its name. Use
+                // the strict form check — a bare `contains('(')` also fires on
+                // parens embedded in a where-clause of a `T{K}` key-typed hash
+                // (`Associative[Str{subset ... where any("a", "b")}]`).
+                let is_coercive = crate::runtime::types::is_coercion_constraint(&invocant_name);
+                // A definite type (`Int:D` / `Int:U`) wraps its base type
+                // (rakudo: nominal=False, nominalizable=True, definite=True).
+                let is_definite = invocant_name.ends_with(":D") || invocant_name.ends_with(":U");
                 let mut attrs = HashMap::new();
                 attrs.insert("composable".to_string(), Value::truth(is_role));
-                // Classes, enums, and roles are nominal; subsets and coercion
-                // types are not (JSON::Unmarshal's ClassLike subset — rakudo
-                // reports roles as nominal too).
+                // Classes, enums, and roles are nominal; subsets, coercion
+                // types, and definite types are not (JSON::Unmarshal's
+                // ClassLike subset — rakudo reports roles as nominal too).
                 attrs.insert(
                     "nominal".to_string(),
-                    Value::truth(!is_subset && !is_coercive),
+                    Value::truth(!is_subset && !is_coercive && !is_definite),
                 );
-                // Subsets and coercion types can be nominalized (^nominalize).
+                // Subsets, coercion types, and definite types can be
+                // nominalized (^nominalize).
                 attrs.insert(
                     "nominalizable".to_string(),
-                    Value::truth(is_subset || is_coercive),
+                    Value::truth(is_subset || is_coercive || is_definite),
                 );
                 attrs.insert("coercive".to_string(), Value::truth(is_coercive));
+                attrs.insert("definite".to_string(), Value::truth(is_definite));
                 Ok(Value::make_instance(
                     Symbol::intern("Perl6::Metamodel::Archetypes"),
                     attrs,
                 ))
+            }
+            "nominalize" if !args.is_empty() => {
+                let invocant_name = match args[0].view() {
+                    ValueView::Package(name) => name.resolve(),
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => value_type_name(&args[0]).to_string(),
+                };
+                let nominal = self.nominalize_type_name(&invocant_name);
+                Ok(Value::package(Symbol::intern(&nominal)))
             }
             "mro_unhidden" if !args.is_empty() => {
                 let mut include_roles = false;
