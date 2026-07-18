@@ -182,7 +182,10 @@ earlier ones.
   / `required-topic => 1`. `with`/`without` are NOT mappable — mutsu desugars them at parse time
   into a temp-var + `.defined` check + `if` (`__with_tmp_0`), so there is no `Statement::With` node
   to recover (same collapse as `unless`/`until`); deferred. Explicit-signature `for` (`for @a ->
-  $x`), hyper/race/lazy modes, `<->` rw blocks, and labels also remain the boundary. Note the
+  $x`) is handled (slice 12): the body becomes a `PointyBlock` carrying the signature (reusing the
+  slice-3 pointy-block logic, no `Type::Setting`) instead of a topic-marked `Block`; a single param
+  lives in mutsu's `For.param_def`, multiple in `For.params_def`. Hyper/race/lazy modes, `<->` rw
+  blocks, and labels remain the boundary. Note the
   topic-call form `.method` (i.e. `$_.method` written bare) is desugared by mutsu to `$_.method`
   (`ApplyPostfix` on `$_`), where raku keeps a distinct `Term::TopicCall` — a pre-existing
   method-call representation divergence, unrelated to `for`.
