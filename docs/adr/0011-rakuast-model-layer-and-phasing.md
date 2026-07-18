@@ -230,6 +230,10 @@ earlier ones.
     result), so a *non-last* one shadowed the block's real tail value; `compile_unit` now pops it. Tests
     in `t/rakuast-eval-given.t`. Next: the bare `for @x { … }` (`$_`) form, control flow (`return`/
     `last`/`next`).
+  - **Slice 9 (bare `for @x { … }` / `$_`) — done.** A `Statement::For` whose body is a plain `Block`
+    (not a `PointyBlock`) lowers to a `Stmt::For` with no named parameter, so the loop body sees the
+    iterand as `$_`. `EVAL(Q[my $t = 0; for 1..4 { $t = $t + $_ }; $t].AST)` → `10`. Tests in
+    `t/rakuast-eval-bare-for.t`. Next: control flow (`return`/`last`/`next`), multi/typed parameters.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
