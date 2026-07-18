@@ -204,6 +204,13 @@ earlier ones.
   desugared by mutsu to `$x = $x + 3` (`op` stays `Assign`), so it renders as a plain `=` over a
   binop rather than raku's `MetaInfix::Assign(Infix("+"))` (deferred, same collapse family as
   `unless`/`until`).
+- **Scoped/typed declarations (Phase 2 slice 10).** `my`/`our`/`state` with an optional simple
+  type: `VarDeclaration::Simple` gains a `scope` leaf (`"our"`/`"state"`; `my` is the default and
+  omitted) and a `type => Type::Simple(Name)` field, in raku's field order (scope, type, sigil,
+  desigilname, initializer). Only plain (possibly `::`-qualified) type identifiers map to
+  `Type::Simple`; parameterised (`Array[Int]`), definite (`Int:D`), and coercion (`Str()`) types,
+  dynamic (`$*x`) declarations, `where` constraints, and real `is`/`does` traits are the coverage
+  boundary (explicit `RuntimeError`).
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`
