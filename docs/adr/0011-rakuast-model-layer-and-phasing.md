@@ -311,6 +311,14 @@ earlier ones.
     expression. This closes the slice-19 boundary: `EVAL(Q/my $x = 0; my $y = ($x = 5); $x + $y/.AST)` →
     `10`. Multi-statement parenthesised lists stay the boundary. Tests in `t/rakuast-eval-paren.t`.
     Next: bareword type terms, named/slurpy parameters, array/hash literals.
+  - **Slice 22 (named parameters) — done, both directions.** A named parameter `:$x` renders as a
+    `Parameter` with a `names` list (and no `optional`, since named params are optional by default);
+    the write side sets the `ParamDef`'s `named` flag. The `x => 5` call argument (a `FatArrow` infix,
+    which renders with its Debug name) also lowers now (`op_name_to_token_kind` maps `"FatArrow"`).
+    `EVAL(Q[sub f(:$x) { $x * 2 }; f(x => 5)].AST)` → `10`; the `:x(7)` colonpair form and a
+    positional+named mix work, and an omitted named param is undefined. Typed/defaulted named params
+    stay the boundary. Tests in `t/rakuast-eval-named-param.t`. Next: bareword type terms, slurpy
+    parameters, array/hash literals.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

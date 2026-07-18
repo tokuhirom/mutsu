@@ -1237,8 +1237,7 @@ fn signature(param_defs: &[ParamDef], type_setting: bool) -> Result<RakuAstNode,
 /// modelled; anything richer (typed, named, slurpy, `where`, sub-signature,
 /// traits, optional-marker, invocant, shaped) is the coverage boundary.
 fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
-    if pd.named
-        || pd.slurpy
+    if pd.slurpy
         || pd.double_slurpy
         || pd.onearg
         || pd.literal_value.is_some()
@@ -1254,6 +1253,13 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         return Err(unsupported("non-trivial signature parameter"));
     }
     let (sigil, desigil) = split_sigil(&pd.name);
+    if pd.named {
+        // A typed/defaulted named param carries richer shape; defer for now.
+        if pd.type_constraint.is_some() || pd.default.is_some() {
+            return Err(unsupported("typed/defaulted named parameter"));
+        }
+        return named_parameter(sigil, desigil, type_setting);
+    }
     simple_parameter(
         sigil,
         desigil,
@@ -1261,6 +1267,36 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         pd.default.as_ref(),
         type_setting,
     )
+}
+
+/// A named parameter `:$x` -> `Parameter(type => Type::Setting(Any),
+/// names => ("x",), target => ParameterTarget::Var)`. Named params are optional
+/// by default, so no `optional`/`default` field is emitted.
+fn named_parameter(
+    sigil: &str,
+    desigil: &str,
+    type_setting: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let target = RakuAstNode {
+        class: RakuAstClass::ParameterTargetVar,
+        fields: vec![leaf_field(
+            Some("name"),
+            Value::str(format!("{sigil}{desigil}")),
+        )],
+    };
+    let mut fields = Vec::new();
+    if type_setting {
+        fields.push(node_field(Some("type"), type_setting_any()));
+    }
+    fields.push(RakuAstField {
+        name: Some("names"),
+        value: RakuAstFieldValue::List(vec![Value::str(desigil.to_string())]),
+    });
+    fields.push(node_field(Some("target"), target));
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    })
 }
 
 /// `Type::Setting.new(Name.from-identifier("Any"))` — the implicit default type

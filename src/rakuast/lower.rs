@@ -236,6 +236,12 @@ fn signature_positional_params(
         let raw = leaf_str(target, "name")?;
         let name = raw.strip_prefix('$').map(str::to_string).unwrap_or(raw);
         let mut def = positional_param(&name);
+        // A named parameter `:$x` carries a `names` list; it binds by name and is
+        // optional by default.
+        if p.fields.iter().any(|f| f.name == Some("names")) {
+            def.named = true;
+            def.required = false;
+        }
         // `Int $x` -> a type constraint. `Type::Simple` (a plain type name) is
         // handled; the implicit `Type::Setting(Any)` on an untyped param is
         // ignored, and richer type forms (definite/coercion/parameterised) defer.
