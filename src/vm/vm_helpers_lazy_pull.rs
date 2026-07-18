@@ -355,6 +355,11 @@ impl Interpreter {
                             vec![Value::value_pair(elem, idx)]
                         }
                         crate::value::IndexTransform::Kv => vec![idx, elem],
+                        crate::value::IndexTransform::Flat => {
+                            let mut out = Vec::new();
+                            crate::builtins::flat_val(&elem, &mut out, true);
+                            out
+                        }
                     };
                     {
                         let mut spec = list.lazy_pipe.as_ref().unwrap().lock().unwrap();

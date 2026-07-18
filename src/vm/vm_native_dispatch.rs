@@ -415,9 +415,9 @@ impl Interpreter {
         {
             let name = name_sym.resolve();
             if matches!(name.as_str(), "flat" | "eager") {
-                // For `flat`, a single lazy argument normally stays lazy
-                // (`flat 42 xx *` / `flat 1..Inf` propagate `.is-lazy`). The one
-                // exception is a finite `gather` coroutine: it must be forced and
+                // For `flat`, a single lazy argument stays lazy (`flat 42 xx *`
+                // / `flat 10,11 ... *` propagate `.is-lazy`). The one exception
+                // is a finite `gather` coroutine: it must be forced and
                 // flattened here so `flat` descends into its nested lazy elements
                 // (`take internals($child)` in a binary-tree walk), which a raw
                 // return would leave un-descended (`('A', Seq(...), ...)`). Only
@@ -425,18 +425,29 @@ impl Interpreter {
                 // every other lazy list keeps its laziness.
                 // TODO: an actually-infinite `gather` (`flat gather { loop {
                 // take $i++ } }`) is forced eagerly here and would hang — raku
-                // keeps it lazy. A proper fix is a lazy flattening pipe that
-                // pulls+descends on demand; the eager path is correct for the
-                // finite gathers that occur in practice.
+                // keeps it lazy. (A `lazy gather` takes the flattening-pipe
+                // path below and stays lazy.)
                 let is_finite_gather = |v: &Value| {
                     matches!(v.view(), ValueView::LazyList(ll)
                         if ll.coroutine.is_some() && ll.cache.lock().unwrap().is_none())
                 };
                 if name.as_str() == "flat"
                     && args.len() == 1
-                    && matches!(args[0].view(), ValueView::LazyList(_))
+                    && let ValueView::LazyList(ll) = args[0].view()
                     && !is_finite_gather(&args[0])
                 {
+                    // A genuinely-lazy list may hold nested arrays
+                    // (`flat [2,3,4], 10, 11 ... *`), so wrap it in a lazy
+                    // flattening pipe that pulls source elements on demand and
+                    // spills each through `flat_val` — flattened AND still lazy.
+                    if ll.is_genuinely_lazy() {
+                        return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+                            crate::value::LazyList::new_index_pipe(
+                                args[0].clone(),
+                                crate::value::IndexTransform::Flat,
+                            ),
+                        ))));
+                    }
                     return Some(Ok(args[0].clone()));
                 }
                 let mut forced_args = Vec::with_capacity(args.len());
