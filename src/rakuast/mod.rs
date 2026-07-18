@@ -319,6 +319,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
+        ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         _ => return None,
     })
 }
@@ -335,6 +336,11 @@ fn multi_field_schema(
         ("RakuAST::ApplyInfix", "new") => {
             (RakuAstClass::ApplyInfix, &["left", "infix", "right"][..])
         }
+        ("RakuAST::ApplyPrefix", "new") => (RakuAstClass::ApplyPrefix, &["prefix", "operand"][..]),
+        ("RakuAST::ApplyPostfix", "new") => {
+            (RakuAstClass::ApplyPostfix, &["operand", "postfix"][..])
+        }
+        ("RakuAST::Postfix", "new") => (RakuAstClass::Postfix, &["operator"][..]),
         _ => return None,
     })
 }
