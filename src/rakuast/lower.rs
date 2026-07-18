@@ -49,6 +49,20 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementLoopWhile => lower_while(node),
         RakuAstClass::StatementFor => lower_for(node),
         RakuAstClass::Sub => lower_sub(node),
+        // `given`/`when`/`default` — a `when`/`default` sits directly (not
+        // Statement::Expression-wrapped) in the enclosing `given` block, so it
+        // reaches this dispatch unwrapped.
+        RakuAstClass::StatementGiven => Ok(Stmt::Given {
+            topic: lower_expr(named_child(node, "source")?)?,
+            body: lower_block(named_child(node, "body")?)?,
+        }),
+        RakuAstClass::StatementWhen => Ok(Stmt::When {
+            cond: lower_expr(named_child(node, "condition")?)?,
+            body: lower_block(named_child(node, "body")?)?,
+        }),
+        RakuAstClass::StatementDefault => {
+            Ok(Stmt::Default(lower_block(named_child(node, "body")?)?))
+        }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
