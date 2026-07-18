@@ -685,6 +685,21 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("postfix"), postfix_node(op)),
             ],
         }),
+        // `COND ?? THEN !! ELSE` -> Ternary(condition, then, else). Note raku
+        // constant-folds a literal-condition ternary (`1 ?? 2 !! 3` -> IntLiteral(2));
+        // mutsu does not, a documented divergence (the const-fold open question).
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => Ok(RakuAstNode {
+            class: RakuAstClass::Ternary,
+            fields: vec![
+                node_field(Some("condition"), convert_expr(cond)?),
+                node_field(Some("then"), convert_expr(then_expr)?),
+                node_field(Some("else"), convert_expr(else_expr)?),
+            ],
+        }),
         Expr::MethodCall {
             target,
             name,
