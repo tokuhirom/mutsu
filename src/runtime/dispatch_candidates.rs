@@ -441,11 +441,14 @@ impl Interpreter {
                 return 0;
             }
             for lookup in [cn.as_str(), cn_base] {
-                if let Some(class_def) = self.registry().classes.get(lookup) {
-                    for (i, ancestor) in class_def.mro.iter().enumerate() {
-                        if ancestor == base {
-                            return i;
-                        }
+                // `mro_readonly` walks the parent chain live — the registry's
+                // `ClassDef.mro` field is not populated for every class, which
+                // made `d(C1, Package(C2))` fall through to the 500 fallback
+                // (S14 parameter-subtyping: `(C1 @arr)` lost to a bare
+                // `(@arr)` once the bare sigil got a real implicit distance).
+                for (i, ancestor) in self.mro_readonly(lookup).iter().enumerate() {
+                    if ancestor == base {
+                        return i;
                     }
                 }
                 if let Some(roles) = self.registry().class_composed_roles.get(lookup)
