@@ -144,18 +144,22 @@ impl Value {
         if my_type == type_name {
             return true;
         }
-        // RakuAST node hierarchy (Phase 3): every node isa `RakuAST::Node`, and a
-        // node isa any `::`-namespace ancestor of its printed class name (e.g.
-        // `Statement::If` isa `RakuAST::Statement`). The `::` boundary avoids a
-        // false `StatementList isa Statement`. (The semantic Expression/Term
-        // hierarchy — `IntLiteral isa RakuAST::Expression` — is not yet modelled.)
-        if matches!(self.view(), ValueView::RakuAst(_)) {
+        // RakuAST node hierarchy (Phase 3): every node isa `RakuAST::Node`, a node
+        // isa any `::`-namespace ancestor of its printed class name (e.g.
+        // `Statement::If` isa `RakuAST::Statement`; the `::` boundary avoids a
+        // false `StatementList isa Statement`), and a node isa its semantic
+        // ancestors (`RakuAST::Term`/`RakuAST::Expression`) whose names are not
+        // part of the printed class name.
+        if let ValueView::RakuAst(node) = self.view() {
             if type_name == "RakuAST::Node" {
                 return true;
             }
             if let Some(rest) = my_type.strip_prefix(type_name)
                 && rest.starts_with("::")
             {
+                return true;
+            }
+            if node.class.semantic_ancestors().contains(&type_name) {
                 return true;
             }
         }

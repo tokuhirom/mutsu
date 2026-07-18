@@ -139,8 +139,15 @@ earlier ones.
     `StrLiteral.value` return the literal payload, and `Var::Lexical.name` returns the sigil'd
     variable string — the single positional field exposed under a class-specific accessor name. The
     named-field lookup runs first, so `Call::Name.name` (a named `Name`-node field) is not shadowed.
-    Tests in `t/rakuast-leaf-accessors.t`. Still pending: the semantic `IntLiteral isa
-    RakuAST::Expression` hierarchy (needs a per-class ancestor table) and registering `RakuAST::*`
+    Tests in `t/rakuast-leaf-accessors.t`.
+  - **Slice 4 (semantic Expression/Term hierarchy) — done.** `IntLiteral isa RakuAST::Expression`,
+    `IntLiteral isa RakuAST::Term`, `ApplyInfix isa RakuAST::Expression` (but not `Term`), etc. —
+    the ancestor names that don't appear in the printed class name. A `RakuAstClass::
+    semantic_ancestors` table (verified against Rakudo: literals/variables/`Term::Reduce`/`Sub`/
+    blocks/`Call::Name` are Terms-and-Expressions; `Apply*`/`Ternary` are Expressions-only; `Name`/
+    `ArgList`/`Signature`/statements/types are neither) is consulted by `isa_check`. Conservative:
+    only verified classes are listed, so an unlisted expression node is a missed match, never a
+    false positive. Tests in `t/rakuast-semantic-hierarchy.t`. Still pending: registering `RakuAST::*`
     as first-class type objects (they currently resolve as bare type names).
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
