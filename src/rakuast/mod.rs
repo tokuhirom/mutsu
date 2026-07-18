@@ -263,8 +263,9 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 
 /// Construction (Phase 4): build a `Value::RakuAst` from a `RakuAST::*.new(...)`
 /// / `.from-identifier(...)` call. Returns `Ok(None)` when the class/method is
-/// not a supported constructor yet (so normal dispatch handles it). Slice 1
-/// covers the single-value literals.
+/// not a supported constructor yet (so normal dispatch handles it). Covers the
+/// single-positional-argument constructors: the literals (`.new`) and
+/// `Name.from-identifier`.
 pub fn construct(
     class_name: &str,
     method: &str,
@@ -274,11 +275,12 @@ pub fn construct(
         ("RakuAST::IntLiteral", "new") => RakuAstClass::IntLiteral,
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
+        ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         _ => return Ok(None),
     };
     if args.len() != 1 {
         return Err(RuntimeError::new(format!(
-            "{class_name}.new expects a single argument"
+            "{class_name}.{method} expects a single argument"
         )));
     }
     let node = RakuAstNode {

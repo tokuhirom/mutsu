@@ -2002,6 +2002,14 @@ impl Interpreter {
                     ValueView::Package(name) => name.resolve(),
                     _ => crate::runtime::utils::value_type_name(&target).to_string(),
                 };
+                // RakuAST construction via a non-`new` constructor (Phase 4),
+                // e.g. `RakuAST::Name.from-identifier("x")` (`.new` is handled
+                // earlier in methods_object_dispatch_new).
+                if type_name.starts_with("RakuAST::")
+                    && let Some(node) = crate::rakuast::construct(&type_name, method, &args)?
+                {
+                    return Ok(node);
+                }
                 Err(make_method_not_found_error(method, &type_name, false))
             }
         }
