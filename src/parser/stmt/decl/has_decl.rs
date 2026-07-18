@@ -555,9 +555,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                         _ => {}
                     }
                 }
-                let inner = &stripped[..idx];
+                let inner = stripped[..idx].trim();
                 let mut trait_arg: Option<Expr> = None;
-                if !inner.trim().is_empty()
+                if !inner.is_empty()
                     && let Ok((leftover, arg_expr)) = expression(inner)
                     && leftover.trim().is_empty()
                 {
