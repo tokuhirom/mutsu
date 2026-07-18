@@ -165,9 +165,12 @@ earlier ones.
   `Loop::Until` with the bare condition. This is faithful to *mutsu's* AST (the desugaring is
   lossless-but-collapsing: `if !X` and `unless X` are the same node), so reconstituting the
   surface keyword would be a guess — deliberately not done. Narrows only if the parser grows
-  distinct `unless`/`until` statements. `elsif` chains, C-style/`repeat`/labelled loops, topic
-  binding (`if EXPR -> $v`), and topic-taking `with`/`without`/`for` are the coverage boundary
-  (explicit `RuntimeError`), deferred to a later slice.
+  distinct `unless`/`until` statements. `elsif` chains are handled (slice 5): mutsu nests each
+  `elsif` as a single `if` inside the else-branch, and the converter flattens that chain into
+  raku's flat `elsifs` list (`Statement::Elsif`), with any trailing block as the final `else`.
+  C-style/`repeat`/labelled loops, topic binding (`if EXPR -> $v` / `elsif EXPR -> $v`), and
+  topic-taking `with`/`without`/`for` remain the coverage boundary (explicit `RuntimeError`),
+  deferred to a later slice.
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`

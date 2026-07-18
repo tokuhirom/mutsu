@@ -102,15 +102,36 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if binding_var.is_some() {
                 return Err(unsupported("`if EXPR -> $var` topic binding"));
             }
-            if is_elsif_chain(else_branch) {
-                return Err(unsupported("`elsif` chain"));
-            }
             let mut fields = vec![
                 node_field(Some("condition"), convert_expr(cond)?),
                 node_field(Some("then"), block_node(then_branch)?),
             ];
-            if else_branch.iter().any(|s| !matches!(s, Stmt::SetLine(_))) {
-                fields.push(node_field(Some("else"), block_node(else_branch)?));
+            // mutsu nests each `elsif` as a single `if` inside the else-branch.
+            // Flatten that chain into raku's `elsifs` list; whatever remains
+            // after the last `elsif` is the final `else` block.
+            let mut elsifs: Vec<Value> = Vec::new();
+            let mut tail: &[Stmt] = else_branch;
+            while let Some(Stmt::If {
+                cond,
+                then_branch,
+                else_branch,
+                binding_var,
+            }) = single_if_stmt(tail)
+            {
+                if binding_var.is_some() {
+                    return Err(unsupported("`elsif EXPR -> $var` topic binding"));
+                }
+                elsifs.push(Value::rakuast(Box::new(elsif_node(cond, then_branch)?)));
+                tail = else_branch;
+            }
+            if !elsifs.is_empty() {
+                fields.push(RakuAstField {
+                    name: Some("elsifs"),
+                    value: RakuAstFieldValue::List(elsifs),
+                });
+            }
+            if tail.iter().any(|s| !matches!(s, Stmt::SetLine(_))) {
+                fields.push(node_field(Some("else"), block_node(tail)?));
             }
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementIf,
@@ -325,15 +346,27 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     }
 }
 
-/// True when an `if`'s else-branch is a single nested `if` — i.e. an `elsif`
-/// chain (mutsu nests `elsif` into `else_branch`). raku models these as a flat
-/// `elsifs` list, deferred to a later slice, so we treat it as the boundary
-/// rather than mis-render it as a plain `else => Block(If)`.
-fn is_elsif_chain(else_branch: &[Stmt]) -> bool {
-    let mut real = else_branch
-        .iter()
-        .filter(|s| !matches!(s, Stmt::SetLine(_)));
-    matches!(real.next(), Some(Stmt::If { .. })) && real.next().is_none()
+/// If `stmts` (ignoring `SetLine` bookkeeping) is exactly one `if` statement,
+/// return it — this is how mutsu nests an `elsif`. Anything else (a real
+/// `else` block, multiple statements, empty) returns `None`.
+fn single_if_stmt(stmts: &[Stmt]) -> Option<&Stmt> {
+    let mut real = stmts.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let first = real.next()?;
+    if real.next().is_some() {
+        return None;
+    }
+    matches!(first, Stmt::If { .. }).then_some(first)
+}
+
+/// One `elsif` clause -> `Statement::Elsif(condition, then => Block)`.
+fn elsif_node(cond: &Expr, then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::StatementElsif,
+        fields: vec![
+            node_field(Some("condition"), convert_expr(cond)?),
+            node_field(Some("then"), block_node(then_branch)?),
+        ],
+    })
 }
 
 /// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.

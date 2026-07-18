@@ -760,11 +760,14 @@ so it is tracked separately from the roast backlog.
         While`, `Statement::Loop`), condition + `then`/`else`/`body` = `Block`. Tests in
         `t/rakuast-control.t`. (mutsu desugars `unless`→`if !` and `until`→`while !`, so those
         render with a negated condition — documented divergence, ADR-0011.)
-  - [ ] Slice 5+: `elsif` chains, C-style/`repeat`/labelled loops, topic-taking `with`/`without`/
-        `for` (Block `implicit-topic`/`required-topic`), sub declarations (`RakuAST::Sub`, reuse
-        Signature), scoped/typed `my`, compound/`:=` assignment, method-call modifiers; then
-        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
-        mutsu does not).
+  - [x] Slice 5: `elsif` chains — mutsu nests each `elsif` as a single `if` in the else-branch;
+        flattened into raku's `elsifs` list (`Statement::Elsif`) with any trailing `else` block.
+        Tests in `t/rakuast-elsif.t`.
+  - [ ] Slice 6+: C-style/`repeat`/labelled loops, topic-taking `with`/`without`/`for` (Block
+        `implicit-topic`/`required-topic`), sub declarations (`RakuAST::Sub`, reuse Signature),
+        scoped/typed `my`, compound/`:=` assignment, method-call modifiers; then `.DEPARSE`;
+        resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu
+        does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

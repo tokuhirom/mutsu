@@ -78,6 +78,8 @@ pub enum RakuAstClass {
     StatementIf,
     StatementLoopWhile,
     StatementLoop,
+    // Phase 2 slice 5: elsif chains.
+    StatementElsif,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +123,7 @@ impl RakuAstClass {
             StatementIf => "RakuAST::Statement::If",
             StatementLoopWhile => "RakuAST::Statement::Loop::While",
             StatementLoop => "RakuAST::Statement::Loop",
+            StatementElsif => "RakuAST::Statement::Elsif",
         }
     }
 
