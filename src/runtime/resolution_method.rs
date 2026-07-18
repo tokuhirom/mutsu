@@ -248,7 +248,7 @@ impl Interpreter {
                 .map(|&i| narrowness(&all_matches[i].1))
                 .max()
                 .unwrap_or(0);
-            let narrowed: Vec<usize> = tied
+            let mut narrowed: Vec<usize> = tied
                 .iter()
                 .copied()
                 .filter(|&i| narrowness(&all_matches[i].1) == best_where)
@@ -256,6 +256,36 @@ impl Interpreter {
             if let Some(&i) = narrowed.first() {
                 best_idx = i;
             }
+            // Explicit-named preference (rakudo): among otherwise-tied
+            // candidates, one that declares an explicit (non-slurpy) named
+            // parameter is narrower than one that does not — `(Int $a, :$x)`
+            // beats `(Int $a)` for `f(1)` regardless of declaration order.
+            let has_explicit_named = |def: &MethodDef| -> bool {
+                def.param_defs
+                    .iter()
+                    .any(|p| p.named && !p.slurpy && !p.double_slurpy)
+            };
+            if narrowed
+                .iter()
+                .any(|&i| has_explicit_named(&all_matches[i].1))
+                && narrowed
+                    .iter()
+                    .any(|&i| !has_explicit_named(&all_matches[i].1))
+            {
+                narrowed.retain(|&i| has_explicit_named(&all_matches[i].1));
+                if let Some(&i) = narrowed.first() {
+                    best_idx = i;
+                }
+            }
+            // Named parameters never make a dispatch ambiguous (rakudo): tied
+            // candidates that all declare explicit named params resolve by
+            // declaration order (`(Any :$file!)` vs `(Str :$file!)` picks the
+            // first; named types/requiredness are not compared). Only a tie
+            // among candidates with no explicit named params raises
+            // X::Multi::Ambiguous (`(Int $a)` x2, `(Int $a, *%o)` x2).
+            let all_named = narrowed
+                .iter()
+                .all(|&i| has_explicit_named(&all_matches[i].1));
             // Invocant specificity tie-break: candidates whose argument-type
             // distance is equal can still differ in how derived their owning
             // class is. A `multi method` defined on the receiver's own class is
@@ -292,7 +322,7 @@ impl Interpreter {
             // (same type distance, same number of `where` constraints, and the
             // same most-derived owner class) and none is marked `is default`.
             // Raku raises X::Multi::Ambiguous here.
-            if !default_winner && mro_narrowed.len() > 1 {
+            if !default_winner && mro_narrowed.len() > 1 && !all_named {
                 self.dispatch_ambiguous = true;
             }
         }
@@ -306,16 +336,25 @@ impl Interpreter {
         let mut total = 0usize;
         let mut arg_idx = 0;
         for pd in &def.param_defs {
-            if pd.is_invocant || pd.named || pd.name.starts_with("__type_capture__") {
+            if pd.is_invocant || pd.name.starts_with("__type_capture__") {
                 continue;
             }
             // Slurpy parameters (`*@x`, `*%h`, `**@x`) are less specific than a
             // required positional of the same type. When a single Positional
             // argument matches both `(@x)` and `(*@x)`, the non-slurpy candidate
             // must win rather than being treated as equally specific (ambiguous).
-            if pd.slurpy || pd.double_slurpy {
+            // This includes a user-written named-hash slurpy: `(*%items)` must
+            // lose to `(IO::Path :$file!)` for `.load(file => $path)` (META6's
+            // `multi method new` set). The implicit method `*%_` is on every
+            // candidate, so it carries no penalty.
+            if (pd.slurpy || pd.double_slurpy) && pd.name != "%_" && pd.name != "_" {
                 total += 2000;
-                arg_idx += 1;
+                if !pd.named && !pd.name.starts_with('%') {
+                    arg_idx += 1;
+                }
+                continue;
+            }
+            if pd.named || pd.slurpy || pd.double_slurpy {
                 continue;
             }
             if let Some(tc) = &pd.type_constraint {

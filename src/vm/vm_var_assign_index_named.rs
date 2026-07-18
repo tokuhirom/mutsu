@@ -2238,6 +2238,32 @@ impl Interpreter {
                 let inner = self
                     .call_method_with_values(target, at, vec![inner_idx.clone()])?
                     .deref_container();
+                // The inner collection is itself a user-defined instance: route
+                // the outermost write through its ASSIGN-POS/ASSIGN-KEY
+                // (`$obj<support><source> = v` with both levels custom
+                // Associative — META6's AutoAssoc). The instance's attribute
+                // cell is shared, so the mutation is visible through the base.
+                if let ValueView::Instance {
+                    class_name: inner_cn,
+                    ..
+                } = inner.view()
+                {
+                    let icn = inner_cn.resolve();
+                    let assign = if outer_positional {
+                        "ASSIGN-POS"
+                    } else {
+                        "ASSIGN-KEY"
+                    };
+                    if self.has_user_method(&icn, assign) {
+                        self.call_method_with_values(
+                            inner,
+                            assign,
+                            vec![outer_idx.clone(), val.clone()],
+                        )?;
+                        self.stack.push(val);
+                        return Ok(());
+                    }
+                }
                 let idx_u = crate::runtime::to_int(&outer_idx) as usize;
                 let elem = match inner.view() {
                     ValueView::Array(items, _) => items.get(idx_u).cloned(),

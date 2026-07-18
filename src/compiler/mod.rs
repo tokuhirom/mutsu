@@ -1422,21 +1422,12 @@ impl Compiler {
                             continue;
                         }
                         Stmt::Call { name, args } => {
-                            let positional: Option<Vec<Expr>> = args
-                                .iter()
-                                .map(|arg| match arg {
-                                    crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
-                                    _ => None,
-                                })
-                                .collect();
-                            if let Some(positional_args) = positional {
-                                self.compile_expr(&Expr::Call {
-                                    name: *name,
-                                    args: positional_args,
-                                });
-                                self.code.emit(OpCode::SetTopic);
-                                continue;
-                            }
+                            // Tail call: its value is the body result, whether
+                            // the args are positional-only or carry named/slip
+                            // args (compile_tail_stmt_call_value handles both).
+                            self.compile_tail_stmt_call_value(*name, args);
+                            self.code.emit(OpCode::SetTopic);
+                            continue;
                         }
                         Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
                             if Self::has_block_placeholders(body) {

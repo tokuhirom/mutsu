@@ -720,10 +720,14 @@ pub(crate) enum OpCode {
     /// positions written as `|EXPR`. Those — and only those — spread into the
     /// argument list: a Slip an ordinary argument merely evaluated to
     /// (`is-deeply $s.Slip, $t.Slip, 'name'`) stays one argument, as in Rakudo.
+    /// `keep_value` (tail position: the call's value is the body's result)
+    /// pushes the call result onto the stack; plain statement position leaves
+    /// the stack untouched.
     ExecCallPairs {
         name_idx: u32,
         arity: u32,
         slip_positions_idx: Option<u32>,
+        keep_value: bool,
     },
     BlockScope {
         pre_end: u32,

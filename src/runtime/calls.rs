@@ -276,12 +276,19 @@ impl Interpreter {
         finalized.and_then(|v| self.maybe_fetch_rw_proxy(v, def.is_rw))
     }
 
-    pub(crate) fn exec_call(&mut self, name: &str, args: Vec<Value>) -> Result<(), RuntimeError> {
+    /// Execute a statement-position call. Returns the call's value so a
+    /// tail-position statement call (`ExecCallPairs { keep_value: true }`) can
+    /// use it as the body result; plain statement sites ignore it.
+    pub(crate) fn exec_call(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
         let (args, callsite_line) = self.sanitize_call_args(&args);
         self.test_pending_callsite_line = callsite_line;
         // Delegate test functions to the unified test_functions.rs
-        if let Some(_result) = self.call_test_function(name, &args)? {
-            return Ok(());
+        if let Some(result) = self.call_test_function(name, &args)? {
+            return Ok(result);
         }
         match name {
             "make" => {
@@ -303,11 +310,28 @@ impl Interpreter {
                     && let Some(sub_val) = self.get_wrapped_sub(name)
                 {
                     let result = self.call_sub_value(sub_val, args, false)?;
-                    self.env.insert("_".to_string(), result);
-                    return Ok(());
+                    self.env.insert("_".to_string(), result.clone());
+                    return Ok(result);
                 }
                 let def_opt = self.resolve_function_with_alias(name, &args);
                 if let Some(def) = def_opt {
+                    // The real JSON::Fast/JSON::Tiny `to-json`/`from-json` defs
+                    // resolve here, but their nqp-based bodies cannot run under
+                    // mutsu — the module-gated native must win, matching the
+                    // expression path (where those defs never compile). A
+                    // user-defined from-json in any other package still wins.
+                    let def_pkg = def.package.resolve();
+                    let is_json_module_pkg = ["JSON::Fast", "JSON::Tiny"].iter().any(|m| {
+                        def_pkg == *m
+                            || (def_pkg.starts_with(*m)
+                                && def_pkg[m.len()..].starts_with(':')
+                                && !def_pkg[m.len()..].starts_with("::"))
+                    });
+                    if is_json_module_pkg
+                        && let Some(result) = self.try_native_json_function(name, &args)
+                    {
+                        return result;
+                    }
                     self.check_deprecation_for_def(&def);
                     if def.empty_sig && !args.is_empty() {
                         return Err(Self::reject_args_for_empty_sig(&args));
@@ -406,7 +430,8 @@ impl Interpreter {
                         Ok(()) => Ok(implicit_return),
                         Err(e) => Err(e),
                     };
-                    self.finalize_return_with_spec(call_result, effective_return_spec.as_deref())?;
+                    return self
+                        .finalize_return_with_spec(call_result, effective_return_spec.as_deref());
                 } else if let Some(err) = self.take_pending_dispatch_error() {
                     return Err(err);
                 } else if self.has_proto(name) {
@@ -454,13 +479,13 @@ impl Interpreter {
                     // expression path dispatches these in vm_call_func_ops.
                     // Placed after user-sub resolution so a user-defined
                     // from-json still wins.
-                    result?;
+                    return result;
                 } else {
                     return Err(RuntimeError::new(format!("Unknown call: {}", name)));
                 }
             }
         }
-        Ok(())
+        Ok(Value::NIL)
     }
 
     /// Build the positional/named argument type-name list used for the

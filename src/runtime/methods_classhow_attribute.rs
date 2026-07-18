@@ -147,12 +147,18 @@ impl Interpreter {
             .get(&(owner.to_string(), attr_name.clone()))
             .cloned();
         let full_name = format!("{}!{}", sigil, attr_name);
+        // Resolve a short declared type against the owner's package chain: a
+        // nested class (`class META6 { class Support {…}; has Support $.support }`)
+        // registers as `META6::Support`, and `.type` must report that resolved
+        // type (rakudo does) — JSON::Unmarshal constructs nested typed
+        // attributes from it.
         let raw_type_name = self
             .registry()
             .classes
             .get(owner)
             .and_then(|cd| cd.attribute_types.get(attr_name))
-            .cloned();
+            .cloned()
+            .map(|t| self.resolve_type_name_for_owner(owner, t));
         // For @ sigil, the exposed type is Positional[T]; for % it is Associative[T]
         let type_name = match sigil {
             '@' => {
@@ -258,6 +264,10 @@ impl Interpreter {
         type_constraint: Option<&str>,
     ) -> Value {
         let full_name = format!("{}!{}", sigil, attr_name);
+        // Same owner-chain resolution as `make_attribute_object`: a nested
+        // class's short name must resolve to its qualified registration.
+        let type_constraint =
+            type_constraint.map(|t| self.resolve_type_name_for_owner(owner, t.to_string()));
         let type_name = match sigil {
             '@' => type_constraint
                 .map(|t| format!("Positional[{}]", t))
@@ -265,7 +275,7 @@ impl Interpreter {
             '%' => type_constraint
                 .map(|t| format!("Associative[{}]", t))
                 .unwrap_or_else(|| "Associative".to_string()),
-            _ => type_constraint.unwrap_or("Mu").to_string(),
+            _ => type_constraint.unwrap_or_else(|| "Mu".to_string()),
         };
         let mut meta = HashMap::new();
         meta.insert("name".to_string(), Value::str(full_name));

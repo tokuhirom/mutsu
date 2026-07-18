@@ -335,6 +335,7 @@ const IO_HANDLE_METHODS: &[&str] = &[
     "path",
     "IO",
     "slurp",
+    "slurp-rest",
     "spurt",
     "lines",
     "words",

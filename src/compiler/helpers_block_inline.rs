@@ -181,21 +181,11 @@ impl Compiler {
                         return;
                     }
                     Stmt::Call { name, args } => {
-                        let positional: Option<Vec<Expr>> = args
-                            .iter()
-                            .map(|arg| match arg {
-                                crate::ast::CallArg::Positional(expr) => Some(expr.clone()),
-                                _ => None,
-                            })
-                            .collect();
-                        if let Some(positional_args) = positional {
-                            self.compile_expr(&Expr::Call {
-                                name: *name,
-                                args: positional_args,
-                            });
-                            self.pop_dynamic_scope_lexical(saved);
-                            return;
-                        }
+                        // Tail statement call is the block's value — including
+                        // named/slip args (compile_tail_stmt_call_value).
+                        self.compile_tail_stmt_call_value(*name, args);
+                        self.pop_dynamic_scope_lexical(saved);
+                        return;
                     }
                     Stmt::VarDecl {
                         name,

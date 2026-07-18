@@ -716,7 +716,10 @@ impl Interpreter {
                 let opened = self.with_handle_mut(&target_val, |state| Ok(state.is_opened()))?;
                 Ok(Value::truth(opened))
             }
-            "slurp" => {
+            // `slurp-rest` is the deprecated Rakudo spelling of "slurp the rest
+            // of the handle from the current position" — same behavior as
+            // `.slurp` here, which also reads from the current position.
+            "slurp" | "slurp-rest" => {
                 let has_bin_arg = Self::named_bool(&args, "bin");
                 let (is_bin, handle_encoding) = self.with_handle_mut(&target_val, |state| {
                     let bin = has_bin_arg || state.bin || state.encoding == "bin";

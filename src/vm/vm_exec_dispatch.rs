@@ -3131,6 +3131,7 @@ impl Interpreter {
                 name_idx,
                 arity,
                 slip_positions_idx,
+                keep_value,
             } => {
                 self.sync_source_line(code, *ip);
                 self.exec_exec_call_pairs_op(
@@ -3139,6 +3140,7 @@ impl Interpreter {
                     *name_idx,
                     *arity,
                     *slip_positions_idx,
+                    *keep_value,
                 )?;
                 *ip += 1;
             }

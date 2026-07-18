@@ -2165,6 +2165,7 @@ impl Compiler {
                     name_idx,
                     arity: rewritten_args.len() as u32,
                     slip_positions_idx,
+                    keep_value: false,
                 });
             }
             // Loop control

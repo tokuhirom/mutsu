@@ -292,6 +292,60 @@ impl Interpreter {
             })
     }
 
+    /// Resolve a short type name against the current package chain: inside
+    /// `module Foo { class Params {…}; sub mk { Params.new } }` the sub's
+    /// bareword `Params` names `Foo::Params` (registered fully qualified),
+    /// even when `mk` is called from another package (JSON::Marshal's
+    /// `MarshalParams`, reached through META6's `to-json`). Walks enclosing
+    /// packages outward (`A::B::name`, then `A::name`); GLOBAL is the normal
+    /// bare namespace, so it ends the walk.
+    pub(crate) fn resolve_type_in_current_package(&self, name: &str) -> Option<String> {
+        if name.contains("::") || name.is_empty() {
+            return None;
+        }
+        let pkg_owned = self.current_package().to_string();
+        let mut pkg: &str = &pkg_owned;
+        loop {
+            if pkg.is_empty() || pkg == "GLOBAL" {
+                return None;
+            }
+            let qualified = format!("{pkg}::{name}");
+            if self.has_type_direct(&qualified) {
+                return Some(qualified);
+            }
+            match pkg.rsplit_once("::") {
+                Some((parent, _)) => pkg = parent,
+                None => return None,
+            }
+        }
+    }
+
+    /// Resolve a short type name against a specific owner package's chain
+    /// (`owner = "META6"`, `name = "Support"` → `"META6::Support"` when that
+    /// nested class exists). A nested class lexically shadows a same-named
+    /// outer type inside its declaring class, so the qualified probe runs
+    /// first; an unresolvable name is returned unchanged.
+    pub(crate) fn resolve_type_name_for_owner(&self, owner: &str, name: String) -> String {
+        if name.contains("::") || name.is_empty() {
+            return name;
+        }
+        let mut pkg = owner;
+        loop {
+            if pkg.is_empty() {
+                break;
+            }
+            let qualified = format!("{pkg}::{name}");
+            if self.has_type_direct(&qualified) {
+                return qualified;
+            }
+            match pkg.rsplit_once("::") {
+                Some((parent, _)) => pkg = parent,
+                None => break,
+            }
+        }
+        name
+    }
+
     pub(crate) fn has_enum_type(&self, name: &str) -> bool {
         self.registry().enum_types.contains_key(name)
     }

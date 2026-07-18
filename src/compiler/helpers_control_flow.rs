@@ -425,70 +425,7 @@ impl Compiler {
                         main_leaves_value = true;
                         continue;
                     } else if let Stmt::Call { name, args } = stmt {
-                        let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
-                        let positional_only = rewritten_args
-                            .iter()
-                            .all(|arg| matches!(arg, CallArg::Positional(_)));
-
-                        if positional_only {
-                            let expr_args: Vec<Expr> = rewritten_args
-                                .iter()
-                                .filter_map(|arg| match arg {
-                                    CallArg::Positional(expr) => Some(expr.clone()),
-                                    _ => None,
-                                })
-                                .collect();
-                            self.compile_expr(&Expr::Call {
-                                name: *name,
-                                args: expr_args,
-                            });
-                            main_leaves_value = true;
-                            continue;
-                        }
-
-                        for arg in &rewritten_args {
-                            match arg {
-                                CallArg::Positional(expr) => self.compile_call_arg(expr),
-                                CallArg::Named {
-                                    name,
-                                    value: Some(expr),
-                                } => {
-                                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                                    self.compile_expr(expr);
-                                    self.code.emit(OpCode::MakePair);
-                                }
-                                CallArg::Named { name, value: None } => {
-                                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                                    self.compile_expr(&Expr::Literal(Value::TRUE));
-                                    self.code.emit(OpCode::MakePair);
-                                }
-                                // `|EXPR` interpolates into the argument list:
-                                // MakeSlip builds the Slip and the call op spreads
-                                // it, so any number of `|` args work.
-                                CallArg::Slip(expr) => {
-                                    self.compile_expr(expr);
-                                    self.code.emit(OpCode::MakeSlip);
-                                }
-                                CallArg::Invocant(_) => unreachable!(),
-                            }
-                        }
-                        let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                        let arg_sources_idx = rewritten_args
-                            .iter()
-                            .map(|arg| match arg {
-                                CallArg::Positional(expr) => Some(expr),
-                                _ => None,
-                            })
-                            .collect::<Option<Vec<&Expr>>>()
-                            .and_then(|exprs| {
-                                let owned: Vec<Expr> = exprs.into_iter().cloned().collect();
-                                self.add_arg_sources_constant(&owned)
-                            });
-                        self.code.emit(OpCode::CallFunc {
-                            name_idx,
-                            arity: rewritten_args.len() as u32,
-                            arg_sources_idx,
-                        });
+                        self.compile_tail_stmt_call_value(*name, args);
                         main_leaves_value = true;
                         continue;
                     }
@@ -548,6 +485,78 @@ impl Compiler {
             self.code.patch_jump(j);
         }
         self.pop_dynamic_scope_lexical(saved);
+    }
+
+    /// Compile a tail-position statement call (`Stmt::Call` as the last
+    /// statement of a body) so its value stays on the stack — the body's
+    /// result. Positional-only calls reuse the expression path; calls with
+    /// named/slip args compile exactly like the statement path (`MakePair`
+    /// pairs, `MakeSlip` + slip side table — a Slip an argument merely
+    /// *evaluates to* stays one argument) and dispatch via `ExecCallPairs
+    /// { keep_value: true }`, which pushes the call's value. Without this, a
+    /// tail call with named args fell to the value-less statement op and the
+    /// routine returned its topic instead (JSON::Marshal's `to-json($ret,
+    /// :$sorted-keys, :$pretty)` tail made `marshal` return Any on the
+    /// interpreter path).
+    pub(super) fn compile_tail_stmt_call_value(
+        &mut self,
+        name: crate::symbol::Symbol,
+        args: &[CallArg],
+    ) {
+        let rewritten_args = Self::rewrite_stmt_call_args(&name.resolve(), args);
+        let positional_only = rewritten_args
+            .iter()
+            .all(|arg| matches!(arg, CallArg::Positional(_)));
+
+        if positional_only {
+            let expr_args: Vec<Expr> = rewritten_args
+                .iter()
+                .filter_map(|arg| match arg {
+                    CallArg::Positional(expr) => Some(expr.clone()),
+                    _ => None,
+                })
+                .collect();
+            self.compile_expr(&Expr::Call {
+                name,
+                args: expr_args,
+            });
+            return;
+        }
+
+        for arg in &rewritten_args {
+            match arg {
+                CallArg::Positional(expr) => self.compile_call_arg(expr),
+                CallArg::Named {
+                    name,
+                    value: Some(expr),
+                } => {
+                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::MakePair);
+                }
+                CallArg::Named { name, value: None } => {
+                    self.compile_expr(&Expr::Literal(Value::str(name.clone())));
+                    self.compile_expr(&Expr::Literal(Value::TRUE));
+                    self.code.emit(OpCode::MakePair);
+                }
+                // `|EXPR` interpolates into the argument list: MakeSlip builds
+                // the Slip and the slip side table spreads exactly these
+                // positions.
+                CallArg::Slip(expr) => {
+                    self.compile_expr(expr);
+                    self.code.emit(OpCode::MakeSlip);
+                }
+                CallArg::Invocant(_) => unreachable!(),
+            }
+        }
+        let name_idx = self.code.add_constant(Value::str(name.resolve()));
+        let slip_positions_idx = self.add_slip_positions_constant(&rewritten_args);
+        self.code.emit(OpCode::ExecCallPairs {
+            name_idx,
+            arity: rewritten_args.len() as u32,
+            slip_positions_idx,
+            keep_value: true,
+        });
     }
 
     /// Classify a CONTROL block as "resume-safe": it always `.resume`s and
@@ -616,6 +625,12 @@ impl Compiler {
 
     /// The body of a `when`/`default` arm resumes iff its last meaningful
     /// statement is a `.resume` call (and it never `succeed`s before that).
+    /// A tail `if`/`unless` whose taken branch ends in `.resume` also counts
+    /// (`when CX::Warn { say .message; if .message ~~ /…/ { $n++; .resume } }`
+    /// — META6's t/030-versions.t): the inline mechanism treats a run that
+    /// falls through without resuming as resume-with-Nil, so the non-resuming
+    /// branch degrades to that existing approximation instead of losing the
+    /// deep continuation entirely on the resuming branch.
     fn control_block_body_resumes(body: &[Stmt]) -> bool {
         let meaningful: Vec<&Stmt> = body
             .iter()
@@ -624,7 +639,32 @@ impl Compiler {
         if meaningful.iter().any(|s| Self::stmt_exits_control_block(s)) {
             return false;
         }
-        matches!(meaningful.last(), Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e))
+        match meaningful.last() {
+            Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e) => true,
+            Some(Stmt::If {
+                then_branch,
+                else_branch,
+                ..
+            }) => {
+                let branch_resumes = |b: &[Stmt]| -> bool {
+                    let m: Vec<&Stmt> = b
+                        .iter()
+                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                        .collect();
+                    !m.iter().any(|s| Self::stmt_exits_control_block(s))
+                        && matches!(m.last(), Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e))
+                };
+                let else_ok = {
+                    let m: Vec<&Stmt> = else_branch
+                        .iter()
+                        .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                        .collect();
+                    m.is_empty() || branch_resumes(else_branch)
+                };
+                branch_resumes(then_branch) && else_ok
+            }
+            _ => false,
+        }
     }
 
     fn when_cond_warn_class(cond: &Expr) -> WhenWarnClass {

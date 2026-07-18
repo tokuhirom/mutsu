@@ -25,8 +25,16 @@ impl Interpreter {
             return None;
         }
         // Strip the synthetic `__test_callsite_line` trailer (and any other
-        // call-site bookkeeping) the same way the Test path does.
+        // call-site bookkeeping) the same way the Test path does. Unwrap
+        // VarRef-wrapped args (a statement-position call compiles its variable
+        // args through `compile_call_arg`, which wraps them for rw detection)
+        // — the serializer would otherwise hit its opaque-value fallback and
+        // emit the *stringification* of the wrapped Hash.
         let (clean_args, _callsite_line) = self.sanitize_call_args(args);
+        let clean_args: Vec<Value> = clean_args
+            .into_iter()
+            .map(crate::runtime::types::unwrap_varref_value)
+            .collect();
         match name {
             "to-json" => Some(native_to_json(&clean_args)),
             "from-json" => Some(native_from_json(&clean_args)),

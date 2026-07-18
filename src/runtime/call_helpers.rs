@@ -24,9 +24,9 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: Vec<Value>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Value, RuntimeError> {
         match self.call_function(name, args.clone()) {
-            Ok(_) => Ok(()),
+            Ok(v) => Ok(v),
             Err(e)
                 if e.message
                     .contains("Unknown function (call_function fallback disabled):") =>
@@ -41,11 +41,11 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: Vec<Value>,
-    ) -> Result<(), RuntimeError> {
+    ) -> Result<Value, RuntimeError> {
         // For EVAL, route through call_function to handle named args like :check.
         if name == "EVAL" {
             return match self.call_function(name, args.clone()) {
-                Ok(_) => Ok(()),
+                Ok(v) => Ok(v),
                 Err(e)
                     if e.message
                         .contains("Unknown function (call_function fallback disabled):") =>
