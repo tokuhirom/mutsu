@@ -252,6 +252,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 fields,
             }))
         }
+        // `given X { ... }` -> Statement::Given(source, body => topic Block).
+        Stmt::Given { topic, body } => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementGiven,
+            fields: vec![
+                node_field(Some("source"), convert_expr(topic)?),
+                node_field(Some("body"), topic_block_node(body)?),
+            ],
+        })),
+        // `when Y { ... }` -> Statement::When(condition, body => plain Block).
+        Stmt::When { cond, body } => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementWhen,
+            fields: vec![
+                node_field(Some("condition"), convert_expr(cond)?),
+                node_field(Some("body"), block_node(body)?),
+            ],
+        })),
+        // `default { ... }` -> Statement::Default(body => plain Block).
+        Stmt::Default(body) => Ok(Some(RakuAstNode {
+            class: RakuAstClass::StatementDefault,
+            fields: vec![node_field(Some("body"), block_node(body)?)],
+        })),
         Stmt::SubDecl {
             name,
             name_expr,

@@ -232,6 +232,11 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **given / when / default (Phase 2 slice 18).** `given X { ... }` (`Stmt::Given`) →
+  `Statement::Given(source, body => topic Block)` (the given body is a topic-taking `Block`, marked
+  `implicit-topic`/`required-topic`). `when Y { ... }` (`Stmt::When`) → `Statement::When(condition,
+  body => plain Block)`; `default { ... }` (`Stmt::Default`) → `Statement::Default(body => plain
+  Block)`. All reuse the existing `topic_block_node`/`block_node` helpers.
 - **Method-call modifiers (Phase 2 slice 15).** `$x.?foo` / `$x.+foo` / `$x.*foo` (`Expr::MethodCall`
   with a `modifier: Option<char>`) add a `dispatch => ".?"` / `".+"` / `".*"` leaf to the
   `Call::Method`, after `name` and any `args`. A quoted method name (`."$n"()`) remains the boundary.

@@ -99,6 +99,10 @@ pub enum RakuAstClass {
     RoleBody,
     // Phase 2 slice 17: loop labels.
     Label,
+    // Phase 2 slice 18: given/when/default.
+    StatementGiven,
+    StatementWhen,
+    StatementDefault,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +158,9 @@ impl RakuAstClass {
             Role => "RakuAST::Role",
             RoleBody => "RakuAST::RoleBody",
             Label => "RakuAST::Label",
+            StatementGiven => "RakuAST::Statement::Given",
+            StatementWhen => "RakuAST::Statement::When",
+            StatementDefault => "RakuAST::Statement::Default",
         }
     }
 
