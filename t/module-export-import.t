@@ -9,7 +9,9 @@ plan 8;
     ok Even ~~ Any, 'imported subset is a known type';
     my Even $x = 4;
     is $x, 4, 'value matching the subset predicate is accepted';
-    is Even.^name, 'Even', 'subset type name is correct after import';
+    # A subset declared in a module carries its package-qualified name
+    # (rakudo: `Even.^name` is "M1::Even" even via the imported bare name).
+    is Even.^name, 'M1::Even', 'subset type name is correct after import';
 }
 
 # A subset declared `is export(:tag)` is importable via that tag.

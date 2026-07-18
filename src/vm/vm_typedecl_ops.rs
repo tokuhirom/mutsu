@@ -545,12 +545,13 @@ impl Interpreter {
             version,
             is_export,
             export_tags,
+            is_my,
         } = stmt
         {
             let resolved_name = name.resolve();
             loan_env!(
                 self,
-                register_subset_decl(&resolved_name, base, predicate.as_ref(), version,)
+                register_subset_decl(&resolved_name, base, predicate.as_ref(), version, *is_my)
             );
             // When a subset is declared `is export` inside a module, record it
             // in the export table so `import M` (and `use M`) can find it.

@@ -686,6 +686,14 @@ impl Interpreter {
                 out.extend(class.items.iter().cloned());
                 true
             }
+            // A subtraction-free CompositeClass (e.g. a token whose body is
+            // itself a combined class, `token unenc-pchar { <[:@] +unreserved
+            // +sub-delims> }`) is a plain union of its items. Only reached for
+            // closed patterns, so any NamedBuiltin items are true builtins.
+            RegexAtom::CompositeClass { positive, negative } if negative.is_empty() => {
+                out.extend(positive.iter().cloned());
+                true
+            }
             RegexAtom::Group(inner) => Self::pattern_single_char_items(inner, out),
             RegexAtom::Alternation(branches) | RegexAtom::SequentialAlternation(branches) => {
                 branches
@@ -869,14 +877,55 @@ impl Interpreter {
         // `CompositeClass` (not a negated `CharClass`) so that negated
         // grammar-token items resolve at match time; the CompositeClass matcher
         // treats an empty `positive` as "any char" (see its `pos_match` fallback).
-        let class_atom = if positive_items.is_empty() && negative_items.is_empty() {
+        //
+        // With subrule/inline branches present, negative items that FOLLOW a
+        // positive part are a SUBTRACTION from the built-up class (`<+pc -
+        // [:]>` = pc's charset minus ':'), not a standalone "any char except
+        // ..." branch — that reading would make the class match almost
+        // anything. Emit them as a negative lookahead guarding every branch,
+        // and only keep the class atom when positive single-char items carry
+        // it. A class whose FIRST part is negative (`<-restricted +name-sep>`,
+        // zef's REQUIRE name) starts from the full character set instead: its
+        // negatives form the classic any-char-except branch, and the positive
+        // subrules are plain unions with no guard.
+        let first_part_negative = input.trim_start().starts_with('-');
+        let neg_guard = if first_part_negative || negative_items.is_empty() {
             None
         } else {
-            Some(RegexAtom::CompositeClass {
-                positive: positive_items,
-                negative: negative_items,
+            Some(RegexAtom::Lookaround {
+                pattern: RegexPattern {
+                    tokens: vec![RegexToken {
+                        atom: RegexAtom::CompositeClass {
+                            positive: negative_items.clone(),
+                            negative: vec![],
+                        },
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        secondary_named_capture: None,
+                        hash_capture: None,
+                        force_list_capture: false,
+                        ratchet: false,
+                        frugal: false,
+                        separator: None,
+                    }],
+                    anchor_start: false,
+                    anchor_end: false,
+                    ignore_case: false,
+                    ignore_mark: false,
+                },
+                negated: true,
+                is_behind: false,
             })
         };
+        let class_atom =
+            if positive_items.is_empty() && (negative_items.is_empty() || !first_part_negative) {
+                None
+            } else {
+                Some(RegexAtom::CompositeClass {
+                    positive: positive_items,
+                    negative: negative_items,
+                })
+            };
         // Desugar an enumerated class carrying positive user-subrules into an
         // LTM alternation: `<-restricted +name-sep>` -> `[ <name-sep> | <-restricted> ]`.
         // The subrule branches are non-capturing (char classes never capture).
@@ -897,15 +946,35 @@ impl Interpreter {
             ignore_case: false,
             ignore_mark: false,
         };
+        // Prepend the subtraction guard (if any) to a branch pattern.
+        let guard_pattern = |mut p: RegexPattern| {
+            if let Some(guard) = &neg_guard {
+                p.tokens.insert(
+                    0,
+                    RegexToken {
+                        atom: guard.clone(),
+                        quant: RegexQuant::One,
+                        named_capture: None,
+                        secondary_named_capture: None,
+                        hash_capture: None,
+                        force_list_capture: false,
+                        ratchet: false,
+                        frugal: false,
+                        separator: None,
+                    },
+                );
+            }
+            p
+        };
         let mut branches: Vec<RegexPattern> = subrule_branches
             .into_iter()
             // Prefix with `.` so the subrule is matched *silently* (no named
             // capture) — a character class never captures.
-            .map(|name| make_pattern(RegexAtom::Named(format!(".{name}"))))
+            .map(|name| guard_pattern(make_pattern(RegexAtom::Named(format!(".{name}")))))
             .collect();
         // Statically-folded token bodies join the alternation directly (they
         // are closed patterns: no captures, no runtime resolution).
-        branches.extend(inline_branches);
+        branches.extend(inline_branches.into_iter().map(guard_pattern));
         if let Some(atom) = class_atom {
             branches.push(make_pattern(atom));
         }

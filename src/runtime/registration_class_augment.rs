@@ -322,6 +322,7 @@ impl Interpreter {
         base: &str,
         predicate: Option<&Expr>,
         version: &str,
+        is_my: bool,
     ) {
         // When the predicate is `* ~~ <expr>` (Whatever on LHS of SmartMatch),
         // the parser doesn't wrap it as WhateverCode (to avoid breaking other
@@ -350,14 +351,29 @@ impl Interpreter {
         // Drop any cached compiled predicate for this name so a redeclaration
         // recompiles against the new predicate (see `subset_predicate_cache`).
         self.subset_predicate_cache.remove(name);
-        self.registry_mut().subsets.insert(
-            name.to_string(),
-            SubsetDef {
-                base: base.to_string(),
-                predicate,
-                version: version.to_string(),
-            },
-        );
+        let def = SubsetDef {
+            base: base.to_string(),
+            predicate,
+            version: version.to_string(),
+        };
+        // A subset defaults to `our` scope: declared inside a package/class/
+        // module it is also reachable by its qualified name (`URI::Scheme`),
+        // so register that alias too — smartmatch resolves the constraint by
+        // the exact name it was referenced with. A `my subset` is lexical and
+        // must NOT get the package-qualified alias (S12-subset/type-subset.t).
+        let pkg = self.current_package();
+        if !is_my && !name.contains("::") && !pkg.is_empty() && pkg != "GLOBAL" && pkg != "Main" {
+            let qualified = format!("{}::{}", pkg, name);
+            self.subset_predicate_cache.remove(&qualified);
+            self.registry_mut()
+                .subsets
+                .insert(qualified.clone(), def.clone());
+            self.env.insert(
+                qualified.clone(),
+                Value::package(Symbol::intern(&qualified)),
+            );
+        }
+        self.registry_mut().subsets.insert(name.to_string(), def);
         self.env
             .insert(name.to_string(), Value::package(Symbol::intern(name)));
     }
