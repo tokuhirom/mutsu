@@ -150,6 +150,25 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             };
             return parse_statement_modifier(rest, stmt);
         }
+        // `@a Z= rhs` (zip metaoperator on `=`) is element-wise assignment, not
+        // `@a = (@a Z rhs)`: each `@a[i]` gets `rhs[i]`, trailing `@a` elements
+        // keep their value, and a shaped array keeps its shape (plain `=` to a
+        // shaped array is `X::Assignment::ToShaped`, so `Z=` is the flat-fill
+        // path — S02-types/array-shapes.t). `__mutsu_zip_assign` rebuilds the
+        // container; the outer assignment stores it back. Only `Z=` (op `=`) is
+        // rewritten — `Z=>` / `Z+=` keep the value-producing MetaOp path.
+        if meta == "Z" && op == "=" {
+            let zip_call = Expr::Call {
+                name: crate::symbol::Symbol::intern("__mutsu_zip_assign"),
+                args: vec![var_expr, rhs],
+            };
+            let stmt = Stmt::Assign {
+                name,
+                expr: zip_call,
+                op: AssignOp::Assign,
+            };
+            return parse_statement_modifier(rest, stmt);
+        }
         // The reverse meta-operator assignment `$x R op= $y` assigns to its
         // RIGHT operand: `$y = $y op $x` (= `$x R op $y`). So `$x R~= $y` leaves
         // `$x` unchanged and sets `$y` to `$y ~ $x`, and `$x R op= <literal>`

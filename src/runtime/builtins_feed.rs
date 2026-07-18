@@ -17,6 +17,39 @@ impl Interpreter {
         Ok(value)
     }
 
+    /// `@a Z= rhs` (zip metaoperator applied to `=`): element-wise assignment.
+    /// `args[0]` is the current LHS container, `args[1]` the RHS list. Each
+    /// `leaf[i]` is set to `rhs[i]` for `i < min(len(leaves), len(rhs))`;
+    /// trailing leaves (no matching RHS element) keep their value. A shaped
+    /// array keeps its shape/structure — `my int @a[2;3] Z= 0..5` fills the six
+    /// leaves without flattening to a bare list (plain `=` to a shaped array is
+    /// `X::Assignment::ToShaped` in raku, so `Z=` is the flat-fill path). The
+    /// rebuilt container is returned; the outer assignment stores it back.
+    pub(super) fn builtin_zip_assign(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let lhs = args.first().cloned().unwrap_or(Value::NIL);
+        let rhs = args.get(1).cloned().unwrap_or(Value::NIL);
+        let rhs_list = crate::runtime::value_to_list(&rhs);
+        if crate::runtime::utils::is_shaped_array(&lhs) {
+            let leaves = crate::runtime::utils::shaped_array_leaves(&lhs);
+            let new_leaves: Vec<Value> = leaves
+                .iter()
+                .enumerate()
+                .map(|(i, leaf)| rhs_list.get(i).cloned().unwrap_or_else(|| leaf.clone()))
+                .collect();
+            return Ok(crate::runtime::utils::replace_shaped_leaves(
+                &lhs,
+                &new_leaves,
+            ));
+        }
+        let items = crate::runtime::value_to_list(&lhs);
+        let new_items: Vec<Value> = items
+            .iter()
+            .enumerate()
+            .map(|(i, it)| rhs_list.get(i).cloned().unwrap_or_else(|| it.clone()))
+            .collect();
+        Ok(Value::array(new_items))
+    }
+
     pub(super) fn builtin_feed_append(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() < 2 {
             return Err(RuntimeError::new(

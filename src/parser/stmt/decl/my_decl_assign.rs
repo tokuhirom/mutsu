@@ -63,6 +63,23 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             super::super::assign::compound_assigned_value_expr(var_expr, op, rhs)
         });
     }
+    // `my @a Z= rhs` — a zip metaoperator assignment right after a declaration.
+    // Declare `@a` (with its shaped/default init) in a scopeless block, then
+    // element-wise-assign `rhs` into it via `__mutsu_zip_assign`. This is the
+    // only way to flat-fill a shaped array (`my int @a[2;3] Z= 0..5`), since
+    // plain `=` to a shaped array is `X::Assignment::ToShaped`. Only `Z=`
+    // (op `=`) is handled here; `Z=>`/`Z+=` fall through to the value paths.
+    // Checked BEFORE `parse_custom_compound_assign_op`, which would otherwise
+    // treat the leading `Z` as a user-defined `Z=` operator.
+    if let Some((stripped, meta, op)) = super::super::assign::parse_meta_compound_assign_op(rest)
+        && meta == "Z"
+        && op == "="
+    {
+        return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::Call {
+            name: Symbol::intern("__mutsu_zip_assign"),
+            args: vec![var_expr, rhs],
+        });
+    }
     if let Some((stripped, op_name)) = super::super::assign::parse_custom_compound_assign_op(rest) {
         return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::InfixFunc {
             name: op_name,
