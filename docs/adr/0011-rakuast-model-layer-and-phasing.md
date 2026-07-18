@@ -151,6 +151,12 @@ earlier ones.
     as first-class type objects (they currently resolve as bare type names).
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
+  - **Slice 1 (literals) — done.** `RakuAST::IntLiteral.new(42)` / `RatLiteral.new(3.5)` /
+    `StrLiteral.new("hi")` build a real node — renderable (`.gist` round-trips) and queryable
+    (`.value`, `~~`). A `rakuast::construct(class_name, method, args)` builds the node; it is
+    dispatched from the `.new`-on-a-`Package` handler (`methods_object_dispatch_new`) for any
+    `RakuAST::*` type-object bareword. Tests in `t/rakuast-construct.t`. Next: multi-field
+    constructors (Name.from-identifier, ApplyInfix.new(...), StatementList.new(...)).
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.

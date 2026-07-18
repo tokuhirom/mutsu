@@ -2127,8 +2127,15 @@ impl Interpreter {
                 self.builtin_callframe(&args, depth)
             }
             ValueView::Package(name) => {
+                // RakuAST construction (Phase 4): `RakuAST::IntLiteral.new(42)`.
+                let resolved = name.resolve();
+                if resolved.starts_with("RakuAST::")
+                    && let Some(node) = crate::rakuast::construct(&resolved, "new", &args)?
+                {
+                    return Ok(node);
+                }
                 // Built-in type objects: .new creates a default defined instance
-                match name.resolve().as_str() {
+                match resolved.as_str() {
                     // Shared with the VM's native fast path.
                     "Int" => Self::build_native_int_value(&args),
                     "Str" => Ok(Value::str(String::new())),

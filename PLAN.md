@@ -864,8 +864,13 @@ so it is tracked separately from the roast backlog.
         `t/rakuast-leaf-accessors.t`.
   - [x] Slice 4: semantic Expression/Term hierarchy (`IntLiteral isa RakuAST::Expression`/`Term`,
         `ApplyInfix isa Expression`). Tests in `t/rakuast-semantic-hierarchy.t`.
-  - [ ] Slice 5+: registering `RakuAST::*` as first-class type objects; `.WHAT`. Then Phase 4
-        (construction, `.new`), Phase 5 (EVAL: lower RakuAST → internal AST → existing compiler).
+  - [ ] Slice 5+: registering `RakuAST::*` as first-class type objects; `.WHAT`.
+- **Phase 4 (in progress)** — construction (`.new`).
+  - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
+        Tests in `t/rakuast-construct.t`.
+  - [ ] Slice 2+: `Name.from-identifier("x")`; multi-field constructors (`ApplyInfix.new(...)`,
+        `Statement::Expression.new(...)`, `StatementList.new(...)`) — a per-class field schema; then
+        Phase 5 (EVAL: lower RakuAST → internal AST → existing compiler).
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
 - [ ] **Phase 5** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
