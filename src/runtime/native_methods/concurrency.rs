@@ -14,6 +14,18 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "protect" => {
+                // `.protect` requires a single Callable block; a non-Callable
+                // (e.g. `.protect: %()`) matches no candidate and must throw
+                // X::Multi::NoMatch (roast .../multi-no-match.t).
+                if args.len() != 1
+                    || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..))
+                {
+                    return Err(
+                        crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                            "protect",
+                        ),
+                    );
+                }
                 let lock_id = match attributes.get("lock-id").and_then(|v| v.as_int()) {
                     Some(id) if id > 0 => id as u64,
                     _ => {

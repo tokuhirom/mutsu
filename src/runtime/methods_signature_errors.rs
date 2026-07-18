@@ -105,7 +105,7 @@ pub(super) fn make_x_immutable_error(method_name: &str, typename: &str) -> Runti
 }
 
 /// Create a structured X::Multi::NoMatch error.
-pub(super) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
+pub(crate) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("No matching candidates for method: {}", method_name);
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));

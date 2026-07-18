@@ -84,6 +84,16 @@ impl Interpreter {
                     day = d;
                 }
                 _ => {
+                    // y/m/d as Int:D. A type object (e.g. `Date.new(Int, 1, 1)`)
+                    // matches no candidate — Rakudo dies here rather than
+                    // coercing to 0 (roast .../multi-no-match.t).
+                    for comp in positional.iter().take(3) {
+                        if matches!(comp.view(), ValueView::Package(_)) {
+                            return Err(RuntimeError::new(
+                                "Date.new: year, month and day must be defined Int values",
+                            ));
+                        }
+                    }
                     year = to_int(v);
                     if let Some(v2) = positional.get(1) {
                         month = to_int(v2);

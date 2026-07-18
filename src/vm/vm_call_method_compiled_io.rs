@@ -257,11 +257,20 @@ impl Interpreter {
                     (c, true)
                 }
                 "printf" => {
+                    // printf requires a format argument; a bare `$handle.printf`
+                    // matches no candidate (roast .../multi-no-match.t).
+                    if args.is_empty() {
+                        return Some(Err(
+                            crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                                "printf",
+                            ),
+                        ));
+                    }
                     let fmt = args
                         .first()
                         .map(|v| v.to_string_value())
                         .unwrap_or_default();
-                    let rest = if args.is_empty() { &[][..] } else { &args[1..] };
+                    let rest = &args[1..];
                     if let Err(e) =
                         crate::runtime::sprintf::validate_sprintf_directives(&fmt, rest.len())
                     {
@@ -635,11 +644,20 @@ impl Interpreter {
             // printf: validate the directives then format, exactly as the
             // interpreter's `printf` arm (pure `sprintf` helpers, no handle state).
             Kind::Printf => {
+                // printf requires a format argument; a bare `$handle.printf`
+                // matches no candidate (roast .../multi-no-match.t).
+                if args.is_empty() {
+                    return Some(Err(
+                        crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                            "printf",
+                        ),
+                    ));
+                }
                 let fmt = args
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
-                let rest = if args.is_empty() { &[][..] } else { &args[1..] };
+                let rest = &args[1..];
                 if let Err(e) =
                     crate::runtime::sprintf::validate_sprintf_directives(&fmt, rest.len())
                 {

@@ -553,6 +553,15 @@ impl Interpreter {
                 Ok(Value::TRUE)
             }
             "printf" => {
+                // printf requires a format argument; a bare `$handle.printf`
+                // matches no candidate (roast .../multi-no-match.t).
+                if args.is_empty() {
+                    return Err(
+                        crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                            "printf",
+                        ),
+                    );
+                }
                 // If the first arg is a Junction, thread through it
                 if let Some(ValueView::Junction { kind: _, values }) = args.first().map(Value::view)
                 {

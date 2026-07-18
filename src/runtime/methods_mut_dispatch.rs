@@ -997,6 +997,33 @@ impl Interpreter {
                             resolved_args[1] = result;
                         }
                     }
+                    // Type-check the offset/size arguments. splice's candidates
+                    // take `Int` (plus `Whatever`/`Callable`, already resolved
+                    // above) for the start and elems positions — a `Num`, `Str`,
+                    // `Array`, etc. matches no candidate and must throw
+                    // X::Multi::NoMatch (roast .../multi-no-match.t), not coerce.
+                    fn is_valid_splice_index(v: &Value) -> bool {
+                        match v.view() {
+                            ValueView::Int(_)
+                            | ValueView::BigInt(_)
+                            | ValueView::Whatever
+                            | ValueView::Sub(..)
+                            | ValueView::WeakSub(..) => true,
+                            ValueView::Mixin(inner, _) => is_valid_splice_index(inner),
+                            _ => false,
+                        }
+                    }
+                    for idx in 0..2 {
+                        if let Some(v) = resolved_args.get(idx)
+                            && !is_valid_splice_index(v)
+                        {
+                            return Err(
+                                super::methods_signature_errors::make_multi_no_match_error(
+                                    "splice",
+                                ),
+                            );
+                        }
+                    }
                     // Validate offset range
                     if let Some(offset_val) = resolved_args.first()
                         && let Some(raw_offset) = resolve_splice_raw(offset_val, arr_len)

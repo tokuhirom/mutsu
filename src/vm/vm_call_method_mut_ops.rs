@@ -729,6 +729,26 @@ impl Interpreter {
             return Ok(());
         }
 
+        // `Lock.protect` / `Lock::Async.protect` require a defined invocant and a
+        // single Callable block. The type object (`Lock.protect: …`) or a
+        // non-Callable arg (`.protect: %()`) matches no candidate and must throw
+        // X::Multi::NoMatch (roast .../multi-no-match.t).
+        if method == "protect" {
+            let is_lock_type_object = matches!(target.view(), ValueView::Package(name)
+                if matches!(name.resolve().as_str(),
+                    "Lock" | "Lock::Async" | "Lock::Soft"));
+            let is_lock_instance_bad_arg = matches!(target.view(),
+                ValueView::Instance { class_name, .. }
+                if matches!(class_name.resolve().as_str(),
+                    "Lock" | "Lock::Async" | "Lock::Soft"))
+                && (args.len() != 1
+                    || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
+            if is_lock_type_object || is_lock_instance_bad_arg {
+                return Err(
+                    crate::runtime::methods_signature_errors::make_multi_no_match_error("protect"),
+                );
+            }
+        }
         // Fast path for Lock::Async.protect — execute block inline in current Interpreter
         if method == "protect"
             && args.len() == 1
