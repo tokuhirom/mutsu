@@ -7,7 +7,7 @@
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn unsupported(node: &RakuAstNode) -> RuntimeError {
@@ -48,6 +48,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementIf => lower_if(node),
         RakuAstClass::StatementLoopWhile => lower_while(node),
         RakuAstClass::StatementFor => lower_for(node),
+        RakuAstClass::Sub => lower_sub(node),
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
@@ -129,6 +130,99 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         rw_block: false,
         explicit_zero_params: false,
     })
+}
+
+/// Lower `sub NAME (SIG) { … }` to `Stmt::SubDecl`. Only bare positional scalar
+/// parameters are handled; typed/named/slurpy/defaulted parameters and anonymous
+/// subs in expression position are the current coverage boundary.
+fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let name = call_name_str(node)?;
+    let params = signature_positional_params(node)?;
+    let param_defs = params.iter().map(|n| positional_param(n)).collect();
+    // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
+    let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
+    Ok(Stmt::SubDecl {
+        name: crate::symbol::Symbol::intern(&name),
+        name_expr: None,
+        params,
+        param_defs,
+        return_type: None,
+        associativity: None,
+        precedence_trait: None,
+        signature_alternates: Vec::new(),
+        body,
+        multi: false,
+        is_rw: false,
+        is_raw: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        is_test_assertion: false,
+        supersede: false,
+        custom_traits: Vec::new(),
+    })
+}
+
+/// The positional scalar parameter names of a routine's `signature`, each with
+/// its `$` sigil stripped. A parameter carrying anything beyond a plain scalar
+/// `target` (a name, a slurpy/named marker, a default) is the coverage boundary.
+fn signature_positional_params(node: &RakuAstNode) -> Result<Vec<String>, RuntimeError> {
+    let Ok(sig) = named_child(node, "signature") else {
+        return Ok(Vec::new());
+    };
+    let params = match sig.fields.iter().find(|f| f.name == Some("parameters")) {
+        Some(f) => match &f.value {
+            RakuAstFieldValue::List(items) => items,
+            _ => return Err(unsupported(node)),
+        },
+        None => return Ok(Vec::new()),
+    };
+    let mut names = Vec::with_capacity(params.len());
+    for v in params {
+        let ValueView::RakuAst(p) = v.view() else {
+            return Err(unsupported(node));
+        };
+        // A named/slurpy/optional/defaulted parameter carries extra fields; defer.
+        if p.fields.iter().any(|f| {
+            matches!(
+                f.name,
+                Some("slurpy") | Some("named") | Some("default") | Some("optional_marker")
+            )
+        }) {
+            return Err(unsupported(node));
+        }
+        let target = named_child(p, "target")?;
+        if target.class != RakuAstClass::ParameterTargetVar {
+            return Err(unsupported(node));
+        }
+        let raw = leaf_str(target, "name")?;
+        names.push(raw.strip_prefix('$').map(str::to_string).unwrap_or(raw));
+    }
+    Ok(names)
+}
+
+/// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
+fn positional_param(name: &str) -> ParamDef {
+    ParamDef {
+        name: name.to_string(),
+        default: None,
+        multi_invocant: true,
+        required: true,
+        named: false,
+        slurpy: false,
+        double_slurpy: false,
+        onearg: false,
+        sigilless: false,
+        type_constraint: None,
+        literal_value: None,
+        sub_signature: None,
+        where_constraint: None,
+        traits: Vec::new(),
+        optional_marker: false,
+        outer_sub_signature: None,
+        code_signature: None,
+        is_invocant: false,
+        shape_constraints: None,
+    }
 }
 
 /// The single loop variable of a pointy block's signature (`-> $x`), with its
@@ -354,6 +448,12 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 expr: Box::new(operand),
             })
         }
+        // A named call `f(1, 2)` -> Expr::Call (the listop I/O calls are handled
+        // as statements in `lower_stmt_inner`; here they are ordinary calls too).
+        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => Ok(Expr::Call {
+            name: crate::symbol::Symbol::intern(&call_name_str(node)?),
+            args: arg_exprs(node)?,
+        }),
         // A comma list `1, 2, 3` (or parenthesised `(1, 2, 3)`) -> ApplyListInfix
         // with a `,` infix. Other list infixes (`Z`/`X`/...) are deferred.
         RakuAstClass::ApplyListInfix => {
