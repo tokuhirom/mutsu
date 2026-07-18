@@ -251,6 +251,23 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             .collect();
         return Some(Value::array(items));
     }
+    // Positional-leaf accessors: a node whose single positional field is its
+    // payload exposes it under a class-specific name (`IntLiteral.value`,
+    // `Var::Lexical.name`). The named-field loop above runs first, so a class
+    // with a *named* field of the same name (e.g. `Call::Name.name`) is unaffected.
+    let positional_name = match node.class {
+        RakuAstClass::IntLiteral | RakuAstClass::RatLiteral | RakuAstClass::StrLiteral => {
+            Some("value")
+        }
+        RakuAstClass::VarLexical => Some("name"),
+        _ => None,
+    };
+    if positional_name == Some(method)
+        && let Some(f) = node.fields.first()
+        && f.name.is_none()
+    {
+        return Some(field_to_value(&f.value));
+    }
     None
 }
 
