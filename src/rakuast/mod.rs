@@ -13,7 +13,7 @@
 mod convert;
 mod render;
 
-use crate::value::{RuntimeError, Value};
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// A single RakuAST node: its class plus ordered fields. Immutable tree.
 #[derive(Debug, Clone, PartialEq)]
@@ -271,26 +271,81 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
-    let class = match (class_name, method) {
+    // Single-positional-argument constructors: the literals, `Name.from-identifier`,
+    // and the bare operator nodes (`Infix.new("+")`).
+    if let Some(class) = single_positional_class(class_name, method) {
+        if args.len() != 1 {
+            return Err(RuntimeError::new(format!(
+                "{class_name}.{method} expects a single argument"
+            )));
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields: vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node(args[0].clone()),
+            }],
+        }))));
+    }
+    // Multi-field named constructors: the named args map to same-named fields in
+    // the class's schema order (`ApplyInfix.new(left => …, infix => …, right => …)`).
+    if let Some((class, schema)) = multi_field_schema(class_name, method) {
+        let mut fields = Vec::with_capacity(schema.len());
+        for &fname in schema {
+            let value = named_arg(args, fname).ok_or_else(|| {
+                RuntimeError::new(format!(
+                    "{class_name}.{method} requires a `{fname}` argument"
+                ))
+            })?;
+            fields.push(RakuAstField {
+                name: Some(fname),
+                value: RakuAstFieldValue::Node(value),
+            });
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields,
+        }))));
+    }
+    Ok(None)
+}
+
+/// The class for a single-positional-argument constructor, or `None`.
+fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
+    Some(match (class_name, method) {
         ("RakuAST::IntLiteral", "new") => RakuAstClass::IntLiteral,
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
-        _ => return Ok(None),
-    };
-    if args.len() != 1 {
-        return Err(RuntimeError::new(format!(
-            "{class_name}.{method} expects a single argument"
-        )));
-    }
-    let node = RakuAstNode {
-        class,
-        fields: vec![RakuAstField {
-            name: None,
-            value: RakuAstFieldValue::Node(args[0].clone()),
-        }],
-    };
-    Ok(Some(Value::rakuast(Box::new(node))))
+        ("RakuAST::Infix", "new") => RakuAstClass::Infix,
+        ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
+        _ => return None,
+    })
+}
+
+/// The class and ordered named-field schema for a multi-field constructor.
+fn multi_field_schema(
+    class_name: &str,
+    method: &str,
+) -> Option<(RakuAstClass, &'static [&'static str])> {
+    Some(match (class_name, method) {
+        ("RakuAST::Statement::Expression", "new") => {
+            (RakuAstClass::StatementExpression, &["expression"][..])
+        }
+        ("RakuAST::ApplyInfix", "new") => {
+            (RakuAstClass::ApplyInfix, &["left", "infix", "right"][..])
+        }
+        _ => return None,
+    })
+}
+
+/// Find a named (`key => value`) constructor argument, returning its value.
+fn named_arg(args: &[Value], name: &str) -> Option<Value> {
+    args.iter().find_map(|a| match a.view() {
+        ValueView::Pair(k, v) => (k.as_str() == name).then(|| v.clone()),
+        ValueView::ValuePair(k, v) => (k.to_string_value() == name).then(|| v.clone()),
+        _ => None,
+    })
 }
 
 /// A named-field / positional accessor on a RakuAST node (Phase 3). Returns the
