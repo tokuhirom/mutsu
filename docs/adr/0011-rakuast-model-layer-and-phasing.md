@@ -232,6 +232,10 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **Quoted method names (Phase 2 slice 23).** `$x."foo"()` (`Expr::MethodCall` with `quoted ==
+  true`) → `ApplyPostfix(operand, postfix => Call::QuotedMethod(name => QuotedString, [args =>
+  ArgList]))` — unlike `Call::Method`, the name is a `QuotedString` (string literal) rather than a
+  `Name.from-identifier`. A quoted name combined with a `.?`/`.+`/`.*` modifier is the boundary.
 - **Positional subscripts (Phase 2 slice 22).** `@x[EXPR]` (`Expr::Index` with
   `is_positional == true`) → `ApplyPostfix(operand, postfix => Postcircumfix::ArrayIndex(index =>
   SemiList(Statement::Expression(EXPR))))`. Associative subscripts (`%h{...}` / `%h<...>`) are
