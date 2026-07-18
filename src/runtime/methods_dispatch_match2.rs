@@ -394,11 +394,45 @@ impl Interpreter {
     }
 
     /// Dispatch the "map" method.
+    /// Iteration methods (`.map`/`.grep`) on a role mixin over a list-ish
+    /// value iterate the INNER value's elements — including an itemized inner
+    /// (`my $x = (1,2); $x does R; $x.map(...)` iterates 1, 2 in raku).
+    /// A mixin over a scalar stays the single item. Without this,
+    /// JSON::Marshal's `_marshal(Positional:D)` received the whole mixin back
+    /// from `.map` and recursed to a stack overflow (JSON::Class
+    /// t/050-array.t: `Array[TestObject] but JSON::Class`).
+    pub(crate) fn mixin_iteration_target(target: Value) -> Value {
+        if let ValueView::Mixin(inner, _) = target.view()
+            && matches!(
+                inner.view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(_)
+                    | ValueView::HyperSeq(_)
+                    | ValueView::RaceSeq(_)
+                    | ValueView::Slip(_)
+                    | ValueView::LazyList(_)
+                    | ValueView::Hash(_)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Set(..)
+                    | ValueView::Bag(..)
+                    | ValueView::Mix(..)
+            )
+        {
+            return inner.as_ref().clone();
+        }
+        target
+    }
+
     fn dispatch_map_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        let target = Self::mixin_iteration_target(target);
         if let ValueView::Instance {
             class_name,
             attributes,

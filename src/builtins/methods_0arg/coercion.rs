@@ -141,6 +141,16 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     0.0,
                 )))
             }
+            // `"1+2i".Complex` parses the numeric string (raku: <1+2i>), not 0+0i.
+            ValueView::Str(s) => {
+                match crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()) {
+                    Some(v) => match v.view() {
+                        ValueView::Complex(..) => Some(Ok(v)),
+                        _ => Some(Ok(Value::complex(v.to_f64(), 0.0))),
+                    },
+                    None => Some(Ok(Value::complex(0.0, 0.0))),
+                }
+            }
             _ => Some(Ok(Value::complex(0.0, 0.0))),
         },
         "Pair" => match target.view() {

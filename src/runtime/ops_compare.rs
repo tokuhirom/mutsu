@@ -4,6 +4,31 @@ impl Interpreter {
     pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
         match val.view() {
             ValueView::Array(_, kind) if kind.is_itemized() => vec![val.clone()],
+            // A role mixin over a (non-itemized) list-ish value lists as the
+            // inner value does; itemized/scalar inners keep one item (and the
+            // mixin identity). Mirrors utils::value_to_list.
+            ValueView::Mixin(inner, _)
+                if matches!(
+                    inner.view(),
+                    ValueView::Array(_, kind) if !kind.is_itemized()
+                ) || matches!(
+                    inner.view(),
+                    ValueView::Seq(_)
+                        | ValueView::Slip(_)
+                        | ValueView::LazyList(_)
+                        | ValueView::Range(..)
+                        | ValueView::RangeExcl(..)
+                        | ValueView::RangeExclStart(..)
+                        | ValueView::RangeExclBoth(..)
+                        | ValueView::GenericRange { .. }
+                        | ValueView::Set(..)
+                        | ValueView::Bag(..)
+                        | ValueView::Mix(..)
+                ) || (matches!(inner.view(), ValueView::Hash(_))
+                    && !inner.hash_is_itemized()) =>
+            {
+                Self::value_to_list(inner)
+            }
             ValueView::Array(items, ..) => items.to_vec(),
             ValueView::Seq(items) => items.to_vec(),
             ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),

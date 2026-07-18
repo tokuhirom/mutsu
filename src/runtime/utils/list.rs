@@ -51,6 +51,35 @@ pub(crate) fn walk_list_candidates(attributes: &crate::value::InstanceAttrs) -> 
 pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     match val.view() {
         ValueView::Array(_, kind) if kind.is_itemized() => vec![val.clone()],
+        // A role mixin over a (non-itemized) list-ish value lists as the inner
+        // value does. An itemized inner keeps one item — `for $x` where
+        // `my $x = (1,2); $x does R` iterates once, like the plain itemized
+        // scalar — and a scalar mixin stays one item with its mixin identity.
+        // Iteration METHODS (`.map`/`.grep`) unwrap itemization separately via
+        // `Interpreter::mixin_iteration_target`.
+        ValueView::Mixin(inner, _)
+            if matches!(
+                inner.view(),
+                ValueView::Array(_, kind) if !kind.is_itemized()
+            ) || matches!(
+                inner.view(),
+                ValueView::Seq(_)
+                    | ValueView::HyperSeq(_)
+                    | ValueView::RaceSeq(_)
+                    | ValueView::Slip(_)
+                    | ValueView::LazyList(_)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+                    | ValueView::Set(..)
+                    | ValueView::Bag(..)
+                    | ValueView::Mix(..)
+            ) || (matches!(inner.view(), ValueView::Hash(_)) && !inner.hash_is_itemized()) =>
+        {
+            value_to_list(inner)
+        }
         ValueView::Array(items, ..) => items.to_vec(),
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             items.to_vec()

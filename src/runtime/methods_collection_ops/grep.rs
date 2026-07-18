@@ -8,6 +8,9 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // A role mixin over a list-ish value greps the inner elements (see
+        // mixin_iteration_target on the map dispatch).
+        let target = Self::mixin_iteration_target(target);
         fn stmt_contains_last(stmt: &Stmt) -> bool {
             match stmt {
                 Stmt::Last(_) => true,
