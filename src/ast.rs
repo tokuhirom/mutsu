@@ -928,6 +928,9 @@ pub(crate) enum Stmt {
         version: String,
         is_export: bool,
         export_tags: Vec<String>,
+        /// `my subset F ...` — lexically scoped: NOT reachable (nor
+        /// registered) under the enclosing package's qualified name.
+        is_my: bool,
     },
     Phaser {
         kind: PhaserKind,

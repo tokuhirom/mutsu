@@ -125,6 +125,7 @@ pub(super) fn try_keyword_dispatch(
                     version: super::super::simple::current_language_version(),
                     is_export: false,
                     export_tags: Vec::new(),
+                    is_my: !is_our,
                 },
             )));
         }
@@ -230,7 +231,14 @@ pub(super) fn try_keyword_dispatch(
     }
     // my subset Name of BaseType where ...
     if keyword("subset", rest).is_some() {
-        return subset_decl(rest).map(Some);
+        return subset_decl(rest)
+            .map(|(r, mut stmt)| {
+                if !is_our && let Stmt::SubsetDecl { is_my, .. } = &mut stmt {
+                    *is_my = true;
+                }
+                (r, stmt)
+            })
+            .map(Some);
     }
     // my constant $x = ...
     if keyword("constant", rest).is_some() {

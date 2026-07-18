@@ -267,6 +267,7 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
             version: super::super::simple::current_language_version(),
             is_export,
             export_tags,
+            is_my: false,
         },
     ))
 }

@@ -825,6 +825,9 @@ impl Compiler {
                             version: String::new(),
                             is_export: false,
                             export_tags: Vec::new(),
+                            // Anonymous where-subsets are internal; never
+                            // alias them under the enclosing package.
+                            is_my: true,
                         };
                         let idx = self.code.add_stmt(subset_stmt);
                         self.code.emit(OpCode::RegisterSubset(idx));
