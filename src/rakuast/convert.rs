@@ -1163,7 +1163,7 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
         fields: vec![RakuAstField {
             name: Some("parameters"),
             value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(simple_parameter(
-                "$", param, None, false,
+                "$", param, None, None, false,
             )?))]),
         }],
     };
@@ -1218,7 +1218,6 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         || pd.slurpy
         || pd.double_slurpy
         || pd.onearg
-        || pd.type_constraint.is_some()
         || pd.literal_value.is_some()
         || pd.sub_signature.is_some()
         || pd.where_constraint.is_some()
@@ -1232,7 +1231,13 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         return Err(unsupported("non-trivial signature parameter"));
     }
     let (sigil, desigil) = split_sigil(&pd.name);
-    simple_parameter(sigil, desigil, pd.default.as_ref(), type_setting)
+    simple_parameter(
+        sigil,
+        desigil,
+        pd.type_constraint.as_deref(),
+        pd.default.as_ref(),
+        type_setting,
+    )
 }
 
 /// `Type::Setting.new(Name.from-identifier("Any"))` — the implicit default type
@@ -1254,6 +1259,7 @@ fn type_setting_any() -> RakuAstNode {
 fn simple_parameter(
     sigil: &str,
     desigil: &str,
+    type_constraint: Option<&str>,
     default: Option<&Expr>,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
@@ -1265,8 +1271,12 @@ fn simple_parameter(
         )],
     };
     let mut fields = Vec::new();
-    if type_setting {
-        fields.push(node_field(Some("type"), type_setting_any()));
+    // An explicit type constraint (`Int $x`) replaces the implicit
+    // `Type::Setting(Any)` that untyped sub/method params carry.
+    match type_constraint {
+        Some(tc) => fields.push(node_field(Some("type"), build_type_node(tc)?)),
+        None if type_setting => fields.push(node_field(Some("type"), type_setting_any())),
+        None => {}
     }
     fields.push(node_field(Some("target"), target));
     match default {

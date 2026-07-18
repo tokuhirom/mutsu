@@ -235,6 +235,29 @@ fn signature_positional_params(
         let raw = leaf_str(target, "name")?;
         let name = raw.strip_prefix('$').map(str::to_string).unwrap_or(raw);
         let mut def = positional_param(&name);
+        // `Int $x` -> a type constraint. `Type::Simple` (a plain type name) is
+        // handled; the implicit `Type::Setting(Any)` on an untyped param is
+        // ignored, and richer type forms (definite/coercion/parameterised) defer.
+        if let Some(t) = p.fields.iter().find(|f| f.name == Some("type")) {
+            if let RakuAstFieldValue::Node(val) = &t.value
+                && let ValueView::RakuAst(type_node) = val.view()
+            {
+                match type_node.class {
+                    RakuAstClass::TypeSimple => {
+                        let name_node = named_child_or_positional(type_node)?;
+                        if let ValueView::Str(s) = positional_leaf(name_node)?.view() {
+                            def.type_constraint = Some(s.to_string());
+                        } else {
+                            return Err(unsupported(node));
+                        }
+                    }
+                    RakuAstClass::TypeSetting => {} // implicit `Any`
+                    _ => return Err(unsupported(node)),
+                }
+            } else {
+                return Err(unsupported(node));
+            }
+        }
         // `$y = EXPR` -> an optional positional with a default value.
         if let Some(d) = p.fields.iter().find(|f| f.name == Some("default")) {
             let default_node = match &d.value {

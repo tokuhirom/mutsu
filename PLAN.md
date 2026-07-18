@@ -949,9 +949,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 16: interpolated strings `"a $x b"` (both directions) — `Expr::StringInterpolation` ↔ a
         `QuotedString` with a `StrLiteral`/interpolated-term segment per part. `EVAL(Q[my $x=5;
         "val=$x"].AST)` → `val=5`. Tests in `t/rakuast-eval-interp.t`.
-  - [ ] Slice 17+: typed/named/slurpy params (need read + write), C-style `loop`, code-block (`{…}`)
-        interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full
-        lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 17: typed positional parameters `Int $x` (both directions) — read emits `type =>
+        Type::Simple(Name)`, write extracts it into the `ParamDef` `type_constraint`; `EVAL(Q[sub f(Int
+        $x) { $x*2 }; f(5)].AST)` → 10, a mismatch throws. Tests in `t/rakuast-eval-typed-param.t`.
+  - [ ] Slice 18+: more infix operators (`x`/`xx`/`eq`/`ne`/…), named/slurpy params, C-style `loop`,
+        code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster by
+        cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
