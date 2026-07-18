@@ -47,6 +47,16 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::StatementIf => lower_if(node),
         RakuAstClass::StatementLoopWhile => lower_while(node),
+        // `repeat { … } while/until C` runs the body once before testing the
+        // condition (`until` desugars to `while !C`, handled by the prefix `!`).
+        RakuAstClass::StatementLoopRepeatWhile => Ok(Stmt::Loop {
+            init: None,
+            cond: Some(lower_expr(named_child(node, "condition")?)?),
+            step: None,
+            body: lower_block(named_child(node, "body")?)?,
+            repeat: true,
+            label: None,
+        }),
         RakuAstClass::StatementFor => lower_for(node),
         RakuAstClass::Sub => lower_sub(node),
         // `given`/`when`/`default` — a `when`/`default` sits directly (not

@@ -938,9 +938,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 12: default sub parameters — a `Parameter` with a `default` expression lowers to an
         optional positional `ParamDef` (`required=false`, `default=Some(…)`); `EVAL(Q[sub f($x, $y=10)
         { $x+$y }; f(5)].AST)` → 15. Tests in `t/rakuast-eval-default-param.t`.
-  - [ ] Slice 13+: `repeat`/`while`, typed/named/slurpy params (need both read + write) — the inverse
-        of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
-        multi-slice effort mirroring Phase 2.)
+  - [x] Slice 13: `repeat { … } while/until C` (`Statement::Loop::RepeatWhile` → `Stmt::Loop` with
+        `repeat => true`); the body always runs once. `EVAL(Q[my $i=0; repeat { $i=$i+1 } until $i>=5;
+        $i].AST)` → 5. Tests in `t/rakuast-eval-repeat.t`.
+  - [ ] Slice 14+: `Bool` literals (read side), typed/named/slurpy params (need read + write), C-style
+        `loop` — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering
+        is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
