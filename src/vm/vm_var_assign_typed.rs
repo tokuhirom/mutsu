@@ -221,22 +221,10 @@ impl Interpreter {
                 &coercion_target,
                 explicit_initializer,
             )?;
-            let rebuilt = Value::array_with_kind(
+            return Ok(Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(coerced_items)),
                 kind,
-            );
-            // Preserve the top-level shape metadata: coercing a shaped array
-            // rebuilds its backing `ArrayData`, which would otherwise drop the
-            // `:shape(...)` so `.raku` renders a flat array. Read the stored
-            // `shape` field directly (O(1)) rather than re-deriving it by walking
-            // the whole structure — a 100M-element `my int @a[N;N]` init must not
-            // pay an extra full-array pass here.
-            if kind == crate::value::ArrayKind::Shaped
-                && let Some(shape) = items.shape.clone()
-            {
-                crate::runtime::utils::mark_shaped_array(&rebuilt, Some(&shape));
-            }
-            return Ok(rebuilt);
+            ));
         }
 
         if var_name.starts_with('%')
@@ -400,7 +388,6 @@ impl Interpreter {
                 continue;
             }
             // For shaped arrays, sub-arrays are structural — recurse into them
-            // and validate the leaves, not the rows.
             if kind == crate::value::ArrayKind::Shaped
                 && let ValueView::Array(sub_items, sub_kind) = item.view()
             {

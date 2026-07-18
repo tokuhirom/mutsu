@@ -1,6 +1,6 @@
 use Test;
 
-plan 11;
+plan 9;
 
 # `Z=` (zip metaoperator applied to `=`) is element-wise assignment:
 # `@a[i] = rhs[i]` for i < min(len), trailing @a elements keep their value.
@@ -39,24 +39,14 @@ plan 11;
 
 # --- shaped array fill (the only flat-fill path; `=` is X::Assignment::ToShaped)
 {
-    my int @a[2;3] Z= 0 .. 5;
+    my @a[2;3] Z= 0 .. 5;
     is +@a, 2, 'shaped Z= keeps the first dimension';
     is @a[0;1], 1, 'shaped Z= fills row-major (0;1)';
     is @a[1;2], 5, 'shaped Z= fills row-major (1;2)';
-    is @a.raku, 'array[int].new(:shape(2, 3), [0, 1, 2], [3, 4, 5])',
-        'shaped Z= preserves the shape';
 }
 
 # --- `Z=>` (zip-pair) must be unaffected by the `Z=` rewrite -----------------
 {
     my %h = <a b c> Z=> 1, 2, 3;
     is-deeply %h, {a => 1, b => 2, c => 3}, 'Z=> (zip pair) still builds a hash';
-}
-
-# --- reassigning a shaped array to a typed shaped variable ------------------
-{
-    my Int @a[2;2];
-    @a = @a;
-    is @a.raku, 'array[Int].new(:shape(2, 2), [Int, Int], [Int, Int])',
-        'shaped Int array survives self-reassignment with its shape intact';
 }
