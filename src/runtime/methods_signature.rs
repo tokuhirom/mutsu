@@ -462,20 +462,50 @@ impl Interpreter {
                 }
             }
         }
-        // When .assuming() is used with named args, all named params lose their
-        // defaults and where constraints in the signature display.
-        // Assumed params additionally become non-required.
-        if !assumed_named.is_empty() {
-            for pd in &mut param_defs {
-                if pd.named {
-                    pd.default = None;
-                    pd.where_constraint = None;
-                    if assumed_named.contains_key(&pd.name) {
-                        pd.required = false;
-                    }
-                }
+        // When .assuming() binds a named argument, that parameter is shown in
+        // the primed signature with the bound value as its default (and becomes
+        // optional, dropping any `!`). Named parameters that were NOT primed
+        // keep their original state, including their own defaults. A named
+        // parameter can be bound by any of its alias names (`:b(:c($a))` binds
+        // to either `b` or `c`).
+        for pd in &mut param_defs {
+            if pd.named
+                && let Some(value) = assumed_named_binding(pd, assumed_named)
+            {
+                pd.default = Some(crate::ast::Expr::Literal(value));
+                pd.required = false;
+                pd.optional_marker = false;
+                pd.where_constraint = None;
             }
         }
         Some(param_defs)
     }
+}
+
+/// Returns the bound value if `.assuming` primed this named parameter, matching
+/// on the parameter's primary name or any of its alias names (`:b(:c($a))` can
+/// be bound as either `b` or `c`). Mirrors `collect_named_names`: only nested
+/// named sub-signature params contribute alias names.
+fn assumed_named_binding(
+    pd: &ParamDef,
+    assumed_named: &std::collections::HashMap<String, Value>,
+) -> Option<Value> {
+    fn strip_sigil(name: &str) -> &str {
+        name.strip_prefix(['@', '%', '&']).unwrap_or(name)
+    }
+    if let Some(v) = assumed_named.get(strip_sigil(&pd.name)) {
+        return Some(v.clone());
+    }
+    let mut cur = pd;
+    while cur.named
+        && let Some(subs) = &cur.sub_signature
+        && subs.len() == 1
+        && subs[0].named
+    {
+        cur = &subs[0];
+        if let Some(v) = assumed_named.get(strip_sigil(&cur.name)) {
+            return Some(v.clone());
+        }
+    }
+    None
 }
