@@ -79,6 +79,15 @@ impl Interpreter {
                     }
                 }
             }
+            // A Match/cursor on the RHS accepts by its own success, regardless
+            // of the LHS (rakudo: `$str ~~ G.new.tok` is the cursor's Bool —
+            // URI's missing-components smartmatches strings against the
+            // cursor a grammar-token instance-method call returns).
+            (ValueView::Str(_), ValueView::Instance { class_name, .. })
+                if class_name == "Match" =>
+            {
+                right.truthy()
+            }
             (
                 ValueView::Instance {
                     class_name: left_class,
