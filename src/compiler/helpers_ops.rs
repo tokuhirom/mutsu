@@ -76,3 +76,34 @@ pub(crate) fn token_kind_to_op_name(op: &TokenKind) -> String {
         _ => format!("{:?}", op),
     }
 }
+
+/// Reverse of [`token_kind_to_op_name`] for the common infix operators, used to
+/// lower a `RakuAST::Infix("...")` back to a `TokenKind` (ADR-0011 Phase 5).
+/// Returns `None` for operators not yet handled by the RakuAST lowerer.
+pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
+    Some(match name {
+        "+" => TokenKind::Plus,
+        "-" => TokenKind::Minus,
+        "*" => TokenKind::Star,
+        "**" => TokenKind::StarStar,
+        "/" => TokenKind::Slash,
+        "%" => TokenKind::Percent,
+        "%%" => TokenKind::PercentPercent,
+        "~" => TokenKind::Tilde,
+        "==" => TokenKind::EqEq,
+        "!=" => TokenKind::BangEq,
+        "<" => TokenKind::Lt,
+        "<=" => TokenKind::Lte,
+        ">" => TokenKind::Gt,
+        ">=" => TokenKind::Gte,
+        "<=>" => TokenKind::LtEqGt,
+        "===" => TokenKind::EqEqEq,
+        "&&" => TokenKind::AndAnd,
+        "||" => TokenKind::OrOr,
+        "^^" => TokenKind::XorXor,
+        "//" => TokenKind::SlashSlash,
+        ".." => TokenKind::DotDot,
+        "..." => TokenKind::DotDotDot,
+        _ => return None,
+    })
+}
