@@ -232,6 +232,11 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **Hyper method calls (Phase 2 slice 26).** `@a>>.abs` (`Expr::HyperMethodCall`) → `ApplyPostfix(
+  operand, postfix => MetaPostfix::Hyper(Call::Method(...)))` — the inner `Call::Method` /
+  `Call::QuotedMethod` is built by the same `method_call_postfix` helper as a plain method call, then
+  wrapped in a `MetaPostfix::Hyper`. Other hyper forms (`<<.m`, `>>.m<<`, hyper infix `>>+<<`) are
+  the boundary.
 - **Reduction metaoperator (Phase 2 slice 25).** `[+] @a` (`Expr::Reduction`) → `Term::Reduce(
   triangle => False, infix => Infix("+"), args => ArgList(@a))`. The triangle form `[\+] @a`
   (mutsu stores its op as `"\+"`) sets `triangle => True` with the backslash stripped from the infix.
