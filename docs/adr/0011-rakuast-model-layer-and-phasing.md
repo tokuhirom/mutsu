@@ -134,9 +134,14 @@ earlier ones.
     RakuAST::Statement`); the `::` boundary avoids a false `StatementList isa Statement`. The
     smartmatch path was already routing exact-class matches through `isa_check`; `type_matches_value`
     now delegates `RakuAST::*` constraints to `isa_check` instead of the static name table. Tests in
-    `t/rakuast-smartmatch.t`. Still pending: the semantic `IntLiteral isa RakuAST::Expression`
-    hierarchy (needs a per-class ancestor table), positional leaf accessors (`IntLiteral.value`),
-    registering `RakuAST::*` as first-class type objects (they currently resolve as bare type names).
+    `t/rakuast-smartmatch.t`.
+  - **Slice 3 (positional-leaf accessors) — done.** `IntLiteral.value` / `RatLiteral.value` /
+    `StrLiteral.value` return the literal payload, and `Var::Lexical.name` returns the sigil'd
+    variable string — the single positional field exposed under a class-specific accessor name. The
+    named-field lookup runs first, so `Call::Name.name` (a named `Name`-node field) is not shadowed.
+    Tests in `t/rakuast-leaf-accessors.t`. Still pending: the semantic `IntLiteral isa
+    RakuAST::Expression` hierarchy (needs a per-class ancestor table) and registering `RakuAST::*`
+    as first-class type objects (they currently resolve as bare type names).
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
