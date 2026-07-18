@@ -1713,6 +1713,9 @@ pub struct Interpreter {
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
     monkey_typing: bool,
+    /// Defaults selected by the import list of the latest
+    /// `use JSON::Fast <...>` / `use JSON::Tiny` (see `runtime/json.rs`).
+    pub(crate) json_import_defaults: crate::runtime::json::JsonImportDefaults,
 
     // === Merged VM execution registers (CP-3 collapse: the bytecode VM was
     // dissolved into the Interpreter; these were the per-execution fields of the

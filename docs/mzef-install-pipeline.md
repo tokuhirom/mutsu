@@ -221,13 +221,17 @@ JSON::Unmarshal (11 files / 101 tests), JSON::Marshal (14/85), JSON::Class
 (6/31), URI (14/222), META6 (9/969), License::SPDX (2/729), Test::META
 (3/26, #4756). FAIL: **JSON::Fast** only (native-JSON fidelity remnants;
 full parity is likely unnecessary for the pipeline). Within JSON::Fast,
-the X::JSON::AdditionalContent + strict string/number grammar PR brought
-`01-parse.t` (724 tests) and `10-multidocument.t` to full pass — 5/14
-files green (01, 06, 08, 09, 10); remaining: 02-structure (8/20),
-03-unicode (aborts at 11/14), 04-roundtrip (2/56), 05-unreasonable (3/7),
-07-datetime (`augment class DateTime`), 11-enum (6/16),
-12-assocpositional, 13-scopes (3/8), 14-comments (JSONC). Test-Helpers
-ships no `t/` of its own (covered by mutsu's local `t/test-util-*.t`).
+two PRs (#4762 AdditionalContent + strict grammar; the options-parity PR:
+`:immutable`/List+Map decode, `:enums-as-value`, `$*JSON_NAN_INF_SUPPORT`,
+import-list defaults `<immutable !pretty>`, `&from-json`/`.&from-json`
+code-object dispatch, uppercase surrogate escapes, Duration-as-Num)
+brought the suite from 3/14 to **10/14 files green**; remaining:
+04-roundtrip (1 fail: `Rational[Int,Int].new(3,10)` — role type-params
+`::NuT = Int` unresolved in method signatures, a general parametric-role
+bug), 07-datetime (`augment class DateTime`), 12-assocpositional
+(Positional+Associative instance serialization), 14-comments (JSONC).
+Test-Helpers ships no `t/` of its own (covered by mutsu's local
+`t/test-util-*.t`).
 
 The #4747 session's two generic fixes (License::SPDX 0/2 → 2/2): a trait
 argument with whitespace after the opening paren

@@ -20,6 +20,11 @@ pub(crate) struct ToJsonOpts {
     pub pretty: bool,
     pub sorted_keys: bool,
     pub spacing: usize,
+    /// `:enums-as-value` — serialize enum values as their underlying payload
+    /// (`0` / `"Eins"`) instead of their short name.
+    pub enums_as_value: bool,
+    /// `$*JSON_NAN_INF_SUPPORT` — emit `NaN`/`Inf`/`-Inf` instead of `null`.
+    pub nan_inf_support: bool,
 }
 
 impl Default for ToJsonOpts {
@@ -28,7 +33,46 @@ impl Default for ToJsonOpts {
             pretty: true,
             sorted_keys: false,
             spacing: 2,
+            enums_as_value: false,
+            nan_inf_support: false,
         }
+    }
+}
+
+/// Per-`use` defaults selected by the import list of the native JSON modules
+/// (`use JSON::Fast <immutable !pretty sorted-keys>`). Rakudo scopes these
+/// lexically (the list picks which candidates are exported into the using
+/// scope); mutsu executes `use` at run time, so the latest `use` wins — which
+/// matches straight-line block-sequential usage.
+// TODO: model true lexical scoping if a real-world module needs interleaved
+// scopes with different JSON defaults.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct JsonImportDefaults {
+    pub immutable: bool,
+    pub not_pretty: bool,
+    pub sorted_keys: bool,
+    pub enums_as_value: bool,
+}
+
+impl JsonImportDefaults {
+    /// Parse import-list words (`immutable`, `!pretty`, ...) into defaults.
+    /// Unknown words are ignored (JSON::Fast also exports sub names there).
+    pub(crate) fn from_import_words(words: &[String]) -> Self {
+        let mut d = JsonImportDefaults::default();
+        for w in words {
+            let (name, on) = match w.strip_prefix('!') {
+                Some(rest) => (rest, false),
+                None => (w.as_str(), true),
+            };
+            match name {
+                "immutable" => d.immutable = on,
+                "pretty" => d.not_pretty = !on,
+                "sorted-keys" => d.sorted_keys = on,
+                "enums-as-value" => d.enums_as_value = on,
+                _ => {}
+            }
+        }
+        d
     }
 }
 
@@ -63,8 +107,18 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
         ValueView::Num(f) => {
             if f.is_nan() || f.is_infinite() {
                 // JSON has no NaN/Inf; JSON::Fast emits `null` unless the dynamic
-                // var $*JSON_NAN_INF_SUPPORT is set (which mutsu does not model).
-                out.push_str("null");
+                // var $*JSON_NAN_INF_SUPPORT is set.
+                if opts.nan_inf_support {
+                    out.push_str(if f.is_nan() {
+                        "NaN"
+                    } else if f > 0.0 {
+                        "Inf"
+                    } else {
+                        "-Inf"
+                    });
+                } else {
+                    out.push_str("null");
+                }
             } else {
                 let s = val.to_string_value();
                 out.push_str(&s);
@@ -95,6 +149,31 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
         ValueView::ValuePair(k, v) => {
             let key = k.to_string_value();
             jsonify_object(vec![(&key, v)], opts, level, out);
+        }
+        // Enum values: short name by default, underlying payload with
+        // `:enums-as-value` (JSON::Fast semantics).
+        ValueView::Enum { key, value, .. } => {
+            if opts.enums_as_value {
+                jsonify(&value.to_value(), opts, level, out);
+            } else {
+                out.push('"');
+                escape_str(&key.resolve(), out);
+                out.push('"');
+            }
+        }
+        // Duration is Real (a Rat-backed instance: `value` attr); JSON::Fast's
+        // Real:D candidate serializes it numerically as a Num (`57e0`).
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name.resolve() == "Duration" => {
+            let num = attributes
+                .as_map()
+                .get("value")
+                .map(|v| v.to_f64())
+                .unwrap_or(0.0);
+            jsonify(&Value::num(num), opts, level, out);
         }
         // Type objects / undefined values render as JSON null.
         ValueView::Nil | ValueView::Package(_) | ValueView::Whatever | ValueView::HyperWhatever => {
@@ -205,10 +284,12 @@ fn escape_str(s: &str, out: &mut String) {
                 out.push_str(&format!("\\u{:04x}", c as u32));
             }
             c if (c as u32) >= 0x10000 => {
+                // JSON::Fast's to-surrogate-pair uses .base(16): UPPERCASE hex
+                // (control-char escapes above stay lowercase, fmt "\u%04x").
                 let cp = c as u32 - 0x10000;
                 let hi = 0xD800 + (cp >> 10);
                 let lo = 0xDC00 + (cp & 0x3FF);
-                out.push_str(&format!("\\u{:04x}\\u{:04x}", hi, lo));
+                out.push_str(&format!("\\u{:04X}\\u{:04X}", hi, lo));
             }
             c => out.push(c),
         }
@@ -228,12 +309,14 @@ pub(crate) enum FromJsonError {
     },
 }
 
-/// Parse a JSON string into a `Value`.
-pub(crate) fn from_json(text: &str) -> Result<Value, FromJsonError> {
+/// Parse a JSON string into a `Value`. With `immutable`, arrays decode as
+/// `List` and objects as `Map` (JSON::Fast `:immutable`).
+pub(crate) fn from_json(text: &str, immutable: bool) -> Result<Value, FromJsonError> {
     let mut p = Parser {
         bytes: text.as_bytes(),
         chars: text,
         pos: 0,
+        immutable,
     };
     p.skip_ws();
     let value = p.parse_value().map_err(FromJsonError::Parse)?;
@@ -253,9 +336,35 @@ struct Parser<'a> {
     bytes: &'a [u8],
     chars: &'a str,
     pos: usize,
+    immutable: bool,
 }
 
 impl<'a> Parser<'a> {
+    /// Wrap a decoded JSON object: mutable `Hash` by default, `Map` with
+    /// `:immutable` (a Hash whose `declared_type` is "Map", mutsu's Map repr).
+    fn finish_object(&self, map: HashMap<String, Value>) -> Value {
+        if self.immutable {
+            let mut data: crate::value::HashData = map.into();
+            data.declared_type = Some("Map".to_string());
+            Value::hash_with_data(crate::gc::Gc::new(data))
+        } else {
+            Value::hash_with_data(Value::hash_arc(map))
+        }
+    }
+
+    /// Wrap a decoded JSON array: mutable `Array` by default, `List` with
+    /// `:immutable`.
+    fn finish_array(&self, items: Vec<Value>) -> Value {
+        if self.immutable {
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            )
+        } else {
+            Value::real_array(items)
+        }
+    }
+
     fn skip_ws(&mut self) {
         while self.pos < self.bytes.len() {
             match self.bytes[self.pos] {
@@ -301,7 +410,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         if self.peek() == Some(b'}') {
             self.pos += 1;
-            return Ok(Value::hash_with_data(Value::hash_arc(map)));
+            return Ok(self.finish_object(map));
         }
         loop {
             self.skip_ws();
@@ -323,7 +432,7 @@ impl<'a> Parser<'a> {
                 }
                 Some(b'}') => {
                     self.pos += 1;
-                    return Ok(Value::hash_with_data(Value::hash_arc(map)));
+                    return Ok(self.finish_object(map));
                 }
                 _ => return Err("Expected ',' or '}' in JSON object".to_string()),
             }
@@ -336,7 +445,7 @@ impl<'a> Parser<'a> {
         self.skip_ws();
         if self.peek() == Some(b']') {
             self.pos += 1;
-            return Ok(Value::real_array(items));
+            return Ok(self.finish_array(items));
         }
         loop {
             let val = self.parse_value()?;
@@ -348,7 +457,7 @@ impl<'a> Parser<'a> {
                 }
                 Some(b']') => {
                     self.pos += 1;
-                    return Ok(Value::real_array(items));
+                    return Ok(self.finish_array(items));
                 }
                 _ => return Err("Expected ',' or ']' in JSON array".to_string()),
             }

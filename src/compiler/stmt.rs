@@ -3036,13 +3036,32 @@ impl Compiler {
                 module,
                 tags,
                 condition,
-                ..
+                arg,
             } => {
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
-                let tags_idx = if tags.is_empty() {
+                // The native JSON modules read their import list at run time to
+                // select per-scope defaults (`use JSON::Fast <immutable !pretty>`).
+                // The angle-list words parse into `arg`, not `tags`; ride them in
+                // the same tags constant (unused otherwise for native modules).
+                let mut entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
+                if matches!(module.as_str(), "JSON::Fast" | "JSON::Tiny")
+                    && let Some(arg) = arg
+                {
+                    let words: &[Expr] = match arg {
+                        Expr::ArrayLiteral(items) => items,
+                        other => std::slice::from_ref(other),
+                    };
+                    for w in words {
+                        if let Expr::Literal(lit) = w
+                            && let ValueView::Str(s) = lit.view()
+                        {
+                            entries.push(Value::str(s.to_string()));
+                        }
+                    }
+                }
+                let tags_idx = if entries.is_empty() {
                     None
                 } else {
-                    let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                     Some(self.code.add_constant(Value::array(entries)))
                 };
                 // `use Foo:if(EXPR)` (the `if` pragma): load the module only when

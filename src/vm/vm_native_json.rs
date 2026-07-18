@@ -36,9 +36,30 @@ impl Interpreter {
             .map(crate::runtime::types::unwrap_varref_value)
             .collect();
         match name {
-            "to-json" => Some(native_to_json(&clean_args)),
-            "from-json" => Some(native_from_json(&clean_args)),
+            "to-json" => Some(native_to_json(&clean_args, self.base_to_json_opts())),
+            "from-json" => Some(native_from_json(
+                &clean_args,
+                self.json_import_defaults.immutable,
+            )),
             _ => None,
+        }
+    }
+
+    /// Base `to-json` options for this call site: the import-list defaults of
+    /// the latest `use JSON::Fast <...>`, plus the `$*JSON_NAN_INF_SUPPORT`
+    /// dynamic variable. Explicit named args override these in
+    /// `native_to_json`.
+    fn base_to_json_opts(&self) -> ToJsonOpts {
+        let d = self.json_import_defaults;
+        ToJsonOpts {
+            pretty: !d.not_pretty,
+            sorted_keys: d.sorted_keys,
+            enums_as_value: d.enums_as_value,
+            nan_inf_support: self
+                .get_dynamic_var("*JSON_NAN_INF_SUPPORT")
+                .map(|v| v.truthy())
+                .unwrap_or(false),
+            ..ToJsonOpts::default()
         }
     }
 
@@ -65,15 +86,15 @@ impl Interpreter {
         }
         let (clean_args, _) = self.sanitize_call_args(args);
         Some(match method {
-            "to-json" => native_to_json(&clean_args),
-            "from-json" => native_from_json(&clean_args),
+            "to-json" => native_to_json(&clean_args, self.base_to_json_opts()),
+            "from-json" => native_from_json(&clean_args, self.json_import_defaults.immutable),
             _ => unreachable!(),
         })
     }
 }
 
-fn native_to_json(args: &[Value]) -> Result<Value, RuntimeError> {
-    let mut opts = ToJsonOpts::default();
+fn native_to_json(args: &[Value], base_opts: ToJsonOpts) -> Result<Value, RuntimeError> {
+    let mut opts = base_opts;
     let mut subject: Option<&Value> = None;
     for arg in args {
         match arg.view() {
@@ -93,6 +114,7 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
     match name {
         "pretty" => opts.pretty = val.truthy(),
         "sorted-keys" => opts.sorted_keys = val.truthy(),
+        "enums-as-value" => opts.enums_as_value = val.truthy(),
         "spacing" => {
             if let ValueView::Int(n) = val.view() {
                 opts.spacing = n.max(0) as usize;
@@ -102,13 +124,25 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
     }
 }
 
-fn native_from_json(args: &[Value]) -> Result<Value, RuntimeError> {
-    let text = args
-        .iter()
-        .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    json::from_json(&text).map_err(|e| match e {
+fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, RuntimeError> {
+    let mut immutable = default_immutable;
+    let mut text = String::new();
+    let mut have_text = false;
+    for arg in args {
+        match arg.view() {
+            ValueView::Pair(name, val) if name == "immutable" => immutable = val.truthy(),
+            ValueView::ValuePair(key, val) if key.to_string_value() == "immutable" => {
+                immutable = val.truthy()
+            }
+            ValueView::Pair(..) | ValueView::ValuePair(..) => {}
+            _ if !have_text => {
+                text = arg.to_string_value();
+                have_text = true;
+            }
+            _ => {}
+        }
+    }
+    json::from_json(&text, immutable).map_err(|e| match e {
         json::FromJsonError::Parse(msg) => RuntimeError::new(msg),
         json::FromJsonError::AdditionalContent {
             parsed,

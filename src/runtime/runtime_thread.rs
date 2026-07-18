@@ -344,6 +344,7 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: self.precomp_enabled,
             monkey_typing: self.monkey_typing,
+            json_import_defaults: self.json_import_defaults,
 
             // Merged VM execution registers (CP-3 collapse): a thread clone starts
             // with fresh per-execution registers, exactly as the former

@@ -824,6 +824,13 @@ impl Interpreter {
             return self.call_function(short_name, args.to_vec());
         }
 
+        // Native JSON routines invoked as code objects (`&from-json`,
+        // `$str.&from-json`) reach this generic fallback — they have no
+        // declared sub for the resolver above to find.
+        if let Some(result) = self.try_native_json_function(name, args) {
+            return result;
+        }
+
         let suggestions = self.suggest_routine_names(name);
         Err(RuntimeError::undeclared_routine_symbols(
             name,
