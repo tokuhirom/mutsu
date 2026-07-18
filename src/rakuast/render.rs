@@ -8,7 +8,7 @@
 //! forces the multi-line form (e.g. `Postfix.new(operator => "++")` is
 //! multi-line despite its single leaf, because the field is named).
 
-use super::{Constructor, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use super::{Constructor, RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
@@ -22,6 +22,16 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // empty parens (`RakuAST::Assignment.new`), unlike the generic `.new()`.
     if node.fields.is_empty() && node.class.empty_parens_omitted() {
         return format!("{name}.{ctor}");
+    }
+
+    // `Term::Enum.from-identifier('True')` — raku renders the enum identifier in
+    // single quotes (unlike `Name.from-identifier("say")`, which uses double).
+    if node.class == RakuAstClass::TermEnum
+        && let Some(f) = node.fields.first()
+        && let RakuAstFieldValue::Node(v) = &f.value
+        && let ValueView::Str(s) = v.view()
+    {
+        return format!("{name}.{ctor}('{}')", s.as_str());
     }
 
     // Inline when every field is a positional leaf or a colonpair adverb

@@ -259,6 +259,13 @@ earlier ones.
     share the write path. `EVAL(Q[my $i = 0; repeat { $i = $i + 1 } until $i >= 5; $i].AST)` → `5`, and
     the body always runs at least once. Tests in `t/rakuast-eval-repeat.t`. Next: `Bool` literals
     (read side), typed/named parameters (both directions), C-style `loop`.
+  - **Slice 14 (`True`/`False` literals) — done, both directions.** A new `Term::Enum` node class
+    models a boolean literal (`RakuAST::Term::Enum.from-identifier('True')` — the enum identifier is
+    single-quoted in raku's gist, unlike `Name.from-identifier("…")`). The read side (`.AST`) converts
+    a `Bool` literal to that node and the write side (`EVAL`) lowers `True`/`False` back to the Bool
+    value. `EVAL(Q[my $i = 0; while True { $i = $i + 1; last if $i >= 3 }; $i].AST)` → `3`. Other enum
+    identifiers stay the boundary. Tests in `t/rakuast-eval-bool.t`. Next: ternary lowering (`?? !!`),
+    typed/named parameters, C-style `loop`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

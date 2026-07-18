@@ -125,6 +125,8 @@ pub enum RakuAstClass {
     PostcircumfixArrayIndex,
     // Phase 2 slice 25: reduction metaoperator.
     TermReduce,
+    // Phase 2 slice 30: `True`/`False` (and other enum) literals.
+    TermEnum,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +195,7 @@ impl RakuAstClass {
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
             TermReduce => "RakuAST::Term::Reduce",
+            TermEnum => "RakuAST::Term::Enum",
         }
     }
 
@@ -205,7 +208,7 @@ impl RakuAstClass {
 
     pub fn constructor(self) -> Constructor {
         match self {
-            RakuAstClass::Name => Constructor::FromIdentifier,
+            RakuAstClass::Name | RakuAstClass::TermEnum => Constructor::FromIdentifier,
             _ => Constructor::New,
         }
     }
@@ -320,6 +323,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
+        ("RakuAST::Term::Enum", "from-identifier") => RakuAstClass::TermEnum,
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::Prefix", "new") => RakuAstClass::Prefix,
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,

@@ -1385,6 +1385,14 @@ fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             fields: vec![leaf_field(None, v.clone())],
         }),
         ValueView::Str(_) => Ok(quoted_string(v.clone())),
+        // `True`/`False` are enum values: `Term::Enum.from-identifier('True')`.
+        ValueView::Bool(b) => Ok(RakuAstNode {
+            class: RakuAstClass::TermEnum,
+            fields: vec![leaf_field(
+                None,
+                Value::str(if b { "True" } else { "False" }.to_string()),
+            )],
+        }),
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
 }
