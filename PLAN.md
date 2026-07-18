@@ -882,9 +882,10 @@ so it is tracked separately from the roast backlog.
         `EVAL(Q[3 * 4 + 1].AST)` → 13). Tests in `t/rakuast-eval-infix.t`.
   - [x] Slice 3: EVAL of `Var::Lexical` (→ `Expr::Var`/etc.) and `my $x = EXPR` (→ `Stmt::VarDecl`);
         `EVAL(Q[my $x = 5; $x * 2].AST)` → 10. Tests in `t/rakuast-eval-var.t`.
-  - [ ] Slice 4+: method calls, `if`/loops, sub declarations — the inverse of the Phase-2 converter,
-        grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring
-        Phase 2.)
+  - [x] Slice 4: EVAL of listop I/O calls (`say`/`put`/`print`/`note` → `Stmt::Say` etc.) and method
+        calls (`ApplyPostfix`/`Call::Method` → `Expr::MethodCall`). Tests in `t/rakuast-eval-call.t`.
+  - [ ] Slice 5+: `if`/loops, sub declarations — the inverse of the Phase-2 converter, grown cluster
+        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
