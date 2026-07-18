@@ -22,6 +22,10 @@ impl Interpreter {
             match shape_val.view() {
                 ValueView::Int(i) => vec![Value::int(i)],
                 ValueView::BigInt(n) => vec![Value::bigint_arc(n.clone())],
+                // A non-integer numeric shape (`my @a[2.5]`) coerces toward Int
+                // in the per-dimension loop below (raku: `my Int @a[2.5]` is a
+                // 2-element array).
+                ValueView::Num(_) | ValueView::Rat(_, _) => vec![shape_val.clone()],
                 ValueView::Package(name) => {
                     // Enum type as shape: use the number of enum variants
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
@@ -46,6 +50,16 @@ impl Interpreter {
                 ValueView::Num(f) if f > 0.0 => f as usize,
                 ValueView::Num(f) => {
                     return Err(RuntimeError::illegal_dimension_in_shape(f as i64));
+                }
+                // A rational shape truncates toward Int (`2.5` -> 2), matching
+                // raku's `my Int @a[2.5]` -> a 2-element array.
+                ValueView::Rat(n, d) if d != 0 && n / d > 0 => (n / d) as usize,
+                ValueView::Rat(n, d) => {
+                    return Err(RuntimeError::illegal_dimension_in_shape(if d != 0 {
+                        n / d
+                    } else {
+                        0
+                    }));
                 }
                 // A dimension that overflows i64 (parsed as a BigInt) is always
                 // illegal: either negative, or far too large to allocate.
