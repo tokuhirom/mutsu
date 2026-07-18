@@ -487,9 +487,53 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             .next()
             .is_some_and(|c| c.is_ascii_uppercase())
         {
-            // Uppercase-starting trait name: `is Buf`, `is BagHash`, etc.
-            // This is a container type trait for `@`/`%` attributes.
-            is_type = Some(trait_name.to_string());
+            // Uppercase-starting trait name: `is Buf`, `is BagHash`,
+            // `is Array[Int]`, `is G::A`, etc. This is a container type trait
+            // for `@`/`%` attributes. `ident` only captured the first segment,
+            // so pull in any `::`-qualified segments and a `[...]`
+            // parameterization to keep the full type name (`Array[Int]` /
+            // `R::G::A`); otherwise the trailing `[Int]` is misparsed as a
+            // separate statement.
+            let mut full = trait_name.to_string();
+            let mut tr = r;
+            while let Some(after) = tr.strip_prefix("::") {
+                match ident(after) {
+                    Ok((r2, seg)) => {
+                        full.push_str("::");
+                        full.push_str(&seg);
+                        tr = r2;
+                    }
+                    Err(_) => break,
+                }
+            }
+            if tr.starts_with('[') {
+                let mut depth = 0u32;
+                let mut end = None;
+                for (i, ch) in tr.char_indices() {
+                    match ch {
+                        '[' => depth += 1,
+                        ']' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = Some(i);
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(end) = end {
+                    let inner = tr[1..end].trim();
+                    full.push('[');
+                    full.push_str(inner);
+                    full.push(']');
+                    tr = &tr[end + 1..];
+                }
+            }
+            is_type = Some(full);
+            let (r2, _) = ws(tr)?;
+            rest = r2;
+            continue;
         } else {
             // Unknown lowercase trait — dispatched to a custom `trait_mod:<is>`
             // at class registration, or X::Comp::Trait::Unknown if none exists.

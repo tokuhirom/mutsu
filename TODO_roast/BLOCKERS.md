@@ -89,7 +89,6 @@ noted.
 | Classification | File | mutsu | raku (v2026.06/6.d) | Blocker (one line) |
 |---|---|---|---|---|
 | Awaiting infrastructure | `S32-str/format.t` | aborts at 26/49 | **49/49 full pass** (SORRY on v2022.12) | Requires `Formatter::Syntax.parse`→Match and `Formatter.AST`→`RakuAST::Node` = **no RakuAST subsystem**. The raku update provided an oracle, but stubbing is forbidden, so it stays shelved |
-| Awaiting infrastructure | `S02-types/generics.t` | 0/1 | **1/1 full pass** (SORRY on v2022.12) | Needs 6.e coercion type terms + `Array[T]` subclassing. The raku update made reference verification possible, but the size of the required infrastructure is unchanged |
 | No oracle | `S02-names/pseudo-6d.t` | aborts at 116/159 | SORRY (`::=` NYI) | `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
 | No oracle | `S02-names/pseudo-6e.t` | aborts at 79/202 | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Still SORRY on v2026.06 |
 | No oracle | `S02-names-vars/names.t` | 144/156, notok 3 | SORRY (unfudged line) | test 142 "Null PMC access when printing a var typed as ::foo" edge. raku SORRYs on a fudge-dependent line (a bare `$`) |
@@ -123,19 +122,6 @@ completed fix history lives in `news/`.
   (`::<$x> := $y`); `X::NoSuchSymbol` exception type; `is dynamic` trait for CALLERS visibility;
   `CORE::v6c/v6d/v6e` namespaces. Note: raku itself fails to parse this test due to `$?` twigil
   constants.
-- **`S02-types/generics.t`** — a deep multi-feature 6.e stack. Subtests 1-2 now PASS (progress
-  2026-07-18). Done: (1) **coercion type TERMS** — `Int()` -> `Int(Any)`, `Int:D()` ->
-  `Int:D(Any)`, and the same forms over a bound generic type parameter (`T()`, `T:D()`).
-  (2) **`class A is Array[Int] {}` subclassing** — a parametric native parent now contributes
-  its base type to the MRO, so `.push` and typed-element checks are inherited. (3) nested generic
-  class parent-substitution — `class A is Array[T] {}` inside a parametric role composes with the
-  concrete `Array[Int]` parent (type captures resolved at class registration).
-  Remaining blockers for subtests 3-6: (a) **per-composition parameterized naming** — the nested
-  class `.^name` is `G::A`, must be `R::G::A[Int]` (role-qualified + pinned to the instantiation
-  type; the nested `my package G` decl is not routed through the role package, and the class is
-  registered once globally rather than re-instantiated per composition); (b) **typed attribute
-  element checking from a generic class** — `has @.a is G::A` does not propagate `Array[Int]`'s
-  element type, so a wrong-typed `.new(a => <bad>)` is not rejected.
 - **`S05-mass/rx.t`** — the per-token ratchet (`:`) core is fixed (commits to the atom's
   highest-priority match; leading null `||`/`|` alternatives ignored). Remaining: `<commit>`
   named assertion is NYI and its runtime error aborts the file at test 20; later subtests need
@@ -226,5 +212,6 @@ re-running it; this ledger's *diagnoses* have also been wrong (see `my-6c.t` in
 
 - For the S\* table (non-goal / no-oracle / awaiting-infrastructure), advancing entries as a side
   effect of general mutsu improvements is fine, but do not make whitelisting those individual
-  files the goal. `S32-str/format.t` and `S02-types/generics.t` gained an oracle from the raku
-  update, but the size of the required infrastructure (RakuAST / 6.e generics) is unchanged.
+  files the goal. `S32-str/format.t` gained an oracle from the raku update, but the size of the
+  required infrastructure (RakuAST) is unchanged. (`S02-types/generics.t` was whitelisted
+  2026-07-18 — see `news/2026-07.md`.)
