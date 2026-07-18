@@ -234,6 +234,13 @@ earlier ones.
     (not a `PointyBlock`) lowers to a `Stmt::For` with no named parameter, so the loop body sees the
     iterand as `$_`. `EVAL(Q[my $t = 0; for 1..4 { $t = $t + $_ }; $t].AST)` → `10`. Tests in
     `t/rakuast-eval-bare-for.t`. Next: control flow (`return`/`last`/`next`), multi/typed parameters.
+  - **Slice 10 (`return`/`last`/`next`) — done, both directions.** raku models these control-flow
+    statements as bare calls (`Call::Name` in WithoutParentheses form). The read side (`.AST`) now emits
+    that form — `Stmt::Return`/`Last`/`Next` → a `control_call` (the `args` field omitted when empty,
+    matching raku's bare-call gist) — and the write side (`EVAL`) lowers a `return`/`last`/`next` call
+    back to the internal control-flow statement. `EVAL(Q[sub f($x) { if $x > 0 { return 5 }; -1 }; f(3)].AST)`
+    → `5`; `last`/`next` control loops. Labelled `last LABEL`/`next LABEL` stay the boundary. Tests in
+    `t/rakuast-eval-return.t`. Next: multi/typed/named parameters, `unless`/`until`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

@@ -76,6 +76,13 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "put" => Ok(Stmt::Put(args)),
                 "print" => Ok(Stmt::Print(args)),
                 "note" => Ok(Stmt::Note(args)),
+                // `return`/`last`/`next` are modelled as bare calls in RakuAST but
+                // are control-flow statements in the internal AST.
+                "return" => Ok(Stmt::Return(
+                    args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
+                )),
+                "last" => Ok(Stmt::Last(None)),
+                "next" => Ok(Stmt::Next(None)),
                 _ => Ok(Stmt::Expr(lower_expr(node)?)),
             }
         }

@@ -904,9 +904,13 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 9: EVAL of the bare `for @x { … }` form (a `Statement::For` with a plain `Block` body →
         `Stmt::For` with no named parameter; the body sees `$_`); `EVAL(Q[my $t=0; for 1..4 { $t=$t+$_ };
         $t].AST)` → 10. Tests in `t/rakuast-eval-bare-for.t`.
-  - [ ] Slice 10+: control flow (`return`/`last`/`next`), multi-param/typed/named/slurpy params — the
-        inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
-        multi-slice effort mirroring Phase 2.)
+  - [x] Slice 10: `return`/`last`/`next` (both directions). raku models these as bare calls; the read
+        side emits `Call::Name` (WithoutParentheses, `args` omitted when empty) and the write side lowers
+        such a call back to `Stmt::Return`/`Last`/`Next`. `EVAL(Q[sub f($x){ if $x>0 { return 5 }; -1 };
+        f(3)].AST)` → 5. Tests in `t/rakuast-eval-return.t`.
+  - [ ] Slice 11+: multi-param/typed/named/slurpy params, `unless`/`until` — the inverse of the Phase-2
+        converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort
+        mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

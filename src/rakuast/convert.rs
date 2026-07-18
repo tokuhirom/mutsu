@@ -58,6 +58,20 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         Stmt::Put(args) => Ok(Some(statement_expression(listop_call("put", args)?))),
         Stmt::Print(args) => Ok(Some(statement_expression(listop_call("print", args)?))),
         Stmt::Note(args) => Ok(Some(statement_expression(listop_call("note", args)?))),
+        // `return`/`last`/`next` are control-flow statements in the internal AST;
+        // raku models them as bare calls. A bare `return` (a `Nil` literal) and an
+        // unlabelled `last`/`next` carry no arguments. Labelled `last LABEL` /
+        // `next LABEL` are deferred.
+        Stmt::Return(expr) => {
+            let args: &[Expr] = match expr {
+                Expr::Literal(v) if v.is_nil() => &[],
+                other => std::slice::from_ref(other),
+            };
+            Ok(Some(statement_expression(control_call("return", args)?)))
+        }
+        Stmt::Last(None) => Ok(Some(statement_expression(control_call("last", &[])?))),
+        Stmt::Next(None) => Ok(Some(statement_expression(control_call("next", &[])?))),
+        Stmt::Last(Some(_)) | Stmt::Next(Some(_)) => Err(unsupported("labelled last/next")),
         Stmt::VarDecl {
             name,
             expr,
@@ -1416,6 +1430,25 @@ fn call_name(
             node_field(Some("name"), name_node),
             node_field(Some("args"), arg_list),
         ],
+    })
+}
+
+/// A control-flow listop (`return`/`last`/`next`) — a `Call::Name` in
+/// WithoutParentheses form. Unlike [`listop_call`], the `args` field is omitted
+/// entirely when there are no arguments (matching raku's gist for a bare
+/// `return`/`last`/`next`).
+fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let name_node = RakuAstNode {
+        class: RakuAstClass::Name,
+        fields: vec![leaf_field(None, Value::str(name.to_string()))],
+    };
+    let mut fields = vec![node_field(Some("name"), name_node)];
+    if !args.is_empty() {
+        fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::CallNameWithoutParentheses,
+        fields,
     })
 }
 
