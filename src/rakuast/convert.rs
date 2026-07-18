@@ -92,7 +92,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 .any(|(name, _)| name == "__has_initializer");
             let init = has_initializer.then_some(expr);
             Ok(Some(statement_expression(var_declaration(
-                name, init, scope, type_name, None,
+                name, init, scope, type_name, None, None,
             )?)))
         }
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
@@ -464,14 +464,16 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // *implicit* `BareWord(<TypeName>)` default that is NOT a will-build
             // and must be ignored. Traits, type smileys, `required`, `where`,
             // aliases, and `my`/`our` attributes are also deferred.
-            let has_explicit_default = match default {
-                None => false,
-                // The implicit type default: `BareWord` equal to the type name.
-                Some(Expr::BareWord(w)) => type_constraint.as_deref() != Some(w.as_str()),
-                Some(_) => true,
+            // A typed attribute (`has Int $.z`) carries an *implicit*
+            // `BareWord(<TypeName>)` default that is NOT a real default; an
+            // *explicit* `= EXPR` default (slice 27) is a `Trait::WillBuild` and
+            // an `initializer`.
+            let explicit_default = match default {
+                None => None,
+                Some(Expr::BareWord(w)) if type_constraint.as_deref() == Some(w.as_str()) => None,
+                Some(e) => Some(e),
             };
-            if has_explicit_default
-                || !handles.is_empty()
+            if !handles.is_empty()
                 || *is_rw
                 || type_smiley.is_some()
                 || is_required.is_some()
@@ -484,9 +486,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || deprecated_message.is_some()
                 || !unknown_traits.is_empty()
             {
-                return Err(unsupported(
-                    "attribute with default / traits / smiley / scope",
-                ));
+                return Err(unsupported("attribute with traits / smiley / scope"));
             }
             // Definite attributes carry `type_smiley` (guarded above), so the
             // type_constraint here is a bare type; build_type_node handles it.
@@ -499,10 +499,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             };
             Ok(Some(statement_expression(var_declaration(
                 &full_name,
-                None,
+                explicit_default,
                 Some("has"),
                 type_name,
                 Some(twigil),
+                explicit_default,
             )?)))
         }
         Stmt::Assign { name, expr, op } => match op {
@@ -576,11 +577,12 @@ fn var_declaration(
     scope: Option<&'static str>,
     type_name: Option<&str>,
     twigil: Option<&str>,
+    will_build: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    // Field order matches raku: scope, type, sigil, twigil, desigilname,
-    // initializer — each omitted when absent (scope defaults to `my`; twigil is
-    // present only on attributes).
+    // Field order matches raku: scope, type, sigil, twigil, desigilname, traits,
+    // initializer — each omitted when absent (scope defaults to `my`; twigil and
+    // traits appear only on attributes).
     let mut fields = Vec::new();
     if let Some(s) = scope {
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
@@ -596,6 +598,18 @@ fn var_declaration(
         Some("desigilname"),
         name_from_identifier(desigil),
     ));
+    if let Some(wb) = will_build {
+        // An attribute default (`has $.x = 5`) is a `Trait::WillBuild` (and also
+        // an `initializer`, emitted below).
+        let trait_node = RakuAstNode {
+            class: RakuAstClass::TraitWillBuild,
+            fields: vec![node_field(None, convert_expr(wb)?)],
+        };
+        fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
+        });
+    }
     if let Some(init_expr) = init {
         let assign = RakuAstNode {
             class: RakuAstClass::InitializerAssign,
@@ -1013,7 +1027,7 @@ fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
             return Err(unsupported("scoped/typed variable declaration"));
         }
         let init = (!expr_is_nil(expr)).then_some(expr);
-        return var_declaration(name, init, None, None, None);
+        return var_declaration(name, init, None, None, None, None);
     }
     // Assignment / expression setups convert normally, then get unwrapped.
     let node = convert_stmt(stmt)?.ok_or_else(|| unsupported("empty loop setup clause"))?;

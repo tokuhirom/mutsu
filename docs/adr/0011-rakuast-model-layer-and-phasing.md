@@ -255,6 +255,11 @@ earlier ones.
   deferred: mutsu marks both `is_positional == false` with no `<>`-vs-`{}` distinction, so it cannot
   tell `<k>` (raku `LiteralHashIndex` + a word-quoted `QuotedString`) from `{"k"}` (raku
   `HashIndex` + `SemiList`).
+- **Attribute build-time defaults (Phase 2 slice 27).** An explicit `has $.x = 5` default (deferred
+  in slice 14) now emits BOTH a `traits => (Trait::WillBuild(5),)` field and an `initializer =>
+  Initializer::Assign(5)`, matching raku. The implicit `BareWord(<TypeName>)` default of a typed
+  attribute (`has Int $.z`) is still filtered out and produces neither. `var_declaration` gained a
+  `will_build` parameter for the trait.
 - **Ternary `?? !!` (Phase 2 slice 19).** `COND ?? THEN !! ELSE` (`Expr::Ternary`) →
   `Ternary(condition, then, else)`. raku constant-folds a literal-condition ternary (`1 ?? 2 !! 3`
   → `IntLiteral(2)`) while mutsu does not — the same const-fold divergence tracked in Open questions;
