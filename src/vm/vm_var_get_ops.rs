@@ -206,6 +206,12 @@ impl Interpreter {
             || Self::is_type_with_smiley(name, self)
         {
             Value::package(Symbol::intern(Self::resolve_type_alias(name)))
+        } else if let Some(qualified) = self.resolve_type_in_current_package(name) {
+            // A short type name declared in the (dynamically) current package —
+            // `module Foo { class Params {…}; sub mk { Params.new } }` where the
+            // class registered as `Foo::Params` and `mk` runs from another
+            // package's call site.
+            Value::package(Symbol::intern(&qualified))
         } else if self.wrap_sub_id_for_name(name).is_some()
             && let Some(sub_val) = self.get_wrapped_sub(name)
         {

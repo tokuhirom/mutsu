@@ -112,6 +112,7 @@ impl Interpreter {
         name_idx: u32,
         arity: u32,
         slip_positions_idx: Option<u32>,
+        keep_value: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let arity = arity as usize;
@@ -132,15 +133,21 @@ impl Interpreter {
         // Try compiled function dispatch first
         if let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args) {
             let pkg = self.current_package().to_string();
-            self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
+            let v = self.call_compiled_function_named(cf, args, compiled_fns, &pkg, &name)?;
             // Slice F: drain any `is rw` param writeback into the caller's slots.
             self.apply_pending_rw_writeback(code);
             // call_compiled_function_named signals env_dirty precisely; no blanket.
+            if keep_value {
+                self.stack.push(v);
+            }
             return Ok(());
         }
         // Try native function (env-pure: no env_dirty mark).
         if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
-            native_result?;
+            let v = native_result?;
+            if keep_value {
+                self.stack.push(v);
+            }
             return Ok(());
         }
         // Carrier fallback: precise scalar writeback + unconditional env_dirty net.
@@ -156,11 +163,20 @@ impl Interpreter {
         // `slot_carrier_overwritable`).
         let pre_env: Vec<Option<Value>> = self.snapshot_carrier_overwritable_env(code);
         let carrier_saved = self.begin_carrier();
+        // Tail position (`keep_value`) routes through the standard expression
+        // dispatcher first (call_function — same as exec_call_values) so the
+        // call's value is the real return value; the legacy exec_call carrier
+        // reconstructs an implicit return from the topic, which is unreliable
+        // for a value that must propagate (JSON::Marshal's tail
+        // `to-json($ret, :$sorted-keys, :$pretty)`).
         let exec_result = loan_env!(self, exec_call_pairs_values(&name, args));
         let written = self.end_carrier(carrier_saved);
-        exec_result?;
+        let v = exec_result?;
         self.writeback_carrier_writes(code, &written);
         self.carrier_writeback_changed_aggregates(code, &pre_env);
+        if keep_value {
+            self.stack.push(v);
+        }
         Ok(())
     }
 }
