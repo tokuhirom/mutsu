@@ -97,12 +97,11 @@ X«|Reference,MY (package)»X«|Reference,OUR (package)»X«|Reference,CORE (pac
 The following pseudo-package names are reserved at the front of a name:
 
 =begin table
-MY          Symbols in the current lexical scope (aka $?SCOPE)
-OUR         Symbols in the current package (aka $?PACKAGE)
+MY          Symbols in the current lexical scope
+OUR         Symbols in the current package
 CORE        Outermost lexical scope, definition of standard Raku
 GLOBAL      Interpreter-wide package symbols, really UNIT::GLOBAL
 PROCESS     Process-related globals (superglobals). The last place dynamic variable lookup will look.
-COMPILING   Lexical symbols in the scope being compiled
 =end table
 
 X«|Reference,CALLER (package)»X«|Reference,CALLERS (package)»X«|Reference,DYNAMIC (package)»
@@ -198,8 +197,9 @@ In the same vein, class and method names can be interpolated too:
     $what-method = 'another-method';
     say a-class."$what-method"(); # OUTPUT: «in-another-method␤»
 
-=head2 X<Direct lookup|Syntax,::($c).m;Syntax,A."$m"()>
+=head2 X<Direct lookup|Syntax,::($c).m>
 
+X<|Syntax,A."$m"()>
 To do direct lookup in a package's symbol table without scanning, treat the
 package name as a hash:
 
