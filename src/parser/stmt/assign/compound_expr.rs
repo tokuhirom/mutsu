@@ -314,6 +314,18 @@ pub(crate) fn build_custom_compound_assign_expr(
     })
 }
 
+/// The sigil-qualified assignment-target name for a `Z=` element-wise assign,
+/// or `None` for an LHS shape `Z=` does not element-wise-assign (only plain
+/// variables are supported; an `Index` LHS keeps the value-producing path).
+fn zip_assign_target_name(lhs: &Expr) -> Option<String> {
+    match lhs {
+        Expr::Var(name) => Some(name.clone()),
+        Expr::ArrayVar(name) => Some(format!("@{name}")),
+        Expr::HashVar(name) => Some(format!("%{name}")),
+        _ => None,
+    }
+}
+
 pub(crate) fn build_meta_assign_expr(
     lhs: Expr,
     meta: String,
@@ -325,6 +337,26 @@ pub(crate) fn build_meta_assign_expr(
         && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
     {
         return build_compound_assign_expr(lhs, compound_op, rhs);
+    }
+    // `@a Z= rhs` (zip metaoperator on `=`) is element-wise assignment, NOT
+    // `@a = (@a Z rhs)`: each `@a[i]` gets `rhs[i]`, trailing `@a` elements keep
+    // their value, and a shaped array keeps its shape. `__mutsu_zip_assign`
+    // rebuilds the container; the outer assignment stores it back. Only `Z=`
+    // (op `=`) is rewritten — `Z=>` / `Z+` / etc. keep the value-producing
+    // MetaOp path below.
+    if meta == "Z"
+        && op == "="
+        && let Some(name) = zip_assign_target_name(&lhs)
+    {
+        let zip_call = Expr::Call {
+            name: Symbol::intern("__mutsu_zip_assign"),
+            args: vec![lhs, rhs],
+        };
+        return Ok(Expr::AssignExpr {
+            name,
+            expr: Box::new(zip_call),
+            is_bind: false,
+        });
     }
     Ok(match lhs {
         Expr::Var(name) => Expr::AssignExpr {
