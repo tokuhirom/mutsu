@@ -279,7 +279,7 @@ impl Interpreter {
     /// `has_type` without short-name alias resolution — checks the type
     /// registries directly (classes/roles/enums/subsets, including parametric
     /// base names).
-    fn has_type_direct(&self, name: &str) -> bool {
+    pub(crate) fn has_type_direct(&self, name: &str) -> bool {
         self.registry().classes.contains_key(name)
             || self.registry().roles.contains_key(name)
             || self.registry().enum_types.contains_key(name)

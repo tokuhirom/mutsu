@@ -101,9 +101,21 @@ impl Interpreter {
             // Pseudo-package names (MY, CORE, OUTER, CALLER, etc.) resolve to
             // Package values so that .WHO/.WHAT etc. work correctly.
             Value::package(Symbol::intern(name))
-        } else if (self.has_type(name) || Self::is_builtin_type(name))
-            && matches!(self.env().get(name).map(Value::view), Some(ValueView::Nil))
-        {
+        } else if match self.env().get(name).map(Value::view) {
+            Some(ValueView::Nil) => self.has_type(name) || Self::is_builtin_type(name),
+            // A `my $Buf = Buf.new` declaration pre-seeds env["Buf"] with the
+            // placeholder `Package(Any)` before its RHS runs (closure
+            // capture-by-reference support in SetVarDynamic); the RHS bareword
+            // still names the TYPE — without this it fell into the alias
+            // branch below and returned Any. `has_type_direct` (no alias
+            // resolution) is required here: the plain `has_type` treats the
+            // very placeholder as an import alias to Any and reports ANY name
+            // as a type (`my $x .= new` would resolve `x` to Package("x")).
+            Some(ValueView::Package(p)) if p == "Any" && name != "Any" => {
+                Self::is_builtin_type(name) || self.has_type_direct(name)
+            }
+            _ => false,
+        } {
             // A bareword that names a type resolves to the type object. A same-named
             // `$`-sigiled scalar (`my $foo` where a class `foo` exists) is stored
             // sigil-stripped under the same env key; while it is still unassigned

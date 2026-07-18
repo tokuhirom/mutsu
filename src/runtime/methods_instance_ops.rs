@@ -1970,6 +1970,33 @@ impl Interpreter {
                 {
                     return self.dispatch_classhow_method(method, args.to_vec());
                 }
+                // A grammar token/rule called as an instance method
+                // (`G.new.tok`, URI's `IETF::RFC_Grammar::URI.new()
+                // .TOP-non-empty`): rakudo runs the token against an
+                // empty-string cursor and returns the resulting Match cursor —
+                // falsy when the token cannot match the empty string. Run
+                // `subparse("", rule => method)`; a failed subparse yields a
+                // falsy value that smartmatches False like a failed cursor.
+                if args.is_empty()
+                    && let ValueView::Instance { class_name, .. } = target.view()
+                {
+                    let cn = class_name.resolve();
+                    let qualified = format!("{}::{}", cn, method);
+                    if self
+                        .resolve_token_defs(&qualified)
+                        .map(|d| !d.is_empty())
+                        .unwrap_or(false)
+                    {
+                        return self.dispatch_package_parse(
+                            &cn,
+                            "subparse",
+                            &[
+                                Value::str_from(""),
+                                Value::pair("rule".to_string(), Value::str(method.to_string())),
+                            ],
+                        );
+                    }
+                }
                 let type_name = match target.view() {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
                     ValueView::Package(name) => name.resolve(),
