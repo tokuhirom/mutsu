@@ -161,8 +161,7 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// subs in expression position are the current coverage boundary.
 fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
-    let params = signature_positional_params(node)?;
-    let param_defs = params.iter().map(|n| positional_param(n)).collect();
+    let (params, param_defs) = signature_positional_params(node)?;
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::SubDecl {
@@ -189,27 +188,32 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// The positional scalar parameter names of a routine's `signature`, each with
 /// its `$` sigil stripped. A parameter carrying anything beyond a plain scalar
 /// `target` (a name, a slurpy/named marker, a default) is the coverage boundary.
-fn signature_positional_params(node: &RakuAstNode) -> Result<Vec<String>, RuntimeError> {
+#[allow(clippy::type_complexity)]
+fn signature_positional_params(
+    node: &RakuAstNode,
+) -> Result<(Vec<String>, Vec<ParamDef>), RuntimeError> {
     let Ok(sig) = named_child(node, "signature") else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     };
     let params = match sig.fields.iter().find(|f| f.name == Some("parameters")) {
         Some(f) => match &f.value {
             RakuAstFieldValue::List(items) => items,
             _ => return Err(unsupported(node)),
         },
-        None => return Ok(Vec::new()),
+        None => return Ok((Vec::new(), Vec::new())),
     };
     let mut names = Vec::with_capacity(params.len());
+    let mut defs = Vec::with_capacity(params.len());
     for v in params {
         let ValueView::RakuAst(p) = v.view() else {
             return Err(unsupported(node));
         };
-        // A named/slurpy/optional/defaulted parameter carries extra fields; defer.
+        // Named / slurpy / explicitly-optional parameters carry richer shape; defer.
+        // A `default` is handled below (an optional positional with a fallback).
         if p.fields.iter().any(|f| {
             matches!(
                 f.name,
-                Some("slurpy") | Some("named") | Some("default") | Some("optional_marker")
+                Some("slurpy") | Some("named") | Some("optional_marker")
             )
         }) {
             return Err(unsupported(node));
@@ -219,9 +223,24 @@ fn signature_positional_params(node: &RakuAstNode) -> Result<Vec<String>, Runtim
             return Err(unsupported(node));
         }
         let raw = leaf_str(target, "name")?;
-        names.push(raw.strip_prefix('$').map(str::to_string).unwrap_or(raw));
+        let name = raw.strip_prefix('$').map(str::to_string).unwrap_or(raw);
+        let mut def = positional_param(&name);
+        // `$y = EXPR` -> an optional positional with a default value.
+        if let Some(d) = p.fields.iter().find(|f| f.name == Some("default")) {
+            let default_node = match &d.value {
+                RakuAstFieldValue::Node(val) => match val.view() {
+                    ValueView::RakuAst(child) => child,
+                    _ => return Err(unsupported(node)),
+                },
+                _ => return Err(unsupported(node)),
+            };
+            def.default = Some(lower_expr(default_node)?);
+            def.required = false;
+        }
+        names.push(name);
+        defs.push(def);
     }
-    Ok(names)
+    Ok((names, defs))
 }
 
 /// A default positional (required, non-slurpy, untyped) `ParamDef` for `name`.
