@@ -160,9 +160,15 @@ earlier ones.
     node (its gist round-trips). Same single-positional builder as the literals. `.new` routes
     through `methods_object_dispatch_new`, but a non-`new` constructor like `from-identifier` reaches
     the terminal method-not-found fallback in `methods_instance_ops` instead, so the RakuAST
-    construct hook is placed there too. Tests in `t/rakuast-construct-name.t`. Next: multi-field
-    constructors (`ApplyInfix.new(:left, :infix, :right)`, `Statement::Expression.new(:expression)`,
-    `StatementList.new(...)`) — these take **named** args (Pairs) per a per-class field schema.
+    construct hook is placed there too. Tests in `t/rakuast-construct-name.t`.
+  - **Slice 3 (multi-field) — done.** Bare operator nodes (`Infix.new("+")`, `Prefix.new(...)`) use
+    the single-positional builder; named-field constructors (`Statement::Expression.new(expression =>
+    …)`, `ApplyInfix.new(left => …, infix => …, right => …)`) build fields from the `key => value`
+    args in a per-class schema order. Named args reach `construct` as `Pair`/`ValuePair` values;
+    `named_arg` finds them, and a missing one is a clear error. Constructed nodes nest, render (gist),
+    and are queryable (`.left.value`, `~~ RakuAST::Expression`). Tests in
+    `t/rakuast-construct-multi.t`. Next: `StatementList.new`, more operator/statement/declaration
+    constructors — then Phase 5 (EVAL) can lower a fully-constructed tree.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
