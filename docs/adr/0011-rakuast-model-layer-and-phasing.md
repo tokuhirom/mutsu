@@ -183,8 +183,14 @@ earlier ones.
     `42`, and `EVAL(Q[42].AST)` round-trips source → node tree → value. Slice 1 lowers the literal
     cluster (`IntLiteral`/`RatLiteral`/`StrLiteral`, single-segment `QuotedString`) plus the
     `StatementList` / `Statement::Expression` wrappers; anything else is an explicit `RuntimeError`.
-    Tests in `t/rakuast-eval.t`. Next: `ApplyInfix`/`ApplyPrefix` (needs an operator-name →
-    `TokenKind` reverse map), then variables/statements/declarations.
+    Tests in `t/rakuast-eval.t`.
+  - **Slice 2 (infix/prefix) — done.** `ApplyInfix` lowers to `Expr::Binary` and `ApplyPrefix` to
+    `Expr::Unary`; the operator string of the `Infix`/`Prefix` child maps back to a `TokenKind` via a
+    new `op_name_to_token_kind` (the reverse of `token_kind_to_op_name`, covering the common
+    arithmetic/comparison infixes). `EVAL(Q[3 * 4 + 1].AST)` → `13`. Operators outside the reverse map
+    are an explicit `RuntimeError`. Tests in `t/rakuast-eval-infix.t`. Next: variables (`Var::Lexical`
+    → `Expr::Var`), method calls, then statements/declarations — the inverse of the Phase-2 converter,
+    grown cluster by cluster.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

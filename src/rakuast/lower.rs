@@ -61,8 +61,36 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Err(unsupported(node))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        RakuAstClass::ApplyInfix => {
+            let left = lower_expr(named_child(node, "left")?)?;
+            let right = lower_expr(named_child(node, "right")?)?;
+            let op = infix_token(named_child(node, "infix")?)?;
+            Ok(Expr::Binary {
+                left: Box::new(left),
+                op,
+                right: Box::new(right),
+            })
+        }
+        RakuAstClass::ApplyPrefix => {
+            let operand = lower_expr(named_child(node, "operand")?)?;
+            let op = infix_token(named_child(node, "prefix")?)?;
+            Ok(Expr::Unary {
+                op,
+                expr: Box::new(operand),
+            })
+        }
         _ => Err(unsupported(node)),
     }
+}
+
+/// The `TokenKind` for an `Infix`/`Prefix` operator node (its positional operator
+/// string), or an error for an operator the lowerer doesn't handle yet.
+fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+    let name = positional_leaf(node)?;
+    let ValueView::Str(s) = name.view() else {
+        return Err(unsupported(node));
+    };
+    crate::compiler::helpers_ops::op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
 }
 
 /// The value of a node's single positional (name-less) leaf field.

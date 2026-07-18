@@ -878,8 +878,11 @@ so it is tracked separately from the roast backlog.
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
   - [x] Slice 1: EVAL of the literal cluster (`src/rakuast/lower.rs`; `EVAL(IntLiteral.new(42))` →
         42, `EVAL(Q[42].AST)` round-trips). Tests in `t/rakuast-eval.t`.
-  - [ ] Slice 2+: `ApplyInfix`/`ApplyPrefix` (operator-name → `TokenKind` reverse map), then
-        variables / statements / declarations.
+  - [x] Slice 2: EVAL of `ApplyInfix`/`ApplyPrefix` (`op_name_to_token_kind` reverse map;
+        `EVAL(Q[3 * 4 + 1].AST)` → 13). Tests in `t/rakuast-eval-infix.t`.
+  - [ ] Slice 3+: variables (`Var::Lexical` → `Expr::Var`), method calls, statements, declarations —
+        the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a
+        large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
