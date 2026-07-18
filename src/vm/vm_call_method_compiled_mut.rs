@@ -26,6 +26,9 @@ impl Interpreter {
         // Native built-in construction (mut path twin of the above).
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
+            // Augmented `multi method new` candidates must reach dispatch_new
+            // (see the non-mut twin).
+            && !self.has_user_method(&class_name.resolve(), "new")
             && let Some(result) =
                 crate::runtime::Interpreter::try_native_builtin_construct(class_name, &args)
         {

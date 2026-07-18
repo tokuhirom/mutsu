@@ -177,6 +177,38 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
                 out.push('"');
             }
         }
+        // Instant serializes as its `.DateTime` ISO string (JSON::Fast's
+        // Instant candidate: `"{.DateTime}"`), not the raw `Instant:...` gist.
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name.resolve() == "Instant" => {
+            use crate::builtins::methods_0arg::temporal;
+            let tai = attributes
+                .as_map()
+                .get("value")
+                .map(|v| v.to_f64())
+                .unwrap_or(0.0);
+            let posix = temporal::instant_to_posix(tai);
+            let total_i = posix.floor() as i64;
+            let frac = posix - total_i as f64;
+            let day_secs = total_i.rem_euclid(86400);
+            let epoch_days = (total_i - day_secs) / 86400;
+            let (y, m, d) = temporal::epoch_days_to_civil(epoch_days);
+            let iso = temporal::format_datetime(
+                y,
+                m,
+                d,
+                day_secs / 3600,
+                (day_secs % 3600) / 60,
+                (day_secs % 60) as f64 + frac,
+                0,
+            );
+            out.push('"');
+            escape_str(&iso, out);
+            out.push('"');
+        }
         // Duration is Real (a Rat-backed instance: `value` attr); JSON::Fast's
         // Real:D candidate serializes it numerically as a Num (`57e0`).
         ValueView::Instance {

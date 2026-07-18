@@ -44,6 +44,27 @@ fn constructor_positional_error(class_name: &str) -> RuntimeError {
 }
 
 impl Interpreter {
+    /// Try `.new` candidates a user `augment class` (MONKEY-TYPING) added to a
+    /// builtin native class (Date/DateTime). Returns `Ok(Some(v))` when a user
+    /// candidate matched, `Ok(None)` when there are no user candidates or none
+    /// matched (caller falls through to the native ctor), and `Err` for a real
+    /// error raised by the matched candidate.
+    fn try_augmented_builtin_new(
+        &mut self,
+        class_key: &str,
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        if !self.has_user_method(class_key, "new") {
+            return Ok(None);
+        }
+        let empty_attrs = AttrMap::new();
+        match self.run_instance_method(class_key, empty_attrs, "new", args.to_vec(), None) {
+            Ok((result, _updated)) => Ok(Some(result)),
+            Err(e) if e.is_multi_no_match() => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Materialize a user `message` *method* into the `message` attribute of a
     /// freshly-constructed exception. raku computes `Exception.message` lazily,
     /// but mutsu's interpreter-less stringification (`join`, `sprintf "%s"`, `~`,
@@ -582,6 +603,12 @@ impl Interpreter {
                     return Ok(Self::build_native_strdistance_value(&args));
                 }
                 "Date" => {
+                    // An augmented `multi method new` (MONKEY-TYPING) wins when
+                    // a candidate matches; a no-match falls back to the native
+                    // ctor (mirrors the user-new dispatch further below).
+                    if let Some(result) = self.try_augmented_builtin_new(class_key, &args)? {
+                        return Ok(result);
+                    }
                     // Shared with the VM's native fast path. Only the formatter
                     // case needs `self` (it renders a user Callable).
                     let (date, formatter) = Self::build_native_date(&args)?;
@@ -591,6 +618,9 @@ impl Interpreter {
                     return Ok(date);
                 }
                 "DateTime" => {
+                    if let Some(result) = self.try_augmented_builtin_new(class_key, &args)? {
+                        return Ok(result);
+                    }
                     // Shared with the VM's native fast path. Only the
                     // `:formatter` case needs `self` (it renders a user
                     // Callable); the common case is built natively.

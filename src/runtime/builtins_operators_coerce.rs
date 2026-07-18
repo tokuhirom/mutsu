@@ -228,6 +228,10 @@ impl Interpreter {
                 self.resolve_function_with_types(&infix_name, &[l.clone(), r.clone()])
             {
                 self.call_function_def(&v, &[l, r])?
+            } else if inner == "=~=" || inner == "\u{2245}" {
+                // `=~=` needs $*TOLERANCE (self), so the static reduction table
+                // cannot host it (its `op=` catch-all would also mis-strip it).
+                self.approx_eq_values(l, r)?
             } else {
                 Self::apply_reduction_op(inner, &l, &r)?
             };

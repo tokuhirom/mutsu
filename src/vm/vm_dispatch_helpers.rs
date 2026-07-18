@@ -148,6 +148,11 @@ impl Interpreter {
             "\u{2260}" => "!=",
             other => other,
         };
+        // `=~=` needs $*TOLERANCE (self), so the static reduction table cannot
+        // host it (and its `op=` catch-all would mis-strip it to `=~`).
+        if normalized_op == "=~=" || normalized_op == "\u{2245}" {
+            return self.approx_eq_values(left.clone(), right.clone());
+        }
         match Interpreter::apply_reduction_op(normalized_op, left, right) {
             Ok(v) => Ok(v),
             Err(err) if err.message.starts_with("Unsupported reduction operator:") => {

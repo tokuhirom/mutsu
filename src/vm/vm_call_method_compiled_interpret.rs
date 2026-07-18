@@ -78,6 +78,10 @@ impl Interpreter {
         // performs directly instead of routing through `dispatch_new`.
         if method == "new"
             && let ValueView::Package(class_name) = target.view()
+            // An augmented `multi method new` (MONKEY-TYPING on a builtin class,
+            // e.g. DateTime) must reach dispatch_new's candidate merge — skip
+            // the pure-native fork when user candidates exist.
+            && !self.has_user_method(&class_name.resolve(), "new")
             && let Some(result) =
                 crate::runtime::Interpreter::try_native_builtin_construct(class_name, &args)
         {
