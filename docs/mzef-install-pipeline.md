@@ -214,17 +214,20 @@ repro → general fix → `t/` pin):
 
 ## Test-phase frontier (2026-07-18 refresh)
 
-**Per-suite standing (2026-07-18, after #4735 / #4738 / #4747; staged-dist
-`prove` sweep with the full MUTSULIB chain, `tmp/e2e-suites.sh`): 9 PASS /
-2 FAIL.** PASS: JSON::OptIn, JSON::Name, JSON::Unmarshal (11 files / 101
-tests), JSON::Marshal (14/85), JSON::Class (6/31), URI (14/222), META6
-(9/969), License::SPDX (2/729). FAIL: **JSON::Fast** (native-JSON fidelity
-remnants — strict mode / unicode / datetime; full parity is likely
-unnecessary for the pipeline) and **Test::META** (3 concrete subtest
-failures: `020-internals.t` test 12 "check-provides with my own files" and
-test 24 "check-sources" / "non-git URI needn't must end in git", plus
-`030-my-meta.t` "don't have META file"). Test-Helpers ships no `t/` of its
-own (covered by mutsu's local `t/test-util-*.t`).
+**Per-suite standing (2026-07-18, after #4735 / #4738 / #4747 / #4756;
+staged-dist `prove` sweep with the full MUTSULIB chain,
+`tmp/e2e-suites.sh`): 10 PASS / 1 FAIL.** PASS: JSON::OptIn, JSON::Name,
+JSON::Unmarshal (11 files / 101 tests), JSON::Marshal (14/85), JSON::Class
+(6/31), URI (14/222), META6 (9/969), License::SPDX (2/729), Test::META
+(3/26, #4756). FAIL: **JSON::Fast** only (native-JSON fidelity remnants;
+full parity is likely unnecessary for the pipeline). Within JSON::Fast,
+the X::JSON::AdditionalContent + strict string/number grammar PR brought
+`01-parse.t` (724 tests) and `10-multidocument.t` to full pass — 5/14
+files green (01, 06, 08, 09, 10); remaining: 02-structure (8/20),
+03-unicode (aborts at 11/14), 04-roundtrip (2/56), 05-unreasonable (3/7),
+07-datetime (`augment class DateTime`), 11-enum (6/16),
+12-assocpositional, 13-scopes (3/8), 14-comments (JSONC). Test-Helpers
+ships no `t/` of its own (covered by mutsu's local `t/test-util-*.t`).
 
 The #4747 session's two generic fixes (License::SPDX 0/2 → 2/2): a trait
 argument with whitespace after the opening paren
@@ -279,7 +282,7 @@ generally:
 
 ~~Re-run the full `zef install Test::META` E2E after these land to get the
 new pass/fail count.~~ Done 2026-07-18 — see the per-suite standing at the
-top of this section (9 PASS / 2 FAIL).
+top of this section (10 PASS / 1 FAIL).
 
 **Test::Async is out of scope for this frontier** (PLAN.md §1 B5): its
 blocker is custom Metamodel HOW inheritance

@@ -215,18 +215,36 @@ fn escape_str(s: &str, out: &mut String) {
     }
 }
 
-/// Parse a JSON string into a `Value`. Returns an error message on malformed input.
-pub(crate) fn from_json(text: &str) -> Result<Value, String> {
+/// Error from `from_json`: either a plain malformed-input message, or the
+/// JSON::Fast `X::JSON::AdditionalContent` condition — the document parsed
+/// cleanly but was followed by more non-whitespace text. Positions are in
+/// characters (Raku `substr` semantics), not bytes.
+pub(crate) enum FromJsonError {
+    Parse(String),
+    AdditionalContent {
+        parsed: Value,
+        parsed_length: usize,
+        rest_position: usize,
+    },
+}
+
+/// Parse a JSON string into a `Value`.
+pub(crate) fn from_json(text: &str) -> Result<Value, FromJsonError> {
     let mut p = Parser {
         bytes: text.as_bytes(),
         chars: text,
         pos: 0,
     };
     p.skip_ws();
-    let value = p.parse_value()?;
+    let value = p.parse_value().map_err(FromJsonError::Parse)?;
+    let parsed_length = text[..p.pos].chars().count();
     p.skip_ws();
     if p.pos != p.bytes.len() {
-        return Err("JSON Input contained additional text after the document".to_string());
+        return Err(FromJsonError::AdditionalContent {
+            parsed: value,
+            parsed_length,
+            rest_position: text[..p.pos].chars().count(),
+        });
     }
     Ok(value)
 }
@@ -361,30 +379,53 @@ impl<'a> Parser<'a> {
                         b't' => result.push('\t'),
                         b'u' => {
                             let cp = self.parse_unicode_escape()?;
-                            // Handle surrogate pairs.
+                            // A high surrogate must be followed by an escaped low
+                            // surrogate (JSON transports astral chars as pairs);
+                            // anything else — including a lone low surrogate — is
+                            // malformed (JSON::Fast rejects it too).
                             if (0xD800..=0xDBFF).contains(&cp) {
-                                if self.chars[self.pos..].starts_with("\\u") {
-                                    self.pos += 2;
-                                    let lo = self.parse_unicode_escape()?;
-                                    let combined = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-                                    if let Some(ch) = char::from_u32(combined) {
-                                        result.push(ch);
-                                    }
-                                } else if let Some(ch) = char::from_u32(cp) {
-                                    result.push(ch);
+                                if !self.chars[self.pos..].starts_with("\\u") {
+                                    return Err(
+                                        "Lone surrogate \\u escape in JSON string".to_string()
+                                    );
                                 }
-                                continue;
+                                self.pos += 1; // consume '\\'; parse_unicode_escape eats the 'u'
+                                let lo = self.parse_unicode_escape()?;
+                                if !(0xDC00..=0xDFFF).contains(&lo) {
+                                    return Err("Invalid surrogate pair in JSON string".to_string());
+                                }
+                                let combined = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                match char::from_u32(combined) {
+                                    Some(ch) => result.push(ch),
+                                    None => {
+                                        return Err(
+                                            "Invalid surrogate pair in JSON string".to_string()
+                                        );
+                                    }
+                                }
+                            } else if (0xDC00..=0xDFFF).contains(&cp) {
+                                return Err("Lone surrogate \\u escape in JSON string".to_string());
                             } else if let Some(ch) = char::from_u32(cp) {
                                 result.push(ch);
                             }
                             continue;
                         }
-                        other => {
-                            result.push('\\');
-                            result.push(other as char);
+                        _ => {
+                            return Err(format!(
+                                "Invalid backslash escape in JSON string at position {}",
+                                self.pos
+                            ));
                         }
                     }
                     self.pos += 1;
+                }
+                c if c < 0x20 => {
+                    // Raw control characters (tab, newline, ...) must be escaped
+                    // inside JSON strings.
+                    return Err(format!(
+                        "Unescaped control character in JSON string at position {}",
+                        self.pos
+                    ));
                 }
                 _ => {
                     // Copy the full UTF-8 character.
@@ -427,6 +468,11 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(b'.') {
             is_rat = true;
             self.pos += 1;
+            // JSON's number grammar requires at least one digit after the
+            // decimal point: `1.` / `2.e3` are malformed.
+            if !matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
+                return Err("Missing digits after decimal point in JSON number".to_string());
+            }
             while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
                 self.pos += 1;
             }

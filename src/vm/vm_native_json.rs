@@ -108,5 +108,31 @@ fn native_from_json(args: &[Value]) -> Result<Value, RuntimeError> {
         .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
         .map(|v| v.to_string_value())
         .unwrap_or_default();
-    json::from_json(&text).map_err(RuntimeError::new)
+    json::from_json(&text).map_err(|e| match e {
+        json::FromJsonError::Parse(msg) => RuntimeError::new(msg),
+        json::FromJsonError::AdditionalContent {
+            parsed,
+            parsed_length,
+            rest_position,
+        } => {
+            // Mirror JSON::Fast's X::JSON::AdditionalContent so multi-document
+            // consumers can catch it and resume from `.rest-position`.
+            let msg = format!(
+                "JSON Input contained additional text after the document \
+                 (parsed {parsed_length} chars, next non-whitespace lives at {rest_position})"
+            );
+            let ex = Value::make_exception(
+                "X::JSON::AdditionalContent",
+                &[
+                    ("parsed", parsed),
+                    ("parsed-length", Value::int(parsed_length as i64)),
+                    ("rest-position", Value::int(rest_position as i64)),
+                    ("message", Value::str(msg.clone())),
+                ],
+            );
+            let mut err = RuntimeError::new(msg);
+            err.exception = Some(Box::new(ex));
+            err
+        }
+    })
 }
