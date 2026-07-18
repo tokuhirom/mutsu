@@ -2950,11 +2950,27 @@ impl Interpreter {
                 let base = &resolved[..open];
                 if matches!(
                     base,
-                    "array" | "Array" | "Positional" | "List" | "Seq" | "Hash" | "Map"
+                    "array"
+                        | "Array"
+                        | "Positional"
+                        | "List"
+                        | "Seq"
+                        | "Hash"
+                        | "Map"
+                        | "Associative"
                 ) {
                     let inner = &resolved[open + 1..resolved.len() - 1];
+                    // `ValueType{KeyType}` object-hash form first — the key
+                    // type may itself contain commas (a subset where-clause),
+                    // so the comma split below would truncate it.
+                    let (obj_hash_value, key) =
+                        crate::runtime::types::split_object_hash_constraint(inner);
                     // Hash[ValueType, KeyType] -> .of is the value type.
-                    let value_type = inner.split(',').next().unwrap_or(inner).trim();
+                    let value_type = if key.is_some() {
+                        obj_hash_value
+                    } else {
+                        inner.split(',').next().unwrap_or(inner).trim()
+                    };
                     return Ok(Value::package(Symbol::intern(value_type)));
                 }
             }

@@ -538,10 +538,34 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
 ) -> Result<(), RuntimeError> {
     let positional = positional_values_from_unpack_target(value);
     let mut nested_positional_idx = 0usize;
+    // Keys consumed by the non-slurpy named sub-params (outer name plus any
+    // `:outer(:$inner)` alias names): a named slurpy (`*%rest`) receives only
+    // the named arguments NOT bound to a named parameter.
+    let consumed_named_keys: std::collections::HashSet<String> = sub_params
+        .iter()
+        .filter(|p| p.named && !p.slurpy)
+        .flat_map(|p| {
+            let strip = |n: &str| {
+                n.trim_start_matches(|c: char| "$@%&:".contains(c))
+                    .to_string()
+            };
+            let mut keys = vec![strip(&p.name)];
+            if let Some(alias_params) = &p.sub_signature {
+                keys.extend(
+                    alias_params
+                        .iter()
+                        .filter(|a| a.named && !a.slurpy)
+                        .map(|a| strip(&a.name)),
+                );
+            }
+            keys
+        })
+        .collect();
     for sub_pd in sub_params {
         if sub_pd.slurpy {
             if sub_pd.name.starts_with('%') {
-                let named = named_values_from_unpack_target(value);
+                let mut named = named_values_from_unpack_target(value);
+                named.retain(|k, _| !consumed_named_keys.contains(k));
                 if !sub_pd.name.is_empty() {
                     interpreter
                         .env
@@ -571,7 +595,24 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             continue;
         }
         let mut candidate = if sub_pd.named {
-            extract_named_from_unpack_target(interpreter, value, &sub_pd.name)
+            let mut c = extract_named_from_unpack_target(interpreter, value, &sub_pd.name);
+            // `:outer(:$inner)` alias: also accept the argument under an inner
+            // name. Plain map lookup only — the method-call fallback in
+            // `extract_named_from_unpack_target` must not fire for alias names
+            // like `throw` or `warn`.
+            if c.is_none()
+                && let Some(alias_params) = &sub_pd.sub_signature
+            {
+                let named = named_values_from_unpack_target(value);
+                for apd in alias_params.iter().filter(|a| a.named && !a.slurpy) {
+                    let key = apd.name.trim_start_matches(|ch: char| "$@%&:".contains(ch));
+                    if let Some(v) = named.get(key) {
+                        c = Some(v.clone());
+                        break;
+                    }
+                }
+            }
+            c
         } else if nested_positional_idx < positional.len() {
             let v = positional[nested_positional_idx].clone();
             nested_positional_idx += 1;
@@ -601,7 +642,22 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 } else {
                     Value::NIL
                 };
-                interpreter.env.insert(sub_pd.name.clone(), default_val);
+                interpreter
+                    .env
+                    .insert(sub_pd.name.clone(), default_val.clone());
+                // An unsupplied `:outer(:$inner)` alias must still declare the
+                // inner names the body actually reads.
+                if sub_pd.named
+                    && let Some(alias_params) = &sub_pd.sub_signature
+                {
+                    for apd in alias_params.iter().filter(|a| a.named && !a.slurpy) {
+                        if !apd.name.is_empty() {
+                            interpreter
+                                .env
+                                .insert(apd.name.clone(), default_val.clone());
+                        }
+                    }
+                }
             }
             continue;
         };
@@ -691,7 +747,17 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
                 .insert(sub_pd.name.clone(), candidate.clone());
         }
         if let Some(nested) = &sub_pd.sub_signature {
-            bind_sub_signature_from_value(interpreter, nested, &candidate)?;
+            // A named sub-param's parens are either a RENAME/alias target
+            // (`:key($k)`, `:die(:$throw)` — plain inner params, no nested
+            // signature) or a genuine destructure (`:value((:key($d), ...))` —
+            // the inner param carries its own sub_signature). Rename binds the
+            // whole candidate to each inner name; destructure recurses into it.
+            let is_rename = sub_pd.named && nested.iter().all(|p| p.sub_signature.is_none());
+            if is_rename {
+                bind_named_rename_sub_signature(interpreter, nested, &candidate)?;
+            } else {
+                bind_sub_signature_from_value(interpreter, nested, &candidate)?;
+            }
         }
     }
     // If there are unconsumed positional elements and no slurpy param, error

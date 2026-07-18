@@ -29,6 +29,7 @@ impl Interpreter {
                 | "add_parent"
                 | "compose"
                 | "archetypes"
+                | "nominalize"
                 | "name"
                 | "set_name"
                 | "ver"

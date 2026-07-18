@@ -92,8 +92,20 @@ impl Interpreter {
         // substitution-modified topic must persist — restoring `saved_topic`
         // below would clobber it. Skip the restore in that case.
         let lhs_is_topic = lhs_var.as_deref() == Some("_");
-        if let Some(var_name) = lhs_var {
-            let modified_topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
+        // The LHS-variable writeback exists for a DESTRUCTIVE RHS (`$x ~~ s///`,
+        // `tr///`, or a block that assigns the topic): only then has the topic
+        // been modified and must flow back into the variable. A pure predicate
+        // match (`$json ~~ Int`) must NOT re-write the variable — the
+        // `note_caller_env_write` below would flag it for reverse sync into the
+        // caller, clobbering a same-named caller lexical of a different sigil
+        // (JSON::Unmarshal: the callee's `$json` Int overwrote the caller's
+        // `%json` hash after `if $json ~~ Int`).
+        let topic_after = self.env().get("_").cloned().unwrap_or(Value::NIL);
+        let topic_modified = was_substitution
+            || was_transliterate
+            || !crate::runtime::utils::values_identical(&topic_after, &left);
+        if let Some(var_name) = lhs_var.as_ref().filter(|_| topic_modified) {
+            let modified_topic = topic_after.clone();
             self.env_mut()
                 .insert(var_name.clone(), modified_topic.clone());
             // Reverse write-through: if the lhs alias names a compiled local slot,

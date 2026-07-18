@@ -562,6 +562,20 @@ impl Interpreter {
             .any(|n| !n.is_empty() && data.env.contains_key(n));
 
         let let_mark = self.let_saves_len();
+        // Package-scoped name resolution: run the body under the closure's
+        // declaring package so nested-class short names and `our`-vars resolve
+        // when the Sub value is invoked from a foreign frame (mirrors
+        // `enter_routine_package` on the named-call paths).
+        let saved_pkg = {
+            let pkg = data.package.resolve();
+            if !pkg.is_empty() && pkg != "GLOBAL" && !pkg.contains("::&") {
+                let saved = self.current_package();
+                self.set_current_package(pkg);
+                Some(saved)
+            } else {
+                None
+            }
+        };
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -675,6 +689,10 @@ impl Interpreter {
             if self.is_halted() {
                 break;
             }
+        }
+
+        if let Some(p) = saved_pkg {
+            self.set_current_package(p);
         }
 
         // Natural fall-through completion (no explicit return / break arm): a

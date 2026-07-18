@@ -571,6 +571,40 @@ impl Compiler {
         {
             return Self::control_block_is_resume_safe(body);
         }
+        // All-arms form: `CONTROL { when CX::Warn { ...; .resume } ... }`. Only
+        // warns are routed through the inline mechanism, so this is resume-safe
+        // when every arm that can match a CX::Warn — an explicit `when CX::Warn`
+        // arm or a `default` arm — ends in `.resume`. An arm for a different
+        // CX:: type never matches a warn inside the inline run and is ignored.
+        // A `when` whose matcher we cannot classify stays conservative (false).
+        if meaningful
+            .iter()
+            .all(|s| matches!(s, Stmt::When { .. } | Stmt::Default(_)))
+        {
+            let mut warn_arm_seen = false;
+            for s in &meaningful {
+                match s {
+                    Stmt::When { cond, body } => match Self::when_cond_warn_class(cond) {
+                        WhenWarnClass::Warn => {
+                            warn_arm_seen = true;
+                            if !Self::control_block_body_resumes(body) {
+                                return false;
+                            }
+                        }
+                        WhenWarnClass::OtherControl => {}
+                        WhenWarnClass::Unknown => return false,
+                    },
+                    Stmt::Default(body) => {
+                        warn_arm_seen = true;
+                        if !Self::control_block_body_resumes(body) {
+                            return false;
+                        }
+                    }
+                    _ => unreachable!("filtered to When/Default above"),
+                }
+            }
+            return warn_arm_seen;
+        }
         // Any `when` arm or `succeed` escapes the block via a control signal
         // (it does NOT resume) — the #3372 killer case. Reject.
         if meaningful.iter().any(|s| Self::stmt_exits_control_block(s)) {
@@ -578,6 +612,34 @@ impl Compiler {
         }
         // The tail statement must be a `.resume` method call.
         matches!(meaningful.last(), Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e))
+    }
+
+    /// The body of a `when`/`default` arm resumes iff its last meaningful
+    /// statement is a `.resume` call (and it never `succeed`s before that).
+    fn control_block_body_resumes(body: &[Stmt]) -> bool {
+        let meaningful: Vec<&Stmt> = body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        if meaningful.iter().any(|s| Self::stmt_exits_control_block(s)) {
+            return false;
+        }
+        matches!(meaningful.last(), Some(Stmt::Expr(e)) if Self::expr_is_resume_call(e))
+    }
+
+    fn when_cond_warn_class(cond: &Expr) -> WhenWarnClass {
+        match cond {
+            Expr::BareWord(name) => {
+                if name == "CX::Warn" {
+                    WhenWarnClass::Warn
+                } else if name.starts_with("CX::") {
+                    WhenWarnClass::OtherControl
+                } else {
+                    WhenWarnClass::Unknown
+                }
+            }
+            _ => WhenWarnClass::Unknown,
+        }
     }
 
     fn expr_is_resume_call(e: &Expr) -> bool {
@@ -592,4 +654,15 @@ impl Compiler {
             _ => false,
         }
     }
+}
+
+/// How a `when` arm's matcher relates to a CX::Warn signal, for the
+/// resume-safe classification above.
+enum WhenWarnClass {
+    /// Matches warns (`when CX::Warn`).
+    Warn,
+    /// A different CX:: control type — never matches a warn.
+    OtherControl,
+    /// Anything we cannot classify — stay conservative.
+    Unknown,
 }

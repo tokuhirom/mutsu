@@ -381,9 +381,26 @@ impl Interpreter {
         // as the full constructor does (`enforce_attribute_smiley_constraints`,
         // which itself skips `is required` attributes). `:_` imposes no constraint.
         let has_smiley = plan.has_smiley;
-        if has_smiley && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs)
-        {
-            return Some(Err(e));
+        if has_smiley {
+            // With a BUILD submethod the pre-BUILD attrs are not final — a
+            // provided named arg only reaches its attribute inside BUILD — so
+            // the provided-and-undefined `:D` check must wait (post-BUILD pass).
+            let provided_attr_names: Option<std::collections::HashSet<String>> =
+                (!has_build).then(|| {
+                    args.iter()
+                        .filter_map(|v| match v.view() {
+                            ValueView::Pair(k, _) => Some(k.clone()),
+                            _ => None,
+                        })
+                        .collect()
+                });
+            if let Err(e) = self.enforce_attribute_smiley_constraints(
+                cn_resolved,
+                &attrs,
+                provided_attr_names.as_ref(),
+            ) {
+                return Some(Err(e));
+            }
         }
         // Build the instance BEFORE BUILD/TWEAK and thread its shared attribute
         // cell through them (raku semantics: `self` inside BUILD/TWEAK IS the
@@ -427,7 +444,7 @@ impl Interpreter {
             // interpreter does not currently perform), so neither do we — a TWEAK
             // that violates a smiley is left untouched to match the baseline.
             if has_smiley
-                && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs)
+                && let Err(e) = self.enforce_attribute_smiley_constraints(cn_resolved, &attrs, None)
             {
                 return Some(Err(e));
             }

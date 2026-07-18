@@ -229,11 +229,11 @@ impl Interpreter {
                             if !self.warning_suppressed() {
                                 self.write_warn_to_stderr(&ce.message);
                             }
-                            self.resume_ip.take()
+                            self.take_resume_ip_for(code)
                         }
                         Err(ce) if ce.is_resume() => {
                             let _ = ce;
-                            self.resume_ip.take()
+                            self.take_resume_ip_for(code)
                         }
                         Err(ce) => {
                             loan_env!(self, set_when_matched(saved_when));
@@ -383,7 +383,7 @@ impl Interpreter {
                                 self.env_mut().remove("_");
                             }
                             // Resume from the instruction after die
-                            if let Some(resume_point) = self.resume_ip.take() {
+                            if let Some(resume_point) = self.take_resume_ip_for(code) {
                                 // Run from the resume point to the end of the try body
                                 match self.run_range(code, resume_point, catch_begin, compiled_fns)
                                 {

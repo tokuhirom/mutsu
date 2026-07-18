@@ -222,6 +222,29 @@ impl Interpreter {
     /// the nested work observes and mutates the same state. Used by `run_nested`
     /// (single compiled block) and by the map/sort `run_reuse` loops (many
     /// iterations sharing one fresh-register scope).
+    /// Identity fingerprint of a CompiledCode for resume-point validation.
+    /// A recorded `resume_ip` is only meaningful inside the code object whose
+    /// op array it indexes; the ops pointer distinguishes frames cheaply.
+    #[inline]
+    pub(crate) fn resume_code_fp(code: &CompiledCode) -> usize {
+        code.ops.as_ptr() as usize
+    }
+
+    /// Take the recorded resume point if (and only if) it belongs to `code`.
+    /// A mismatched fingerprint means the point was recorded in a different
+    /// (typically callee) frame — resuming there would jump to an arbitrary
+    /// op in this frame, so it is discarded instead.
+    #[inline]
+    pub(crate) fn take_resume_ip_for(&mut self, code: &CompiledCode) -> Option<usize> {
+        match self.resume_ip {
+            Some((fp, ip)) if fp == Self::resume_code_fp(code) => {
+                self.resume_ip = None;
+                Some(ip)
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         // GC safepoint (§9.2a `nested_run`): the nested-VM entry boundary.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::NestedRun);
@@ -586,7 +609,7 @@ impl Interpreter {
                         // CallMethod / step) records a resume point; without
                         // one there is no way to know where to continue, so
                         // propagate loudly instead of guessing.
-                        if let Some(resume_point) = self.resume_ip.take() {
+                        if let Some(resume_point) = self.take_resume_ip_for(code) {
                             return self.run_range_from(
                                 code,
                                 resume_point,
@@ -646,7 +669,7 @@ impl Interpreter {
                     // site (e.g., when a CONTROL block rethrew the CX::Warn),
                     // resume there so execution continues after the warn
                     // rather than past whatever op propagated the signal.
-                    if let Some(resume_point) = self.resume_ip.take() {
+                    if let Some(resume_point) = self.take_resume_ip_for(code) {
                         ip = resume_point;
                     } else {
                         ip += 1;

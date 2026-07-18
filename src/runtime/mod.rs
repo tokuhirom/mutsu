@@ -1796,7 +1796,12 @@ pub struct Interpreter {
     /// outer-lexical-write fallback to exactly this context so ordinary `our`/
     /// package-qualified writes elsewhere are unaffected.
     pub(crate) in_regex_code_block: bool,
-    pub(crate) resume_ip: Option<usize>,
+    /// Resume point for a `.resume`d control signal: `(code_fp, ip)` where
+    /// `code_fp` identifies the CompiledCode the ip belongs to (see
+    /// `Interpreter::resume_code_fp`). Consumers must verify the fp matches the
+    /// code they are about to resume in — an ip from a different (callee) frame
+    /// must never be reused as an ip in the handler's frame.
+    pub(crate) resume_ip: Option<(usize, usize)>,
     /// Error slot for JIT-compiled bodies (ADR-0004 J1): an `extern "C"` opcode
     /// helper cannot return a `RuntimeError` by value across the native-code
     /// boundary, so it parks the error here and returns a nonzero status; the
