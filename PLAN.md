@@ -908,6 +908,70 @@ so it is tracked separately from the roast backlog.
 
 ---
 
+## 8. QA & finalization — closing the compatibility gap roast no longer sees
+
+**Why this section exists.** roast is mined out (§4: the whitelist is at its ceiling and the 33
+remaining files are mostly non-goal / no-oracle). The compatibility defects that are *left* are, by
+definition, the ones roast does not exercise. Finalization therefore needs signals **orthogonal to
+roast**. The backbone is **differential testing against the reference `raku`** (Rakudo, installed on
+the dev box and in CI): any program where mutsu and raku disagree is a candidate defect, found
+objectively rather than by a model's guess. `raku-doc` is **one corpus among several**, not the
+campaign itself.
+
+**Labor split (load-bearing).** Discovery, minimal-repro reduction, and triage are wide, mechanical,
+and parallelizable — farm them out to cheap models / subagents to produce a **ranked backlog of
+minimal repros grouped by root cause**. Interpreter **fixes stay under tighter control**: a
+breadth-first agent is exactly what tends to add the slow-path fallbacks / hardcoded results /
+test-specific hacks that this repo forbids (see the standing rules and CLAUDE.md). The deliverable of
+a discovery campaign is the backlog, not a pile of speculative fixes.
+
+**Cross-cutting caveat for every differential item below — align the language version.** Local raku is
+6.d-default (Rakudo 2026.06); doc/example code may use 6.e or version-tagged features (e.g. `exits-ok`
+was "effective with Rakudo 2026.01"). Prefer the stronger signal **"mutsu differs from raku AND from
+the documented expectation"** over a raw raku diff, so version skew and aspirational docs do not flood
+the backlog.
+
+### 8.1 Differential harness (the backbone — build first)
+
+- [ ] Build a `raku`-vs-`mutsu` differential runner: feed a program to both, capture
+      stdout/stderr/exit, diff, and emit only mismatches with a minimal repro. This is the reusable
+      substrate for 8.2 / 8.3 / 8.4 and any future fuzz corpus. Handle version fudging and per-run
+      timeouts. **Gate before scaling:** first prototype it on a small corpus and confirm the signal is
+      dense enough to justify a full campaign — do not stand up a large agent fleet on an unmeasured
+      signal.
+
+### 8.2 Documented-surface coverage (doc examples + method matrix)
+
+- [ ] **Doc-example diff**: extract runnable examples from `raku-doc` — many carry a
+      ` # OUTPUT: «…»` annotation that is a built-in oracle — and run them through 8.1. This is the
+      structured, objective form of "read the docs to find gaps"; do **not** do the read-and-guess
+      form. Complements the one-shot `raku-doc` audits already recorded in §4.
+- [ ] **Per-type method-coverage matrix**: for each `Type/*.rakudoc`, enumerate the documented methods
+      and check which mutsu implements (call each / introspect), producing an "N of M implemented"
+      table per type. This surfaces the **never-called holes** a diff over existing examples cannot: a
+      method with no doc example is invisible to the bullet above.
+
+### 8.3 Robustness — zero panics / crashes
+
+- [ ] **Panic-zero sweep**: mutsu must never Rust-panic or process-abort on any input. Concrete known
+      target: the deep-recursion `fatal runtime error: stack overflow` process abort (§6; 4 roast
+      files). Extend with **parser fuzzing** (malformed / adversarial / oversized input) driven through
+      8.1 with a "did it panic?" oracle. Track under the existing `roast-panic` category
+      (`scripts/roast-history.sh`) plus a dedicated fuzz corpus.
+
+### 8.4 Behaviour under real code & error parity
+
+- [ ] **Real-module corpus**: run real ecosystem modules and their own test suites (the zef *upstream*
+      track is exhausted, but broader rea/CPAN dists are not). Real code exercises meaner shapes than
+      doc examples — parser, exceptions, containers. Overlaps with §1 (batteries) and the mzef
+      north-star.
+- [ ] **Error / exception parity** (extends the §6 error-message-quality item): differential-test that
+      mutsu throws the **right `X::` type** with a matching message / payload, not merely that it
+      fails. Corpus = `Type/X*.rakudoc` + `throws-like`-style assertions. Good QA is "fails
+      correctly", not only "works".
+
+---
+
 ## Metrics
 
 | Metric | Current | Target |
