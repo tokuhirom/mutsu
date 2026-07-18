@@ -285,6 +285,13 @@ earlier ones.
     mismatch throws, and a typed parameter can also carry a default. Tests in
     `t/rakuast-eval-typed-param.t`. Next: named/slurpy parameters, more infix operators (`x`/`eq`/…),
     C-style `loop`.
+  - **Slice 18 (named infix operators) — done.** The read side already renders `$a x $b` as
+    `Infix.new("x")`; the write side now maps `~~` to `SmartMatch` and any other operator name to
+    mutsu's generic `Ident` token (the inverse of `token_kind_to_op_name`'s `Ident(name) => name`), so
+    `x`/`xx`/`eq`/`ne`/`lt`/`gt`/`le`/`ge`/`cmp`/`leg`/`div`/`mod`/… all lower at once.
+    `EVAL(Q["ab" x 3].AST)` → `ababab`; `EVAL(Q[my $x = 5; $x ~~ 5].AST)` → `True`. Bareword type terms
+    (`Int` as a smartmatch RHS) stay the boundary. Tests in `t/rakuast-eval-named-infix.t`. Next:
+    bareword type terms, named/slurpy parameters, C-style `loop`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

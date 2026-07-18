@@ -108,6 +108,11 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         // spelling (`-`/`+`/`~`) already map above.
         "!" => TokenKind::Bang,
         "?" => TokenKind::Question,
-        _ => return None,
+        "~~" => TokenKind::SmartMatch,
+        // Any remaining operator name is a named infix (`x`, `xx`, `eq`, `ne`,
+        // `lt`/`gt`/`le`/`ge`, `cmp`, `leg`, `div`, `mod`, ...), which mutsu
+        // represents with a generic `Ident` token (the inverse of
+        // `token_kind_to_op_name`'s `Ident(name) => name`).
+        name => TokenKind::Ident(name.to_string()),
     })
 }
