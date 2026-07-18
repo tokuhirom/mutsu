@@ -232,3 +232,33 @@ pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
 pub fn node_gist(node: &RakuAstNode) -> String {
     render::render_node(node, 0)
 }
+
+/// A named-field / positional accessor on a RakuAST node (Phase 3). Returns the
+/// field value as a mutsu `Value`, or `None` if `method` is not an accessor for
+/// this node (so ordinary methods like `.gist` fall through). `.statements`
+/// returns the positional children of a `StatementList`/`Blockoid` as a `List`.
+pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
+    for f in &node.fields {
+        if f.name == Some(method) {
+            return Some(field_to_value(&f.value));
+        }
+    }
+    if method == "statements" && matches!(node.class, RakuAstClass::StatementList) {
+        let items = node
+            .fields
+            .iter()
+            .map(|f| field_to_value(&f.value))
+            .collect();
+        return Some(Value::array(items));
+    }
+    None
+}
+
+fn field_to_value(fv: &RakuAstFieldValue) -> Value {
+    match fv {
+        RakuAstFieldValue::Node(v) => v.clone(),
+        RakuAstFieldValue::List(items) => Value::array(items.clone()),
+        // Colonpair adverbs (`:item`) are a rendering detail; expose as True.
+        RakuAstFieldValue::Adverb(_) => Value::truth(true),
+    }
+}
