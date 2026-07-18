@@ -302,18 +302,97 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "sub with traits / multi / export / return type",
                 ));
             }
-            let name_node = RakuAstNode {
-                class: RakuAstClass::Name,
-                fields: vec![leaf_field(None, Value::str(name.resolve()))],
-            };
-            let mut fields = vec![node_field(Some("name"), name_node)];
-            if !param_defs.is_empty() {
-                fields.push(node_field(Some("signature"), signature(param_defs, true)?));
+            Ok(Some(statement_expression(routine_node(
+                RakuAstClass::Sub,
+                &name.resolve(),
+                param_defs,
+                body,
+            )?)))
+        }
+        Stmt::MethodDecl {
+            name,
+            name_expr,
+            param_defs,
+            body,
+            multi,
+            is_rw,
+            is_private,
+            is_our,
+            is_my,
+            is_submethod,
+            our_variable_form,
+            return_type,
+            is_default_candidate,
+            deprecated_message,
+            handles,
+            custom_traits,
+            ..
+        } => {
+            // Plain `method NAME (params) { body }`. Private/submethod/multi/our/
+            // my forms, traits, delegation, and return types carry extra shape.
+            if name_expr.is_some()
+                || *multi
+                || *is_rw
+                || *is_private
+                || *is_our
+                || *is_my
+                || *is_submethod
+                || *our_variable_form
+                || return_type.is_some()
+                || *is_default_candidate
+                || deprecated_message.is_some()
+                || !handles.is_empty()
+                || !custom_traits.is_empty()
+            {
+                return Err(unsupported(
+                    "method with traits / private / multi / submethod",
+                ));
             }
-            fields.push(node_field(Some("body"), blockoid(body)?));
+            Ok(Some(statement_expression(routine_node(
+                RakuAstClass::Method,
+                &name.resolve(),
+                param_defs,
+                body,
+            )?)))
+        }
+        Stmt::ClassDecl {
+            name,
+            name_expr,
+            parents,
+            class_is_rw,
+            is_hidden,
+            is_lexical,
+            hidden_parents,
+            does_parents,
+            repr,
+            body,
+            custom_traits,
+            is_unit,
+            ..
+        } => {
+            // Plain `class NAME { body }`. Inheritance (`is`/`does`), `my`/unit
+            // scope, reprs, `rw`, and traits carry extra RakuAST shape, deferred.
+            if name_expr.is_some()
+                || !parents.is_empty()
+                || *class_is_rw
+                || *is_hidden
+                || *is_lexical
+                || !hidden_parents.is_empty()
+                || !does_parents.is_empty()
+                || repr.is_some()
+                || !custom_traits.is_empty()
+                || *is_unit
+            {
+                return Err(unsupported(
+                    "class with inheritance / scope / repr / traits",
+                ));
+            }
             Ok(Some(statement_expression(RakuAstNode {
-                class: RakuAstClass::Sub,
-                fields,
+                class: RakuAstClass::Class,
+                fields: vec![
+                    node_field(Some("name"), name_from_identifier(&name.resolve())),
+                    node_field(Some("body"), block_node(body)?),
+                ],
             })))
         }
         Stmt::Assign { name, expr, op } => match op {
@@ -719,6 +798,23 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
             node_field(Some("body"), blockoid(body)?),
         ],
     })
+}
+
+/// A named routine — `Sub` or `Method` — with an optional signature and a
+/// body. A parameter-less routine omits the `signature` field; parameters
+/// carry the implicit `type => Type::Setting(Any)` (`type_setting = true`).
+fn routine_node(
+    class: RakuAstClass,
+    name: &str,
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
+    if !param_defs.is_empty() {
+        fields.push(node_field(Some("signature"), signature(param_defs, true)?));
+    }
+    fields.push(node_field(Some("body"), blockoid(body)?));
+    Ok(RakuAstNode { class, fields })
 }
 
 /// `Signature(parameters => (Parameter, ...))`. `type_setting` prepends the
