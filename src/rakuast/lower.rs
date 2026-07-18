@@ -559,6 +559,17 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let inner = named_child_or_positional(semilist)?;
             lower_expr(inner)
         }
+        // `[1, 2, 3]` -> an array literal. The composer wraps a `SemiList` of a
+        // single `Statement::Expression` (a comma list, or a lone element).
+        RakuAstClass::CircumfixArrayComposer => {
+            let semilist = named_child_or_positional(node)?;
+            let inner = named_child_or_positional(semilist)?;
+            let items = match lower_expr(inner)? {
+                Expr::ArrayLiteral(items) => items,
+                other => vec![other],
+            };
+            Ok(Expr::BracketArray(items, false))
+        }
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
             ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
