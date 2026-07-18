@@ -17,6 +17,21 @@ fn sprintf_numify_str(s: &str) -> Option<Value> {
     super::str_numeric::parse_raku_str_to_numeric(s.trim())
 }
 
+/// Whether the lexically-active language version is 6.e or later. Several
+/// sprintf flag semantics changed in 6.e: the sign is emitted before the radix
+/// prefix (`%#x` of -256 is `-0x100`, not `0x-100`), the `+`/space flags no
+/// longer apply to radix conversions (`%b`/`%o`/`%x`), `#` forces a trailing
+/// decimal point on `%e`/`%f` even at precision 0, and the `0` flag zero-pads
+/// strings. The version is read the same way `$*RAKU.version` is (the parser
+/// global reflects the active `use vX` pragma).
+fn v6e_active() -> bool {
+    let version = crate::parser::current_language_version();
+    match version.strip_prefix("6.").and_then(|s| s.chars().next()) {
+        Some(letter) => letter >= 'e',
+        None => false,
+    }
+}
+
 pub(crate) fn format_sprintf(fmt: &str, arg: Option<&Value>) -> String {
     match arg {
         Some(value) => format_sprintf_impl(fmt, std::slice::from_ref(value), false),
@@ -45,6 +60,7 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
     let mut out = String::new();
     let mut pos = 0usize;
     let mut arg_index = 0usize;
+    let v6e = v6e_active();
     while pos < len {
         if bytes[pos] != b'%' {
             out.push(bytes[pos] as char);
@@ -135,12 +151,24 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
         } else {
             None
         };
+        // In 6.e the `0` flag zero-pads strings even when a precision is given,
+        // so precision no longer cancels the `0` flag for `%s`.
         let prec_cancels_zero = prec_num.is_some()
-            && matches!(spec, 's' | 'b' | 'B' | 'd' | 'i' | 'o' | 'x' | 'X' | 'u');
-        let zero_pad = flags.contains('0') && !flags.contains('-') && !prec_cancels_zero;
-        let left_align = flags.contains('-');
-        let float_minus_zero =
-            matches!(spec, 'f' | 'F' | 'e' | 'E') && flags.contains('-') && flags.contains('0');
+            && (matches!(spec, 'b' | 'B' | 'd' | 'i' | 'o' | 'x' | 'X' | 'u')
+                || (spec == 's' && !v6e));
+        // 6.e: for float specs the `0` flag beats `-` (zero-pads instead of
+        // left-aligning), dropping the 6.d `apply_float_minus_zero` quirk.
+        let zero_beats_minus = v6e
+            && matches!(spec, 'f' | 'F' | 'e' | 'E')
+            && flags.contains('0')
+            && flags.contains('-');
+        let zero_pad =
+            flags.contains('0') && (!flags.contains('-') || zero_beats_minus) && !prec_cancels_zero;
+        let left_align = flags.contains('-') && !zero_beats_minus;
+        let float_minus_zero = !v6e
+            && matches!(spec, 'f' | 'F' | 'e' | 'E')
+            && flags.contains('-')
+            && flags.contains('0');
         let plus_sign = flags.contains('+');
         let space_flag = flags.contains(' ');
         let hash_flag = flags.contains('#');
@@ -302,7 +330,12 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                     } else {
                         ""
                     };
-                    format!("{}{}{}", hash_prefix, neg_sign, digits)
+                    if v6e {
+                        // 6.e: sign precedes the radix prefix (`-0x100`).
+                        format!("{}{}{}", neg_sign, hash_prefix, digits)
+                    } else {
+                        format!("{}{}{}", hash_prefix, neg_sign, digits)
+                    }
                 }
             }
             'o' => {
@@ -322,7 +355,15 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                     String::new()
                 } else {
                     let neg_sign = if is_neg { "-" } else { "" };
-                    if hash_flag && !is_zero {
+                    if v6e {
+                        // 6.e: sign precedes the `0` prefix (`-0400`).
+                        let prefix = if hash_flag && !is_zero && !digits.starts_with('0') {
+                            "0"
+                        } else {
+                            ""
+                        };
+                        format!("{}{}{}", neg_sign, prefix, digits)
+                    } else if hash_flag && !is_zero {
                         if is_neg {
                             format!("0{}{}", neg_sign, digits)
                         } else if !digits.starts_with('0') {
@@ -339,7 +380,12 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 let i = bigint_val();
                 let is_neg = i < BigInt::from(0);
                 let is_zero = i == BigInt::from(0);
-                let sign = sign_prefix(is_neg, plus_sign, space_flag);
+                // 6.e: the `+`/space flags do not apply to radix conversions.
+                let sign = if v6e {
+                    if is_neg { "-" } else { "" }
+                } else {
+                    sign_prefix(is_neg, plus_sign, space_flag)
+                };
                 let abs_val = if is_neg { -&i } else { i };
                 let mut digits = abs_val.to_str_radix(2);
                 if let Some(p) = prec_num {
@@ -365,12 +411,22 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 // Use exact rational formatting (round-half-away-from-zero, like
                 // Rakudo) for all numeric args; fall back to float only for
                 // non-numeric arguments.
-                if let Some(rendered) = format_rat_fixed(arg, p, plus_sign, space_flag) {
-                    rendered
-                } else {
-                    let f = float_val();
-                    format_float_fixed(f, p, plus_sign, space_flag)
+                let mut rendered =
+                    if let Some(rendered) = format_rat_fixed(arg, p, plus_sign, space_flag) {
+                        rendered
+                    } else {
+                        let f = float_val();
+                        format_float_fixed(f, p, plus_sign, space_flag)
+                    };
+                // 6.e: `#` forces a trailing decimal point even at precision 0.
+                if v6e
+                    && hash_flag
+                    && prec_num == Some(0)
+                    && rendered.as_bytes().last().is_some_and(u8::is_ascii_digit)
+                {
+                    rendered.push('.');
                 }
+                rendered
             }
             'e' | 'E' => {
                 let p = prec_num.unwrap_or(6);
@@ -378,7 +434,9 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 // value, mantissa rounded half-away-from-zero and NOT re-
                 // normalized on carry) for numeric args, matching Rakudo; fall
                 // back to float only for non-numeric arguments and inf/nan.
-                if let Some(rendered) = format_rat_sci(arg, p, plus_sign, space_flag, spec == 'E') {
+                let mut rendered = if let Some(rendered) =
+                    format_rat_sci(arg, p, plus_sign, space_flag, spec == 'E')
+                {
                     rendered
                 } else {
                     let f = float_val();
@@ -395,7 +453,18 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                         };
                         format!("{}{}", prefix, formatted)
                     }
+                };
+                // 6.e: `#` forces a decimal point before the exponent even at
+                // precision 0 (`%#.0e` of 1 is `1.e+00`).
+                if v6e && hash_flag && prec_num == Some(0) {
+                    let marker = if spec == 'E' { 'E' } else { 'e' };
+                    if let Some(m) = rendered.find(marker)
+                        && !rendered[..m].contains('.')
+                    {
+                        rendered.insert(m, '.');
+                    }
                 }
+                rendered
             }
             'g' | 'G' => {
                 let f = float_val();
@@ -471,7 +540,11 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
                 None => String::new(),
             },
         };
-        let plain_zero = matches!(spec, 'o' | 'x' | 'X');
+        // 6.d zero-pads o/x/X by prepending zeros before the whole (sign-first)
+        // body. 6.e instead threads the sign/prefix out (handled by
+        // `zero_pad_prefix_len`), so o/x/X drop out of `plain_zero`; strings,
+        // which have no sign to thread, join it (zeros always prepend).
+        let plain_zero = (matches!(spec, 'o' | 'x' | 'X') && !v6e) || (spec == 's' && v6e);
         if float_minus_zero && width_num > 0 {
             apply_float_minus_zero(&mut out, &rendered, width_num);
         } else {

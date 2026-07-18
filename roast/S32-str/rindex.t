@@ -2,7 +2,7 @@ use Test;
 
 # L<S32::Str/Str/"=item rindex">
 
-plan 50;
+plan 57;
 
 # Type of return value
 isa-ok('abc'.rindex('b'), Int);
@@ -49,6 +49,16 @@ is(rindex("what are these « » unicode characters for ?", "uni"), 19, "over uni
 is("Hello World".rindex("l"), 9, ".rindex on string");
 is("Hello World".rindex(''), 11, ".rindex('') on string gives string length graphemes");
 
+# Lists of overlapping needles - https://github.com/rakudo/rakudo/issues/6104
+
+is(rindex("ab", <b ab>), 1, "First needle contained in the second");
+is(rindex("ab", <ab b>), 1, "Second needle contained in the first");
+is(rindex("abc", <bc ab>), 1, "Needles with partial overlap (large index first)");
+is(rindex("abc", <ab bc>), 1, "Needles with partial overlap (small index first)");
+is(rindex("abcab", <abc ab>), 3, "Second needle contained in the first and occurring twice in str");
+is(rindex("acbc", <cbc ac bc>), 2, "Needles with partial and with complete overlap");
+is(rindex("accbabccbccbab", <ccbc bccb ccba cbcc cbba bcc ccba ccbc>), 9, "Many overlapping needles");
+
 # on scalar variable
 my $s = "Hello World";
 is(rindex($s, "o"), 7, "rindex on scalar variable");
@@ -88,6 +98,7 @@ throws-like 'rindex("xxyxx", "y", -1)', X::OutOfRange, 'rindex with negative sta
 
 dies-ok { 42.rindex: Str }, "Cool.rindex with wrong args does not hang";
 
+# https://github.com/rakudo/rakudo/issues/6104
 for "foobar","foobar".match(/\w+/) {
     is .rindex(<o a>), 4, "does a list of needles work ok with method";
     is rindex($_,<a o>), 4, "does a list of needles work ok with sub";

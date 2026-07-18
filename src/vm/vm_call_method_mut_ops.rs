@@ -1268,7 +1268,8 @@ impl Interpreter {
                         return Ok(());
                     }
                     ValueView::Bag(_, false) => {
-                        return Err(RuntimeError::assignment_ro_typename("Int", "1"));
+                        let repr = crate::runtime::gist_value(inner_target);
+                        return Err(RuntimeError::assignment_ro_typename("Bag", &repr));
                     }
                     ValueView::Bag(data, true) => {
                         let count = value.to_bigint();
@@ -1284,7 +1285,8 @@ impl Interpreter {
                         return Ok(());
                     }
                     ValueView::Mix(_, false) => {
-                        return Err(RuntimeError::assignment_ro_typename("Int", "1"));
+                        let repr = crate::runtime::gist_value(inner_target);
+                        return Err(RuntimeError::assignment_ro_typename("Mix", &repr));
                     }
                     ValueView::Mix(data, true) => {
                         let weight = crate::runtime::to_float_value(&value).unwrap_or(0.0);
@@ -1344,7 +1346,8 @@ impl Interpreter {
                         return Ok(());
                     }
                     ValueView::Set(_, false) => {
-                        return Err(RuntimeError::immutable("Set", "DELETE-KEY"));
+                        let repr = crate::runtime::utils::gist_value(inner_target);
+                        return Err(RuntimeError::assignment_ro_typename("Set", &repr));
                     }
                     ValueView::Set(data, true) => {
                         let existed = data.elements.contains(&key);
@@ -1356,7 +1359,8 @@ impl Interpreter {
                         return Ok(());
                     }
                     ValueView::Bag(_, false) => {
-                        return Err(RuntimeError::immutable("Bag", "DELETE-KEY"));
+                        let repr = crate::runtime::utils::gist_value(inner_target);
+                        return Err(RuntimeError::assignment_ro_typename("Bag", &repr));
                     }
                     ValueView::Bag(data, true) => {
                         let old_count = data.counts.get(&key).cloned().unwrap_or_default();
@@ -1368,7 +1372,8 @@ impl Interpreter {
                         return Ok(());
                     }
                     ValueView::Mix(_, false) => {
-                        return Err(RuntimeError::immutable("Mix", "DELETE-KEY"));
+                        let repr = crate::runtime::utils::gist_value(inner_target);
+                        return Err(RuntimeError::assignment_ro_typename("Mix", &repr));
                     }
                     ValueView::Mix(data, true) => {
                         let old_weight = data.weights.get(&key).copied().unwrap_or(0.0);

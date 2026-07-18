@@ -210,6 +210,7 @@ S02-types/nominalizables.t
 S02-types/num.t
 S02-types/pair.t
 S02-types/parsing-bool.t
+S02-types/quanthash.t
 S02-types/range-iterator.t
 S02-types/range.t
 S02-types/resolved-in-setting.t    # moar
@@ -1289,6 +1290,16 @@ S32-str/shiftjis-encode-decode.t # moar
 S32-str/space-chars.t
 S32-str/split-simple.t
 S32-str/split.t
+S32-str/sprintf-b.t
+S32-str/sprintf-c.t      # moar
+S32-str/sprintf-d.t
+S32-str/sprintf-e.t
+S32-str/sprintf-f.t
+S32-str/sprintf-o.t
+S32-str/sprintf-s.t
+S32-str/sprintf-u.t
+S32-str/sprintf-x.t
+S32-str/sprintf.t
 S32-str/starts-with.t
 S32-str/substr-eq.t
 S32-str/substr-rw.t
