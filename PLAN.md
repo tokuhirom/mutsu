@@ -979,7 +979,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 24: array-composer literals `[1, 2, 3]` (both directions) via a new
         `Circumfix::ArrayComposer` node — `Expr::BracketArray` ↔ `Circumfix::ArrayComposer(SemiList(…))`.
         `EVAL(Q{[1, 2, 3].sum}.AST)` → 6. Tests in `t/rakuast-eval-array-lit.t`.
-  - [ ] Slice 25+: positional subscripts (`@a[1]`), hash literals, bareword type terms, code-block
+  - [x] Slice 25: positional subscripts `@a[EXPR]` (`ApplyPostfix` + `Postcircumfix::ArrayIndex` →
+        `Expr::Index`); `EVAL(Q{my @a = 10, 20, 30; @a[1]}.AST)` → 20. Tests in
+        `t/rakuast-eval-subscript.t`.
+  - [ ] Slice 26+: hash literals, associative subscripts (`%h{…}`), bareword type terms, code-block
         (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5
         full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
