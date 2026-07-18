@@ -18,10 +18,19 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
         Constructor::FromIdentifier => "from-identifier",
     };
 
+    // A class-specific gist quirk: raku's `Assignment` list form omits even the
+    // empty parens (`RakuAST::Assignment.new`), unlike the generic `.new()`.
+    if node.fields.is_empty() && node.class.empty_parens_omitted() {
+        return format!("{name}.{ctor}");
+    }
+
+    // Inline when every field is a positional leaf or a colonpair adverb
+    // (`Assignment.new(:item)`); any named field, child node, or list forces
+    // the multi-line form.
     if node
         .fields
         .iter()
-        .all(|f| f.name.is_none() && is_leaf_field(f))
+        .all(|f| f.name.is_none() && is_inline_field(f))
     {
         let inner = node
             .fields
@@ -49,17 +58,19 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     s
 }
 
-fn is_leaf_field(f: &RakuAstField) -> bool {
+fn is_inline_field(f: &RakuAstField) -> bool {
     match &f.value {
         RakuAstFieldValue::List(_) => false,
         RakuAstFieldValue::Node(v) => !matches!(v.view(), ValueView::RakuAst(_)),
+        RakuAstFieldValue::Adverb(_) => true,
     }
 }
 
 fn render_inline_field(f: &RakuAstField) -> String {
     let val = match &f.value {
         RakuAstFieldValue::Node(v) => render_leaf(v),
-        // Unreachable while all fields are leaves, but keep it total.
+        RakuAstFieldValue::Adverb(name) => return format!(":{name}"),
+        // Unreachable while all fields are inline leaves, but keep it total.
         RakuAstFieldValue::List(_) => "()".to_string(),
     };
     match f.name {
@@ -83,6 +94,7 @@ fn render_field_value(fv: &RakuAstFieldValue, indent: usize) -> String {
             _ => render_leaf(v),
         },
         RakuAstFieldValue::List(items) => render_paren_list(items, indent),
+        RakuAstFieldValue::Adverb(name) => format!(":{name}"),
     }
 }
 

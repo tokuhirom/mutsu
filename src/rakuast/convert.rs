@@ -1,12 +1,13 @@
 //! Internal AST (`Stmt`/`Expr`) → RakuAST node tree (read direction, ADR-0011).
 //!
-//! Covered so far: the literal + say-call cluster (Phase 1) and variables,
-//! plain `my` declarations, and infix/prefix/postfix operators (Phase 2).
-//! Constructs outside that set produce an explicit `RuntimeError` (the
-//! documented coverage boundary) rather than a silently-wrong node.
+//! Covered so far: the literal + say-call cluster (Phase 1); and variables,
+//! plain `my` declarations, infix/prefix/postfix operators, `=` assignment, and
+//! method calls (Phase 2). Constructs outside that set produce an explicit
+//! `RuntimeError` (the documented coverage boundary) rather than a
+//! silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{Expr, Stmt};
+use crate::ast::{AssignOp, Expr, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -87,8 +88,42 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 has_initializer,
             )?)))
         }
+        Stmt::Assign { name, expr, op } => {
+            // Phase 2 slice 2 covers only plain `=`; `:=` (Bind) and match-assign
+            // map to distinct RakuAST nodes.
+            if !matches!(op, AssignOp::Assign) {
+                return Err(unsupported("non-`=` assignment"));
+            }
+            Ok(Some(statement_expression(assignment_infix(name, expr)?)))
+        }
         other => Err(unsupported(&format!("{other:?}"))),
     }
+}
+
+/// `$x = EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Assignment, right)`.
+/// The `Assignment` node carries `:item` for scalar (`$`) targets; the list form
+/// (`@`/`%`) has no adverb.
+fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let (sigil, desigil) = split_sigil(name);
+    let assignment = RakuAstNode {
+        class: RakuAstClass::Assignment,
+        fields: if sigil == "$" {
+            vec![RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Adverb("item"),
+            }]
+        } else {
+            vec![]
+        },
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), var_lexical(sigil, desigil)),
+            node_field(Some("infix"), assignment),
+            node_field(Some("right"), convert_expr(rhs)?),
+        ],
+    })
 }
 
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
@@ -169,8 +204,44 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("postfix"), postfix_node(op)),
             ],
         }),
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted,
+        } => {
+            // Phase 2 slice 2 covers only plain `.method(...)`; modifier forms
+            // (`.?`/`.+`/`.*`) and quoted names map to distinct RakuAST nodes.
+            if modifier.is_some() || *quoted {
+                return Err(unsupported("method call modifier / quoted name"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyPostfix,
+                fields: vec![
+                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("postfix"), call_method(name.as_str(), args)?),
+                ],
+            })
+        }
         other => Err(unsupported(&format!("{other:?}"))),
     }
+}
+
+/// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.
+fn call_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let name_node = RakuAstNode {
+        class: RakuAstClass::Name,
+        fields: vec![leaf_field(None, Value::str(name.to_string()))],
+    };
+    let mut fields = vec![node_field(Some("name"), name_node)];
+    if !args.is_empty() {
+        fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::CallMethod,
+        fields,
+    })
 }
 
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
