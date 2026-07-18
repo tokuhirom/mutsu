@@ -122,6 +122,13 @@ earlier ones.
   objects; route `~~ RakuAST::Node`, `.^name`, `.WHAT`, `.isa`, and attribute accessors
   (`$node.expression`, `$node.args`, `.statements`) to a central RakuAST metaobject over the
   node's `class`/`fields`. Accept `use experimental :rakuast` (no-op gate).
+  - **Slice 1 (accessors) — done.** `node_accessor(node, method)` (dispatched in the 0-arg method
+    path) returns a named field's value as a mutsu `Value` (child node, leaf `Int`/`Str`, or a
+    `List` for list-valued fields), and `.statements` returns a `StatementList`'s positional
+    children as a `List`. This makes the tree walkable (`.AST.statements[0].condition.^name`), not
+    just renderable. `.gist`/`.raku`/`.^name` are unaffected (not field names). Tests in
+    `t/rakuast-accessors.t`. Still pending: `~~ RakuAST::Node` smartmatch, positional leaf
+    accessors (`IntLiteral.value`), `use experimental :rakuast` gate.
 - **Phase 4 — Construction.** `.new` (and `.from-identifier`, …) on RakuAST type objects
   build `Value::RakuAst`, validating args against the per-class field schema.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the

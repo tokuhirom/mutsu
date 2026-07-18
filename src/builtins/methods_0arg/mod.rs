@@ -1000,6 +1000,15 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return Some(crate::rakuast::str_dot_ast(&s));
     };
 
+    // RakuAST node accessors (Phase 3): `.condition`, `.expression`, `.args`,
+    // `.statements`, etc. return the node's field values. `.gist`/`.raku`/`.^name`
+    // are handled elsewhere, so a non-accessor method name falls through.
+    if let ValueView::RakuAst(node) = target.view()
+        && let Some(v) = crate::rakuast::node_accessor(node, method)
+    {
+        return Some(Ok(v));
+    }
+
     // Instant.Instant returns self (identity coercion)
     if method == "Instant" {
         match target.view() {

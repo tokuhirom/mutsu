@@ -856,14 +856,15 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 28: labelled `repeat` loops (`Stmt::Label`-wrapped). Tests in
         `t/rakuast-labelled-repeat.t`.
   - [x] Slice 29: coercion types `Int()` (`Type::Coercion`). Tests in `t/rakuast-type-coercion.t`.
-  - [ ] Slice 30+ / pivot: the clean read-coverage tail is essentially exhausted. Remaining Phase 2
-        candidates carry divergences or complications (`.=` desugars to `$x=$x.m`; hyper `<<.m`/
-        `>>+<<`; signature return types). Next major options: **`.DEPARSE`** (a second renderer that
-        regenerates Raku source from a RakuAST node) or **Phase 3** (type-object registry: make
-        nodes `~~ RakuAST::Node`-matchable with `.^name`/accessors). Resolve the constant-folding
-        divergence (`1+2` → raku folds to `IntLiteral(3)`) whichever way is chosen.
-- [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
-      `use experimental :rakuast` gate.
+  - Phase 2 read-coverage is complete (slices 1–29); user chose the Phase 3 pivot (2026-07-18).
+    Remaining Phase 2 constructs (`.=`, hyper `<<.m`/`>>+<<`, signature return types) carry mutsu
+    desugar divergences and are deferred.
+- **Phase 3 (in progress)** — `RakuAST::*` type-object registry + introspection dispatch.
+  - [x] Slice 1: node accessors — `.condition`/`.expression`/`.args`/… return field values, and
+        `.statements` returns a `StatementList`'s children as a `List`, so the tree is walkable.
+        Tests in `t/rakuast-accessors.t`.
+  - [ ] Slice 2+: `~~ RakuAST::Node` smartmatch + `RakuAST::*` type objects; positional leaf
+        accessors (`IntLiteral.value`); `use experimental :rakuast` no-op gate; `.WHAT`/`.isa`.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
 - [ ] **Phase 5** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
