@@ -125,13 +125,16 @@ fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// blocks are the current coverage boundary.
 fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let iterable = lower_expr(named_child(node, "source")?)?;
-    let pointy = named_child(node, "body")?;
-    if pointy.class != RakuAstClass::PointyBlock {
-        return Err(unsupported(node));
-    }
-    let param = pointy_single_param(pointy)?;
-    // A PointyBlock, like a Block, wraps its statements in a `body` Blockoid.
-    let body = lower_block(pointy)?;
+    let block = named_child(node, "body")?;
+    // A pointy block (`-> $x { … }`) names the loop variable; a plain block
+    // (`for @x { … $_ }`) has no explicit parameter and the body sees `$_`.
+    let param = match block.class {
+        RakuAstClass::PointyBlock => pointy_single_param(block)?,
+        RakuAstClass::Block => None,
+        _ => return Err(unsupported(node)),
+    };
+    // Both a Block and a PointyBlock wrap their statements in a `body` Blockoid.
+    let body = lower_block(block)?;
     Ok(Stmt::For {
         iterable,
         param,

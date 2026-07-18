@@ -901,9 +901,12 @@ so it is tracked separately from the roast backlog.
         `Stmt::Given`/`When`/`Default`); a topicalizer runs and yields the matched clause's value.
         Also fixed a latent `eval_block_value` bug where a non-tail `given` leaked its block value onto
         the stack and shadowed the block's real tail value. Tests in `t/rakuast-eval-given.t`.
-  - [ ] Slice 9+: `for @x { … }` (`$_`), multi-param/typed/named/slurpy params, control flow
-        (`return`/`last`/`next`) — the inverse of the Phase-2 converter, grown cluster by cluster.
-        (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 9: EVAL of the bare `for @x { … }` form (a `Statement::For` with a plain `Block` body →
+        `Stmt::For` with no named parameter; the body sees `$_`); `EVAL(Q[my $t=0; for 1..4 { $t=$t+$_ };
+        $t].AST)` → 10. Tests in `t/rakuast-eval-bare-for.t`.
+  - [ ] Slice 10+: control flow (`return`/`last`/`next`), multi-param/typed/named/slurpy params — the
+        inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
+        multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
