@@ -97,6 +97,8 @@ pub enum RakuAstClass {
     // Phase 2 slice 16: role declarations.
     Role,
     RoleBody,
+    // Phase 2 slice 17: loop labels.
+    Label,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +153,7 @@ impl RakuAstClass {
             Method => "RakuAST::Method",
             Role => "RakuAST::Role",
             RoleBody => "RakuAST::RoleBody",
+            Label => "RakuAST::Label",
         }
     }
 

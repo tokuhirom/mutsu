@@ -150,15 +150,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         }
         Stmt::While { cond, body, label } => {
             // mutsu desugars `until X` to `while !X` (same as unless/if above).
-            if label.is_some() {
-                return Err(unsupported("loop label"));
-            }
+            let mut fields = label_fields(label);
+            fields.push(node_field(Some("condition"), convert_expr(cond)?));
+            fields.push(node_field(Some("body"), block_node(body)?));
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementLoopWhile,
-                fields: vec![
-                    node_field(Some("condition"), convert_expr(cond)?),
-                    node_field(Some("body"), block_node(body)?),
-                ],
+                fields,
             }))
         }
         Stmt::Loop {
@@ -169,9 +166,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             repeat,
             label,
         } => {
-            if label.is_some() {
-                return Err(unsupported("labelled loop"));
-            }
             if *repeat {
                 // `repeat { } while X`. mutsu desugars `repeat { } until X` to a
                 // negated `while` condition (same collapse as while/until), so
@@ -179,24 +173,26 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 let cond = cond
                     .as_ref()
                     .ok_or_else(|| unsupported("repeat loop without condition"))?;
+                let mut fields = label_fields(label);
+                fields.push(node_field(Some("body"), block_node(body)?));
+                fields.push(node_field(Some("condition"), convert_expr(cond)?));
                 return Ok(Some(RakuAstNode {
                     class: RakuAstClass::StatementLoopRepeatWhile,
-                    fields: vec![
-                        node_field(Some("body"), block_node(body)?),
-                        node_field(Some("condition"), convert_expr(cond)?),
-                    ],
+                    fields,
                 }));
             }
             if init.is_none() && cond.is_none() && step.is_none() {
                 // Bare `loop { }`.
+                let mut fields = label_fields(label);
+                fields.push(node_field(Some("body"), block_node(body)?));
                 return Ok(Some(RakuAstNode {
                     class: RakuAstClass::StatementLoop,
-                    fields: vec![node_field(Some("body"), block_node(body)?)],
+                    fields,
                 }));
             }
             // C-style `loop (init; cond; step) { }`. Each clause is optional and
             // present only when written.
-            let mut fields = Vec::new();
+            let mut fields = label_fields(label);
             if let Some(init) = init.as_deref() {
                 fields.push(node_field(Some("setup"), loop_setup_node(init)?));
             }
@@ -230,12 +226,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // The explicit param names live in `param_def` / `params_def`; the
             // sigil-stripped `param` / `params` string lists are unused here.
             let _ = (param, params);
-            if label.is_some()
-                || *rw_block
-                || *explicit_zero_params
-                || !matches!(mode, ForMode::Normal)
-            {
-                return Err(unsupported("for loop with mode / rw / label"));
+            if *rw_block || *explicit_zero_params || !matches!(mode, ForMode::Normal) {
+                return Err(unsupported("for loop with mode / rw"));
             }
             // A single explicit param lives in `param_def`, multiple in
             // `params_def`. With none, the body is an implicit-topic Block; with
@@ -250,13 +242,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             } else {
                 pointy_block(explicit_defs, body)?
             };
+            // Field order matches raku: labels, mode, source, body.
+            let mut fields = label_fields(label);
+            fields.push(leaf_field(Some("mode"), Value::str("serial".to_string())));
+            fields.push(node_field(Some("source"), convert_expr(iterable)?));
+            fields.push(node_field(Some("body"), body_node));
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementFor,
-                fields: vec![
-                    leaf_field(Some("mode"), Value::str("serial".to_string())),
-                    node_field(Some("source"), convert_expr(iterable)?),
-                    node_field(Some("body"), body_node),
-                ],
+                fields,
             }))
         }
         Stmt::SubDecl {
@@ -799,6 +792,24 @@ fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],
     })
+}
+
+/// The leading `labels => (Label(name => "..."),)` field for a labelled loop,
+/// or an empty vec when unlabelled. raku always renders labels first.
+fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
+    match label {
+        None => Vec::new(),
+        Some(name) => {
+            let label_node = RakuAstNode {
+                class: RakuAstClass::Label,
+                fields: vec![leaf_field(Some("name"), Value::str(name.clone()))],
+            };
+            vec![RakuAstField {
+                name: Some("labels"),
+                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(label_node))]),
+            }]
+        }
+    }
 }
 
 /// A C-style loop `setup` clause renders its node unwrapped — raku shows the
