@@ -645,16 +645,19 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             modifier,
             quoted,
         } => {
-            // Phase 2 slice 2 covers only plain `.method(...)`; modifier forms
-            // (`.?`/`.+`/`.*`) and quoted names map to distinct RakuAST nodes.
-            if modifier.is_some() || *quoted {
-                return Err(unsupported("method call modifier / quoted name"));
+            // Plain `.method(...)` and modifier forms (`.?`/`.+`/`.*`, slice 15).
+            // A quoted method name (`."$name"()`) maps to a distinct node.
+            if *quoted {
+                return Err(unsupported("quoted method name"));
             }
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
                     node_field(Some("operand"), convert_expr(target)?),
-                    node_field(Some("postfix"), call_method(name.as_str(), args)?),
+                    node_field(
+                        Some("postfix"),
+                        call_method(name.as_str(), args, *modifier)?,
+                    ),
                 ],
             })
         }
@@ -980,14 +983,23 @@ fn simple_parameter(
 }
 
 /// `.method` / `.method(args)` -> `Call::Method(name => Name, [args => ArgList])`.
-fn call_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+fn call_method(
+    name: &str,
+    args: &[Expr],
+    modifier: Option<char>,
+) -> Result<RakuAstNode, RuntimeError> {
     let name_node = RakuAstNode {
         class: RakuAstClass::Name,
         fields: vec![leaf_field(None, Value::str(name.to_string()))],
     };
+    // Field order matches raku: name, args, dispatch.
     let mut fields = vec![node_field(Some("name"), name_node)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    if let Some(m) = modifier {
+        // `.?` / `.+` / `.*` become a `dispatch` string.
+        fields.push(leaf_field(Some("dispatch"), Value::str(format!(".{m}"))));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::CallMethod,
