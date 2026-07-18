@@ -261,6 +261,36 @@ pub fn node_gist(node: &RakuAstNode) -> String {
     render::render_node(node, 0)
 }
 
+/// Construction (Phase 4): build a `Value::RakuAst` from a `RakuAST::*.new(...)`
+/// / `.from-identifier(...)` call. Returns `Ok(None)` when the class/method is
+/// not a supported constructor yet (so normal dispatch handles it). Slice 1
+/// covers the single-value literals.
+pub fn construct(
+    class_name: &str,
+    method: &str,
+    args: &[Value],
+) -> Result<Option<Value>, RuntimeError> {
+    let class = match (class_name, method) {
+        ("RakuAST::IntLiteral", "new") => RakuAstClass::IntLiteral,
+        ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
+        ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
+        _ => return Ok(None),
+    };
+    if args.len() != 1 {
+        return Err(RuntimeError::new(format!(
+            "{class_name}.new expects a single argument"
+        )));
+    }
+    let node = RakuAstNode {
+        class,
+        fields: vec![RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(args[0].clone()),
+        }],
+    };
+    Ok(Some(Value::rakuast(Box::new(node))))
+}
+
 /// A named-field / positional accessor on a RakuAST node (Phase 3). Returns the
 /// field value as a mutsu `Value`, or `None` if `method` is not an accessor for
 /// this node (so ordinary methods like `.gist` fall through). `.statements`
