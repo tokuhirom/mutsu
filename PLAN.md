@@ -888,9 +888,13 @@ so it is tracked separately from the roast backlog.
         `Statement::Loop::While` → `Stmt::While`, `ApplyInfix`-with-`Assignment` → `Stmt::Assign`);
         `EVAL(Q[my $n=5; my $f=1; while $n>1 { $f=$f*$n; $n=$n-1 }; $f].AST)` → 120. `elsif` chains stay
         the boundary. Tests in `t/rakuast-eval-control.t`.
-  - [ ] Slice 6+: `for`/`given`, sub declarations, `elsif` chains — the inverse of the Phase-2
-        converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort
-        mirroring Phase 2.)
+  - [x] Slice 6: EVAL of `for` (single-param pointy block → `Stmt::For`), `elsif` chains (each
+        `Statement::Elsif` folds into a nested `Stmt::If`), and comma lists (`ApplyListInfix` `,` →
+        `Expr::ArrayLiteral`); `EVAL(Q[my $p=1; for (2,3,4) -> $n { $p=$p*$n }; $p].AST)` → 24. Tests
+        in `t/rakuast-eval-for-elsif.t`.
+  - [ ] Slice 7+: sub declarations, `given`/`when`, `for @x { … }` (`$_`), multi-param blocks — the
+        inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
+        multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

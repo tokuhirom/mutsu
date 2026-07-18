@@ -210,6 +210,12 @@ earlier ones.
     helper). `EVAL(Q[my $n = 5; my $f = 1; while $n > 1 { $f = $f * $n; $n = $n - 1 }; $f].AST)` → `120`.
     `elsif` chains stay the boundary. Tests in `t/rakuast-eval-control.t`. Next: `for`/`given`, sub
     declarations.
+  - **Slice 6 (`for` + `elsif` chains + comma lists) — done.** `Statement::For` (single-parameter
+    pointy block) lowers to `Stmt::For`; each `Statement::Elsif` in an `if`'s `elsifs` list folds into
+    a nested `Stmt::If` in the enclosing `else`; and an `ApplyListInfix` with a `,` infix lowers to
+    `Expr::ArrayLiteral`. `EVAL(Q[my $p = 1; for (2, 3, 4) -> $n { $p = $p * $n }; $p].AST)` → `24`.
+    The bare `for @x { … }` (`$_`) form, multi-parameter blocks, and non-comma list infixes (`Z`/`X`)
+    stay the boundary. Tests in `t/rakuast-eval-for-elsif.t`. Next: sub declarations, `given`/`when`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
