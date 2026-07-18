@@ -157,6 +157,17 @@ earlier ones.
   operands. Leaning (a) for fidelity to *mutsu's* AST, revisited with data.
 - **`.AST` on `Code`/blocks (Phase 2+).** Phase 1 is `Str`-only; `.AST` on a `Block`/`Routine`
   needs the internal AST retained on the code object.
+- **`unless`/`until` fold to `if !`/`while !` (Phase 2 slice 4).** mutsu's parser desugars
+  `unless X { }` to `if !X { }` and `until X { }` to `while !X { }` at parse time — there is no
+  distinct `Unless`/`Until` node in the internal AST. So `unless X.AST` renders
+  `RakuAST::Statement::If` with a negated `ApplyPrefix(!)` condition (and `until` renders
+  `Statement::Loop::While` likewise), whereas raku keeps `RakuAST::Statement::Unless` /
+  `Loop::Until` with the bare condition. This is faithful to *mutsu's* AST (the desugaring is
+  lossless-but-collapsing: `if !X` and `unless X` are the same node), so reconstituting the
+  surface keyword would be a guess — deliberately not done. Narrows only if the parser grows
+  distinct `unless`/`until` statements. `elsif` chains, C-style/`repeat`/labelled loops, topic
+  binding (`if EXPR -> $v`), and topic-taking `with`/`without`/`for` are the coverage boundary
+  (explicit `RuntimeError`), deferred to a later slice.
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`

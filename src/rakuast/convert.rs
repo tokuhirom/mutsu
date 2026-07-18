@@ -90,6 +90,64 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         }
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
         Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            binding_var,
+        } => {
+            // mutsu desugars `unless X` to `if !X`, so an `unless` renders as a
+            // `Statement::If` whose condition is `ApplyPrefix(!)` — a documented
+            // divergence (raku keeps `Statement::Unless` with the bare condition).
+            if binding_var.is_some() {
+                return Err(unsupported("`if EXPR -> $var` topic binding"));
+            }
+            if is_elsif_chain(else_branch) {
+                return Err(unsupported("`elsif` chain"));
+            }
+            let mut fields = vec![
+                node_field(Some("condition"), convert_expr(cond)?),
+                node_field(Some("then"), block_node(then_branch)?),
+            ];
+            if else_branch.iter().any(|s| !matches!(s, Stmt::SetLine(_))) {
+                fields.push(node_field(Some("else"), block_node(else_branch)?));
+            }
+            Ok(Some(RakuAstNode {
+                class: RakuAstClass::StatementIf,
+                fields,
+            }))
+        }
+        Stmt::While { cond, body, label } => {
+            // mutsu desugars `until X` to `while !X` (same as unless/if above).
+            if label.is_some() {
+                return Err(unsupported("loop label"));
+            }
+            Ok(Some(RakuAstNode {
+                class: RakuAstClass::StatementLoopWhile,
+                fields: vec![
+                    node_field(Some("condition"), convert_expr(cond)?),
+                    node_field(Some("body"), block_node(body)?),
+                ],
+            }))
+        }
+        Stmt::Loop {
+            init,
+            cond,
+            step,
+            body,
+            repeat,
+            label,
+        } => {
+            // Only the bare `loop { }` form; the C-style `loop (init; cond; step)`,
+            // `repeat` loops, and labelled loops carry extra RakuAST shape.
+            if init.is_some() || cond.is_some() || step.is_some() || *repeat || label.is_some() {
+                return Err(unsupported("C-style / repeat / labelled loop"));
+            }
+            Ok(Some(RakuAstNode {
+                class: RakuAstClass::StatementLoop,
+                fields: vec![node_field(Some("body"), block_node(body)?)],
+            }))
+        }
         Stmt::Assign { name, expr, op } => {
             // Phase 2 slice 2 covers only plain `=`; `:=` (Bind) and match-assign
             // map to distinct RakuAST nodes.
@@ -265,6 +323,17 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         other => Err(unsupported(&format!("{other:?}"))),
     }
+}
+
+/// True when an `if`'s else-branch is a single nested `if` — i.e. an `elsif`
+/// chain (mutsu nests `elsif` into `else_branch`). raku models these as a flat
+/// `elsifs` list, deferred to a later slice, so we treat it as the boundary
+/// rather than mis-render it as a plain `else => Block(If)`.
+fn is_elsif_chain(else_branch: &[Stmt]) -> bool {
+    let mut real = else_branch
+        .iter()
+        .filter(|s| !matches!(s, Stmt::SetLine(_)));
+    matches!(real.next(), Some(Stmt::If { .. })) && real.next().is_none()
 }
 
 /// A `{ ... }` block body wraps its `StatementList` in a `Blockoid`.

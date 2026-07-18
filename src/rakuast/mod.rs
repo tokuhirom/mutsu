@@ -74,6 +74,10 @@ pub enum RakuAstClass {
     Signature,
     Parameter,
     ParameterTargetVar,
+    // Phase 2 slice 4: conditionals and loops.
+    StatementIf,
+    StatementLoopWhile,
+    StatementLoop,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +118,9 @@ impl RakuAstClass {
             Signature => "RakuAST::Signature",
             Parameter => "RakuAST::Parameter",
             ParameterTargetVar => "RakuAST::ParameterTarget::Var",
+            StatementIf => "RakuAST::Statement::If",
+            StatementLoopWhile => "RakuAST::Statement::Loop::While",
+            StatementLoop => "RakuAST::Statement::Loop",
         }
     }
 
