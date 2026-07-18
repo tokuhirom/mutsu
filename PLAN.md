@@ -847,10 +847,11 @@ so it is tracked separately from the roast backlog.
         `t/rakuast-quoted-method.t`.
   - [x] Slice 24: list-associative infixes `andthen`/`orelse`/`notandthen` (flat `ApplyListInfix`).
         Tests in `t/rakuast-list-infix.t`.
-  - [ ] Slice 25+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
-        `.=` method-assign, coercion types (`Str()`), reduction `[+]`, hyper `>>.method`; then
-        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
-        mutsu does not).
+  - [x] Slice 25: reduction metaoperator `[+]`/`[\+]` (`Term::Reduce`). Tests in
+        `t/rakuast-reduction.t`.
+  - [ ] Slice 26+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
+        `.=` method-assign, coercion types (`Str()`), hyper `>>.method`; then `.DEPARSE`; resolve
+        the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
