@@ -195,6 +195,12 @@ earlier ones.
   return types, operator subs (associativity/precedence), alternate signatures, and anonymous
   `sub { }` (deferred). Parameters reuse the slice-3 plain-positional boundary (typed/named/slurpy/
   `where`/… still error).
+- **Anonymous parameter-less `sub { }` (Phase 2 slice 11).** `sub { ... }` with no signature
+  (`Expr::AnonSub { is_block: false }`) → `RakuAST::Sub(body => Blockoid)` with no `name` field.
+  Only the no-parameter form is handled: `sub ($x) { }` parses to `Expr::AnonSubParams`, which mutsu
+  cannot distinguish from a multi-param pointy block (`-> $a, $b`), so a parameterised anonymous sub
+  still renders as a `PointyBlock` — a documented divergence, unfixable without a distinguishing
+  flag in the internal AST. `is rw` blocks remain the boundary.
 - **Comma lists and `:=` binding (Phase 2 slice 9).** A bare comma list `1, 2, 3`
   (`Expr::ArrayLiteral`) → `ApplyListInfix(infix => Infix(","), operands => (...))`. A `:=` bind
   (`Stmt::Assign { op: Bind }`) → `ApplyInfix(left, infix => Infix(":="), right)` — a plain `Infix`,
