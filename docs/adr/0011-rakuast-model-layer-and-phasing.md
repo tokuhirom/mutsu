@@ -222,6 +222,14 @@ earlier ones.
     { $n * fact($n - 1) } }; fact(5)].AST)` → `120`. Typed/named/slurpy/defaulted parameters and
     anonymous subs in expression position stay the boundary. Tests in `t/rakuast-eval-sub.t`. Next:
     `given`/`when`, the bare `for @x { … }` (`$_`) form.
+  - **Slice 8 (`given`/`when`/`default`) — done.** `Statement::Given`/`When`/`Default` lower to
+    `Stmt::Given`/`When`/`Default`, so a topicalizer block runs and yields the matched clause's value —
+    `EVAL(Q[my $x = 2; given $x { when 1 { 10 }; when 2 { 20 }; default { 30 } }].AST)` → `20`. This also
+    fixed a latent `eval_block_value` bug: `given`/`when`/`default` leave their block value on the value
+    stack even in sink position (the tail-statement arms rely on that leaked value being the block
+    result), so a *non-last* one shadowed the block's real tail value; `compile_unit` now pops it. Tests
+    in `t/rakuast-eval-given.t`. Next: the bare `for @x { … }` (`$_`) form, control flow (`return`/
+    `last`/`next`).
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

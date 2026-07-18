@@ -896,9 +896,13 @@ so it is tracked separately from the roast backlog.
         `Stmt::SubDecl`) and named calls (`Call::Name` → `Expr::Call`); a defined routine can be
         invoked, including recursively — `EVAL(Q[sub fact($n) { … fact($n-1) }; fact(5)].AST)` → 120.
         Tests in `t/rakuast-eval-sub.t`.
-  - [ ] Slice 8+: `given`/`when`, `for @x { … }` (`$_`), multi-param/typed/named/slurpy params — the
-        inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
-        multi-slice effort mirroring Phase 2.)
+  - [x] Slice 8: EVAL of `given`/`when`/`default` (`Statement::Given`/`When`/`Default` →
+        `Stmt::Given`/`When`/`Default`); a topicalizer runs and yields the matched clause's value.
+        Also fixed a latent `eval_block_value` bug where a non-tail `given` leaked its block value onto
+        the stack and shadowed the block's real tail value. Tests in `t/rakuast-eval-given.t`.
+  - [ ] Slice 9+: `for @x { … }` (`$_`), multi-param/typed/named/slurpy params, control flow
+        (`return`/`last`/`next`) — the inverse of the Phase-2 converter, grown cluster by cluster.
+        (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

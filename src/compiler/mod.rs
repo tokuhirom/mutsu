@@ -1483,6 +1483,19 @@ impl Compiler {
                     }
                 }
                 self.compile_stmt(stmt);
+                // `given`/`when`/`default` leave their block value on the stack
+                // even in statement (sink) position — the tail-statement arms
+                // above rely on that leaked value being the block result. A
+                // *non-last* one must have it popped, or it would shadow the
+                // block's real tail value (the stack top wins over the topic).
+                if !is_last
+                    && matches!(
+                        stmt,
+                        Stmt::Given { .. } | Stmt::When { .. } | Stmt::Default(_)
+                    )
+                {
+                    self.code.emit(OpCode::Pop);
+                }
             }
         }
         self.code.compute_needs_env_sync();
