@@ -168,9 +168,17 @@ earlier ones.
   distinct `unless`/`until` statements. `elsif` chains are handled (slice 5): mutsu nests each
   `elsif` as a single `if` inside the else-branch, and the converter flattens that chain into
   raku's flat `elsifs` list (`Statement::Elsif`), with any trailing block as the final `else`.
-  C-style/`repeat`/labelled loops, topic binding (`if EXPR -> $v` / `elsif EXPR -> $v`), and
-  topic-taking `with`/`without`/`for` remain the coverage boundary (explicit `RuntimeError`),
-  deferred to a later slice.
+  C-style/`repeat`/labelled loops and topic binding (`if EXPR -> $v` / `elsif EXPR -> $v`) remain
+  the coverage boundary (explicit `RuntimeError`), deferred to a later slice. Implicit-topic `for`
+  is handled (slice 6): `for SRC { ... }` (no explicit signature) → `Statement::For(mode =>
+  "serial", source, body)` where the body is a topic-taking `Block` marked `implicit-topic => True`
+  / `required-topic => 1`. `with`/`without` are NOT mappable — mutsu desugars them at parse time
+  into a temp-var + `.defined` check + `if` (`__with_tmp_0`), so there is no `Statement::With` node
+  to recover (same collapse as `unless`/`until`); deferred. Explicit-signature `for` (`for @a ->
+  $x`), hyper/race/lazy modes, `<->` rw blocks, and labels also remain the boundary. Note the
+  topic-call form `.method` (i.e. `$_.method` written bare) is desugared by mutsu to `$_.method`
+  (`ApplyPostfix` on `$_`), where raku keeps a distinct `Term::TopicCall` — a pre-existing
+  method-call representation divergence, unrelated to `for`.
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`
