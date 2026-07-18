@@ -212,7 +212,7 @@ Per-type method documentation — consult when implementing methods on specific 
 
 - The ultimate goal is to pass ALL roast tests.
 - **Task selection is PLAN.md → BLOCKERS.md driven, not random** — see the "Roast test prioritization" section below for the full procedure.
-- `roast/` is read-only; never modify files under `roast/`.
+- `roast/` is read-only; never modify files under `roast/`. It is a vendored copy of upstream Raku/roast, pinned in `vendor.lock`; update it only via `scripts/update-vendor.sh` (see `docs/vendoring.md`). `raku-doc/` and `old-design-docs/` are vendored the same way.
 - `TODO_roast/BLOCKERS.md` is the single ledger of non-whitelisted tests. When a test reaches the whitelist, remove its row (details move to `news/`).
 - When a test file has known partial failures, describe the blockers in its BLOCKERS.md row (or the "Investigation notes" section for longer findings).
 - Do not add a roast test to the whitelist unless `prove -e 'target/debug/mutsu' <file>` exits cleanly.

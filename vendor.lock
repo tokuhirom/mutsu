@@ -1,0 +1,23 @@
+# Vendored upstream sources — pinned commits.
+#
+# The directories below are copied ("vendored") verbatim from upstream Raku
+# repositories. They are vendored rather than added as git submodules ON
+# PURPOSE: with a submodule checked out under this repo it is far too easy to
+# accidentally open a pull request or file an issue against the upstream Raku
+# repositories from this workspace. A plain copy has no upstream remote, so
+# that mistake cannot happen. (Project policy forbids PRs/Issues against Raku
+# org repos from this workspace — see CLAUDE.md.)
+#
+# This file records exactly which upstream commit each vendored tree was
+# imported from, so the version is auditable and reproducible.
+#
+# Do NOT edit the data rows by hand. To update a tree and this lock together:
+#   scripts/update-vendor.sh <name> [ref]     # ref defaults to <branch> HEAD
+# To see how far behind upstream each tree is (no changes made):
+#   scripts/update-vendor.sh --check
+#
+# Format: tab-separated. Columns:
+#   name              dir               url                                          branch   commit                                     date
+roast	roast	https://github.com/Raku/roast.git	master	7f2d7508ad5e3144a23418f046f8c3e7691bd861	2025-12-20
+raku-doc	raku-doc	https://github.com/Raku/doc.git	main	468a767fef6e83ac34e8f739fb24a616f1c33d4e	2026-07-07
+old-design-docs	old-design-docs	https://github.com/Raku/old-design-docs.git	master	1c4e6039a116421c7dbd36c56c34d3f774dcaf8f	2025-06-08

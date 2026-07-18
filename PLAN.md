@@ -337,6 +337,44 @@ The only real feature gaps left in the S\* series (they do not directly lead to 
       detection of class redeclaration / X::Redeclaration::Outer (compile-time scope analysis). All
       non-trivial, and none whitelists a roast file on its own.
 
+### Gaps surfaced by the `raku-doc` update to `468a767f` (2026-07-07)
+
+Audited the whole `raku-doc` diff `6c879bc7..468a767f` (see `vendor.lock` / `docs/vendoring.md`)
+for newly-documented language features. Everything documented in the update is **already
+implemented** — parameterised regexes (`my regex r ($x) {…}` called as `<r: arg>` and `<r(arg)>`),
+and `Instant.from-posix` / `.to-posix` / `.Date` / `.DateTime` all match raku — **except one**:
+
+- [ ] `exits-ok($code, $exit, $reason)` — new `Test` routine (`Type/Test.rakudoc`): passes if the
+      code exits with the given exit code. Implement alongside the sibling `dies-ok` / `lives-ok`
+      Test routines (Test-module handler, not a core builtin — it is not in `perl-func.rakudoc`).
+      Note: no roast file uses it (not in upstream roast HEAD either), so this is Test-completeness /
+      batteries polish, **not** a roast-whitelisting lever.
+
+### Prerequisites for updating vendored `roast` `7f2d7508` → HEAD `b2cbe8a4` (2026-06-12)
+
+The vendored roast is pinned at `7f2d7508` (2025-12-20); upstream HEAD is `b2cbe8a4`
+(34 commits ahead). The update touches 33 files (1 new: `S02-types/quanthash.t`); **28 are
+currently whitelisted**. Ran mutsu against the new versions of those 28: **15 still pass**
+(free to re-vendor), **13 regress** because upstream added subtests for features mutsu lacks.
+**Decision (2026-07-18): implement the features first (no whitelist regression), then bump
+roast.** Verify each fix against the new test file from an upstream clone before landing;
+the final roast-bump PR then goes green with no whitelist edits. Order by leverage:
+
+- [ ] **6.e sprintf flag combinations** (regresses `sprintf-b/e/f/o/s/x.t`, 6 files). Upstream
+      added exhaustive flag-combo rows: `#` alternate form (`0x`/`0o`/`0b` prefixes), space
+      flag, `%#.0e`/`%#.0f` (always emit the decimal point), `%08.2s` (width+precision on a
+      string). mutsu's sprintf formatter mishandles these combos.
+- [ ] **Immutable QuantHash RO errors** (regresses `S02-types/bag.t`, `mix.t`,
+      `S32-basics/xxKEY.t`, 3 files). `:delete` / `DELETE-KEY` / `ASSIGN-KEY` on an immutable
+      Bag/Mix must throw `X::Assignment::RO`; mutsu currently allows them. (Also unblocks the
+      new `S02-types/quanthash.t` as a fresh whitelist candidate.)
+- [ ] **List-of-overlapping-needles `index`** (regresses `S32-str/index.t`, 1 file; rakudo
+      issue #6104). `index("abc", <ab bc>)` must return the earliest match across all needles.
+- [ ] **`.assuming` priming signature gist** (regresses `S06-currying/misc/named/slurpy.t`,
+      3 files; upstream un-TODO'd these for RakuAST). A primed sub's `.signature.gist` must
+      render the bound named params as defaults, e.g. `:(:$a = Bool::True)`. Hardest of the
+      four (signature introspection of primed sub).
+
 ---
 
 ## 5. perf — execution speed (measurement-driven; MUTSU_VM_STATS / timed roast)

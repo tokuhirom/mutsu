@@ -8,16 +8,18 @@ See L<creating operators|/language/optut> on how to define new operators.
 
 =head1 Operator precedence
 
-The precedence and associativity of Raku operators determine the order of
-evaluation of operands in expressions.
+The precedence and associativity of Raku operators determine how an expression
+is going to be parsed, more specifically, what operands will be passed to which
+operand during the evaluation of the expression. (Parentheses can also be used
+to indicate if a subexpression should be treated as a single operand.)
 
-Where two operators with a different precedence act on the same operand, the
-subexpression involving the higher-precedence operator is evaluated first. For
-instance, in the expression C<1 + 2 * 3>, both the binary C<+> operator for
-addition and the binary C<*> operator for multiplication act on the operand
-C<2>. Because the C<*> operator has a higher precedence than the C<+> operator,
-the subexpression C<2 * 3> will be evaluated first. Consequently, the resulting
-value of the overall expression is C<7> and not C<9>.
+When an operand appears in a position where it could belong to two operators,
+e.g. C<2> in C<1 + 2 * 3>, the operand belongs to the operator with higher
+precedence - in this case, the C<*> operator. This means that the operands of
+C<+> are C<1> and C<2 * 3> so C<1 + 2 * 3> is equivalent to C<1 + (2 * 3)>, and
+the sum will evaluate to C<7>. On the other hand, C<1 ** 2 * 3> will be equivalent
+to C<(1 ** 2) * 3> and evaluate to C<3> because the L<power operator C<**>|#infix_**>
+has higher precedence than C<*>.
 
 Instead of "precedence" one can also speak of "binding": operators with a higher
 precedence are then said to have a tighter binding to the operand(s) in
@@ -77,12 +79,12 @@ operator|#infix_=_(list_assignment)>.
 
 =head1 Operator associativity
 
-Where two operators with a same precedence level act on an operand, the
-associativity of the operators determines which subexpression/operator is
-evaluated first. For instance, in the expression C<100 / 2 * 10>, the binary
-division operator C</> and the binary multiplication operator C<*> have equal
-precedence, so that the order of their evaluation is determined by their
-associativity. As the two operators are I<left associative>, operations are
+Associativity can be seen as a tiebreaker: where two operators with the same
+precedence level act on an operand, the associativity of the operators determines
+which operator the given operand belongs to. For instance, in the expression
+C<100 / 2 * 10>, the binary division operator C</> and the binary multiplication
+operator C<*> have equal precedence, so their associativity decides which operator
+C<2> belongs to. As the two operators are I<left associative>, operations are
 grouped from the left like this: C<(100 / 2) * 10>. The expression thus
 evaluates to C<500>. Conversely, if C</> and C<*> had both been I<right
 associative>, the expression would have been grouped as C<100 / (2 * 10)> and
@@ -105,12 +107,15 @@ associativity (using a fictitious infix C<§> operator):
 =end table
 
 Although this table only depicts infix operators, associativity also determines
-the order of evaluation for expressions with other types of operators.  For
-example, if you created an infix C<§> operator with the precedence
-C<equiv(&prefix:<~>)>, then the order of evaluation of C<~$a § $b> would depend
-on what associativity you assigned to C<§>.  If C<§> is left associative, then
-C<~$a> will be evaluated first and then passed to C<§>; if C<§> is right
-associative, then C<$a § $b> will be evaluated first and passed to C<~>.
+the structure of expressions when other types of operators are used. (Note: currently
+only the associativity of infix operators can be I<set>.)
+For example, if you created an infix C<§> operator with the precedence
+C<equiv(&prefix:<~>)>, then in the expression C<~$a § $b>, C<$a>
+could be the left operand of C<§> or the (only) operand of C<~>, depending on the
+associativity you assigned to C<§>.  If C<§> is left associative, then C<$a> will be
+the operand of C<~> and C<~$a> will be the left operand of C<§>, making the expression
+equivalent to C<(~$a) § $b>. If C<§> is right associative, then C<$a> will be the
+left operand of C<§> and the expression will be equivalent to C<~($a § $b)>.
 
 When two operators have the same precedence but I<different> associativity,
 determining the grouping of operands is more complicated.  However, for
@@ -124,7 +129,7 @@ have the same associativity.
 
    Associativity works slightly differently for unary operators (that is, operators
    that take only one operand such as prefix and postfix operators).  The following
-   table shows the evaluation order for a fictitious C<¶> operator given left,
+   table shows the grouping for a fictitious C<¶> operator given left,
    right, or non associativity.
 
    =begin table
@@ -432,8 +437,9 @@ There are shortcuts for C<!==> and C<!eq>, namely C<!=> and C<ne>.
     my $today = Date.today;
     say so $release !before $today;     # OUTPUT: «False␤»
 
-=head2 X<Reversed operators|Metaoperators,R;Metaoperators,reverse metaoperator>
+=head2 X<Reversed operators|Metaoperators,R>
 
+X<|Metaoperators,reverse metaoperator>
 Any infix operator may be called with its two arguments reversed by
 prefixing with C<R>. Associativity of operands is reversed as well.
 
@@ -441,8 +447,13 @@ prefixing with C<R>. Associativity of operands is reversed as well.
     say [R/] 2, 4, 16;         # OUTPUT: «2␤»
     say [RZ~] <1 2 3>,<4 5 6>  # OUTPUT: «(41 52 63)␤»
 
-=head2 X<<<Hyper operators|Operators,<<;Operators,>>;Operators,«;Operators,»;Operators,»=«;Operators,«=»>>>
+=head2 X«Hyper operators|Operators,<<»
 
+X«|Operators,>>»
+X<|Operators,«>
+X<|Operators,»>
+X<|Operators,»=«>
+X<|Operators,«=»>
 Hyper operators include C<«> and C<»>, with their ASCII variants C«<<» and
 C«>>». They apply a given operator enclosed (or preceded or followed, in the
 case of unary operators) by C<«> and/or C<»> to one or two lists, returning the
@@ -621,8 +632,9 @@ default:
 
 See L<infix:<Z>|#infix_Z> for more about this usage.
 
-=head2 X<Sequential operators|Metaoperators,S;Metaoperators,sequential metaoperator>
+=head2 X<Sequential operators|Metaoperators,S>
 
+X<|Metaoperators,sequential metaoperator>
 The sequential metaoperator, C<S>, will suppress any concurrency or reordering
 done by the optimizer. Most simple infix operators are supported.
 
@@ -642,7 +654,8 @@ compiler understand you.
 
 =head2 term C«< >»
 
-The X<quote-words|Terms,qw;Terms,quote-words> construct breaks up the contents on whitespace
+X<|Terms,quote-words>
+The X<quote-words|Terms,qw> construct breaks up the contents on whitespace
 and returns a L<C<List>|/type/List> of the words. If a word looks like a number
 literal or a L<C<Pair>|/type/Pair> literal, it's converted to the appropriate number.
 
@@ -666,7 +679,9 @@ being interpreted as a named argument.
 
 =head2 term C«{ }»
 
-L<C<Block>|/type/Block> or L<C<Hash>|/type/Hash> constructor. X<|Terms,block constructor;Terms,hash constructor>
+X<|Terms,block constructor>
+X<|Terms,hash constructor>
+L<C<Block>|/type/Block> or L<C<Hash>|/type/Hash> constructor.
 
 If the content is empty, or contains a single list that starts with a L<C<Pair>|/type/Pair>
 literal or C<%>-sigiled variable, and the L«C<$_> variable|/syntax/$_» or
@@ -707,7 +722,8 @@ Terms have their L<own extended documentation|/language/terms>.
                             :$k, :$v, :$kv, :$p, :$exists, :$delete)
 
 Universal interface for positional access to zero or more elements of
-@container, a.k.a. "X<array indexing operator|Postcircumfix operators,array indexing operator;Postcircumfix operators,array subscript operator>".
+@container, a.k.a. "X<array indexing operator|Postcircumfix operators,array indexing operator>".
+X<|Postcircumfix operators,array subscript operator>
 
     my @alphabet = 'a' .. 'z';
     say @alphabet[0];                   # OUTPUT: «a␤»
@@ -729,7 +745,8 @@ operator's behavior and for how to implement support for it in custom types.
                             :$k, :$v, :$kv, :$p, :$exists, :$delete)
 
 Universal interface for associative access to zero or more elements of a
-%container, a.k.a. "X<hash indexing operator|Postcircumfix operators,hash indexing operator;Postcircumfix operators,hash subscript operator>".
+%container, a.k.a. "X<hash indexing operator|Postcircumfix operators,hash indexing operator>".
+X<|Postcircumfix operators,hash subscript operator>
 
     my %color = kiwi => "green", banana => "yellow", cherry => "red";
     say %color{"banana"};                 # OUTPUT: «yellow␤»
@@ -846,9 +863,8 @@ It can be also applied, within classes, to access metamethods on self:
 
 =for code
 class Foo {
-    has $.a = 3;
     method bar {
-        return $.^name
+        return self.^name
     }
 };
 say Foo.new.bar; # OUTPUT: «Foo␤»
@@ -862,6 +878,31 @@ C<$invocant> if it has a method of such name. Otherwise it returns
 L<C<Nil>|/type/Nil>.
 
 Technically, not a real operator; it's syntax special-cased in the compiler.
+
+X«|Syntax,methodop .""»
+=head2 methodop C«.""»
+
+L<Runtime method resolution operator|/language/objects#index-entry-programmatic_use>. Uses
+L<double quotes|/language/quoting#Interpolation:_qq> for interpolation; the resulting string will
+be used as a method name. Requires parentheses or C<\> for the method call.
+
+Technically, not a real operator; it's syntax special-cased in the compiler.
+
+=begin code
+class Player {
+    method eat {
+        say 'Take the pineapple off the pizza!';
+    }
+
+    method drink {
+        say 'Pop the soda!';
+    }
+
+};
+
+my $action = 'eat';
+Player.new."$action"(); # OUTPUT: «Take the pineapple off the pizza!␤»
+=end code
 
 X«|Syntax,methodop .+»
 =head2 methodop C«.+»

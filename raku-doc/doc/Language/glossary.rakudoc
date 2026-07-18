@@ -81,47 +81,6 @@ notably L<quoting constructs|/language/quoting> and L<regexes|/language/regexes>
 
 Also see the sections L<Adverb|#Adverb> and L<Colon pair and colon list|#Colon pair and colon list>.
 
-=head1 X<Allomorph|Language,Allomorph>
-
-A type that has two related values which may be used depending on the
-context. For example L<C<IntStr>|/type/IntStr> allomorph C<is> both
-an L<C<Int>|/type/Int> and a L<C<Str>|/type/Str>, so it will be accepted by
-anything that expects an L<C<Int>|/type/Int>, a L<C<Str>|/type/Str>, or an L<C<IntStr>|/type/IntStr>. Keep in mind
-that certain constructs, such as L<sets, bags, and mixes|/language/setbagmix>
-care about object identity, and so will not accept an allomorph as equivalent
-of its components alone.
-
-The I<allomorph> types L<C<IntStr>|/type/IntStr>, L<C<NumStr>|/type/NumStr>,
-L<C<RatStr>|/type/RatStr> and L<C<ComplexStr>|/type/ComplexStr> may be created
-as a result of parsing a string quoted with angle brackets:
-
-    say <42>.^name;     # OUTPUT: «IntStr␤»
-    say <42.1e0>.^name; # OUTPUT: «NumStr␤»
-    say <42.1>.^name;   # OUTPUT: «RatStr␤»
-
-B<Note>: angle brackets can also be used to create literals for which you'd
-normally need to use some operator (e.g. C</> for L<C<Rat>|/type/Rat> or C<+> for
-L<C<Complex>|/type/Complex>). This allows you to use such literals in places where
-expressions are not allowed, for example, as literals in signatures:
-
-=for code :skip-test<syntax error>
-# Wrong, can't use an operator there:
-multi foo (1/3) { say "It's one third!" }
-=for code
-# Right, a Rat literal:
-multi foo (<1/3>) { say "It's one third!" }
-
-If you I<do> want an allomorph and not a literal L<C<Numeric>|/type/Numeric>, then
-include whitespace around angle brackets:
-
-    say <42/1>.^name;    # OUTPUT: «Rat␤»
-    say <42+0i>.^name;   # OUTPUT: «Complex␤»
-    say < 42+0i >.^name; # OUTPUT: «ComplexStr␤»
-    say < 42/1 >.^name;  # OUTPUT: «RatStr␤»
-
-Please see L<the Numerics page|/language/numerics#Allomorphs> for a more
-complete description on how to work with these allomorphs.
-
 =head1 X<Anonymous|Reference,Anonymous>
 
 A subroutine, method or submethod is called I<anonymous> if it can't be
@@ -172,14 +131,10 @@ sub the-answer() { 42 }                            # arity of 0
 =end code
 
 The arity of a L<C<Callable>|/type/Callable> is one of the main selectors in
-L<multi-dispatch|#Multi-dispatch>.
+L<multi-dispatch|#Multi-dispatch>. Note that required named arguments, e.g. C<(:$foo!)>,
+count as arity.
 
-=head1 X<ASCII operator|Language,ASCII operator;Language,Texas operator>
-
-=begin comment
-“Texas” was used in the past but is now discouraged.
-Remove the link when “Texas” goes completely out of use.
-=end comment
+=head1 X<ASCII operator|Language,ASCII operator>
 
 The ASCII variant of a non-ASCII Unicode L<operator|#Operator> or
 L<symbol|#Symbol>.
@@ -255,8 +210,9 @@ MoarVM or the Java Virtual Machine, the two VMs currently supported.
 
 A butterfly image intended primarily to represent Raku, The Language.
 
-=head1 X<Colon pair and colon list|Reference,Colon Pair;Reference,Colon List>
+=head1 X<Colon pair and colon list|Reference,Colon Pair>
 
+X<|Reference,Colon List>
 A colon pair is a shorthand syntax used to create or visually present
 a L<C<Pair>|/type/Pair> object. The two most common forms are:
 
@@ -297,8 +253,16 @@ See also L<Adverb|#Adverb>.
 
 =head1 X<Community|Reference,Community>
 
-See L<https://raku.org/community/> for information about how to participate
+See L<https://raku.org/community> for information about how to participate
 in the friendly Raku community.
+
+=head1 X<Compilation unit or I<compunit>|Reference,compunit (glossary)>
+
+X<|Reference,compilation unit>
+A L<compunit|https://github.com/rakudo/rakudo/blob/master/docs/module_management.md>
+is a piece of Raku code that is analyzed and compiled as a single unit.
+Typically, this piece of code will be contained in a single file, but code
+inside an L<EVAL|/routine/EVAL> is also considered a compunit.
 
 =head1 X<Damian Conway|Reference,Damian Conway>
 
@@ -350,6 +314,12 @@ grammar Quux {
 
 In this case, the regex acts as a method; please note that the scope is only
 declared once.
+
+=head1 X<gradual typing|Reference,gradual typing>
+
+You don't have to specify types of variables and parameters, but if you do,
+it helps in early determination of impossible dispatches and better
+optimization. See also L<https://en.wikipedia.org/wiki/Gradual_typing>.
 
 =head1 X<Handle|Reference,Handle>
 
@@ -451,31 +421,17 @@ channels:
 
 As Late As Possible
 
-=head2 X<autopun|Reference,autopun>
-
-A self-referencing pun, e.g. "Are you ignorant or apathetic?" - "I don't
-know, and I don't care."
-
 =head2 X<backlog|Reference,backlog>
 
 That part of a discussion on an L<IRC|#IRC> channel that you've missed. If it is
-not or no longer available in your IRC client, you can go to sites such as
-L<https://irclogs.raku.org> to see what has been logged
-for you.
+no longer available in your IRC client, you can check L<the logs|https://irclogs.raku.org>.
 
 =head2 X<Bot|Reference,Bot>
 
 A program that does automatic tasks on one or more L<IRC|#IRC> channels by
 acting like a regular user (as far as the IRC server is concerned) and
 performing some tasks that may involve answering to users requests.
-Examples can be found L<on the IRC page of raku.org|https://raku.org/community/irc>.
-
-=head2 X<Compilation unit or I<compunit>|Reference,compunit (glossary);Reference,compilation unit>
-
-A L<compunit|https://github.com/rakudo/rakudo/blob/master/docs/module_management.md>
-is a piece of Raku code that is analyzed and compiled as a single unit.
-Typically, this piece of code will be contained in a single file, but code
-inside an L<EVAL|/routine/EVAL> is also considered a compunit.
+Examples can be found L<on the IRC section of raku.org|https://raku.org/community>.
 
 =head2 X<DWIM|Reference,DWIM>
 
@@ -499,12 +455,6 @@ For Some Value Of...
 =head2 X<FTFY|Reference,FTFY>
 
 Fixed That For You
-
-=head2 X<gradual typing|Reference,gradual typing>
-
-You don't have to specify types of variables and parameters, but if you do,
-it helps in early determination of impossible dispatches and better
-optimization. See also L<https://en.wikipedia.org/wiki/Gradual_typing>.
 
 =head2 X<IIRC|Reference,IIRC>
 
@@ -532,18 +482,10 @@ Looks Good To Me
 Less Than Awesome. Usually used in the context of an error message that
 is rather non-descriptive or unrelated to the actual error.
 
-=head2 X<NST|Reference,NST>
-
-No Such Thing
-
 =head2 X<Opt|Reference,Opt>
 
 Short for "optimization", usually in either the context of
 L<spesh|#Spesh> or JIT.
-
-=head2 X<PB|Reference,PB>
-
-Short for "problem". As in "that's not the pb".
 
 =head2 X<PR|Reference,PR>
 
@@ -553,19 +495,9 @@ See L<Pull request|#Pull request>.
 
 Perl 5
 
-=head2 X<P6|Reference,P6>
-
-Raku (née Perl 6)
-
 =head2 X<RSN|Reference,RSN>
 
 Real Soon Now.
-
-=head2 X<RT|Reference,RT>
-
-Request Tracker (L<https://rt.perl.org/>). The place where all the bugs
-related to L<Rakudo|#Rakudo> used to live. Nowadays, the Github issue tracker of
-the rakudo/rakudo repository is used for that.
 
 =head2 X<TIMTOWTDI|Reference,TIMTOWTDI>
 
@@ -592,10 +524,6 @@ Works For Me
 
 Work In Progress
 
-=head2 X<WP|Reference,WP>
-
-Wikipedia
-
 =head2 X<WW|Reference,WW>
 
 Short for C<wrong window>. When on L<IRC|#IRC>, someone types something in
@@ -612,14 +540,15 @@ See also L<https://en.wikipedia.org/wiki/Larry_Wall>.
 Performing L<lexical analysis|https://en.wikipedia.org/wiki/Lexical_analysis>,
 a step which usually precedes parsing.
 
-=head1 X<LHS|Reference,LHS;Reference,Left-hand side>
+=head1 X<LHS|Reference,LHS>
 
+X<|Reference,Left-hand side>
 As an acronym left-hand side, it usually refers to the left-hand side of
 an expression, and more specifically to the left-hand side of
 expressions such as C<$lhs = "this would be the right-hand side">. Since
 the left-hand side of these expressions modify their value, when
 something behaves as a LHS it means that it can be read and written to.
-See also L<https://en.wikipedia.org/wiki/Sides_of_an_equation|Sides of an equation>.
+See also L<Sides of an equation|https://en.wikipedia.org/wiki/Sides_of_an_equation>.
 
 =head1 X<Literal|Reference,Literal>
 
@@ -700,18 +629,20 @@ MoarVM has some similarities with the Hotspot VM so you may peruse its
 L<glossary|http://openjdk.java.net/groups/hotspot/docs/HotSpotGlossary.html>
 for entries missing from the present one.
 
-=head1 X<Multi-dispatch|Reference,Multi-Dispatch;Reference,MMD>
+=head1 X<Multi-dispatch|Reference,Multi-Dispatch>
 
+X<|Reference,MMD>
 The mechanism used to invoke different routines (L<C<Method>|/type/Method>s or
 L<C<Sub>|/type/Sub>s) of the same name, selecting the correct one based on the
 L<C<Parameter>|/type/Parameter> prototype and the arguments it was called with.
 
 The selection process is primarily based on types and number of arguments
 (L<arity|#Arity>), where the narrowest, most specific candidate wins,
-typically without regard to the order of declaration.  The C<is default>
-trait may be used as a tiebreaker in this first phase.  There is also a
-secondary phase where some different tiebreakers may be evaluated in order
-of declaration of the methods or subs.
+typically without regard to the order of declaration. Note that required named
+arguments, e.g. C<(:$foo!)>, count as arity. The C<is default> trait may be used as a
+tiebreaker in this first phase.  There is also a secondary phase where some
+different tiebreakers may be evaluated in order of declaration of the
+methods or subs.
 
 =head1 X<multi-method|Reference,multi-method>
 
@@ -900,12 +831,13 @@ loads modules, managing their installation and precompilation. They are
 structured as linked lists, including chain of repositories ending in
 the default C<Compunit::Repository::Installation>.
 
-=head1 X<RHS|Reference,RHS;Reference,Right-hand side>
+=head1 X<RHS|Reference,RHS>
 
+X<|Reference,Right-hand side>
 Acronym for right-hand side, usually refers to the right-hand side of
 assignment operators and expressions such as C<my $bound := $rhs> or
 C<my $a = 5; $a //= $rhs>. See
-also L<https://en.wikipedia.org/wiki/Sides_of_an_equation|Sides of an equation>.
+also L<Sides of an equation|https://en.wikipedia.org/wiki/Sides_of_an_equation>.
 
 =head1 X<roast|Reference,roast>
 
@@ -1029,8 +961,9 @@ L<Exegeses|#Exegesis>.
 A piece of code that isn't immediately executed, but doesn't have an independent
 scope.
 
-=head1 X<Tight and loose precedence|Reference,Tight;Reference,Loose>
+=head1 X<Tight and loose precedence|Reference,Tight>
 
+X<|Reference,Loose>
 In this context, tight or tighter refers to
 L<precedence rules|/language/functions#Precedence>
 and is the opposite of C<looser>. Precedence rules for new terms are
@@ -1056,8 +989,9 @@ In this context, a L<C<token>|/syntax/token> is a regex that does not backtrack.
 In general, L<tokens|https://en.wikipedia.org/wiki/Lexical_analysis> are
 extracted from the source program while L<lexing|#Lexing>.
 
-=head1 X<Truthy and Falsy|Reference,Truthy;Reference,Falsy>
+=head1 X<Truthy and Falsy|Reference,Truthy>
 
+X<|Reference,Falsy>
 A value is "truthy" if it evaluates to C<True> in Boolean context and "falsy"
 if it evaluates to C<False>.
 
@@ -1207,7 +1141,7 @@ L<bytecode|#bytecode>. It can optimize the bytecode or generate machine code
 Just in Time. Examples are L<MoarVM|#MoarVM>, L<Parrot|#Parrot> (who are intended to run
 Raku) and more generic virtual machines such as JVM and Javascript.
 
-=head2 X<WAT|Reference,WAT>
+=head1 X<WAT|Reference,WAT>
 
 The opposite of a L<DWIM|#DWIM>; counter-intuitive behavior. It is said
 that to every DWIM there is a corresponding WAT.

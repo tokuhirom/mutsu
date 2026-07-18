@@ -558,6 +558,18 @@ eval-lives-ok q[my $daenerys-burns = False;
     "Dany is blood of the dragon";
 =end code
 
+=head2 sub exits-ok
+
+    multi exits-ok($code, $exit, $reason)
+
+Marks a test as passed if the given C<$code> exits with the given C<$exit> code.
+
+The routine accepts an optional description (C<$reason>) for the test.
+
+=begin code :preamble<use Test;>
+exits-ok({ say 3; exit 4}, 4, "exited with the right code") # passes
+=end code
+
 =head2 sub throws-like
 
     sub throws-like($code, $ex_type, $reason?, *%matcher)
