@@ -285,10 +285,17 @@ impl Compiler {
             let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
             let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
             let orig_idx = self.code.add_constant(Value::str(orig.clone()));
+            // RAW stores: these compile-time-fixed temp names are re-used on
+            // every execution of this call site (each loop iteration). The
+            // element snapshot may be a promoted `ContainerRef` cell; a plain
+            // SetGlobal would then WRITE THROUGH the previous execution's cell
+            // (corrupting that element in its source hash/array — the
+            // `%args{$k} := f(%j{$k})` loop clobbered `%j` at the first key
+            // with each later iteration's value) instead of replacing the temp.
             self.code.emit(OpCode::Dup);
-            self.code.emit(OpCode::SetGlobal(tmp_idx));
+            self.code.emit(OpCode::SetGlobalRaw(tmp_idx));
             self.code.emit(OpCode::Dup);
-            self.code.emit(OpCode::SetGlobal(orig_idx));
+            self.code.emit(OpCode::SetGlobalRaw(orig_idx));
             self.pending_index_rw_writebacks
                 .push((arg.clone(), tmp.clone(), orig.clone()));
             let name_idx = self.code.add_constant(Value::str(tmp));
@@ -349,10 +356,12 @@ impl Compiler {
                 is_positional,
             } = &index_expr
             {
-                // Save the call result
+                // Save the call result. RAW store — same fixed-name reuse
+                // hazard as the arg/orig temps above: a cell-valued result
+                // must replace the temp, not write through a stale cell.
                 let result_tmp = format!("__mutsu_call_result_{}", self.code.constants.len());
                 let result_idx = self.code.add_constant(Value::str(result_tmp));
-                self.code.emit(OpCode::SetGlobal(result_idx));
+                self.code.emit(OpCode::SetGlobalRaw(result_idx));
 
                 // Compare current temp value with original value.
                 // If they're identical (===), skip writeback.
