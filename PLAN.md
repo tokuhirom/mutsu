@@ -941,7 +941,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 13: `repeat { … } while/until C` (`Statement::Loop::RepeatWhile` → `Stmt::Loop` with
         `repeat => true`); the body always runs once. `EVAL(Q[my $i=0; repeat { $i=$i+1 } until $i>=5;
         $i].AST)` → 5. Tests in `t/rakuast-eval-repeat.t`.
-  - [ ] Slice 14+: `Bool` literals (read side), typed/named/slurpy params (need read + write), C-style
+  - [x] Slice 14: `True`/`False` literals (both directions) via a new `Term::Enum` node class
+        (`.from-identifier('True')`, single-quoted enum identifier). `EVAL(Q[my $i=0; while True { $i=
+        $i+1; last if $i>=3 }; $i].AST)` → 3. Tests in `t/rakuast-eval-bool.t`.
+  - [ ] Slice 15+: ternary lowering (`?? !!`), typed/named/slurpy params (need read + write), C-style
         `loop` — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering
         is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).

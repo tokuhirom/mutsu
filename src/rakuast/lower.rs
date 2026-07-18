@@ -469,6 +469,12 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Err(unsupported(node))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
+        RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
+            ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
+            ValueView::Str(s) if s.as_str() == "False" => Ok(Expr::Literal(Value::truth(false))),
+            _ => Err(unsupported(node)),
+        },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
         RakuAstClass::VarLexical => {
             let name = match positional_leaf(node)?.view() {
