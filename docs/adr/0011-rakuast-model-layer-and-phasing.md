@@ -167,8 +167,13 @@ earlier ones.
     args in a per-class schema order. Named args reach `construct` as `Pair`/`ValuePair` values;
     `named_arg` finds them, and a missing one is a clear error. Constructed nodes nest, render (gist),
     and are queryable (`.left.value`, `~~ RakuAST::Expression`). Tests in
-    `t/rakuast-construct-multi.t`. Next: `StatementList.new`, more operator/statement/declaration
-    constructors — then Phase 5 (EVAL) can lower a fully-constructed tree.
+    `t/rakuast-construct-multi.t`.
+  - **Slice 4 (more operators) — done.** `Var::Lexical.new("$x")` (positional), `ApplyPrefix.new(
+    prefix => …, operand => …)`, `ApplyPostfix.new(operand => …, postfix => …)`, and `Postfix.new(
+    operator => …)` (whose `operator` is a *named* string field). Tests in
+    `t/rakuast-construct-more.t`. Next: `StatementList` (its children are added via the `.add-statement`
+    *mutator*, which needs a mutable-node path), block/sub/declaration constructors — then Phase 5
+    (EVAL) can lower a fully-constructed tree.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
