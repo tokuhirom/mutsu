@@ -874,10 +874,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 4: `Var::Lexical.new`, `ApplyPrefix`/`ApplyPostfix`, `Postfix.new(:operator)`. Tests in
         `t/rakuast-construct-more.t`.
   - [ ] Slice 5+: `StatementList` (children via `.add-statement` mutator — needs a mutable-node path),
-        block/sub/declaration constructors; then Phase 5 (EVAL: lower RakuAST → internal AST →
-        existing compiler).
-- [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
-- [ ] **Phase 5** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
+        block/sub/declaration constructors.
+- **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
+  - [x] Slice 1: EVAL of the literal cluster (`src/rakuast/lower.rs`; `EVAL(IntLiteral.new(42))` →
+        42, `EVAL(Q[42].AST)` round-trips). Tests in `t/rakuast-eval.t`.
+  - [ ] Slice 2+: `ApplyInfix`/`ApplyPrefix` (operator-name → `TokenKind` reverse map), then
+        variables / statements / declarations.
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
