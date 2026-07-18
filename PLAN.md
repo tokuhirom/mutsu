@@ -892,7 +892,11 @@ so it is tracked separately from the roast backlog.
         `Statement::Elsif` folds into a nested `Stmt::If`), and comma lists (`ApplyListInfix` `,` →
         `Expr::ArrayLiteral`); `EVAL(Q[my $p=1; for (2,3,4) -> $n { $p=$p*$n }; $p].AST)` → 24. Tests
         in `t/rakuast-eval-for-elsif.t`.
-  - [ ] Slice 7+: sub declarations, `given`/`when`, `for @x { … }` (`$_`), multi-param blocks — the
+  - [x] Slice 7: EVAL of `sub` declarations (`RakuAST::Sub` with bare positional scalar params →
+        `Stmt::SubDecl`) and named calls (`Call::Name` → `Expr::Call`); a defined routine can be
+        invoked, including recursively — `EVAL(Q[sub fact($n) { … fact($n-1) }; fact(5)].AST)` → 120.
+        Tests in `t/rakuast-eval-sub.t`.
+  - [ ] Slice 8+: `given`/`when`, `for @x { … }` (`$_`), multi-param/typed/named/slurpy params — the
         inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
         multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).

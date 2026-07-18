@@ -216,6 +216,12 @@ earlier ones.
     `Expr::ArrayLiteral`. `EVAL(Q[my $p = 1; for (2, 3, 4) -> $n { $p = $p * $n }; $p].AST)` → `24`.
     The bare `for @x { … }` (`$_`) form, multi-parameter blocks, and non-comma list infixes (`Z`/`X`)
     stay the boundary. Tests in `t/rakuast-eval-for-elsif.t`. Next: sub declarations, `given`/`when`.
+  - **Slice 7 (`sub` declarations + named calls) — done.** `RakuAST::Sub` (with bare positional
+    scalar parameters) lowers to `Stmt::SubDecl`, and a `Call::Name` lowers to `Expr::Call`, so a
+    defined routine can be invoked — including recursively. `EVAL(Q[sub fact($n) { if $n < 2 { 1 } else
+    { $n * fact($n - 1) } }; fact(5)].AST)` → `120`. Typed/named/slurpy/defaulted parameters and
+    anonymous subs in expression position stay the boundary. Tests in `t/rakuast-eval-sub.t`. Next:
+    `given`/`when`, the bare `for @x { … }` (`$_`) form.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
