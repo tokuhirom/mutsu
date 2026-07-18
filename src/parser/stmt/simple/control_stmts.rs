@@ -484,6 +484,20 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             ))),
         });
     }
+    // A trailing low-precedence word infix (`ok(...) or say "NO"`) means the
+    // call is the LEFT OPERAND of a larger expression — this statement-level
+    // parse would silently drop the ` or ...` tail (it is not a statement
+    // modifier). Bail to the expression-statement parser, which builds the
+    // full Binary.
+    {
+        let (after_ws, _) = ws(rest)?;
+        if ["or", "and", "andthen", "orelse", "notandthen"]
+            .iter()
+            .any(|kw| keyword(kw, after_ws).is_some())
+        {
+            return Err(PError::expected("known function call"));
+        }
+    }
     let stmt = Stmt::Call {
         name: Symbol::intern(&name),
         args,
