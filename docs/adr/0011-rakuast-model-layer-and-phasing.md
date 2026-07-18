@@ -299,6 +299,12 @@ earlier ones.
     backs both the statement and expression forms). `EVAL(Q[my $a; my $b; $a = $b = 5; $a + $b].AST)` →
     `10`. Explicitly-parenthesised `($x = 5)` (a `Circumfix::Parentheses`) and `:=` binding stay the
     boundary. Tests in `t/rakuast-eval-assign-expr.t`. Next: C-style `loop`, bareword type terms.
+  - **Slice 20 (C-style `loop`) — done.** `Statement::Loop` (with optional `setup`/`condition`/
+    `increment`) lowers to a `Stmt::Loop`; the read side already works via the slice-19 assignment
+    expression (the `$i = $i + 1` increment). `EVAL(Q[my $s = 0; loop (my $i = 0; $i < 5; $i = $i + 1) {
+    $s = $s + $i }; $s].AST)` → `10`; a bare `loop { … }` broken by `last`, and `next`/`last` inside,
+    all work. Tests in `t/rakuast-eval-cstyle-loop.t`. Next: bareword type terms, named/slurpy
+    parameters, parenthesisation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

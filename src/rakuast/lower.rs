@@ -47,6 +47,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::StatementIf => lower_if(node),
         RakuAstClass::StatementLoopWhile => lower_while(node),
+        RakuAstClass::StatementLoop => lower_cstyle_loop(node),
         // `repeat { … } while/until C` runs the body once before testing the
         // condition (`until` desugars to `while !C`, handled by the prefix `!`).
         RakuAstClass::StatementLoopRepeatWhile => Ok(Stmt::Loop {
@@ -334,6 +335,32 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     Ok(Stmt::While {
         cond,
         body,
+        label: None,
+    })
+}
+
+/// Lower a C-style `loop (SETUP; COND; STEP) { … }` to `Stmt::Loop`. Each of the
+/// three controls is optional (a bare `loop { … }` has none).
+fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let init = match node.fields.iter().any(|f| f.name == Some("setup")) {
+        true => Some(Box::new(lower_stmt_inner(named_child(node, "setup")?)?)),
+        false => None,
+    };
+    let cond = match node.fields.iter().any(|f| f.name == Some("condition")) {
+        true => Some(lower_expr(named_child(node, "condition")?)?),
+        false => None,
+    };
+    let step = match node.fields.iter().any(|f| f.name == Some("increment")) {
+        true => Some(lower_expr(named_child(node, "increment")?)?),
+        false => None,
+    };
+    let body = lower_block(named_child(node, "body")?)?;
+    Ok(Stmt::Loop {
+        init,
+        cond,
+        step,
+        body,
+        repeat: false,
         label: None,
     })
 }

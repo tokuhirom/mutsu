@@ -958,9 +958,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 19: assignment expressions `$x = EXPR` in value position (both directions) — an
         `AssignExpr` ↔ `ApplyInfix(Assignment)`; `EVAL(Q[my $a; my $b; $a = $b = 5; $a + $b].AST)` → 10.
         Tests in `t/rakuast-eval-assign-expr.t`.
-  - [ ] Slice 20+: C-style `loop`, parenthesisation (`Circumfix::Parentheses`), bareword type terms,
-        named/slurpy params, code-block (`{…}`) interpolation — the inverse of the Phase-2 converter,
-        grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 20: C-style `loop (setup; cond; increment) { … }` (`Statement::Loop` → `Stmt::Loop`, all
+        three controls optional); `EVAL(Q[my $s=0; loop (my $i=0; $i<5; $i=$i+1) { $s=$s+$i }; $s].AST)`
+        → 10. Tests in `t/rakuast-eval-cstyle-loop.t`.
+  - [ ] Slice 21+: parenthesisation (`Circumfix::Parentheses`), bareword type terms, named/slurpy
+        params, code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
+        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
