@@ -109,6 +109,9 @@ pub enum RakuAstClass {
     StatementDefault,
     // Phase 2 slice 19: ternary.
     Ternary,
+    // Phase 2 slice 22: positional subscripts.
+    SemiList,
+    PostcircumfixArrayIndex,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,6 +173,8 @@ impl RakuAstClass {
             StatementWhen => "RakuAST::Statement::When",
             StatementDefault => "RakuAST::Statement::Default",
             Ternary => "RakuAST::Ternary",
+            SemiList => "RakuAST::SemiList",
+            PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
         }
     }
 

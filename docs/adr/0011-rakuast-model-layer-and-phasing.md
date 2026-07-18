@@ -232,6 +232,12 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **Positional subscripts (Phase 2 slice 22).** `@x[EXPR]` (`Expr::Index` with
+  `is_positional == true`) → `ApplyPostfix(operand, postfix => Postcircumfix::ArrayIndex(index =>
+  SemiList(Statement::Expression(EXPR))))`. Associative subscripts (`%h{...}` / `%h<...>`) are
+  deferred: mutsu marks both `is_positional == false` with no `<>`-vs-`{}` distinction, so it cannot
+  tell `<k>` (raku `LiteralHashIndex` + a word-quoted `QuotedString`) from `{"k"}` (raku
+  `HashIndex` + `SemiList`).
 - **Ternary `?? !!` (Phase 2 slice 19).** `COND ?? THEN !! ELSE` (`Expr::Ternary`) →
   `Ternary(condition, then, else)`. raku constant-folds a literal-condition ternary (`1 ?? 2 !! 3`
   → `IntLiteral(2)`) while mutsu does not — the same const-fold divergence tracked in Open questions;
