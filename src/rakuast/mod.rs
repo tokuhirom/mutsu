@@ -103,6 +103,8 @@ pub enum RakuAstClass {
     StatementGiven,
     StatementWhen,
     StatementDefault,
+    // Phase 2 slice 19: ternary.
+    Ternary,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +163,7 @@ impl RakuAstClass {
             StatementGiven => "RakuAST::Statement::Given",
             StatementWhen => "RakuAST::Statement::When",
             StatementDefault => "RakuAST::Statement::Default",
+            Ternary => "RakuAST::Ternary",
         }
     }
 

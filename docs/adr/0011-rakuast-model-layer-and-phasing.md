@@ -232,6 +232,10 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **Ternary `?? !!` (Phase 2 slice 19).** `COND ?? THEN !! ELSE` (`Expr::Ternary`) →
+  `Ternary(condition, then, else)`. raku constant-folds a literal-condition ternary (`1 ?? 2 !! 3`
+  → `IntLiteral(2)`) while mutsu does not — the same const-fold divergence tracked in Open questions;
+  a non-constant condition renders identically.
 - **given / when / default (Phase 2 slice 18).** `given X { ... }` (`Stmt::Given`) →
   `Statement::Given(source, body => topic Block)` (the given body is a topic-taking `Block`, marked
   `implicit-topic`/`required-topic`). `when Y { ... }` (`Stmt::When`) → `Statement::When(condition,

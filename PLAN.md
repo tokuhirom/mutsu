@@ -798,10 +798,11 @@ so it is tracked separately from the roast backlog.
         node, deferred.)
   - [x] Slice 18: given / when / default (`Statement::Given`/`When`/`Default`). Tests in
         `t/rakuast-given-when.t`.
-  - [ ] Slice 19+: parameterised/definite types (`Array[Int]`/`Int:D`), attribute defaults
-        (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped loops, ternary/`andthen`;
-        then `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to
-        `IntLiteral(3)`, mutsu does not).
+  - [x] Slice 19: the ternary `?? !!` operator (`RakuAST::Ternary`). Tests in `t/rakuast-ternary.t`.
+  - [ ] Slice 20+: parameterised/definite types (`Array[Int]`/`Int:D`), attribute defaults
+        (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped loops, `andthen`/`orelse`,
+        `.=` method-assign; then `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku
+        folds to `IntLiteral(3)`, mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
