@@ -466,7 +466,16 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             {
                 return Ok(Expr::Literal(positional_leaf(seg)?));
             }
-            Err(unsupported(node))
+            // A multi-segment (interpolated) string -> StringInterpolation of the
+            // lowered segments (`StrLiteral` runs and interpolated terms alike).
+            let mut parts = Vec::with_capacity(segments.len());
+            for s in segments {
+                let ValueView::RakuAst(seg) = s.view() else {
+                    return Err(unsupported(node));
+                };
+                parts.push(lower_expr(seg)?);
+            }
+            Ok(Expr::StringInterpolation(parts))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
