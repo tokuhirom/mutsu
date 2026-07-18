@@ -7,19 +7,25 @@ use std::collections::HashMap;
 /// is-prime, isNaN, re, im, conj, reals, Complex, key, value, Slip, list/Array, Range
 pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     match method {
+        // numerator/denominator/nude exist on Rational types (and Int via
+        // Rational[Int,Int]). Claiming every other invocant here (the old
+        // catch-all 0/1) shadowed same-named attribute accessors on user
+        // role/class instances (e.g. the Rational role prelude's
+        // `$.numerator`); return None so dispatch falls through to them.
         "numerator" => match target.view() {
             ValueView::Rat(n, _) => Some(Ok(Value::int(n))),
             ValueView::FatRat(n, _) => Some(Ok(Value::int(n))),
             ValueView::BigRat(n, _) => Some(Ok(Value::bigint(n.clone()))),
             ValueView::Int(i) => Some(Ok(Value::int(i))),
-            _ => Some(Ok(Value::int(0))),
+            ValueView::BigInt(i) => Some(Ok(Value::bigint(i.as_ref().clone()))),
+            _ => None,
         },
         "denominator" => match target.view() {
             ValueView::Rat(_, d) => Some(Ok(Value::int(d))),
             ValueView::FatRat(_, d) => Some(Ok(Value::int(d))),
             ValueView::BigRat(_, d) => Some(Ok(Value::bigint(d.clone()))),
-            ValueView::Int(_) => Some(Ok(Value::int(1))),
-            _ => Some(Ok(Value::int(1))),
+            ValueView::Int(_) | ValueView::BigInt(_) => Some(Ok(Value::int(1))),
+            _ => None,
         },
         "isNaN" => match target.view() {
             ValueView::Rat(0, 0) => Some(Ok(Value::TRUE)),
@@ -35,7 +41,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Value::bigint(d.clone()),
             ]))),
             ValueView::Int(i) => Some(Ok(Value::array(vec![Value::int(i), Value::int(1)]))),
-            _ => Some(Ok(Value::array(vec![Value::int(0), Value::int(1)]))),
+            ValueView::BigInt(i) => Some(Ok(Value::array(vec![
+                Value::bigint(i.as_ref().clone()),
+                Value::int(1),
+            ]))),
+            _ => None,
         },
         "norm" => match target.view() {
             ValueView::Rat(n, d) => Some(Ok(make_rat(n, d))),
