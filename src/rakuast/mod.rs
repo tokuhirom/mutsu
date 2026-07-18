@@ -101,6 +101,8 @@ pub enum RakuAstClass {
     TraitWillBuild,
     // Phase 2 slice 21: parameterised types (`Array[Int]`).
     TypeParameterized,
+    // Phase 2 slice 29: coercion types (`Int()`).
+    TypeCoercion,
     // Phase 2 slice 13: class and method declarations.
     Class,
     Method,
@@ -175,6 +177,7 @@ impl RakuAstClass {
             TypeDefinedness => "RakuAST::Type::Definedness",
             TraitWillBuild => "RakuAST::Trait::WillBuild",
             TypeParameterized => "RakuAST::Type::Parameterized",
+            TypeCoercion => "RakuAST::Type::Coercion",
             Class => "RakuAST::Class",
             Method => "RakuAST::Method",
             Role => "RakuAST::Role",
