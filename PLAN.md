@@ -200,15 +200,20 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
 - [x] **Real install** — done for a dependency-free dist: a real fez dist downloads, extracts,
       installs into the site repo and is then `use`-able (#4655). Verify with a **non-bundled** dist
       (`JSON::OptIn`); `use JSON::Fast` succeeds without any install because mutsu bundles it.
-- [ ] **A dist WITH dependencies** — the remaining gap. Resolution (#4650) and fetch (#4658) are done;
-      `zef install Test::META` now dies in **extract**. See `docs/mzef-install-pipeline.md`
-      ("Current frontier") for the lead and the next steps.
-- [ ] **build/test execution**, an `mzef` binary shim + vendoring of zef itself + dependencies +
-      config (debian's zef lacks `resources/bin/zef`; a known-good vendoring is needed). The test
-      phase (6) now runs (`zef install` without `--/test` does `Testing [OK] → Installing`); the
-      per-suite standing for the Test::META dependency chain is **9 PASS / 2 FAIL** as of
-      2026-07-18 (#4735/#4738/#4747; remaining = JSON::Fast fidelity + 3 Test::META subtests —
-      see `docs/mzef-install-pipeline.md` "Test-phase frontier").
+- [x] **A dist WITH dependencies** — done: `zef install --/test Test::META` installs all 13 dists
+      end-to-end (resolution #4650, concurrent fetch #4658, concurrent extract fixed on top of
+      ADR-0010), and `use Test::META` resolves from the site repo afterwards.
+- [x] **Test-phase frontier closed (2026-07-19)**: on a fresh HOME, `zef install Test::META` with
+      tests ON runs all 13 suites concurrently and reports **12/13 Testing [OK]** (Test::META
+      itself, META6, License::SPDX, URI, JSON::Unmarshal/Marshal/Class/Name/OptIn, Test-Helpers).
+      The only FAIL is **JSON::Fast t/07-datetime.t**, blocked on `augment class DateTime` for a
+      builtin native class (MONKEY-TYPING — campaign-sized, tracked in
+      `docs/mzef-install-pipeline.md`); zef then correctly aborts, and `--force-test` completes the
+      full install with `use Test::META` loading from the fresh site repo. The four JSON::Fast
+      parity PRs (#4762/#4765/#4768/#4770) took that suite 3/14 → 13/14 files.
+- [ ] **An `mzef` binary shim** + vendoring of zef itself + dependencies + config (debian's zef
+      lacks `resources/bin/zef`; a known-good vendoring is needed — the working copy lives outside
+      this repo today).
 
 **`docs/mzef-install-pipeline.md` is the live tracker** — phase table, what each fix unblocked, and
 the current frontier with its next steps. Read it before picking up mzef work.
