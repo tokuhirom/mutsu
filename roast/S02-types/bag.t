@@ -1,6 +1,6 @@
 use Test;
 
-plan 255;
+plan 257;
 
 sub showkv($x) {
     $x.keys.sort.map({ $^k ~ ':' ~ $x{$k} }).join(' ')
@@ -45,7 +45,7 @@ sub showkv($x) {
       X::Assignment::RO,
       "Can't assign to .values";
     throws-like { $b<a>:delete },
-      X::Immutable,
+      X::Assignment::RO,
       "Can't :delete from Bag";
 
     is ~$b<a b>, "5 1", 'Multiple-element access';
@@ -89,7 +89,7 @@ sub showkv($x) {
     is $b<a>:exists, True, ':exists with existing element';
     is $b<santa>:exists, False, ':exists with nonexistent element';
     throws-like { $b<a>:delete },
-      X::Immutable,
+      X::Assignment::RO,
       ':delete does not work on bag';
 }
 
@@ -192,7 +192,7 @@ sub showkv($x) {
       X::Assignment::RO,
       "Can't assign to a %var implemented by Bag";
     throws-like { %b<a>:delete },
-      X::Immutable,
+      X::Assignment::RO,
       "Can't :delete from a Bag";
 }
 
@@ -633,5 +633,12 @@ lives-ok { my %h is Bag = 42 }, "Can we initialize a Bag with a single value";
 }
 
 is-deeply %(:42a, :72b).Bag.Capture, %(:42a, :72b).Capture, 'Bag Capture';
+
+# https://github.com/rakudo/rakudo/issues/6246
+{
+    my %h is Bag = <a b b>;
+    is-deeply %h.keys.sort, <a b>, 'Did the keys get set';
+    is-deeply bag().keys, (), 'did it not spoil the sentinel';
+}
 
 # vim: expandtab shiftwidth=4

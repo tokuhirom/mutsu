@@ -1,5 +1,5 @@
 use v6.e.PREVIEW;
-#BEGIN %*ENV<PERL6_TEST_DIE_ON_FAIL> = True;
+BEGIN %*ENV<RAKU_TEST_DIE_ON_FAIL> = True;
 use Test;
 
 # Test combinations of flags for "%c".  The @info array is intialized with the
@@ -12,66 +12,68 @@ use Test;
 #                        0 ,        65 ,    129419 ;
 my @info = ( # |-----------|-----------|-----------|
              # no size or size explicitely 0
-       '',   '',       "\0",        "A",       "🦋",
-      ' ',   '',       "\0",        "A",       "🦋",
-      '0',   '',       "\0",        "A",       "🦋",
-     '0 ',   '',       "\0",        "A",       "🦋",
-      '+',   '',       "\0",        "A",       "🦋",
-     '+ ',   '',       "\0",        "A",       "🦋",
-     '+0',   '',       "\0",        "A",       "🦋",
-    '+0 ',   '',       "\0",        "A",       "🦋",
-      '-',   '',       "\0",        "A",       "🦋",
-     '-+',   '',       "\0",        "A",       "🦋",
-     '- ',   '',       "\0",        "A",       "🦋",
-    '-+ ',   '',       "\0",        "A",       "🦋",
-     '-0',   '',       "\0",        "A",       "🦋",
-    '-+0',   '',       "\0",        "A",       "🦋",
-    '-0 ',   '',       "\0",        "A",       "🦋",
-   '-+0 ',   '',       "\0",        "A",       "🦋",
+       '',   '',       "\0",        "A",       "🦋", $?LINE,
+      ' ',   '',       "\0",        "A",       "🦋", $?LINE,
+      '0',   '',       "\0",        "A",       "🦋", $?LINE,
+     '0 ',   '',       "\0",        "A",       "🦋", $?LINE,
+      '+',   '',       "\0",        "A",       "🦋", $?LINE,
+     '+ ',   '',       "\0",        "A",       "🦋", $?LINE,
+     '+0',   '',       "\0",        "A",       "🦋", $?LINE,
+    '+0 ',   '',       "\0",        "A",       "🦋", $?LINE,
+      '-',   '',       "\0",        "A",       "🦋", $?LINE,
+     '-+',   '',       "\0",        "A",       "🦋", $?LINE,
+     '- ',   '',       "\0",        "A",       "🦋", $?LINE,
+    '-+ ',   '',       "\0",        "A",       "🦋", $?LINE,
+     '-0',   '',       "\0",        "A",       "🦋", $?LINE,
+    '-+0',   '',       "\0",        "A",       "🦋", $?LINE,
+    '-0 ',   '',       "\0",        "A",       "🦋", $?LINE,
+   '-+0 ',   '',       "\0",        "A",       "🦋", $?LINE,
 
              # size that fits
-       '',    3,     "  \0",      "  A",     "  🦋",
-      ' ',    3,     "  \0",      "  A",     "  🦋",
-      '0',    3,     "00\0",      "00A",     "00🦋",
-     '0 ',    3,     "00\0",      "00A",     "00🦋",
-      '+',    3,     "  \0",      "  A",     "  🦋",
-     '+ ',    3,     "  \0",      "  A",     "  🦋",
-     '+0',    3,     "00\0",      "00A",     "00🦋",
-    '+0 ',    3,     "00\0",      "00A",     "00🦋",
-      '-',    3,     "\0  ",      "A  ",     "🦋  ",
-     '-+',    3,     "\0  ",      "A  ",     "🦋  ",
-     '- ',    3,     "\0  ",      "A  ",     "🦋  ",
-    '-+ ',    3,     "\0  ",      "A  ",     "🦋  ",
-     '-0',    3,     "\0  ",      "A  ",     "🦋  ",
-    '-+0',    3,     "\0  ",      "A  ",     "🦋  ",
-    '-0 ',    3,     "\0  ",      "A  ",     "🦋  ",
-   '-+0 ',    3,     "\0  ",      "A  ",     "🦋  ",
-  '#-+0 ',    3,     "\0  ",      "A  ",     "🦋  ",
+       '',    3,     "  \0",      "  A",     "  🦋", $?LINE,
+      ' ',    3,     "  \0",      "  A",     "  🦋", $?LINE,
+      '0',    3,     "00\0",      "00A",     "00🦋", $?LINE,
+     '0 ',    3,     "00\0",      "00A",     "00🦋", $?LINE,
+      '+',    3,     "  \0",      "  A",     "  🦋", $?LINE,
+     '+ ',    3,     "  \0",      "  A",     "  🦋", $?LINE,
+     '+0',    3,     "00\0",      "00A",     "00🦋", $?LINE,
+    '+0 ',    3,     "00\0",      "00A",     "00🦋", $?LINE,
+      '-',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+     '-+',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+     '- ',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+    '-+ ',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+     '-0',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+    '-+0',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+    '-0 ',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+   '-+0 ',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
+  '#-+0 ',    3,     "\0  ",      "A  ",     "🦋  ", $?LINE,
 
-).map: -> $flags, $size, $r0, $rA, $rB {
+).map: -> $flags, $size, $r0, $rA, $rB, $line {
     my @flat;
     @flat.append(
+      $line,
       '%' ~ $_ ~ $size ~ 'c',
       ($r0 => 0, $rA => 65, $rB => 129419)
     ) for $flags.comb.permutations>>.join;
     @flat.append(
+      $line,
       '%' ~ $_ ~ $size ~ 'c',
       ($r0 => 0, $rA => 65, $rB => 129419)
     ) for "#$flags".comb.permutations>>.join;
     |@flat
 }
 
-plan @info/2;
+plan @info/3;
 
-for @info -> $format, @tests {
-    subtest {
+for @info -> $line, $format, @tests {
+    subtest "Tested '$format' at line $line" => {
         plan +@tests;
 
-        is-deeply zprintf($format, |.value), .key,
-          qq/zprintf("$format",{.value.list.join(",")}) eq '{.key}'/
+        is-deeply sprintf($format, |.value), .key,
+          qq/sprintf("$format",{.value.list.join(",")}) eq '{.key}'/
           for @tests;
 
-    }, "Tested '$format'";
+    }
 }
 
 # vim: expandtab shiftwidth=4

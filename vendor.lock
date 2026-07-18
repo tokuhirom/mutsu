@@ -18,6 +18,6 @@
 #
 # Format: tab-separated. Columns:
 #   name              dir               url                                          branch   commit                                     date
-roast	roast	https://github.com/Raku/roast.git	master	7f2d7508ad5e3144a23418f046f8c3e7691bd861	2025-12-20
+roast	roast	https://github.com/Raku/roast.git	master	b2cbe8a42eaf9a044dc95f544428bffdeb2870c7	2026-06-12
 raku-doc	raku-doc	https://github.com/Raku/doc.git	main	468a767fef6e83ac34e8f739fb24a616f1c33d4e	2026-07-07
 old-design-docs	old-design-docs	https://github.com/Raku/old-design-docs.git	master	1c4e6039a116421c7dbd36c56c34d3f774dcaf8f	2025-06-08

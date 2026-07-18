@@ -88,6 +88,7 @@ noted.
 | Classification | File | mutsu | raku (v2026.06/6.d) | Blocker (one line) |
 |---|---|---|---|---|
 | Awaiting infrastructure | `S32-str/format.t` | aborts at 26/49 | **49/49 full pass** (SORRY on v2022.12) | Requires `Formatter::Syntax.parse`→Match and `Formatter.AST`→`RakuAST::Node` = **no RakuAST subsystem**. The raku update provided an oracle, but stubbing is forbidden, so it stays shelved |
+| Awaiting infrastructure | `S02-types/quanthash.t` | aborts at 2/129 | **129/129 full pass** | New file added by the roast `b2cbe8a4` bump (2026-07-18). Needs `.^parameterize` on Set/Bag/Mix (`Set.^parameterize(Str)`, coercive types `Int()`/`Date()`), `.keyof`, and per-element type coercion/validation at `.new` — a whole parameterized-QuantHash-type subsystem. Immutable RO errors (its tail) already pass |
 | No oracle | `S02-names/pseudo-6d.t` | aborts at 116/159 | SORRY (`::=` NYI) | `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
 | No oracle | `S02-names/pseudo-6e.t` | aborts at 79/202 | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Still SORRY on v2026.06 |
 | No oracle | `S02-names-vars/names.t` | 144/156, notok 3 | SORRY (unfudged line) | test 142 "Null PMC access when printing a var typed as ::foo" edge. raku SORRYs on a fudge-dependent line (a bare `$`) |

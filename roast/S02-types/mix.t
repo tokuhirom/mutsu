@@ -2,7 +2,7 @@ use Test;
 use lib $*PROGRAM.parent(2).add("packages/Test-Helpers");
 use Test::Util;
 
-plan 244;
+plan 246;
 
 sub showkv($x) {
     $x.keys.sort.map({ $^k ~ ':' ~ $x{$k} }).join(' ')
@@ -46,7 +46,7 @@ sub showkv($x) {
       X::Assignment::RO,
       "Can't assign to .values";
     throws-like { $m<a>:delete },
-      X::Immutable,
+      X::Assignment::RO,
       "Can't :delete from Mix";
 
     is ~$m<a b>, "5 1", 'Multiple-element access';
@@ -93,7 +93,7 @@ sub showkv($x) {
     is $m<a>:exists, True, ':exists with existing element';
     is $m<santa>:exists, False, ':exists with nonexistent element';
     throws-like { $m<a>:delete },
-      X::Immutable,
+      X::Assignment::RO,
       ':delete does not work on mix';
 }
 
@@ -195,7 +195,7 @@ sub showkv($x) {
       X::Assignment::RO,
       "Can't assign to a %var implemented by Mix";
     throws-like { %m<a>:delete },
-      X::Immutable,
+      X::Assignment::RO,
       "Can't :delete from a Mix";
 }
 
@@ -587,5 +587,12 @@ lives-ok { my %h is Mix = 42 }, "Can we initialize a Mix with a single value";
 }
 
 is-deeply %(:42a, :b(-72)).Mix.Capture, %(:42a, :b(-72)).Capture, 'Mix Capture';
+
+# https://github.com/rakudo/rakudo/issues/6246
+{
+    my %h is Mix = <a b b>;
+    is-deeply %h.keys.sort, <a b>, 'Did the keys get set';
+    is-deeply mix().keys, (), 'did it not spoil the sentinel';
+}
 
 # vim: expandtab shiftwidth=4
