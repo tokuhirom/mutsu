@@ -753,10 +753,17 @@ so it is tracked separately from the roast backlog.
         `t/rakuast-expr.t`.
   - [x] Slice 2: `=` assignment (`Assignment` node, `:item` for scalar targets) and method
         calls (`Call::Method` as an `ApplyPostfix`). Tests in `t/rakuast-calls-assign.t`.
-  - [ ] Slice 3+: blocks & pointy blocks, `if`/`unless`/`with`, loops, sub declarations,
-        signatures & parameters; scoped/typed `my`; compound/`:=` assignment; method-call
-        modifiers; then `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds
-        to `IntLiteral(3)`, mutsu does not).
+  - [x] Slice 3: bare blocks (`Block`/`Blockoid`) and pointy blocks (`PointyBlock`/`Signature`/
+        `Parameter`/`ParameterTarget::Var`, plain positional params only). Tests in
+        `t/rakuast-blocks.t`. (PR #4684.)
+  - [ ] Slice 4: `if`/`unless` and `while`/`until`/`loop` statements (`Statement::If`/`Unless`/
+        `Loop::While`/`Loop::Until`/`Loop`), condition + `then`/`body` = `Block`, `if...else`.
+        Defer topic-taking blocks (`with`/`without`/`for` add `implicit-topic`/`required-topic`
+        Block fields), `elsif` chains, C-style `loop`, and postfix statement modifiers to slice 5.
+  - [ ] Slice 5+: `with`/`without`/`for`, `elsif`, sub declarations (`RakuAST::Sub`, reuse
+        Signature), scoped/typed `my`, compound/`:=` assignment, method-call modifiers; then
+        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
+        mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
