@@ -211,7 +211,14 @@ earlier ones.
   (parameters carry the implicit `type => Type::Setting(Any)`). Boundary (explicit `RuntimeError`):
   inheritance (`is`/`does`), `my`/`unit` scope, `repr`, `rw`, class traits; and for methods,
   private/submethod/multi/`our`/`my` forms, traits, delegation (`handles`), and return types.
-  Roles/grammars (`RakuAST::Role` with a distinct `RoleBody`) are deferred.
+  Roles are handled (slice 16). **Grammars are NOT mappable**: mutsu models `grammar G { }` as a
+  `Stmt::ClassDecl` with `parents = ["Grammar"]` (no distinct grammar node), so it hits the class
+  inheritance boundary rather than producing `RakuAST::Grammar`; deferred.
+- **Role declarations (Phase 2 slice 16).** `role NAME { body }` (`Stmt::RoleDecl`) →
+  `Statement::Expression(Role(name => Name, body => RoleBody(body => Blockoid(StatementList))))`.
+  Unlike a class, the body is wrapped in a distinct `RoleBody` node (not a plain `Block`); its
+  statements convert recursively (methods → `Method`, etc.). Boundary (explicit `RuntimeError`):
+  parameterised roles (`role R[::T]`), `is export`, `is rw`, and traits.
 - **Attributes (Phase 2 slice 14).** `has [Type] $.x` (`Stmt::HasDecl`) → a `VarDeclaration::Simple`
   with `scope => "has"` and a `twigil` leaf (`.` public accessor / `!` private), reusing the slice-10
   `var_declaration` helper (extended with a `twigil` field, and its initializer arg generalised to
