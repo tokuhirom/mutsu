@@ -47,6 +47,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::StatementIf => lower_if(node),
         RakuAstClass::StatementLoopWhile => lower_while(node),
+        RakuAstClass::StatementFor => lower_for(node),
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
         RakuAstClass::ApplyInfix if infix_is_assignment(node) => lower_assign(node),
@@ -67,24 +68,93 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
-/// Lower `if COND { … } else { … }` to `Stmt::If`. `elsif` chains (which carry
-/// an `elsifs` list) are the current coverage boundary.
+/// Lower `if COND { … } elsif … { … } else { … }` to `Stmt::If`. Each `elsif`
+/// clause becomes a nested `Stmt::If` in the enclosing `else` branch, folded
+/// innermost-last so the source order is preserved.
 fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    if node.fields.iter().any(|f| f.name == Some("elsifs")) {
-        return Err(unsupported(node));
-    }
     let cond = lower_expr(named_child(node, "condition")?)?;
     let then_branch = lower_block(named_child(node, "then")?)?;
-    let else_branch = match node.fields.iter().find(|f| f.name == Some("else")) {
+    // The base `else` (the outer `else { … }` block, or empty).
+    let mut else_branch = match node.fields.iter().find(|f| f.name == Some("else")) {
         Some(_) => lower_block(named_child(node, "else")?)?,
         None => Vec::new(),
     };
+    // Fold the `elsif` clauses in reverse into nested `if`s in the `else`.
+    if let Some(field) = node.fields.iter().find(|f| f.name == Some("elsifs"))
+        && let RakuAstFieldValue::List(items) = &field.value
+    {
+        for item in items.iter().rev() {
+            let ValueView::RakuAst(clause) = item.view() else {
+                return Err(unsupported(node));
+            };
+            let econd = lower_expr(named_child(clause, "condition")?)?;
+            let ethen = lower_block(named_child(clause, "then")?)?;
+            else_branch = vec![Stmt::If {
+                cond: econd,
+                then_branch: ethen,
+                else_branch,
+                binding_var: None,
+            }];
+        }
+    }
     Ok(Stmt::If {
         cond,
         then_branch,
         else_branch,
         binding_var: None,
     })
+}
+
+/// Lower `for SOURCE -> $x { … }` to `Stmt::For`. Only a single-parameter pointy
+/// block is handled; the bare `for @x { … }` (`$_`) form and multi-parameter
+/// blocks are the current coverage boundary.
+fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let iterable = lower_expr(named_child(node, "source")?)?;
+    let pointy = named_child(node, "body")?;
+    if pointy.class != RakuAstClass::PointyBlock {
+        return Err(unsupported(node));
+    }
+    let param = pointy_single_param(pointy)?;
+    // A PointyBlock, like a Block, wraps its statements in a `body` Blockoid.
+    let body = lower_block(pointy)?;
+    Ok(Stmt::For {
+        iterable,
+        param,
+        param_def: Box::new(None),
+        params: Vec::new(),
+        params_def: Vec::new(),
+        body,
+        label: None,
+        mode: crate::ast::ForMode::Normal,
+        rw_block: false,
+        explicit_zero_params: false,
+    })
+}
+
+/// The single loop variable of a pointy block's signature (`-> $x`), with its
+/// `$` sigil stripped, or `None` when the block takes no explicit parameter.
+fn pointy_single_param(pointy: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+    let Ok(sig) = named_child(pointy, "signature") else {
+        return Ok(None);
+    };
+    let params = list_field(sig, "parameters")?;
+    match params.len() {
+        0 => Ok(None),
+        1 => {
+            let ValueView::RakuAst(p0) = params[0].view() else {
+                return Err(unsupported(pointy));
+            };
+            let target = named_child(p0, "target")?;
+            if target.class != RakuAstClass::ParameterTargetVar {
+                return Err(unsupported(pointy));
+            }
+            let raw = leaf_str(target, "name")?;
+            Ok(Some(
+                raw.strip_prefix('$').map(str::to_string).unwrap_or(raw),
+            ))
+        }
+        _ => Err(unsupported(pointy)),
+    }
 }
 
 /// Lower `while COND { … }` to `Stmt::While`.
@@ -283,6 +353,23 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 op,
                 expr: Box::new(operand),
             })
+        }
+        // A comma list `1, 2, 3` (or parenthesised `(1, 2, 3)`) -> ApplyListInfix
+        // with a `,` infix. Other list infixes (`Z`/`X`/...) are deferred.
+        RakuAstClass::ApplyListInfix => {
+            let infix = named_child(node, "infix")?;
+            match positional_leaf(infix)?.view() {
+                ValueView::Str(s) if s.as_str() == "," => {}
+                _ => return Err(unsupported(node)),
+            }
+            let mut items = Vec::new();
+            for v in list_field(node, "operands")? {
+                let ValueView::RakuAst(child) = v.view() else {
+                    return Err(unsupported(node));
+                };
+                items.push(lower_expr(child)?);
+            }
+            Ok(Expr::ArrayLiteral(items))
         }
         // A postfix method call: `$x.abs` -> ApplyPostfix(operand, Call::Method).
         // Subscripts / hyper-calls carry a different postfix and are deferred.
