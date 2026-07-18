@@ -34,7 +34,13 @@ impl Interpreter {
             _ => None,
         };
         if let Some(composed) = role_composed {
-            if let Some(tn) = &left_type_object {
+            // A role type object invocant has a ParametricRoleGroupHOW with no
+            // `mixin` metamethod (X::Method::NotFound). A *class* type object
+            // (builtin or user, incl. parametric like Array[Int]) is fine:
+            // `Int but R` creates the mixin type object `Int+{R}`.
+            if let Some(tn) = &left_type_object
+                && self.is_role_type_name(tn)
+            {
                 return Err(self.but_on_type_object_error(tn));
             }
             let composed = composed?;

@@ -9,8 +9,11 @@ throws-like '(my $foo) does Int, Bool', X::Does::TypeObject,
     'does with a type-object list on a type object is illegal';
 throws-like 'Bool does role { method Str() { $.raku } }', X::Does::TypeObject,
     'does on the Bool type object is illegal';
-throws-like 'Int but role { method foo { 1 } }', X::Does::TypeObject,
-    'but on the Int type object is illegal';
+# `but` on a class type object is legal: it creates a mixin type object.
+{
+    my $t = Int but role { method foo { 1 } };
+    is $t.foo, 1, 'but on the Int type object creates a mixin type object';
+}
 
 # Mixing a non-composable type (a class / type object, not a role or a
 # concrete value) into a concrete object is illegal.
