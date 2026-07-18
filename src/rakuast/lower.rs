@@ -352,9 +352,10 @@ fn infix_is_assignment(node: &RakuAstNode) -> bool {
         .unwrap_or(false)
 }
 
-/// Lower `$x = EXPR` to `Stmt::Assign`. The `$` sigil is stripped (matching the
-/// parser's naming); `@`/`%`/`&` are kept.
-fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+/// The `(name, right)` of an `ApplyInfix(Assignment)`: the target variable name
+/// (`$` sigil stripped to match the parser's naming; `@`/`%`/`&` kept) and the
+/// lowered right-hand side.
+fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError> {
     let left = named_child(node, "left")?;
     if left.class != RakuAstClass::VarLexical {
         return Err(unsupported(node));
@@ -368,6 +369,12 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         None => raw,
     };
     let expr = lower_expr(named_child(node, "right")?)?;
+    Ok((name, expr))
+}
+
+/// Lower `$x = EXPR` (statement position) to `Stmt::Assign`.
+fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let (name, expr) = lower_assign_parts(node)?;
     Ok(Stmt::Assign {
         name,
         expr,
@@ -519,6 +526,15 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 "%" => Expr::HashVar(bare.to_string()),
                 "&" => Expr::CodeVar(bare.to_string()),
                 _ => Expr::Var(bare.to_string()),
+            })
+        }
+        // `($x = EXPR)` in expression position -> an assignment expression.
+        RakuAstClass::ApplyInfix if infix_is_assignment(node) => {
+            let (name, expr) = lower_assign_parts(node)?;
+            Ok(Expr::AssignExpr {
+                name,
+                expr: Box::new(expr),
+                is_bind: false,
             })
         }
         RakuAstClass::ApplyInfix => {
