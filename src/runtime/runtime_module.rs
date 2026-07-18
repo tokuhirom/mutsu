@@ -108,6 +108,14 @@ impl Interpreter {
         module: &str,
         tags: &[String],
     ) -> Result<(), RuntimeError> {
+        // Native JSON modules: the import list selects per-scope defaults
+        // (`use JSON::Fast <immutable !pretty>`). Every `use` re-selects them —
+        // including re-uses of the already-loaded module below — so this must
+        // run before the loaded_modules early return.
+        if matches!(module, "JSON::Fast" | "JSON::Tiny") {
+            self.json_import_defaults =
+                crate::runtime::json::JsonImportDefaults::from_import_words(tags);
+        }
         if self.loaded_modules.contains(module) {
             if module == "strict" {
                 self.strict_mode = true;

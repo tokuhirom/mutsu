@@ -2150,6 +2150,7 @@ impl Interpreter {
             pending_regex_error: None,
             precomp_enabled: true,
             monkey_typing: false,
+            json_import_defaults: crate::runtime::json::JsonImportDefaults::default(),
 
             // Merged VM execution registers (CP-3 collapse) — same defaults the
             // former `VM::new` installed.

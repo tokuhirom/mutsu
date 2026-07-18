@@ -346,6 +346,11 @@ impl Interpreter {
             // values so `my &fn = &is-deeply; fn(...)` dispatches through the
             // Routine call path, which routes test names to the Test dispatcher.
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
+        } else if self.json_module_loaded() && matches!(lookup_name, "to-json" | "from-json") {
+            // Native JSON routines (runtime/json.rs) have no declared sub either;
+            // expose them as Routines so `&from-json` / `$str.&from-json` work.
+            // The Routine call path falls through to try_native_json_function.
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if bare_name.starts_with('*') {
             // Dynamic code vars (&*foo) can point to routines that are resolved
             // at call time (including builtins not listed in is_builtin_function).
