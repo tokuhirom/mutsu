@@ -792,6 +792,34 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
+        // Positional subscript `@x[EXPR]` -> ApplyPostfix(operand,
+        // postfix => Postcircumfix::ArrayIndex(index => SemiList(...))).
+        // Associative subscripts (`%h{...}` / `%h<...>`) are deferred: mutsu
+        // cannot distinguish `<k>` (LiteralHashIndex) from `{"k"}` (HashIndex).
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => {
+            if !is_positional {
+                return Err(unsupported("associative subscript"));
+            }
+            let semilist = RakuAstNode {
+                class: RakuAstClass::SemiList,
+                fields: vec![node_field(None, statement_expression(convert_expr(index)?))],
+            };
+            let array_index = RakuAstNode {
+                class: RakuAstClass::PostcircumfixArrayIndex,
+                fields: vec![node_field(Some("index"), semilist)],
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyPostfix,
+                fields: vec![
+                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("postfix"), array_index),
+                ],
+            })
+        }
         // A bare `{ ... }` block in expression position.
         Expr::Block(body) => block_node(body),
         Expr::AnonSub {

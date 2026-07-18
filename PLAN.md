@@ -841,7 +841,9 @@ so it is tracked separately from the roast backlog.
         Tests in `t/rakuast-type-definite.t`.
   - [x] Slice 21: parameterised types `Array[Int]`/`Hash[Str, Int]` (`Type::Parameterized` with an
         `ArgList` of type args). Tests in `t/rakuast-type-parameterized.t`.
-  - [ ] Slice 22+: attribute defaults (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped
+  - [x] Slice 22: positional subscripts `@x[EXPR]` (`Postcircumfix::ArrayIndex` + `SemiList`). Tests
+        in `t/rakuast-subscript.t`. (Associative `%h{...}`/`%h<...>` deferred — indistinguishable.)
+  - [ ] Slice 23+: attribute defaults (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped
         loops, `andthen`/`orelse`, `.=` method-assign, coercion types (`Str()`); then `.DEPARSE`;
         resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does
         not).
