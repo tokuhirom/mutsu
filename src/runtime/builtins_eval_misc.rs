@@ -244,6 +244,14 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_eval(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // EVAL of a RakuAST node (ADR-0011 Phase 5): lower it to the internal AST
+        // and run it through the existing evaluator — no new execution engine.
+        if let Some(first_arg) = Self::positional_value(args, 0)
+            && let ValueView::RakuAst(node) = first_arg.view()
+        {
+            let stmts = crate::rakuast::lower(node)?;
+            return self.eval_block_value(&stmts);
+        }
         // EVAL only accepts strings (and Buf), not blocks
         if let Some(first_arg) = Self::positional_value(args, 0) {
             match first_arg.view() {

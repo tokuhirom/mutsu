@@ -177,6 +177,14 @@ earlier ones.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
+  - **Slice 1 (literals) — done.** `src/rakuast/lower.rs` lowers a RakuAST node back to internal
+    `Stmt`/`Expr`; `builtin_eval` now recognises a `Value::RakuAst` first argument, lowers it, and
+    runs it via `eval_block_value` (the existing evaluator). `EVAL(RakuAST::IntLiteral.new(42))` →
+    `42`, and `EVAL(Q[42].AST)` round-trips source → node tree → value. Slice 1 lowers the literal
+    cluster (`IntLiteral`/`RatLiteral`/`StrLiteral`, single-segment `QuotedString`) plus the
+    `StatementList` / `Statement::Expression` wrappers; anything else is an explicit `RuntimeError`.
+    Tests in `t/rakuast-eval.t`. Next: `ApplyInfix`/`ApplyPrefix` (needs an operator-name →
+    `TokenKind` reverse map), then variables/statements/declarations.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

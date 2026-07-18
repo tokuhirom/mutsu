@@ -11,7 +11,10 @@
 //! phasing (construction, EVAL, macros are later phases).
 
 mod convert;
+mod lower;
 mod render;
+
+pub use lower::lower;
 
 use crate::value::{RuntimeError, Value, ValueView};
 
