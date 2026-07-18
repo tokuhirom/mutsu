@@ -798,9 +798,11 @@ impl Interpreter {
             )),
             "(==)" | "≡" => Ok(Value::truth(Self::apply_set_equality(left, right)?)),
             "≢" => Ok(Value::truth(!Self::apply_set_equality(left, right)?)),
-            _ if op.ends_with('=') && op.len() > 1 => {
+            _ if op.ends_with('=') && op.len() > 1 && op != "=~=" && op != "=:=" => {
                 // Compound assignment operator (e.g., "~=", "+=", "-=", "*=")
-                // Apply the base operator and return the result.
+                // Apply the base operator and return the result. `=~=`/`=:=`
+                // are comparison ops, not `op=` forms — mis-stripping them
+                // yields a bogus "Unsupported reduction operator: =~".
                 let base_op = &op[..op.len() - 1];
                 Self::apply_reduction_op(base_op, left, right)
             }

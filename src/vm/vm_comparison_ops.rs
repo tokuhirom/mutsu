@@ -473,6 +473,18 @@ impl Interpreter {
     pub(super) fn exec_approx_eq_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let result = self.approx_eq_values(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    /// `=~=` on two values (shared by the ApproxEq opcode and the hyper/meta
+    /// paths, e.g. `»=~=«`). Honors `$*TOLERANCE`.
+    pub(crate) fn approx_eq_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
         let tolerance = loan_env!(self, get_dynamic_var("*TOLERANCE"))
             .ok()
@@ -505,7 +517,6 @@ impl Interpreter {
             diff / max_abs <= tolerance
         };
         let result = approx_f64(lr, rr) && approx_f64(li, ri);
-        self.stack.push(Value::truth(result));
-        Ok(())
+        Ok(Value::truth(result))
     }
 }

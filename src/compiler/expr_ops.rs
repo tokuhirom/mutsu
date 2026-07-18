@@ -219,7 +219,10 @@ impl Compiler {
         // These need to compute with the base op and then assign back.
         let is_assign_op = op.ends_with('=')
             && op.len() > 1
-            && !matches!(op, "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>");
+            && !matches!(
+                op,
+                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>" | "=~=" | "=:="
+            );
         // Hyper meta-assignment over a literal list of lvalues, e.g.
         // `($a, $b, $c) »~=» <pie tart>`: compute the element-wise result with
         // the base op, then distribute it back to each lvalue via the regular

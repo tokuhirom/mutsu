@@ -108,6 +108,11 @@ impl Interpreter {
                 "Endian",
                 "Proc",
                 "Capture",
+                "DateTime",
+                "Date",
+                "Dateish",
+                "Instant",
+                "Duration",
             ];
             if !BUILTIN_TYPES.contains(&name) {
                 let message = format!("You tried to augment class {}, but it does not exist", name);

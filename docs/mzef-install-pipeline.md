@@ -212,30 +212,31 @@ repro → general fix → `t/` pin):
   predicates. It now delegates to the same subset matcher `~~` uses. Pin:
   `t/subset-regex-return-check.t`.
 
-## Test-phase frontier (2026-07-18 refresh)
+## Test-phase frontier (CLOSED 2026-07-19 — all 11 suites PASS)
 
-**Per-suite standing (2026-07-18, after #4735 / #4738 / #4747 / #4756;
-staged-dist `prove` sweep with the full MUTSULIB chain,
-`tmp/e2e-suites.sh`): 10 PASS / 1 FAIL.** PASS: JSON::OptIn, JSON::Name,
+**Per-suite standing (2026-07-19; staged-dist `prove` sweep with the full
+MUTSULIB chain, `tmp/e2e-suites.sh`): 11 PASS / 0 FAIL.** PASS: JSON::OptIn, JSON::Name,
 JSON::Unmarshal (11 files / 101 tests), JSON::Marshal (14/85), JSON::Class
 (6/31), URI (14/222), META6 (9/969), License::SPDX (2/729), Test::META
-(3/26, #4756). FAIL: **JSON::Fast** only (native-JSON fidelity remnants;
-full parity is likely unnecessary for the pipeline). Within JSON::Fast,
-four PRs (#4762 AdditionalContent + strict grammar; #4765 options parity:
-`:immutable`/List+Map decode, `:enums-as-value`, `$*JSON_NAN_INF_SUPPORT`,
-import-list defaults `<immutable !pretty>`, `&from-json`/`.&from-json`
-code-object dispatch, uppercase surrogate escapes, Duration-as-Num;
-#4768 numerator/denominator-shadow: those builtins no longer claim every
-invocant, so the Rational role prelude's attr accessors work and a punned
-Rational serializes numerically; the JSONC/assoc-pos PR: `:allow-jsonc`
-comment skipping, Associative/Positional user instances serialize via
-`.list`, and `Foo::.values`/`Bool::.values` stash enumeration) brought
-the suite from 3/14 to **13/14 files green**; the only remaining file is
-07-datetime, blocked on `augment class DateTime` for a builtin native
-class (MONKEY-TYPING on Date/DateTime — campaign-sized, not JSON work).
-Known adjacent gap (not needed by the suite): an UNparameterized
-`Rational.new(6,4)` still fails binding (`expected NuT, got Int` — role
-type-param defaults `::NuT = Int` unresolved in method signatures).
+(3/26, #4756), **JSON::Fast** (**14/14 files / 931 tests** — five PRs,
+2026-07-19: #4762 AdditionalContent + strict grammar; #4765 options
+parity: `:immutable`/List+Map decode, `:enums-as-value`,
+`$*JSON_NAN_INF_SUPPORT`, import-list defaults `<immutable !pretty>`,
+`&from-json`/`.&from-json` code-object dispatch, uppercase surrogate
+escapes, Duration-as-Num; #4768 numerator/denominator-shadow: those
+builtins no longer claim every invocant, so the Rational role prelude's
+attr accessors work and a punned Rational serializes numerically; #4770
+`:allow-jsonc` comment skipping, Associative/Positional user instances
+serialize via `.list`, `Foo::.values`/`Bool::.values` stash enumeration;
+and the augment-builtin PR: `augment class DateTime/Date` on builtin
+native classes — an augmented `multi method new` candidate wins when it
+matches and falls back to the native ctor, Instant serializes as its
+`.DateTime` ISO string, and hyper `»=~=«`/`»=:=«` are no longer
+mis-stripped as `op=` assignments). **No suite in the Test::META chain
+fails anymore.** Known adjacent gap (not needed by the suite): an
+UNparameterized `Rational.new(6,4)` still fails binding (`expected NuT,
+got Int` — role type-param defaults `::NuT = Int` unresolved in method
+signatures).
 Test-Helpers ships no `t/` of its own (covered by mutsu's local
 `t/test-util-*.t`).
 
