@@ -176,7 +176,11 @@ earlier ones.
   `Statement::Loop::RepeatWhile(body, condition)`, with `repeat ... until X` folding to
   `RepeatWhile` + negated condition (same collapse as `until`/`while`). Labelled loops and topic
   binding (`if EXPR -> $v` / `elsif EXPR -> $v`) remain the coverage boundary (explicit
-  `RuntimeError`), deferred to a later slice. Implicit-topic `for`
+  `RuntimeError`), deferred to a later slice. Loop labels are handled (slice 17): a
+  `LABEL: while/for/loop` prepends a `labels => (Label(name => "..."),)` field (raku renders labels
+  first). mutsu stores the label inline on `while`/`for`/bare-`loop`, but wraps a labelled `repeat`
+  (and C-style `loop`) in a separate `Stmt::Label` node it does not yet convert (C-style-labelled
+  does not even parse), so those remain the boundary. Implicit-topic `for`
   is handled (slice 6): `for SRC { ... }` (no explicit signature) → `Statement::For(mode =>
   "serial", source, body)` where the body is a topic-taking `Block` marked `implicit-topic => True`
   / `required-topic => 1`. `with`/`without` are NOT mappable — mutsu desugars them at parse time

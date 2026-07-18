@@ -793,9 +793,13 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 16: role declarations (`RakuAST::Role` with a distinct `RoleBody`). Tests in
         `t/rakuast-role.t`. (Grammars are `ClassDecl`+`parents=["Grammar"]` in mutsu — no distinct
         node — so they defer.)
-  - [ ] Slice 17+: labelled loops, parameterised/definite types (`Array[Int]`/`Int:D`), attribute
-        defaults (`Trait::WillBuild`), quoted method names, given/when; then `.DEPARSE`; resolve the
-        constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
+  - [x] Slice 17: loop labels (`LABEL: while/for/loop` → `labels => (Label(...),)`). Tests in
+        `t/rakuast-loop-label.t`. (Labelled `repeat`/C-style loops use a separate `Stmt::Label`
+        node, deferred.)
+  - [ ] Slice 18+: given/when, parameterised/definite types (`Array[Int]`/`Int:D`), attribute
+        defaults (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped loops; then
+        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
+        mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
