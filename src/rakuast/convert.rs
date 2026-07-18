@@ -93,12 +93,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let has_initializer = custom_traits
                 .iter()
                 .any(|(name, _)| name == "__has_initializer");
+            let init = has_initializer.then_some(expr);
             Ok(Some(statement_expression(var_declaration(
-                name,
-                expr,
-                has_initializer,
-                scope,
-                type_name,
+                name, init, scope, type_name, None,
             )?)))
         }
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
@@ -395,6 +392,77 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 ],
             })))
         }
+        Stmt::HasDecl {
+            name,
+            is_public,
+            default,
+            handles,
+            is_rw,
+            type_constraint,
+            type_smiley,
+            is_required,
+            sigil,
+            where_constraint,
+            is_alias,
+            is_our,
+            is_my,
+            is_default,
+            is_type,
+            deprecated_message,
+            unknown_traits,
+            ..
+        } => {
+            // A plain `has [Type] $.x` attribute -> a `VarDeclaration::Simple`
+            // with `scope => "has"` and a `twigil` (`.` public accessor / `!`
+            // private). An *explicit* attribute default (`has $.x = 5`) becomes a
+            // `Trait::WillBuild` in raku (not an `initializer`), so it is
+            // deferred; but a typed attribute (`has Int $.z`) carries an
+            // *implicit* `BareWord(<TypeName>)` default that is NOT a will-build
+            // and must be ignored. Traits, type smileys, `required`, `where`,
+            // aliases, and `my`/`our` attributes are also deferred.
+            let has_explicit_default = match default {
+                None => false,
+                // The implicit type default: `BareWord` equal to the type name.
+                Some(Expr::BareWord(w)) => type_constraint.as_deref() != Some(w.as_str()),
+                Some(_) => true,
+            };
+            if has_explicit_default
+                || !handles.is_empty()
+                || *is_rw
+                || type_smiley.is_some()
+                || is_required.is_some()
+                || where_constraint.is_some()
+                || *is_alias
+                || *is_our
+                || *is_my
+                || is_default.is_some()
+                || is_type.is_some()
+                || deprecated_message.is_some()
+                || !unknown_traits.is_empty()
+            {
+                return Err(unsupported(
+                    "attribute with default / traits / smiley / scope",
+                ));
+            }
+            let type_name = match type_constraint.as_deref() {
+                Some(t) if is_simple_type(t) => Some(t),
+                Some(_) => return Err(unsupported("parameterised/definite attribute type")),
+                None => None,
+            };
+            let twigil = if *is_public { "." } else { "!" };
+            let full_name = if *sigil == '$' {
+                name.resolve()
+            } else {
+                format!("{}{}", sigil, name.resolve())
+            };
+            Ok(Some(statement_expression(var_declaration(
+                &full_name,
+                None,
+                Some("has"),
+                type_name,
+                Some(twigil),
+            )?)))
+        }
         Stmt::Assign { name, expr, op } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). Note mutsu
             // desugars `$x += 3` to `$x = $x + 3` (op stays `Assign`), so a
@@ -462,14 +530,15 @@ fn plain_infix(op: &str) -> RakuAstNode {
 /// name carries its `@`/`%`/`&` sigil.
 fn var_declaration(
     name: &str,
-    init_expr: &Expr,
-    has_initializer: bool,
+    init: Option<&Expr>,
     scope: Option<&'static str>,
     type_name: Option<&str>,
+    twigil: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    // Field order matches raku: scope, type, sigil, desigilname, initializer —
-    // with scope (default `my`) and type omitted when absent.
+    // Field order matches raku: scope, type, sigil, twigil, desigilname,
+    // initializer — each omitted when absent (scope defaults to `my`; twigil is
+    // present only on attributes).
     let mut fields = Vec::new();
     if let Some(s) = scope {
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
@@ -482,11 +551,14 @@ fn var_declaration(
         fields.push(node_field(Some("type"), type_node));
     }
     fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
+    if let Some(tw) = twigil {
+        fields.push(leaf_field(Some("twigil"), Value::str(tw.to_string())));
+    }
     fields.push(node_field(
         Some("desigilname"),
         name_from_identifier(desigil),
     ));
-    if has_initializer {
+    if let Some(init_expr) = init {
         let assign = RakuAstNode {
             class: RakuAstClass::InitializerAssign,
             fields: vec![node_field(None, convert_expr(init_expr)?)],
@@ -719,7 +791,8 @@ fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
         {
             return Err(unsupported("scoped/typed variable declaration"));
         }
-        return var_declaration(name, expr, !expr_is_nil(expr), None, None);
+        let init = (!expr_is_nil(expr)).then_some(expr);
+        return var_declaration(name, init, None, None, None);
     }
     // Assignment / expression setups convert normally, then get unwrapped.
     let node = convert_stmt(stmt)?.ok_or_else(|| unsupported("empty loop setup clause"))?;
