@@ -227,8 +227,13 @@ impl Interpreter {
             );
             // Preserve the top-level shape metadata: coercing a shaped array
             // rebuilds its backing `ArrayData`, which would otherwise drop the
-            // `:shape(...)` so `.raku` renders a flat array.
-            if let Some(shape) = crate::runtime::utils::shaped_array_shape(&value) {
+            // `:shape(...)` so `.raku` renders a flat array. Read the stored
+            // `shape` field directly (O(1)) rather than re-deriving it by walking
+            // the whole structure — a 100M-element `my int @a[N;N]` init must not
+            // pay an extra full-array pass here.
+            if kind == crate::value::ArrayKind::Shaped
+                && let Some(shape) = items.shape.clone()
+            {
                 crate::runtime::utils::mark_shaped_array(&rebuilt, Some(&shape));
             }
             return Ok(rebuilt);
@@ -395,13 +400,8 @@ impl Interpreter {
                 continue;
             }
             // For shaped arrays, sub-arrays are structural — recurse into them
-            // and validate the leaves, not the rows. Detect a structural row by
-            // its own shaped mark too (`is_shaped_array`), not only the parent
-            // `kind`: reassigning a shaped array to a typed shaped variable
-            // (`my Int @a[2;3]; @a = @a`) can arrive with the top-level `kind`
-            // normalized away while each row keeps its `Shaped` mark.
-            if (kind == crate::value::ArrayKind::Shaped
-                || crate::runtime::utils::is_shaped_array(item))
+            // and validate the leaves, not the rows.
+            if kind == crate::value::ArrayKind::Shaped
                 && let ValueView::Array(sub_items, sub_kind) = item.view()
             {
                 let sub_coerced = self.coerce_typed_array_elements(
