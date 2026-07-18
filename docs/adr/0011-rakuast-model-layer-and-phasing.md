@@ -335,6 +335,12 @@ earlier ones.
     previous `[…].method` convert error. Positional subscripts (`@a[1]` — an `ApplyPostfix` with a
     `Postcircumfix::ArrayIndex`) stay the boundary. Tests in `t/rakuast-eval-array-lit.t`. Next:
     positional subscripts, hash literals, bareword type terms.
+  - **Slice 25 (positional subscripts) — done.** An `ApplyPostfix` with a `Postcircumfix::ArrayIndex`
+    postfix (`@a[EXPR]`) lowers to `Expr::Index` (the index is the `SemiList`'s single
+    `Statement::Expression`); the read side already emits it. `EVAL(Q{my @a = 10, 20, 30; @a[1]}.AST)` →
+    `20`; a computed index, subscripting an array literal (`[10, 20, 30][2]`), and two subscripts in an
+    expression work. Associative subscripts (`%h{…}`) and slices (`@a[1, 2]`) stay the boundary. Tests
+    in `t/rakuast-eval-subscript.t`. Next: hash literals, bareword type terms, code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

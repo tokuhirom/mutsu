@@ -646,21 +646,34 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(Expr::ArrayLiteral(items))
         }
-        // A postfix method call: `$x.abs` -> ApplyPostfix(operand, Call::Method).
-        // Subscripts / hyper-calls carry a different postfix and are deferred.
+        // A postfix method call (`$x.abs`) or a positional subscript (`@a[1]`).
+        // Hyper-calls and associative subscripts carry a different postfix and are
+        // deferred.
         RakuAstClass::ApplyPostfix => {
             let operand = lower_expr(named_child(node, "operand")?)?;
             let postfix = named_child(node, "postfix")?;
-            if postfix.class != RakuAstClass::CallMethod {
-                return Err(unsupported(node));
+            match postfix.class {
+                RakuAstClass::CallMethod => Ok(Expr::MethodCall {
+                    target: Box::new(operand),
+                    name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
+                    args: arg_exprs(postfix)?,
+                    modifier: None,
+                    quoted: false,
+                }),
+                // `@a[EXPR]` -> Postcircumfix::ArrayIndex(index => SemiList(
+                // Statement::Expression(EXPR))).
+                RakuAstClass::PostcircumfixArrayIndex => {
+                    let semilist = named_child(postfix, "index")?;
+                    let stmt_expr = named_child_or_positional(semilist)?;
+                    let index = lower_expr(stmt_expr)?;
+                    Ok(Expr::Index {
+                        target: Box::new(operand),
+                        index: Box::new(index),
+                        is_positional: true,
+                    })
+                }
+                _ => Err(unsupported(node)),
             }
-            Ok(Expr::MethodCall {
-                target: Box::new(operand),
-                name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
-                args: arg_exprs(postfix)?,
-                modifier: None,
-                quoted: false,
-            })
         }
         _ => Err(unsupported(node)),
     }
