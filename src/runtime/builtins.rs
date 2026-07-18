@@ -1025,6 +1025,15 @@ impl Interpreter {
         BUILTIN_FUNCTION_NAMES.contains(&name)
     }
 
+    /// MOP pseudo-methods (`WHAT`, `HOW`, `VAR`) that Raku also exposes as
+    /// first-class `&`-callables (`&WHAT`, `.map(&WHAT)`). They are dispatched as
+    /// bare functions (see the function-call handler), but are deliberately kept
+    /// out of `BUILTIN_FUNCTION_NAMES` so they do not shadow the same-named
+    /// methods in other resolution paths; `resolve_code_var` special-cases them.
+    pub(crate) fn is_mop_macro_function(name: &str) -> bool {
+        matches!(name, "WHAT" | "HOW" | "VAR")
+    }
+
     /// Builtin `skip(N, list)` function — skips N elements from the list.
     /// This is only called when the args look like a list-skip (not Test::skip).
     pub(crate) fn builtin_skip(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

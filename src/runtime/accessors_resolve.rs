@@ -339,6 +339,12 @@ impl Interpreter {
             sub_val
         } else if Self::is_builtin_function(lookup_name) {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
+        } else if Self::is_mop_macro_function(lookup_name) {
+            // The MOP pseudo-methods `WHAT`/`HOW`/`VAR` are also first-class
+            // callables in Raku — `&WHAT`, `.map(&WHAT)`, `my $f = &WHAT` — not
+            // just call-syntax macros. They dispatch through the builtin-function
+            // path (see `builtins.rs`), so expose them as Routine values here.
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if self.test_module_loaded() && Self::is_test_function_name(lookup_name) {
             // Test-framework functions (&is-deeply, &pass, ...) are implemented
             // as Rust methods (runtime/test_functions.rs), not declared subs, so
