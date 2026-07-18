@@ -396,13 +396,21 @@ impl Interpreter {
                     is_our: _,
                     is_my: _,
                     is_default,
-                    is_type: _,
+                    is_type,
                     deprecated_message: _,
                     is_built: _,
                     unknown_traits: _,
                 } => {
                     let attr_name_str = attr_name.resolve();
                     role_def.own_attribute_names.insert(attr_name_str.clone());
+                    // Carry an `is Type` container trait (`has @.a is G::A`) so it
+                    // can be transferred to the consuming class at composition and
+                    // its element type enforced.
+                    if let Some(it) = is_type {
+                        self.registry_mut()
+                            .role_attribute_is_types
+                            .insert((name.to_string(), attr_name_str.clone()), it.clone());
+                    }
                     // `is default(...)` on a role attribute can reference the role's
                     // type parameters (`is default(T)`), so it cannot be evaluated
                     // until composition. Stash the expression keyed by (role, attr);

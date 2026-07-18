@@ -492,21 +492,62 @@ impl Interpreter {
     /// element-type metadata + element type-check); any other container type is
     /// produced by dispatching to that type's `.new`, mirroring the uninitialized
     /// `is Type` path. A value that already matches the declared type is kept.
+    /// Resolve an `is Type` name that is (or aliases to) a subclass of `Array[T]`
+    /// to its concrete class name and element type. Handles a per-composition
+    /// alias (`has @.a is G::A` where `G::A` resolves to `R::G::A[Int]`, itself a
+    /// subclass of `Array[Int]`), so such an attribute type-checks its elements
+    /// exactly like a literal `is Array[Int]`. Returns `None` for a literal
+    /// `Array[...]` (handled directly) or a non-array type.
+    fn is_type_array_subclass_element(&mut self, type_name: &str) -> Option<(String, String)> {
+        if type_name.starts_with("Array[") || type_name.starts_with("array[") {
+            return None;
+        }
+        // A bare/aliased name may map to a concrete parameterized class through
+        // the env (the composition alias `G::A` -> `R::G::A[Int]`).
+        let resolved = match self.env.get(type_name).map(|v| v.view()) {
+            Some(ValueView::Package(name)) => name.resolve(),
+            _ => type_name.to_string(),
+        };
+        if !self.registry().classes.contains_key(&resolved) {
+            return None;
+        }
+        for anc in self.class_mro(&resolved).iter() {
+            let anc = anc.resolve();
+            if let Some(inner) = anc.strip_prefix("Array[").and_then(|s| s.strip_suffix(']')) {
+                return Some((resolved, inner.trim().to_string()));
+            }
+        }
+        None
+    }
+
     pub(crate) fn coerce_value_to_is_type(
         &mut self,
         type_name: &str,
         sigil: char,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        if self.type_matches_value(type_name, &value) {
+        // A parameterized `Array[T]` is handled below even when the provided
+        // value leniently matches (an untyped array whose current elements
+        // happen to be `T`): it must be rebuilt as a genuinely typed array so
+        // `.^name` is `Array[T]` and later element assignments are checked.
+        let is_parametric_array =
+            type_name.starts_with("Array[") || type_name.starts_with("array[");
+        let array_subclass = self.is_type_array_subclass_element(type_name);
+        if array_subclass.is_none()
+            && !is_parametric_array
+            && self.type_matches_value(type_name, &value)
+        {
             return Ok(value);
         }
-        if let Some(inner) = type_name
+        // The declared container name (for `.^name`) and the element type: a
+        // literal `Array[T]`, or a resolved subclass of `Array[T]`.
+        let array_target = type_name
             .strip_prefix("Array[")
             .or_else(|| type_name.strip_prefix("array["))
             .and_then(|s| s.strip_suffix(']'))
-        {
-            let inner = inner.trim().to_string();
+            .map(|inner| (type_name.to_string(), inner.trim().to_string()))
+            .or(array_subclass);
+        if let Some((declared, inner)) = array_target {
             let coerced = Self::coerce_attr_value_by_sigil(value, '@');
             let items = if let ValueView::Array(items, _) = coerced.view() {
                 (**items).clone()
@@ -528,7 +569,7 @@ impl Interpreter {
                 super::ContainerTypeInfo {
                     value_type: inner,
                     key_type: None,
-                    declared_type: Some(type_name.to_string()),
+                    declared_type: Some(declared),
                 },
             );
             Ok(arr)

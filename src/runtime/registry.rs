@@ -124,6 +124,11 @@ pub(crate) struct Registry {
     pub(crate) class_attribute_default_exprs: HashMap<(String, String), crate::ast::Expr>,
     /// Per-attribute declared type: (class, attr) -> type name.
     pub(crate) class_attribute_is_types: HashMap<(String, String), String>,
+    /// Per-attribute `is Type` container trait declared on a *role* attribute:
+    /// (role, attr) -> type name. Carried onto a consuming class's
+    /// `class_attribute_is_types` at composition (`has @.a is G::A` in a
+    /// parametric role) so the attribute's element type is enforced.
+    pub(crate) role_attribute_is_types: HashMap<(String, String), String>,
     /// Per-attribute `does Role` traits: (class, attr) -> role names mixed into
     /// the attribute's container (`has $.x does Foo`). Applied to the attribute's
     /// value at construction so `$o.x` does the role.

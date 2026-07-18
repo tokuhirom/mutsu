@@ -6,6 +6,40 @@ use super::*;
 use crate::ast::{HandleSpec, ParamDef, PhaserKind};
 use crate::symbol::Symbol;
 
+/// Replace whole type-name tokens in `name` that exactly match a role type
+/// parameter with its concrete type name. Tokens are delimited by `[`, `]`,
+/// `,`, and whitespace, so `Array[TV]` with `TV -> Rat:D` becomes
+/// `Array[Rat:D]` while a nested-class name like `G::A` (no embedded param) is
+/// left untouched.
+fn substitute_type_param_tokens(name: &str, subs: &[(String, String)]) -> String {
+    if subs.is_empty() {
+        return name.to_string();
+    }
+    let mut result = String::with_capacity(name.len());
+    let mut token = String::new();
+    let flush = |token: &mut String, result: &mut String| {
+        if !token.is_empty() {
+            let replacement = subs
+                .iter()
+                .find(|(p, _)| p == token)
+                .map(|(_, r)| r.as_str())
+                .unwrap_or(token.as_str());
+            result.push_str(replacement);
+            token.clear();
+        }
+    };
+    for ch in name.chars() {
+        if matches!(ch, '[' | ']' | ',' | ' ') {
+            flush(&mut token, &mut result);
+            result.push(ch);
+        } else {
+            token.push(ch);
+        }
+    }
+    flush(&mut token, &mut result);
+    result
+}
+
 impl Interpreter {
     /// True for a categorical operator name such as `prefix:<~>`, `infix:<as>`,
     /// `postfix:<!>`, `circumfix:<[ ]>`, etc.
@@ -206,6 +240,49 @@ impl Interpreter {
             .insert(class_name.to_string(), class_def);
         self.clear_private_zeroarg_method_cache();
         Ok(())
+    }
+
+    /// Rename a class declared inside a parametric role body to its
+    /// per-composition parameterized name. `old_name` is the registry key it was
+    /// registered under while running the role's deferred body (`G::A` for a
+    /// class nested in `my package G`, `R::A` for a direct role-body class);
+    /// `role_name` is the composing role (`R`); `suffix` is the bracketed concrete
+    /// type args (`[Int]`). Returns the new registry key, or `None` when no rename
+    /// is needed.
+    fn rename_generic_composed_class(
+        &mut self,
+        old_name: &str,
+        role_name: &str,
+        suffix: &str,
+    ) -> Option<String> {
+        // Prefix the class with the role unless it is already role-qualified, so
+        // a `my package G` nested class (`G::A`) becomes `R::G::A` while a direct
+        // role-body class (`R::A`) keeps its single role prefix.
+        let role_prefix = format!("{role_name}::");
+        let base = if old_name.starts_with(&role_prefix) || old_name == role_name {
+            old_name.to_string()
+        } else {
+            format!("{role_prefix}{old_name}")
+        };
+        let new_name = format!("{base}{suffix}");
+        if new_name == old_name {
+            return None;
+        }
+        // Move the class definition to the new key with a cleared MRO cache so it
+        // recomputes with the new name as its head.
+        let mut def = self.registry_mut().classes.remove(old_name)?;
+        def.mro = std::sync::Arc::from(Vec::<Symbol>::new());
+        self.registry_mut().classes.insert(new_name.clone(), def);
+        if self.user_declared_classes.remove(old_name) {
+            self.user_declared_classes.insert(new_name.clone());
+        }
+        // Register the new type object so `R::G::A[Int]` resolves; the caller
+        // aliases the bare `G::A` reference to the same value.
+        self.env
+            .insert(new_name.clone(), Value::package(Symbol::intern(&new_name)));
+        // Prime the MRO for the new name.
+        self.class_mro(&new_name);
+        Some(new_name)
     }
 
     pub(crate) fn register_class_decl(
@@ -699,6 +776,28 @@ impl Interpreter {
                         .entry((name.to_string(), attr))
                         .or_insert(expr);
                 }
+                // Carry each composed-role attribute's `is Type` container trait
+                // (`has @.a is Array[TV]`, `has @.a is G::A`) onto the consuming
+                // class so its element type is enforced at construction. Type
+                // parameters embedded in the type name (`Array[TV]`) are resolved
+                // to their concrete args (`Array[Rat:D]`); a nested-class trait
+                // (`G::A`) has no embedded param and is repointed to the
+                // parameterized class by the rename pass below.
+                let role_is_types: Vec<(String, String)> = self
+                    .registry()
+                    .role_attribute_is_types
+                    .iter()
+                    .filter(|((r, _), _)| r == base_role_name)
+                    .map(|((_, attr), ty)| {
+                        (attr.clone(), substitute_type_param_tokens(ty, &type_subs))
+                    })
+                    .collect();
+                for (attr, ty) in role_is_types {
+                    self.registry_mut()
+                        .class_attribute_is_types
+                        .entry((name.to_string(), attr))
+                        .or_insert(ty);
+                }
                 for (mname, overloads) in &role.methods {
                     // Skip methods declared with `my` scope -- they are role-private
                     // and should not be composed into consuming classes.
@@ -763,6 +862,29 @@ impl Interpreter {
                     for (param_name, param_value) in &role_param_values {
                         self.bind_type_capture(param_name, param_value);
                     }
+                    // A class declared inside a *parametric* role body becomes
+                    // parametric over the role's type args: `class A is Array[T]`
+                    // in `role R[::T]` composed with `Int` is `R::A[Int]` (or
+                    // `R::G::A[Int]` when nested in `my package G`). Snapshot the
+                    // registry so the freshly-declared nested class(es) can be
+                    // renamed to their per-composition parameterized names below.
+                    let class_suffix: Option<String> = if role_arg_values.is_empty() {
+                        None
+                    } else {
+                        Some(format!(
+                            "[{}]",
+                            role_arg_values
+                                .iter()
+                                .map(type_value_name)
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        ))
+                    };
+                    let classes_before: HashSet<String> = if class_suffix.is_some() {
+                        self.registry().classes.keys().cloned().collect()
+                    } else {
+                        HashSet::new()
+                    };
                     // Run a nested TYPE declaration (`my class CR2`) in the role
                     // body with the ROLE as the current package so it is named
                     // `R2::CR2`, not the composing class. Only type declarations get
@@ -780,6 +902,46 @@ impl Interpreter {
                             self.set_current_package(saved_body_pkg.clone());
                         }
                         r?;
+                    }
+                    // Rename each newly-declared nested class to its
+                    // per-composition parameterized name and record an alias so a
+                    // bare reference (`G::A`) from a composed method still resolves
+                    // to this instantiation's class.
+                    if let Some(suffix) = &class_suffix {
+                        let new_classes: Vec<String> = self
+                            .registry()
+                            .classes
+                            .keys()
+                            .filter(|k| !classes_before.contains(*k))
+                            .cloned()
+                            .collect();
+                        for old_name in new_classes {
+                            if let Some(new_name) = self.rename_generic_composed_class(
+                                &old_name,
+                                base_role_name,
+                                suffix,
+                            ) {
+                                // Repoint any attribute typed `is G::A` at the
+                                // parameterized class so its element type is
+                                // enforced at construction (`is_type_array_subclass_element`
+                                // resolves it via the registry, not a runtime env
+                                // alias that `.new` would have already reset).
+                                let attrs_to_fix: Vec<(String, String)> = self
+                                    .registry()
+                                    .class_attribute_is_types
+                                    .iter()
+                                    .filter(|((c, _), t)| c == name && *t == &old_name)
+                                    .map(|((c, a), _)| (c.clone(), a.clone()))
+                                    .collect();
+                                for key in attrs_to_fix {
+                                    self.registry_mut()
+                                        .class_attribute_is_types
+                                        .insert(key, new_name.clone());
+                                }
+                                class_role_param_bindings
+                                    .insert(old_name, Value::package(Symbol::intern(&new_name)));
+                            }
+                        }
                     }
                     // Remove type capture markers (but keep the variables
                     // created by the deferred stmts for method closures)
