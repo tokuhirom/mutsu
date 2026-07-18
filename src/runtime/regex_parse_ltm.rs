@@ -579,9 +579,14 @@ impl Interpreter {
                 (min_val, Some(parse_num(max_str)))
             }
         } else {
-            let exact = parse_num(count_str);
-            let exact = if exact == 0 { 1 } else { exact };
-            (exact, Some(exact))
+            // `** 0` is a valid "exactly zero times" quantifier (RFC 3986's
+            // `token path-empty { <.pchar> ** 0 }`); only an unparsable count
+            // falls back to 1.
+            let cleaned: String = count_str.chars().filter(|c| *c != '_').collect();
+            match cleaned.parse::<usize>() {
+                Ok(exact) => (exact, Some(exact)),
+                Err(_) => (1, Some(1)),
+            }
         }
     }
 

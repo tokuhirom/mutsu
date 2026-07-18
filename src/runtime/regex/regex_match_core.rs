@@ -250,6 +250,25 @@ impl Interpreter {
             .map(Vec::len)
             .unwrap_or(0);
         if sub_count < name_count {
+            // An aliased subrule call (`$<pl> = <G::list>`) must carry the
+            // called rule's full sub-match tree, not just its text: the rule
+            // already merged its rich subcap into the store under its own
+            // capture key, so clone that entry (span-checked) for the alias.
+            // Raku keeps BOTH captures (`$/.keys` is `(G::list pl)`).
+            let subrule_subcap = if group_subcap.is_none()
+                && let RegexAtom::Named(atom_name) = &token.atom
+            {
+                let spec = Self::parse_named_regex_lookup_spec(atom_name);
+                let own_key = spec
+                    .capture_name
+                    .clone()
+                    .or_else(|| (!spec.silent).then(|| spec.lookup_name.clone()));
+                own_key
+                    .and_then(|k| store.caps().named_subcaps.get(&k)?.last().cloned())
+                    .filter(|sc| sc.from == from && sc.to == to)
+            } else {
+                None
+            };
             let sub = if let Some(mut gs) = group_subcap.take() {
                 // Keep the group's nested captures, but pin the span/text to
                 // the aliased group's extent.
@@ -259,6 +278,8 @@ impl Interpreter {
                 gsm.match_from = from;
                 gsm.matched = captured.clone();
                 gs
+            } else if let Some(sc) = subrule_subcap {
+                sc
             } else {
                 std::sync::Arc::new(RegexCaptures {
                     from,

@@ -68,6 +68,121 @@ impl Interpreter {
         Some(Ok(()))
     }
 
+    /// `:=` bind of a Positional value to an `@`-sigiled target: preserves the
+    /// container type (e.g. List stays List) instead of copying into a fresh
+    /// Array. Shared by the SetLocal path (`my @x := ...`) and the SetGlobal
+    /// path (`@!attr := ...`, `our @x := ...`).
+    ///
+    /// Type-check: only Positional values can be bound to @-sigiled vars.
+    /// A single-index terminal element bind (`@x := @array[2]`) may arrive
+    /// here as a `ContainerRef` cell (promoted so a later whole-array
+    /// assignment writes through the source element) — decont it first so the
+    /// Positional check inspects the actual bound value, not the cell wrapper.
+    pub(crate) fn bind_positional_value(
+        &mut self,
+        name: &str,
+        raw_popped: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let decontained_popped = raw_popped.deref_container();
+        let is_positional = match decontained_popped.view() {
+            ValueView::Array(..)
+            | ValueView::LazyList(_)
+            | ValueView::LazyIoLines { .. }
+            | ValueView::Seq(_)
+            | ValueView::Slip(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
+            | ValueView::Uni { .. }
+            | ValueView::Nil => true,
+            // Instance objects are Positional only if they implement
+            // the Positional role (or Array subclass etc.), but not
+            // Failure or arbitrary classes.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } => {
+                let cn = class_name.resolve();
+                matches!(
+                    cn.as_str(),
+                    "Array"
+                        | "List"
+                        | "Slip"
+                        | "Seq"
+                        | "Range"
+                        | "Buf"
+                        | "Blob"
+                        | "utf8"
+                        | "buf8"
+                        | "buf16"
+                        | "buf32"
+                ) || self
+                    .class_composed_roles(&cn)
+                    .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+                    || attributes.contains_key("__mutsu_array_storage")
+            }
+            _ => false,
+        };
+        if !is_positional {
+            let got_type = crate::runtime::utils::value_type_name(raw_popped);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("got".to_string(), raw_popped.clone());
+            attrs.insert(
+                "expected".to_string(),
+                Value::package(crate::symbol::Symbol::intern("Positional")),
+            );
+            attrs.insert("symbol".to_string(), Value::str_from(name));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Type check failed in binding; expected Positional but got {}",
+                    got_type
+                )),
+            );
+            let ex = Value::make_instance(
+                crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
+                attrs,
+            );
+            let mut err = RuntimeError::new(format!(
+                "Type check failed in binding; expected Positional but got {}",
+                got_type
+            ));
+            err.exception = Some(Box::new(ex));
+            return Err(err);
+        }
+        Ok(match raw_popped.view() {
+            // `:=` binds the container itself rather than copying values
+            // into a fresh Array, so — unlike plain `=` assignment, which
+            // must stay conservative about mutation support (see
+            // docs/lazy-arrays.md L2) — ANY genuinely-lazy list (gather
+            // coroutine, infinite sequence/closure spec, lazy pipe, scan)
+            // can be bound without forcing. A *plain* (non-`lazy`-marked)
+            // gather is `.is-lazy` False (`is_genuinely_lazy()` alone
+            // would miss it) but binding must still not force it — that
+            // is the whole point of `:=` vs `=` (t/gather-lazy.t tests
+            // 1/3) — so `coroutine.is_some()` is checked too. Tag it as
+            // living in `@` array context so gist/`.WHAT` render
+            // `[...]`/`Array` rather than `(...)`/`Seq`.
+            ValueView::LazyList(list) if list.coroutine.is_some() || list.is_genuinely_lazy() => {
+                Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
+            }
+            ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
+            ValueView::LazyIoLines { .. } => {
+                let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
+                Value::real_array(runtime::value_to_list(&forced))
+            }
+            // `@a := $x` strips the Scalar container: the @-var binds the
+            // Array itself (same backing data, plain kind), not the item.
+            ValueView::Array(items, kind) if kind.is_itemized() => {
+                Value::array_with_kind(items.clone(), kind.decontainerize())
+            }
+            _ => raw_popped.clone(),
+        })
+    }
+
     pub(super) fn exec_set_local_op(
         &mut self,
         code: &CompiledCode,
@@ -715,113 +830,7 @@ impl Interpreter {
                     ),
                 }
             } else if is_bind {
-                // `:=` binding preserves the container type (e.g. List stays List).
-                // Type-check: only Positional values can be bound to @-sigiled vars.
-                // A single-index terminal element bind (`@x := @array[2]`) may
-                // arrive here as a `ContainerRef` cell (promoted so a later
-                // whole-array assignment writes through the source element) —
-                // decont it first so the Positional check inspects the actual
-                // bound value, not the cell wrapper.
-                let decontained_popped = raw_popped.deref_container();
-                let is_positional = match decontained_popped.view() {
-                    ValueView::Array(..)
-                    | ValueView::LazyList(_)
-                    | ValueView::LazyIoLines { .. }
-                    | ValueView::Seq(_)
-                    | ValueView::Slip(_)
-                    | ValueView::Range(..)
-                    | ValueView::RangeExcl(..)
-                    | ValueView::RangeExclStart(..)
-                    | ValueView::RangeExclBoth(..)
-                    | ValueView::GenericRange { .. }
-                    | ValueView::Uni { .. }
-                    | ValueView::Nil => true,
-                    // Instance objects are Positional only if they implement
-                    // the Positional role (or Array subclass etc.), but not
-                    // Failure or arbitrary classes.
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } => {
-                        let cn = class_name.resolve();
-                        matches!(
-                            cn.as_str(),
-                            "Array"
-                                | "List"
-                                | "Slip"
-                                | "Seq"
-                                | "Range"
-                                | "Buf"
-                                | "Blob"
-                                | "utf8"
-                                | "buf8"
-                                | "buf16"
-                                | "buf32"
-                        ) || self
-                            .class_composed_roles(&cn)
-                            .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
-                            || attributes.contains_key("__mutsu_array_storage")
-                    }
-                    _ => false,
-                };
-                if !is_positional {
-                    let got_type = crate::runtime::utils::value_type_name(&raw_popped);
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("got".to_string(), raw_popped.clone());
-                    attrs.insert(
-                        "expected".to_string(),
-                        Value::package(crate::symbol::Symbol::intern("Positional")),
-                    );
-                    attrs.insert("symbol".to_string(), Value::str(name.clone()));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Type check failed in binding; expected Positional but got {}",
-                            got_type
-                        )),
-                    );
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::TypeCheck::Binding"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(format!(
-                        "Type check failed in binding; expected Positional but got {}",
-                        got_type
-                    ));
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
-                }
-                match raw_popped.view() {
-                    // `:=` binds the container itself rather than copying values
-                    // into a fresh Array, so — unlike plain `=` assignment, which
-                    // must stay conservative about mutation support (see
-                    // docs/lazy-arrays.md L2) — ANY genuinely-lazy list (gather
-                    // coroutine, infinite sequence/closure spec, lazy pipe, scan)
-                    // can be bound without forcing. A *plain* (non-`lazy`-marked)
-                    // gather is `.is-lazy` False (`is_genuinely_lazy()` alone
-                    // would miss it) but binding must still not force it — that
-                    // is the whole point of `:=` vs `=` (t/gather-lazy.t tests
-                    // 1/3) — so `coroutine.is_some()` is checked too. Tag it as
-                    // living in `@` array context so gist/`.WHAT` render
-                    // `[...]`/`Array` rather than `(...)`/`Seq`.
-                    ValueView::LazyList(list)
-                        if list.coroutine.is_some() || list.is_genuinely_lazy() =>
-                    {
-                        Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
-                    }
-                    ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
-                    ValueView::LazyIoLines { .. } => {
-                        let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
-                        Value::real_array(runtime::value_to_list(&forced))
-                    }
-                    // `@a := $x` strips the Scalar container: the @-var binds the
-                    // Array itself (same backing data, plain kind), not the item.
-                    ValueView::Array(items, kind) if kind.is_itemized() => {
-                        Value::array_with_kind(items.clone(), kind.decontainerize())
-                    }
-                    _ => raw_popped.clone(),
-                }
+                self.bind_positional_value(name, &raw_popped)?
             } else {
                 match raw_popped.view() {
                     ValueView::LazyList(list) => {

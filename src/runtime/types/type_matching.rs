@@ -330,6 +330,15 @@ impl Interpreter {
         if constraint == "NaN" {
             return matches!(value.view(), ValueView::Num(n) if n.is_nan());
         }
+        if constraint == "Nil" {
+            // A `Nil` parameter/constraint accepts only Nil itself (and
+            // Failure, which is a Nil subclass) — NOT arbitrary undefined
+            // values. Needed so `multi method m(Nil)` out-narrows a coercion
+            // candidate like `m(Str() $s)` for a literal Nil argument.
+            return matches!(value.view(), ValueView::Nil)
+                || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str() == "Failure")
+                || matches!(value.view(), ValueView::Package(name) if name == "Nil");
+        }
         if constraint == "UInt" {
             return match value.view() {
                 ValueView::Int(i) => i >= 0,

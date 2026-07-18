@@ -36,6 +36,20 @@ impl Interpreter {
         }
     }
 
+    /// Stringify the smartmatch LHS for a regex match. An Instance whose class
+    /// defines a user `Str` method must match against that string (e.g. a
+    /// `URI::Path` object with `multi method Str` smartmatched against a path
+    /// regex); everything else keeps the plain value stringification.
+    fn regex_match_text(&mut self, left: &Value) -> String {
+        if let ValueView::Instance { class_name, .. } = left.view()
+            && self.has_user_method(&class_name.resolve(), "Str")
+            && let Ok(v) = self.call_method_with_values(left.clone(), "Str", vec![])
+        {
+            return v.to_string_value();
+        }
+        left.to_string_value()
+    }
+
     pub(crate) fn smart_match(&mut self, left: &Value, right: &Value) -> bool {
         // A first-class element container on the LHS (`ContainerRef`, e.g. a
         // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
@@ -205,7 +219,7 @@ impl Interpreter {
                     .extract_token_regex_pattern(&qualified)
                     .or_else(|| self.extract_token_regex_pattern(&name.resolve()))
                 {
-                    let text = left.to_string_value();
+                    let text = self.regex_match_text(left);
                     // Push routine frame so &?ROUTINE resolves inside code blocks
                     self.routine_stack.push(super::super::RoutineFrame {
                         package: package.resolve(),
@@ -266,7 +280,7 @@ impl Interpreter {
                 let pattern = &a.pattern;
                 let raw_nth = a.nth.as_ref().unwrap();
                 let perl5 = &a.perl5;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
                 } else {
@@ -393,7 +407,7 @@ impl Interpreter {
                 if a.continue_ && !a.global && !a.exhaustive && !a.overlap =>
             {
                 let pat = &a.pattern;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pat = pat.to_string();
                 let start_pos = self.get_match_to_position();
                 if let Some(captures) = self.regex_match_with_captures_from(&pat, &text, start_pos)
@@ -409,7 +423,7 @@ impl Interpreter {
                 if a.pos && !a.global && !a.exhaustive && !a.overlap =>
             {
                 let pat = &a.pattern;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pat = pat.to_string();
                 let start_pos = self.get_match_to_position();
                 if let Some(captures) = self.regex_match_with_captures_at(&pat, &text, start_pos) {
@@ -427,7 +441,7 @@ impl Interpreter {
                 let pattern = &a.pattern;
                 let needed = &a.repeat.unwrap();
                 let perl5 = &a.perl5;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
                 } else {
@@ -460,7 +474,7 @@ impl Interpreter {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
                 let perl5 = &a.perl5;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
                 } else {
@@ -519,7 +533,7 @@ impl Interpreter {
             (_, ValueView::RegexWithAdverbs(a)) if a.overlap => {
                 let pattern = &a.pattern;
                 let perl5 = &a.perl5;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
                 } else {
@@ -562,7 +576,7 @@ impl Interpreter {
                 let pattern = &a.pattern;
                 let repeat = &a.repeat;
                 let perl5 = &a.perl5;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pattern = if *perl5 {
                     self.interpolate_regex_pattern(pattern)
                 } else {
@@ -648,7 +662,7 @@ impl Interpreter {
                     ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
                     _ => unreachable!(),
                 };
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 // Set $_ to the match target so $( $_ ) works inside regex
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), Value::str(text.clone()));
@@ -765,7 +779,7 @@ impl Interpreter {
                 if !a.global && !a.exhaustive && !a.overlap && a.perl5 =>
             {
                 let pat = &a.pattern;
-                let text = left.to_string_value();
+                let text = self.regex_match_text(left);
                 let pat = self.interpolate_regex_pattern(pat);
                 #[cfg(feature = "pcre2")]
                 let result = self.regex_match_with_captures_p5(&pat, &text);
