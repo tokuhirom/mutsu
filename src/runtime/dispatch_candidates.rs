@@ -176,7 +176,16 @@ impl Interpreter {
         let typed_param_count = params
             .iter()
             .filter(|p| {
-                p.type_constraint.is_some()
+                // A bare `Mu`/`Any` constraint is no narrower than an
+                // unconstrained param (raku: unconstrained IS Any) — counting
+                // it made `(Any:D $j, Mu)` outrank `($j, @x)` wholesale
+                // (JSON::Unmarshal's fallback swallowing the Positional
+                // candidate). A smiley (`Any:D`) still counts.
+                let meaningful_type = p
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
+                meaningful_type
                     || (!p.slurpy
                         && (p.name.starts_with('@')
                             || p.name.starts_with('%')
@@ -302,6 +311,56 @@ impl Interpreter {
                         self.type_hierarchy_distance_with_var_type(base, &arg, var_type.as_deref());
                 }
             } else {
+                // An unconstrained `@`/`%` param carries an implicit
+                // Positional/Associative constraint: it must out-narrow a `Mu`
+                // candidate for a Positional/Associative argument
+                // (JSON::Unmarshal's `_unmarshal($json, @x)` vs `($json, Mu)`
+                // dispatching a `Positional[Dog]` attribute type).
+                if !pd.named && !pd.slurpy && (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                {
+                    while pos_idx < args.len()
+                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
+                    {
+                        pos_idx += 1;
+                    }
+                    if pos_idx < args.len() {
+                        let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                        pos_idx += 1;
+                        let implicit = if pd.name.starts_with('@') {
+                            "Positional"
+                        } else {
+                            "Associative"
+                        };
+                        total += self.type_hierarchy_distance_with_var_type(
+                            implicit,
+                            &arg,
+                            var_type.as_deref(),
+                        );
+                        continue;
+                    }
+                }
+                // An unconstrained positional `$`-param is an implicit `Any`
+                // constraint (raku): rank it at the Any distance instead of a
+                // flat 1000, so `($j, @x)` can out-narrow `(Any:D $j, Mu)` on
+                // the SECOND param (JSON::Unmarshal's `_unmarshal($json, @x)`
+                // vs its `(Any:D $json, Mu)` fallback).
+                if !pd.named && !pd.slurpy && !pd.name.starts_with('&') {
+                    while pos_idx < args.len()
+                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
+                    {
+                        pos_idx += 1;
+                    }
+                    if pos_idx < args.len() {
+                        let (arg, var_type) = self.unwrap_varref_for_dispatch(&args[pos_idx]);
+                        pos_idx += 1;
+                        total += self.type_hierarchy_distance_with_var_type(
+                            "Any",
+                            &arg,
+                            var_type.as_deref(),
+                        );
+                        continue;
+                    }
+                }
                 total += 1000;
                 if !pd.named {
                     pos_idx += 1;
@@ -374,17 +433,26 @@ impl Interpreter {
             if base == cn.as_str() {
                 return 0;
             }
-            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
-                for (i, ancestor) in class_def.mro.iter().enumerate() {
-                    if ancestor == base {
-                        return i;
+            // A parametric type object (`Positional[Dog]`) ranks by its base
+            // name: distance 0 to a `Positional` constraint (JSON::Unmarshal's
+            // `_unmarshal($json, @x)` receiving an attribute type).
+            let cn_base = cn.split('[').next().unwrap_or(cn.as_str());
+            if base == cn_base {
+                return 0;
+            }
+            for lookup in [cn.as_str(), cn_base] {
+                if let Some(class_def) = self.registry().classes.get(lookup) {
+                    for (i, ancestor) in class_def.mro.iter().enumerate() {
+                        if ancestor == base {
+                            return i;
+                        }
                     }
                 }
-            }
-            if let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
-                && roles.iter().any(|r| r == base)
-            {
-                return 1;
+                if let Some(roles) = self.registry().class_composed_roles.get(lookup)
+                    && roles.iter().any(|r| r == base)
+                {
+                    return 1;
+                }
             }
         }
         // Built-in type hierarchy (approximation of Raku MRO depths)

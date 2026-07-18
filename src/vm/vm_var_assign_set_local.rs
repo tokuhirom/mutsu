@@ -97,6 +97,19 @@ impl Interpreter {
             | ValueView::GenericRange { .. }
             | ValueView::Uni { .. }
             | ValueView::Nil => true,
+            // A Positional TYPE OBJECT binds too (`my @x := Positional[Dog]`,
+            // JSON::Unmarshal's attribute-type flow): raku accepts it and
+            // `.of` reads the parametric element type.
+            ValueView::Package(name) => {
+                let n = name.resolve();
+                let base = n.split('[').next().unwrap_or(&n);
+                matches!(
+                    base,
+                    "Positional" | "Array" | "List" | "Seq" | "Slip" | "Range" | "Buf" | "Blob"
+                ) || self
+                    .class_composed_roles(base)
+                    .is_some_and(|roles| roles.iter().any(|r| r == "Positional"))
+            }
             // Instance objects are Positional only if they implement
             // the Positional role (or Array subclass etc.), but not
             // Failure or arbitrary classes.
