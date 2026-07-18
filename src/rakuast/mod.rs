@@ -87,6 +87,8 @@ pub enum RakuAstClass {
     TypeSetting,
     // Phase 2 slice 8: C-style and repeat loops.
     StatementLoopRepeatWhile,
+    // Phase 2 slice 9: `:=` binding and comma lists.
+    ApplyListInfix,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,6 +137,7 @@ impl RakuAstClass {
             Sub => "RakuAST::Sub",
             TypeSetting => "RakuAST::Type::Setting",
             StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
+            ApplyListInfix => "RakuAST::ApplyListInfix",
         }
     }
 

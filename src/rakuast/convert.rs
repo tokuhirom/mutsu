@@ -291,14 +291,16 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 fields,
             })))
         }
-        Stmt::Assign { name, expr, op } => {
-            // Phase 2 slice 2 covers only plain `=`; `:=` (Bind) and match-assign
-            // map to distinct RakuAST nodes.
-            if !matches!(op, AssignOp::Assign) {
-                return Err(unsupported("non-`=` assignment"));
-            }
-            Ok(Some(statement_expression(assignment_infix(name, expr)?)))
-        }
+        Stmt::Assign { name, expr, op } => match op {
+            // `$x = EXPR` — the special `Assignment` infix (slice 2). Note mutsu
+            // desugars `$x += 3` to `$x = $x + 3` (op stays `Assign`), so a
+            // compound assignment renders as a plain `=` over a binop rather than
+            // raku's `MetaInfix::Assign` — a documented divergence.
+            AssignOp::Assign => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
+            // `$x := EXPR` — a plain `:=` infix (slice 9).
+            AssignOp::Bind => Ok(Some(statement_expression(bind_infix(name, expr)?))),
+            AssignOp::MatchAssign => Err(unsupported("`~~` match-assignment")),
+        },
         other => Err(unsupported(&format!("{other:?}"))),
     }
 }
@@ -327,6 +329,28 @@ fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError>
             node_field(Some("right"), convert_expr(rhs)?),
         ],
     })
+}
+
+/// `$x := EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Infix(":="), right)`.
+/// Unlike `=`, binding uses a plain `Infix`, not the special `Assignment` node.
+fn bind_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    let (sigil, desigil) = split_sigil(name);
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), var_lexical(sigil, desigil)),
+            node_field(Some("infix"), plain_infix(":=")),
+            node_field(Some("right"), convert_expr(rhs)?),
+        ],
+    })
+}
+
+/// A plain `Infix.new("<op>")` node from a literal operator string.
+fn plain_infix(op: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::Infix,
+        fields: vec![leaf_field(None, Value::str(op.to_string()))],
+    }
 }
 
 /// `my $x` / `my @a` / `my $x = EXPR` -> `VarDeclaration::Simple`. The sigil is
@@ -424,6 +448,23 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![
                     node_field(Some("operand"), convert_expr(target)?),
                     node_field(Some("postfix"), call_method(name.as_str(), args)?),
+                ],
+            })
+        }
+        // A bare comma list `1, 2, 3` -> ApplyListInfix(infix => ",", operands).
+        Expr::ArrayLiteral(items) => {
+            let mut operands = Vec::with_capacity(items.len());
+            for it in items {
+                operands.push(Value::rakuast(Box::new(convert_expr(it)?)));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyListInfix,
+                fields: vec![
+                    node_field(Some("infix"), plain_infix(",")),
+                    RakuAstField {
+                        name: Some("operands"),
+                        value: RakuAstFieldValue::List(operands),
+                    },
                 ],
             })
         }
