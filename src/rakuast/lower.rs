@@ -35,11 +35,92 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 
 fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
-        RakuAstClass::StatementExpression => {
-            let expr = named_child(node, "expression")?;
-            Ok(Stmt::Expr(lower_expr(expr)?))
-        }
+        // A declaration wrapped in Statement::Expression lowers to its own
+        // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
+        RakuAstClass::StatementExpression => lower_stmt_inner(named_child(node, "expression")?),
+        _ => lower_stmt_inner(node),
+    }
+}
+
+fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    match node.class {
+        RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         _ => Ok(Stmt::Expr(lower_expr(node)?)),
+    }
+}
+
+/// Lower a plain `my $x = EXPR` declaration to `Stmt::VarDecl`. Scoped/typed/
+/// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
+/// coverage boundary.
+fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if node.fields.iter().any(|f| {
+        matches!(
+            f.name,
+            Some("scope") | Some("type") | Some("twigil") | Some("traits")
+        )
+    }) {
+        return Err(unsupported(node));
+    }
+    let sigil = leaf_str(node, "sigil")?;
+    let desigil_node = named_child(node, "desigilname")?;
+    let desigil = match positional_leaf(desigil_node)?.view() {
+        ValueView::Str(s) => s.to_string(),
+        _ => return Err(unsupported(node)),
+    };
+    let name = if sigil == "$" {
+        desigil
+    } else {
+        format!("{sigil}{desigil}")
+    };
+    // The initializer field is present only for `= EXPR`; without it a plain
+    // `my $x` declares an undefined value.
+    let (expr, has_initializer) = match node.fields.iter().find(|f| f.name == Some("initializer")) {
+        Some(_) => {
+            let init = named_child(node, "initializer")?;
+            (lower_expr(named_child_or_positional(init)?)?, true)
+        }
+        None => (Expr::Literal(Value::NIL), false),
+    };
+    let custom_traits = if has_initializer {
+        vec![("__has_initializer".to_string(), None)]
+    } else {
+        Vec::new()
+    };
+    Ok(Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits,
+        where_constraint: None,
+    })
+}
+
+/// The value of a leaf-valued named field (e.g. `sigil => "$"`), as a `String`.
+fn leaf_str(node: &RakuAstNode, name: &str) -> Result<String, RuntimeError> {
+    let field = node
+        .fields
+        .iter()
+        .find(|f| f.name == Some(name))
+        .ok_or_else(|| unsupported(node))?;
+    match &field.value {
+        RakuAstFieldValue::Node(v) => match v.view() {
+            ValueView::Str(s) => Ok(s.to_string()),
+            _ => Err(unsupported(node)),
+        },
+        _ => Err(unsupported(node)),
+    }
+}
+
+/// The child node of an `Initializer::Assign` — its single positional child.
+fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNode, RuntimeError> {
+    match node.fields.first() {
+        Some(f) if f.name.is_none() => child_node(&f.value),
+        _ => Err(unsupported(node)),
     }
 }
 
@@ -61,6 +142,20 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Err(unsupported(node))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
+        RakuAstClass::VarLexical => {
+            let name = match positional_leaf(node)?.view() {
+                ValueView::Str(s) => s.to_string(),
+                _ => return Err(unsupported(node)),
+            };
+            let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
+            Ok(match sigil {
+                "@" => Expr::ArrayVar(bare.to_string()),
+                "%" => Expr::HashVar(bare.to_string()),
+                "&" => Expr::CodeVar(bare.to_string()),
+                _ => Expr::Var(bare.to_string()),
+            })
+        }
         RakuAstClass::ApplyInfix => {
             let left = lower_expr(named_child(node, "left")?)?;
             let right = lower_expr(named_child(node, "right")?)?;
