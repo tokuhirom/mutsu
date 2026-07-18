@@ -22,7 +22,13 @@ impl Compiler {
     pub(super) fn rewrite_stmt_call_args(name: &str, args: &[CallArg]) -> Vec<CallArg> {
         let rewrites_needed = matches!(
             name,
-            "lives-ok" | "dies-ok" | "throws-like" | "warns-like" | "doesn't-warn" | "is_run"
+            "lives-ok"
+                | "dies-ok"
+                | "exits-ok"
+                | "throws-like"
+                | "warns-like"
+                | "doesn't-warn"
+                | "is_run"
         );
         if !rewrites_needed {
             return args.to_vec();
@@ -33,7 +39,12 @@ impl Compiler {
                 CallArg::Positional(expr) => {
                     let rewritten = if matches!(
                         name,
-                        "lives-ok" | "dies-ok" | "throws-like" | "warns-like" | "doesn't-warn"
+                        "lives-ok"
+                            | "dies-ok"
+                            | "exits-ok"
+                            | "throws-like"
+                            | "warns-like"
+                            | "doesn't-warn"
                     ) && positional_index == 0
                     {
                         match expr {

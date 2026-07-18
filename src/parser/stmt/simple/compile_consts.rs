@@ -106,6 +106,7 @@ const TEST_ASSERTION_EXPORTS: &[&str] = &[
     "can-ok",
     "lives-ok",
     "dies-ok",
+    "exits-ok",
     "eval-lives-ok",
     "eval-dies-ok",
     "throws-like",

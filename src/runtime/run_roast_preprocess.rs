@@ -98,6 +98,7 @@ impl Interpreter {
             "subtest(",
             "lives-ok",
             "dies-ok",
+            "exits-ok",
             "eval-lives-ok",
             "eval-dies-ok",
             "throws-like",
