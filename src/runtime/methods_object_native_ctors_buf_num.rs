@@ -191,10 +191,28 @@ impl Interpreter {
     /// argument (default `0`). A type-object argument is an error, matching the
     /// interpreter's basic-type `.new` arm.
     pub(crate) fn build_native_int_value(args: &[Value]) -> Result<Value, RuntimeError> {
-        if matches!(args.first().map(Value::view), Some(ValueView::Package(_))) {
+        // Int.new accepts at most one positional (`new()` / `new($value)`); named
+        // args are ignored. Two or more positionals resolve to no candidate and
+        // must throw X::Multi::NoMatch (roast .../multi-no-match.t) rather than
+        // silently taking the first.
+        let positional: Vec<&Value> = args
+            .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+            .collect();
+        if positional.len() > 1 {
+            return Err(super::methods_signature_errors::make_multi_no_match_error(
+                "new",
+            ));
+        }
+        if matches!(
+            positional.first().map(|v| v.view()),
+            Some(ValueView::Package(_))
+        ) {
             return Err(RuntimeError::new("Cannot convert type object to Int"));
         }
-        Ok(Value::int(args.first().map_or(0, crate::runtime::to_int)))
+        Ok(Value::int(
+            positional.first().map_or(0, |v| crate::runtime::to_int(v)),
+        ))
     }
 
     /// Build a `Num` from `.new(value)` as pure data: coerce the argument to
@@ -270,7 +288,7 @@ impl Interpreter {
     /// Build a `Pair` from `.new(:key, :value)` or `.new(key, value)` as pure
     /// data. A `Str` key uses `Pair` (string-keyed); any other key type uses
     /// `ValuePair`, mirroring the `=>` operator and positional `Pair.new`.
-    pub(crate) fn build_native_pair_value(args: &[Value]) -> Value {
+    pub(crate) fn build_native_pair_value(args: &[Value]) -> Result<Value, RuntimeError> {
         let mut named_key: Option<Value> = None;
         let mut named_value: Option<Value> = None;
         let mut positional = Vec::new();
@@ -278,24 +296,28 @@ impl Interpreter {
             match a.view() {
                 ValueView::Pair(k, v) if k == "key" => named_key = Some(v.clone()),
                 ValueView::Pair(k, v) if k == "value" => named_value = Some(v.clone()),
+                ValueView::Pair(..) => { /* extra named args are ignored by bless */ }
                 _ => positional.push(a.clone()),
             }
         }
-        let (key, value) = if named_key.is_some() || named_value.is_some() {
-            (
-                named_key.unwrap_or(Value::NIL),
-                named_value.unwrap_or(Value::NIL),
-            )
+        // Pair.new has two candidates: `($key, $value)` (exactly two positionals)
+        // and `(:$key, :$value)` (both named, no positionals). Anything else —
+        // one/three positionals, a lone :key or :value — resolves to no
+        // candidate and must throw X::Multi::NoMatch rather than silently
+        // filling in Nil (roast APPENDICES/.../multi-no-match.t).
+        let (key, value) = if positional.len() == 2 {
+            (positional[0].clone(), positional[1].clone())
+        } else if positional.is_empty() && named_key.is_some() && named_value.is_some() {
+            (named_key.unwrap(), named_value.unwrap())
         } else {
-            (
-                positional.first().cloned().unwrap_or(Value::NIL),
-                positional.get(1).cloned().unwrap_or(Value::NIL),
-            )
+            return Err(super::methods_signature_errors::make_multi_no_match_error(
+                "new",
+            ));
         };
         if matches!(key.view(), ValueView::Str(_)) {
-            Value::pair(key.to_string_value(), value)
+            Ok(Value::pair(key.to_string_value(), value))
         } else {
-            Value::value_pair(key, value)
+            Ok(Value::value_pair(key, value))
         }
     }
 

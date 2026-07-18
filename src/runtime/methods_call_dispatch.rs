@@ -926,6 +926,28 @@ impl Interpreter {
             if matches!(method, "push" | "append" | "unshift" | "prepend") {
                 self.check_array_value_element_types(&target, &args)?;
             }
+            // splice's start/elems positions take `Int` (plus `Whatever`/
+            // `Callable`) — a `Num`/`Str`/`Array` there matches no candidate and
+            // must throw X::Multi::NoMatch (roast .../multi-no-match.t) rather
+            // than being coerced. Mirrors the lvalue path in methods_mut_dispatch.
+            if method == "splice" {
+                fn is_valid_splice_index(v: &Value) -> bool {
+                    match v.view() {
+                        ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Whatever
+                        | ValueView::Sub(..)
+                        | ValueView::WeakSub(..) => true,
+                        ValueView::Mixin(inner, _) => is_valid_splice_index(inner),
+                        _ => false,
+                    }
+                }
+                for v in args.iter().take(2) {
+                    if !is_valid_splice_index(v) {
+                        return Err(make_multi_no_match_error("splice"));
+                    }
+                }
+            }
             // Splice replacements land in the shared node in place now, so
             // type-check them up front (flattened like do_splice flattens).
             if method == "splice" && args.len() > 2 {

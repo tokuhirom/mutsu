@@ -845,7 +845,7 @@ impl Interpreter {
                     // path (`try_native_builtin_construct`). Pure data assembly:
                     // arg parsing + process-global supply ids + empty Supply
                     // attributes. The process is only spawned later by `.start`.
-                    return Ok(Self::build_native_proc_async_value(*class_name, &args));
+                    return Self::build_native_proc_async_value(*class_name, &args);
                 }
                 "utf8" | "utf16" => {
                     // Shared with the VM's native fast path (pure code-unit build).
@@ -867,7 +867,7 @@ impl Interpreter {
                 }
                 "Pair" => {
                     // Shared with the VM's native fast path.
-                    return Ok(Self::build_native_pair_value(&args));
+                    return Self::build_native_pair_value(&args);
                 }
                 "Set" | "SetHash" => {
                     // Native QuantHash construction — single impl shared with the
@@ -956,9 +956,12 @@ impl Interpreter {
                     )));
                 }
                 "Junction" => {
-                    // Junction.new(values, :type<kind>)
-                    // or Junction.new("kind", values)
-                    // Extract named :type from Pair args
+                    // Junction.new has exactly two candidates:
+                    //   new(Str:D $type, \values)       — type string + one positional
+                    //   new(\values, Str:D :$type!)      — one positional + named :type
+                    // Anything else (no type, extra positionals, no args) resolves
+                    // to no candidate and must throw X::Multi::NoMatch rather than
+                    // defaulting to `any()` (roast .../multi-no-match.t).
                     let mut type_str: Option<String> = None;
                     let mut positional: Vec<&Value> = Vec::new();
                     for arg in &args {
@@ -970,19 +973,25 @@ impl Interpreter {
                             positional.push(arg);
                         }
                     }
-                    // If no named :type, check if first positional is a type string
                     let type_name = if let Some(t) = type_str {
-                        t
-                    } else if positional.len() >= 2 {
-                        if let ValueView::Str(s) = positional[0].view() {
-                            let name = s.to_string();
-                            positional.remove(0);
-                            name
-                        } else {
-                            "any".to_string()
+                        // Named :type — need exactly one positional (the values).
+                        if positional.len() != 1 {
+                            return Err(
+                                super::methods_signature_errors::make_multi_no_match_error("new"),
+                            );
                         }
+                        t
+                    } else if positional.len() == 2
+                        && matches!(positional[0].view(), ValueView::Str(_))
+                    {
+                        // Positional type string + values.
+                        let name = positional[0].to_string_value();
+                        positional.remove(0);
+                        name
                     } else {
-                        "any".to_string()
+                        return Err(super::methods_signature_errors::make_multi_no_match_error(
+                            "new",
+                        ));
                     };
                     let kind = match type_name.as_str() {
                         "all" => JunctionKind::All,

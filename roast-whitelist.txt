@@ -35,6 +35,7 @@ roast/APPENDICES/A01-limits/misc.t
 roast/APPENDICES/A01-limits/overflow.t
 roast/APPENDICES/A02-some-day-maybe/concreteness.t
 roast/APPENDICES/A02-some-day-maybe/io-cathandle.t
+roast/APPENDICES/A02-some-day-maybe/multi-no-match.t
 roast/MISC/bug-coverage-6.d.t
 roast/MISC/bug-coverage-stress.t
 roast/S01-perl-5-integration/array.t

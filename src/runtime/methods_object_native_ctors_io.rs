@@ -194,7 +194,10 @@ impl Interpreter {
     /// not-yet-started `Proc::Async` instance. No `&self` — the process is only
     /// spawned later, by `.start`. The interpreter's `dispatch_new` arm delegates
     /// here so the native VM fast path is byte-identical.
-    pub(crate) fn build_native_proc_async_value(class_name: Symbol, args: &[Value]) -> Value {
+    pub(crate) fn build_native_proc_async_value(
+        class_name: Symbol,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         let mut positional = Vec::new();
         let mut w_flag = false;
         let mut enc = Value::str_from("utf-8");
@@ -209,6 +212,14 @@ impl Interpreter {
                 }
                 _ => positional.push(arg.clone()),
             }
+        }
+        // Proc::Async.new requires at least one positional command element
+        // (the program to run). No command resolves to no candidate and must
+        // throw X::Multi::NoMatch (roast .../multi-no-match.t).
+        if positional.is_empty() {
+            return Err(super::methods_signature_errors::make_multi_no_match_error(
+                "new",
+            ));
         }
         let stdout_id = super::native_methods::next_supply_id();
         let stderr_id = super::native_methods::next_supply_id();
@@ -264,7 +275,7 @@ impl Interpreter {
         if w_flag {
             attrs.insert("w".to_string(), Value::TRUE);
         }
-        Value::make_instance(class_name, attrs)
+        Ok(Value::make_instance(class_name, attrs))
     }
 
     pub(crate) fn try_native_builtin_construct(
@@ -306,7 +317,7 @@ impl Interpreter {
         } else if cn == "FatRat" {
             Some(Ok(Self::build_native_fatrat_value(args)))
         } else if cn == "Pair" {
-            Some(Ok(Self::build_native_pair_value(args)))
+            Some(Self::build_native_pair_value(args))
         } else if cn == "Date" {
             // A `:formatter` renders a user Callable (`render_date_formatter`,
             // self-dependent) — fall through to the interpreter for that case;
@@ -376,7 +387,7 @@ impl Interpreter {
             // process-global supply ids + empty Supply attributes. The process is
             // only spawned later by `.start`. Shared with the interpreter's
             // `dispatch_new` arm via the single `build_native_proc_async_value`.
-            Some(Ok(Self::build_native_proc_async_value(class_name, args)))
+            Some(Self::build_native_proc_async_value(class_name, args))
         } else if cn == "Capture" {
             // `Capture.new` is named-only (`Mu.new`): a positional arg dies. Its
             // build signature is `:@list, :%hash`, so a `list`/`hash` named arg

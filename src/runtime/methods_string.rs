@@ -220,9 +220,12 @@ impl Interpreter {
         {
             return Err(Self::str_match_x_error("subst", x));
         }
+        // `.subst` with no matcher at all resolves to no candidate — Rakudo
+        // throws X::Multi::NoMatch (roast .../multi-no-match.t). (A bare pattern
+        // with no replacement is still valid: replacement defaults to "".)
         let pattern = positional
             .first()
-            .ok_or_else(|| RuntimeError::new("subst requires a pattern argument"))?;
+            .ok_or_else(|| super::methods_signature_errors::make_multi_no_match_error("subst"))?;
         let replacement_val = positional.get(1).cloned();
         let is_closure = matches!(
             replacement_val.as_ref().map(Value::view),
