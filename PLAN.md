@@ -843,10 +843,12 @@ so it is tracked separately from the roast backlog.
         `ArgList` of type args). Tests in `t/rakuast-type-parameterized.t`.
   - [x] Slice 22: positional subscripts `@x[EXPR]` (`Postcircumfix::ArrayIndex` + `SemiList`). Tests
         in `t/rakuast-subscript.t`. (Associative `%h{...}`/`%h<...>` deferred — indistinguishable.)
-  - [ ] Slice 23+: attribute defaults (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped
-        loops, `andthen`/`orelse`, `.=` method-assign, coercion types (`Str()`); then `.DEPARSE`;
-        resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does
-        not).
+  - [x] Slice 23: quoted method names `$x."foo"()` (`Call::QuotedMethod`). Tests in
+        `t/rakuast-quoted-method.t`.
+  - [ ] Slice 24+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
+        `andthen`/`orelse` (`ApplyListInfix`), `.=` method-assign, coercion types (`Str()`); then
+        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
+        mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

@@ -759,19 +759,21 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             modifier,
             quoted,
         } => {
-            // Plain `.method(...)` and modifier forms (`.?`/`.+`/`.*`, slice 15).
-            // A quoted method name (`."$name"()`) maps to a distinct node.
-            if *quoted {
-                return Err(unsupported("quoted method name"));
-            }
+            // Plain `.method(...)` and modifier forms (`.?`/`.+`/`.*`, slice 15);
+            // and quoted names (`."foo"()`, slice 23) -> Call::QuotedMethod.
+            let postfix = if *quoted {
+                if modifier.is_some() {
+                    return Err(unsupported("quoted method name with a modifier"));
+                }
+                call_quoted_method(name.as_str(), args)?
+            } else {
+                call_method(name.as_str(), args, *modifier)?
+            };
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
                     node_field(Some("operand"), convert_expr(target)?),
-                    node_field(
-                        Some("postfix"),
-                        call_method(name.as_str(), args, *modifier)?,
-                    ),
+                    node_field(Some("postfix"), postfix),
                 ],
             })
         }
@@ -1163,6 +1165,23 @@ fn call_method(
     }
     Ok(RakuAstNode {
         class: RakuAstClass::CallMethod,
+        fields,
+    })
+}
+
+/// `."foo"` / `."foo"(args)` -> `Call::QuotedMethod(name => QuotedString,
+/// [args => ArgList])`. Unlike `Call::Method`, the name is a QuotedString
+/// (a string literal) rather than a `Name.from-identifier`.
+fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = vec![node_field(
+        Some("name"),
+        quoted_string(Value::str(name.to_string())),
+    )];
+    if !args.is_empty() {
+        fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::CallQuotedMethod,
         fields,
     })
 }
