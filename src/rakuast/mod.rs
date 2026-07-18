@@ -219,6 +219,34 @@ impl RakuAstClass {
             _ => 0,
         }
     }
+
+    /// Extra `RakuAST::*` ancestor type names this node kind smartmatches beyond
+    /// its own class, its `::`-namespace ancestors, and the universal
+    /// `RakuAST::Node` — i.e. the *semantic* hierarchy (`RakuAST::Term` /
+    /// `RakuAST::Expression`) whose names don't appear in the printed class name.
+    /// Only classes verified against Rakudo are listed; an unlisted expression
+    /// node is a documented gap (a missed match), never a false positive.
+    pub fn semantic_ancestors(self) -> &'static [&'static str] {
+        use RakuAstClass::*;
+        // A Term is also an Expression.
+        const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
+        const EXPR: &[&str] = &["RakuAST::Expression"];
+        match self {
+            IntLiteral
+            | RatLiteral
+            | StrLiteral
+            | QuotedString
+            | VarLexical
+            | TermReduce
+            | Sub
+            | Block
+            | PointyBlock
+            | CallName
+            | CallNameWithoutParentheses => TERM,
+            ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
+            _ => &[],
+        }
+    }
 }
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
