@@ -82,6 +82,9 @@ pub enum RakuAstClass {
     StatementElsif,
     // Phase 2 slice 6: for loops (implicit topic).
     StatementFor,
+    // Phase 2 slice 7: named sub declarations.
+    Sub,
+    TypeSetting,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,6 +130,8 @@ impl RakuAstClass {
             StatementLoop => "RakuAST::Statement::Loop",
             StatementElsif => "RakuAST::Statement::Elsif",
             StatementFor => "RakuAST::Statement::For",
+            Sub => "RakuAST::Sub",
+            TypeSetting => "RakuAST::Type::Setting",
         }
     }
 
