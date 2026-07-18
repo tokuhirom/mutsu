@@ -132,6 +132,8 @@ pub enum RakuAstClass {
     // Phase 2 slice 32: slurpy parameter markers (`*@a` / `**@a`).
     ParameterSlurpyFlattened,
     ParameterSlurpyUnflattened,
+    // Phase 2 slice 33: array-composer literal (`[1, 2, 3]`).
+    CircumfixArrayComposer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -204,6 +206,7 @@ impl RakuAstClass {
             CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
             ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
+            CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
         }
     }
 

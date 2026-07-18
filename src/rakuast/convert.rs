@@ -886,20 +886,18 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             })
         }
         // A bare comma list `1, 2, 3` -> ApplyListInfix(infix => ",", operands).
-        Expr::ArrayLiteral(items) => {
-            let mut operands = Vec::with_capacity(items.len());
-            for it in items {
-                operands.push(Value::rakuast(Box::new(convert_expr(it)?)));
-            }
+        Expr::ArrayLiteral(items) => comma_list_node(items),
+        // An array-composer literal `[1, 2, 3]` ->
+        // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
+        Expr::BracketArray(items, _) => {
+            let inner = comma_list_node(items)?;
+            let semilist = RakuAstNode {
+                class: RakuAstClass::SemiList,
+                fields: vec![node_field(None, statement_expression(inner))],
+            };
             Ok(RakuAstNode {
-                class: RakuAstClass::ApplyListInfix,
-                fields: vec![
-                    node_field(Some("infix"), plain_infix(",")),
-                    RakuAstField {
-                        name: Some("operands"),
-                        value: RakuAstFieldValue::List(operands),
-                    },
-                ],
+                class: RakuAstClass::CircumfixArrayComposer,
+                fields: vec![node_field(None, semilist)],
             })
         }
         // Positional subscript `@x[EXPR]` -> ApplyPostfix(operand,
@@ -1590,6 +1588,24 @@ fn control_call(name: &'static str, args: &[Expr]) -> Result<RakuAstNode, Runtim
     Ok(RakuAstNode {
         class: RakuAstClass::CallNameWithoutParentheses,
         fields,
+    })
+}
+
+/// A comma list `1, 2, 3` -> `ApplyListInfix(infix => ",", operands)`.
+fn comma_list_node(items: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let mut operands = Vec::with_capacity(items.len());
+    for it in items {
+        operands.push(Value::rakuast(Box::new(convert_expr(it)?)));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyListInfix,
+        fields: vec![
+            node_field(Some("infix"), plain_infix(",")),
+            RakuAstField {
+                name: Some("operands"),
+                value: RakuAstFieldValue::List(operands),
+            },
+        ],
     })
 }
 

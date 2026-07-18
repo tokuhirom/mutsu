@@ -327,6 +327,14 @@ earlier ones.
     positional plus a slurpy, `.sum` over the slurpy, and an empty slurpy all work. Typed slurpies and
     `+@a` (onearg) stay the boundary. Tests in `t/rakuast-eval-slurpy.t`. Next: bareword type terms,
     array/hash literals.
+  - **Slice 24 (array-composer literals) — done, both directions.** A `[1, 2, 3]` literal renders as a
+    new `Circumfix::ArrayComposer` node wrapping a single-statement `SemiList` (a comma list — the
+    conversion reuses a shared `comma_list_node`). The read side converts `Expr::BracketArray` to it and
+    the write side unwraps it to an array literal (`Expr::BracketArray`). `EVAL(Q{[1, 2, 3].elems}.AST)`
+    → `3`; `.sum`/`.sort.join` over the literal and a single-element `[5]` work. This also fixes the
+    previous `[…].method` convert error. Positional subscripts (`@a[1]` — an `ApplyPostfix` with a
+    `Postcircumfix::ArrayIndex`) stay the boundary. Tests in `t/rakuast-eval-array-lit.t`. Next:
+    positional subscripts, hash literals, bareword type terms.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
