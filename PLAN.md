@@ -868,9 +868,11 @@ so it is tracked separately from the roast backlog.
 - **Phase 4 (in progress)** — construction (`.new`).
   - [x] Slice 1: literal constructors (`RakuAST::IntLiteral.new(42)`, `StrLiteral`, `RatLiteral`).
         Tests in `t/rakuast-construct.t`.
-  - [ ] Slice 2+: `Name.from-identifier("x")`; multi-field constructors (`ApplyInfix.new(...)`,
-        `Statement::Expression.new(...)`, `StatementList.new(...)`) — a per-class field schema; then
-        Phase 5 (EVAL: lower RakuAST → internal AST → existing compiler).
+  - [x] Slice 2: `RakuAST::Name.from-identifier("x")`. Tests in `t/rakuast-construct-name.t`.
+  - [ ] Slice 3+: multi-field constructors (`ApplyInfix.new(:left, :infix, :right)`,
+        `Statement::Expression.new(:expression)`, `StatementList.new(...)`) — these take **named**
+        args (Pairs) per a per-class field schema; then Phase 5 (EVAL: lower RakuAST → internal AST →
+        existing compiler).
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
 - [ ] **Phase 5** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).

@@ -155,8 +155,14 @@ earlier ones.
     `StrLiteral.new("hi")` build a real node — renderable (`.gist` round-trips) and queryable
     (`.value`, `~~`). A `rakuast::construct(class_name, method, args)` builds the node; it is
     dispatched from the `.new`-on-a-`Package` handler (`methods_object_dispatch_new`) for any
-    `RakuAST::*` type-object bareword. Tests in `t/rakuast-construct.t`. Next: multi-field
-    constructors (Name.from-identifier, ApplyInfix.new(...), StatementList.new(...)).
+    `RakuAST::*` type-object bareword. Tests in `t/rakuast-construct.t`.
+  - **Slice 2 (`Name.from-identifier`) — done.** `RakuAST::Name.from-identifier("x")` builds a Name
+    node (its gist round-trips). Same single-positional builder as the literals. `.new` routes
+    through `methods_object_dispatch_new`, but a non-`new` constructor like `from-identifier` reaches
+    the terminal method-not-found fallback in `methods_instance_ops` instead, so the RakuAST
+    construct hook is placed there too. Tests in `t/rakuast-construct-name.t`. Next: multi-field
+    constructors (`ApplyInfix.new(:left, :infix, :right)`, `Statement::Expression.new(:expression)`,
+    `StatementList.new(...)`) — these take **named** args (Pairs) per a per-class field schema.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
