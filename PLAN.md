@@ -769,10 +769,13 @@ so it is tracked separately from the roast backlog.
         recover — deferred, documented in ADR-0011.)
   - [x] Slice 7: named sub declarations (`RakuAST::Sub`, reusing `Signature`/`Parameter`; sub
         params carry an implicit `type => RakuAST::Type::Setting(Any)`). Tests in `t/rakuast-sub.t`.
-  - [ ] Slice 8+: anonymous `sub { }`, C-style/`repeat`/labelled loops, explicit-signature `for`
-        (`for @a -> $x`), scoped/typed `my`, compound/`:=` assignment, comma-list source
-        (`ApplyListInfix`), method-call modifiers; then `.DEPARSE`; resolve the constant-folding
-        divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
+  - [x] Slice 8: C-style loops (`Statement::Loop` with setup/condition/increment) and `repeat`
+        loops (`Statement::Loop::RepeatWhile`). Tests in `t/rakuast-loop.t`.
+  - [ ] Slice 9+: anonymous `sub { }` (no-param only — `sub ($x)`/`-> $x` share `AnonSubParams`
+        so are indistinguishable), method decls (needs `RakuAST::Class`), labelled loops,
+        explicit-signature `for` (`for @a -> $x`), scoped/typed `my`, compound/`:=` assignment,
+        comma-list source (`ApplyListInfix`), method-call modifiers; then `.DEPARSE`; resolve the
+        constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
