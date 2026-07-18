@@ -38,7 +38,8 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let Some(value) = args.first().cloned() else {
-            return Ok(Value::NIL);
+            // `Int()` with no args is a coercion type term `Int(Any)`, not a call.
+            return Ok(Value::package(Symbol::intern(&format!("{name}(Any)"))));
         };
         if let Some(source) = match value.view() {
             ValueView::Package(sym) => Some(sym.resolve()),

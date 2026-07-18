@@ -784,14 +784,25 @@ impl Interpreter {
             );
         }
 
-        // TypeName() with no args produces a coercion type TypeName(Any)
-        if args.is_empty()
-            && (self.has_type(name)
-                || crate::runtime::utils::is_known_type_constraint(name)
-                || self.registry().subsets.contains_key(name)
-                || self.registry().roles.contains_key(name))
-        {
-            return Ok(Value::package(Symbol::intern(&format!("{name}(Any)"))));
+        // TypeName() with no args produces a coercion type TypeName(Any).
+        // Also handles a type smiley: `Int:D()` -> `Int:D(Any)`.
+        if args.is_empty() {
+            let (base, smiley) = crate::runtime::types::strip_type_smiley(name);
+            // A bound generic type parameter (`T()` / `T:D()` inside a role method
+            // where `T` -> `Int`) forms `Int(Any)` / `Int:D(Any)`.
+            if let Some(v) = self.env.get(base)
+                && let ValueView::Package(pkg) = v.view()
+            {
+                let resolved = format!("{}{}(Any)", pkg.resolve(), smiley.unwrap_or(""));
+                return Ok(Value::package(Symbol::intern(&resolved)));
+            }
+            if self.has_type(base)
+                || crate::runtime::utils::is_known_type_constraint(base)
+                || self.registry().subsets.contains_key(base)
+                || self.registry().roles.contains_key(base)
+            {
+                return Ok(Value::package(Symbol::intern(&format!("{name}(Any)"))));
+            }
         }
 
         // comb($matcher, $str) or comb($matcher, $str, $limit)

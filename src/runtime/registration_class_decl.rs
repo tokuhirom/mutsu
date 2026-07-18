@@ -231,7 +231,14 @@ impl Interpreter {
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
         // `is ::Foo` means the same as `is Foo` in Raku.
         let strip_colons = |s: &str| s.strip_prefix("::").unwrap_or(s).to_string();
-        let parents: Vec<String> = parents.iter().map(|p| strip_colons(p)).collect();
+        // Resolve generic type captures in parent names so a class nested in a
+        // parametric role body (`class A is Array[T] {}`, composed with `T = Int`)
+        // inherits from the concrete `Array[Int]`. Outside a role composition no
+        // captures are bound, so `resolved_type_capture_name` is a no-op.
+        let parents: Vec<String> = parents
+            .iter()
+            .map(|p| self.resolved_type_capture_name(&strip_colons(p)))
+            .collect();
         let parents = parents.as_slice();
         let does_parents: Vec<String> = does_parents.iter().map(|p| strip_colons(p)).collect();
         let does_parents = does_parents.as_slice();
