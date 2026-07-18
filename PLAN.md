@@ -935,9 +935,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 11: `unless`/`until` (which desugar to `if !X` / `while !X`) and the prefix `!`/`?`
         operators (added to `op_name_to_token_kind`); `EVAL(Q[my $i=0; until $i>=3 { $i=$i+1 }; $i].AST)`
         → 3. Tests in `t/rakuast-eval-unless-until.t`.
-  - [ ] Slice 12+: multi-param/typed/named/slurpy params, `repeat`/`while` — the inverse of the Phase-2
-        converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort
-        mirroring Phase 2.)
+  - [x] Slice 12: default sub parameters — a `Parameter` with a `default` expression lowers to an
+        optional positional `ParamDef` (`required=false`, `default=Some(…)`); `EVAL(Q[sub f($x, $y=10)
+        { $x+$y }; f(5)].AST)` → 15. Tests in `t/rakuast-eval-default-param.t`.
+  - [ ] Slice 13+: `repeat`/`while`, typed/named/slurpy params (need both read + write) — the inverse
+        of the Phase-2 converter, grown cluster by cluster. (Phase 5 full lowering is a large
+        multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

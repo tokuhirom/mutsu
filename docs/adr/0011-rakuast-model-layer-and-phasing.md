@@ -246,6 +246,13 @@ earlier ones.
     reverse operator map (`op_name_to_token_kind`, used solely by the lowerer). `EVAL(Q[my $i = 0; until
     $i >= 3 { $i = $i + 1 }; $i].AST)` → `3`; `EVAL(Q[my $x = 0; !$x].AST)` → `True`. Tests in
     `t/rakuast-eval-unless-until.t`. Next: multi/typed/named parameters, `repeat`/`while`.
+  - **Slice 12 (default sub parameters) — done.** A `Parameter` carrying a `default` expression now
+    lowers to an optional positional `ParamDef` (`required = false`, `default = Some(…)`) instead of
+    being deferred, so a defaulted parameter uses its fallback when the argument is omitted.
+    `EVAL(Q[sub f($x, $y = 10) { $x + $y }; f(5)].AST)` → `15`; a default may reference an earlier
+    parameter (`$y = $x * 2`). Typed (`Int $x`) and named (`:$x`) parameters still lack read-side
+    (`.AST`) support and stay the boundary. Tests in `t/rakuast-eval-default-param.t`. Next: `repeat`/
+    `while`, typed/named parameters (both directions).
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
