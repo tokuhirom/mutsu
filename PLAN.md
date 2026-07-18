@@ -763,9 +763,13 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 5: `elsif` chains — mutsu nests each `elsif` as a single `if` in the else-branch;
         flattened into raku's `elsifs` list (`Statement::Elsif`) with any trailing `else` block.
         Tests in `t/rakuast-elsif.t`.
-  - [ ] Slice 6+: C-style/`repeat`/labelled loops, topic-taking `with`/`without`/`for` (Block
-        `implicit-topic`/`required-topic`), sub declarations (`RakuAST::Sub`, reuse Signature),
-        scoped/typed `my`, compound/`:=` assignment, method-call modifiers; then `.DEPARSE`;
+  - [x] Slice 6: implicit-topic `for` (`Statement::For` with topic-taking `Block` marked
+        `implicit-topic`/`required-topic`). Tests in `t/rakuast-for.t`. (`with`/`without` are
+        desugared by mutsu into temp-var + `.defined` + `if`, so no `Statement::With` node to
+        recover — deferred, documented in ADR-0011.)
+  - [ ] Slice 7+: C-style/`repeat`/labelled loops, explicit-signature `for` (`for @a -> $x`),
+        sub declarations (`RakuAST::Sub`, reuse Signature), scoped/typed `my`, compound/`:=`
+        assignment, comma-list source (`ApplyListInfix`), method-call modifiers; then `.DEPARSE`;
         resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu
         does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,

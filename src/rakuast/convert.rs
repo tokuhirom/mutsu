@@ -7,7 +7,7 @@
 //! silently-wrong node.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
-use crate::ast::{AssignOp, Expr, ParamDef, Stmt};
+use crate::ast::{AssignOp, Expr, ForMode, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -167,6 +167,41 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementLoop,
                 fields: vec![node_field(Some("body"), block_node(body)?)],
+            }))
+        }
+        Stmt::For {
+            iterable,
+            param,
+            param_def,
+            params,
+            params_def,
+            body,
+            label,
+            mode,
+            rw_block,
+            explicit_zero_params,
+        } => {
+            // Phase 2 slice 6 covers the implicit-topic form (`for SRC { ... $_ }`)
+            // only. An explicit signature (`for @a -> $x`), hyper/race/lazy modes,
+            // `<->` rw blocks, and labels carry extra RakuAST shape, deferred.
+            if param.is_some()
+                || param_def.is_some()
+                || !params.is_empty()
+                || !params_def.is_empty()
+                || label.is_some()
+                || *rw_block
+                || *explicit_zero_params
+                || !matches!(mode, ForMode::Normal)
+            {
+                return Err(unsupported("for loop with explicit params / mode / label"));
+            }
+            Ok(Some(RakuAstNode {
+                class: RakuAstClass::StatementFor,
+                fields: vec![
+                    leaf_field(Some("mode"), Value::str("serial".to_string())),
+                    node_field(Some("source"), convert_expr(iterable)?),
+                    node_field(Some("body"), topic_block_node(body)?),
+                ],
             }))
         }
         Stmt::Assign { name, expr, op } => {
@@ -382,6 +417,26 @@ fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],
+    })
+}
+
+/// A topic-taking block body (the `{ ... }` of an implicit-topic `for`), which
+/// raku marks with `implicit-topic => True` and `required-topic => 1` before
+/// the `body` field.
+fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::Block,
+        fields: vec![
+            RakuAstField {
+                name: Some("implicit-topic"),
+                value: RakuAstFieldValue::Node(Value::truth(true)),
+            },
+            RakuAstField {
+                name: Some("required-topic"),
+                value: RakuAstFieldValue::Node(Value::int(1)),
+            },
+            node_field(Some("body"), blockoid(body)?),
+        ],
     })
 }
 
