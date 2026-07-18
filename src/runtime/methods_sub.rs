@@ -449,6 +449,18 @@ impl Interpreter {
                         || matches!(v.view(), ValueView::Num(f) if f.is_infinite())
                         || matches!(v.view(), ValueView::Rat(_, 0))
                 };
+                // Type captures (`::T $a`) are declared by one parameter and
+                // referenced by later ones as a bare `T`, which is not a real
+                // type. Rakudo defers checking such capture-constrained params at
+                // priming time, so collect the declared capture names and skip
+                // them below (checking against the literal "T" would spuriously
+                // fail the bind).
+                let capture_decls: std::collections::HashSet<&str> = next
+                    .param_defs
+                    .iter()
+                    .filter_map(|pd| pd.type_constraint.as_deref())
+                    .filter_map(|t| t.strip_prefix("::"))
+                    .collect();
                 for (pos_idx, pd) in next
                     .param_defs
                     .iter()
@@ -469,6 +481,7 @@ impl Interpreter {
                     }
                     if let Some(constraint) = &pd.type_constraint
                         && !constraint.starts_with("::")
+                        && !capture_decls.contains(constraint.as_str())
                         && !self.type_matches_value(constraint, assumed)
                     {
                         // Add $ sigil to the symbol name if it's bare
