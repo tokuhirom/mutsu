@@ -166,6 +166,21 @@ impl Interpreter {
         }
 
         let last_value = body_result.unwrap();
+        // Raku sinks the mainline's final statement value. When that tail is a
+        // fresh rvalue (a method/sub call or `EVAL`) whose value is an unhandled
+        // Failure, sinking it throws — e.g. a bare `@a.pop` on an empty Array,
+        // `"abc".Int`, or a bare `EVAL` that fails. Non-tail statements already
+        // sink via `SinkPop`; the tail compiles to `SetTopic` so it can escape as
+        // an `EVAL`/`do`-block value, so the genuine top-level trips it here. A
+        // container-wrapped tail (`my $x = @a.pop`, a bare `$x`) does NOT trip,
+        // matching Raku, so only fresh-rvalue tail forms are checked.
+        if Self::tail_stmt_sinks_fresh_rvalue(&body_main)
+            && let Some(v) = last_value.as_ref()
+            && let Some(err) = self.failure_to_runtime_error_if_unhandled(v)
+        {
+            self.finish()?;
+            return Err(err);
+        }
         // Only store last_value if _ was actually set during this execution
         // (not inherited from a previous REPL line)
         self.last_value = last_value;
@@ -184,6 +199,55 @@ impl Interpreter {
         // stats) — see `gc::collect_at_program_end`.
         crate::gc::collect_at_program_end(self.registry_has_destroy_methods());
         Ok(self.output_sink().output.clone())
+    }
+
+    /// Whether the mainline's final statement yields a fresh rvalue whose value
+    /// is sunk in sink context (Raku sinks the program's tail expression). Used
+    /// to decide whether an unhandled Failure produced as the last statement
+    /// throws.
+    ///
+    /// Deliberately restricted to **method calls** (`@a.pop`, `Failure.new`,
+    /// `"x".Int`) and bare **`EVAL`** — the forms whose value is a decontainerized
+    /// fresh rvalue. Bare *sub* calls (`is $x, $y`, a user `f()`) are excluded:
+    /// mutsu's soft-Failure modeling of a routine's return diverges from Raku
+    /// (e.g. `is $failure.WHAT, Failure` yields a Bool in Raku but leaves an
+    /// unhandled Failure as the statement value here), so tripping them would
+    /// throw where Raku does not. A bare variable or an assignment keeps the
+    /// value container-wrapped and never auto-sinks either.
+    fn tail_stmt_sinks_fresh_rvalue(stmts: &[Stmt]) -> bool {
+        // Trailing `SetLine` markers are not statements.
+        stmts
+            .iter()
+            .rev()
+            .find(|s| !matches!(s, Stmt::SetLine(_)))
+            .is_some_and(Self::stmt_tail_is_fresh_rvalue)
+    }
+
+    fn stmt_tail_is_fresh_rvalue(stmt: &Stmt) -> bool {
+        match stmt {
+            // Bare `EVAL "..."` parses as a `Stmt::Call`; other bare sub calls
+            // are excluded (see the doc comment).
+            Stmt::Call { name, .. } => matches!(name.resolve().as_str(), "EVAL" | "EVALFILE"),
+            Stmt::Expr(e) => Self::expr_is_fresh_rvalue(e),
+            // A bare block's value is its own last statement's value.
+            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+                Self::tail_stmt_sinks_fresh_rvalue(body)
+            }
+            _ => false,
+        }
+    }
+
+    fn expr_is_fresh_rvalue(expr: &crate::ast::Expr) -> bool {
+        use crate::ast::Expr;
+        match expr {
+            Expr::MethodCall { .. }
+            | Expr::DynamicMethodCall { .. }
+            | Expr::HyperMethodCall { .. } => true,
+            // `do { ... }` carries the value of its last statement.
+            Expr::DoStmt(inner) => Self::stmt_tail_is_fresh_rvalue(inner),
+            Expr::DoBlock { body, .. } => Self::tail_stmt_sinks_fresh_rvalue(body),
+            _ => false,
+        }
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
