@@ -756,11 +756,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 3: bare blocks (`Block`/`Blockoid`) and pointy blocks (`PointyBlock`/`Signature`/
         `Parameter`/`ParameterTarget::Var`, plain positional params only). Tests in
         `t/rakuast-blocks.t`. (PR #4684.)
-  - [ ] Slice 4: `if`/`unless` and `while`/`until`/`loop` statements (`Statement::If`/`Unless`/
-        `Loop::While`/`Loop::Until`/`Loop`), condition + `then`/`body` = `Block`, `if...else`.
-        Defer topic-taking blocks (`with`/`without`/`for` add `implicit-topic`/`required-topic`
-        Block fields), `elsif` chains, C-style `loop`, and postfix statement modifiers to slice 5.
-  - [ ] Slice 5+: `with`/`without`/`for`, `elsif`, sub declarations (`RakuAST::Sub`, reuse
+  - [x] Slice 4: `if`/`if...else`, `while`, and bare `loop` (`Statement::If`, `Statement::Loop::
+        While`, `Statement::Loop`), condition + `then`/`else`/`body` = `Block`. Tests in
+        `t/rakuast-control.t`. (mutsu desugars `unless`→`if !` and `until`→`while !`, so those
+        render with a negated condition — documented divergence, ADR-0011.)
+  - [ ] Slice 5+: `elsif` chains, C-style/`repeat`/labelled loops, topic-taking `with`/`without`/
+        `for` (Block `implicit-topic`/`required-topic`), sub declarations (`RakuAST::Sub`, reuse
         Signature), scoped/typed `my`, compound/`:=` assignment, method-call modifiers; then
         `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
         mutsu does not).
