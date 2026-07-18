@@ -91,6 +91,8 @@ pub enum RakuAstClass {
     ApplyListInfix,
     // Phase 2 slice 10: scoped/typed variable declarations.
     TypeSimple,
+    // Phase 2 slice 20: definite types (`Int:D` / `Int:U`).
+    TypeDefinedness,
     // Phase 2 slice 13: class and method declarations.
     Class,
     Method,
@@ -155,6 +157,7 @@ impl RakuAstClass {
             StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
             ApplyListInfix => "RakuAST::ApplyListInfix",
             TypeSimple => "RakuAST::Type::Simple",
+            TypeDefinedness => "RakuAST::Type::Definedness",
             Class => "RakuAST::Class",
             Method => "RakuAST::Method",
             Role => "RakuAST::Role",
