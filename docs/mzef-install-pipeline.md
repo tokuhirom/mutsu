@@ -221,19 +221,21 @@ JSON::Unmarshal (11 files / 101 tests), JSON::Marshal (14/85), JSON::Class
 (6/31), URI (14/222), META6 (9/969), License::SPDX (2/729), Test::META
 (3/26, #4756). FAIL: **JSON::Fast** only (native-JSON fidelity remnants;
 full parity is likely unnecessary for the pipeline). Within JSON::Fast,
-three PRs (#4762 AdditionalContent + strict grammar; #4765 options parity:
+four PRs (#4762 AdditionalContent + strict grammar; #4765 options parity:
 `:immutable`/List+Map decode, `:enums-as-value`, `$*JSON_NAN_INF_SUPPORT`,
 import-list defaults `<immutable !pretty>`, `&from-json`/`.&from-json`
-code-object dispatch, uppercase surrogate escapes, Duration-as-Num; the
-numerator/denominator-shadow PR: those builtins no longer claim every
+code-object dispatch, uppercase surrogate escapes, Duration-as-Num;
+#4768 numerator/denominator-shadow: those builtins no longer claim every
 invocant, so the Rational role prelude's attr accessors work and a punned
-Rational serializes numerically) brought the suite from 3/14 to **11/14
-files green**; remaining: 07-datetime (`augment class DateTime`),
-12-assocpositional (Positional+Associative instance serialization),
-14-comments (JSONC). Known adjacent gap (not needed by the suite): an
-UNparameterized `Rational.new(6,4)` still fails binding (`expected NuT,
-got Int` — role type-param defaults `::NuT = Int` unresolved in method
-signatures).
+Rational serializes numerically; the JSONC/assoc-pos PR: `:allow-jsonc`
+comment skipping, Associative/Positional user instances serialize via
+`.list`, and `Foo::.values`/`Bool::.values` stash enumeration) brought
+the suite from 3/14 to **13/14 files green**; the only remaining file is
+07-datetime, blocked on `augment class DateTime` for a builtin native
+class (MONKEY-TYPING on Date/DateTime — campaign-sized, not JSON work).
+Known adjacent gap (not needed by the suite): an UNparameterized
+`Rational.new(6,4)` still fails binding (`expected NuT, got Int` — role
+type-param defaults `::NuT = Int` unresolved in method signatures).
 Test-Helpers ships no `t/` of its own (covered by mutsu's local
 `t/test-util-*.t`).
 
