@@ -78,11 +78,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if custom_traits.iter().any(|(n, _)| n != "__has_initializer") {
                 return Err(unsupported("declaration with traits"));
             }
-            let type_name = match type_constraint.as_deref() {
-                Some(t) if is_simple_type(t) => Some(t),
-                Some(_) => return Err(unsupported("parameterised/definite/coercion type")),
-                None => None,
-            };
+            // build_type_node validates simple/definite and defers the rest.
+            let type_name = type_constraint.as_deref();
             let scope = if *is_our {
                 Some("our")
             } else if *is_state {
@@ -491,11 +488,9 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     "attribute with default / traits / smiley / scope",
                 ));
             }
-            let type_name = match type_constraint.as_deref() {
-                Some(t) if is_simple_type(t) => Some(t),
-                Some(_) => return Err(unsupported("parameterised/definite attribute type")),
-                None => None,
-            };
+            // Definite attributes carry `type_smiley` (guarded above), so the
+            // type_constraint here is a bare type; build_type_node handles it.
+            let type_name = type_constraint.as_deref();
             let twigil = if *is_public { "." } else { "!" };
             let full_name = if *sigil == '$' {
                 name.resolve()
@@ -591,11 +586,7 @@ fn var_declaration(
         fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
     }
     if let Some(t) = type_name {
-        let type_node = RakuAstNode {
-            class: RakuAstClass::TypeSimple,
-            fields: vec![node_field(None, name_from_identifier(t))],
-        };
-        fields.push(node_field(Some("type"), type_node));
+        fields.push(node_field(Some("type"), build_type_node(t)?));
     }
     fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
     if let Some(tw) = twigil {
@@ -627,14 +618,49 @@ fn name_from_identifier(s: &str) -> RakuAstNode {
 }
 
 /// True when a type constraint is a plain (possibly `::`-qualified) identifier
-/// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`),
-/// definite (`Int:D`), and coercion (`Str()`) types carry richer RakuAST shape,
-/// deferred — so each `::`-separated segment must be a bare identifier.
+/// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`)
+/// and coercion (`Str()`) types carry richer RakuAST shape, deferred — so each
+/// `::`-separated segment must be a bare identifier.
 fn is_simple_type(t: &str) -> bool {
     !t.is_empty()
         && t.split("::").all(|seg| {
             !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         })
+}
+
+/// A bare simple type `Int` -> `Type::Simple(Name.from-identifier("Int"))`.
+fn simple_type_node(t: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::TypeSimple,
+        fields: vec![node_field(None, name_from_identifier(t))],
+    }
+}
+
+/// Build the `type => ...` RakuAST node for a mutsu type-constraint string.
+/// A plain identifier -> `Type::Simple`; a `:D`/`:U` definiteness smiley ->
+/// `Type::Definedness(base-type => Type::Simple, definite => True/False)`.
+/// Parameterised (`Array[Int]`), coercion (`Str()`), and `:_` types defer.
+fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
+        if !is_simple_type(base) {
+            return Err(unsupported("definite type over a non-simple base"));
+        }
+        let definite = t.ends_with(":D");
+        return Ok(RakuAstNode {
+            class: RakuAstClass::TypeDefinedness,
+            fields: vec![
+                node_field(Some("base-type"), simple_type_node(base)),
+                RakuAstField {
+                    name: Some("definite"),
+                    value: RakuAstFieldValue::Node(Value::truth(definite)),
+                },
+            ],
+        });
+    }
+    if is_simple_type(t) {
+        return Ok(simple_type_node(t));
+    }
+    Err(unsupported("parameterised/coercion type"))
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil

@@ -259,7 +259,10 @@ earlier ones.
   desigilname, initializer). Only plain (possibly `::`-qualified) type identifiers map to
   `Type::Simple`; parameterised (`Array[Int]`), definite (`Int:D`), and coercion (`Str()`) types,
   dynamic (`$*x`) declarations, `where` constraints, and real `is`/`does` traits are the coverage
-  boundary (explicit `RuntimeError`).
+  boundary (explicit `RuntimeError`). A `:D`/`:U` definiteness smiley (`my Int:D $x`) is handled
+  (slice 20): the `type` field becomes `Type::Definedness(base-type => Type::Simple(Name), definite
+  => True/False)` via the shared `build_type_node` helper. Parameterised (`Array[Int]`), coercion
+  (`Str()`), and `:_` types still defer.
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`
