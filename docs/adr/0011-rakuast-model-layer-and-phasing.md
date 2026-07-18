@@ -179,6 +179,15 @@ earlier ones.
   topic-call form `.method` (i.e. `$_.method` written bare) is desugared by mutsu to `$_.method`
   (`ApplyPostfix` on `$_`), where raku keeps a distinct `Term::TopicCall` — a pre-existing
   method-call representation divergence, unrelated to `for`.
+- **Named sub declarations (Phase 2 slice 7).** `sub NAME (params) { body }` (`Stmt::SubDecl`) →
+  `Statement::Expression(Sub(name => Name, [signature => Signature], body => Blockoid))`. A
+  parameter-less sub (and an empty explicit `()` signature) omits the `signature` field. Sub/method
+  signature parameters carry an implicit `type => Type::Setting(Name.from-identifier("Any"))` that
+  pointy-block parameters do not — the `signature`/`parameter`/`simple_parameter` helpers thread a
+  `type_setting` flag to add it. Boundary (explicit `RuntimeError`): traits, `multi`, `is export`,
+  return types, operator subs (associativity/precedence), alternate signatures, and anonymous
+  `sub { }` (deferred). Parameters reuse the slice-3 plain-positional boundary (typed/named/slurpy/
+  `where`/… still error).
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`

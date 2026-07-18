@@ -204,6 +204,60 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 ],
             }))
         }
+        Stmt::SubDecl {
+            name,
+            name_expr,
+            param_defs,
+            return_type,
+            associativity,
+            precedence_trait,
+            signature_alternates,
+            body,
+            multi,
+            is_rw,
+            is_raw,
+            is_export,
+            export_tags,
+            is_test_assertion,
+            supersede,
+            custom_traits,
+            ..
+        } => {
+            // Phase 2 slice 7 covers the plain named `sub NAME (params) { body }`
+            // form. Traits, multi, export, return type, operator subs, and
+            // alternate signatures carry extra RakuAST shape, deferred.
+            if name_expr.is_some()
+                || return_type.is_some()
+                || associativity.is_some()
+                || precedence_trait.is_some()
+                || !signature_alternates.is_empty()
+                || *multi
+                || *is_rw
+                || *is_raw
+                || *is_export
+                || !export_tags.is_empty()
+                || *is_test_assertion
+                || *supersede
+                || !custom_traits.is_empty()
+            {
+                return Err(unsupported(
+                    "sub with traits / multi / export / return type",
+                ));
+            }
+            let name_node = RakuAstNode {
+                class: RakuAstClass::Name,
+                fields: vec![leaf_field(None, Value::str(name.resolve()))],
+            };
+            let mut fields = vec![node_field(Some("name"), name_node)];
+            if !param_defs.is_empty() {
+                fields.push(node_field(Some("signature"), signature(param_defs, true)?));
+            }
+            fields.push(node_field(Some("body"), blockoid(body)?));
+            Ok(Some(statement_expression(RakuAstNode {
+                class: RakuAstClass::Sub,
+                fields,
+            })))
+        }
         Stmt::Assign { name, expr, op } => {
             // Phase 2 slice 2 covers only plain `=`; `:=` (Bind) and match-assign
             // map to distinct RakuAST nodes.
@@ -445,7 +499,7 @@ fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 fn pointy_block(param_defs: &[ParamDef], body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
     if !param_defs.is_empty() {
-        fields.push(node_field(Some("signature"), signature(param_defs)?));
+        fields.push(node_field(Some("signature"), signature(param_defs, false)?));
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {
@@ -464,7 +518,7 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
         fields: vec![RakuAstField {
             name: Some("parameters"),
             value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(simple_parameter(
-                "$", param, None,
+                "$", param, None, false,
             )?))]),
         }],
     };
@@ -477,11 +531,13 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
     })
 }
 
-/// `Signature(parameters => (Parameter, ...))`.
-fn signature(param_defs: &[ParamDef]) -> Result<RakuAstNode, RuntimeError> {
+/// `Signature(parameters => (Parameter, ...))`. `type_setting` prepends the
+/// implicit `type => Type::Setting(Any)` on each parameter — present in
+/// sub/method signatures, absent in pointy-block signatures.
+fn signature(param_defs: &[ParamDef], type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
     let mut params = Vec::with_capacity(param_defs.len());
     for pd in param_defs {
-        params.push(Value::rakuast(Box::new(parameter(pd)?)));
+        params.push(Value::rakuast(Box::new(parameter(pd, type_setting)?)));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::Signature,
@@ -495,7 +551,7 @@ fn signature(param_defs: &[ParamDef]) -> Result<RakuAstNode, RuntimeError> {
 /// One `Parameter`. Only plain positional params (name + optional default) are
 /// modelled; anything richer (typed, named, slurpy, `where`, sub-signature,
 /// traits, optional-marker, invocant, shaped) is the coverage boundary.
-fn parameter(pd: &ParamDef) -> Result<RakuAstNode, RuntimeError> {
+fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
     if pd.named
         || pd.slurpy
         || pd.double_slurpy
@@ -514,15 +570,30 @@ fn parameter(pd: &ParamDef) -> Result<RakuAstNode, RuntimeError> {
         return Err(unsupported("non-trivial signature parameter"));
     }
     let (sigil, desigil) = split_sigil(&pd.name);
-    simple_parameter(sigil, desigil, pd.default.as_ref())
+    simple_parameter(sigil, desigil, pd.default.as_ref(), type_setting)
+}
+
+/// `Type::Setting.new(Name.from-identifier("Any"))` — the implicit default type
+/// carried by every sub/method-signature parameter.
+fn type_setting_any() -> RakuAstNode {
+    let name = RakuAstNode {
+        class: RakuAstClass::Name,
+        fields: vec![leaf_field(None, Value::str("Any".to_string()))],
+    };
+    RakuAstNode {
+        class: RakuAstClass::TypeSetting,
+        fields: vec![node_field(None, name)],
+    }
 }
 
 /// Build a `Parameter(target => ParameterTarget::Var, ...)`. A param with a
 /// default renders `default => <expr>`; a required one renders `optional => False`.
+/// `type_setting` prepends `type => Type::Setting(Any)` (sub/method params).
 fn simple_parameter(
     sigil: &str,
     desigil: &str,
     default: Option<&Expr>,
+    type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     let target = RakuAstNode {
         class: RakuAstClass::ParameterTargetVar,
@@ -531,7 +602,11 @@ fn simple_parameter(
             Value::str(format!("{sigil}{desigil}")),
         )],
     };
-    let mut fields = vec![node_field(Some("target"), target)];
+    let mut fields = Vec::new();
+    if type_setting {
+        fields.push(node_field(Some("type"), type_setting_any()));
+    }
+    fields.push(node_field(Some("target"), target));
     match default {
         Some(d) => fields.push(node_field(Some("default"), convert_expr(d)?)),
         None => fields.push(RakuAstField {
