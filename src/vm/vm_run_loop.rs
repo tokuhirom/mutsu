@@ -841,10 +841,47 @@ impl Interpreter {
             && !name.contains("__mutsu")
             && self.var_default(name).is_none()
         {
+            // A typed scalar attribute (`has Foo $.f; ... $!f = Nil`) resets to
+            // its own type object, not Any. Attribute vars reach this untyped
+            // branch because their type lives in the class registry, not in a
+            // per-var constraint.
+            if let Some(attr) = name.strip_prefix('!').or_else(|| name.strip_prefix('.'))
+                && !attr.is_empty()
+                && let Some(tc) = self.self_attr_type_constraint(attr)
+            {
+                return Value::package(crate::symbol::Symbol::intern(&tc));
+            }
             Value::package(crate::symbol::Symbol::intern("Any"))
         } else {
             val
         }
+    }
+
+    /// Look up the declared type constraint of an attribute of the current
+    /// `self` instance, walking the MRO.
+    fn self_attr_type_constraint(&self, attr_name: &str) -> Option<String> {
+        let self_val = self.get_env_with_main_alias("self")?;
+        let class_name = self_val.with_deref(|v| match v.view() {
+            crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+            crate::value::ValueView::Mixin(inner, _) => match inner.view() {
+                crate::value::ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                _ => None,
+            },
+            _ => None,
+        })?;
+        let tc = self.get_attr_type_constraint(&class_name, attr_name)?;
+        // A nested class type (`class URI { class Authority {}; has Authority
+        // $.authority }`) is declared by its short name but registered fully
+        // qualified — resolve it so the reset type object dispatches methods.
+        if !self.registry().classes.contains_key(&tc) {
+            for cls in self.mro_readonly(&class_name) {
+                let qualified = format!("{}::{}", cls, tc);
+                if self.registry().classes.contains_key(&qualified) {
+                    return Some(qualified);
+                }
+            }
+        }
+        Some(tc)
     }
 
     /// De-itemize a `for … -> @a` chunk element while preserving its element

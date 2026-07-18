@@ -468,16 +468,16 @@ impl Interpreter {
     }
 
     /// Get the type constraint for a class attribute, searching MRO.
-    pub(super) fn get_attr_type_constraint(
+    pub(crate) fn get_attr_type_constraint(
         &self,
         class_name: &str,
         attr_name: &str,
     ) -> Option<String> {
-        if let Some(class_def) = self.registry().classes.get(class_name) {
-            for (name, _is_public, _default, _is_rw, _, _, _) in &class_def.attributes {
-                if name == attr_name {
-                    return class_def.attribute_types.get(attr_name).cloned();
-                }
+        for cls in self.mro_readonly(class_name) {
+            if let Some(class_def) = self.registry().classes.get(&cls)
+                && let Some(tc) = class_def.attribute_types.get(attr_name)
+            {
+                return Some(tc.clone());
             }
         }
         None

@@ -1061,7 +1061,14 @@ impl Interpreter {
                     // not a Hash with element-level type errors.
                     self.coerce_hash_var_value(&name, raw_val)?
                 } else if name.starts_with('@') {
-                    runtime::coerce_to_array(raw_val)
+                    if is_bind_ctx || is_rebind {
+                        // `:=` bind (e.g. `@!attr := @x.List`, `our @a := ...`)
+                        // preserves the container type instead of copying into
+                        // a fresh Array — same semantics as the SetLocal path.
+                        self.bind_positional_value(&name, &raw_val)?
+                    } else {
+                        runtime::coerce_to_array(raw_val)
+                    }
                 } else {
                     raw_val
                 };

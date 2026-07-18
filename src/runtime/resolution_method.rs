@@ -352,6 +352,18 @@ impl Interpreter {
     /// Compute the type hierarchy distance between a constraint and a value.
     /// 0 = exact match, larger = less specific.
     fn builtin_type_distance(constraint: &str, value: &Value) -> usize {
+        // `value_type_name(Nil)` reports "Any", so a Nil argument needs its own
+        // MRO here: a `(Nil)` candidate must out-narrow e.g. `(Str() $s)` for a
+        // literal Nil argument (URI's `authority(Nil)`).
+        if matches!(value.view(), ValueView::Nil) {
+            let nil_mro: &[&str] = &["Nil", "Cool", "Any", "Mu"];
+            for (i, &ancestor) in nil_mro.iter().enumerate() {
+                if ancestor == constraint {
+                    return i;
+                }
+            }
+            return 500;
+        }
         let value_type = super::value_type_name(value);
         if constraint == value_type {
             return 0;

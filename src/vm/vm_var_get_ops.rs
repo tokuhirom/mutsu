@@ -149,7 +149,12 @@ impl Interpreter {
                     self.call_function_compiled_first(name, Vec::new(), compiled_fns)?
                 }
             } else if !name.starts_with('$') && !name.starts_with('@') && !name.starts_with('%') {
-                v.clone()
+                // A sigilless bind (`given ... -> \ex`, `ex := $_`) stores a
+                // shared ContainerRef cell in env; the bareword read must
+                // deliver the cell's value, not the wrapper — method dispatch
+                // on a raw ContainerRef misresolves (e.g. `ex.raku` on a bound
+                // instance rendered the type object).
+                v.deref_container()
             } else {
                 Value::str(name.to_string())
             }

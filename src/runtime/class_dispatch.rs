@@ -123,6 +123,32 @@ impl Interpreter {
                     })
             });
             if has_visible_method {
+                // `self.new(:named)` on a concrete invocant whose class declares
+                // user multi `new` candidates that don't match: Mu.new(*%attrinit)
+                // is always available as a fallback multi candidate, exactly as
+                // `dispatch_new` provides for type-object targets. An explicit
+                // `proto method new` owns dispatch, so no fallback then. Gated on
+                // a concrete invocant: `dispatch_new`'s own user-new probe runs
+                // with a Package invocant and must surface no-match to reach its
+                // default-constructor fall-through (not recurse through here).
+                if method_name == "new"
+                    && matches!(
+                        inv_value.view(),
+                        ValueView::Instance { .. } | ValueView::Mixin(..)
+                    )
+                    && self
+                        .lookup_proto_method(receiver_class_name, "new")
+                        .is_none()
+                    && args
+                        .iter()
+                        .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+                {
+                    let v = self.dispatch_new(
+                        Value::package(crate::symbol::Symbol::intern(receiver_class_name)),
+                        args,
+                    )?;
+                    return Ok((v, None));
+                }
                 let sigs =
                     self.format_method_candidate_signatures(receiver_class_name, method_name);
                 let profile = self.format_call_arg_profile(&args);
