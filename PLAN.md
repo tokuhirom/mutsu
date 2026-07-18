@@ -845,8 +845,10 @@ so it is tracked separately from the roast backlog.
         in `t/rakuast-subscript.t`. (Associative `%h{...}`/`%h<...>` deferred — indistinguishable.)
   - [x] Slice 23: quoted method names `$x."foo"()` (`Call::QuotedMethod`). Tests in
         `t/rakuast-quoted-method.t`.
-  - [ ] Slice 24+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
-        `andthen`/`orelse` (`ApplyListInfix`), `.=` method-assign, coercion types (`Str()`); then
+  - [x] Slice 24: list-associative infixes `andthen`/`orelse`/`notandthen` (flat `ApplyListInfix`).
+        Tests in `t/rakuast-list-infix.t`.
+  - [ ] Slice 25+: attribute defaults (`Trait::WillBuild`), `Stmt::Label`-wrapped loops,
+        `.=` method-assign, coercion types (`Str()`), reduction `[+]`, hyper `>>.method`; then
         `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
         mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
