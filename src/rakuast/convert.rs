@@ -227,26 +227,38 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             rw_block,
             explicit_zero_params,
         } => {
-            // Phase 2 slice 6 covers the implicit-topic form (`for SRC { ... $_ }`)
-            // only. An explicit signature (`for @a -> $x`), hyper/race/lazy modes,
-            // `<->` rw blocks, and labels carry extra RakuAST shape, deferred.
-            if param.is_some()
-                || param_def.is_some()
-                || !params.is_empty()
-                || !params_def.is_empty()
-                || label.is_some()
+            // Implicit-topic (`for SRC { ... $_ }`, slice 6) and explicit-signature
+            // (`for @a -> $x`, slice 12) forms. Hyper/race/lazy modes, `<->` rw
+            // blocks, and labels carry extra RakuAST shape, deferred.
+            // The explicit param names live in `param_def` / `params_def`; the
+            // sigil-stripped `param` / `params` string lists are unused here.
+            let _ = (param, params);
+            if label.is_some()
                 || *rw_block
                 || *explicit_zero_params
                 || !matches!(mode, ForMode::Normal)
             {
-                return Err(unsupported("for loop with explicit params / mode / label"));
+                return Err(unsupported("for loop with mode / rw / label"));
             }
+            // A single explicit param lives in `param_def`, multiple in
+            // `params_def`. With none, the body is an implicit-topic Block; with
+            // an explicit signature, it is a PointyBlock (matching raku).
+            let single = (**param_def).as_ref();
+            let explicit_defs: &[ParamDef] = match single {
+                Some(pd) => std::slice::from_ref(pd),
+                None => params_def,
+            };
+            let body_node = if explicit_defs.is_empty() {
+                topic_block_node(body)?
+            } else {
+                pointy_block(explicit_defs, body)?
+            };
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementFor,
                 fields: vec![
                     leaf_field(Some("mode"), Value::str("serial".to_string())),
                     node_field(Some("source"), convert_expr(iterable)?),
-                    node_field(Some("body"), topic_block_node(body)?),
+                    node_field(Some("body"), body_node),
                 ],
             }))
         }

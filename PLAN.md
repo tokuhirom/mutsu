@@ -780,8 +780,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 11: anonymous parameter-less `sub { }` (`RakuAST::Sub` with no name). Tests in
         `t/rakuast-anon-sub.t`. (`sub ($x)` shares `AnonSubParams` with pointy blocks, still
         deferred.)
-  - [ ] Slice 12+: method decls (needs `RakuAST::Class`), labelled loops, explicit-signature `for`
-        (`for @a -> $x`), method-call modifiers, parameterised/definite types; then `.DEPARSE`;
+  - [x] Slice 12: explicit-signature `for @a -> $x` (body becomes a `PointyBlock` carrying the
+        signature). Tests in `t/rakuast-for-signature.t`.
+  - [ ] Slice 13+: method decls (needs `RakuAST::Class`), labelled loops, method-call modifiers
+        (`.?`/`.+`/`.*`), parameterised/definite types (`Array[Int]`/`Int:D`); then `.DEPARSE`;
         resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does
         not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
