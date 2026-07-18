@@ -118,6 +118,16 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
         | ValueView::GenericRange { .. } => {
             out.extend(crate::runtime::utils::value_to_list(v));
         }
+        // A bare (non-itemized) Hash in LIST context flattens into its pairs —
+        // `flat %new, @new` splices the hash's pairs in (an empty hash
+        // contributes nothing). An itemized hash (`$h`), or a hash stored as a
+        // real-Array element (`@aoh.flat` — flatten_arrays=false marks the
+        // itemizing container), stays a single element.
+        ValueView::Hash(map) if flatten_arrays && !v.hash_is_itemized() => {
+            for (k, val) in map.iter() {
+                out.push(map.typed_pair(k, val.clone()));
+            }
+        }
         _ => out.push(v.clone()),
     }
 }

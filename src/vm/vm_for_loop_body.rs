@@ -213,6 +213,14 @@ impl Interpreter {
             } else {
                 item
             };
+            // A Proxy element FETCHes on iteration in value context (raku:
+            // `for $proxy-list.list { }` yields the values). An rw loop
+            // (`<->`) keeps the Proxy so writes go through STORE.
+            let item = if !spec.is_rw && matches!(item.view(), ValueView::Proxy { .. }) {
+                loan_env!(self, auto_fetch_proxy(&item))?
+            } else {
+                item
+            };
             // `topic_source_var` drives the whole-topic writeback for a scalar
             // source (`for $x { $_[1] = ... }` writes the mutated `$_` back to
             // `$x`). For a `.values` loop over a mutable QuantHash the topic is a

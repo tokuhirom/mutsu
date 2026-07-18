@@ -2,6 +2,16 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Whether a statement is (or returns) an explicit `return-rw ...` call.
+    pub(crate) fn stmt_contains_return_rw_call(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Expr(expr) | Stmt::Return(expr) => {
+                matches!(expr, Expr::Call { name, .. } if name == "return-rw")
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn rw_method_attribute_target(body: &[Stmt]) -> Option<String> {
         let first = body.iter().find(|s| !matches!(s, Stmt::SetLine(_)))?;
         let extract_attr = |expr: &Expr| -> Option<String> {

@@ -124,6 +124,39 @@ impl Compiler {
             self.code.emit(OpCode::LoadConst(idx));
             return;
         }
+        // Parser artifact: `@a[0] = "k" => 1` reaches the compiler as
+        // `(IndexAssign{value:"k"}) => 1` because the element-assign RHS is
+        // parsed below fat-arrow precedence. Raku's `=` is LOOSER than `=>`,
+        // so re-associate: the assigned value is the whole Pair.
+        if matches!(op, TokenKind::FatArrow)
+            && let Expr::IndexAssign {
+                target,
+                index,
+                value,
+                is_positional,
+            } = left
+        {
+            // Apply the same bareword auto-quote the expression parser does
+            // for pair keys (`@a[0] = k => 1`).
+            let key = match value.as_ref() {
+                Expr::BareWord(name) if !name.contains("::") => {
+                    Expr::Literal(Value::str(name.clone()))
+                }
+                other => other.clone(),
+            };
+            let pair = Expr::Binary {
+                left: Box::new(key),
+                op: TokenKind::FatArrow,
+                right: Box::new(right.clone()),
+            };
+            self.compile_expr(&Expr::IndexAssign {
+                target: target.clone(),
+                index: index.clone(),
+                value: Box::new(pair),
+                is_positional: *is_positional,
+            });
+            return;
+        }
         // `$var andthen/orelse/notandthen .=method` writes the `.=` result back to
         // the chain's root variable (the topic `$_` aliases it in raku).
         let retargeted_right;

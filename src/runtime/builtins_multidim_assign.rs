@@ -32,6 +32,44 @@ impl Interpreter {
             _ => current,
         };
 
+        // The accessor returned an Associative/Positional OBJECT (URI's
+        // `$u.query<foo> = v` — `.query` yields a URI::Query instance):
+        // dispatch the raku subscript protocol on it instead of treating it
+        // as a plain container. Instance-internal mutation travels through
+        // the shared attribute cell, so no write-back is needed.
+        if let ValueView::Instance { class_name, .. } = current.view() {
+            let (primary, secondary) = if matches!(index.view(), ValueView::Int(_)) {
+                ("ASSIGN-POS", "ASSIGN-KEY")
+            } else {
+                ("ASSIGN-KEY", "ASSIGN-POS")
+            };
+            let cn = class_name.resolve();
+            let m = if self.has_user_method(&cn, primary) {
+                Some(primary)
+            } else if self.has_user_method(&cn, secondary) {
+                Some(secondary)
+            } else {
+                None
+            };
+            if let Some(m) = m {
+                let idx_arg = match index.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
+                        items[0].clone()
+                    }
+                    _ => index.clone(),
+                };
+                // A Pair VALUE must arrive as a positional argument, not be
+                // eaten as a named arg.
+                let val_arg = match value.view() {
+                    ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+                    _ => value.clone(),
+                };
+                self.call_method_with_values(current.clone(), m, vec![idx_arg, val_arg])?;
+                return Ok(value);
+            }
+        }
+
         // Save Arc pointers before modifying (for shared container propagation)
         let old_array_arc = match current.view() {
             ValueView::Array(arc, ..) => Some(arc.clone()),
@@ -329,6 +367,46 @@ impl Interpreter {
 
         // Get the attribute container
         let container = self.call_method_with_values(target.clone(), &method, Vec::new())?;
+
+        // The accessor returned a subscriptable OBJECT (`$u.query<foo>[0] = v`
+        // — `.query` yields a URI::Query instance): read the inner collection
+        // via AT-KEY/AT-POS; a Proxy element routes the write through STORE
+        // (URI's read-only lists throw X::Assignment::RO from there).
+        if let ValueView::Instance { class_name, .. } = container.view() {
+            let cn = class_name.resolve();
+            let (p, s) = if matches!(inner_index.view(), ValueView::Int(_)) {
+                ("AT-POS", "AT-KEY")
+            } else {
+                ("AT-KEY", "AT-POS")
+            };
+            let at = if self.has_user_method(&cn, p) {
+                Some(p)
+            } else if self.has_user_method(&cn, s) {
+                Some(s)
+            } else {
+                None
+            };
+            if let Some(at) = at {
+                let inner = self
+                    .call_method_with_values(container.clone(), at, vec![inner_index.clone()])?
+                    .deref_container();
+                let idx_u = crate::runtime::to_int(&_outer_index) as usize;
+                let elem = match inner.view() {
+                    ValueView::Array(items, _) => items.get(idx_u).cloned(),
+                    ValueView::Seq(items) | ValueView::Slip(items) => items.get(idx_u).cloned(),
+                    _ => None,
+                };
+                if let Some(elem) = elem
+                    && let ValueView::Proxy { storer, .. } = elem.view()
+                {
+                    if storer.is_nil() {
+                        return Err(RuntimeError::assignment_ro(None));
+                    }
+                    self.call_sub_value(storer.clone(), vec![elem.clone(), value.clone()], true)?;
+                    return Ok(value);
+                }
+            }
+        }
 
         // For typed containers, check if the inner element is Nil (would need autovivification)
         if let ValueView::Instance { class_name, .. } = target.view()

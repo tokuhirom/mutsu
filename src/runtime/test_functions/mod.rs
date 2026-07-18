@@ -200,10 +200,12 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
         let normalized_args: Vec<Value> = args.iter().map(Self::unwrap_test_arg_value).collect();
-        // Auto-FETCH any Proxy containers in test function arguments
+        // Auto-FETCH any Proxy containers in test function arguments — deep:
+        // Proxies inside a List/Hash argument (URI::Query's read-only Proxy
+        // lists) must compare/render as their FETCHed values too.
         let fetched_args: Vec<Value> = normalized_args
             .into_iter()
-            .map(|v| self.auto_fetch_proxy(&v))
+            .map(|v| self.resolve_proxies_in_value(&v))
             .collect::<Result<Vec<_>, _>>()?;
         let args = fetched_args.as_slice();
         match name {

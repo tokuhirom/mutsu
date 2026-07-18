@@ -1157,7 +1157,17 @@ impl Interpreter {
                 return Ok(result);
             }
         }
-        if !method_def.is_rw {
+        // A method whose body is `return-rw $!attr` exposes a writable
+        // container even without an `is rw` trait (URI's `multi method
+        // fragment(URI:D: --> Fragment) { return-rw $!fragment }`).
+        let returns_rw_attr =
+            Self::rw_method_attribute_target(&method_def.body).is_some_and(|_| {
+                method_def
+                    .body
+                    .iter()
+                    .any(Self::stmt_contains_return_rw_call)
+            });
+        if !method_def.is_rw && !returns_rw_attr {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: method '{}' is not rw",
                 method
