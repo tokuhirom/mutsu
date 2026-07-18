@@ -796,10 +796,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 17: loop labels (`LABEL: while/for/loop` → `labels => (Label(...),)`). Tests in
         `t/rakuast-loop-label.t`. (Labelled `repeat`/C-style loops use a separate `Stmt::Label`
         node, deferred.)
-  - [ ] Slice 18+: given/when, parameterised/definite types (`Array[Int]`/`Int:D`), attribute
-        defaults (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped loops; then
-        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
-        mutsu does not).
+  - [x] Slice 18: given / when / default (`Statement::Given`/`When`/`Default`). Tests in
+        `t/rakuast-given-when.t`.
+  - [ ] Slice 19+: parameterised/definite types (`Array[Int]`/`Int:D`), attribute defaults
+        (`Trait::WillBuild`), quoted method names, `Stmt::Label`-wrapped loops, ternary/`andthen`;
+        then `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to
+        `IntLiteral(3)`, mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
