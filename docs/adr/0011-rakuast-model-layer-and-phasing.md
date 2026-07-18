@@ -197,6 +197,13 @@ earlier ones.
     initializers (comma lists) stay the boundary. Tests in `t/rakuast-eval-var.t`. Next: method
     calls, `if`/loops, sub declarations — the inverse of the Phase-2 converter, grown cluster by
     cluster.
+  - **Slice 4 (calls) — done.** The listop I/O calls (`Call::Name`/`::WithoutParentheses` with name
+    `say`/`put`/`print`/`note`) lower to their statement forms (`Stmt::Say` etc.), and a postfix
+    method call (`ApplyPostfix` with a `Call::Method` postfix) lowers to `Expr::MethodCall`.
+    `EVAL(Q[my $x = -5; $x.abs].AST)` → `5`; chained calls and `say` as a side-effecting statement
+    work. (The *return value* of a bare trailing `say` differs between mutsu and raku — a pre-existing
+    mutsu EVAL behaviour also seen with a string EVAL, unrelated to RakuAST.) Tests in
+    `t/rakuast-eval-call.t`. Next: `if`/loops, sub declarations.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

@@ -45,7 +45,44 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
+        // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
+        // statements in the internal AST.
+        RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => {
+            let name = call_name_str(node)?;
+            let args = arg_exprs(node)?;
+            match name.as_str() {
+                "say" => Ok(Stmt::Say(args)),
+                "put" => Ok(Stmt::Put(args)),
+                "print" => Ok(Stmt::Print(args)),
+                "note" => Ok(Stmt::Note(args)),
+                _ => Ok(Stmt::Expr(lower_expr(node)?)),
+            }
+        }
         _ => Ok(Stmt::Expr(lower_expr(node)?)),
+    }
+}
+
+/// The identifier string of a call node's `name` (a `Name`) child.
+fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> {
+    match positional_leaf(named_child(node, "name")?)?.view() {
+        ValueView::Str(s) => Ok(s.to_string()),
+        _ => Err(unsupported(node)),
+    }
+}
+
+/// The lowered positional arguments of a call node's `args` (`ArgList`) child, or
+/// an empty vec when there are none.
+fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+    match node.fields.iter().find(|f| f.name == Some("args")) {
+        Some(f) => {
+            let arglist = child_node(&f.value)?;
+            arglist
+                .fields
+                .iter()
+                .map(|af| lower_expr(child_node(&af.value)?))
+                .collect()
+        }
+        None => Ok(Vec::new()),
     }
 }
 
@@ -172,6 +209,22 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::Unary {
                 op,
                 expr: Box::new(operand),
+            })
+        }
+        // A postfix method call: `$x.abs` -> ApplyPostfix(operand, Call::Method).
+        // Subscripts / hyper-calls carry a different postfix and are deferred.
+        RakuAstClass::ApplyPostfix => {
+            let operand = lower_expr(named_child(node, "operand")?)?;
+            let postfix = named_child(node, "postfix")?;
+            if postfix.class != RakuAstClass::CallMethod {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::MethodCall {
+                target: Box::new(operand),
+                name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
+                args: arg_exprs(postfix)?,
+                modifier: None,
+                quoted: false,
             })
         }
         _ => Err(unsupported(node)),
