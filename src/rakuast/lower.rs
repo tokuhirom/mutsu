@@ -219,14 +219,9 @@ fn signature_positional_params(
         let ValueView::RakuAst(p) = v.view() else {
             return Err(unsupported(node));
         };
-        // Named / slurpy / explicitly-optional parameters carry richer shape; defer.
-        // A `default` is handled below (an optional positional with a fallback).
-        if p.fields.iter().any(|f| {
-            matches!(
-                f.name,
-                Some("slurpy") | Some("named") | Some("optional_marker")
-            )
-        }) {
+        // An explicitly-optional parameter carries richer shape; defer.
+        // `named`/`slurpy`/`default` are handled below.
+        if p.fields.iter().any(|f| f.name == Some("optional_marker")) {
             return Err(unsupported(node));
         }
         let target = named_child(p, "target")?;
@@ -241,6 +236,21 @@ fn signature_positional_params(
         if p.fields.iter().any(|f| f.name == Some("names")) {
             def.named = true;
             def.required = false;
+        }
+        // A slurpy parameter `*@a` / `**@a` carries a `slurpy` marker node.
+        if let Some(s) = p.fields.iter().find(|f| f.name == Some("slurpy")) {
+            if let RakuAstFieldValue::Node(val) = &s.value
+                && let ValueView::RakuAst(marker) = val.view()
+            {
+                match marker.class {
+                    RakuAstClass::ParameterSlurpyFlattened => def.slurpy = true,
+                    RakuAstClass::ParameterSlurpyUnflattened => def.double_slurpy = true,
+                    _ => return Err(unsupported(node)),
+                }
+                def.required = false;
+            } else {
+                return Err(unsupported(node));
+            }
         }
         // `Int $x` -> a type constraint. `Type::Simple` (a plain type name) is
         // handled; the implicit `Type::Setting(Any)` on an untyped param is

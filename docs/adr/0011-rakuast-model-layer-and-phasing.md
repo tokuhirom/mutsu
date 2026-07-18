@@ -319,6 +319,14 @@ earlier ones.
     positional+named mix work, and an omitted named param is undefined. Typed/defaulted named params
     stay the boundary. Tests in `t/rakuast-eval-named-param.t`. Next: bareword type terms, slurpy
     parameters, array/hash literals.
+  - **Slice 23 (slurpy parameters) — done, both directions.** A slurpy parameter `*@a` (or `**@a`)
+    renders as a `Parameter` with a `slurpy => RakuAST::Parameter::Slurpy::Flattened` (resp.
+    `Unflattened`) marker — a new pair of node classes that render as a *bare class name* (no
+    constructor call, via `renders_bare()`). The write side sets the `ParamDef`'s `slurpy`/
+    `double_slurpy` flag. `EVAL(Q[sub f(*@a) { @a.elems }; f(1, 2, 3)].AST)` → `3`; a leading
+    positional plus a slurpy, `.sum` over the slurpy, and an empty slurpy all work. Typed slurpies and
+    `+@a` (onearg) stay the boundary. Tests in `t/rakuast-eval-slurpy.t`. Next: bareword type terms,
+    array/hash literals.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

@@ -13,6 +13,11 @@ use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     let name = node.class.printed_name();
+    // A bare-class-name node (e.g. `RakuAST::Parameter::Slurpy::Flattened`) has no
+    // constructor call at all.
+    if node.class.renders_bare() {
+        return name.to_string();
+    }
     let ctor = match node.class.constructor() {
         Constructor::New => "new",
         Constructor::FromIdentifier => "from-identifier",
