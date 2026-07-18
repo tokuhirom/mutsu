@@ -853,9 +853,12 @@ so it is tracked separately from the roast backlog.
         `t/rakuast-hyper-method.t`.
   - [x] Slice 27: attribute build-time defaults `has $.x = 5` (`Trait::WillBuild` + initializer).
         Tests in `t/rakuast-attribute-default.t`.
-  - [ ] Slice 28+: `Stmt::Label`-wrapped loops, `.=` method-assign, coercion types (`Str()`), other
-        hyper forms (`<<.m`, `>>+<<`), signature return types; then `.DEPARSE`; resolve the
-        constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
+  - [x] Slice 28: labelled `repeat` loops (`Stmt::Label`-wrapped). Tests in
+        `t/rakuast-labelled-repeat.t`.
+  - [ ] Slice 29+: `.=` method-assign, coercion types (`Str()`), other hyper forms (`<<.m`,
+        `>>+<<`), signature return types; then `.DEPARSE`; resolve the constant-folding divergence
+        (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not). **NOTE: read-coverage tail is thin
+        — consider the `.DEPARSE`/Phase 3 pivot.**
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).
