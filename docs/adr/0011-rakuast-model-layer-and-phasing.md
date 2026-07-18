@@ -293,7 +293,8 @@ earlier ones.
   => True/False)` via the shared `build_type_node` helper. Parameterised types (slice 21):
   `Array[Int]` / `Hash[Str, Int]` → `Type::Parameterized(base-type => Type::Simple, args => ArgList(
   <type args>))`, with each argument built recursively by `build_type_node` (so nesting composes).
-  Coercion (`Str()`) and `:_` types still defer.
+  Coercion types (slice 29): `Int()` → `Type::Coercion(base-type => Type::Simple(Int))`; a coercion
+  with an explicit target (`Str(Int)`) and `:_` types still defer.
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`

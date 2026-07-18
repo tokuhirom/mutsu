@@ -855,10 +855,13 @@ so it is tracked separately from the roast backlog.
         Tests in `t/rakuast-attribute-default.t`.
   - [x] Slice 28: labelled `repeat` loops (`Stmt::Label`-wrapped). Tests in
         `t/rakuast-labelled-repeat.t`.
-  - [ ] Slice 29+: `.=` method-assign, coercion types (`Str()`), other hyper forms (`<<.m`,
-        `>>+<<`), signature return types; then `.DEPARSE`; resolve the constant-folding divergence
-        (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not). **NOTE: read-coverage tail is thin
-        — consider the `.DEPARSE`/Phase 3 pivot.**
+  - [x] Slice 29: coercion types `Int()` (`Type::Coercion`). Tests in `t/rakuast-type-coercion.t`.
+  - [ ] Slice 30+ / pivot: the clean read-coverage tail is essentially exhausted. Remaining Phase 2
+        candidates carry divergences or complications (`.=` desugars to `$x=$x.m`; hyper `<<.m`/
+        `>>+<<`; signature return types). Next major options: **`.DEPARSE`** (a second renderer that
+        regenerates Raku source from a RakuAST node) or **Phase 3** (type-object registry: make
+        nodes `~~ RakuAST::Node`-matchable with `.^name`/accessors). Resolve the constant-folding
+        divergence (`1+2` → raku folds to `IntLiteral(3)`) whichever way is chosen.
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

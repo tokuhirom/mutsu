@@ -683,6 +683,17 @@ fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
             ],
         });
     }
+    // `Int()` coercion -> Type::Coercion(base-type). A coercion with an explicit
+    // target (`Str(Int)`) is deferred.
+    if let Some(base) = t.strip_suffix("()") {
+        if !is_simple_type(base) {
+            return Err(unsupported("coercion type over a non-simple base"));
+        }
+        return Ok(RakuAstNode {
+            class: RakuAstClass::TypeCoercion,
+            fields: vec![node_field(Some("base-type"), simple_type_node(base))],
+        });
+    }
     // `Array[Int]` / `Hash[Str, Int]` -> Type::Parameterized(base-type, args).
     if let Some(open) = t.find('[') {
         let inner = t
