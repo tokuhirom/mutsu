@@ -168,8 +168,15 @@ earlier ones.
   distinct `unless`/`until` statements. `elsif` chains are handled (slice 5): mutsu nests each
   `elsif` as a single `if` inside the else-branch, and the converter flattens that chain into
   raku's flat `elsifs` list (`Statement::Elsif`), with any trailing block as the final `else`.
-  C-style/`repeat`/labelled loops and topic binding (`if EXPR -> $v` / `elsif EXPR -> $v`) remain
-  the coverage boundary (explicit `RuntimeError`), deferred to a later slice. Implicit-topic `for`
+  C-style and `repeat` loops are handled (slice 8): `loop (init; cond; step) { }` →
+  `Statement::Loop(setup, condition, increment, body)` (each clause present only when written; the
+  `setup` renders its `VarDeclaration`/expression node **unwrapped**, not inside a
+  `Statement::Expression` — and because the loop-init parse path does not set `__has_initializer`,
+  the initializer is detected from a non-`Nil` `expr`); `repeat { } while X` →
+  `Statement::Loop::RepeatWhile(body, condition)`, with `repeat ... until X` folding to
+  `RepeatWhile` + negated condition (same collapse as `until`/`while`). Labelled loops and topic
+  binding (`if EXPR -> $v` / `elsif EXPR -> $v`) remain the coverage boundary (explicit
+  `RuntimeError`), deferred to a later slice. Implicit-topic `for`
   is handled (slice 6): `for SRC { ... }` (no explicit signature) → `Statement::For(mode =>
   "serial", source, body)` where the body is a topic-taking `Block` marked `implicit-topic => True`
   / `required-topic => 1`. `with`/`without` are NOT mappable — mutsu desugars them at parse time

@@ -159,14 +159,47 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             repeat,
             label,
         } => {
-            // Only the bare `loop { }` form; the C-style `loop (init; cond; step)`,
-            // `repeat` loops, and labelled loops carry extra RakuAST shape.
-            if init.is_some() || cond.is_some() || step.is_some() || *repeat || label.is_some() {
-                return Err(unsupported("C-style / repeat / labelled loop"));
+            if label.is_some() {
+                return Err(unsupported("labelled loop"));
             }
+            if *repeat {
+                // `repeat { } while X`. mutsu desugars `repeat { } until X` to a
+                // negated `while` condition (same collapse as while/until), so
+                // this always renders as `Loop::RepeatWhile`.
+                let cond = cond
+                    .as_ref()
+                    .ok_or_else(|| unsupported("repeat loop without condition"))?;
+                return Ok(Some(RakuAstNode {
+                    class: RakuAstClass::StatementLoopRepeatWhile,
+                    fields: vec![
+                        node_field(Some("body"), block_node(body)?),
+                        node_field(Some("condition"), convert_expr(cond)?),
+                    ],
+                }));
+            }
+            if init.is_none() && cond.is_none() && step.is_none() {
+                // Bare `loop { }`.
+                return Ok(Some(RakuAstNode {
+                    class: RakuAstClass::StatementLoop,
+                    fields: vec![node_field(Some("body"), block_node(body)?)],
+                }));
+            }
+            // C-style `loop (init; cond; step) { }`. Each clause is optional and
+            // present only when written.
+            let mut fields = Vec::new();
+            if let Some(init) = init.as_deref() {
+                fields.push(node_field(Some("setup"), loop_setup_node(init)?));
+            }
+            if let Some(cond) = cond {
+                fields.push(node_field(Some("condition"), convert_expr(cond)?));
+            }
+            if let Some(step) = step {
+                fields.push(node_field(Some("increment"), convert_expr(step)?));
+            }
+            fields.push(node_field(Some("body"), block_node(body)?));
             Ok(Some(RakuAstNode {
                 class: RakuAstClass::StatementLoop,
-                fields: vec![node_field(Some("body"), block_node(body)?)],
+                fields,
             }))
         }
         Stmt::For {
@@ -472,6 +505,56 @@ fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],
     })
+}
+
+/// A C-style loop `setup` clause renders its node unwrapped — raku shows the
+/// `VarDeclaration::Simple` / `ApplyInfix` directly, not inside a
+/// `Statement::Expression`. mutsu's init is a full statement.
+fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    // A `my $i = 0` init is a special case: the loop-init parse path does NOT
+    // set the `__has_initializer` trait the top-level VarDecl handler relies on,
+    // so detect the initializer from a non-Nil `expr` instead.
+    if let Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic,
+        where_constraint,
+        ..
+    } = stmt
+    {
+        if type_constraint.is_some()
+            || *is_state
+            || *is_our
+            || *is_dynamic
+            || where_constraint.is_some()
+        {
+            return Err(unsupported("scoped/typed variable declaration"));
+        }
+        return var_declaration(name, expr, !expr_is_nil(expr));
+    }
+    // Assignment / expression setups convert normally, then get unwrapped.
+    let node = convert_stmt(stmt)?.ok_or_else(|| unsupported("empty loop setup clause"))?;
+    if node.class != RakuAstClass::StatementExpression {
+        return Ok(node);
+    }
+    if let Some(RakuAstField {
+        value: RakuAstFieldValue::Node(v),
+        ..
+    }) = node.fields.into_iter().next()
+        && let ValueView::RakuAst(inner) = v.view()
+    {
+        return Ok(inner.clone());
+    }
+    Err(unsupported("loop setup clause"))
+}
+
+/// True when `expr` is a `Nil` literal (mutsu's placeholder for a `my $x` with
+/// no initializer in a loop-setup clause).
+fn expr_is_nil(expr: &Expr) -> bool {
+    matches!(expr, Expr::Literal(v) | Expr::LiteralSrc(v, _) if v.is_nil())
 }
 
 /// A topic-taking block body (the `{ ... }` of an implicit-topic `for`), which

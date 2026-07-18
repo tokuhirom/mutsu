@@ -85,6 +85,8 @@ pub enum RakuAstClass {
     // Phase 2 slice 7: named sub declarations.
     Sub,
     TypeSetting,
+    // Phase 2 slice 8: C-style and repeat loops.
+    StatementLoopRepeatWhile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +134,7 @@ impl RakuAstClass {
             StatementFor => "RakuAST::Statement::For",
             Sub => "RakuAST::Sub",
             TypeSetting => "RakuAST::Type::Setting",
+            StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
         }
     }
 
