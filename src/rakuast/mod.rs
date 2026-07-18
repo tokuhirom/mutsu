@@ -89,6 +89,8 @@ pub enum RakuAstClass {
     StatementLoopRepeatWhile,
     // Phase 2 slice 9: `:=` binding and comma lists.
     ApplyListInfix,
+    // Phase 2 slice 10: scoped/typed variable declarations.
+    TypeSimple,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +140,7 @@ impl RakuAstClass {
             TypeSetting => "RakuAST::Type::Setting",
             StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
             ApplyListInfix => "RakuAST::ApplyListInfix",
+            TypeSimple => "RakuAST::Type::Simple",
         }
     }
 

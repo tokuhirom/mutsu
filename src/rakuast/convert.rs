@@ -69,16 +69,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             where_constraint,
             ..
         } => {
-            // Phase 2 covers only the plain `my $x [= expr]` form; scoped/typed
-            // declarations map to extra RakuAST fields not yet modelled.
-            if type_constraint.is_some()
-                || *is_state
-                || *is_our
-                || *is_dynamic
-                || where_constraint.is_some()
-            {
-                return Err(unsupported("scoped/typed variable declaration"));
+            // `my`/`our`/`state` with an optional simple type. Dynamic (`$*x`),
+            // `where` constraints, parameterised/definite/coercion types, and
+            // real `is`/`does` traits carry richer shape, deferred.
+            if *is_dynamic || where_constraint.is_some() {
+                return Err(unsupported("dynamic / where-constrained declaration"));
             }
+            if custom_traits.iter().any(|(n, _)| n != "__has_initializer") {
+                return Err(unsupported("declaration with traits"));
+            }
+            let type_name = match type_constraint.as_deref() {
+                Some(t) if is_simple_type(t) => Some(t),
+                Some(_) => return Err(unsupported("parameterised/definite/coercion type")),
+                None => None,
+            };
+            let scope = if *is_our {
+                Some("our")
+            } else if *is_state {
+                Some("state")
+            } else {
+                None
+            };
             let has_initializer = custom_traits
                 .iter()
                 .any(|(name, _)| name == "__has_initializer");
@@ -86,6 +97,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 name,
                 expr,
                 has_initializer,
+                scope,
+                type_name,
             )?)))
         }
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
@@ -360,16 +373,28 @@ fn var_declaration(
     name: &str,
     init_expr: &Expr,
     has_initializer: bool,
+    scope: Option<&'static str>,
+    type_name: Option<&str>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    let name_node = RakuAstNode {
-        class: RakuAstClass::Name,
-        fields: vec![leaf_field(None, Value::str(desigil.to_string()))],
-    };
-    let mut fields = vec![
-        leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-        node_field(Some("desigilname"), name_node),
-    ];
+    // Field order matches raku: scope, type, sigil, desigilname, initializer —
+    // with scope (default `my`) and type omitted when absent.
+    let mut fields = Vec::new();
+    if let Some(s) = scope {
+        fields.push(leaf_field(Some("scope"), Value::str(s.to_string())));
+    }
+    if let Some(t) = type_name {
+        let type_node = RakuAstNode {
+            class: RakuAstClass::TypeSimple,
+            fields: vec![node_field(None, name_from_identifier(t))],
+        };
+        fields.push(node_field(Some("type"), type_node));
+    }
+    fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
+    fields.push(node_field(
+        Some("desigilname"),
+        name_from_identifier(desigil),
+    ));
     if has_initializer {
         let assign = RakuAstNode {
             class: RakuAstClass::InitializerAssign,
@@ -381,6 +406,25 @@ fn var_declaration(
         class: RakuAstClass::VarDeclarationSimple,
         fields,
     })
+}
+
+/// A `Name.from-identifier("<s>")` node.
+fn name_from_identifier(s: &str) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::Name,
+        fields: vec![leaf_field(None, Value::str(s.to_string()))],
+    }
+}
+
+/// True when a type constraint is a plain (possibly `::`-qualified) identifier
+/// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`),
+/// definite (`Int:D`), and coercion (`Str()`) types carry richer RakuAST shape,
+/// deferred — so each `::`-separated segment must be a bare identifier.
+fn is_simple_type(t: &str) -> bool {
+    !t.is_empty()
+        && t.split("::").all(|seg| {
+            !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
@@ -574,7 +618,7 @@ fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
         {
             return Err(unsupported("scoped/typed variable declaration"));
         }
-        return var_declaration(name, expr, !expr_is_nil(expr));
+        return var_declaration(name, expr, !expr_is_nil(expr), None, None);
     }
     // Assignment / expression setups convert normally, then get unwrapped.
     let node = convert_stmt(stmt)?.ok_or_else(|| unsupported("empty loop setup clause"))?;
