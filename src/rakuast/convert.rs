@@ -638,8 +638,8 @@ fn simple_type_node(t: &str) -> RakuAstNode {
 
 /// Build the `type => ...` RakuAST node for a mutsu type-constraint string.
 /// A plain identifier -> `Type::Simple`; a `:D`/`:U` definiteness smiley ->
-/// `Type::Definedness(base-type => Type::Simple, definite => True/False)`.
-/// Parameterised (`Array[Int]`), coercion (`Str()`), and `:_` types defer.
+/// `Type::Definedness`; a `Base[Arg, ...]` -> `Type::Parameterized`. Coercion
+/// (`Str()`) and `:_` types defer.
 fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
     if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
         if !is_simple_type(base) {
@@ -657,10 +657,36 @@ fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
             ],
         });
     }
+    // `Array[Int]` / `Hash[Str, Int]` -> Type::Parameterized(base-type, args).
+    if let Some(open) = t.find('[') {
+        let inner = t
+            .strip_suffix(']')
+            .ok_or_else(|| unsupported("malformed parameterised type"))?;
+        let base = &t[..open];
+        let args_str = &inner[open + 1..];
+        if !is_simple_type(base) {
+            return Err(unsupported("parameterised type over a non-simple base"));
+        }
+        let mut args = Vec::new();
+        for a in args_str.split(',') {
+            args.push(node_field(None, build_type_node(a.trim())?));
+        }
+        let arglist = RakuAstNode {
+            class: RakuAstClass::ArgList,
+            fields: args,
+        };
+        return Ok(RakuAstNode {
+            class: RakuAstClass::TypeParameterized,
+            fields: vec![
+                node_field(Some("base-type"), simple_type_node(base)),
+                node_field(Some("args"), arglist),
+            ],
+        });
+    }
     if is_simple_type(t) {
         return Ok(simple_type_node(t));
     }
-    Err(unsupported("parameterised/coercion type"))
+    Err(unsupported("coercion type"))
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
