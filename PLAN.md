@@ -771,11 +771,14 @@ so it is tracked separately from the roast backlog.
         params carry an implicit `type => RakuAST::Type::Setting(Any)`). Tests in `t/rakuast-sub.t`.
   - [x] Slice 8: C-style loops (`Statement::Loop` with setup/condition/increment) and `repeat`
         loops (`Statement::Loop::RepeatWhile`). Tests in `t/rakuast-loop.t`.
-  - [ ] Slice 9+: anonymous `sub { }` (no-param only — `sub ($x)`/`-> $x` share `AnonSubParams`
+  - [x] Slice 9: bare comma lists (`ApplyListInfix`) and `:=` binding (`ApplyInfix` over a plain
+        `Infix(":=")`). Tests in `t/rakuast-listinfix-bind.t`. (Parenthesised lists and compound
+        `+=` are desugared/dropped by mutsu — deferred, documented in ADR-0011.)
+  - [ ] Slice 10+: anonymous `sub { }` (no-param only — `sub ($x)`/`-> $x` share `AnonSubParams`
         so are indistinguishable), method decls (needs `RakuAST::Class`), labelled loops,
-        explicit-signature `for` (`for @a -> $x`), scoped/typed `my`, compound/`:=` assignment,
-        comma-list source (`ApplyListInfix`), method-call modifiers; then `.DEPARSE`; resolve the
-        constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`, mutsu does not).
+        explicit-signature `for` (`for @a -> $x`), scoped/typed `my`, method-call modifiers; then
+        `.DEPARSE`; resolve the constant-folding divergence (`1+2` → raku folds to `IntLiteral(3)`,
+        mutsu does not).
 - [ ] **Phase 3** — `RakuAST::*` type-object registry: `~~ RakuAST::Node`, `.^name`, accessors,
       `use experimental :rakuast` gate.
 - [ ] **Phase 4** — construction (`.new`, `.from-identifier`, …).

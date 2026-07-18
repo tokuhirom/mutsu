@@ -195,6 +195,15 @@ earlier ones.
   return types, operator subs (associativity/precedence), alternate signatures, and anonymous
   `sub { }` (deferred). Parameters reuse the slice-3 plain-positional boundary (typed/named/slurpy/
   `where`/… still error).
+- **Comma lists and `:=` binding (Phase 2 slice 9).** A bare comma list `1, 2, 3`
+  (`Expr::ArrayLiteral`) → `ApplyListInfix(infix => Infix(","), operands => (...))`. A `:=` bind
+  (`Stmt::Assign { op: Bind }`) → `ApplyInfix(left, infix => Infix(":="), right)` — a plain `Infix`,
+  unlike `=`'s special `Assignment` node. Divergences: a **parenthesised** list `(1, 2)` is
+  `Circumfix::Parentheses(SemiList(...))` in raku, but mutsu drops the parens at parse time, so it
+  renders as a bare `ApplyListInfix` (deferred). And a **compound** assignment `$x += 3` is
+  desugared by mutsu to `$x = $x + 3` (`op` stays `Assign`), so it renders as a plain `=` over a
+  binop rather than raku's `MetaInfix::Assign(Infix("+"))` (deferred, same collapse family as
+  `unless`/`until`).
 - **Single-param pointy sigil loss (Phase 2 slice 3).** mutsu parses a single-parameter pointy
   block to `Expr::Lambda { param: String }` with the sigil stripped, and does not preserve `@`/`%`
   for a single non-scalar param (`-> @a` becomes `param: "a"`). The converter therefore assumes `$`
