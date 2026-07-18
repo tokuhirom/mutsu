@@ -127,6 +127,8 @@ pub enum RakuAstClass {
     TermReduce,
     // Phase 2 slice 30: `True`/`False` (and other enum) literals.
     TermEnum,
+    // Phase 2 slice 31: parenthesised expressions (`($x = 5)`).
+    CircumfixParentheses,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -196,6 +198,7 @@ impl RakuAstClass {
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
             TermReduce => "RakuAST::Term::Reduce",
             TermEnum => "RakuAST::Term::Enum",
+            CircumfixParentheses => "RakuAST::Circumfix::Parentheses",
         }
     }
 
