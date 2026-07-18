@@ -232,6 +232,9 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **Reduction metaoperator (Phase 2 slice 25).** `[+] @a` (`Expr::Reduction`) → `Term::Reduce(
+  triangle => False, infix => Infix("+"), args => ArgList(@a))`. The triangle form `[\+] @a`
+  (mutsu stores its op as `"\+"`) sets `triangle => True` with the backslash stripped from the infix.
 - **List-associative infixes (Phase 2 slice 24).** `andthen` / `orelse` / `notandthen` render as a
   single flat `ApplyListInfix(infix => Infix("andthen"), operands => (...))` in raku, not the
   binary `ApplyInfix` used by ordinary operators. mutsu parses them left-associatively

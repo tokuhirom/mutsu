@@ -114,6 +114,8 @@ pub enum RakuAstClass {
     // Phase 2 slice 22: positional subscripts.
     SemiList,
     PostcircumfixArrayIndex,
+    // Phase 2 slice 25: reduction metaoperator.
+    TermReduce,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +180,7 @@ impl RakuAstClass {
             Ternary => "RakuAST::Ternary",
             SemiList => "RakuAST::SemiList",
             PostcircumfixArrayIndex => "RakuAST::Postcircumfix::ArrayIndex",
+            TermReduce => "RakuAST::Term::Reduce",
         }
     }
 

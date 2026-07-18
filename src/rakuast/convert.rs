@@ -819,6 +819,28 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // postfix => Postcircumfix::ArrayIndex(index => SemiList(...))).
         // Associative subscripts (`%h{...}` / `%h<...>`) are deferred: mutsu
         // cannot distinguish `<k>` (LiteralHashIndex) from `{"k"}` (HashIndex).
+        // Reduction metaop `[+] @a` / triangle `[\+] @a` -> Term::Reduce.
+        Expr::Reduction { op, expr } => {
+            let (triangle, infix_op) = match op.strip_prefix('\\') {
+                Some(stripped) => (true, stripped),
+                None => (false, op.as_str()),
+            };
+            let arglist = RakuAstNode {
+                class: RakuAstClass::ArgList,
+                fields: vec![node_field(None, convert_expr(expr)?)],
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::TermReduce,
+                fields: vec![
+                    RakuAstField {
+                        name: Some("triangle"),
+                        value: RakuAstFieldValue::Node(Value::truth(triangle)),
+                    },
+                    node_field(Some("infix"), plain_infix(infix_op)),
+                    node_field(Some("args"), arglist),
+                ],
+            })
+        }
         Expr::Index {
             target,
             index,
