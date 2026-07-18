@@ -104,6 +104,10 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "//" => TokenKind::SlashSlash,
         ".." => TokenKind::DotDot,
         "..." => TokenKind::DotDotDot,
+        // Prefix-only operators (`!$x`, `?$x`). The prefixes shared with an infix
+        // spelling (`-`/`+`/`~`) already map above.
+        "!" => TokenKind::Bang,
+        "?" => TokenKind::Question,
         _ => return None,
     })
 }
