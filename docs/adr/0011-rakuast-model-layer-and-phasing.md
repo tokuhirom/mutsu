@@ -232,6 +232,11 @@ earlier ones.
   `Trait::WillBuild` in raku (not an `initializer`), so it is deferred, along with `is rw`, type
   smileys (`:D`), `is required`, `where`, aliases (`has $x`), `my`/`our` attributes, delegation, and
   other traits.
+- **List-associative infixes (Phase 2 slice 24).** `andthen` / `orelse` / `notandthen` render as a
+  single flat `ApplyListInfix(infix => Infix("andthen"), operands => (...))` in raku, not the
+  binary `ApplyInfix` used by ordinary operators. mutsu parses them left-associatively
+  (`a op b op c` → `(a op b) op c`), so the converter flattens a same-operator left chain into one
+  operand list.
 - **Quoted method names (Phase 2 slice 23).** `$x."foo"()` (`Expr::MethodCall` with `quoted ==
   true`) → `ApplyPostfix(operand, postfix => Call::QuotedMethod(name => QuotedString, [args =>
   ArgList]))` — unlike `Call::Method`, the name is a `QuotedString` (string literal) rather than a

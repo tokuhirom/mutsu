@@ -715,6 +715,27 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::ArrayVar(name) => Ok(var_lexical("@", name)),
         Expr::HashVar(name) => Ok(var_lexical("%", name)),
         Expr::CodeVar(name) => Ok(var_lexical("&", name)),
+        // List-associative infixes (`andthen`/`orelse`/`notandthen`) render as a
+        // single flat `ApplyListInfix` in raku; mutsu nests them left-associatively,
+        // so flatten a same-operator left chain into one operand list.
+        Expr::Binary { left, op, right } if is_list_infix(op) => {
+            let mut operands = Vec::new();
+            flatten_list_infix(op, left, right, &mut operands);
+            let mut nodes = Vec::with_capacity(operands.len());
+            for e in operands {
+                nodes.push(Value::rakuast(Box::new(convert_expr(e)?)));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyListInfix,
+                fields: vec![
+                    node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+                    RakuAstField {
+                        name: Some("operands"),
+                        value: RakuAstFieldValue::List(nodes),
+                    },
+                ],
+            })
+        }
         Expr::Binary { left, op, right } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyInfix,
             fields: vec![
@@ -1200,6 +1221,41 @@ fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> Raku
         class,
         fields: vec![leaf_field(None, Value::str(token_kind_to_op_name(op)))],
     }
+}
+
+/// True for the list-associative infixes raku renders as `ApplyListInfix`
+/// (`andthen` / `orelse` / `notandthen`).
+fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
+    use crate::token_kind::TokenKind;
+    matches!(
+        op,
+        TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen
+    )
+}
+
+/// Flatten a left-nested same-operator chain (`a op b op c` parsed as
+/// `(a op b) op c`) into a single operand list `[a, b, c]`.
+fn flatten_list_infix<'a>(
+    op: &crate::token_kind::TokenKind,
+    left: &'a Expr,
+    right: &'a Expr,
+    out: &mut Vec<&'a Expr>,
+) {
+    if let Expr::Binary {
+        left: ll,
+        op: lop,
+        right: lr,
+    } = left
+    {
+        if lop == op {
+            flatten_list_infix(op, ll, lr, out);
+        } else {
+            out.push(left);
+        }
+    } else {
+        out.push(left);
+    }
+    out.push(right);
 }
 
 /// `Postfix` — a single NAMED `operator` string (e.g. `Postfix.new(operator => "++")`).
