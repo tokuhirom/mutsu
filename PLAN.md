@@ -205,10 +205,34 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
       ("Current frontier") for the lead and the next steps.
 - [ ] **build/test execution**, an `mzef` binary shim + vendoring of zef itself + dependencies +
       config (debian's zef lacks `resources/bin/zef`; a known-good vendoring is needed). The test
-      phase (6) has not been exercised yet — runs have used `--/test`.
+      phase (6) now runs (`zef install` without `--/test` does `Testing [OK] → Installing`); the
+      per-suite standing for the Test::META dependency chain is **9 PASS / 2 FAIL** as of
+      2026-07-18 (#4735/#4738/#4747; remaining = JSON::Fast fidelity + 3 Test::META subtests —
+      see `docs/mzef-install-pipeline.md` "Test-phase frontier").
 
 **`docs/mzef-install-pipeline.md` is the live tracker** — phase table, what each fix unblocked, and
 the current frontier with its next steps. Read it before picking up mzef work.
+
+### B2b. Test::Async / custom Metamodel HOW inheritance (deferred campaign — NOT on the mzef critical path)
+
+**Decision (user, 2026-07-18): handled as its own section, decoupled from the B2 test-phase
+frontier.** Test::Async (vrurg's async test framework, used by newer ecosystem dists) is blocked on
+**custom Metamodel HOW inheritance**: `'Test::Async::Metamodel::BundleHOW' cannot inherit from
+'Metamodel::ParametricRoleHOW' because it is unknown`. That is a real MOP feature — user-visible
+subclasses of the built-in metamodel classes (ParametricRoleHOW / ClassHOW), with mutsu's role/class
+machinery dispatching through the user's HOW overrides — and is **campaign-sized** (multiple
+sessions).
+
+- **Why deferred**: the mzef install pipeline's dependency chain (JSON::* / META6 / URI /
+  License::SPDX / Test::META) does not use Test::Async, so the "mzef installs real dists with tests
+  on" milestone does not need it. Spending the campaign now would delay the mzef return for zero
+  pipeline gain.
+- **Start trigger**: after the B2 test-phase frontier closes (or when a bundle-candidate module
+  hard-depends on Test::Async), start with a scouting session: inventory which HOW methods
+  Test::Async's BundleHOW/TestSuiteHOW actually override, and decide between (a) real HOW-subclass
+  dispatch in the MOP vs (b) a narrower compatibility shim for the handful of overridden hooks.
+- Prerequisite groundwork already landed: `::?CLASS` param fixes (#4669). Detail and error text:
+  `docs/mzef-install-pipeline.md` "Test-phase frontier" history block.
 
 ### B3. Distribution and tooling
 

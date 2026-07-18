@@ -212,13 +212,35 @@ repro → general fix → `t/` pin):
   predicates. It now delegates to the same subset matcher `~~` uses. Pin:
   `t/subset-regex-return-check.t`.
 
-## Test-phase frontier (2026-07-17, the current one)
+## Test-phase frontier (2026-07-18 refresh)
 
-`zef install Test::META` (tests ON) runs all 16 dists' test suites
-concurrently; the baseline was **13/16 FAIL** (OK: JSON::OptIn; the
-debug-build run also overran a 570s timeout — use release for E2E). The
-2026-07-17 (late) session root-caused the dominant failures — none were
-environmental; all four were ordinary mutsu bugs, each fixed generally:
+**Per-suite standing (2026-07-18, after #4735 / #4738 / #4747; staged-dist
+`prove` sweep with the full MUTSULIB chain, `tmp/e2e-suites.sh`): 9 PASS /
+2 FAIL.** PASS: JSON::OptIn, JSON::Name, JSON::Unmarshal (11 files / 101
+tests), JSON::Marshal (14/85), JSON::Class (6/31), URI (14/222), META6
+(9/969), License::SPDX (2/729). FAIL: **JSON::Fast** (native-JSON fidelity
+remnants — strict mode / unicode / datetime; full parity is likely
+unnecessary for the pipeline) and **Test::META** (3 concrete subtest
+failures: `020-internals.t` test 12 "check-provides with my own files" and
+test 24 "check-sources" / "non-git URI needn't must end in git", plus
+`030-my-meta.t` "don't have META file"). Test-Helpers ships no `t/` of its
+own (covered by mutsu's local `t/test-util-*.t`).
+
+The #4747 session's two generic fixes (License::SPDX 0/2 → 2/2): a trait
+argument with whitespace after the opening paren
+(`is unmarshalled-by( -> $d { ... })`) was silently dropped by the `has`
+parser, and recursive re-binding of a same-named typed container
+(`my @ret := Array[T].new` in JSON::Unmarshal's `_unmarshal` recursion)
+clobbered the name-keyed element-type constraint — element checks and `.of`
+now prefer the metadata embedded in the value. Pins:
+`t/attr-trait-paren-space.t`, `t/typed-bind-recursion.t`.
+
+History (2026-07-17): `zef install Test::META` (tests ON) runs all 16
+dists' test suites concurrently; the baseline was **13/16 FAIL** (OK:
+JSON::OptIn; the debug-build run also overran a 570s timeout — use release
+for E2E). The 2026-07-17 (late) session root-caused the dominant failures
+— none were environmental; all four were ordinary mutsu bugs, each fixed
+generally:
 
 - ~~`use-ok` never did a real load~~ (the "dominant symptom"): mutsu's
   `use-ok` probed `lib_paths` for `Module/Name.rakumod` as literal files —
@@ -255,8 +277,14 @@ environmental; all four were ordinary mutsu bugs, each fixed generally:
   closure-exit/inline writeback (a declared name that is also a free var
   keeps its writeback). Pin: `t/map-block-my-shadow-leak.t`.
 
-Re-run the full `zef install Test::META` E2E after these land to get the
-new pass/fail count.
+~~Re-run the full `zef install Test::META` E2E after these land to get the
+new pass/fail count.~~ Done 2026-07-18 — see the per-suite standing at the
+top of this section (9 PASS / 2 FAIL).
+
+**Test::Async is out of scope for this frontier** (PLAN.md §1 B5): its
+blocker is custom Metamodel HOW inheritance
+(`Metamodel::ParametricRoleHOW`), a campaign-sized MOP feature that the
+mzef dependency chain does not need.
 
 Still open (load-side leftovers):
 
