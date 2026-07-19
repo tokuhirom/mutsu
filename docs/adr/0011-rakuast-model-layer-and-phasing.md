@@ -411,6 +411,12 @@ earlier ones.
     two term calls composed, work. Named-parameter code values (`sub ($x) { … }` / `-> $x { … }`) — the
     `RakuAST::PointyBlock`/`Sub` in expression position — stay the boundary. Tests in
     `t/rakuast-eval-callterm.t`. Next: pointy/sub code values, placeholder blocks, CATCH blocks.
+  - **Slice 36 (pointy code values) — done (write).** A single-parameter `RakuAST::PointyBlock` in
+    expression position (`-> $x { … }`) now lowers to a closure (`Expr::Lambda`), so a named-parameter
+    closure can be stored, passed, and called (with slice 35's `Call::Term`). `EVAL(Q{my $f = -> $x { $x
+    * 2 }; $f(9)}.AST)` → `18`; a pointy callback, a pointy `.map` argument, and a multi-statement pointy
+    body all work. Multi-/zero-parameter pointy blocks and `sub ($x) { … }` code values stay the
+    boundary. Tests in `t/rakuast-eval-pointy.t`. Next: `sub` code values, placeholder blocks, CATCH.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
