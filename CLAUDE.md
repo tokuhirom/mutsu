@@ -135,6 +135,25 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - Do not use `cat`, `head`, `tail`, or `sed` via Bash to read files. Always use the Read tool.
 - Do not use `grep`, `rg`, or `find` via Bash to search files. Always use the Grep and Glob tools.
 
+## mzef package manager and distribution
+
+- **Two binaries ship, not one.** `src/main.rs` builds `mutsu` (the interpreter); `src/bin/mzef.rs`
+  builds `mzef` (the bundled package manager). When you add a `[[bin]]`/test or touch CLI wiring,
+  remember both — `cargo build` and `make test` build/exercise both, and `tests/mzef_shim.rs` pins
+  the shim's path resolution.
+- **`vendor/zef/` is vendored upstream Zef (Artistic-2.0) — do NOT hand-edit it.** It is a runtime
+  dependency shipped with mutsu (zef is also the compat north star: fix mutsu, not zef). To bump it,
+  re-vendor per `vendor/README.md` (an `rsync` recipe), not by editing files in place.
+- **`mzef` is a thin re-exec shim** (`mutsu -I vendor/zef/lib vendor/zef/bin/zef <args>`). To run zef
+  under mutsu locally, prefer `target/release/mzef <args>`; it resolves the vendored tree
+  exe-relative (or `$MZEF_ZEF_HOME`) and the sibling `mutsu` (`$MZEF_MUTSU_BIN`). The full pipeline
+  tracker is `docs/mzef-install-pipeline.md`.
+- **Distribution** (`.github/workflows/release.yml` on `v*` tags, `docker.yml` to GHCR): the release
+  tarball and the container both place `bin/mutsu`, `bin/mzef`, and the zef tree at
+  `share/mutsu/zef` so `mzef` finds it via `../share/mutsu/zef` with zero config (mise installs both
+  onto PATH). Linux x64/arm64 are required; **macOS is best-effort** (`continue-on-error`) pending an
+  upstream libffi Mach-O CFI fix — do not "fix" that by weakening the Linux path.
+
 ## Reference implementation
 
 - `raku` is available on this system. Use `raku -e '<code>'` to check expected behavior when the spec is unclear.

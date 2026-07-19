@@ -29,6 +29,45 @@ bundled Zef under `mutsu`, so `mzef install <dist>` works out of the box with no
 extra setup. Linux (x64/arm64) binaries are published each release; macOS builds
 are best-effort while an upstream toolchain issue is resolved.
 
+### With Docker
+
+A prebuilt image (interpreter + bundled `mzef`) is published to GHCR. It carries
+both `mutsu` and `mzef`, so nothing else is needed.
+
+```bash
+# Interactive Raku REPL (needs -it):
+docker run --rm -it ghcr.io/tokuhirom/mutsu
+
+# Run a one-liner:
+docker run --rm ghcr.io/tokuhirom/mutsu mutsu -e 'say (^10).sum'
+
+# Run a script from the current directory (mount it read-only):
+docker run --rm -v "$PWD:/work:ro" ghcr.io/tokuhirom/mutsu mutsu hello.raku
+
+# Use the bundled package manager:
+docker run --rm ghcr.io/tokuhirom/mutsu mzef --version
+docker run --rm ghcr.io/tokuhirom/mutsu mzef info JSON::Fast
+```
+
+`mzef install` writes into a per-`$HOME` site repository. To keep installed
+modules across runs, mount a named volume at `$HOME` (the image runs as `root`,
+so `$HOME` is `/root`) and reuse it:
+
+```bash
+docker run --rm -v mutsu-home:/root ghcr.io/tokuhirom/mutsu mzef install JSON::OptIn
+docker run --rm -v mutsu-home:/root ghcr.io/tokuhirom/mutsu \
+    mutsu -e 'use JSON::OptIn; say "loaded"'
+```
+
+Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.7.0`); `:latest` tracks the
+newest release and `:main` tracks the development branch.
+
+The image is a **two-stage build**: a `rust:1.93-bookworm` **builder** stage
+compiles the binaries, and the shipped `debian:bookworm-slim` **runtime** stage
+carries only the `mutsu`/`mzef` binaries, the bundled zef tree, and zef's
+shell-out tools (`curl`/`git`/`tar`/`unzip`) — no Rust toolchain or source. Build
+it yourself with `docker build -t mutsu .`.
+
 ### From source
 
 ```bash

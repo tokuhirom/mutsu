@@ -264,6 +264,13 @@ sessions).
       no env. Remaining: (a) the **macOS libffi** build (upstream Clang-17+ CFI issue; needs a
       libffi/libffi-sys bump or a system-libffi build — unverifiable from Linux, so deferred); (b)
       first real tag to confirm the GitHub Release + a live `mise use` end-to-end.
+- [x] **Container image (2026-07-19)**: `Dockerfile` (two-stage — `rust:1.93-bookworm` builder →
+      `debian:bookworm-slim` runtime carrying only the `mutsu`/`mzef` binaries, the bundled zef tree
+      at `/usr/local/share/mutsu/zef`, and zef's shell-out tools curl/git/tar/unzip + libpcre2) and
+      `.github/workflows/docker.yml` publish a multi-arch (amd64+arm64, native per-arch runners +
+      manifest merge) image to `ghcr.io/tokuhirom/mutsu` on `v*` tags (`:X.Y.Z`/`:latest`) and main
+      (`:main`). Try: `docker run --rm -it ghcr.io/tokuhirom/mutsu`. `.dockerignore` keeps the build
+      context tiny (ignore-all + re-include src/Cargo/vendor).
 - [ ] REPL / Debugger / native binary output / public WASM playground.
 
 ### B4. Remaining module-compatibility blockers (the base of batteries)
