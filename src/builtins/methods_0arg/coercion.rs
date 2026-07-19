@@ -335,7 +335,30 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // A shaped array falls through to the slow path, which flattens all
             // dimensions and replaces Nil slots with the type-default.
             ValueView::Array(..) if crate::runtime::utils::is_shaped_array(target) => None,
-            ValueView::Array(items, _) => Some(Ok(Value::array(items.to_vec()))),
+            // `.List` materializes autovivification holes as `Nil` (raku:
+            // `my @a=[1]; @a[3]=3; @a.List` is `(1 Nil Nil 3)`), unlike the
+            // Array gist which shows the `(Any)` type object. A hole is a
+            // `Package("Any")` slot whose index is not in the `initialized`
+            // set (bulk-constructed arrays have `initialized == None` and thus
+            // no holes).
+            ValueView::Array(items, _) => {
+                let list = match &items.initialized {
+                    Some(set) => items
+                        .items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, v)| {
+                            if !set.contains(&i) && matches!(v.view(), ValueView::Package(_)) {
+                                Value::NIL
+                            } else {
+                                v.clone()
+                            }
+                        })
+                        .collect(),
+                    None => items.to_vec(),
+                };
+                Some(Ok(Value::array(list)))
+            }
             ValueView::GenericRange {
                 start,
                 end,
