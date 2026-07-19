@@ -436,6 +436,29 @@ block exit no longer re-seeds slots from the name-keyed env (the fib env-COW per
 payoff). See the fused §1.3 + §1.2 campaign notes below; that is the open work,
 not clone removal.
 
+## Block exit is slot-authoritative — DONE (2026-07-19, PR #4844)
+
+The first step of the "dual-store half": `exec_block_scope_op` no longer re-seeds
+**propagating** enclosing slots from the name-keyed `restored_env`. Under shadow
+slots every store already writes the slot (`exec_set_local_op_inner`), so a
+propagating enclosing var holds its live value in its own slot and the env re-seed
+is redundant. The restore now touches **only the non-propagating names**:
+block-declared fresh `my` → Nil (folds in the old separate Nil loop), and
+block-declared shadowing names / `$_` / `$*dyn` → their saved outer value (still in
+`restored_env` because propagation was skipped for them). The
+`MUTSU_NO_SHADOW_SLOTS` opt-out keeps the whole-array restore + full re-seed.
+
+Behavior-preserving (make test 18747, scoping/phaser/declaration roast 77/77, pin
+`t/block-restore-slot-authoritative.t`), and perf-neutral on its own — it is a
+**prerequisite**: it removes ONE of the four env-mirror dependencies (mechanism #1,
+block-restore's env pull-back) that block dropping the `needs_env_sync` blanket.
+The three still open: cross-thread shared-var copy, method-call caller-local
+coherence × the JIT inline GetLocal, and currying/priming capture (see
+[[memory: needs_env_sync blanket removal]] — the store-site gate breaks all four
+until each is freed). Only after all four are slot-authoritative can the
+unconditional per-store env write in `exec_set_local_op_inner` be gated for the
+env-COW payoff.
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch

@@ -418,22 +418,39 @@ impl Interpreter {
         // The `MUTSU_NO_SHADOW_SLOTS` opt-out has no distinct shadow slots, so it
         // still needs the whole-array restore.
         if let Some(saved) = saved_locals {
+            // MUTSU_NO_SHADOW_SLOTS opt-out: no distinct shadow slots, so the
+            // whole-array restore is needed, and the propagated inner values are
+            // then re-applied from `restored_env` by name.
             self.locals = saved;
-        } else {
-            for sym in &block_declared {
-                if saved_env.contains_key_sym(*sym) {
-                    continue;
-                }
-                for idx in 0..code.locals.len().min(self.locals.len()) {
-                    if code.local_sym(idx) == Some(*sym) {
-                        self.locals[idx] = Value::NIL;
-                    }
+            for (idx, name) in code.locals.iter().enumerate() {
+                if let Some(val) = restored_env.get(name).cloned() {
+                    self.locals[idx] = val;
                 }
             }
-        }
-        for (idx, name) in code.locals.iter().enumerate() {
-            if let Some(val) = restored_env.get(name).cloned() {
-                self.locals[idx] = val;
+        } else {
+            // Shadow slots: slot-authoritative restore. A PROPAGATING enclosing
+            // var already holds its live in-block value in its own slot (every
+            // store writes the slot, `exec_set_local_op_inner`), so it needs no
+            // env re-seed — this drops block exit's dependency on the per-store
+            // env mirror for those slots (the §1.3 endgame's remaining coupling).
+            // Only NON-propagating names must be reverted:
+            //   - block-declared FRESH `my` (absent from `saved_env`, hence from
+            //     `restored_env`): reset to Nil so the declaration cannot leak
+            //     past the block / into a later iteration (its unique shadow
+            //     slot's pre-block value is Nil by induction — slice 1).
+            //   - block-declared SHADOWING names, the block topic `$_`, and
+            //     `$*dyn` (present in `saved_env`): restore the saved outer value,
+            //     which `restored_env` still holds because propagation was skipped
+            //     for these names in the loop above.
+            for (idx, name) in code.locals.iter().enumerate() {
+                let non_propagating = name == "_"
+                    || name.starts_with('*')
+                    || code
+                        .local_sym(idx)
+                        .is_some_and(|s| block_declared.contains(&s));
+                if non_propagating {
+                    self.locals[idx] = restored_env.get(name).cloned().unwrap_or(Value::NIL);
+                }
             }
         }
         // For `our`-scoped locals declared inside this block (or in the outer
