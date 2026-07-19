@@ -1011,9 +1011,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 28: fat-arrow pairs `a => 1` (both directions) via a new `FatArrow` node —
         `Expr::PositionalPair(FatArrow binop)` ↔ `FatArrow(key, value)`. `EVAL(Q{(a => 5).value}.AST)` →
         5. Tests in `t/rakuast-eval-pair.t`.
-  - [ ] Slice 29+: hash literals (raku models `{a => 1}` as a `Block`), associative subscripts
-        (`%h{…}`), WhateverCode (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2
-        converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort.)
+  - [x] Slice 29: hash literals `{a => 1}` — **read-only** (`.AST` gist). raku models `{...}` as a
+        `Block` of `FatArrow` pairs; EVAL of that Block yields a block/Callable in raku itself, so the
+        write direction is out of scope. Tests in `t/rakuast-hash-literal.t`.
+  - [ ] Slice 30+: associative subscripts (`%h{…}`), WhateverCode (`* + 1`), code-block (`{…}`)
+        interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full
+        lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

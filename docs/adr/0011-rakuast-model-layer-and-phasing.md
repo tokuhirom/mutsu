@@ -363,6 +363,14 @@ earlier ones.
     so the pin checks round-tripped values rather than the gist.) A non-string-literal key stays the
     boundary. Tests in `t/rakuast-eval-pair.t`. Next: hash literals, code-block interpolation,
     WhateverCode.
+  - **Slice 29 (hash literals — read only) — done.** raku models `{a => 1}` as a `Block` whose body is
+    a `FatArrow` pair (or a comma list of `FatArrow`s), not a dedicated hash node. The read side now
+    converts `Expr::Hash` to that `Block` (via `hash_literal_node`), so the `.AST` gist matches Rakudo.
+    This is **read-only**: EVAL of the produced `Block` yields a block/Callable in raku itself (`{a =>
+    1}.AST` round-trips to a `Block`, and `.elems` on it is `1`, not the hash's size) — the
+    block-vs-hash distinction is a parse-time decision the RakuAST `Block` node does not carry — so the
+    write direction is deliberately out of scope. Value-less keys (`{:a}`) stay the boundary. Tests in
+    `t/rakuast-hash-literal.t`. Next: code-block interpolation, WhateverCode, associative subscripts.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
