@@ -720,6 +720,11 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     modifier: None,
                     quoted: false,
                 }),
+                // `$f(EXPR)` -> Call::Term(args) -> a call on the operand term.
+                RakuAstClass::CallTerm => Ok(Expr::CallOn {
+                    target: Box::new(operand),
+                    args: arg_exprs(postfix)?,
+                }),
                 // `@a[EXPR]` -> Postcircumfix::ArrayIndex(index => SemiList(
                 // Statement::Expression(EXPR))).
                 RakuAstClass::PostcircumfixArrayIndex => {

@@ -404,6 +404,13 @@ earlier ones.
     `{a => 1}` lands here as a block too, matching raku's `.elems` == 1.) Placeholder-parameter blocks
     (`{ $^a <=> $^b }`) and calling a code variable (`$f(…)`) stay the boundary. Tests in
     `t/rakuast-eval-block-arg.t`. Next: placeholder blocks, CATCH blocks, code-block interpolation.
+  - **Slice 35 (calling a term) — done, both directions.** A new `Call::Term` node class models a call
+    on a term (`$f(1, 2)` — `ApplyPostfix(operand, Call::Term(args))`). The read side converts
+    `Expr::CallOn` to it and the write side lowers a `Call::Term` postfix back to an `Expr::CallOn`.
+    `EVAL(Q{my $f = { $_ * 2 }; $f(9)}.AST)` → `18`; a callback block passed to a sub and invoked, and
+    two term calls composed, work. Named-parameter code values (`sub ($x) { … }` / `-> $x { … }`) — the
+    `RakuAST::PointyBlock`/`Sub` in expression position — stay the boundary. Tests in
+    `t/rakuast-eval-callterm.t`. Next: pointy/sub code values, placeholder blocks, CATCH blocks.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
