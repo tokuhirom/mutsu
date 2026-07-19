@@ -473,6 +473,11 @@ impl Interpreter {
                     (start..end).map(Value::int).collect()
                 }
             }
+            // Non-i64 ranges (string `"a".."z"`, Rat, `.succ`-driven) must also
+            // distribute across a slice, e.g. `@a[^10] = 'a'..'z'`. The i64
+            // variants above stay inline for speed; everything else expands via
+            // the shared `value_to_list` range walker.
+            ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(val),
             ValueView::LazyList(list) => self.force_lazy_list_vm(&list)?,
             _ => vec![val.clone()],
         })
