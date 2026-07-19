@@ -177,6 +177,44 @@ earlier ones.
 - **Phase 5 — EVAL / compilation.** `lower(RakuAstNode) -> Vec<Stmt>/Expr`, then the
   **existing** compiler. `EVAL($rakuast)` and any code that yields a RakuAST tree runs
   through this. No new execution engine.
+
+  **Status summary (as of slice 37, 2026-07-19).** 37 slices landed (PRs #4736–#4804): 35 cover both
+  directions (`.AST` read + `EVAL` write), 2 are read-only where raku's own EVAL semantics make a
+  round-trip meaningless. Every slice is pinned by a dual-oracle test (`t/rakuast-eval-*.t` /
+  `t/rakuast-*.t`) that passes under **both** mutsu and raku. Real programs — recursion, higher-order
+  list processing, exception trapping, generators — run through `EVAL(Q[…].AST)`.
+
+  *Covered clusters:*
+  - **Literals:** Int / Rat / Str / Bool (`Term::Enum`), interpolated strings `"$x"`, array literals
+    `[1, 2, 3]`, fat-arrow pairs `a => 1`, the `*` whatever term, bareword type terms (`Int`/`Str`).
+  - **Operators:** all arithmetic / comparison, prefix `!`/`?`/`-`, named infixes (`x`/`xx`/`eq`/`ne`/
+    `lt`/`gt`/`cmp`/`~~`/…), the ternary `?? !!`, assignment expressions (`$a = $b = 5`),
+    parenthesisation `($x = …)`.
+  - **Control flow:** `if`/`elsif`/`unless`, `while`/`until`, `repeat … while/until`, `for` (pointy
+    `-> $x` and bare `$_`), the C-style `loop`, `given`/`when`/`default`, and the statement prefixes
+    `do`/`try`/`gather`.
+  - **Routines & calls:** `sub` declarations (typed / default / named / slurpy parameters), named
+    calls, recursion, method-call chains, positional subscripts `@a[i]`, calling a term `$f(…)`, and
+    the control-flow calls `return`/`last`/`next`/`die`/`fail`/`take`.
+  - **Code values:** bare blocks `{ … }`, pointy blocks `-> $x { … }`, and anonymous subs `sub ($a,
+    $b) { … }` (1..N parameters) as first-class closures — so `.map`/`.grep`/`.first`/… callbacks and
+    stored/passed closures run.
+
+  *Boundaries (deliberately deferred — each blocked by a representation mismatch, not merely effort):*
+  - **Desugar divergences** — placeholder blocks `{ $^a }` (mutsu lowers `$^a` to a param + a plain
+    `Var`, losing the placeholder), `with`/`without` (desugared to a temp-var `if`), list assignment
+    `($a, $b) = …` (desugared to an internal call), `constant` (a `__constant` custom trait). Their
+    `.AST` gist does not match raku's dedicated nodes.
+  - **Indistinguishable forms** — associative subscripts `%h<a>` vs `%h{"a"}` are the same internal
+    `Index { is_positional: false }`, so the read side cannot choose raku's `LiteralHashIndex` vs
+    `HashIndex`.
+  - **raku's own EVAL divergence** — a hash literal `{a => 1}` is a `Block` in RakuAST; raku EVALs that
+    `Block` to a `Callable` (`.elems` == 1), so lowering it to a hash would diverge from raku itself.
+    Kept read-only (slice 29).
+  - **Larger machinery** — CATCH blocks, `WhateverCode` (`* + 1`, a curried closure), code-block
+    interpolation `"{ … }"`, and regexes each need substantial new converter/lowerer work and are out
+    of scope for the incremental-slice cadence.
+
   - **Slice 1 (literals) — done.** `src/rakuast/lower.rs` lowers a RakuAST node back to internal
     `Stmt`/`Expr`; `builtin_eval` now recognises a `Value::RakuAst` first argument, lowers it, and
     runs it via `eval_block_value` (the existing evaluator). `EVAL(RakuAST::IntLiteral.new(42))` →

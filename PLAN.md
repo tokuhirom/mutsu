@@ -936,121 +936,17 @@ so it is tracked separately from the roast backlog.
   - [ ] Slice 5+: `StatementList` (children via `.add-statement` mutator — needs a mutable-node path),
         block/sub/declaration constructors.
 - **Phase 5 (in progress)** — EVAL: lower RakuAST → internal AST → existing compiler (no new engine).
-  - [x] Slice 1: EVAL of the literal cluster (`src/rakuast/lower.rs`; `EVAL(IntLiteral.new(42))` →
-        42, `EVAL(Q[42].AST)` round-trips). Tests in `t/rakuast-eval.t`.
-  - [x] Slice 2: EVAL of `ApplyInfix`/`ApplyPrefix` (`op_name_to_token_kind` reverse map;
-        `EVAL(Q[3 * 4 + 1].AST)` → 13). Tests in `t/rakuast-eval-infix.t`.
-  - [x] Slice 3: EVAL of `Var::Lexical` (→ `Expr::Var`/etc.) and `my $x = EXPR` (→ `Stmt::VarDecl`);
-        `EVAL(Q[my $x = 5; $x * 2].AST)` → 10. Tests in `t/rakuast-eval-var.t`.
-  - [x] Slice 4: EVAL of listop I/O calls (`say`/`put`/`print`/`note` → `Stmt::Say` etc.) and method
-        calls (`ApplyPostfix`/`Call::Method` → `Expr::MethodCall`). Tests in `t/rakuast-eval-call.t`.
-  - [x] Slice 5: EVAL of `if`/`while` and `$x = EXPR` assignment (`Statement::If` → `Stmt::If`,
-        `Statement::Loop::While` → `Stmt::While`, `ApplyInfix`-with-`Assignment` → `Stmt::Assign`);
-        `EVAL(Q[my $n=5; my $f=1; while $n>1 { $f=$f*$n; $n=$n-1 }; $f].AST)` → 120. `elsif` chains stay
-        the boundary. Tests in `t/rakuast-eval-control.t`.
-  - [x] Slice 6: EVAL of `for` (single-param pointy block → `Stmt::For`), `elsif` chains (each
-        `Statement::Elsif` folds into a nested `Stmt::If`), and comma lists (`ApplyListInfix` `,` →
-        `Expr::ArrayLiteral`); `EVAL(Q[my $p=1; for (2,3,4) -> $n { $p=$p*$n }; $p].AST)` → 24. Tests
-        in `t/rakuast-eval-for-elsif.t`.
-  - [x] Slice 7: EVAL of `sub` declarations (`RakuAST::Sub` with bare positional scalar params →
-        `Stmt::SubDecl`) and named calls (`Call::Name` → `Expr::Call`); a defined routine can be
-        invoked, including recursively — `EVAL(Q[sub fact($n) { … fact($n-1) }; fact(5)].AST)` → 120.
-        Tests in `t/rakuast-eval-sub.t`.
-  - [x] Slice 8: EVAL of `given`/`when`/`default` (`Statement::Given`/`When`/`Default` →
-        `Stmt::Given`/`When`/`Default`); a topicalizer runs and yields the matched clause's value.
-        Also fixed a latent `eval_block_value` bug where a non-tail `given` leaked its block value onto
-        the stack and shadowed the block's real tail value. Tests in `t/rakuast-eval-given.t`.
-  - [x] Slice 9: EVAL of the bare `for @x { … }` form (a `Statement::For` with a plain `Block` body →
-        `Stmt::For` with no named parameter; the body sees `$_`); `EVAL(Q[my $t=0; for 1..4 { $t=$t+$_ };
-        $t].AST)` → 10. Tests in `t/rakuast-eval-bare-for.t`.
-  - [x] Slice 10: `return`/`last`/`next` (both directions). raku models these as bare calls; the read
-        side emits `Call::Name` (WithoutParentheses, `args` omitted when empty) and the write side lowers
-        such a call back to `Stmt::Return`/`Last`/`Next`. `EVAL(Q[sub f($x){ if $x>0 { return 5 }; -1 };
-        f(3)].AST)` → 5. Tests in `t/rakuast-eval-return.t`.
-  - [x] Slice 11: `unless`/`until` (which desugar to `if !X` / `while !X`) and the prefix `!`/`?`
-        operators (added to `op_name_to_token_kind`); `EVAL(Q[my $i=0; until $i>=3 { $i=$i+1 }; $i].AST)`
-        → 3. Tests in `t/rakuast-eval-unless-until.t`.
-  - [x] Slice 12: default sub parameters — a `Parameter` with a `default` expression lowers to an
-        optional positional `ParamDef` (`required=false`, `default=Some(…)`); `EVAL(Q[sub f($x, $y=10)
-        { $x+$y }; f(5)].AST)` → 15. Tests in `t/rakuast-eval-default-param.t`.
-  - [x] Slice 13: `repeat { … } while/until C` (`Statement::Loop::RepeatWhile` → `Stmt::Loop` with
-        `repeat => true`); the body always runs once. `EVAL(Q[my $i=0; repeat { $i=$i+1 } until $i>=5;
-        $i].AST)` → 5. Tests in `t/rakuast-eval-repeat.t`.
-  - [x] Slice 14: `True`/`False` literals (both directions) via a new `Term::Enum` node class
-        (`.from-identifier('True')`, single-quoted enum identifier). `EVAL(Q[my $i=0; while True { $i=
-        $i+1; last if $i>=3 }; $i].AST)` → 3. Tests in `t/rakuast-eval-bool.t`.
-  - [x] Slice 15: ternary lowering (`RakuAST::Ternary` → `Expr::Ternary`); `EVAL(Q[1 ?? 10 !! 20].AST)`
-        → 10, nested right-associative ternaries work. Tests in `t/rakuast-eval-ternary.t`.
-  - [x] Slice 16: interpolated strings `"a $x b"` (both directions) — `Expr::StringInterpolation` ↔ a
-        `QuotedString` with a `StrLiteral`/interpolated-term segment per part. `EVAL(Q[my $x=5;
-        "val=$x"].AST)` → `val=5`. Tests in `t/rakuast-eval-interp.t`.
-  - [x] Slice 17: typed positional parameters `Int $x` (both directions) — read emits `type =>
-        Type::Simple(Name)`, write extracts it into the `ParamDef` `type_constraint`; `EVAL(Q[sub f(Int
-        $x) { $x*2 }; f(5)].AST)` → 10, a mismatch throws. Tests in `t/rakuast-eval-typed-param.t`.
-  - [x] Slice 18: named infix operators — the write side maps `~~` → `SmartMatch` and any other
-        operator name → the generic `Ident` token, so `x`/`xx`/`eq`/`ne`/`lt`/`gt`/`cmp`/… all lower.
-        `EVAL(Q["ab" x 3].AST)` → `ababab`. Tests in `t/rakuast-eval-named-infix.t`.
-  - [x] Slice 19: assignment expressions `$x = EXPR` in value position (both directions) — an
-        `AssignExpr` ↔ `ApplyInfix(Assignment)`; `EVAL(Q[my $a; my $b; $a = $b = 5; $a + $b].AST)` → 10.
-        Tests in `t/rakuast-eval-assign-expr.t`.
-  - [x] Slice 20: C-style `loop (setup; cond; increment) { … }` (`Statement::Loop` → `Stmt::Loop`, all
-        three controls optional); `EVAL(Q[my $s=0; loop (my $i=0; $i<5; $i=$i+1) { $s=$s+$i }; $s].AST)`
-        → 10. Tests in `t/rakuast-eval-cstyle-loop.t`.
-  - [x] Slice 21: parenthesised expressions `(EXPR)` (both directions) via a new
-        `Circumfix::Parentheses` node — `Expr::Grouped` ↔ `Circumfix::Parentheses(SemiList(...))`.
-        `EVAL(Q/my $x = 0; my $y = ($x = 5); $x + $y/.AST)` → 10. Tests in `t/rakuast-eval-paren.t`.
-  - [x] Slice 22: named parameters `:$x` (both directions) — a named `Parameter` carries a `names`
-        list; the write side sets the `ParamDef` `named` flag, and the `x => 5` call arg (`FatArrow`)
-        lowers too. `EVAL(Q[sub f(:$x) { $x*2 }; f(x => 5)].AST)` → 10. Tests in
-        `t/rakuast-eval-named-param.t`.
-  - [x] Slice 23: slurpy parameters `*@a`/`**@a` (both directions) via new `Parameter::Slurpy::
-        Flattened`/`Unflattened` bare-class-name nodes; the write side sets the `ParamDef` slurpy flag.
-        `EVAL(Q[sub f(*@a) { @a.elems }; f(1,2,3)].AST)` → 3. Tests in `t/rakuast-eval-slurpy.t`.
-  - [x] Slice 24: array-composer literals `[1, 2, 3]` (both directions) via a new
-        `Circumfix::ArrayComposer` node — `Expr::BracketArray` ↔ `Circumfix::ArrayComposer(SemiList(…))`.
-        `EVAL(Q{[1, 2, 3].sum}.AST)` → 6. Tests in `t/rakuast-eval-array-lit.t`.
-  - [x] Slice 25: positional subscripts `@a[EXPR]` (`ApplyPostfix` + `Postcircumfix::ArrayIndex` →
-        `Expr::Index`); `EVAL(Q{my @a = 10, 20, 30; @a[1]}.AST)` → 20. Tests in
-        `t/rakuast-eval-subscript.t`.
-  - [x] Slice 26: bareword type terms `Int`/`Str` as values (both directions) — a known type name
-        (`is_known_type_constraint`) ↔ `Type::Simple`; `EVAL(Q{5 ~~ Int}.AST)` → True, `Int.^name` →
-        "Int". Tests in `t/rakuast-eval-typeterm.t`.
-  - [x] Slice 27: the `*` whatever term (both directions) via a new `Term::Whatever` node;
-        `EVAL(Q{(1..*).head(3).join(",")}.AST)` → "1,2,3". WhateverCode (`* + 1`) stays the boundary.
-        Tests in `t/rakuast-eval-whatever.t`.
-  - [x] Slice 28: fat-arrow pairs `a => 1` (both directions) via a new `FatArrow` node —
-        `Expr::PositionalPair(FatArrow binop)` ↔ `FatArrow(key, value)`. `EVAL(Q{(a => 5).value}.AST)` →
-        5. Tests in `t/rakuast-eval-pair.t`.
-  - [x] Slice 29: hash literals `{a => 1}` — **read-only** (`.AST` gist). raku models `{...}` as a
-        `Block` of `FatArrow` pairs; EVAL of that Block yields a block/Callable in raku itself, so the
-        write direction is out of scope. Tests in `t/rakuast-hash-literal.t`.
-  - [x] Slice 30: the `do { … }` statement prefix (both directions) via a new `StatementPrefix::Do`
-        node — `Expr::DoBlock` ↔ `StatementPrefix::Do(Block)`. `EVAL(Q{do { 1 + 2 }}.AST)` → 3. Tests in
-        `t/rakuast-eval-do.t`.
-  - [x] Slice 31: the `try { … }` statement prefix (both directions) via a new `StatementPrefix::Try`
-        node — `Expr::Try` (no CATCH) ↔ `StatementPrefix::Try(Block)`. `EVAL(Q{try { 1 + 2 }}.AST)` → 3;
-        a failing try is undefined. Tests in `t/rakuast-eval-try.t`.
-  - [x] Slice 32: `die`/`fail` (both directions) as control calls — `Stmt::Die`/`Stmt::Fail` ↔
-        `Call::Name`. Unblocks `die` inside a `try`; `EVAL(Q{try { die "boom" }; $!.Str}.AST)` → "boom".
-        Tests in `t/rakuast-eval-die.t`.
-  - [x] Slice 33: `gather`/`take` (both directions) — `Expr::Gather` ↔ `StatementPrefix::Gather`, and
-        `take` is a bare call (like `die`). `EVAL(Q{gather { take 1; take 2; take 3 }.elems}.AST)` → 3.
-        Tests in `t/rakuast-eval-gather.t`.
-  - [x] Slice 34: blocks as values — a `RakuAST::Block` in expression position lowers to a bare-block
-        closure (`Expr::AnonSub`), unblocking `.map`/`.grep`/`.first`/… block arguments.
-        `EVAL(Q{(1,2,3).map({ $_*2 }).sum}.AST)` → 12. Tests in `t/rakuast-eval-block-arg.t`.
-  - [x] Slice 35: calling a term `$f(…)` (both directions) via a new `Call::Term` node — `Expr::CallOn`
-        ↔ `ApplyPostfix(operand, Call::Term(args))`. `EVAL(Q{my $f = { $_*2 }; $f(9)}.AST)` → 18. Tests
-        in `t/rakuast-eval-callterm.t`.
-  - [x] Slice 36: pointy code values `-> $x { … }` (write) — a single-param `RakuAST::PointyBlock` in
-        expression position lowers to `Expr::Lambda`. `EVAL(Q{my $f = -> $x { $x*2 }; $f(9)}.AST)` → 18.
-        Tests in `t/rakuast-eval-pointy.t`.
-  - [x] Slice 37: multi-parameter closures — `sub ($a, $b) { … }` / `-> $a, $b { … }` (both a
-        multi-param `PointyBlock`) lower to `Expr::AnonSubParams`; a default parameter composes.
-        `EVAL(Q{my $add = sub ($a, $b) { $a+$b }; $add(3, 4)}.AST)` → 7. Tests in `t/rakuast-eval-anonsub.t`.
-  - [ ] Slice 38+: placeholder blocks (`{ $^a }`), CATCH blocks, WhateverCode (`* + 1`), code-block
-        (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5
-        full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slices 1–37 done (PRs #4736–#4804): literals, all common operators + ternary, the full
+        control-flow set, sub declarations (typed/default/named/slurpy params) + calls + method calls,
+        control-flow calls (`return`/`last`/`next`/`die`/`fail`/`take`), the `do`/`try`/`gather`
+        statement prefixes, and first-class code values (blocks / pointy / anon subs, `.map`/`.grep`
+        callbacks). Coverage + boundary summary: `docs/adr/0011-…` Phase 5 "Status summary";
+        campaign write-up in `news/2026-07.md`.
+  - [ ] Slice 38+: the deferred constructs are blocked by representation mismatches, not effort —
+        placeholder blocks (`{ $^a }`), `with`/`without`, list assignment, `constant` (all desugared),
+        associative subscripts (`%h<a>` vs `%h{"a"}`, indistinguishable), CATCH blocks, WhateverCode
+        (`* + 1`), code-block interpolation, regexes. Each needs its own design, not an incremental
+        slice; pick one deliberately rather than by cadence.
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
