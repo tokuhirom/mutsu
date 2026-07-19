@@ -8,6 +8,27 @@ use crate::symbol::Symbol;
 /// method directly to a leaf and leaves that result alone. So `((1,),)>>.succ`
 /// is `($(2,),)` while `(1,2)>>.Array` stays `([1], [2])` — the deciding factor
 /// is the *source* element's shape, not the result's.
+/// Whether a hyper subscript index is a *slice* (a Range or multi-element list),
+/// as opposed to a single scalar key/position. `@a>>.[0..2]` / `%h>>.{1,2}`
+/// desugar to `AT-POS`/`AT-KEY`, but a slice index must apply the postcircumfix
+/// subscript (which slices) to each element, not the single-element accessor
+/// method (which would return Nil). A scalar index keeps the plain method path.
+fn hyper_subscript_index_is_slice(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. }
+        | ValueView::Seq(..)
+        | ValueView::Slip(..) => true,
+        // A bare list `{1,2}` is a slice; an *itemized* list `$(1,2)` is a single
+        // key (matching `exec_index_op_with_positional`'s itemization rule).
+        ValueView::Array(_, kind) => !matches!(kind, crate::value::ArrayKind::ItemList),
+        _ => false,
+    }
+}
+
 fn itemize_if_descended(source: &Value, result: Value) -> Value {
     if !matches!(
         source.view(),
@@ -380,6 +401,24 @@ impl Interpreter {
                             Err(_) => results.push(Value::array(vec![])),
                         }
                     }
+                }
+                _ if modifier.is_none()
+                    && item_args.len() == 1
+                    && matches!(method.as_str(), "AT-POS" | "AT-KEY")
+                    && hyper_subscript_index_is_slice(&item_args[0]) =>
+                {
+                    // Hyper subscript with a slice index (`@a>>.[0..2]`,
+                    // `%h>>.{1,2}`): apply the postcircumfix subscript to each
+                    // element (which slices) rather than the single-key accessor
+                    // method (which returns Nil for a Range/list key).
+                    let is_positional = method == "AT-POS";
+                    self.stack.push(item.clone());
+                    self.stack.push(item_args[0].clone());
+                    self.exec_index_op_with_positional(is_positional)?;
+                    results.push(self.stack.pop().unwrap_or(Value::NIL));
+                    // AT-POS/AT-KEY are nodal: the hyper result is a List even
+                    // over an Array target (see `result_kind` below).
+                    method_is_nodal = true;
                 }
                 _ => {
                     // Hyper method dispatch on nested list/array/seq items.

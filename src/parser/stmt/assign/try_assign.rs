@@ -30,38 +30,67 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     }
     let (r, var) = var_name(input)?;
 
-    // Handle subscripted lvalues: @a[1] = ..., %h{key} = ..., $a[0] = ...
+    // Handle subscripted lvalues: @a[1] = ..., %h{key} = ..., %h<key> = ...
     if r.starts_with('[') || r.starts_with('{') || r.starts_with('<') {
-        let closing = match r.as_bytes()[0] {
-            b'[' => ']',
-            b'{' => '}',
-            _ => '>',
-        };
-        let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
-        let (r_idx, _) = ws(r_idx)?;
-        // Parse comma-separated index expressions inside brackets
-        let (r_idx, first_expr) = expression(r_idx)?;
-        let (mut r_idx, _) = ws(r_idx)?;
-        let index_expr = if r_idx.starts_with(',') {
-            let mut items = vec![first_expr];
-            while r_idx.starts_with(',') {
-                let (r2, _) = parse_char(r_idx, ',')?;
-                let (r2, _) = ws(r2)?;
-                if r2.starts_with(closing) {
-                    r_idx = r2;
-                    break;
-                }
-                let (r2, next) = expression(r2)?;
-                items.push(next);
-                let (r2, _) = ws(r2)?;
-                r_idx = r2;
+        let (r_after, index_expr) = if let Some(inner) = r.strip_prefix('<') {
+            // `<...>` is word-quoting (a literal string key), NOT an expression.
+            // Parsing the inside as an expression mis-reads `%h<b> := 5` — `b>`
+            // is taken as a `b > ...` comparison, so the chained bind never
+            // parses. Split the content into angle words instead, exactly as the
+            // postfix `<key>` subscript parser does. `<=`, `<<`, `<=>`, and any
+            // non-word content fall through to Err (a real comparison / not an
+            // lvalue), letting the caller re-parse as an expression.
+            let Some(end) = inner.find('>') else {
+                return Err(PError::expected("assignment expression"));
+            };
+            let keys = crate::parser::helpers::split_angle_words(&inner[..end]);
+            if keys.is_empty()
+                || !keys
+                    .iter()
+                    .all(|k| !k.is_empty() && k.chars().all(crate::parser::expr::is_angle_key_char))
+            {
+                return Err(PError::expected("assignment expression"));
             }
-            Expr::ArrayLiteral(items)
+            let index_expr = if keys.len() == 1 {
+                Expr::Literal(Value::str(keys[0].to_string()))
+            } else {
+                Expr::ArrayLiteral(
+                    keys.into_iter()
+                        .map(|k| Expr::Literal(Value::str(k.to_string())))
+                        .collect(),
+                )
+            };
+            let (r_after, _) = ws(&inner[end + 1..])?;
+            (r_after, index_expr)
         } else {
-            first_expr
+            let closing = if r.as_bytes()[0] == b'[' { ']' } else { '}' };
+            let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
+            let (r_idx, _) = ws(r_idx)?;
+            // Parse comma-separated index expressions inside brackets
+            let (r_idx, first_expr) = expression(r_idx)?;
+            let (mut r_idx, _) = ws(r_idx)?;
+            let index_expr = if r_idx.starts_with(',') {
+                let mut items = vec![first_expr];
+                while r_idx.starts_with(',') {
+                    let (r2, _) = parse_char(r_idx, ',')?;
+                    let (r2, _) = ws(r2)?;
+                    if r2.starts_with(closing) {
+                        r_idx = r2;
+                        break;
+                    }
+                    let (r2, next) = expression(r2)?;
+                    items.push(next);
+                    let (r2, _) = ws(r2)?;
+                    r_idx = r2;
+                }
+                Expr::ArrayLiteral(items)
+            } else {
+                first_expr
+            };
+            let (r_idx, _) = parse_char(r_idx, closing)?;
+            let (r_after, _) = ws(r_idx)?;
+            (r_after, index_expr)
         };
-        let (r_idx, _) = parse_char(r_idx, closing)?;
-        let (r_after, _) = ws(r_idx)?;
         // Check for binding assignment (:= or ::=)
         if let Some(stripped) = r_after
             .strip_prefix("::=")

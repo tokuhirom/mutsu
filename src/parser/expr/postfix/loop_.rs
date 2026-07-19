@@ -2288,6 +2288,35 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 rest = r;
                 continue;
             }
+            // Hyper associative indexing: expr»{key} / expr».{key} (or >> forms)
+            // => expr».AT-KEY(key). Mirrors the AT-POS block above but with braces.
+            let hyper_key_input = after_hyper
+                .strip_prefix(".{")
+                .or_else(|| after_hyper.strip_prefix('{'));
+            if let Some(r) = hyper_key_input {
+                let (r, _) = ws(r)?;
+                if let Some(after) = r.strip_prefix('}') {
+                    // A zen slice `»{}` is a no-op subscript over each element.
+                    rest = after;
+                    continue;
+                }
+                let (r, parsed) = parse_bracket_indices_inner(r)?;
+                let (r, _) = ws(r)?;
+                let (r, _) = parse_char(r, '}')?;
+                let args = match parsed {
+                    ParsedBracketIndex::Single(index) => vec![index],
+                    ParsedBracketIndex::MultiDim(dimensions) => dimensions,
+                };
+                expr = Expr::HyperMethodCall {
+                    target: Box::new(expr),
+                    name: Symbol::intern("AT-KEY"),
+                    args,
+                    modifier: None,
+                    quoted: false,
+                };
+                rest = r;
+                continue;
+            }
             // Hyper postfix with user-declared postfix operator: »??? / >>???
             // Only match when NOT preceded by dot (dotted form is a method call)
             if !after_hyper.starts_with('.')
