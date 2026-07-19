@@ -1,5 +1,123 @@
 # Changelog
 
+## [v0.8.0](https://github.com/tokuhirom/mutsu/compare/v0.7.0...v0.8.0) - 2026-07-19
+
+- fix: a mixed-in role's composed roles satisfy .does/~~ checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4671
+- fix: a map-block `my` no longer clobbers a same-named caller lexical by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4672
+- fix: statement-position from-json/to-json with named args dispatches by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4677
+- feat: implement the CALLERS:: pseudo-package (any caller scope) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4678
+- feat: RakuAST Phase 1 — Str.AST introspection (literal + say-call cluster) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4679
+- feat: RakuAST Phase 2 slice 1 — variables, my-declarations, operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4680
+- feat: coercion type terms, generic nominalizables, Array[T] subclassing by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4681
+- feat: RakuAST Phase 2 slice 2 — = assignment and method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4682
+- fix: eight general bugs surfaced by the URI dist test suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4683
+- feat: RakuAST Phase 2 slice 3 — bare blocks and pointy blocks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4684
+- fix: composite char-class subtraction and package-qualified subsets by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4685
+- feat: RakuAST Phase 2 slice 4 — if/else, while, and bare loop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4687
+- feat: per-composition generic class naming + typed-attribute element checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4686
+- feat: RakuAST Phase 2 slice 5 — elsif chains by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4689
+- fix: quantified captures in subst closures; test-call `or` continuation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4688
+- feat: RakuAST Phase 2 slice 6 — implicit-topic for loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4690
+- feat: RakuAST Phase 2 slice 7 — named sub declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4691
+- feat: RakuAST Phase 2 slice 8 — C-style and repeat loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4692
+- feat: RakuAST Phase 2 slice 9 — comma lists and := binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4693
+- fix: Proxy transparency, object subscript protocol, and related URI fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4694
+- feat: RakuAST Phase 2 slice 10 — scoped and typed declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4695
+- feat: RakuAST Phase 2 slice 11 — anonymous parameter-less sub by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4697
+- feat: X::Multi::NoMatch for wrong-argument builtins (multi-no-match.t) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4696
+- feat: RakuAST Phase 2 slice 12 — explicit-signature for loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4698
+- fix: grammar tokens as instance methods; type-named scalar declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4699
+- feat: RakuAST Phase 2 slice 13 — class and method declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4700
+- feat: RakuAST Phase 2 slice 14 — class attributes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4701
+- feat: RakuAST Phase 2 slice 15 — method-call modifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4702
+- feat: RakuAST Phase 2 slice 16 — role declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4704
+- feat: RakuAST Phase 2 slice 17 — loop labels by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4705
+- fix: MOP archetypes, SetHash.set, and multi-dispatch narrowness for JSON::Unmarshal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4703
+- feat: RakuAST Phase 2 slice 18 — given / when / default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4707
+- chore(vendor): manage vendored upstream sources + refresh raku-doc by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4706
+- feat: RakuAST Phase 2 slice 19 — ternary ?? !! by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4708
+- feat: RakuAST Phase 2 slice 20 — definite types Int:D / Int:U by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4709
+- fix(index): list-of-needles support in the sub form of index() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4710
+- feat: RakuAST Phase 2 slice 21 — parameterised types Array[Int] by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4711
+- feat: RakuAST Phase 2 slice 22 — positional subscripts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4712
+- feat: RakuAST Phase 2 slice 23 — quoted method names by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4713
+- feat: RakuAST Phase 2 slice 24 — list-associative infixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4714
+- feat: RakuAST Phase 2 slice 25 — reduction metaoperator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4715
+- feat: RakuAST Phase 2 slice 26 — hyper method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4717
+- feat: RakuAST Phase 2 slice 27 — attribute build-time defaults by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4718
+- fix: nine generic bugs surfaced by the JSON::Unmarshal test suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4716
+- feat: RakuAST Phase 2 slice 28 — labelled repeat loops by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4719
+- feat: RakuAST Phase 2 slice 29 — coercion types Int() by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4720
+- fix: raw stores for the is-rw element-arg writeback temps (JSON::Unmarshal 11/11) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4721
+- feat(assuming): reflect priming in a curried sub's signature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4722
+- feat: RakuAST Phase 3 slice 1 — node accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4723
+- feat: allow `but` role mixin on class type objects by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4725
+- feat: RakuAST Phase 3 slice 2 — smartmatch type hierarchy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4726
+- chore(vendor): bump roast to b2cbe8a4 (2026-06-12) + prerequisite fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4724
+- feat: RakuAST Phase 3 slice 3 — positional-leaf accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4727
+- feat: RakuAST Phase 3 slice 4 — semantic Expression/Term hierarchy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4728
+- feat: RakuAST Phase 4 slice 1 — literal construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4729
+- fix(shaped-array): coerce a non-integer numeric shape dimension toward Int by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4730
+- feat: RakuAST Phase 4 slice 2 — Name.from-identifier construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4731
+- feat: RakuAST Phase 4 slice 3 — multi-field construction by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4732
+- feat: RakuAST Phase 4 slice 4 — more operator constructors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4734
+- fix: six generic bugs surfaced by the META6 test suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4735
+- feat: RakuAST Phase 5 slice 1 — EVAL of literals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4736
+- feat: RakuAST Phase 5 slice 2 — EVAL of infix/prefix operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4737
+- fix: six generic bugs surfaced by the JSON::Class / JSON::Marshal suites by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4738
+- feat: RakuAST Phase 5 slice 3 — EVAL of variables and declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4739
+- feat: element-wise Z= (zip-metaop assignment) incl. shaped-array fill by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4733
+- feat: RakuAST Phase 5 slice 4 — EVAL of listop calls and method calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4740
+- feat: RakuAST Phase 5 slice 5 — EVAL of if/while and assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4741
+- feat: RakuAST Phase 5 slice 6 — EVAL of for, elsif chains, and comma lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4742
+- feat: RakuAST Phase 5 slice 7 — EVAL of sub declarations and named calls by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4743
+- docs: record the array-shapes.t slice and shaped-native coercion perf trap by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4744
+- feat: RakuAST Phase 5 slice 8 — EVAL of given/when/default by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4745
+- feat: add exits-ok Test function by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4746
+- fix: two generic bugs surfaced by the License::SPDX suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4747
+- docs: add QA & finalization plan (§8) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4748
+- feat: RakuAST Phase 5 slice 9 — EVAL of the bare for @x { ... } ($_) form by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4749
+- tooling: add QA doc-diff harness (PLAN.md §8.1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4750
+- docs: refresh mzef test-phase standing and split Test::Async into PLAN §1 B2b by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4751
+- feat: RakuAST slice 10 — return/last/next in both .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4752
+- feat: RakuAST Phase 5 slice 11 — EVAL of unless/until and prefix !/? by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4753
+- feat: RakuAST Phase 5 slice 12 — EVAL of default sub parameters by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4754
+- fix: three generic bugs surfaced by the Test::META suite by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4756
+- feat: RakuAST Phase 5 slice 13 — EVAL of repeat/while and repeat/until by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4757
+- fix: .polymod reifies a lazy divisor source (gather / .map Seq) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4758
+- feat: RakuAST slice 14 — True/False literals in both .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4759
+- feat: RakuAST Phase 5 slice 15 — EVAL of the ternary ?? !! by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4760
+- feat: RakuAST slice 16 — interpolated strings in both .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4761
+- fix(json): X::JSON::AdditionalContent + strict string/number grammar in native from-json by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4762
+- feat: RakuAST slice 17 — typed positional parameters in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4763
+- feat: RakuAST Phase 5 slice 18 — EVAL of named infix operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4764
+- feat: RakuAST slice 19 — assignment expressions in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4766
+- feat(json): JSON::Fast option parity — :immutable, :enums-as-value, NaN/Inf, import defaults, code-object dispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4765
+- feat: RakuAST Phase 5 slice 20 — EVAL of the C-style loop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4767
+- fix: sequence operator (...) is looser than comma in argument lists by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4755
+- fix: numerator/denominator/nude builtins no longer shadow instance attribute accessors by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4768
+- feat: RakuAST slice 21 — parenthesised expressions in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4769
+- feat(json): JSONC comments, Associative/Positional instance serialization, stash .values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4770
+- feat: RakuAST slice 22 — named parameters in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4771
+- docs: close the B2 test-phase frontier — real zef tests-ON install is 12/13 OK by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4772
+- feat: RakuAST slice 23 — slurpy parameters in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4773
+- feat: RakuAST slice 24 — array-composer literals in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4775
+- fix: make &WHAT/&HOW/&VAR first-class callables by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4776
+- feat: augment on builtin native classes (DateTime/Date) — JSON::Fast 14/14 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4777
+- fix: sink the mainline's tail value so an unhandled Failure throws by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4774
+- feat: RakuAST Phase 5 slice 25 — EVAL of positional subscripts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4778
+- docs: tests-ON zef install now completes clean — JSON::Fast 14/14 (#4777) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4779
+- feat: RakuAST slice 26 — bareword type terms in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4780
+- fix: reduce/&[op] metaop trims whitespace when numifying a string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4781
+- feat: RakuAST slice 27 — the * whatever term in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4783
+- chore: remove stray files accidentally committed in #4774 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4784
+- feat: bundle the mzef package manager (vendored zef + binary shim) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4782
+- feat: RakuAST slice 28 — fat-arrow pairs in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4785
+- ci: publish mise-installable release binaries with mutsu + mzef by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4786
+- fix: numeric builtin functions operate on allomorph inner value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4787
+- feat: RakuAST slice 29 — hash-literal .AST conversion (read only) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4789
+- fix: (elem)/∈ tests list membership by === identity, not stringification by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4788
+
 ## [v0.7.0](https://github.com/tokuhirom/mutsu/compare/v0.6.0...v0.7.0) - 2026-07-17
 
 - fix: `@a.map` returns a Seq on the rw path, and nested hyper results are itemized by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4647
