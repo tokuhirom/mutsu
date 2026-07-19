@@ -762,19 +762,19 @@ impl Compiler {
                 self.code.emit(OpCode::SetGlobal(key_idx));
             }
             Stmt::Say(exprs) => {
-                self.compile_exprs(exprs);
+                self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Say(exprs.len() as u32));
             }
             Stmt::Put(exprs) => {
-                self.compile_exprs(exprs);
+                self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Put(exprs.len() as u32));
             }
             Stmt::Print(exprs) => {
-                self.compile_exprs(exprs);
+                self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Print(exprs.len() as u32));
             }
             Stmt::Note(exprs) => {
-                self.compile_exprs(exprs);
+                self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Note(exprs.len() as u32));
             }
             Stmt::VarDecl {

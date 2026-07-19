@@ -323,7 +323,11 @@ pub(crate) enum OpCode {
     BoolBitNeg, // ?^ prefix: boolean bitwise negation
     StrBitNeg,  // ~^ prefix: string/buffer bitwise negation
     MakeSlip,   // | prefix: convert array/list to Slip for flattening
-    Decont,     // strip ONE level of Scalar for slurpy flattening (NOT the
+    DeSlip,     // demote a top-level Slip VALUE to a Seq so it is NOT flattened
+    // by a `**@`-slurpy consumer (say/put/print/note). A `|EXPR` pipe-slip is
+    // left untouched (still flattens); an ordinary `.Slip`/`slip(...)` value is
+    // kept whole. See exec_say_op / flatten_slip_args.
+    Decont, // strip ONE level of Scalar for slurpy flattening (NOT the
     // recursive Value::descalarize; touches no ArrayKind flag — see decont family note)
     /// Itemize (containerize) an Array/List value so it behaves as a single
     /// item in list context. Emitted when `$` variable values are used inside
