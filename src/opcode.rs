@@ -2469,16 +2469,22 @@ impl CompiledCode {
             // `RegisterSub` op and compiled lazily, so this frame cannot see which
             // enclosing lexicals its body reads by name. Such a sub reads an outer
             // lexical (`my $base = 100; sub f { $base + 1 }`) from this frame's env
-            // by name at call time, which the gate would leave stale. Without the
-            // sub's free-var set available here, conservatively keep every local of
-            // a sub-defining frame env-synced. Gate-ON only, so the default build is
-            // byte-identical/perf-neutral; the top-level/main frame (the usual
-            // sub-defining frame) is never a hot arithmetic loop.
-            let defines_named_sub = self
-                .ops
-                .iter()
-                .any(|op| matches!(op, OpCode::RegisterSub(_)));
-            if defines_named_sub {
+            // by name at call time, which the gate would leave stale. A class/role
+            // METHOD body captures an outer lexical the same way (`my $base = 100;
+            // class T { method calc($n) { $base + $n } }`) and is likewise compiled
+            // lazily off the class/role registration op, invisible here. Without the
+            // body's free-var set available, conservatively keep every local of a
+            // frame that defines a named sub or a class/role env-synced. Gate-ON
+            // only, so the default build is byte-identical/perf-neutral; the
+            // top-level/main frame (the usual definer) is never a hot arithmetic
+            // loop.
+            let defines_lazy_body = self.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::RegisterSub(_) | OpCode::RegisterClass(_) | OpCode::RegisterRole(_)
+                )
+            });
+            if defines_lazy_body {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
         }
