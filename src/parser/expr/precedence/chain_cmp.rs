@@ -234,8 +234,9 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    if let Some(stripped) = r.strip_prefix("^..") {
+    if r.starts_with("^..") && !r.starts_with("^...") {
         check_range_precedence_worry(input)?;
+        let stripped = &r[3..];
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '^..'", r.len()))?;

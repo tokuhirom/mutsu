@@ -293,7 +293,15 @@ fn parse_meta_word_op(input: &str) -> Option<(String, usize)> {
 }
 
 pub(crate) fn strip_sequence_op(input: &str) -> Option<(&str, TokenKind, &str)> {
-    if let Some(rest) = input.strip_prefix("...^") {
+    // Left-exclusive sequence operators (`^...`, `^...^`) generate the same
+    // series as `...`/`...^` but drop the first element. The `op_str` keeps its
+    // leading `^` so the caller can wrap the result in `.skip(1)`; the returned
+    // `TokenKind` is the plain end-inclusive/exclusive sequence op.
+    if let Some(rest) = input.strip_prefix("^...^") {
+        Some((rest, TokenKind::DotDotDotCaret, "^...^"))
+    } else if input.starts_with("^...") && !input.starts_with("^....") {
+        Some((&input[4..], TokenKind::DotDotDot, "^..."))
+    } else if let Some(rest) = input.strip_prefix("...^") {
         Some((rest, TokenKind::DotDotDotCaret, "...^"))
     } else if let Some(rest) = input.strip_prefix("…^") {
         Some((rest, TokenKind::DotDotDotCaret, "…^"))

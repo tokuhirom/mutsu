@@ -370,14 +370,20 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
     input: &'a str,
     seeds: &[Expr],
 ) -> Option<PResult<'a, Expr>> {
-    let (is_excl, rest) = if let Some(stripped) = input.strip_prefix("...^") {
-        (true, stripped)
+    // `is_left_excl` marks the `^...` / `^...^` left-exclusive forms, which
+    // generate the same series and then drop the first element (`.skip(1)`).
+    let (is_excl, is_left_excl, rest) = if let Some(stripped) = input.strip_prefix("^...^") {
+        (true, true, stripped)
+    } else if input.starts_with("^...") && !input.starts_with("^....") {
+        (false, true, &input[4..])
+    } else if let Some(stripped) = input.strip_prefix("...^") {
+        (true, false, stripped)
     } else if let Some(stripped) = input.strip_prefix("\u{2026}^") {
-        (true, stripped)
+        (true, false, stripped)
     } else if input.starts_with("...") && !input.starts_with("....") {
-        (false, &input[3..])
+        (false, false, &input[3..])
     } else if let Some(stripped) = input.strip_prefix('\u{2026}') {
-        (false, stripped)
+        (false, false, stripped)
     } else {
         return None;
     };
@@ -450,13 +456,29 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
             op,
             right: Box::new(right_expr),
         };
+        // Left-exclusive sequence: drop the first generated element (stays lazy).
+        let seq = if is_left_excl {
+            Expr::MethodCall {
+                target: Box::new(seq),
+                name: crate::symbol::Symbol::intern("skip"),
+                args: vec![Expr::Literal(crate::value::Value::int(1))],
+                modifier: None,
+                quoted: false,
+            }
+        } else {
+            seq
+        };
         Ok((r, seq))
     })();
     Some(result)
 }
 
 pub(crate) fn starts_with_sequence_op(input: &str) -> bool {
-    input.starts_with("...") || input.starts_with('\u{2026}')
+    input.starts_with("...")
+        || input.starts_with('\u{2026}')
+        // Left-exclusive sequence (`^...` / `^...^`); the `^...^` case also starts
+        // with `^...`, so this single prefix covers both.
+        || input.starts_with("^...")
 }
 
 fn maybe_wrap_whatever(expr: Expr) -> Expr {
