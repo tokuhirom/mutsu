@@ -396,6 +396,14 @@ earlier ones.
     `EVAL(Q{gather { take 1; take 2; take 3 }.elems}.AST)` → `3`; `take` inside a loop gathers each
     iteration, and a conditional `take` gathers a subset. Tests in `t/rakuast-eval-gather.t`. Next:
     CATCH blocks, more statement prefixes (`quietly`/`lazy`/`eager`), code-block interpolation.
+  - **Slice 34 (blocks as values) — done (write).** A `RakuAST::Block` in expression position (e.g. the
+    `{ … }` argument to `.map`/`.grep`/`.first`/…) now lowers to a bare-block closure
+    (`Expr::AnonSub { is_block: true }`), so higher-order list methods run. `EVAL(Q{(1, 2, 3).map({ $_ *
+    2 }).sum}.AST)` → `12`; `.grep`/`.first`, multi-statement blocks, and chained `map`/`grep` all work.
+    (This is also consistent with raku, which EVALs any `Block` node to a `Callable` — so a hash-shaped
+    `{a => 1}` lands here as a block too, matching raku's `.elems` == 1.) Placeholder-parameter blocks
+    (`{ $^a <=> $^b }`) and calling a code variable (`$f(…)`) stay the boundary. Tests in
+    `t/rakuast-eval-block-arg.t`. Next: placeholder blocks, CATCH blocks, code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
