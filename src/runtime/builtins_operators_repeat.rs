@@ -245,7 +245,8 @@ impl Interpreter {
                     acc = Value::str(repeated.nfc().collect::<String>());
                 }
                 "xx" => {
-                    const EAGER_LIMIT: usize = 10_000;
+                    // See exec_list_repeat_op for the eager/lazy rationale.
+                    const EAGER_LIMIT: usize = 1_000_000;
                     const LAZY_CACHE: usize = 4_096;
                     // Callable LHS is expensive (each iteration calls eval_call_on_value),
                     // so use a much smaller cache to avoid timeouts on `callable xx *`.
