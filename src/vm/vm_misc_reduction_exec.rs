@@ -32,10 +32,19 @@ impl Interpreter {
         } else {
             (false, op_no_scan)
         };
-        let mut base_op = if base_op == "∘" {
-            "o".to_string()
-        } else {
-            base_op
+        // Unicode operator aliases fold identically to their ASCII base op
+        // (matching `eval_reduction_operator_values`): ∘→o, ×→*, ÷→/,
+        // −(U+2212)→-, ≤→<=, ≥→>=, ≠→!=. Without this a `[×]`/`[÷]`/… fold
+        // reaches an `infix:<×>` lookup that does not exist.
+        let mut base_op = match base_op.as_str() {
+            "\u{2218}" => "o".to_string(),
+            "\u{00D7}" => "*".to_string(),
+            "\u{00F7}" => "/".to_string(),
+            "\u{2212}" => "-".to_string(),
+            "\u{2264}" => "<=".to_string(),
+            "\u{2265}" => ">=".to_string(),
+            "\u{2260}" => "!=".to_string(),
+            _ => base_op,
         };
         // Handle lazy-scan short-circuit reduction compiled from ArrayLiteral.
         // The operator has prefix "_sc_" and the operand is an array of thunks.
