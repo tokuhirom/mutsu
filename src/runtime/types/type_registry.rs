@@ -357,6 +357,25 @@ impl Interpreter {
             .is_some_and(|variants| variants.iter().any(|(k, _)| k == variant_name))
     }
 
+    /// Whether any registered class / role / subset / enum is known by the given
+    /// short name — either exactly, or as the last `::`-segment of a qualified
+    /// name (`P::DecodeBuffer` matches short `DecodeBuffer`). Used to relax the
+    /// role-method parameter-type validation so an unqualified reference to a
+    /// sibling type declared in an enclosing package is not falsely rejected,
+    /// mirroring how the sub-registration pre-pass accepts any type declared in
+    /// the compilation unit. A genuinely-undeclared name matches nothing.
+    pub(crate) fn type_known_by_short_name(&self, short: &str) -> bool {
+        if short.is_empty() {
+            return false;
+        }
+        let reg = self.registry();
+        let matches = |key: &str| key == short || key.ends_with(&format!("::{short}"));
+        reg.classes.keys().any(|k| matches(k))
+            || reg.roles.keys().any(|k| matches(k))
+            || reg.subsets.keys().any(|k| matches(k))
+            || reg.enum_types.keys().any(|k| matches(k))
+    }
+
     pub(crate) fn has_role(&self, name: &str) -> bool {
         self.registry().roles.contains_key(name)
     }

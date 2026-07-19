@@ -788,7 +788,17 @@ impl Interpreter {
                                 || (!tc.contains("::")
                                     && enclosing_prefixes.iter().any(|pfx| {
                                         self.is_resolvable_type(&format!("{pfx}::{tc}"))
-                                    }));
+                                    }))
+                                // Last resort: any registered type known by this
+                                // short name. A compound role name in a `unit
+                                // package` (`my role Packet::Empty`) leaves the
+                                // enclosing package out of both the role name and
+                                // `current_package`, so the prefix walk cannot
+                                // reach a sibling like `P::DecodeBuffer`; a
+                                // short-name match still finds it, mirroring how the
+                                // sub pre-pass accepts any type declared in the unit.
+                                || (!tc.contains("::")
+                                    && self.type_known_by_short_name(tc_base));
                             if !resolvable {
                                 let mut attrs = std::collections::HashMap::new();
                                 attrs.insert("type".to_string(), Value::str(tc.to_string()));
