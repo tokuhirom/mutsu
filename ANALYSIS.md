@@ -5,10 +5,11 @@ This document is an **architecture and soundness review** of the mutsu codebase 
 
 First edition: 2026-06-03. Revision history through rev8 (2026-07-06) is in git; each
 rev's resolved findings are archived in the news files
-([news/2026-07.md](news/2026-07.md) "ANALYSIS.md rev9 — resolved-item archive" holds
-both the pre-rev8 archive and everything closed between rev8 and rev9).
-**rev9: 2026-07-15 — rewritten in English; resolved items moved to news; re-verified
-against HEAD (#4521) with per-subsystem re-reads and fresh measurements.**
+([news/2026-07.md](news/2026-07.md) "ANALYSIS.md rev9/rev10 — resolved-item archive"
+holds both the pre-rev8 archive and everything closed since).
+**rev10: 2026-07-19 — re-verified against HEAD (#4811) after 259 commits since rev9;
+the `integration/` frontier is fully cleared, deep-recursion is fixed, a RakuAST model
+layer (§1.7) landed, and hygiene metrics were re-measured. Resolved items moved to news.**
 
 Method:
 - subsystem-level close reading by survey agents
@@ -21,18 +22,22 @@ Every finding carries a `file:line` reference. Reproducible defects were actuall
 ## 0. Summary
 
 mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The roast
-whitelist stands at **1391 / 1463 (95.1%)**; the remaining frontier is `integration/`
-(real Raku programs), not synopsis feature tests. No test-specific hardcoded outputs
-were found.
+whitelist stands at **1433 / 1464 (97.9%)**, up from rev9's 1391/1463. The former
+frontier — `integration/` (real Raku programs) — is **fully whitelisted (0 remaining)
+as of 2026-07-17**; roast is no longer the productive axis (BLOCKERS.md: "No cluster
+remains"). Active work has moved to the RakuAST model layer (§1.7) and PLAN.md §1/§5/§6.
+No test-specific hardcoded outputs were found.
 
-Overall assessment as of rev9:
+Overall assessment as of rev10:
 
 - **The execution stack is complete in outline**: a single bytecode VM (the tree-walk
   interpreter, dual variable store, and tree-walk method bodies are all long gone), a
   **cycle-collecting GC, default-on** (ADR-0003), an **8-byte NaN-boxed `Value`**
   (layer 3b, #4469), and a **Cranelift JIT, default-on** (ADR-0004 J5, #4482). The
   remaining tree-walk is declaration registration and dispatch-resolver entries, not
-  body execution (§1.1).
+  body execution (§1.1). A **RakuAST model layer** (ADR-0011, §1.7) landed on top of
+  this stack since rev9: `Q[…].AST` reads out a RakuAST tree and `EVAL($tree)` lowers it
+  back through the *same* compiler — no second execution engine.
 - **Performance vs raku flipped from deficit to surplus.** Bench CI (2026-07-14, main
   `827fdb0e`, vs Rakudo v2022.12 on the same runner): fib 0.59x (JIT 0.48x),
   method-call 0.89x, bench-class 0.84x, bench-fib 1.15x (JIT 0.92x), bench-tak+jit
@@ -43,14 +48,18 @@ Overall assessment as of rev9:
   history on every main push. Size guards pin `Value` ≤8B and `OpCode` ≤48B; drift
   tests (`t/can-methods-drift.t`) catch structural regressions.
 - **Soundness debt is localized**: raw-pointer aliased writes survive behind
-  `gc::gc_contents_mut` / `Gc::{get,make}_mut` (~53 call sites, §2.1); the GC's
-  buffered-clone/uniqueness invariant is still mostly prose (§2.1); deep Raku-level
-  recursion aborts the whole process via Rust stack overflow (§2.3).
-- **Negative hygiene trends** (GC/NaN-box/JIT churn): `unwrap/expect/panic!/
-  unreachable!` 1643→**1759**, `#[allow(` 157→**165**, files >500 lines 197→**210**
-  (>1000: 51→57), `runtime/mod.rs` 2118→**2309** lines. `.clone()` is flat
-  (9022→**8947**) and each clone is now an 8-byte copy, but useless-clone pruning
-  (3b-2) remains open (§5).
+  `gc::gc_contents_mut` / `Gc::{get,make}_mut` (~59 call sites across 25 files, up from
+  rev9's ~53/21, §2.1); the GC's buffered-clone/uniqueness invariant is still mostly
+  prose (§2.1). The rev9 "deep recursion aborts the process" hole is **fixed**: the
+  interpreter now runs on a 256 MB-stack thread (`main.rs:99`) and the three pure-recursion
+  integration tests pass; only the memory-bound `deep-recursion-initing-native-array.t`
+  still aborts, and that is a typed-shaped-array coercion issue, not Rust-stack recursion
+  (§2.3).
+- **Negative hygiene trends continue, faster than rev9's slope** (GC/NaN-box/JIT/RakuAST
+  churn): `unwrap/expect/panic!/unreachable!` 1759→**1789**, `#[allow(` 165→**170**,
+  files >500 lines 210→**239** (>1000: 57→**62**), `runtime/mod.rs` 2309→**2470** lines
+  (the rev9 "needs another facade slim-down" flag is now overdue). `.clone()` 8947→**9056**;
+  each is an 8-byte NaN-box copy, but useless-clone pruning (3b-2) remains open (§5).
 
 None of the remaining issues is of the "the basic design is broken" kind; they are
 design/soundness/maintainability debt.
@@ -185,6 +194,29 @@ There is no true slang stack: Regex bodies are scanned as raw text at parse time
 by the parser and rebuilt from raw source at runtime (`runtime/io_pod_blocks.rs:4`).
 Real user-defined grammar/token/rule slang switching remains future work.
 
+### 1.7 RakuAST model layer (new since rev9) — read+write, no second engine
+
+A RakuAST model layer (ADR-0011) landed as ~37 slices across Phases 4–5 (PRs
+#4729–#4804) and is the single largest new subsystem since rev9 (`src/rakuast/`,
+13 files ≈3200 lines). It has two directions:
+
+- **Read** (`Q[…].AST`): the internal `Stmt`/`Expr` tree is converted to a RakuAST node
+  tree whose `.gist` is byte-identical to Rakudo's where applicable.
+- **Write** (`EVAL($rakuast)`): `lower(RakuAstNode) -> Stmt/Expr` re-enters the **existing
+  compiler**, so there is no separate interpreter — the model layer is a translation
+  surface, not a new execution engine.
+
+Coverage is broad: literals (interpolation, array/hash literals, pairs, `*`, bareword
+types), all common operators + the ternary, the full control-flow set
+(`if`/`elsif`/`unless`/`while`/`until`/`repeat`/`for`/C-style `loop`/`given`-`when`/`do`/
+`try`/`gather`), sub declarations with typed/default/named/slurpy parameters, control-flow
+calls (`return`/`last`/`next`/`die`/`fail`/`take`), and first-class closures. Each slice is
+pinned by a dual-oracle test (`t/rakuast-*.t`) that passes under both mutsu and raku.
+Remaining: Phase 6 (macros / `quasi`), the type registry beyond the covered node set, and
+the two read-only nodes whose raw round-trip diverges from raku (hash literals, the
+Phase-2 read cluster). This work is orthogonal to the roast frontier (0 whitelisted roast
+files use RakuAST) and drives PLAN §RakuAST, not roast.
+
 ---
 
 ## 2. Correctness and soundness
@@ -202,9 +234,9 @@ What remains:
   `456-502`) still write through `Arc::as_ptr as *mut` — a provenance violation plus
   a data race whenever the target is genuinely shared. Track B T4/T5/T6
   (#4416/#4417/#4418) cut the biggest cluster (`vm_var_assign_index_named.rs` 18→6)
-  but **~53 production call sites remain across 21 files** (next largest:
-  `value/value_methods_a.rs` 6, `vm_var_assign_ops.rs` 5, `vm_exec_dispatch.rs` 5,
-  `runtime/methods_mut_dispatch.rs` 5). Full removal awaits the deferred `CellValue`
+  but **~59 production call sites remain across 25 files** (rev9: ~53/21 — the count has
+  drifted *up*, not down, as new mutation paths reuse the primitive). Full removal awaits
+  the deferred `CellValue`
   work ([docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §2). The audited old
   primitive `arc_contents_mut` is kept dead (`value/aliased_mut.rs:69`), along with a
   dead duplicate `gc_contents_mut` shim (`aliased_mut.rs:84`).
@@ -227,14 +259,18 @@ What remains:
 and low priority — note there is no `size_of` guard test for `RuntimeError` (only
 `Value` and `OpCode` are pinned), so a regression here would be silent.
 
-### 2.3 Process-level robustness holes (new section)
+### 2.3 Process-level robustness holes
 
-- **Deep Raku recursion aborts the process**: 4 `integration/` tests
-  (`99problems-41-to-50.t`, `99problems-51-to-60.t`, `man-or-boy.t`,
-  `deep-recursion-initing-native-array.t`) die with Rust
-  `fatal runtime error: stack overflow` — Raku-level recursion consumes the Rust call
-  stack. Needs a mechanism (heap frames / stack growth / depth control); highest-impact
-  single item on the integration frontier (BLOCKERS §integration ①).
+- **Deep Raku recursion — mostly fixed (rev10).** The rev9 "Rust stack overflow aborts
+  the process" hole is closed: the interpreter runs on a dedicated **256 MB-stack thread**
+  (`main.rs:99`), and the three pure-recursion integration tests (`99problems-41-to-50.t`,
+  `99problems-51-to-60.t`, `man-or-boy.t`) now pass — the whole `integration/` frontier is
+  whitelisted (§0). The one residual abort is `deep-recursion-initing-native-array.t`
+  (a 100M-element `my int @a[N;N]`), which core-dumps on **memory**, not Rust-stack depth;
+  it is the shaped-native typed-array coercion issue tracked in BLOCKERS (S02 array-shapes
+  T36-38), not a recursion-mechanism gap. A larger fixed stack is a blunt instrument, not
+  true heap frames / stack growth, so pathologically deep recursion can still overflow —
+  but it is no longer a frontier blocker.
 - **Recursive start/await hang** (2026-07-11, deterministic): after one recursive
   `start`-chain sub completes, a second two-branch recursive `start` sub hangs —
   suspected thread-pool worker not released (PLAN §6).
@@ -302,12 +338,12 @@ Two known derivation shortcuts remain:
   (#4463, #4492–#4495, #4506–#4508) removed the worst interning/SipHash/COW churn on
   the declaration path; the structural remainder is §1.3's `needs_env_sync` blanket
   and `BlockScope` clone.
-- **`.clone()` ≈ 8947** (flat vs rev8's 9022): each is now an 8-byte NaN-box copy
+- **`.clone()` ≈ 9056** (rev9: 8947): each is now an 8-byte NaN-box copy
   (+ refcount for container tags), so the unit cost collapsed, but useless-clone
   pruning (3b-2 "traffic pruning", gc-post-3a-roadmap §3.3) is still open,
   profile-driven.
-- **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 1759 (+116)** and
-  **`#[allow(` 165 (+8)**: mostly invariant asserts/tests, but the upward trend
+- **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 1789 (+30)** and
+  **`#[allow(` 170 (+5)**: mostly invariant asserts/tests, but the upward trend
   continues and deserves a periodic sweep. (Module-wide `#![allow]`s are gone.)
 - Allocation-failure aborts on user-sized allocations remain guarded via
   `try_reserve`; remaining aborts are true OOM.
@@ -316,13 +352,13 @@ Two known derivation shortcuts remain:
 
 ## 6. Repository hygiene
 
-- **500-line rule**: **57 files >1000 lines, 210 files >500** (rev8: 51 / 197).
-  Largest: `vm/vm_exec_dispatch.rs` 4408, `opcode.rs` 3800,
-  `runtime/methods_call_dispatch.rs` 3501, `compiler/stmt.rs` 3389,
-  `runtime/regex_parse_core.rs` 3017. Giant dispatch matches stay intentional
-  exceptions, but `runtime/mod.rs` re-grew to **2309** lines (rev7: 1932 → rev8: 2118)
-  and needs another facade slim-down. The VM module root is now `src/vm.rs`
-  (327 lines).
+- **500-line rule**: **62 files >1000 lines, 239 files >500** (rev9: 57 / 210).
+  Largest: `vm/vm_exec_dispatch.rs` 4490, `opcode.rs` 4237,
+  `runtime/methods_call_dispatch.rs` 3569, `compiler/stmt.rs` 3424,
+  `vm/vm_var_assign_index_named.rs` 3124 (a new top-5 entry, displacing
+  `runtime/regex_parse_core.rs`). Giant dispatch matches stay intentional exceptions, but
+  `runtime/mod.rs` re-grew to **2470** lines (rev7: 1932 → rev8: 2118 → rev9: 2309) — the
+  facade slim-down flagged three revs running is now overdue.
 - Stale comment references to the old `MUTSU_SHADOW_SLOTS` opt-in gate survive in
   `opcode.rs:1441,1671,1692` and `vm_register_ops.rs:81,547` — the gate is now the
   opt-out `MUTSU_NO_SHADOW_SLOTS` (§1.3); worth a doc sweep.
@@ -331,24 +367,26 @@ Two known derivation shortcuts remain:
 
 ## 7. Recommended roadmap (priority order)
 
-Everything that topped rev8's table — Track B tail T4-T6, the GC auditability sweep,
-NaN-boxing — is done (see news). Remaining, aligned with PLAN.md:
+rev9's #1 — the deep-recursion process abort — is done (256 MB-stack thread; the
+`integration/` frontier cleared, §2.3). Everything that topped rev8's table (Track B tail
+T4-T6, the GC auditability sweep, NaN-boxing) was already done. Remaining, aligned with
+PLAN.md:
 
 | # | Item | Kind | Impact |
 |---|------|------|--------|
-| 1 | **Deep-recursion process abort** (heap frames / stack growth / depth control; unblocks 4 integration tests and is the "zero crashes" goal's concrete target, §2.3) | robustness | large |
-| 2 | **Lexical-slot endgame as one fused campaign**: `needs_env_sync` blanket removal → by-name fallback retirement → `BlockScope` full-clone removal (§1.3; also the top remaining perf lever per the fib profile) | correctness + perf | large |
-| 3 | **JIT J4d** — Tier B variable-op inlining (the ADR-0004 "int loops 5-10x" gate, §1.5) | perf | medium-large |
-| 4 | **`gc_contents_mut` residue inventory** (~53 sites; route through cells or `make_mut`-style COW, §2.1) + buffered-clone invariant hardening | soundness (UB) | medium |
+| 1 | **Lexical-slot endgame as one fused campaign**: `needs_env_sync` blanket removal → by-name fallback retirement → `BlockScope` full-clone removal (§1.3; also the top remaining perf lever per the fib profile) | correctness + perf | large |
+| 2 | **JIT J4d** — Tier B variable-op inlining (the ADR-0004 "int loops 5-10x" gate, §1.5) | perf | medium-large |
+| 3 | **`gc_contents_mut` residue inventory** (~59 sites, trending *up*; route through cells or `make_mut`-style COW, §2.1) + buffered-clone invariant hardening | soundness (UB) | medium |
+| 4 | **RakuAST completion** (Phase 6 macros/`quasi`, type-registry breadth beyond the covered node set, §1.7) — the largest active campaign | feature | medium |
 | 5 | Scouted perf slices: `compiled_fns` SipHash removal, callsite-line marker removal (PLAN §5 items 1-2) | perf | medium |
 | 6 | Declaration registration → bytecode; dispatch entry consolidation into a type×method table (also retires §4-1's hand tables) (§1.1/§3.3) | design | medium |
-| 7 | Opcode remainder, measurement-gated (§1.4); recursive start/await hang (§2.3) | perf / robustness | low-medium |
+| 7 | Opcode remainder, measurement-gated (§1.4); recursive start/await hang, shaped-native array coercion (§2.3) | perf / robustness | low-medium |
 | 8 | Control-channel separation (§2.2); Supply panic → QUIT (§2.3) | design / robustness | low |
-| 9 | Hygiene: `runtime/mod.rs` re-slim, clone/unwrap trend sweep, file splits, stale gate-name comments (§5/§6) | hygiene | low-medium |
+| 9 | Hygiene: `runtime/mod.rs` re-slim (2470 lines, overdue), file splits (239 >500), clone/unwrap trend sweep, stale gate-name comments (§5/§6) | hygiene | low-medium |
 
 ---
 
 *Based on static close reading plus live reproduction.*
-*rev9 (2026-07-15): rewritten in English; resolved items archived to
-[news/2026-07.md](news/2026-07.md); GC/lexical-slot/OTF/dispatch/value-representation
-sections re-verified against HEAD.*
+*rev10 (2026-07-19): re-verified against HEAD (#4811) after 259 commits; integration
+frontier cleared, deep-recursion fixed, RakuAST layer (§1.7) added, hygiene re-measured;
+resolved items archived to [news/2026-07.md](news/2026-07.md).*
