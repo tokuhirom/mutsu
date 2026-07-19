@@ -985,9 +985,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 26: bareword type terms `Int`/`Str` as values (both directions) — a known type name
         (`is_known_type_constraint`) ↔ `Type::Simple`; `EVAL(Q{5 ~~ Int}.AST)` → True, `Int.^name` →
         "Int". Tests in `t/rakuast-eval-typeterm.t`.
-  - [ ] Slice 27+: hash literals (raku models `{a => 1}` as a `Block`), associative subscripts
-        (`%h{…}`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
-        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 27: the `*` whatever term (both directions) via a new `Term::Whatever` node;
+        `EVAL(Q{(1..*).head(3).join(",")}.AST)` → "1,2,3". WhateverCode (`* + 1`) stays the boundary.
+        Tests in `t/rakuast-eval-whatever.t`.
+  - [ ] Slice 28+: hash literals (raku models `{a => 1}` as a `Block`), associative subscripts
+        (`%h{…}`), WhateverCode (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2
+        converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

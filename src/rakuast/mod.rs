@@ -134,6 +134,8 @@ pub enum RakuAstClass {
     ParameterSlurpyUnflattened,
     // Phase 2 slice 33: array-composer literal (`[1, 2, 3]`).
     CircumfixArrayComposer,
+    // Phase 2 slice 34: the `*` whatever term.
+    TermWhatever,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,6 +209,7 @@ impl RakuAstClass {
             ParameterSlurpyFlattened => "RakuAST::Parameter::Slurpy::Flattened",
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
+            TermWhatever => "RakuAST::Term::Whatever",
         }
     }
 
@@ -214,7 +217,7 @@ impl RakuAstClass {
     /// (`RakuAST::Assignment.new`), unlike the generic `.new()` (e.g. an empty
     /// `StatementList` still prints `RakuAST::StatementList.new()`).
     pub fn empty_parens_omitted(self) -> bool {
-        matches!(self, RakuAstClass::Assignment)
+        matches!(self, RakuAstClass::Assignment | RakuAstClass::TermWhatever)
     }
 
     /// Whether the node renders as a bare class name with no constructor call at

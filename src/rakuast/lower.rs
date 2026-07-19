@@ -570,6 +570,8 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             };
             Ok(Expr::BracketArray(items, false))
         }
+        // The `*` whatever term.
+        RakuAstClass::TermWhatever => Ok(Expr::Whatever),
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
         // bareword term, which mutsu evaluates to the type object.
         RakuAstClass::TypeSimple => {

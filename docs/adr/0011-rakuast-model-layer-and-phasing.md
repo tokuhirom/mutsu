@@ -349,6 +349,12 @@ earlier ones.
     `EVAL(Q{"x" ~~ Int}.AST)` → `False`; `Int.^name` → `"Int"`, and a type object can be stored in a
     variable. User-defined types stay the boundary. Tests in `t/rakuast-eval-typeterm.t`. Next: hash
     literals (raku models `{a => 1}` as a `Block`), code-block interpolation.
+  - **Slice 27 (the `*` whatever term) — done, both directions.** A new `Term::Whatever` node class
+    models a bare `*` (it renders as a bare `.new` — no parens — via `empty_parens_omitted`). The read
+    side converts `Expr::Whatever` to it and the write side lowers it back. `EVAL(Q{(1..*).head(3).join(",")}.AST)`
+    → `"1,2,3"`; `*` closes an infinite range and a bare `*` is a `Whatever` value. `WhateverCode`
+    (`* + 1`, `*-1`), which mutsu desugars to a closure, stays the boundary. Tests in
+    `t/rakuast-eval-whatever.t`. Next: hash literals, code-block interpolation, WhateverCode.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

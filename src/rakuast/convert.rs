@@ -764,6 +764,11 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
         Expr::Var(name) => Ok(var_lexical("$", name)),
+        // The `*` whatever term.
+        Expr::Whatever => Ok(RakuAstNode {
+            class: RakuAstClass::TermWhatever,
+            fields: Vec::new(),
+        }),
         // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`. Only
         // known builtin types convert; a non-type bareword stays the boundary.
         Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
