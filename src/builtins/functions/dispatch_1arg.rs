@@ -50,6 +50,55 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
     {
         return Some(res);
     }
+    // A Str that numifies to a Complex/Rat (not a plain i64/f64) must coerce
+    // fully before a numeric function runs, matching the method form:
+    // `abs "6+8i"` is 10, `conj "1+2i"` is 1-2i. The numeric arms below match
+    // scalar variants and fall to `0`/`NaN` for such a Str. Plain integer/float
+    // strings are handled correctly by those arms, so only the richer Complex/Rat
+    // coercions are delegated to the method dispatch here. Restricted to the
+    // Cool numeric functions — `chars "6+8i"` must stay a string length.
+    if let ValueView::Str(s) = arg.view()
+        && s.parse::<i64>().is_err()
+        && s.parse::<f64>().is_err()
+        && matches!(
+            name,
+            "abs"
+                | "sign"
+                | "exp"
+                | "log"
+                | "log2"
+                | "log10"
+                | "sqrt"
+                | "ceiling"
+                | "floor"
+                | "truncate"
+                | "round"
+                | "conj"
+                | "cis"
+                | "sin"
+                | "cos"
+                | "tan"
+                | "asin"
+                | "acos"
+                | "atan"
+                | "sinh"
+                | "cosh"
+                | "tanh"
+                | "re"
+                | "im"
+                | "sec"
+                | "cosec"
+                | "cotan"
+                | "narrow"
+        )
+        && let Some(coerced) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s)
+        && matches!(
+            coerced.view(),
+            ValueView::Complex(..) | ValueView::Rat(..) | ValueView::FatRat(..)
+        )
+    {
+        return crate::builtins::methods_0arg::native_method_0arg(&coerced, Symbol::intern(name));
+    }
     match name {
         "combinations" => {
             // combinations($n) where $n is Int => (^$n).combinations (powerset)
