@@ -21,19 +21,21 @@ impl RuntimeError {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         let why_str = why.unwrap_or("Required").to_string();
-        attrs.insert("why".to_string(), Value::str(why_str.clone()));
-        attrs.insert(
-            "message".to_string(),
-            Value::str(format!(
-                "The attribute '{}' is required, but you did not provide a value for it.",
-                name
-            )),
-        );
+        attrs.insert("why".to_string(), Value::str(why_str));
+        // A custom reason (`is required("it is a good idea")`) is woven into the
+        // message; a bare `is required` uses the plain form. Matches Rakudo's
+        // X::Attribute::Required, including the newline before "but you did...".
+        let message = match why {
+            Some(reason) => format!(
+                "The attribute '{name}' is required because {reason},\nbut you did not provide a value for it."
+            ),
+            None => format!(
+                "The attribute '{name}' is required, but you did not provide a value for it."
+            ),
+        };
+        attrs.insert("message".to_string(), Value::str(message.clone()));
         let ex = Value::make_instance(Symbol::intern("X::Attribute::Required"), attrs);
-        let mut err = Self::new(format!(
-            "The attribute '{}' is required, but you did not provide a value for it.",
-            name
-        ));
+        let mut err = Self::new(message);
         err.exception = Some(Box::new(ex));
         err
     }
