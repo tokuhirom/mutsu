@@ -140,7 +140,17 @@ pub(crate) fn arith_div(left: Value, right: Value) -> Result<Value, RuntimeError
         let has_fat_rat = is_fat_rat_like(&l) || is_fat_rat_like(&r);
         let has_big_rat = matches!(l.view(), ValueView::BigRat(_, _))
             || matches!(r.view(), ValueView::BigRat(_, _));
-        if (has_fat_rat || has_big_rat)
+        // A plain (i64-based) Rat divided by a BigInt (a value that does not fit
+        // in i64) also needs the exact big-rational path: the i64 rat_div_checked
+        // below cannot represent the operand, and to_rat_parts of the BigInt
+        // returns None, so without this the pair falls through to `Value::int(0)`.
+        // make_big_rat_arith degrades to Num when the denominator exceeds u64,
+        // matching Rakudo (`42.5 / 9999999999999999999` is `4.25e-18`, a Num).
+        let rat_over_bigint = (matches!(l.view(), ValueView::Rat(_, _))
+            && matches!(r.view(), ValueView::BigInt(_)))
+            || (matches!(l.view(), ValueView::BigInt(_))
+                && matches!(r.view(), ValueView::Rat(_, _)));
+        if (has_fat_rat || has_big_rat || rat_over_bigint)
             && let (Some((an, ad)), Some((bn, bd))) = (to_big_rat_parts(&l), to_big_rat_parts(&r))
         {
             let result = if has_fat_rat {
