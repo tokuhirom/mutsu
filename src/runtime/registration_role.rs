@@ -725,6 +725,41 @@ impl Interpreter {
                     Self::validate_attr_declared_in_class(&role_attr_ctx, method_body)?;
                     // Validate that type constraints in method parameters are resolvable.
                     // Undeclared types like A::C should throw X::Parameter::InvalidType.
+                    // A role nested in an enclosing package (e.g. `unit class A`)
+                    // registers sibling classes under the qualified name
+                    // (`A::Identifier`), but a method param may reference them by
+                    // their short name. The role's own registered name carries the
+                    // enclosing namespace (`SQL::Abstract::Renderer::SQL`); collect
+                    // every `::`-prefix of it (`SQL::Abstract::Renderer`,
+                    // `SQL::Abstract`, `SQL`) so an unqualified sibling type resolves
+                    // under whichever enclosing package actually declared it. The
+                    // role's own short name can itself be compound (`Renderer::SQL`),
+                    // so a single rsplit is not enough.
+                    let mut enclosing_prefixes: Vec<String> = Vec::new();
+                    {
+                        let mut rest = name;
+                        while let Some((pfx, _)) = rest.rsplit_once("::") {
+                            enclosing_prefixes.push(pfx.to_string());
+                            rest = pfx;
+                        }
+                    }
+                    // The role's registered short name may omit the enclosing
+                    // package (a compound role like `Renderer::SQL` is stored
+                    // without the `unit class` prefix), so also qualify with the
+                    // current package and its own `::`-prefixes.
+                    {
+                        let cur = self.current_package();
+                        let mut rest = cur.as_str();
+                        loop {
+                            if !rest.is_empty() && !enclosing_prefixes.iter().any(|p| p == rest) {
+                                enclosing_prefixes.push(rest.to_string());
+                            }
+                            match rest.rsplit_once("::") {
+                                Some((pfx, _)) => rest = pfx,
+                                None => break,
+                            }
+                        }
+                    }
                     for pd in param_defs {
                         if let Some(tc) = pd.type_constraint.as_deref() {
                             // Skip type captures (::T), invocant markers, and role type params
@@ -734,7 +769,27 @@ impl Interpreter {
                             {
                                 continue;
                             }
-                            if !self.is_resolvable_type(tc) {
+                            // Base name of the constraint: strip definedness smiley,
+                            // coercion `(...)`, and parameterization `[...]`.
+                            let tc_base = tc
+                                .strip_suffix(":D")
+                                .or_else(|| tc.strip_suffix(":U"))
+                                .or_else(|| tc.strip_suffix(":_"))
+                                .unwrap_or(tc);
+                            let tc_base = tc_base.split(['(', '[']).next().unwrap_or(tc_base);
+                            // A role may reference its own type in a method param
+                            // (`role R { method f(R:D $x) }`); the role is not yet in
+                            // the registry while its methods validate, so accept its
+                            // own name (full or short) explicitly.
+                            let self_short = name.rsplit_once("::").map(|(_, s)| s).unwrap_or(name);
+                            let resolvable = tc_base == name
+                                || tc_base == self_short
+                                || self.is_resolvable_type(tc)
+                                || (!tc.contains("::")
+                                    && enclosing_prefixes.iter().any(|pfx| {
+                                        self.is_resolvable_type(&format!("{pfx}::{tc}"))
+                                    }));
+                            if !resolvable {
                                 let mut attrs = std::collections::HashMap::new();
                                 attrs.insert("type".to_string(), Value::str(tc.to_string()));
                                 attrs.insert(
