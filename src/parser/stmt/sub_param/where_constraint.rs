@@ -9,7 +9,7 @@ pub(crate) fn parse_where_constraint_expr(input: &str) -> PResult<'_, Expr> {
     let (r, _) = ws(input)?;
     if r.starts_with('{') {
         let (r, body) = crate::parser::primary::parse_block_body(r)?;
-        if stmts_contain_whatever(&body) {
+        if stmts_lead_with_whatever(&body) {
             return Err(malformed_double_closure_error());
         }
         return Ok((
@@ -105,146 +105,76 @@ pub(crate) fn reject_placeholder_or_twigil_param(input: &str) -> Result<(), PErr
     Err(PError::fatal_with_exception(msg, Box::new(ex)))
 }
 
-pub(crate) fn stmts_contain_whatever(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(stmt_contains_whatever)
+/// A `{ ... }` where-constraint is a "malformed double closure" only when its
+/// body would itself curry into a WhateverCode — i.e. when the LEADING term
+/// (leftmost leaf on the left spine) of a statement is a bare `*`. A `*` nested
+/// as a call/method ARGUMENT (`{ .grep: * > 2 }`, `{ $_.map(* + 1) }`) forms its
+/// own inner WhateverCode confined to that argument and does NOT make the block a
+/// WhateverCode, so it must not trip the guard. Matches raku, which SORRYs on
+/// `{ * > 2 }` (leads with `*`) but accepts `{ $_ > * }` / `{ .grep: * > 2 }`.
+pub(crate) fn stmts_lead_with_whatever(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(stmt_leads_with_whatever)
 }
 
-fn stmt_contains_whatever(stmt: &Stmt) -> bool {
+fn stmt_leads_with_whatever(stmt: &Stmt) -> bool {
     match stmt {
         Stmt::Expr(expr)
         | Stmt::Return(expr)
         | Stmt::Take(expr, _)
         | Stmt::Die(expr)
-        | Stmt::Fail(expr) => expr_contains_whatever(expr),
-        Stmt::VarDecl {
-            expr,
-            where_constraint,
-            ..
-        } => {
-            expr_contains_whatever(expr)
-                || where_constraint
-                    .as_ref()
-                    .is_some_and(|wc| expr_contains_whatever(wc))
-        }
-        Stmt::Assign { expr, .. } => expr_contains_whatever(expr),
-        Stmt::Block(body) | Stmt::SyntheticBlock(body) | Stmt::Package { body, .. } => {
-            stmts_contain_whatever(body)
-        }
-        Stmt::SubDecl { body, .. } | Stmt::TokenDecl { body, .. } | Stmt::RuleDecl { body, .. } => {
-            stmts_contain_whatever(body)
-        }
-        Stmt::Label { stmt, .. } => stmt_contains_whatever(stmt),
+        | Stmt::Fail(expr) => expr_leads_with_whatever(expr),
+        Stmt::Label { stmt, .. } => stmt_leads_with_whatever(stmt),
         _ => false,
     }
 }
 
-fn expr_contains_whatever(expr: &Expr) -> bool {
+/// Walk the LEFT spine (left operand / receiver / base) to the leftmost leaf and
+/// report whether the block *leads* with a `*`. Does NOT descend into argument
+/// lists or right operands — a `*` there is self-contained and forms its own
+/// inner WhateverCode (`{ .grep: * > 2 }`, `{ $_ > * }`).
+///
+/// Currying rewrites the leading `*` in two shapes, both handled here:
+///   `{ * > 2 }`        -> topic-param `Lambda { is_whatever_code }` (the `*` is
+///                        the standalone leading operand; always a double closure)
+///   `{ * > 2 && * < 9 }`-> `AnonSubParams { is_whatever_code, params:[__wc_N] }`
+///                        whose body's leftmost leaf is a `__wc_N` placeholder
+/// vs the accepted `{ $_ > * }`, also `AnonSubParams`, but whose leftmost leaf is
+/// the genuine `$_` (`Var("_")`), not a `__wc_N` placeholder.
+fn expr_leads_with_whatever(expr: &Expr) -> bool {
     match expr {
         Expr::Whatever | Expr::HyperWhatever => true,
-        Expr::StringInterpolation(parts)
-        | Expr::ArrayLiteral(parts)
-        | Expr::BracketArray(parts, _)
-        | Expr::CaptureLiteral(parts) => parts.iter().any(expr_contains_whatever),
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            expr_contains_whatever(target) || args.iter().any(expr_contains_whatever)
-        }
-        Expr::DynamicMethodCall {
-            target,
-            name_expr,
-            args,
+        // A curried whatever placeholder reached as the leftmost leaf.
+        Expr::Var(name) if name.starts_with("__wc_") => true,
+        // Topic-param WhateverCode: only produced by a standalone leading `*`.
+        Expr::Lambda {
+            is_whatever_code: true,
             ..
-        }
-        | Expr::HyperMethodCallDynamic {
-            target,
-            name_expr,
-            args,
+        } => true,
+        // `__wc_`-param WhateverCode: descend to its body's leftmost leaf, which
+        // is a `__wc_N` placeholder iff the block actually led with `*`.
+        Expr::AnonSubParams {
+            is_whatever_code: true,
+            body,
             ..
-        } => {
-            expr_contains_whatever(target)
-                || expr_contains_whatever(name_expr)
-                || args.iter().any(expr_contains_whatever)
-        }
-        Expr::Exists { target, arg, .. } => {
-            expr_contains_whatever(target)
-                || arg
-                    .as_ref()
-                    .is_some_and(|arg_expr| expr_contains_whatever(arg_expr))
-        }
-        Expr::ZenSlice(inner)
-        | Expr::PositionalPair(inner)
-        | Expr::Eager(inner)
+        } => body.first().is_some_and(stmt_leads_with_whatever),
+        Expr::Binary { left, .. }
+        | Expr::HyperOp { left, .. }
+        | Expr::MetaOp { left, .. }
+        | Expr::InfixFunc { left, .. } => expr_leads_with_whatever(left),
+        Expr::MethodCall { target, .. }
+        | Expr::HyperMethodCall { target, .. }
+        | Expr::DynamicMethodCall { target, .. }
+        | Expr::HyperMethodCallDynamic { target, .. }
+        | Expr::CallOn { target, .. }
+        | Expr::Index { target, .. }
+        | Expr::MultiDimIndex { target, .. }
+        | Expr::HyperSlice { target, .. } => expr_leads_with_whatever(target),
+        Expr::Unary { expr: inner, .. }
+        | Expr::PostfixOp { expr: inner, .. }
         | Expr::Itemize(inner)
-        | Expr::Reduction { expr: inner, .. }
-        | Expr::IndirectTypeLookup(inner)
-        | Expr::SymbolicDeref { expr: inner, .. } => expr_contains_whatever(inner),
-        Expr::Lambda { param, body, .. } => param == "_" || stmts_contain_whatever(body),
-        Expr::AnonSubParams { params, body, .. } => {
-            params.iter().any(|p| p.starts_with("__wc_")) || stmts_contain_whatever(body)
-        }
-        Expr::Block(body) | Expr::AnonSub { body, .. } | Expr::Gather(body) => {
-            stmts_contain_whatever(body)
-        }
-        Expr::CallOn { target, args } => {
-            expr_contains_whatever(target) || args.iter().any(expr_contains_whatever)
-        }
-        Expr::Index { target, index, .. } => {
-            expr_contains_whatever(target) || expr_contains_whatever(index)
-        }
-        Expr::MultiDimIndex { target, dimensions } => {
-            expr_contains_whatever(target) || dimensions.iter().any(expr_contains_whatever)
-        }
-        Expr::MultiDimIndexAssign {
-            target,
-            dimensions,
-            value,
-        } => {
-            expr_contains_whatever(target)
-                || dimensions.iter().any(expr_contains_whatever)
-                || expr_contains_whatever(value)
-        }
-        Expr::IndexAssign {
-            target,
-            index,
-            value,
-            ..
-        } => {
-            expr_contains_whatever(target)
-                || expr_contains_whatever(index)
-                || expr_contains_whatever(value)
-        }
-        Expr::Ternary {
-            cond,
-            then_expr,
-            else_expr,
-        } => {
-            expr_contains_whatever(cond)
-                || expr_contains_whatever(then_expr)
-                || expr_contains_whatever(else_expr)
-        }
-        Expr::AssignExpr { expr, .. } => expr_contains_whatever(expr),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_whatever(expr),
-        Expr::Binary { left, right, .. }
-        | Expr::HyperOp { left, right, .. }
-        | Expr::MetaOp { left, right, .. } => {
-            expr_contains_whatever(left) || expr_contains_whatever(right)
-        }
-        Expr::Call { args, .. } => args.iter().any(expr_contains_whatever),
-        Expr::Try { body, catch } => {
-            stmts_contain_whatever(body)
-                || catch
-                    .as_ref()
-                    .is_some_and(|branch| stmts_contain_whatever(branch))
-        }
-        Expr::InfixFunc { left, right, .. } => {
-            expr_contains_whatever(left) || right.iter().any(expr_contains_whatever)
-        }
-        Expr::DoBlock { body, .. } => stmts_contain_whatever(body),
-        Expr::DoStmt(stmt) => stmt_contains_whatever(stmt),
-        Expr::IndirectCodeLookup { package, .. } => expr_contains_whatever(package),
-        Expr::Hash(pairs) => pairs
-            .iter()
-            .any(|(_, value)| value.as_ref().is_some_and(expr_contains_whatever)),
-        Expr::HyperSlice { target, .. } => expr_contains_whatever(target),
+        | Expr::Eager(inner)
+        | Expr::Reduction { expr: inner, .. } => expr_leads_with_whatever(inner),
+        Expr::Ternary { cond, .. } => expr_leads_with_whatever(cond),
         _ => false,
     }
 }
