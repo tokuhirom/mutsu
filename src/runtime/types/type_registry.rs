@@ -485,6 +485,15 @@ impl Interpreter {
             .or_else(|| constraint.strip_suffix(":U"))
             .or_else(|| constraint.strip_suffix(":_"))
             .unwrap_or(constraint);
+        // Strip coercion: the resolvable part of a coercion type `Target(From)`
+        // is the target type name before `(` (e.g. `Int()` -> `Int`,
+        // `Identifier(Any)` -> `Identifier`). The from-type is validated
+        // separately at parse time.
+        let base = if let Some(idx) = base.find('(') {
+            &base[..idx]
+        } else {
+            base
+        };
         // Strip parameterization: Array[Int] -> Array
         let base = if let Some(idx) = base.find('[') {
             &base[..idx]
