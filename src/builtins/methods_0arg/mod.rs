@@ -550,6 +550,26 @@ pub(crate) fn native_method_0arg(
         if method == "^name" && crate::value::role_mixin_suffix(mixins).is_some() {
             return Some(Ok(Value::str(crate::value::what_type_name(target))));
         }
+        // `.clone` on a mixed-in value must PRESERVE the mixin: `(5 but False).clone`
+        // stays `Int+{...}` (Bool=False), and a Match — which is modelled as a
+        // string carrying its match state as a mixin — must stay a Match. Delegating
+        // to the inner value's clone drops the wrapper (and, now that scalar `.clone`
+        // is a real method, returns the bare inner instead of falling through to the
+        // slow path). Clone the inner and re-apply the mixins here. Role mixins with
+        // `:attr(val)` overrides are left to the slow-path handler
+        // (`methods_mixin_dispatch`), which threads the override args.
+        if method == "clone"
+            && !mixins
+                .keys()
+                .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
+        {
+            let inner_clone = match native_method_0arg(inner, method_sym) {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => return Some(Err(e)),
+                None => inner.as_ref().clone(),
+            };
+            return Some(Ok(Value::mixin(inner_clone, mixins.as_ref().clone())));
+        }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
         if let Some(mixin_val) = mixins.get(method) {
@@ -1828,6 +1848,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             }
             "Capture" => {
                 // Match.Capture returns self
+                return Some(Ok(target.clone()));
+            }
+            "clone" => {
+                // A Match clones to a Match — it must NOT delegate to its Str
+                // (the Cool `_` coercion below), which would drop the match
+                // structure and return the bare matched string. A Match is
+                // immutable, so a value clone (sharing the attribute storage) is
+                // a correct clone that keeps positional/named captures. (Before
+                // scalar `.clone` became a real method this happened to work via
+                // `Str.clone` falling through to the slow path.)
                 return Some(Ok(target.clone()));
             }
             _ => {

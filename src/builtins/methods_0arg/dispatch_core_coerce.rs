@@ -250,6 +250,25 @@ pub(super) fn dispatch(
                 ValueView::ValuePair(key, value) => {
                     Some(Some(Ok(Value::value_pair(key.clone(), value.clone()))))
                 }
+                // Immutable value types: `.clone` (Mu.clone) yields a copy, which
+                // for an immutable scalar is the value itself. These otherwise fell
+                // through to the slow path and errored with NoSuchMethod.
+                ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+                | ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. }
+                | ValueView::Version { .. }
+                | ValueView::Enum { .. } => Some(Some(Ok(target.clone()))),
                 _ => Some(None), // fall through to slow path for instances etc.
             }
         }
