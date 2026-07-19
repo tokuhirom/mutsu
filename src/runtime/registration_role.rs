@@ -17,7 +17,24 @@ impl Interpreter {
                 ));
             }
             if should_treat_role_arg_as_type_expr(expr) {
-                values.push(Value::package(Symbol::intern(expr.trim())));
+                // A plain qualified name (`Type::Connect`, no brackets/parens)
+                // may be an *enum value* rather than a type — an enum value used
+                // as a role type argument (`class C does Packet[Type::Connect]`)
+                // must bind to a typed param (`role Packet[Type $t]`) as the value,
+                // not as a `Package` type object (which would fail the type check
+                // and yield "No matching candidate found for the parametric role").
+                // Try evaluating it; use the result only if it is an enum value.
+                let trimmed = expr.trim();
+                if !trimmed.contains(['[', '(', ' '])
+                    && trimmed.contains("::")
+                    && let Ok(value) = crate::parse_dispatch::parse_source(expr)
+                        .and_then(|(stmts, _)| self.eval_block_value(&stmts))
+                    && matches!(value.view(), ValueView::Enum { .. })
+                {
+                    values.push(value);
+                    continue;
+                }
+                values.push(Value::package(Symbol::intern(trimmed)));
                 continue;
             }
             match crate::parse_dispatch::parse_source(expr)
