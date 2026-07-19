@@ -242,10 +242,24 @@ sessions).
   License::SPDX / Test::META) does not use Test::Async, so the "mzef installs real dists with tests
   on" milestone does not need it. Spending the campaign now would delay the mzef return for zero
   pipeline gain.
-- **Start trigger**: after the B2 test-phase frontier closes (or when a bundle-candidate module
-  hard-depends on Test::Async), start with a scouting session: inventory which HOW methods
-  Test::Async's BundleHOW/TestSuiteHOW actually override, and decide between (a) real HOW-subclass
-  dispatch in the MOP vs (b) a narrower compatibility shim for the handful of overridden hooks.
+- **Scouting done (2026-07-19) — the decision is (b), and B2b stays deferred on cost/benefit.**
+  Test::Async needs far more than "custom HOW inheritance": its `EXPORT` installs a **grammar slang**
+  (`define_slang` + custom `package_declarator:sym<test-bundle>` tokens that swap the role HOW mid-parse
+  via `set_how`), builds `QAST` nodes, and drives the `$*W` World / `NQPHLL` — the MoarVM compiler-guts
+  layer mutsu deliberately lacks. So **(a) real HOW-subclass dispatch is necessary but nowhere near
+  sufficient**; only **(b) a narrow per-declarator shim** (parse `test-bundle`/`test-hub`/`test-reporter`
+  as built-in role declarations with native bundle wiring, ignoring the NQP `EXPORT` grammar) is viable,
+  and it is still multi-session. Combined with the payoff: **Test::Async has 8 reverse-deps in the whole
+  fez ecosystem (1573 dists), all `test-depends` only, concentrated in one author's dists.**
+- **Ecosystem-wide justification for deferring the NQP layer generally**: a 150-dist random sample
+  (see [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md),
+  reproduce with `scripts/ecosystem-guts-survey.py`) finds only **~5% of dists are genuinely
+  compiler-guts blocked** (QAST/slang/macros/`Metamodel::Primitives`), vs **~81% pure Raku** and
+  **~9% NativeCall** (a separate layer mutsu already has an MVP of). The high-leverage work is B1/B4
+  over that ~90%, not an NQP/slang subsystem for the ~5% tail.
+- **Start trigger** (if a bundle-candidate module ever hard-depends on Test::Async): start from the (b)
+  shim above — prototype the `test-bundle` declarator as a built-in parse rule plus a native
+  BundleHOW-equivalent; do not attempt the general NQP/QAST/slang machinery.
 - Prerequisite groundwork already landed: `::?CLASS` param fixes (#4669). Detail and error text:
   `docs/mzef-install-pipeline.md` "Test-phase frontier" history block.
 
