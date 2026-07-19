@@ -34,8 +34,10 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// Magic bytes for the cache format.
-const CACHE_MAGIC: &[u8; 4] = b"MTSU";
+/// Magic bytes for the cache format. Bump the trailing byte whenever the
+/// on-disk encoding changes so stale caches are cleanly rejected by the magic
+/// check rather than mis-decoded. `MTS2` marks the bincode 2 (varint) encoding.
+const CACHE_MAGIC: &[u8; 4] = b"MTS2";
 
 /// The interpreter version stamp embedded in cache files.
 /// Cache is invalidated whenever this changes.
@@ -140,7 +142,8 @@ pub(crate) fn load_cached_ast(source_path: &Path) -> Option<Vec<Stmt>> {
         return None;
     }
 
-    let meta: CacheMetadata = bincode::deserialize(&rest[..meta_len]).ok()?;
+    let (meta, _): (CacheMetadata, usize) =
+        bincode::serde::decode_from_slice(&rest[..meta_len], bincode::config::standard()).ok()?;
     let ast_data = &rest[meta_len..];
 
     // Validate version
@@ -174,7 +177,9 @@ pub(crate) fn load_cached_ast(source_path: &Path) -> Option<Vec<Stmt>> {
     // But we already wrote the format above without format_version. Let me just embed
     // format_version in the metadata for simplicity.
 
-    bincode::deserialize(ast_data).ok()
+    bincode::serde::decode_from_slice(ast_data, bincode::config::standard())
+        .ok()
+        .map(|(stmts, _)| stmts)
 }
 
 /// Save a parsed AST to the cache for the given source file.
@@ -200,10 +205,10 @@ pub(crate) fn save_cached_ast(source_path: &Path, stmts: &[Stmt]) {
         version: interpreter_version(),
     };
 
-    let Ok(meta_bytes) = bincode::serialize(&meta) else {
+    let Ok(meta_bytes) = bincode::serde::encode_to_vec(&meta, bincode::config::standard()) else {
         return;
     };
-    let Ok(ast_bytes) = bincode::serialize(stmts) else {
+    let Ok(ast_bytes) = bincode::serde::encode_to_vec(stmts, bincode::config::standard()) else {
         return;
     };
 
@@ -354,8 +359,8 @@ mod tests {
             source_hash: source_content_hash(&source),
             version: "0.0.0+cf0+exe0".to_string(),
         };
-        let meta_bytes = bincode::serialize(&meta).unwrap();
-        let ast_bytes = bincode::serialize(&stmts).unwrap();
+        let meta_bytes = bincode::serde::encode_to_vec(&meta, bincode::config::standard()).unwrap();
+        let ast_bytes = bincode::serde::encode_to_vec(&stmts, bincode::config::standard()).unwrap();
         let mut data = Vec::new();
         data.extend_from_slice(CACHE_MAGIC);
         data.extend_from_slice(&(meta_bytes.len() as u32).to_le_bytes());
