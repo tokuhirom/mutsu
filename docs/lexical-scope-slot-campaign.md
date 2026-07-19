@@ -598,6 +598,38 @@ The 2-file sigilless cluster splits into two independent roots:
    (sigilless-comma-decl only; sigilless-params stays; the two `let`/`temp` files are
    fixed separately by #4861).
 
+### method-lvalue self-writeback — env_changed guard (2026-07-19)
+
+Partial burndown of the `method-call / attr self-writeback` cluster. After an
+`__mutsu_assign_method_lvalue` call (`$x.attr = v`) the call site
+(`exec_call_func_op`, vm_call_func_ops.rs) pulls `env[target]` back into the
+caller's local slot to keep it coherent — assuming the lvalue builtin wrote
+`env[target]`. Some do NOT: `Failure.handled = True` only flips a global registry
+keyed by the instance id, leaving `env[target]` untouched. Under the gate
+`my $f = Failure.new` leaves env at its `Any` decl seed, so the unconditional pull
+clobbered the live instance slot with `Any` (`$f` became `Any`, then
+`No such method 'handled' for invocant of type 'Any'`). Fix: snapshot
+`env[target]` before dispatch and only apply the pull when it genuinely changed
+during the call — the same `env_changed` guard as
+`carrier_writeback_changed_aggregates` (mechanism #3). Gate OFF byte-identical
+(`make test` 18931 PASS): a builtin that writes `env[target]` always leaves
+`prev != val`, and one that does not leaves `prev == val ==` the live slot value
+(a no-op pull anyway). Fixes `object-subscript-protocol.t`, `native-failure-ctor.t`,
+`native-failure-accessors.t` ON standalone; `lvalue-method-rw.t` /
+`lvalue-subroutines-rw-proxy.t` need this PLUS the closure fold. Pin:
+`t/gate-b-method-lvalue-writeback.t`.
+
+**Still open (the deeper mechanism #3, dedicated session):** the general
+call-return reconcile clobbers a caller local from stale env for constructor and
+self-writeback calls too — `my $ct = CT.new(...); $ct.x` leaves `$ct` = `Any` under
+the gate (a `submethod TWEAK` attr write path), and `method-call-self-writeback.t`,
+`bind-self-attr-write.t`, `virtual-call-attr.t`, `native-tweak-construct.t`,
+`quanthash-immutable-ro.t`, `native-map-hash-coerce.t`,
+`sethash-baghash-mixhash-coerce-fn.t`, `nested-assoc-user-assign-key.t` still fail
+ON via that path. This is the load-bearing `drain_and_reconcile` /
+`apply_pending_rw_writeback` env-by-name pull — the mechanism-#3 core the memory
+flags as flaky-prone and dedicated-session scale.
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
