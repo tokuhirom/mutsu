@@ -1,8 +1,9 @@
 use super::super::helpers::{is_ident_char, ws};
 use super::super::parse_result::{PError, PResult, merge_expected_messages, parse_char, parse_tag};
 use super::super::stmt::assign::{
-    build_compound_assign_expr, compound_assign_op_from_name, compound_assigned_value_expr,
-    parse_assign_expr_or_comma, parse_compound_assign_op, parse_meta_compound_assign_op,
+    build_compound_assign_expr, build_custom_compound_assign_expr, compound_assign_op_from_name,
+    compound_assigned_value_expr, parse_assign_expr_or_comma, parse_compound_assign_op,
+    parse_custom_compound_assign_op, parse_meta_compound_assign_op,
 };
 
 use crate::ast::{Expr, Stmt};
