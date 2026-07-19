@@ -718,19 +718,46 @@ Two follow-ups landed the same day drove the ON survey **13 → 9**:
   env→slot mirror-back. Flips `sethash-baghash-mixhash-coerce-fn.t`. Pin:
   `t/gate-b-index-incdec-slot-container.t`.
 
-**Still open — ON survey residue (9 files, each a dedicated-session slice):**
+### index-assign scalar-held container — slot seed at handler entry (2026-07-20)
+
+Two of the coerce-RO cluster (`encode-utf8-is-blob.t`, `native-map-hash-coerce.t`)
+were fixed structurally. Root: a scalar local holding a container
+(`my $b = "hi".encode; $b[0] = 200`, `my $m = %h.Map; $m<c> = 9`) skips its env
+mirror under the gate, so `exec_index_assign_expr_named_op_inner` — which reads
+the target container from env in dozens of places — saw the stale `my`-decl seed
+(`Any`) instead of the live Blob/Map, and an immutable-container element/key
+assignment silently did NOT throw. Rather than slot-ify the dozens of env reads
+(the `:delete` attempt proved that whole-handler leaf reordering breaks other
+shapes), the fix **seeds env from the authoritative slot at handler entry**, before
+the env-centric body runs. Two guards keep it precise:
+
+- **Scalar targets only** (bare `var_name`, no `@`/`%` sigil). An aggregate keeps
+  its container in env (aggregate reads are env-first, and env may hold a
+  more-reified lazy/range representation than the slot). Seeding an aggregate from
+  the slot clobbered that — the first cut broke `lazy-array-reify.t` /
+  `lazy-array-reify-on-mutation.t` / `range-slice-assignment.t` (`@a[2] = 99` on a
+  lazy `@a` returned `(Any, Any, 99, Any, Any)`). The sigil guard is exact:
+  `@a[i]` compiles the name as `"@a"`, a scalar `$b[i]` as bare `"b"`.
+- **Variant differs** (`!env.same_variant(slot)`): the scalar decl seed is a type
+  object, so it always differs from a live container; a plain scalar (`Int`) matches
+  and is left untouched.
+
+Gate OFF: byte-identical (skipped early via `gate_local_env_write()`; `make test`
+19092 PASS). Pin: `t/gate-b-index-assign-slot-container.t` (OFF, ON, real raku).
+
+**Still open — ON survey residue (7 files, each a dedicated-session slice):**
 `atomic-ops-native-dispatch.t`, `atomic-ops.t` (cross-thread/atomic, gc-stress-
 gated, flaky-prone); `nextsame-rw-redispatch.t`, `proto-method-rw-redispatch.t`
 (the `is rw`/`is raw` writeback chain through `apply_pending_rw_writeback`'s
 env[source]→slot pull — needs the `env_changed` guard of #4859/#4873, the deepest
-one); `native-map-hash-coerce.t`, `quanthash-immutable-ro.t` (coerce-RO: the
-`:delete` and index-assign container reads are ALSO env-first, but a naive
-slot-first patch regressed 5 ON files — array-hole tracking / nested-delete /
-`:=`-cell / whole-container-bind all assume env, and the failing `:delete` is
-inside a `lives-ok { }` closure, so it also needs closure-capture-container
-coherence — so this cluster is a multi-site + closure entanglement, NOT a
-single-site swap like inc/dec); `encode-utf8-is-blob.t` (RO); and
-`resumable-control-signal-indirect-call.t`, `test-assertion-line-number.t` (misc).
+one); `quanthash-immutable-ro.t` (coerce-RO: the failing `:delete` is inside a
+`lives-ok { }` closure, and a naive slot-first `:delete` patch regressed 5 ON files
+— array-hole tracking / nested-delete / `:=`-cell / whole-container-bind all assume
+env — so this one is a multi-site + closure-capture-container entanglement, NOT a
+single-site swap like inc/dec or the index-assign seed above); and
+`resumable-control-signal-indirect-call.t` (a `CONTROL {}` block captures an
+enclosing `$out` — #4869 closure-fold-adjacent), `test-assertion-line-number.t`
+(CALLER line) (misc).
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
