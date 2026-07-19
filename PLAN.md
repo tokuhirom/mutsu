@@ -292,6 +292,18 @@ sessions).
 
 ### B4. Remaining module-compatibility blockers (the base of batteries)
 
+- [ ] **★Real-dist compatibility sweep (systematic, dashboard-driven)** — actually
+      run real fez-ecosystem dists under mutsu and fix the general bugs they surface.
+      Live ledger: [`docs/dist-compat-sweep.md`](../docs/dist-compat-sweep.md)
+      (regenerate: `scripts/dist-compat-sweep.py`; **sandboxed via `bwrap` — no net,
+      read-only FS, throwaway HOME**, since dist code runs arbitrary load-time code).
+      First run (n=60, 2026-07-19): of the pure-Raku, dep-satisfiable dists, **~half
+      load, ~half hit a real mutsu bug on `use` alone**. Top recurring blocker:
+      `Assignment operators inside ?? !! are too loose` (2 dists). This is the
+      execution counterpart of the signal-only
+      [`docs/ecosystem-guts-dependency-survey.md`](../docs/ecosystem-guts-dependency-survey.md)
+      and the highest-leverage way to widen the batteries base. Workflow per bug:
+      minimal repro → general fix → `t/` pin → PR → re-check with `--only <Dist>`.
 - [ ] **NativeCall remainder**: ① `CArray[uint8]`, `CArray[Str]` ② `is repr('CStruct')` structs
       ③ callbacks (generic C callbacks). Everything from the MVP up to real SQLite CRUD is done
       (news/2026-06.md archive section).
