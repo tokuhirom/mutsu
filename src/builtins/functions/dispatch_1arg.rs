@@ -354,7 +354,8 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 .chars()
                 .map(|ch| Value::str(crate::builtins::unicode::unicode_char_name(ch)))
                 .collect();
-            Some(Ok(Value::array(names)))
+            // `uninames` returns a Seq in raku (matters for `.raku`/`.WHAT`).
+            Some(Ok(Value::seq(names)))
         }
         "uniparse" | "parse-names" => {
             let s = arg.to_string_value();

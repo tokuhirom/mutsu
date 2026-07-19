@@ -136,7 +136,8 @@ pub(super) fn dispatch(
                 .chars()
                 .map(|ch| Value::str(crate::builtins::unicode::unicode_char_name(ch)))
                 .collect();
-            Some(Some(Ok(Value::array(names))))
+            // `.uninames` returns a Seq in raku (matters for `.raku`/`.WHAT`).
+            Some(Some(Ok(Value::seq(names))))
         }
         "uniparse" | "parse-names" => {
             let s = target.to_string_value();
@@ -145,13 +146,14 @@ pub(super) fn dispatch(
         "uniprops" => {
             let s = target.to_string_value();
             if s.is_empty() {
-                return Some(Some(Ok(Value::array(vec![]))));
+                return Some(Some(Ok(Value::seq(vec![]))));
             }
             let props: Vec<Value> = s
                 .chars()
                 .map(|ch| Value::str(crate::builtins::unicode::unicode_general_category(ch)))
                 .collect();
-            Some(Some(Ok(Value::array(props))))
+            // `.uniprops` returns a Seq in raku.
+            Some(Some(Ok(Value::seq(props))))
         }
         "unival" => {
             // Type objects should throw an error
@@ -201,13 +203,13 @@ pub(super) fn dispatch(
                     if let Some(ch) = char::from_u32(i as u32) {
                         ch.to_string()
                     } else {
-                        return Some(Some(Ok(Value::array(Vec::new()))));
+                        return Some(Some(Ok(Value::seq(Vec::new()))));
                     }
                 }
                 _ => target.to_string_value(),
             };
             if s.is_empty() {
-                return Some(Some(Ok(Value::array(Vec::new()))));
+                return Some(Some(Ok(Value::seq(Vec::new()))));
             }
             let mut result = Vec::new();
             for ch in s.chars() {
@@ -221,7 +223,8 @@ pub(super) fn dispatch(
                     result.push(Value::num(f64::NAN));
                 }
             }
-            Some(Some(Ok(Value::array(result))))
+            // `.univals` returns a Seq in raku.
+            Some(Some(Ok(Value::seq(result))))
         }
         "chr" => {
             let (code, display) = match target.view() {
