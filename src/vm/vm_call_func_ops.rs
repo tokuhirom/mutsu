@@ -790,6 +790,18 @@ impl Interpreter {
                 .filter(|s| !s.is_empty()),
             _ => None,
         };
+        // Snapshot the target's CURRENT env value so the writeback below can tell
+        // whether the lvalue builtin actually changed it. Some lvalue methods do
+        // NOT write `env[target]` at all (`Failure.handled = True` only flips a
+        // global registry keyed by the instance id; the instance in the slot is
+        // untouched). Under the `(B)` per-store env-write gate a preceding
+        // `my $f = Failure.new` leaves `env<f>` at its `Any` decl seed, so an
+        // unconditional pull would clobber the live instance slot with that stale
+        // `Any`. Mirrors the mechanism-#3 `env_changed` guard in
+        // `carrier_writeback_changed_aggregates`.
+        let lvalue_writeback_pre = lvalue_writeback_target
+            .as_ref()
+            .map(|t| self.env().get(t).cloned());
         let result = match self.dispatch_func_call_inner(
             code,
             &name,
@@ -814,6 +826,15 @@ impl Interpreter {
             // `HashEntryRef` binding slot with a plain env copy.
             && !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
             && let Some(val) = self.env().get(&target).cloned()
+            // Only apply when the lvalue builtin genuinely changed `env[target]`
+            // during the call (see the snapshot above). Gate OFF this is
+            // byte-identical: env tracks the slot, so a builtin that writes
+            // `env[target]` always leaves `prev != val`, and one that does not
+            // leaves `prev == val == the live slot value` (a no-op pull anyway).
+            && match lvalue_writeback_pre {
+                Some(Some(ref prev)) => !prev.same_variant(&val) || *prev != val,
+                _ => true,
+            }
         {
             self.locals[slot] = val;
         }
