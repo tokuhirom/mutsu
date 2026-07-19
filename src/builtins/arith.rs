@@ -18,5 +18,5 @@ pub(crate) use mul_div_mod::{arith_div, arith_mod, arith_mul};
 pub(crate) use pow_negate::{arith_negate, arith_pow};
 
 // Helpers used by external callers (vm/, runtime/).
-pub(crate) use rat::real_to_rat;
+pub(crate) use rat::{exact_round_scaled, real_to_rat};
 pub(crate) use temporal::{is_temporal_operand, make_duration_value};
