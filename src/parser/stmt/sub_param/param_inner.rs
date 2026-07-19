@@ -701,10 +701,16 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (r3, sub_params) = super::super::sub::parse_param_list(r3)?;
             let (r3, _) = ws(r3)?;
             let (r3, _) = parse_char(r3, ')')?;
-            // If it's a single simple variable param, use its name; otherwise sub-signature
+            // If it's a single simple variable param, use its name; otherwise sub-signature.
+            // An anonymous scalar `$` parses to the name `__ANON_STATE__`; it is still a
+            // plain single variable, so accept it here (as the sigil-prefixed anonymous
+            // `@__ANON_ARRAY__` / `%__ANON_HASH__` already are). Without this, a named
+            // parameter with an anonymous scalar and a trailing sub-signature —
+            // `:literal($) ($payload, *@arguments)` (SQL::Abstract) — skipped this branch
+            // and the outer sub-signature went unparsed.
             if sub_params.len() == 1
                 && sub_params[0].sub_signature.is_none()
-                && !sub_params[0].name.starts_with("__")
+                && (!sub_params[0].name.starts_with("__") || sub_params[0].name == "__ANON_STATE__")
             {
                 let mut p = super::helpers::make_param(alias_name.clone());
                 p.named = true;
@@ -713,19 +719,24 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 p.onearg = onearg;
                 p.type_constraint = type_constraint;
                 p.sub_signature = Some(sub_params.clone());
-                // Check for a sub-signature after the alias: :x($r) (Str $g, Any $i)
+                // Check for a sub-signature after the alias: :x($r) (Str $g, Any $i).
+                // An optional `!`/`?` required marker may sit between the alias and
+                // the sub-signature (`:function($)! (Str :$over)`), so consume it
+                // first and re-check for the `(`.
                 let (r3, _) = ws(r3)?;
-                if r3.starts_with('(') {
-                    let (r4, _) = parse_char(r3, '(')?;
+                let (r3m, pre_required, pre_opt) = super::helpers::parse_required_suffix(r3);
+                let (r3m, _) = ws(r3m)?;
+                if r3m.starts_with('(') {
+                    let (r4, _) = parse_char(r3m, '(')?;
                     let (r4, _) = ws(r4)?;
                     let (r4, outer_sub) = super::super::sub::parse_param_list(r4)?;
                     let (r4, _) = ws(r4)?;
                     let (r3_new, _) = parse_char(r4, ')')?;
                     p.outer_sub_signature = Some(outer_sub);
-                    let (rest, alias_required, alias_opt_marker) =
+                    let (rest, post_required, post_opt) =
                         super::helpers::parse_required_suffix(r3_new);
-                    p.required = alias_required;
-                    p.optional_marker = alias_opt_marker;
+                    p.required = pre_required || post_required;
+                    p.optional_marker = pre_opt || post_opt;
                     let (rest, _) = ws(rest)?;
                     let mut param_traits = Vec::new();
                     let (mut rest, _) = ws(rest)?;
@@ -762,13 +773,11 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     p.default = default;
                     return Ok((rest, p));
                 }
-                // Handle optional (?) / required (!) suffix after alias
-                let (rest, alias_required, alias_opt_marker) =
-                    super::helpers::parse_required_suffix(r3);
-                p.required = alias_required;
-                p.optional_marker = alias_opt_marker;
+                // No outer sub-signature: any `!`/`?` marker was already consumed above.
+                p.required = pre_required;
+                p.optional_marker = pre_opt;
                 // Skip whitespace
-                let (rest, _) = ws(rest)?;
+                let (rest, _) = ws(r3m)?;
                 // Handle is copy, is rw, is readonly, is raw traits
                 let mut param_traits = Vec::new();
                 let (mut rest, _) = ws(rest)?;
