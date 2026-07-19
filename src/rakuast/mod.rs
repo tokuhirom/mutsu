@@ -144,6 +144,8 @@ pub enum RakuAstClass {
     StatementPrefixTry,
     // Phase 2 slice 38: the `gather` statement prefix.
     StatementPrefixGather,
+    // Phase 2 slice 39: calling a term (`$f(…)`).
+    CallTerm,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,6 +224,7 @@ impl RakuAstClass {
             StatementPrefixDo => "RakuAST::StatementPrefix::Do",
             StatementPrefixTry => "RakuAST::StatementPrefix::Try",
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
+            CallTerm => "RakuAST::Call::Term",
         }
     }
 

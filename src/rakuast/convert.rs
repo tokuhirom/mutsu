@@ -783,6 +783,20 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
         Expr::Var(name) => Ok(var_lexical("$", name)),
+        // Calling a term `$f(1, 2)` -> ApplyPostfix(operand, Call::Term(args)).
+        Expr::CallOn { target, args } => {
+            let call_term = RakuAstNode {
+                class: RakuAstClass::CallTerm,
+                fields: vec![node_field(Some("args"), arg_list(args)?)],
+            };
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyPostfix,
+                fields: vec![
+                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("postfix"), call_term),
+                ],
+            })
+        }
         // The `*` whatever term.
         Expr::Whatever => Ok(RakuAstNode {
             class: RakuAstClass::TermWhatever,
