@@ -181,7 +181,23 @@ impl Interpreter {
         self.block_declared_vars
             .push(crate::runtime::NameSet::default());
         // Push saved locals for $OUTER:: variable access.
-        self.outer_scope_locals.push(saved_locals.clone());
+        //
+        // Under shadow slots (default) an in-frame `$OUTER::x` resolves through
+        // the compiler-baked outer slot directly against the LIVE `locals`
+        // (`get_outer_var`'s shadow fast path), and a cross-frame one resolves
+        // against the captured `__mutsu_outer::` env — neither consults this
+        // snapshot. So push an *empty* frame: it keeps the stack-depth
+        // bookkeeping every `OUTER::` depth calculation relies on, while the
+        // `slot < saved.len()` guard in `get_outer_var` makes the snapshot path a
+        // no-op that falls through to those two paths. This drops the per-block
+        // O(locals) clone on the default build (lexical-slot endgame slice 2).
+        // The `MUTSU_NO_SHADOW_SLOTS` opt-out has no baked outer slot and still
+        // needs the real snapshot.
+        if crate::compiler::shadow_slots_active() {
+            self.outer_scope_locals.push(Vec::new());
+        } else {
+            self.outer_scope_locals.push(saved_locals.clone());
+        }
         // Baseline for the ENTER-result stack: any value captured by this block's
         // ENTER section (PushEnterResult) must be cleared on exit even if the body
         // throws before reaching LoadEnterResult, so no stale value leaks upward.
