@@ -1311,6 +1311,27 @@ impl Interpreter {
         }
     }
 
+    /// Under the (B) per-store env-write gate, return this frame's live local slot
+    /// value for `name` when the slot holds a real (non-Nil) value — the slot is
+    /// the authoritative half while the env mirror is suppressed. Returns None
+    /// when the gate is off (so callers fall back to the env read and stay
+    /// byte-identical), when there is no local slot for `name`, or when the slot
+    /// is Nil (an uninitialized/absent local, where the env read — and any
+    /// autovivification it drives — is the right source). §1.5 helper — see
+    /// docs/lexical-scope-slot-campaign.md.
+    pub(super) fn gate_local_slot_value(&self, code: &CompiledCode, name: &str) -> Option<Value> {
+        if !crate::opcode::gate_local_env_write() {
+            return None;
+        }
+        let slot = self.find_local_slot(code, name)?;
+        let val = self.locals.get(slot)?;
+        if val.is_nil() {
+            None
+        } else {
+            Some(val.clone())
+        }
+    }
+
     /// Resolve a local slot for `name`, preferring the compile-time-baked `slot`
     /// (scope-correct even once a name occupies several `code.locals` slots) and
     /// falling back to the by-name search when the caller has no baked slot.
