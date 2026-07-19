@@ -207,6 +207,25 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
         }
         // Set operators: (|), (&), (-), (^), (<=), (>=), (<), (>), (elem), (cont)
         if let Some((tok, len)) = parse_set_op(r) {
+            // `∪=`, `(&)=`, `(-)=`, … are set-operator *compound assignments*
+            // (`lhs OP= rhs`), not an infix set op followed by a stray `=`.
+            // Stop here so the assignment handler parses the whole statement;
+            // otherwise the infix branch consumes `∪` and chokes on `=`.
+            let after_op = &r[len..];
+            if matches!(
+                tok,
+                TokenKind::SetUnion
+                    | TokenKind::SetIntersect
+                    | TokenKind::SetMultiply
+                    | TokenKind::SetDiff
+                    | TokenKind::SetSymDiff
+                    | TokenKind::SetAddition
+            ) && after_op.starts_with('=')
+                && !after_op.starts_with("==")
+                && !after_op.starts_with("=>")
+            {
+                break;
+            }
             let r = &r[len..];
             let (r, _) = ws(r)?;
             let (r, right) = concat_expr(r).map_err(|err| {

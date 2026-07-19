@@ -123,7 +123,7 @@ message). Work them one at a time.
 App::Rak · Astro::Utils · Audio::Liquidsoap · Bench · Configuration ·
 Cro::FCGI · CSS · CSV::Table · Deps · File-TreeBuilder · IP::Random ·
 Math::Matrix · ML::SparseMatrixRecommender · Pod::Contents ·
-SBOM::CycloneDX · SSH::LibSSH::Tunnel · Trie
+SBOM::CycloneDX · SSH::LibSSH::Tunnel
 
 Known root causes to date:
 
@@ -132,7 +132,8 @@ Known root causes to date:
 | SSH::LibSSH::Tunnel | `Cannot have a 'whenever' block outside the scope of a 'supply' or 'react' block` — a `whenever` reached at load time (likely a react/supply parse gap). |
 | SBOM::CycloneDX | `unparsed input, column 5: "}\n… @*ERRORS"` — a `@*ERRORS` dynamic var / trailing brace parse dead-end. |
 | CSS | inside a `grammar` ("angle index key") — grammar/regex-slang, heavier. |
-| Pod::Contents / Deps / Trie / Configuration / File-TreeBuilder / Bench / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+| Pod::Contents / Deps / Configuration / File-TreeBuilder / Bench / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+| ~~Trie~~ | **Cleared post-snapshot**: was a set-operator compound assignment on an indexed lvalue (`%!decendents{char} ∪= …`) the parser rejected. Parse error gone; now only lacks its `OrderedHash` dependency (missing_dep). |
 | ~~Prime::Factor~~ | **Cleared post-snapshot**: was a sigilless parameter (`\N`) carrying a `where` constraint (`multi divisors (Int \N where BIG, …)`) that the param parser rejected. Now loads and factors correctly. |
 
 ### runtime_error (14 remaining; Astro::Sunrise cleared post-snapshot)
