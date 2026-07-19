@@ -1,5 +1,18 @@
 # Changelog
 
+## [v0.9.0](https://github.com/tokuhirom/mutsu/compare/v0.8.0...v0.9.0) - 2026-07-19
+
+- feat: RakuAST slice 30 — the do statement prefix in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4790
+- fix: say/put/print/note keep a Slip VALUE whole (**@ slurpy semantics) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4791
+- feat: RakuAST slice 31 — the try statement prefix in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4793
+- fix: Complex.isNaN checks both parts; Str->Complex/Rat Cool coercion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4794
+- feat: ship a container image (mutsu + mzef) to GHCR by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4795
+- feat: RakuAST slice 32 — die/fail in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4796
+- fix: numeric builtin functions coerce a numeric Str argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4797
+- feat: RakuAST slice 33 — gather/take in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4798
+- fix: Complex.UInt coerces via the real part by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4799
+- feat: RakuAST slice 34 — blocks as values (map/grep/first block args) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4800
+
 ## [v0.8.0](https://github.com/tokuhirom/mutsu/compare/v0.7.0...v0.8.0) - 2026-07-19
 
 - fix: a mixed-in role's composed roles satisfy .does/~~ checks by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4671
