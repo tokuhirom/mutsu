@@ -211,9 +211,19 @@ Current state (details in news/2026-06.md and news/2026-07.md): ✅ CLI load + c
       `augment class DateTime/Date` on builtin native classes (an augmented `multi method new`
       candidate participates in construction dispatch, falling back to the native ctor on
       no-match), Instant-as-ISO-string serialization, and the hyper `»=~=«`/`»=:=«` fix.
-- [ ] **An `mzef` binary shim** + vendoring of zef itself + dependencies + config (debian's zef
-      lacks `resources/bin/zef`; a known-good vendoring is needed — the working copy lives outside
-      this repo today).
+- [x] **An `mzef` binary shim + zef vendoring — done (2026-07-19)**: zef 1.1.3
+      (`ugexe/zef@0aa54f5`, Artistic-2.0) is vendored **in-repo** at `vendor/zef/` (lib + bin +
+      resources + LICENSE/META6 for attribution; upstream `t/`/`xt/`/`.github`/precomp excluded).
+      A second cargo binary `mzef` (`src/bin/mzef.rs`) is a thin re-exec shim: it resolves the
+      vendored zef tree (exe-relative candidates `../share/mutsu/zef` / `../lib/mutsu/zef` /
+      `../../vendor/zef`, or `$MZEF_ZEF_HOME`) and the sibling `mutsu` interpreter, then runs
+      `mutsu -I <zef>/lib <zef>/bin/zef <args>` (`$MZEF_MUTSU_BIN` overrides the interpreter path).
+      config resolves from the vendored `resources/config.json` via `%?RESOURCES<config.json>`;
+      installs land in mutsu's default site repo under `$HOME`. Verified E2E on a fresh HOME:
+      `mzef install JSON::OptIn` (tests ON) → `Testing [OK]` → `Installing` → `use JSON::OptIn`
+      loads. Pin: `tests/mzef_shim.rs`; provenance/license: `vendor/README.md`. Remaining for B3:
+      package `vendor/zef` → `<prefix>/share/mutsu/zef` alongside the two binaries in the release
+      artifact (the shim already looks there first).
 
 **`docs/mzef-install-pipeline.md` is the live tracker** — phase table, what each fix unblocked, and
 the current frontier with its next steps. Read it before picking up mzef work.

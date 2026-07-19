@@ -1,0 +1,6 @@
+*.moarvm
+*.jar
+tmp/
+lib/.precomp/
+.precomp/
+.idea/
