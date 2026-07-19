@@ -52,6 +52,19 @@ impl Interpreter {
                 // (Matches raku and `flat(set(...))`; `value_to_list` would
                 // otherwise decompose it into its key/True pairs.)
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => elems.push(val),
+                // A single infinite *integer* range (`[1..Inf]`, `[1..*]`,
+                // `[^Inf]`, `[0..^*]`) keeps the `[...]` array lazy: build the
+                // same reify-on-demand lazy array `my @a = 1..Inf` produces, so
+                // `.is-lazy` is True and `.elems` throws `X::Cannot::Lazy`
+                // instead of materializing a MAX_RANGE_EXPAND-capped finite
+                // prefix. (n == 1 guarantees this is the whole array.)
+                _ if is_real_array
+                    && n == 1
+                    && let Some(lazy) = runtime::utils::infinite_int_range_to_lazy_array(&val) =>
+                {
+                    self.stack.push(lazy);
+                    return;
+                }
                 // In bracket-array literals (`[...]`), a single element is in
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
