@@ -1,5 +1,79 @@
 # Changelog
 
+## [v0.11.0](https://github.com/tokuhirom/mutsu/compare/v0.10.0...v0.11.0) - 2026-07-19
+
+- docs: consolidate RakuAST Phase 5 status at the 37-slice milestone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4806
+- fix: Cool numeric functions raise X::Str::Numeric on a non-numeric string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4807
+- fix: a bracket-array literal over an infinite integer range stays lazy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4809
+- chore(deps): refresh dependencies to latest compatible versions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4810
+- feat: .dynamic method on Array/Hash reports variable dynamism by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4811
+- chore: remove stray tmp-lock-test artifact and gitignore its pattern by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4812
+- chore(deps): bump Rust MSRV to 1.94 and cranelift to 0.133 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4813
+- chore(deps): migrate bincode 1 → 2 (serde API) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4815
+- docs: add periodic maintenance runbook by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4816
+- perf: BlockLocalScope drops whole-locals clone for targeted Nil-reset (lexical-slot endgame slice 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4818
+- fix: keep .round($scale) exact for integer and rational operands by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4817
+- fix: non-numeric Str.Complex / Str.FatRat yield an X::Str::Numeric Failure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4819
+- fix: uninames / uniprops / univals return a Seq, not a List by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4820
+- perf: BlockScope skips $OUTER:: locals snapshot clone under shadow slots (lexical-slot endgame slice 2) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4821
+- fix: Buf.splice coerces a list of replacement values to bytes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4823
+- fix: is required("reason") includes the custom reason in the error message by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4824
+- fix: subbuf-rw($from) without a length replaces the tail, not inserts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4825
+- fix: bump Dockerfile builder to rust 1.96 for the 1.94 MSRV by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4826
+- perf: BlockScope drops whole-locals restore clone for targeted Nil-reset (lexical-slot endgame slice 3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4827
+- docs: ANALYSIS.md rev10 — integration frontier cleared, deep-recursion fixed, RakuAST section by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4814
+- docs: record lexical-slot clone-removal complete (slices 1-3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4828
+- fix: a Unicode numeric literal starts a no-paren listop argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4829
+- docs: survey ecosystem dependence on an NQP/compiler-guts layer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4830
+- fix: an allomorph binds to a parameter typed as any of its component types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4831
+- docs: real-distribution compatibility sweep dashboard + sandboxed sweep tool by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4832
+- fix: parenthesized accessor-lvalue assignment is legal in a ternary branch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4833
+- fix: a trailing comma in a `for` statement modifier builds a 1-element list by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4834
+- fix: dividing a Rat by a BigInt uses exact big-rational arithmetic by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4835
+- fix: a `*`-argument inside a where-block is not a malformed double closure by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4836
+- docs: record first two sweep-driven fixes (#4833, #4836) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4837
+- fix: a hyper-prefix operator can open a no-paren listop argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4838
+- fix: a real array's Nil cells render as Any in .raku by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4840
+- docs: correct rev10 stale-status claims in ANALYSIS.md by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4839
+- fix: multiple placeholders in a for-block set the block arity by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4841
+- fix: a real array's Nil cells gist as (Any) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4843
+- fix: a subset's `is` trait may follow `of BaseType` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4845
+- perf(vm): block exit becomes slot-authoritative under shadow slots (§1.3 endgame) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4844
+- fix: hyper `>>.{}` slicing and angle-subscript bind chains (dist sweep) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4842
+- fix: Hash set-membership honors value truthiness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4846
+- docs: map the (B) per-store env-write gate burndown (§1.3 endgame) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4848
+- fix: a `$` anchor closing a substitution pattern is not the `$/` variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4847
+- docs: root-cause the (B)-gate burndown — mechanism #3 is the shared root by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4849
+- docs: refresh dist-compat sweep — parse_error bucket nearly cleared by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4850
+- fix: a finite xx count up to 1M materializes eagerly (Raku parity) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4851
+- fix: named param anonymous-scalar alias with sub-signature / required marker by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4852
+- fix: an angle-word subscript key may contain parentheses by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4854
+- fix: equal-length string ranges expand as a per-position odometer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4853
+- fix: proceed inside a default block falls through instead of erroring by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4855
+- fix: left-exclusive sequence operators `^...` and `^...^` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4856
+- fix: sort on a non-list value returns a one-element Seq by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4857
+- fix: `&.name` accessor for a callable attribute by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4858
+- fix: (B)-gate mechanism #3 — carrier aggregate writeback clobbers stale-env slots by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4859
+- fix: item() function itemizes a Range/aggregate like the .item method by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4860
+- fix: (B)-gate let/temp cluster — save side reads the baked slot, not stale env by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4861
+- fix: slice assignment distributes a non-i64 range across the slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4862
+- fix: (B)-gate sigilless cluster — typed sigilless bind reads from its slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4863
+- fix: role method param type resolution for coercion / self / sibling types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4865
+- docs: passing-dist report in dist-compat dashboard (n=150, seed 7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4866
+- fix: multidim subscript recurses into a Pair value by key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4867
+- fix: %quanthash{*} returns all values for a Set/Bag/Mix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4864
+- fix: resolve a role method's sibling-type param by short name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4868
+- fix: bind an enum value as a parametric-role type argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4871
+- fix: embedded \qqw[...] / \qw[...] quote-words escapes in strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4872
+- fix: (B)-gate method-lvalue writeback — env_changed guard on the caller-slot pull by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4873
+- fix: parse an attribute `handles<...>` list with no leading space by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4874
+- fix: :a / :h quote adverbs interpolate a method call on the array/hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4875
+- fix: string interpolation recognizes Unicode letters in a var name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4870
+- fix: resolve a coercion type whose target carries a definedness smiley by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4876
+- fix: (B)-gate closure-capture cluster — fold captured/named-sub lexicals under the gate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4869
+- fix: accept Unicode operator aliases in a reduction metaop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4877
+- fix: parse a word-operator compound assignment as a loose-operator operand by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4878
+
 ## [v0.10.0](https://github.com/tokuhirom/mutsu/compare/v0.9.0...v0.10.0) - 2026-07-19
 
 - feat: RakuAST slice 35 — calling a term ($f(...)) in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4801
