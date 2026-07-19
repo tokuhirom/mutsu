@@ -550,6 +550,21 @@ remaining 61 belong to the other mechanisms (#2 cross-thread, #4 curry, closure
 capture, rw-redispatch, `let`/`temp`, sigilless) — those are the next per-cluster
 name-folding targets.
 
+### `let`/`temp` cluster — DONE (2026-07-19, structural slot-read fix)
+
+The `let`/`temp` cluster (2 files: `let-temp.t`, `let-temp-restore-writeback-coherence.t`)
+was fixed **structurally**, not by folding into `needs_env_sync`. Root cause:
+`exec_let_save_op` (vm_misc_block.rs) snapshots the pre-scope value of the temporized
+variable by reading `env` by name first, falling back to the slot. Under the gate a
+plain-lexical assignment (`my $x = 1`) before the `temp`/`let` skips its env mirror, so
+the env-first read snapshots the `my $x` decl seed (`Any`) instead of `1`; the
+scope-exit restore then writes that `Any` back. The `LetSave` opcode already bakes the
+scalar's slot (`slot: Option<u32>`, index mode excepted), and the restore side
+(`restore_let_value`) already prefers it — so the save side now reads the baked slot
+first too (the slot is always current; `env` is only a mirror). Gate OFF the slot
+equals the env mirror, so this is byte-identical (`make test` 18827 PASS). Pin:
+`t/gate-b-let-temp-slot-save.t` (OFF + ON both pass). **ON-survey delta: 61 → 59.**
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
