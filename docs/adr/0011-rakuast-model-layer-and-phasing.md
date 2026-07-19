@@ -417,6 +417,13 @@ earlier ones.
     * 2 }; $f(9)}.AST)` → `18`; a pointy callback, a pointy `.map` argument, and a multi-statement pointy
     body all work. Multi-/zero-parameter pointy blocks and `sub ($x) { … }` code values stay the
     boundary. Tests in `t/rakuast-eval-pointy.t`. Next: `sub` code values, placeholder blocks, CATCH.
+  - **Slice 37 (multi-parameter closures) — done (write).** Both `sub ($a, $b) { … }` and `-> $a, $b {
+    … }` render as a multi-parameter `PointyBlock` in mutsu's `.AST`, so the `PointyBlock` lowering now
+    handles them: a single parameter → `Expr::Lambda` (slice 36), several → `Expr::AnonSubParams`
+    (extracting `params`/`param_defs` via `signature_positional_params`, so a default parameter composes
+    too). `EVAL(Q{my $add = sub ($a, $b) { $a + $b }; $add(3, 4)}.AST)` → `7`; a two-parameter callback
+    and a `$y = 10` default work. A zero-parameter block stays the boundary. Tests in
+    `t/rakuast-eval-anonsub.t`. Next: placeholder blocks, CATCH blocks, code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
