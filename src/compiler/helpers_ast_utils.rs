@@ -317,6 +317,17 @@ impl Compiler {
                     {
                         custom_traits.push(("__lexical_hoist".to_string(), None));
                     }
+                    // Mark every hoist-pass registration (including the mainline
+                    // hoist, which passes `lexical_hoist == false`) so the
+                    // `our multi` scope check can skip this early pass and instead
+                    // validate at in-sequence registration, where an `our proto`
+                    // declared later in the same scope is already registered.
+                    if !custom_traits
+                        .iter()
+                        .any(|(trait_name, _)| trait_name == "__hoisted")
+                    {
+                        custom_traits.push(("__hoisted".to_string(), None));
+                    }
                     // Strip user-defined custom traits during hoisting.
                     // Traits like `is description(...)` require types/roles to be
                     // registered first; they will be applied during the normal pass.
