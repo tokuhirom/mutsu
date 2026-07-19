@@ -217,38 +217,51 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws(rest)?;
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
-    while let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, trait_name) = ident(r)?;
-        if trait_name == "export" {
-            is_export = true;
-            let (r2, tags) = parse_export_trait_tags(r)?;
-            if tags.is_empty() {
-                if !export_tags.iter().any(|t| t == "DEFAULT") {
-                    export_tags.push("DEFAULT".to_string());
-                }
-            } else {
-                for tag in tags {
-                    if !export_tags.iter().any(|t| t == &tag) {
-                        export_tags.push(tag);
+    let mut base: Option<String> = None;
+    // `of Base` and `is trait` may appear in either order before `where`:
+    // `subset S of T is export where …` and `subset S is export of T where …`
+    // both occur in the wild (Business::CreditCard uses the former). Loop over
+    // `of`/`is` until neither matches, so a trait after `of` is not left
+    // unparsed (which stranded the following `where …` as a bare statement).
+    loop {
+        if base.is_none()
+            && let Some(r) = keyword("of", rest)
+        {
+            let (r, _) = ws1(r)?;
+            let (r, b) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+            let (r, _) = ws(r)?;
+            base = Some(b);
+            rest = r;
+            continue;
+        }
+        if let Some(r) = keyword("is", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, trait_name) = ident(r)?;
+            if trait_name == "export" {
+                is_export = true;
+                let (r2, tags) = parse_export_trait_tags(r)?;
+                if tags.is_empty() {
+                    if !export_tags.iter().any(|t| t == "DEFAULT") {
+                        export_tags.push("DEFAULT".to_string());
+                    }
+                } else {
+                    for tag in tags {
+                        if !export_tags.iter().any(|t| t == &tag) {
+                            export_tags.push(tag);
+                        }
                     }
                 }
+                let (r2, _) = ws(r2)?;
+                rest = r2;
+            } else {
+                let (r, _) = ws(r)?;
+                rest = r;
             }
-            let (r2, _) = ws(r2)?;
-            rest = r2;
-        } else {
-            let (r, _) = ws(r)?;
-            rest = r;
+            continue;
         }
+        break;
     }
-    let (rest, base) = if let Some(r) = keyword("of", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, base) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
-        let (r, _) = ws(r)?;
-        (r, base)
-    } else {
-        (rest, "Any".to_string())
-    };
+    let base = base.unwrap_or_else(|| "Any".to_string());
     let (rest, predicate) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
         let (r, pred) = expression(r)?;
