@@ -478,13 +478,16 @@ impl Interpreter {
     /// Check if a constraint string refers to a known type (built-in or user-defined).
     /// Used for __type_only__ params to distinguish real type constraints (Str, Int)
     /// from sigilless parameter names (e1, e2) that look like type constraints.
-    pub(crate) fn is_resolvable_type(&self, constraint: &str) -> bool {
-        // Strip definedness smileys
-        let base = constraint
-            .strip_suffix(":D")
-            .or_else(|| constraint.strip_suffix(":U"))
-            .or_else(|| constraint.strip_suffix(":_"))
-            .unwrap_or(constraint);
+    pub(crate) fn is_resolvable_type<'a>(&self, constraint: &'a str) -> bool {
+        // Strip a definedness smiley that trails the whole constraint
+        // (`Foo:D`, and the outer smiley of `Foo(Bar):D`).
+        let strip_smiley = |s: &'a str| -> &'a str {
+            s.strip_suffix(":D")
+                .or_else(|| s.strip_suffix(":U"))
+                .or_else(|| s.strip_suffix(":_"))
+                .unwrap_or(s)
+        };
+        let base = strip_smiley(constraint);
         // Strip coercion: the resolvable part of a coercion type `Target(From)`
         // is the target type name before `(` (e.g. `Int()` -> `Int`,
         // `Identifier(Any)` -> `Identifier`). The from-type is validated
@@ -494,6 +497,9 @@ impl Interpreter {
         } else {
             base
         };
+        // The coercion target can itself carry a smiley (`Identifier:D(Any:D)`
+        // -> target `Identifier:D`); strip it too so the bare type name resolves.
+        let base = strip_smiley(base);
         // Strip parameterization: Array[Int] -> Array
         let base = if let Some(idx) = base.find('[') {
             &base[..idx]
