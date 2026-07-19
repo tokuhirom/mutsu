@@ -85,20 +85,33 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("loop", rest) {
-        let (r, _) = ws(r)?;
-        let (r, body) = block(r)?;
-        return Ok((
-            r,
-            Stmt::Loop {
-                init: None,
-                cond: None,
-                step: None,
-                body,
-                repeat: false,
-                label: Some(label),
-            },
-        ));
+    if keyword("loop", rest).is_some() {
+        // Delegate to `loop_stmt` so both the C-style `loop (init; cond; step)
+        // { ... }` header and the infinite `loop { ... }` form are handled, then
+        // stamp the label onto the returned loop node.
+        let (r, stmt) = loop_stmt(rest)?;
+        if let Stmt::Loop {
+            init,
+            cond,
+            step,
+            body,
+            repeat,
+            ..
+        } = stmt
+        {
+            return Ok((
+                r,
+                Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    repeat,
+                    label: Some(label),
+                },
+            ));
+        }
+        return Ok((r, stmt));
     }
 
     // Label before `do` block: `A: do { ... }`
