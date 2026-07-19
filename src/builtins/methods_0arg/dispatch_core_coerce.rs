@@ -631,6 +631,38 @@ pub(super) fn dispatch(
                 ValueView::BigInt(_) => Some(target.clone()),
                 ValueView::Num(f) if f.is_finite() => Some(Value::int(f.trunc() as i64)),
                 ValueView::Rat(n, d) if d != 0 => Some(Value::int(n / d)),
+                // A Complex coerces to UInt via its real part (`(5+0i).UInt` is 5);
+                // a non-zero imaginary part is not Real and throws X::Numeric::Real
+                // (mirroring the `sign`/`.Int` Complex coercion).
+                ValueView::Complex(re, im) => {
+                    if im != 0.0 {
+                        let rendered = if im >= 0.0 {
+                            format!("{re}+{im}i")
+                        } else {
+                            format!("{re}{im}i")
+                        };
+                        let mut attrs = std::collections::HashMap::new();
+                        attrs.insert(
+                            "message".to_string(),
+                            Value::str(format!(
+                                "Cannot convert {rendered} to Real: imaginary part not zero"
+                            )),
+                        );
+                        attrs.insert("target".to_string(), Value::package(Symbol::intern("Real")));
+                        attrs.insert("source".to_string(), target.clone());
+                        let ex = Value::make_instance(Symbol::intern("X::Numeric::Real"), attrs);
+                        let mut err = RuntimeError::new(
+                            "Cannot convert Complex to Real: imaginary part not zero",
+                        );
+                        err.exception = Some(Box::new(ex));
+                        return Some(Some(Err(err)));
+                    }
+                    if re.is_finite() {
+                        Some(Value::int(re.trunc() as i64))
+                    } else {
+                        None
+                    }
+                }
                 ValueView::Bool(b) => Some(Value::int(if b { 1 } else { 0 })),
                 ValueView::Str(s) if s.trim().is_empty() => Some(Value::int(0)),
                 ValueView::Str(s) => {
