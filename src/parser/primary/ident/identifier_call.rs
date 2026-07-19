@@ -31,6 +31,24 @@ use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
+/// Whether `s` starts with a hyper-prefix operator such as `+«`, `-«`, `~«`,
+/// `?«`, `!«`, `+^«`, or their ASCII `<<` forms (`+<<`, `-<<`, ...). A symbolic
+/// prefix operator immediately followed by a hyper marker (`«` / `<<`) is an
+/// unambiguous term start — the marker can never begin an infix continuation —
+/// so it may open a no-paren listop argument (`unique +«(1,2,3)`). A bare
+/// `+`/`-` is deliberately excluded: distinguishing `pi - 1` (subtraction) from
+/// a prefixed argument needs term-vs-listop knowledge unavailable at this gate.
+fn starts_hyper_prefix_op(s: &str) -> bool {
+    let rest = match s.as_bytes().first() {
+        Some(b'+') | Some(b'-') | Some(b'~') | Some(b'?') | Some(b'!') => &s[1..],
+        _ => return false,
+    };
+    // Optional bit-negation meta char (`+^«`, `~^«`, `?^«`).
+    let rest = rest.strip_prefix('^').unwrap_or(rest);
+    // `+<` alone is the numeric shift-left infix, so require the doubled `<<`.
+    rest.starts_with('\u{00AB}') || rest.starts_with("<<")
+}
+
 /// When `do STMT` parses its inner statement via the full statement parser, a
 /// statement modifier (`do $_ for @list`) or assignment consumes the trailing
 /// `;`. In expression context the `;` belongs to the *outer* statement, so if it
@@ -1528,6 +1546,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // stranding the fraction as a separate statement.
             || crate::builtins::unicode::unicode_rat_value(next).is_some()
             || crate::builtins::unicode::unicode_numeric_int_value(next).is_some()
+            // A hyper-prefix operator (`+«`, `-«`, `~«`, `+<<`, ...) is an
+            // unambiguous term start — the hyper marker can never begin an
+            // infix continuation — so `unique +«(1,2,2,3)` parses as a call.
+            // (A bare `+`/`-` is left out on purpose: `pi - 1` must stay a
+            // subtraction, which needs term-vs-listop knowledge we lack here.)
+            || starts_hyper_prefix_op(r)
             || starts_with_term_keyword(r)
             || crate::parser::stmt::simple::match_user_declared_term_symbol(r).is_some()
             || hyphen_forward_call
