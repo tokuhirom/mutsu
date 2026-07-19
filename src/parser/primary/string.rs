@@ -43,6 +43,7 @@ pub(crate) use helpers::{
 };
 pub(crate) use heredoc::parse_to_heredoc_with_flags;
 pub(crate) use interp_content::parse_single_quote_qq;
+pub(crate) use interp_content::try_embedded_qw;
 pub(crate) use interp_helpers::{
     has_malformed_angle_interpolation, parse_shell_words_index, try_double_sigil_interp,
     try_parse_interp_call, try_parse_interp_method_call,
