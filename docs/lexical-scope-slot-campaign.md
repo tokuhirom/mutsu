@@ -666,16 +666,45 @@ during the call — the same `env_changed` guard as
 `lvalue-subroutines-rw-proxy.t` need this PLUS the closure fold. Pin:
 `t/gate-b-method-lvalue-writeback.t`.
 
-**Still open (the deeper mechanism #3, dedicated session):** the general
-call-return reconcile clobbers a caller local from stale env for constructor and
-self-writeback calls too — `my $ct = CT.new(...); $ct.x` leaves `$ct` = `Any` under
-the gate (a `submethod TWEAK` attr write path), and `method-call-self-writeback.t`,
-`bind-self-attr-write.t`, `virtual-call-attr.t`, `native-tweak-construct.t`,
+### block-exit env re-seed — slot-authoritative under the gate (2026-07-20)
+
+The suspected "mechanism #3 core" for the constructor/self-writeback cluster
+(`my $ct = CT.new(...)` leaving `$ct` = `Any` under the gate) turned out to be a
+**block-exit env re-seed**, not the `drain_and_reconcile` / `apply_pending_rw_writeback`
+env-by-name pull. Instrumentation (a per-opcode `locals[0]` transition watch)
+pinned the clobber to the `DoBlockExpr { scope_isolate: true }` opcode that a
+string-interpolation `{ ... }` compiles to: `exec_do_block_expr_op`
+(`vm_misc_block.rs`) ended a scope-isolating block by `self.locals = saved_locals`
+followed by re-seeding EVERY slot from the restored `env` by name. Under the gate
+a `my $ct = CT.new(...)` skips its env mirror, so `env["ct"]` keeps the `my` decl
+seed (`Any`); the unconditional re-seed clobbered the live instance slot. In a
+single interpolation with two method calls (`"{$ct.x},{$ct.y}"`) the FIRST block's
+exit clobbered `$ct`, so the SECOND `$ct.y` died `No such method 'y' … Any`.
+(`say`/`is` with an intervening flush masked it — that is why the standalone
+one-liner passed and only the in-file two-call interpolation failed.)
+
+Fix (gated on `gate_local_env_write()`, gate OFF byte-identical): make the block
+exit **slot-authoritative** — a propagating outer var keeps its live in-block slot
+value (the block body read/mutated the slot directly), and only the block's OWN
+isolated declarations (`isolate_set`) plus internal/special/dynamic slots revert
+to their pre-block value from `saved_locals`. The same shape was applied to
+`exec_block_scope_op` (`vm_misc_scope.rs`) for the bare-`{ }` `BlockScope` opcode.
+**ON survey: 19 → 13** (`bind-self-attr-write.t`, `hyper-array-mutators.t`,
+`io-cathandle-malformed-utf8.t`, `is-lazy-io-lines.t`,
+`lines-words-allomorph-limit.t`, `native-tweak-construct.t` all flip green ON).
+Pin: `t/gate-b-doblock-exit-slot-authoritative.t`.
+
+**Still open (the deeper mechanism #3, dedicated session):** a residue of the
+constructor/self-writeback cluster survives via the call-return reconcile itself
+(not the block exit) — `method-call-self-writeback.t`, `virtual-call-attr.t`,
 `quanthash-immutable-ro.t`, `native-map-hash-coerce.t`,
 `sethash-baghash-mixhash-coerce-fn.t`, `nested-assoc-user-assign-key.t` still fail
-ON via that path. This is the load-bearing `drain_and_reconcile` /
-`apply_pending_rw_writeback` env-by-name pull — the mechanism-#3 core the memory
-flags as flaky-prone and dedicated-session scale.
+ON. This is the load-bearing `drain_and_reconcile` / `apply_pending_rw_writeback`
+env-by-name pull — the mechanism-#3 core the memory flags as flaky-prone and
+dedicated-session scale. Plus rw-redispatch (`nextsame`/`proto-method`),
+cross-thread/atomic (`atomic-ops*`, gc-stress), and a few io/misc
+(`encode-utf8-is-blob.t`, `resumable-control-signal-indirect-call.t`,
+`test-assertion-line-number.t`).
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 

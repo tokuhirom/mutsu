@@ -204,21 +204,43 @@ impl Interpreter {
             for (name, value) in new_vars {
                 self.env_mut().insert_sym(name, value);
             }
-            self.locals = saved_locals;
-            // Re-read every local from env: after the block's env snapshot is
-            // restored above, env is the authoritative half of the dual store for
-            // this frame's names.
-            //
-            // This used to be guarded by "skip the locals whose slot is
-            // authoritative" — a condition on the old `simple_locals` flag that
-            // the compiler set for `$`-prefixed names only, and scalars are stored
-            // sigil-less (`my $x` -> `"x"`), so it was false for every slot and the
-            // skip never happened. The guard is gone rather than revived: this
-            // unconditional pull is the behavior every test has ever exercised, and
-            // it is why the env mirror (`flush_local_to_env`) is load-bearing here.
-            for (idx, name) in code.locals.iter().enumerate() {
-                if let Some(val) = self.env().get(name).cloned() {
-                    self.locals[idx] = val;
+            if crate::opcode::gate_local_env_write() {
+                // (B)-gate: the per-store env mirror is suppressed, so re-seeding
+                // every slot from the restored env (below) would clobber a
+                // propagating outer var's LIVE in-block value with its stale
+                // decl-time seed — e.g. `my $ct = CT.new(...)` whose slot never
+                // mirrored into env, so a second `$ct.x` inside one interpolation
+                // read `Any`. The live in-block `self.locals` already holds the
+                // correct value for a propagating outer name (the block body read
+                // /mutated the slot directly). Revert ONLY the block's OWN isolated
+                // declarations (reverted to their pre-block value so they don't
+                // leak) and internal/special/dynamic slots; leave every other slot
+                // at its live value. This mirrors the env-side keep/revert decision
+                // above without depending on the env mirror.
+                for (idx, name) in code.locals.iter().enumerate() {
+                    let revert =
+                        isolate_set.contains(&strip_sigil(name)) || !is_plain_user_var(name);
+                    if revert && let Some(val) = saved_locals.get(idx) {
+                        self.locals[idx] = val.clone();
+                    }
+                }
+            } else {
+                self.locals = saved_locals;
+                // Re-read every local from env: after the block's env snapshot is
+                // restored above, env is the authoritative half of the dual store for
+                // this frame's names.
+                //
+                // This used to be guarded by "skip the locals whose slot is
+                // authoritative" — a condition on the old `simple_locals` flag that
+                // the compiler set for `$`-prefixed names only, and scalars are stored
+                // sigil-less (`my $x` -> `"x"`), so it was false for every slot and the
+                // skip never happened. The guard is gone rather than revived: this
+                // unconditional pull is the behavior every test has ever exercised, and
+                // it is why the env mirror (`flush_local_to_env`) is load-bearing here.
+                for (idx, name) in code.locals.iter().enumerate() {
+                    if let Some(val) = self.env().get(name).cloned() {
+                        self.locals[idx] = val;
+                    }
                 }
             }
             self.stack.push(block_result);

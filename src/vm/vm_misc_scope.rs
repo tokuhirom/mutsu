@@ -418,13 +418,39 @@ impl Interpreter {
         // The `MUTSU_NO_SHADOW_SLOTS` opt-out has no distinct shadow slots, so it
         // still needs the whole-array restore.
         if let Some(saved) = saved_locals {
-            // MUTSU_NO_SHADOW_SLOTS opt-out: no distinct shadow slots, so the
-            // whole-array restore is needed, and the propagated inner values are
-            // then re-applied from `restored_env` by name.
-            self.locals = saved;
-            for (idx, name) in code.locals.iter().enumerate() {
-                if let Some(val) = restored_env.get(name).cloned() {
-                    self.locals[idx] = val;
+            if crate::opcode::gate_local_env_write() {
+                // (B)-gate: the per-store env mirror is suppressed, so
+                // `restored_env` (name-keyed, env-derived) holds a STALE value for
+                // any enclosing name assigned inside the block — re-seeding a
+                // propagating slot from it would clobber the live in-block value
+                // with the decl-time seed (the `my $ct = CT.new(...)` -> `Any`
+                // clobber that broke a second `$ct.x` inside one interpolation).
+                // Without distinct shadow slots the pre-block LIVE value for every
+                // slot is available in the `saved` locals snapshot, so this is
+                // slot-authoritative without depending on env: leave a PROPAGATING
+                // enclosing slot at its live in-block value (every store wrote the
+                // slot) and revert only NON-propagating slots to their pre-block
+                // value — a shadowing decl shares the outer slot, so `saved[idx]`
+                // IS the outer value; a fresh `my` slot's pre-block value is Nil.
+                for (idx, name) in code.locals.iter().enumerate() {
+                    let non_propagating = name == "_"
+                        || name.starts_with('*')
+                        || code
+                            .local_sym(idx)
+                            .is_some_and(|s| block_declared.contains(&s));
+                    if non_propagating {
+                        self.locals[idx] = saved.get(idx).cloned().unwrap_or(Value::NIL);
+                    }
+                }
+            } else {
+                // MUTSU_NO_SHADOW_SLOTS opt-out: no distinct shadow slots, so the
+                // whole-array restore is needed, and the propagated inner values are
+                // then re-applied from `restored_env` by name.
+                self.locals = saved;
+                for (idx, name) in code.locals.iter().enumerate() {
+                    if let Some(val) = restored_env.get(name).cloned() {
+                        self.locals[idx] = val;
+                    }
                 }
             }
         } else {
