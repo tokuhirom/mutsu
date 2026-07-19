@@ -211,3 +211,65 @@ pub(crate) fn real_to_rat(v: &Value) -> Value {
         }
     }
 }
+
+/// Extract exact `(numerator, denominator)` i128 parts of a Real value, or `None`
+/// when the value is inexact (Num/Complex) or too large to fit i128. Used to keep
+/// `.round($scale)` exact when both operands are integers/rationals.
+fn exact_rat_parts_i128(v: &ValueView<'_>) -> Option<(i128, i128)> {
+    match v {
+        ValueView::Int(i) => Some((*i as i128, 1)),
+        ValueView::BigInt(bi) => bi.to_i128().map(|n| (n, 1)),
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if *d != 0 => Some((*n as i128, *d as i128)),
+        ValueView::BigRat(n, d) => {
+            let (n, d) = (n.to_i128()?, d.to_i128()?);
+            (d != 0).then_some((n, d))
+        }
+        _ => None,
+    }
+}
+
+/// Whether a Real value is an integer type (so `.round($scale)` yields an Int
+/// rather than a Rat).
+fn is_integer_scale(v: &ValueView<'_>) -> bool {
+    matches!(v, ValueView::Int(_) | ValueView::BigInt(_))
+}
+
+fn value_from_i128(n: i128) -> Value {
+    match i64::try_from(n) {
+        Ok(i) => Value::int(i),
+        Err(_) => Value::bigint(NumBigInt::from(n)),
+    }
+}
+
+/// Exact `(self / $scale + 1/2).floor * $scale` per Rakudo's `Real.round(Real)`,
+/// staying in exact Int/Rat arithmetic. Returns `None` when either operand is
+/// inexact (Num/Complex), the scale is zero, or i128 overflow would occur — the
+/// caller then falls back to the f64 path.
+pub(crate) fn exact_round_scaled(target: &Value, scale: &Value) -> Option<Value> {
+    let (tn, td) = exact_rat_parts_i128(&target.view())?;
+    let (sn, sd) = exact_rat_parts_i128(&scale.view())?;
+    if sn == 0 {
+        return None;
+    }
+    // r = self/scale + 1/2 = (2*tn*sd + td*sn) / (2*td*sn)
+    let num = tn
+        .checked_mul(sd)?
+        .checked_mul(2)?
+        .checked_add(td.checked_mul(sn)?)?;
+    let mut den = td.checked_mul(sn)?.checked_mul(2)?;
+    let mut num = num;
+    if den < 0 {
+        num = num.checked_neg()?;
+        den = den.checked_neg()?;
+    }
+    // floor(num/den) with den > 0
+    let floor_q = num.div_euclid(den);
+    // result = floor_q * scale = floor_q * sn / sd
+    let rn = floor_q.checked_mul(sn)?;
+    if is_integer_scale(&scale.view()) {
+        // sd == 1 for an integer scale, so the result is an exact integer.
+        Some(value_from_i128(rn.checked_div(sd)?))
+    } else {
+        Some(rat_from_i128_or_num(rn, sd))
+    }
+}

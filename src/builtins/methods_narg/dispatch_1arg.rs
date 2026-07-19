@@ -1113,6 +1113,20 @@ pub(crate) fn native_method_1arg(
             } else {
                 arg
             };
+            // Unwrap target allomorphic types for the exact fast path.
+            let exact_target = if let ValueView::Mixin(inner, _) = target.view() {
+                inner.as_ref()
+            } else {
+                target
+            };
+            // Keep integer/rational rounding exact (Rakudo's Real.round(Real)):
+            // avoids f64 precision loss for large Ints and Rat scales such as
+            // `round(1000, 23.01)` (== 989.43, not 989.4300000000001).
+            if let Some(exact) =
+                crate::builtins::arith::exact_round_scaled(exact_target, unwrapped_arg)
+            {
+                return Some(Ok(exact));
+            }
             // Determine the scale type category for return type selection
             // Int/IntStr -> Int, Num/NumStr/Complex/ComplexStr -> Num,
             // Rat/RatStr -> Rat

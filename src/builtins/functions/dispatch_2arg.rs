@@ -324,6 +324,11 @@ pub(crate) fn native_function_2arg(
             Some(Ok(Value::complex(result_r, result_i)))
         }
         "round" => {
+            // Keep integer/rational rounding exact (e.g. `round(1000, 23.01)`
+            // == 989.43, not 989.4300000000001).
+            if let Some(exact) = crate::builtins::arith::exact_round_scaled(arg1, arg2) {
+                return Some(Ok(exact));
+            }
             let x = runtime::to_float_value(arg1)?;
             let scale = runtime::to_float_value(arg2)?;
             // Raku-style rounding: (x + 0.5).floor()
