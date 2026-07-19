@@ -285,15 +285,27 @@ impl Interpreter {
         if index_mode {
             let _idx_val = self.stack.pop().unwrap_or(Value::int(0));
         }
-        let old_val = self
-            .get_env_with_main_alias(&name)
-            .or_else(|| {
-                code.locals
-                    .iter()
-                    .position(|n| n == &name)
-                    .map(|i| self.locals[i].clone())
-            })
-            .unwrap_or(Value::NIL);
+        // §1.4/§1.5: when the compiler baked THIS frame's slot for `name`, read the
+        // pre-scope value straight from the live slot rather than from `env` by
+        // name. The slot is always current; `env` is only a mirror and can be stale
+        // when the per-store env write is gated (MUTSU_GATE_LOCAL_ENV_WRITE) — a
+        // plain-lexical assignment `$x = ...` before this `temp`/`let` may not have
+        // mirrored into `env`, so an env-first read would snapshot the decl-seed
+        // `Any` instead of the real value. With the gate OFF the slot equals the
+        // env mirror, so this is byte-identical to the former env-first read. The
+        // matching restore side (`restore_let_value`) already prefers the baked slot.
+        let old_val = match slot {
+            Some(s) if (s as usize) < self.locals.len() => self.locals[s as usize].clone(),
+            _ => self
+                .get_env_with_main_alias(&name)
+                .or_else(|| {
+                    code.locals
+                        .iter()
+                        .position(|n| n == &name)
+                        .map(|i| self.locals[i].clone())
+                })
+                .unwrap_or(Value::NIL),
+        };
         // A boxed (shared-cell) scalar saves its INNER value, decoupled from the
         // cell: otherwise the snapshot would be the same Arc that the dynamic-scope
         // write mutates, so the restore would see the modified value, not the
