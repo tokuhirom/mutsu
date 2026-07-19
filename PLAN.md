@@ -1017,9 +1017,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 30: the `do { … }` statement prefix (both directions) via a new `StatementPrefix::Do`
         node — `Expr::DoBlock` ↔ `StatementPrefix::Do(Block)`. `EVAL(Q{do { 1 + 2 }}.AST)` → 3. Tests in
         `t/rakuast-eval-do.t`.
-  - [ ] Slice 31+: `try`/CATCH, associative subscripts (`%h{…}` — read-ambiguous), WhateverCode
-        (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
-        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 31: the `try { … }` statement prefix (both directions) via a new `StatementPrefix::Try`
+        node — `Expr::Try` (no CATCH) ↔ `StatementPrefix::Try(Block)`. `EVAL(Q{try { 1 + 2 }}.AST)` → 3;
+        a failing try is undefined. Tests in `t/rakuast-eval-try.t`.
+  - [ ] Slice 32+: `die` (a control call), `gather`/`take`, CATCH blocks, WhateverCode (`* + 1`),
+        code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster by
+        cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

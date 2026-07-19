@@ -779,6 +779,17 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![node_field(None, block_node(body)?)],
             })
         }
+        // `try { … }` -> `StatementPrefix::Try(Block)`. A `CATCH` block stays the
+        // boundary.
+        Expr::Try { body, catch } => {
+            if catch.is_some() {
+                return Err(unsupported("try with a CATCH block"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementPrefixTry,
+                fields: vec![node_field(None, block_node(body)?)],
+            })
+        }
         // A fat-arrow pair `a => 1` -> `FatArrow(key => "a", value => …)`. Only a
         // string-literal key is modelled (a computed key stays the boundary).
         Expr::PositionalPair(inner) => match &**inner {

@@ -377,6 +377,13 @@ earlier ones.
     `EVAL(Q{do { 1 + 2 }}.AST)` → `3`; a multi-statement do block, a do block over a variable, and a do
     block composed inline in an expression all work. A labelled `do` stays the boundary. Tests in
     `t/rakuast-eval-do.t`.
+  - **Slice 31 (the `try` statement prefix) — done, both directions.** A new `StatementPrefix::Try`
+    node class models `try { … }`. The read side converts `Expr::Try` (without a `CATCH` block) to it
+    and the write side lowers it back to an `Expr::Try`. `EVAL(Q{try { 1 + 2 }}.AST)` → `3`, and a
+    *failing* try yields an undefined value (`EVAL(Q{try { (1/0).Int }}.AST).defined` → `False`) — the
+    exception is trapped. A `try` with a `CATCH` block (and a bare `die` statement inside) stay the
+    boundary. Tests in `t/rakuast-eval-try.t`. Next: `die` (a control call), `gather`/`take`,
+    code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
