@@ -92,6 +92,13 @@ level to be added later (run the dist's `t/`/`.rakutest` with deps installed).
 **31** whose deps are satisfiable (48 − 17 missing_dep), **15 load (48%)** and
 **16 hit a real mutsu bug (52%)**. Those 16 are the actionable frontier below.
 
+> **⚠️ Re-sweep due (2026-07-19).** Since this table was generated, the
+> `parse_error` bucket has been almost entirely cleared: #4833, #4842, #4845,
+> #4847 (and intervening fixes) mean **every parse_error dist except CSS::Grammar
+> now parses** (Taurus::CLI, Ecosystem::Archive, PDF::Combiner, Geo::Ellipsoid,
+> Abbreviations, Business::CreditCard, Data::Dump). The counts above are stale;
+> re-run the sweep to get fresh buckets before picking the next slice.
+
 ## ★ Actionable — real mutsu bugs (parse_error + runtime_error)
 
 Grouped by root cause; a message hit by more than one dist is high-leverage.
@@ -104,17 +111,17 @@ pipeline.)
 | Root cause | Dists | Notes |
 |---|---|---|
 | ~~`Assignment operators inside ?? !! are too loose`~~ **FIXED (#4833)** | Web::App, RakuAST::Utils | A parenthesized accessor-lvalue assignment (`cond ?? a !! ($.value = x)`) was mis-rejected. **RakuAST::Utils now `load_ok`; Web::App advances to `missing_dep` (MIME::Types).** Pin: `t/ternary-paren-accessor-assign.t`. |
-| `expected statement: expected expected statement…` (generic parse dead-end) | **Geo::Ellipsoid**, **CSS::Grammar**, **PDF::Combiner**, ~~**Ecosystem::Archive**~~ (fixed), ~~**Taurus::CLI**~~ (fixed) | Not one bug — each needs its own minimal repro. **Taurus::CLI**: fixed — `>>.{...}` hyper associative subscript did not parse, and hyper subscripts with a Range/list index (`>>.[0..2]`, `>>.{0..4}`) returned Nil instead of slicing each element (pin `t/hyper-assoc-subscript.t`). **Ecosystem::Archive**: fixed — a chained bind through an angle-word hash subscript (`my $id := %h<key> := VALUE`) failed to parse because `<key>` was parsed as an expression, mis-reading `%h<b> := 5` as a `b > ...` comparison (pin `t/bind-angle-subscript-chain.t`). Remaining (Geo::Ellipsoid, CSS::Grammar (grammar slang), PDF::Combiner) each need their own repro. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
+| `expected statement: expected expected statement…` (generic parse dead-end) | ~~**Geo::Ellipsoid**~~, **CSS::Grammar**, ~~**PDF::Combiner**~~, ~~**Ecosystem::Archive**~~, ~~**Taurus::CLI**~~ (all fixed but CSS::Grammar) | Was not one bug — each needed its own repro, and all but CSS::Grammar now parse. **Taurus::CLI** (#4842): `>>.{...}` hyper associative subscript did not parse, and hyper subscripts with a Range/list index (`>>.[0..2]`, `>>.{0..4}`) returned Nil instead of slicing each element (pin `t/hyper-assoc-subscript.t`). **Ecosystem::Archive** (#4842): a chained bind through an angle-word hash subscript (`my $id := %h<key> := VALUE`) failed because `<key>` was parsed as an expression, mis-reading `%h<b> := 5` as a `b > ...` comparison (pin `t/bind-angle-subscript-chain.t`). **PDF::Combiner** (#4847): a `$` anchor closing a substitution pattern (`s/'.pdf'$/.{$x}dpi/`) was mis-read as the `$/` match variable (pin `t/subst-pattern-dollar-anchor.t`). **Geo::Ellipsoid**: parses now (cleared by an intervening fix; a re-sweep is due to confirm its bucket). **Only CSS::Grammar remains** — it fails inside a `grammar` with "angle index key", so it is grammar/regex-slang, not a plain statement bug. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
 
 ### Singletons
 
 | Dist | Bucket | Root cause |
 |---|---|---|
 | Code::Coverable | runtime | `Unexpected block in infix position (missing statement control word…)` |
-| Abbreviations | parse | `Confused. Two terms in a row across lines (missing semicolon or comma?)` |
+| Abbreviations | parse | ~~`Confused. Two terms in a row across lines`~~ **now parses** (cleared by an intervening fix; re-sweep due to confirm bucket). |
 | JavaScript::Google::Charts | runtime | `Cannot declare individual multi candidates in 'our' scope` |
 | Data::Dump | parse | ~~`Malformed double closure; WhateverCode is already a closure…`~~ **FIXED (#4836)** (`where { !$_.values.grep: * !~~ Sub }` — a `*`-arg in a where-block is not a double closure; pin `t/where-constraint-whatever-arg.t`). **Still blocked** by a second bug: `X::Syntax::Confused: Two terms in a row` (same class as Abbreviations). |
-| Business::CreditCard | parse | `X::Syntax::CannotMeta: Cannot negate * because it is not iffy enough` |
+| Business::CreditCard | parse | ~~`X::Syntax::CannotMeta: Cannot negate * because it is not iffy enough`~~ **FIXED (#4845)** — a subset's `is` trait after `of BaseType` (`subset S of T is export where !*.…`) left the `where` stranded; `of`/`is` now parse in either order (pin `t/subset-trait-after-of.t`). Loads now; a separate latent regex char-class bug (`<-[\d x _ \  -]>` matching) only bites when a value is validated. |
 | VERS | runtime | `X::Undeclared::Symbols: Undeclared routine` (load-time) |
 | CSV-AutoClass | runtime | `Variable '$argstr' is not declared` (likely a signature/placeholder gap) |
 | JSON::RepositoryEvent | runtime | `An exception occurred while evaluating a CHECK` |
