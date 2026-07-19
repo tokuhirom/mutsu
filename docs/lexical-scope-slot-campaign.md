@@ -505,6 +505,39 @@ gc-stress-gated and flaky-prone — validate on CI). The `io/misc` bucket (31) i
 catch-all that should shrink substantially as the named clusters are fixed; triage
 its residue last. **A dedicated session per cluster.**
 
+### Root-cause drill-down (2026-07-19): the clusters are NOT independent — #3 is the shared root
+
+Diagnosing the "native ctor / coerce" cluster showed its files are really **mechanism
+#3** (call-return caller-local coherence), not native constructors. Minimal repro:
+
+```raku
+my $l = List.new(1, 2, 3);   # scalar local holding an aggregate
+isa-ok $l, List;             # a Test sub call — the trigger
+say $l.elems;                # ON: 1  (expected 3) — $l has become Any
+```
+
+The chain:
+1. The declaration `my $l` seeds `env["l"] = Any` (the decl path writes env before
+   the initializer runs).
+2. `$l = List.new(...)` is a plain-lexical `SetLocal`; the gate **skips its env
+   write**, so the slot becomes the List but `env["l"]` stays `Any` (stale).
+3. `isa-ok $l` registers `l` as a pending writeback source, and on return the
+   call-boundary reconcile does `self.locals[slot] = self.env().get("l")`
+   (`apply_pending_rw_writeback` vm_env_helpers.rs:1089-1094, and the twin
+   `apply_pending_caller_var_writeback` :1124-1129) — **clobbering the good slot with
+   the stale `env["l"] = Any`**.
+
+So the reconcile reading the caller slot **from env** is the shared root under every
+Test-using cluster (native-ctor, method/attr-writeback, and much of the io/misc
+bucket, all of which do `my $x = ...; is/isa-ok/ok $x...`). **Fix #3 first** — make
+`apply_pending_rw_writeback` / `apply_pending_caller_var_writeback` env-independent
+for a slot the callee did not actually write (gate the slot overwrite on the source
+being genuinely callee-written, i.e. env_dirty for that name, rather than
+unconditionally pulling `env.get(source)`). That one change is expected to clear a
+large fraction of the 75, after which the true #2 (cross-thread) / #4 (curry)
+residue is what remains. This reorders the burndown: **#3 (call-boundary reconcile)
+before the per-cluster name-folding.**
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
