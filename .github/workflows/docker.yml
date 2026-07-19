@@ -99,7 +99,12 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch
+            type=sha
+          # type=ref,event=branch -> :main on a main push and :<branch> on a
+          # branch/workflow_dispatch run (so a dispatch always yields a valid
+          # tag for the manifest step, making the workflow smoke-testable).
+          # type=sha adds a :sha-<short> tag on every build.
 
       - name: Create multi-arch manifest
         working-directory: /tmp/digests
