@@ -4,9 +4,10 @@ use Test;
 # A role method parameter type constraint must resolve the same way a class
 # method's does. Previously the role-registration validation over-rejected
 # several valid forms with "Invalid typename '...' in parameter declaration."
-# (regressions surfaced by real ecosystem dists: IdClass, SQL::Abstract).
+# (regressions surfaced by real ecosystem dists: IdClass, SQL::Abstract,
+# Protocol::MQTT).
 
-plan 6;
+plan 7;
 
 # 1. A coercion type as a role method parameter (`Int()`).
 {
@@ -55,6 +56,21 @@ lives-ok {
     die "wrong" unless Impl.new.render(E.new) eq "rendered";
     CODE
 }, 'compound-role short-name sibling type (nested package)';
+
+# 6b. A compound-named role in a `unit package` (`my role Packet::Empty`)
+#     referencing a sibling class of the enclosing package by short name — the
+#     failing shape in Protocol::MQTT. The compound name leaves the enclosing
+#     package out of both the role name and the current package, so this only
+#     resolves via the "known by short name" fallback.
+#     The "Invalid typename" error fires at role *registration*, so exercising
+#     the declaration alone is enough to pin it.
+lives-ok {
+    EVAL q:to/CODE/;
+    unit package Outer6;
+    our class DecodeBuffer {}
+    my role Packet::Empty { method decode(DecodeBuffer $b) { "ok" } }
+    CODE
+}, 'compound-role short-name sibling in a unit package (Protocol::MQTT shape)';
 
 # 6. A genuinely undeclared type is still rejected.
 {
