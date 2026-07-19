@@ -209,6 +209,18 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
     }
 }
 
+/// Whether `r` starts with the word infix `kw` (`div`/`mod`/`gcd`/`lcm`) as an
+/// operator: it must be a whole word (not a longer identifier) and must not be
+/// the start of a compound assignment (`div=` etc.). Mirrors how the symbolic
+/// multiplicative ops guard against `*=` / `%=`, so a word compound assignment
+/// like `$n div= $p` — including as the operand of a looser operator such as
+/// `and` — is left for the assignment parser instead of being eaten as `div`.
+fn word_infix_at(r: &str, kw: &str) -> bool {
+    r.starts_with(kw)
+        && !is_ident_char(r.as_bytes().get(kw.len()).copied())
+        && r.as_bytes().get(kw.len()).copied() != Some(b'=')
+}
+
 pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
     // Unicode: multiply (U+00D7) -- skip if user-defined infix exists
     if r.starts_with('\u{00D7}') && !super::super::stmt::simple::is_user_defined_infix("\u{00D7}") {
@@ -237,13 +249,13 @@ pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usiz
         Some((MultiplicativeOp::Mod, 1))
     } else if r.starts_with("%%") {
         Some((MultiplicativeOp::DivisibleBy, 2))
-    } else if r.starts_with("div") && !is_ident_char(r.as_bytes().get(3).copied()) {
+    } else if word_infix_at(r, "div") {
         Some((MultiplicativeOp::IntDiv, 3))
-    } else if r.starts_with("mod") && !is_ident_char(r.as_bytes().get(3).copied()) {
+    } else if word_infix_at(r, "mod") {
         Some((MultiplicativeOp::IntMod, 3))
-    } else if r.starts_with("gcd") && !is_ident_char(r.as_bytes().get(3).copied()) {
+    } else if word_infix_at(r, "gcd") {
         Some((MultiplicativeOp::Gcd, 3))
-    } else if r.starts_with("lcm") && !is_ident_char(r.as_bytes().get(3).copied()) {
+    } else if word_infix_at(r, "lcm") {
         Some((MultiplicativeOp::Lcm, 3))
     } else {
         None

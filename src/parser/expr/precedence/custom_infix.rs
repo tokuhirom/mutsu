@@ -20,7 +20,14 @@ pub(crate) fn parse_custom_infix_word(input: &str) -> Option<(String, usize)> {
         // `uc INFIX:<term> ...` instead of the listop call `uc(term)`.
         let is_declared_term = crate::parser::stmt::simple::match_user_declared_term_symbol(input)
             .is_some_and(|(_, consumed, _)| consumed == end);
-        if !is_reserved_infix_word(name) && !is_declared_term {
+        // A word immediately followed by `=` (but not `==`/`=>`) is a word
+        // compound assignment (`div=`, `x=`, a user `op=`), not an infix use —
+        // leave it for the assignment parser so `$n div= $p` parses, including
+        // as the operand of a looser operator like `and`.
+        let is_compound_assign = input[end..].starts_with('=')
+            && !input[end..].starts_with("==")
+            && !input[end..].starts_with("=>");
+        if !is_reserved_infix_word(name) && !is_declared_term && !is_compound_assign {
             word_match = Some((name.to_string(), end));
         }
     }

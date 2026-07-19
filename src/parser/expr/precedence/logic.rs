@@ -149,6 +149,21 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
     }
 
+    // Word-operator compound assignment (`div=`, `mod=`, `gcd=`, `x=`, and
+    // user-declared operators). Handled here — not only at the statement level —
+    // so it parses as the operand of a looser operator, e.g. the right side of
+    // `and`/`or`: `@f.push($p) and $n div= $p while ...` (surfaced by
+    // Prime::Factor). The multiplicative parser leaves `div=` alone (see
+    // `word_infix_at`), so `not_expr_mode` above returns the bare lvalue here.
+    if let Some((after_op, op_name)) = parse_custom_compound_assign_op(r) {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r, rhs)) = parse_assignment_rhs_mode(after_ws, mode)
+            && let Ok(result) = build_custom_compound_assign_expr(expr.clone(), op_name, rhs)
+        {
+            return Ok((r, result));
+        }
+    }
+
     // Binding (`:=`) is an expression-level operator at item-assignment
     // precedence (raku), so it must work unparenthesized after `return`, in a
     // declarator RHS, etc. -- e.g. `return @!specs := @specs`. mutsu otherwise
