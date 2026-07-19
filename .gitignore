@@ -29,6 +29,7 @@ wip.txt
 handle-between-threads-*
 proc-async-*
 _tmp-io-colon-invocant-*
+tmp-lock-test-*.txt
 
 target-local/
 .claude/worktrees/
