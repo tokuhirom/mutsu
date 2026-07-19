@@ -715,7 +715,24 @@ impl Interpreter {
                 //   Hash assignment was silently dropped, JSON::Marshal
                 //   t/030-trait.t / t/080-type-constraints.t). A pre-carrier
                 //   divergence (a live-cell copy) keeps the skip.
-                if !self.locals[i].same_variant(&cur) {
+                //
+                // The type-change write must additionally require that env
+                // genuinely CHANGED during the carrier (mechanism #3, the `(B)`
+                // per-store env-write gate): with the gate ON a plain-lexical
+                // store leaves env stale (the slot is authoritative), so a
+                // preceding `my $l = List.new` leaves `env<l>` at its `Any` decl
+                // seed while the slot holds the List. Without the `env_changed`
+                // guard, any Test-fn carrier (`isa-ok $l, …`) would read that
+                // stale `Any` as a "type change away" and clobber the live List.
+                // Gate OFF this is byte-identical: env tracks the slot, so a
+                // fired type-change here always had `prev != cur` anyway.
+                let env_changed = match pre_env.get(i) {
+                    Some(Some(prev)) => !prev.same_variant(&cur) || *prev != cur,
+                    // No prior env value snapshotted (a name the carrier
+                    // introduced): treat as a genuine change.
+                    _ => true,
+                };
+                if env_changed && !self.locals[i].same_variant(&cur) {
                     self.locals[i] = cur;
                 } else if let Some(Some(prev)) = pre_env.get(i)
                     && *prev == self.locals[i]

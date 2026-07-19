@@ -27,6 +27,26 @@ pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
 }
 
+/// `(B)` per-store env-write gate (docs/lexical-scope-slot-campaign.md, "The
+/// `(B)` per-store env-write gate"). Default OFF is byte-identical to the
+/// pre-gate build: `exec_set_local_op_inner` mirrors every plain-lexical store
+/// into the name-keyed `env`. Under `MUTSU_GATE_LOCAL_ENV_WRITE=1` the mirror is
+/// skipped for slot-authoritative plain lexicals (not captured/reflective/sync),
+/// so the slot is the single source of truth and env-COW can drop the write. This
+/// is the burndown gate — flip and delete once all four env-mirror consumers
+/// (#1 block-restore, #2 cross-thread, #3 call-return reconcile, #4 curry) are
+/// slot-authoritative. Cached like `jit_enabled()`.
+#[inline]
+pub(crate) fn gate_local_env_write() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        matches!(
+            std::env::var("MUTSU_GATE_LOCAL_ENV_WRITE").ok().as_deref(),
+            Some("1") | Some("on") | Some("ON")
+        )
+    })
+}
+
 /// Base binary operation for a fused compound-assignment opcode
 /// (`$x OP= rhs`). Each variant maps to the same `exec_*_op` the plain
 /// `Binary` path uses, so the fused op shares exact operator semantics.

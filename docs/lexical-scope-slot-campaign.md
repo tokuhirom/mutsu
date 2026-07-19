@@ -521,22 +521,34 @@ The chain:
    the initializer runs).
 2. `$l = List.new(...)` is a plain-lexical `SetLocal`; the gate **skips its env
    write**, so the slot becomes the List but `env["l"]` stays `Any` (stale).
-3. `isa-ok $l` registers `l` as a pending writeback source, and on return the
-   call-boundary reconcile does `self.locals[slot] = self.env().get("l")`
-   (`apply_pending_rw_writeback` vm_env_helpers.rs:1089-1094, and the twin
-   `apply_pending_caller_var_writeback` :1124-1129) — **clobbering the good slot with
-   the stale `env["l"] = Any`**.
+3. `isa-ok $l` (a Test fn) dispatches through the **carrier fallback** in
+   `exec_exec_call_pairs_op`, whose post-carrier reconcile
+   `carrier_writeback_changed_aggregates` (vm_env_helpers.rs) writes a slot back from
+   env when the *current* env value differs in variant from the slot — the
+   "type change away from container" case (`$a does Role` turning a Hash into a
+   Mixin). With the gate ON that read is stale: `env["l"] = Any` (a `Package`) differs
+   in variant from the slot's `List` (an `Array`), so it **clobbers the good slot with
+   the decl-seed `Any`**.
 
-So the reconcile reading the caller slot **from env** is the shared root under every
-Test-using cluster (native-ctor, method/attr-writeback, and much of the io/misc
-bucket, all of which do `my $x = ...; is/isa-ok/ok $x...`). **Fix #3 first** — make
-`apply_pending_rw_writeback` / `apply_pending_caller_var_writeback` env-independent
-for a slot the callee did not actually write (gate the slot overwrite on the source
-being genuinely callee-written, i.e. env_dirty for that name, rather than
-unconditionally pulling `env.get(source)`). That one change is expected to clear a
-large fraction of the 75, after which the true #2 (cross-thread) / #4 (curry)
-residue is what remains. This reorders the burndown: **#3 (call-boundary reconcile)
-before the per-cluster name-folding.**
+**Correction (2026-07-19, verified):** the drill-down originally fingered
+`apply_pending_rw_writeback` (:1089/:1124). Instrumentation disproved that — on this
+repro both of those drain with **empty** source sets; the actual clobber is the
+`carrier_writeback_changed_aggregates` "type change away" branch, which did **not**
+check that env genuinely changed *during* the carrier (unlike its sibling overwritable
+branch, which already diffs against the pre-carrier `pre_env` snapshot).
+
+**Fix (landed):** require `env_changed` (a `pre_env[i] != cur` diff) before the
+type-change slot write, matching the overwritable branch. Gate OFF this is
+byte-identical — env tracks the slot, so a fired type-change always had
+`prev != cur` anyway; gate ON it suppresses the stale-`Any` clobber. Pin:
+`t/gate-b-carrier-aggregate-clobber.t`.
+
+**ON-survey delta:** 75 → **61** genuine ON-only regressions (all 61 pass OFF). The
+14 files cleared are exactly the "native ctor / `.Set/.Bag/.Mix`/hash coerce"
+cluster's carrier-writeback subset (`my $x = <aggregate>; is/isa-ok/ok $x`). The
+remaining 61 belong to the other mechanisms (#2 cross-thread, #4 curry, closure
+capture, rw-redispatch, `let`/`temp`, sigilless) — those are the next per-cluster
+name-folding targets.
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
