@@ -16,6 +16,40 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
     if let Some(err) = crate::runtime::Interpreter::lazy_guard_error(name, arg) {
         return Some(Err(err));
     }
+    // Numeric allomorphs (IntStr/NumStr/RatStr/ComplexStr) are `Mixin`s whose
+    // inner numeric drives arithmetic. A numeric/string function applied to one
+    // must operate on that inner value exactly as the equivalent method does
+    // (`abs($x)` == `$x.abs`). Several arms below `match arg.view()` against
+    // scalar-numeric variants only and fall to a `0`/`NaN` default for a
+    // `Mixin`, so `abs(<-2>)` wrongly returned 0. Delegate to the method
+    // dispatch, which already routes string methods to the Str part and numeric
+    // methods to the inner numeric. List/range-semantic functions differ between
+    // sub form (`combinations($n)` == `(^$n).combinations`) and method form, so
+    // they are excluded and handled by the normal `match` below.
+    if let ValueView::Mixin(inner, mixins) = arg.view()
+        && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+        && !matches!(
+            name,
+            "combinations"
+                | "permutations"
+                | "srand"
+                | "elems"
+                | "reverse"
+                | "sort"
+                | "rotate"
+                | "flat"
+                | "first"
+                | "min"
+                | "max"
+                | "ords"
+                | "defined"
+                | "gist"
+        )
+        && let Some(res) =
+            crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern(name))
+    {
+        return Some(res);
+    }
     match name {
         "combinations" => {
             // combinations($n) where $n is Int => (^$n).combinations (powerset)
