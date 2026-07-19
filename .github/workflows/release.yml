@@ -15,9 +15,10 @@ permissions:
 jobs:
   build:
     strategy:
-      # Do not let one platform's failure cancel the others: a broken macOS
-      # toolchain build (e.g. the known libffi Mach-O CFI issue) must not stop
-      # the Linux binaries from publishing.
+      # Do not let one platform's failure cancel the others: a macOS toolchain
+      # hiccup must not stop the Linux binaries from publishing. (The historical
+      # libffi Mach-O CFI failure is fixed as of the vendored-libffi bump — see
+      # ADR-0012 — so macOS arm64 is expected to build now.)
       fail-fast: false
       matrix:
         include:
@@ -38,9 +39,11 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # macOS targets are best-effort for now (upstream libffi does not build
-    # cleanly under recent Xcode). A failure there is tolerated; Linux is
-    # required.
+    # macOS targets remain best-effort until a workflow_dispatch smoke run
+    # confirms the vendored-libffi bump (ADR-0012) fixed the arm64 Mach-O CFI
+    # build. Once verified green, drop `optional` from the macOS matrix rows so
+    # a macOS regression fails loudly instead of silently dropping binaries.
+    # Linux is always required.
     continue-on-error: ${{ matrix.optional || false }}
 
     steps:

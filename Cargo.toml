@@ -47,7 +47,7 @@ bincode = "1"
 icu_collator = "2.1"
 icu_collator_data = "2.1"
 libloading = { version = "0.8", optional = true }
-libffi = { version = "3", optional = true }
+libffi = { version = "5", optional = true }
 cranelift-codegen = { version = "0.132", optional = true }
 cranelift-frontend = { version = "0.132", optional = true }
 cranelift-jit = { version = "0.132", optional = true }
