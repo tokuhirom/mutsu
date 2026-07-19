@@ -998,7 +998,10 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 27: the `*` whatever term (both directions) via a new `Term::Whatever` node;
         `EVAL(Q{(1..*).head(3).join(",")}.AST)` → "1,2,3". WhateverCode (`* + 1`) stays the boundary.
         Tests in `t/rakuast-eval-whatever.t`.
-  - [ ] Slice 28+: hash literals (raku models `{a => 1}` as a `Block`), associative subscripts
+  - [x] Slice 28: fat-arrow pairs `a => 1` (both directions) via a new `FatArrow` node —
+        `Expr::PositionalPair(FatArrow binop)` ↔ `FatArrow(key, value)`. `EVAL(Q{(a => 5).value}.AST)` →
+        5. Tests in `t/rakuast-eval-pair.t`.
+  - [ ] Slice 29+: hash literals (raku models `{a => 1}` as a `Block`), associative subscripts
         (`%h{…}`), WhateverCode (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2
         converter, grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
