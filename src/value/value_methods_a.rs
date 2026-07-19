@@ -219,7 +219,11 @@ impl Value {
             // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
             // `=`-shared mutation are preserved).
             ValueRepr::Hash(h, _) => Value::Hash(h, true),
-            other => Value::from_repr(other),
+            // Any other aggregate (Range, LazyList, Set/Bag/Mix, ...) is wrapped
+            // in a `Scalar` container so it becomes a single non-flattening
+            // element in list context (mirrors the `.item` method form in
+            // `dispatch_core_math.rs` — `for item(1..3)` must see ONE element).
+            other => Value::scalar(Value::from_repr(other)),
         }
     }
 

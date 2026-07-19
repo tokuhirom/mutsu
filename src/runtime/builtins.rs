@@ -664,7 +664,9 @@ impl Interpreter {
                     let val = args.first().cloned().unwrap_or(Value::NIL);
                     Ok(val.item())
                 } else {
-                    Ok(Value::array(args.clone()))
+                    // Multiple args become a single itemized list (`item(1,2,3)`
+                    // is `(1 2 3)` as ONE element, not three flattened elements).
+                    Ok(Value::array(args.clone()).item())
                 }
             }
             "list" => self.builtin_list(&args),
