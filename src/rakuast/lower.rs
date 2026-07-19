@@ -100,6 +100,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
+                "take" => Ok(Stmt::Take(
+                    args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
+                    false,
+                )),
                 _ => Ok(Stmt::Expr(lower_expr(node)?)),
             }
         }
@@ -593,6 +597,11 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 body: lower_block(block)?,
                 catch: None,
             })
+        }
+        // `gather { … }` -> a gather expression over the lowered block body.
+        RakuAstClass::StatementPrefixGather => {
+            let block = named_child_or_positional(node)?;
+            Ok(Expr::Gather(lower_block(block)?))
         }
         // A fat-arrow pair `a => 1` -> a positional pair over a `FatArrow` binop.
         RakuAstClass::FatArrow => {
