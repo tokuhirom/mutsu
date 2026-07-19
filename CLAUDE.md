@@ -151,8 +151,10 @@ Executes compiled bytecode. `vm.rs` holds the (unified `Interpreter`) struct, `r
 - **Distribution** (`.github/workflows/release.yml` on `v*` tags, `docker.yml` to GHCR): the release
   tarball and the container both place `bin/mutsu`, `bin/mzef`, and the zef tree at
   `share/mutsu/zef` so `mzef` finds it via `../share/mutsu/zef` with zero config (mise installs both
-  onto PATH). Linux x64/arm64 are required; **macOS is best-effort** (`continue-on-error`) pending an
-  upstream libffi Mach-O CFI fix — do not "fix" that by weakening the Linux path.
+  onto PATH). **All four targets (Linux x64/arm64, macOS x64/arm64) are required.** macOS arm64 was
+  `continue-on-error` until the vendored-libffi bump (ADR-0012) fixed its Mach-O CFI build; that was
+  verified green via a `workflow_dispatch` run, so `optional` was dropped and a macOS regression now
+  fails the release loudly. Do not "fix" macOS by weakening the Linux path.
 
 ## Reference implementation
 

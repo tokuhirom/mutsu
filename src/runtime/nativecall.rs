@@ -367,7 +367,7 @@ impl ArgOwner {
         ArgOwner::OutPtr { slot, slot_ptr }
     }
 
-    fn as_arg(&self) -> libffi::middle::Arg {
+    fn as_arg(&self) -> libffi::middle::Arg<'_> {
         use libffi::middle::arg;
         match self {
             ArgOwner::I8(v) => arg(v),
