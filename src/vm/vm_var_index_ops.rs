@@ -1346,11 +1346,9 @@ impl Interpreter {
                 Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
             }
             // `%mix{*}` returns all values (the element weights).
-            (ValueView::Mix(m, _), ValueView::Whatever) => Value::array(
-                m.values()
-                    .map(|w| Self::mix_weight_as_value(*w))
-                    .collect(),
-            ),
+            (ValueView::Mix(m, _), ValueView::Whatever) => {
+                Value::array(m.values().map(|w| Self::mix_weight_as_value(*w)).collect())
+            }
             (ValueView::Mix(m, _), _) => {
                 Self::mix_weight_as_value(*m.get(&index.to_string_value()).unwrap_or(&0.0))
             }
