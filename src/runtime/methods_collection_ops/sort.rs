@@ -665,7 +665,11 @@ pub(crate) fn sort_value_generic(
                 .collect();
             sort_value_generic(caller, Value::array(items), args)
         }
-        _ => Ok(target.clone()),
+        // Any non-list value sorts as a one-element list of itself: `Any.sort`
+        // is `self.list.sort`, so `"cba".sort` is `("cba",).Seq`, `42.sort` is
+        // `(42,).Seq`, etc. (Set/Bag/Mix/Hash and the list-ish kinds are handled
+        // above.) mutsu previously returned the scalar unchanged.
+        _ => Ok(Value::seq(vec![target.clone()])),
     }
 }
 
