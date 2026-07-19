@@ -5,7 +5,7 @@ use Test;
 # (`f("x")` == `"x".f`). Regression: sqrt/floor/ceiling/round function arms
 # matched scalar variants and fell to NaN/0 for a Str argument.
 
-plan 16;
+plan 25;
 
 # sqrt / floor / ceiling / round on integer & decimal strings
 is sqrt("4"),        2,  'sqrt "4" -> 2';
@@ -30,3 +30,25 @@ is sign("4"),   1, 'sign "4" -> 1';
 # a string function is NOT hijacked by numeric coercion
 is chars("6+8i"), 4, 'chars "6+8i" -> 4 (string length)';
 is chars("123"),  3, 'chars "123" -> 3 (string length)';
+
+# A non-numeric string cannot be coerced: a Cool numeric *function* must raise
+# X::Str::Numeric (matching `+"abc"`), NOT fall through to a NaN/0 default.
+# Regression: `sqrt "abc"` was NaN, `floor "abc"` / `sign "abc"` were 0.
+throws-like { sqrt "abc" },  X::Str::Numeric, 'sqrt "abc" throws X::Str::Numeric';
+throws-like { sin "abc" },   X::Str::Numeric, 'sin "abc" throws X::Str::Numeric';
+throws-like { floor "abc" }, X::Str::Numeric, 'floor "abc" throws X::Str::Numeric';
+throws-like { sign "abc" },  X::Str::Numeric, 'sign "abc" throws X::Str::Numeric';
+throws-like { log "abc" },   X::Str::Numeric, 'log "abc" throws X::Str::Numeric';
+throws-like { abs "xyz" },   X::Str::Numeric, 'abs "xyz" throws X::Str::Numeric';
+
+# the raised exception carries rakudo's reason/pos, and the message embeds the
+# position marker the same way the numeric operators do.
+throws-like { sqrt "abc" }, X::Str::Numeric,
+    reason => 'base-10 number must begin with valid digits or \'.\'',
+    'sqrt "abc" reports the leading-digit reason';
+throws-like { sqrt "5 foo" }, X::Str::Numeric,
+    reason => 'trailing characters after number',
+    'sqrt "5 foo" reports the trailing-characters reason';
+
+# a numeric string still works after the change (regression guard)
+is sqrt("16"), 4, 'sqrt "16" -> 4 (numeric string still coerces)';

@@ -3,10 +3,12 @@ use super::*;
 /// Build an `X::Str::Numeric` error for a string that cannot be used as a
 /// number, carrying rakudo's `source`, `pos` and `reason` attributes.
 pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> RuntimeError {
-    let msg = format!(
-        "Cannot convert string to number: {} in '{}'",
-        reason, source
-    );
+    // Match Rakudo's `X::Str::Numeric.message`, which embeds the `⏏` position
+    // marker via the source-indicator (e.g. `... in '5⏏ foo' (indicated by ⏏)`),
+    // keeping this path consistent with `str_numeric_exception_attrs` (used by
+    // the `.Int`/`.Num` coercions).
+    let source_indicator = crate::runtime::str_numeric::build_source_indicator(source, pos);
+    let msg = format!("Cannot convert string to number: {reason} {source_indicator}");
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("source".to_string(), Value::str(source.to_string()));
     attrs.insert("pos".to_string(), Value::int(pos as i64));
@@ -14,9 +16,7 @@ pub(crate) fn str_numeric_error(source: &str, pos: usize, reason: &str) -> Runti
     attrs.insert("target-name".to_string(), Value::str("Numeric".to_string()));
     attrs.insert(
         "source-indicator".to_string(),
-        Value::str(crate::runtime::str_numeric::build_source_indicator(
-            source, pos,
-        )),
+        Value::str(source_indicator.clone()),
     );
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Str::Numeric"), attrs);
