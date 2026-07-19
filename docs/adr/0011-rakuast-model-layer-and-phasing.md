@@ -371,6 +371,12 @@ earlier ones.
     block-vs-hash distinction is a parse-time decision the RakuAST `Block` node does not carry — so the
     write direction is deliberately out of scope. Value-less keys (`{:a}`) stay the boundary. Tests in
     `t/rakuast-hash-literal.t`. Next: code-block interpolation, WhateverCode, associative subscripts.
+  - **Slice 30 (the `do` statement prefix) — done, both directions.** A new `StatementPrefix::Do` node
+    class models `do { … }`. The read side converts `Expr::DoBlock` to it (wrapping the block via
+    `block_node`) and the write side lowers it back to an `Expr::DoBlock` over the lowered block body.
+    `EVAL(Q{do { 1 + 2 }}.AST)` → `3`; a multi-statement do block, a do block over a variable, and a do
+    block composed inline in an expression all work. A labelled `do` stays the boundary. Tests in
+    `t/rakuast-eval-do.t`.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

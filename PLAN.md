@@ -1014,9 +1014,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 29: hash literals `{a => 1}` — **read-only** (`.AST` gist). raku models `{...}` as a
         `Block` of `FatArrow` pairs; EVAL of that Block yields a block/Callable in raku itself, so the
         write direction is out of scope. Tests in `t/rakuast-hash-literal.t`.
-  - [ ] Slice 30+: associative subscripts (`%h{…}`), WhateverCode (`* + 1`), code-block (`{…}`)
-        interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5 full
-        lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 30: the `do { … }` statement prefix (both directions) via a new `StatementPrefix::Do`
+        node — `Expr::DoBlock` ↔ `StatementPrefix::Do(Block)`. `EVAL(Q{do { 1 + 2 }}.AST)` → 3. Tests in
+        `t/rakuast-eval-do.t`.
+  - [ ] Slice 31+: `try`/CATCH, associative subscripts (`%h{…}` — read-ambiguous), WhateverCode
+        (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
+        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

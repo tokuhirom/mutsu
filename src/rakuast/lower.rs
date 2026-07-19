@@ -572,6 +572,14 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // The `*` whatever term.
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),
+        // `do { … }` -> a do-block expression over the lowered block body.
+        RakuAstClass::StatementPrefixDo => {
+            let block = named_child_or_positional(node)?;
+            Ok(Expr::DoBlock {
+                body: lower_block(block)?,
+                label: None,
+            })
+        }
         // A fat-arrow pair `a => 1` -> a positional pair over a `FatArrow` binop.
         RakuAstClass::FatArrow => {
             let key = leaf_str(node, "key")?;
