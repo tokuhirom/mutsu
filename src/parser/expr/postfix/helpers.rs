@@ -74,6 +74,12 @@ pub(crate) fn is_angle_key_char(c: char) -> bool {
         || c == '@'
         || c == '%'
         || c == '&'
+        // Parentheses are ordinary characters inside angle-word quoting, so an
+        // angle *subscript* key may contain them too: `%h<(default)>` is the
+        // string key `(default)` (App::Rak). The `<...>` word-list literal
+        // already accepts them; this aligns the subscript path.
+        || c == '('
+        || c == ')'
         || is_non_breaking_space(c)
         || (!c.is_ascii() && !c.is_whitespace())
 }
