@@ -633,10 +633,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         rest = r;
     }
 
-    // `handles` trait, e.g. `has $.x handles <a b>`
+    // `handles` trait, e.g. `has $.x handles <a b>` or `has $.x handles<a b>`
+    // (no space before the angle-word list is legal, so only optional
+    // whitespace is required after the keyword — `keyword` already guards the
+    // word boundary, so `handlesfoo` never matches here).
     let mut handles = Vec::new();
     while let Some(r) = keyword("handles", rest) {
-        let (r, _) = ws1(r)?;
+        let (r, _) = ws(r)?;
         parse_handle_specs(r, &mut handles, &mut rest)?;
         let (r, _) = ws(rest)?;
         rest = r;
