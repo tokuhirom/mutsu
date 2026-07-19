@@ -1313,6 +1313,10 @@ impl Interpreter {
                     .collect(),
             ),
             (ValueView::Set(s, _), ValueView::Str(key)) => Value::truth(s.contains(key.as_str())),
+            // `%set{*}` returns all values (each element's membership is True).
+            (ValueView::Set(s, _), ValueView::Whatever) => {
+                Value::array(s.iter().map(|_| Value::truth(true)).collect())
+            }
             (ValueView::Set(s, _), _) => Value::truth(s.contains(&index.to_string_value())),
             (ValueView::Bag(b, _), ValueView::Array(keys, ..)) => Value::array(
                 keys.iter()
@@ -1323,6 +1327,10 @@ impl Interpreter {
             ),
             (ValueView::Bag(b, _), ValueView::Str(key)) => {
                 Value::from_bigint(b.get(key.as_str()).cloned().unwrap_or_default())
+            }
+            // `%bag{*}` returns all values (the element weights/counts).
+            (ValueView::Bag(b, _), ValueView::Whatever) => {
+                Value::array(b.values().map(|c| Value::from_bigint(c.clone())).collect())
             }
             (ValueView::Bag(b, _), _) => {
                 Value::from_bigint(b.get(&index.to_string_value()).cloned().unwrap_or_default())
@@ -1336,6 +1344,10 @@ impl Interpreter {
             ),
             (ValueView::Mix(m, _), ValueView::Str(key)) => {
                 Self::mix_weight_as_value(*m.get(key.as_str()).unwrap_or(&0.0))
+            }
+            // `%mix{*}` returns all values (the element weights).
+            (ValueView::Mix(m, _), ValueView::Whatever) => {
+                Value::array(m.values().map(|w| Self::mix_weight_as_value(*w)).collect())
             }
             (ValueView::Mix(m, _), _) => {
                 Self::mix_weight_as_value(*m.get(&index.to_string_value()).unwrap_or(&0.0))
