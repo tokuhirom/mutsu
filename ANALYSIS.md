@@ -132,11 +132,15 @@ What remains is the endgame that motivated the campaign:
   baked slot but falls back to `find_local_slot(code, name)`
   (`vm_env_helpers.rs:1200-1214`), and several writeback callers still pass `None`
   (e.g. `vm_for_loop_dispatch.rs:307-310`, `vm_loop_writeback.rs:23-24`).
-- **`BlockScope` still clones/restores the whole `locals` vec**
-  (`vm_misc_scope.rs:178,184,376`) — the cost the campaign exists to delete. A
-  clone-removal probe was attempted and reverted on 2026-07-12
-  (lexical-scope-slot-campaign.md:396).
-- **The `needs_env_sync` blanket**: `captures_env_by_name` returns true if the frame
+- **The whole-`locals` per-block clones are gone** (slices 1-3, 2026-07-19):
+  `BlockLocalScope` (#4818), the `$OUTER::` snapshot (#4821), and the `BlockScope`
+  whole-array restore (#4827) each dropped their `locals`-vec clone for a targeted
+  Nil-reset of the block's fresh declarations — the headline cost the campaign
+  existed to delete. The compile-time `block_declared_slots` bake the 2026-07-12
+  probe anticipated proved unnecessary (the runtime `block_declared` name set plus a
+  not-in-`saved_env` test isolates fresh declarations).
+- **The `needs_env_sync` blanket** — the one remaining piece of the endgame.
+  `captures_env_by_name` returns true if the frame
   contains any `ForLoop`/`BlockScope`/`MakeGather`/`WheneverScope`, mirroring *every*
   local to env on each store. Removing it precisely requires un-name-keying block
   restore, loop shadow save/restore, and closure capture **simultaneously** — one
@@ -167,18 +171,22 @@ Remaining, all measurement-gated:
   an absolute index; histogram-driven consolidation of syntax-shaped specialized ops
   (`ContainerEq`×4, `IndexAssign*`×6).
 
-### 1.5 JIT (new since rev8) — default on; Tier B variable ops are the open slice
+### 1.5 JIT (new since rev8) — default on; ADR-0004 complete
 
 A Cranelift JIT (ADR-0004) landed as J1–J5 and is **default-on since 2026-07-13**
 (#4482; `src/vm/vm_jit*.rs`, 7 files ≈2000 lines; blocking `jit-stress` CI job).
 Tier A translates hot opcode chunks into helper-call sequences; Tier B inlines
 NaN-box tag-dispatched Int/Num arithmetic (including div/mod, #4503) into native code.
 
-Two open points:
-
-- **J4d (Tier B variable-op inlining)** — GetLocal/SetLocal fast paths, JIT→JIT
-  per-call bind inlining, args-Vec allocation removal. This is the body of the
-  "int loops 5-10x" ADR-0004 gate.
+- **J4d (Tier B variable-op inlining) is done and ADR-0004 is closed** (#4543).
+  It landed as six profile-driven slices: inline GetLocal + lock-free hot-range
+  cache (#4527), the SetLocal-mirror intern-chain removal (#4528), an
+  allocation-free light-call ceremony (#4529), FxHashed dispatch tables + fused
+  arg scans (#4534), caller-env-frame reuse via a CoW write latch (#4537), and
+  the readonly-set Arc snapshot → mutation journal (#4540). fib+jit reached a
+  0.28 raku ratio (from 0.34). The int-loop "5-10x" ratio gate was re-judged
+  obsolete (the old-interpreter denominator shrank with the shared-cost cuts);
+  the absolute target — int-arith+jit ≈ 0.16-0.18x raku (~5.5x faster) — is met.
 - **The profile says the JIT is not yet the bottleneck's owner**: on fib (release,
   JIT on) native code runs only ~5.7% of cycles; allocation (~11.8%), hashing/env
   table cloning (~12%), and the call path (~10.9%) dominate
@@ -375,14 +383,15 @@ PLAN.md:
 | # | Item | Kind | Impact |
 |---|------|------|--------|
 | 1 | **Lexical-slot endgame as one fused campaign**: `needs_env_sync` blanket removal → by-name fallback retirement → `BlockScope` full-clone removal (§1.3; also the top remaining perf lever per the fib profile) | correctness + perf | large |
-| 2 | **JIT J4d** — Tier B variable-op inlining (the ADR-0004 "int loops 5-10x" gate, §1.5) | perf | medium-large |
-| 3 | **`gc_contents_mut` residue inventory** (~59 sites, trending *up*; route through cells or `make_mut`-style COW, §2.1) + buffered-clone invariant hardening | soundness (UB) | medium |
-| 4 | **RakuAST completion** (Phase 6 macros/`quasi`, type-registry breadth beyond the covered node set, §1.7) — the largest active campaign | feature | medium |
-| 5 | Scouted perf slices: `compiled_fns` SipHash removal, callsite-line marker removal (PLAN §5 items 1-2) | perf | medium |
-| 6 | Declaration registration → bytecode; dispatch entry consolidation into a type×method table (also retires §4-1's hand tables) (§1.1/§3.3) | design | medium |
-| 7 | Opcode remainder, measurement-gated (§1.4); recursive start/await hang, shaped-native array coercion (§2.3) | perf / robustness | low-medium |
-| 8 | Control-channel separation (§2.2); Supply panic → QUIT (§2.3) | design / robustness | low |
-| 9 | Hygiene: `runtime/mod.rs` re-slim (2470 lines, overdue), file splits (239 >500), clone/unwrap trend sweep, stale gate-name comments (§5/§6) | hygiene | low-medium |
+| 2 | **`gc_contents_mut` residue inventory** (~59 sites, trending *up*; route through cells or `make_mut`-style COW, §2.1) + buffered-clone invariant hardening | soundness (UB) | medium |
+| 3 | **RakuAST completion** (Phase 6 macros/`quasi`, type-registry breadth beyond the covered node set, §1.7) — the largest active campaign | feature | medium |
+| 4 | Scouted perf slices: `compiled_fns` SipHash removal, callsite-line marker removal (PLAN §5 items 1-2) | perf | medium |
+| 5 | Declaration registration → bytecode; dispatch entry consolidation into a type×method table (also retires §4-1's hand tables) (§1.1/§3.3) | design | medium |
+| 6 | Opcode remainder, measurement-gated (§1.4); recursive start/await hang, shaped-native array coercion (§2.3) | perf / robustness | low-medium |
+| 7 | Control-channel separation (§2.2); Supply panic → QUIT (§2.3) | design / robustness | low |
+| 8 | Hygiene: `runtime/mod.rs` re-slim (2470 lines, overdue), file splits (239 >500), clone/unwrap trend sweep, stale gate-name comments (§5/§6) | hygiene | low-medium |
+
+*(JIT J4d — Tier B variable-op inlining — completed 2026-07-15; ADR-0004 closed, #4543. See §1.5.)*
 
 ---
 
