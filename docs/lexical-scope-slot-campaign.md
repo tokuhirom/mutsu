@@ -329,20 +329,38 @@ three of these were missed until now — re-run the FULL survey periodically.
       The gate (`shadow_slots_active`) now defaults true; `MUTSU_NO_SHADOW_SLOTS`
       is a temporary opt-out escape hatch. Green light = the fresh full toggle-ON
       survey below.
-- [ ] §1.3 slot-indexed locals + drop the `exec_block_scope_op` whole-`locals`
-      clone (`self.locals.clone()` @ vm_misc_scope.rs:178, plus the
-      `outer_scope_locals.push(saved_locals.clone())` @ :184 and the
-      `self.locals = saved_locals` restore @ :376). **This is the load-bearing
-      remaining refactor** — the clone feeds THREE entangled consumers: (a) the
-      block-exit locals restore (now largely redundant under shadow slots since
-      inner shadows own isolated slots, but the env re-sync at :377-381 and
-      `our_locals`/alias reconciliation still ride on it), (b) `$OUTER::` runtime
-      access (`outer_scope_locals`, read in `vm_var_get_ops.rs:381`), and (c) GC
-      root tracing (`gc_roots.rs:116`). Removing it safely means reworking the
-      block-exit reconciliation to not need a whole-array snapshot AND giving
-      `$OUTER::` a non-snapshot path (S14 baked the compile-time slots; the
-      runtime snapshot path remains). Deserves its own dedicated session with
-      full `make roast` validation, per the doc's per-slice rule.
+- [x] **Per-block whole-`locals` clone removal — DONE under shadow slots
+      (2026-07-19, slices 1-3, PRs #4818/#4821/#4827).** The three clones the
+      campaign existed to delete are gone on the default build:
+      - **Slice 1 (#4818):** `exec_block_local_scope_op`'s `self.locals.clone()`
+        (BlockLocalScope, the if/unless/else branch path) → a targeted Nil-reset
+        of the branch's fresh declarations. A fresh (non-shadow) declaration owns
+        a unique slot whose pre-branch value is `Nil` by induction, so resetting
+        to `Nil` is identical to restoring a snapshot, at O(declared).
+      - **Slice 2 (#4821):** `outer_scope_locals.push(saved_locals.clone())`
+        (`$OUTER::` snapshot) → an empty frame under shadow slots. In-frame
+        `$OUTER::` resolves through the compiler-baked outer slot against the live
+        `locals` (`get_outer_var` shadow fast path); cross-frame resolves against
+        the captured `__mutsu_outer::` env. Neither reads the snapshot.
+      - **Slice 3 (#4827):** the headline `self.locals = saved_locals` whole-array
+        restore → a targeted Nil-reset of fresh block declarations, keeping the
+        existing env re-seed (which already holds the correct post-block value for
+        every enclosing name). No per-block locals clone is taken at all now.
+
+      The `MUTSU_NO_SHADOW_SLOTS` opt-out still takes the full snapshot (it lacks
+      distinct shadow slots and needs the whole-array restore + `$OUTER::`
+      snapshot). GC root tracing (`gc_roots.rs`) traces whatever `outer_scope_locals`
+      holds, so the empty frames are harmless.
+
+      **Still open — the dual-store half of §1.3.** Slice 3's restore still
+      re-seeds enclosing slots from `restored_env` (the name-keyed env), i.e. it
+      still relies on the `needs_env_sync` blanket mirroring block-body stores to
+      env. Dropping that blanket (the fib env-COW perf payoff) requires making
+      block exit slot-authoritative — no `restored_env` re-seed, slot-based
+      save/restore for the non-propagating `$_`/`$*dyn` names — while keeping the
+      `__mutsu_loop_*` control temps and the `MakeGather`/`WheneverScope` by-name
+      bodies env-synced. That is the fused §1.3 + §1.2 campaign below, not a clone
+      removal, and it is the remaining work.
 
 ## §1.3 is an ARCHITECTURE slice, not a perf slice (measured 2026-07-14)
 
@@ -390,33 +408,33 @@ which are deterministic and identical ON/OFF). So flipping the default breaks
 nothing that currently passes — the §1.5 leaf-slot bakes (S1–S17) plus the
 2026-07-10 container-identity/cell campaign drove the §1.3 class-1 (name-keyed
 env dual-store) breakage, and every §1.4 survey #1–#3 regression, to zero.
-Validated with `make test` under the flip (16351 tests, PASS). The clone-removal
-perf payoff is the remaining unchecked box above.
+Validated with `make test` under the flip (16351 tests, PASS).
 
-## Clone-removal probe (2026-07-12, reverted — scopes the next session)
+## Clone-removal — DONE (2026-07-19, slices 1-3)
 
-A one-line experiment removed the `self.locals = saved_locals` restore (:376),
-keeping only the env-driven re-sync (:377-381), to test the hypothesis that the
-whole-array restore is redundant under shadow slots. **Result: NOT redundant.**
-`make test` regressed on `t/block-lexical-scope.t` #3 ("chained our/my in block
-does not leak"): `{ our $sa2 = my $sb2 = 42 } ($sa2, $sb2)` must throw
-`X::Undeclared`, but without the restore the block-declared `$sb2`/`$sa2` slots
-keep their in-block value (42) and a post-block reference finds the stale slot
-instead of raising undeclared. So the restore has a **second role beyond
-shadow-slot reset**: it clears block-declared slots so their values cannot leak
-past the block (the env restore at :325-375 removes the *names* from env, but the
-*slot values* survive and are still reachable by-slot/by-name).
+The clone-removal probe (2026-07-12) removed the `self.locals = saved_locals`
+restore while keeping only the env-driven re-sync, and regressed
+`t/block-lexical-scope.t` #3: `{ our $sa2 = my $sb2 = 42 } ($sa2, $sb2)` must
+throw `X::Undeclared`, but without a reset the block-declared slots kept their
+in-block value (42) and a post-block reference found the stale slot. That fixed
+the design: the restore's second role is to **clear the block's fresh declarations
+so they cannot leak past the block**.
 
-**Concrete plan for the clone-removal session:** replace the whole-array
-`clone` + `self.locals = saved_locals` with a **targeted reset of just this
-block's declared slots** (Nil them on exit) — that removes the O(n) clone while
-preserving the leak-prevention semantics. It needs a compile-time list of the
-slots each block declares (bake a `block_declared_slots` onto the `BlockScope`
-opcode/bounds, analogous to the S1–S17 slot bakes), because at runtime
-`block_declared` is only a name set and a name can occupy several shadow slots.
-Then separately give `$OUTER::` a non-snapshot path so `outer_scope_locals`
-(:184) can drop its `saved_locals.clone()` too, and update `gc_roots.rs:116`.
-Validate OFF (`MUTSU_NO_SHADOW_SLOTS`) AND ON with `make test` + `make roast`.
+The landed fix (slice 3, #4827) does exactly that — a **targeted Nil-reset of the
+block's fresh declarations** — but **without** the compile-time `block_declared_slots`
+bake the 2026-07-12 note anticipated. That bake turned out unnecessary: the
+runtime `block_declared` **name** set plus a "not in `saved_env`" test already
+isolates the fresh (single-slot) declarations from shadowing ones (a shadowing
+name's outer slot is untouched and its inner slot is dead post-block), reusing
+slice 1's technique. `$OUTER::` got its non-snapshot path via slice 2 (the empty
+`outer_scope_locals` frame + the existing baked-slot fast path), and `gc_roots.rs`
+traces the now-empty frames harmlessly. Validated OFF and ON with `make test`
+(18678 PASS) and the CI `make roast`.
+
+**Remaining:** the dual-store half — dropping the `needs_env_sync` blanket so
+block exit no longer re-seeds slots from the name-keyed env (the fib env-COW perf
+payoff). See the fused §1.3 + §1.2 campaign notes below; that is the open work,
+not clone removal.
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
