@@ -171,7 +171,11 @@ impl Interpreter {
                         n as f64 / d as f64
                     }
                 }
-                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
+                // Raku numeric-string coercion allows surrounding whitespace
+                // (`+"1 " == 1`), so trim before parsing — Rust's `f64::parse`
+                // rejects the trailing/leading space and would yield 0.0, making
+                // `&[==].("1 ", 1)` wrongly False vs the infix `==` path.
+                ValueView::Str(s) => s.trim().parse::<f64>().unwrap_or(0.0),
                 ValueView::Bool(b) => {
                     if b {
                         1.0
