@@ -15,6 +15,10 @@ const REDUCTION_OPS: &[&str] = &[
     "unicmp", "~~", "min", "max", "gcd", "lcm", "and", "or", "not", "andthen", "orelse", "xor",
     ",", "after", "before", "X", "Z", "x", "xx", "&", "|", "^", "o", "∘", "⊍", "div", "mod",
     "minmax",
+    // Unicode operator aliases (each an alias of a listed ASCII op that mutsu
+    // folds identically in reduction form): × (*), ÷ (/), − (U+2212, -),
+    // ≤ (<=), ≥ (>=), ≠ (!=), ∪ (set union), ∩ (set intersection).
+    "×", "÷", "−", "≤", "≥", "≠", "∪", "∩",
 ];
 
 /// Find the matching `]` for a `[` at position 0, respecting nesting.
