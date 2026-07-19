@@ -275,6 +275,35 @@ impl Interpreter {
         // The baked slot is for `original_var_name` (the pre-alias target name), so
         // the sigilless-alias write-back below uses it directly — also gated OFF.
         let orig_slot = if shadow_active { target_slot } else { None };
+        // (B) per-store env-write gate: a scalar-held container
+        // (`my $b = "hi".encode; $b[0] = 200`, `my $m = %h.Map; $m<c> = 9`) skips
+        // its env mirror under the gate, so the env reads throughout this
+        // env-centric handler would see the stale `my`-decl seed (Any) instead of
+        // the live Blob/Map — and an immutable-container element assignment would
+        // silently NOT throw. Seed env from the authoritative slot before the
+        // handler runs. Restricted to a SCALAR target (bare name, no `@`/`%`
+        // sigil): an `@`/`%` aggregate keeps its container in env (aggregate reads
+        // are env-first, and env may hold a more-reified lazy/range representation
+        // than the slot — seeding from the slot would clobber that). Only fires
+        // when the slot holds a real value whose variant differs from the env
+        // mirror (the scalar decl seed is a type object, so it always differs from
+        // a live container). Gate OFF: byte-identical (skipped).
+        if crate::opcode::gate_local_env_write()
+            && !var_name.starts_with('@')
+            && !var_name.starts_with('%')
+            && let Some(slot) = self.resolve_local_slot(code, eff_slot, &var_name)
+        {
+            let slot_val = self.locals[slot].clone();
+            if !slot_val.is_nil() {
+                let stale = match self.env().get(&var_name) {
+                    Some(e) => !e.same_variant(&slot_val),
+                    None => true,
+                };
+                if stale {
+                    self.set_env_with_main_alias(&var_name, slot_val);
+                }
+            }
+        }
         // Pre-compute fill value for native typed arrays (e.g. int->0, num->0e0, str->"")
         // Must be done before mutable borrows to avoid borrow conflicts.
         let native_fill = {
