@@ -19,7 +19,7 @@
 use super::vm_jit_layout::JitLayout;
 use crate::value::jit_words as w;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
-use cranelift_codegen::ir::{InstBuilder, MemFlags, SigRef, Type, types};
+use cranelift_codegen::ir::{InstBuilder, MemFlagsData, SigRef, Type, types};
 use cranelift_frontend::FunctionBuilder;
 
 type CVal = cranelift_codegen::ir::Value;
@@ -65,8 +65,8 @@ pub(super) struct TierB {
 
 impl TierB {
     #[inline]
-    pub(super) fn mf() -> MemFlags {
-        MemFlags::trusted()
+    pub(super) fn mf() -> MemFlagsData {
+        MemFlagsData::trusted()
     }
 
     pub(super) fn stack_ptr(&self, b: &mut FunctionBuilder) -> CVal {
@@ -157,13 +157,13 @@ impl TierB {
     /// Decode an encoded Num word to an f64 SSA value.
     fn decode_num(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
         let bits = b.ins().iadd_imm(word, -(w::DOUBLE_OFFSET as i64));
-        b.ins().bitcast(types::F64, MemFlags::new(), bits)
+        b.ins().bitcast(types::F64, MemFlagsData::new(), bits)
     }
 
     /// Encode an f64 SSA value to a Num word (NaN collapsed to the canonical
     /// quiet-NaN word, exactly like `Value::num`).
     fn encode_num(&self, b: &mut FunctionBuilder, f: CVal) -> CVal {
-        let bits = b.ins().bitcast(types::I64, MemFlags::new(), f);
+        let bits = b.ins().bitcast(types::I64, MemFlagsData::new(), f);
         let word = b.ins().iadd_imm(bits, w::DOUBLE_OFFSET as i64);
         let not_nan = b.ins().fcmp(FloatCC::Equal, f, f);
         let nan_word = b.ins().iconst(types::I64, w::NUM_CANONICAL_NAN_WORD as i64);
