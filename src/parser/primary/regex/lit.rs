@@ -24,7 +24,7 @@ use super::adverbs::{
 use super::call_args::{
     has_unescaped_statement_boundary, parse_call_arg_list, parse_colon_method_arg,
 };
-use super::scan::{scan_to_delim, scan_to_delim_p5};
+use super::scan::{scan_to_delim, scan_to_delim_p5, scan_to_delim_subst_pattern};
 use super::subst::{
     build_non_destructive_subst_expr, build_topic_subst_compound_expr, build_topic_subst_expr,
     parse_subst_replacement_expr, try_strip_subst_compound_assign,
@@ -268,10 +268,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
+                // The substitution *pattern* half: a trailing `$` is the anchor,
+                // never `$/`, since the delimiter always separates pattern from
+                // replacement (`s/foo$/.bar/`). Use the subst-pattern scanner so
+                // the separator is not swallowed.
                 let scan_fn = if adverbs.perl5 {
                     scan_to_delim_p5
                 } else {
-                    scan_to_delim
+                    scan_to_delim_subst_pattern
                 };
                 if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     let r2 = if is_paired {
@@ -378,10 +382,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
+                // The substitution *pattern* half: a trailing `$` is the anchor,
+                // never `$/`, since the delimiter always separates pattern from
+                // replacement (`s/foo$/.bar/`). Use the subst-pattern scanner so
+                // the separator is not swallowed.
                 let scan_fn = if adverbs.perl5 {
                     scan_to_delim_p5
                 } else {
-                    scan_to_delim
+                    scan_to_delim_subst_pattern
                 };
                 if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     // For paired delimiters, skip optional whitespace and opening delimiter
@@ -564,10 +572,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     other => (other, false),
                 };
                 let r = &spec[open_ch.len_utf8()..];
+                // The substitution *pattern* half: a trailing `$` is the anchor,
+                // never `$/`, since the delimiter always separates pattern from
+                // replacement (`s/foo$/.bar/`). Use the subst-pattern scanner so
+                // the separator is not swallowed.
                 let scan_fn = if adverbs.perl5 {
                     scan_to_delim_p5
                 } else {
-                    scan_to_delim
+                    scan_to_delim_subst_pattern
                 };
                 if let Some((pattern, after_pat)) = scan_fn(r, open_ch, close_ch, is_paired) {
                     let r2 = if is_paired {
