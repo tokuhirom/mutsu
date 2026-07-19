@@ -15,10 +15,11 @@ points mutsu at the dist's own `lib`, and tries to `use` every module the dist
 `provides`, bucketing the outcome. It answers the question the guts survey could
 not: **of the reachable ~90%, how much runs today, and what are the top blockers?**
 
-The headline finding (first run, 2026-07-19): among the pure-Raku dists whose
-deps are satisfiable, **only about half load cleanly**; the other half hit a
+The headline finding: among the pure-Raku dists whose deps are satisfiable,
+**57%** load cleanly (n=150/seed7, up from 48% at n=60/seed42); the rest hit a
 genuine mutsu parse/runtime bug on `use` alone. So real-dist compatibility, not
 roast, is the productive frontier for widening the batteries base (PLAN.md §1 B4).
+The list of dists proven to load is the [load_ok section](#load_ok--proven-to-load-on-mutsu-n150-seed-7).
 
 ## ⚠️ Sandbox — this runs untrusted code
 
@@ -47,9 +48,15 @@ do not use it** except against dists you already trust.
 ```sh
 # release build recommended; needs ~/.zef/store/fez/fez.json (any mzef/zef op populates it)
 # sandboxed by default (bwrap); install: apt-get install bubblewrap
-MUTSU_BIN=target/release/mutsu scripts/dist-compat-sweep.py --n 60 --seed 42 --timeout 25
-# → tmp/dist-compat-sweep.tsv (per provided-module rows) + a bucket summary
+MUTSU_BIN=target/release/mutsu scripts/dist-compat-sweep.py --n 150 --seed 7 --timeout 20
+# → tmp/dist-compat-sweep.tsv (per provided-module rows) + a bucket summary +
+#   the load_ok dist list (the passing-dist report) printed at the end
 ```
+
+The script prints, after the bucket summary, the full `load_ok` dist list so the
+passing-dist report below can be refreshed in one command. **Rebuild the release
+binary first** (`touch src/main.rs && cargo build --release`) — the sweep silently
+grabs a stale binary otherwise.
 
 - `--only Dist::Name` sweeps specific dists (repeatable); use it to re-check one
   after a fix.
@@ -76,28 +83,27 @@ level to be added later (run the dist's `t/`/`.rakutest` with deps installed).
 | `timeout` | exceeded the per-module timeout | hang / perf bug |
 | `skip_guts` / `skip_native` | carries a guts / NativeCall signal | separate axes (guts survey / NativeCall) |
 
-## Latest run — n=60, seed 42 (2026-07-19, sandboxed via bwrap)
+## Latest run — n=150, seed 7 (2026-07-19, sandboxed via bwrap, main + #4865)
 
-| Bucket | Count | % of 60 | % of executed pure (48) |
+| Bucket | Count | % of 150 | % of executed pure (121) |
 |---|---|---|---|
-| `load_ok` | 15 | 25% | 31% |
-| `missing_dep` | 17 | 28% | 35% |
-| `parse_error` | 7 | 12% | 15% |
-| `runtime_error` | 9 | 15% | 19% |
-| `skip_guts` | 5 | 8% | — |
-| `skip_native` | 6 | 10% | — |
-| `no_provides` | 1 | 2% | — |
+| `load_ok` | 44 | 29% | 36% |
+| `missing_dep` | 44 | 29% | 36% |
+| `parse_error` | 18 | 12% | 15% |
+| `runtime_error` | 15 | 10% | 12% |
+| `skip_native` | 22 | 15% | — |
+| `skip_guts` | 7 | 5% | — |
 
-**Executed pure dists = 48** (60 − 5 guts − 6 native − 1 no-provides). Of the
-**31** whose deps are satisfiable (48 − 17 missing_dep), **15 load (48%)** and
-**16 hit a real mutsu bug (52%)**. Those 16 are the actionable frontier below.
+**Executed pure dists = 121** (150 − 7 guts − 22 native). Of the **77** whose
+deps are satisfiable (121 − 44 missing_dep), **44 load (57%)** and **33 hit a
+real mutsu bug (43%)** — 18 parse, 15 runtime. Those 33 are the actionable
+frontier below. (The load-rate among satisfiable pure dists has climbed from
+48% at n=60/seed42 to 57% here as parse/type fixes land.)
 
-> **⚠️ Re-sweep due (2026-07-19).** Since this table was generated, the
-> `parse_error` bucket has been almost entirely cleared: #4833, #4842, #4845,
-> #4847 (and intervening fixes) mean **every parse_error dist except CSS::Grammar
-> now parses** (Taurus::CLI, Ecosystem::Archive, PDF::Combiner, Geo::Ellipsoid,
-> Abbreviations, Business::CreditCard, Data::Dump). The counts above are stale;
-> re-run the sweep to get fresh buckets before picking the next slice.
+The full passing (`load_ok`) list is in the [load_ok section](#load_ok--proven-to-load-on-mutsu-n150-seed-7)
+below — this is the "which real dists run on mutsu today" report. Regenerate
+both tables together with `scripts/dist-compat-sweep.py` (it now prints the
+`load_ok` dist list at the end of a run).
 
 ## ★ Actionable — real mutsu bugs (parse_error + runtime_error)
 
@@ -106,26 +112,46 @@ Grouped by root cause; a message hit by more than one dist is high-leverage.
 add a `t/` pin, then re-check with `--only <Dist>`. (Same workflow as the mzef
 pipeline.)
 
-### Recurring (multiple dists — fix first)
+The 33 actionable dists in the n=150/seed7 sample (18 parse, 15 runtime). The
+generic `expected statement: expected expected statement…` parse dead-end is
+**not one bug** — each dist needs its own minimal repro (past slices #4842,
+#4845, #4847, #4858, #4865 each cleared a different construct behind that same
+message). Work them one at a time.
 
-| Root cause | Dists | Notes |
-|---|---|---|
-| ~~`Assignment operators inside ?? !! are too loose`~~ **FIXED (#4833)** | Web::App, RakuAST::Utils | A parenthesized accessor-lvalue assignment (`cond ?? a !! ($.value = x)`) was mis-rejected. **RakuAST::Utils now `load_ok`; Web::App advances to `missing_dep` (MIME::Types).** Pin: `t/ternary-paren-accessor-assign.t`. |
-| `expected statement: expected expected statement…` (generic parse dead-end) | ~~**Geo::Ellipsoid**~~, **CSS::Grammar**, ~~**PDF::Combiner**~~, ~~**Ecosystem::Archive**~~, ~~**Taurus::CLI**~~ (all fixed but CSS::Grammar) | Was not one bug — each needed its own repro, and all but CSS::Grammar now parse. **Taurus::CLI** (#4842): `>>.{...}` hyper associative subscript did not parse, and hyper subscripts with a Range/list index (`>>.[0..2]`, `>>.{0..4}`) returned Nil instead of slicing each element (pin `t/hyper-assoc-subscript.t`). **Ecosystem::Archive** (#4842): a chained bind through an angle-word hash subscript (`my $id := %h<key> := VALUE`) failed because `<key>` was parsed as an expression, mis-reading `%h<b> := 5` as a `b > ...` comparison (pin `t/bind-angle-subscript-chain.t`). **PDF::Combiner** (#4847): a `$` anchor closing a substitution pattern (`s/'.pdf'$/.{$x}dpi/`) was mis-read as the `$/` match variable (pin `t/subst-pattern-dollar-anchor.t`). **Geo::Ellipsoid**: parses now (cleared by an intervening fix; a re-sweep is due to confirm its bucket). **Only CSS::Grammar remains** — it fails inside a `grammar` with "angle index key", so it is grammar/regex-slang, not a plain statement bug. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
+### parse_error (18)
 
-### Singletons
+App::Rak · Astro::Utils · Audio::Liquidsoap · Bench · Configuration ·
+Cro::FCGI · CSS · CSV::Table · Deps · File-TreeBuilder · IP::Random ·
+Math::Matrix · ML::SparseMatrixRecommender · Pod::Contents · Prime::Factor ·
+SBOM::CycloneDX · SSH::LibSSH::Tunnel · Trie
 
-| Dist | Bucket | Root cause |
-|---|---|---|
-| Code::Coverable | runtime | `Unexpected block in infix position (missing statement control word…)` |
-| Abbreviations | parse | ~~`Confused. Two terms in a row across lines`~~ **now parses** (cleared by an intervening fix; re-sweep due to confirm bucket). |
-| JavaScript::Google::Charts | runtime | `Cannot declare individual multi candidates in 'our' scope` |
-| Data::Dump | parse | ~~`Malformed double closure; WhateverCode is already a closure…`~~ **FIXED (#4836)** (`where { !$_.values.grep: * !~~ Sub }` — a `*`-arg in a where-block is not a double closure; pin `t/where-constraint-whatever-arg.t`). **Still blocked** by a second bug: `X::Syntax::Confused: Two terms in a row` (same class as Abbreviations). |
-| Business::CreditCard | parse | ~~`X::Syntax::CannotMeta: Cannot negate * because it is not iffy enough`~~ **FIXED (#4845)** — a subset's `is` trait after `of BaseType` (`subset S of T is export where !*.…`) left the `where` stranded; `of`/`is` now parse in either order (pin `t/subset-trait-after-of.t`). Loads now; a separate latent regex char-class bug (`<-[\d x _ \  -]>` matching) only bites when a value is validated. |
-| VERS | runtime | `X::Undeclared::Symbols: Undeclared routine` (load-time) |
-| CSV-AutoClass | runtime | `Variable '$argstr' is not declared` (likely a signature/placeholder gap) |
-| JSON::RepositoryEvent | runtime | `An exception occurred while evaluating a CHECK` |
-| shorten-sub-commands | runtime | `Could not find as-cli-arguments` — self-provides / export resolution |
+Known root causes to date:
+
+| Dist | Root cause |
+|---|---|
+| SSH::LibSSH::Tunnel | `Cannot have a 'whenever' block outside the scope of a 'supply' or 'react' block` — a `whenever` reached at load time (likely a react/supply parse gap). |
+| SBOM::CycloneDX | `unparsed input, column 5: "}\n… @*ERRORS"` — a `@*ERRORS` dynamic var / trailing brace parse dead-end. |
+| CSS | inside a `grammar` ("angle index key") — grammar/regex-slang, heavier. |
+| Prime::Factor / Pod::Contents / Deps / Trie / Configuration / File-TreeBuilder / Bench / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+
+### runtime_error (15)
+
+| Dist | Root cause |
+|---|---|
+| Protocol::MQTT | `Invalid typename 'DecodeBuffer' in parameter declaration.` — a sibling type in the enclosing package (same family as #4865; `DecodeBuffer` is likely nested deeper / declared via a form the prefix-walk still misses). |
+| SQL::Abstract | `No matching candidate found for the parametric role` — advanced past four typename blockers by #4865; now blocked on parametric-role resolution in its `does Constant['…']` / `does Op::Prefix['…']` chains. |
+| JavaScript::Google::Charts | `Cannot declare individual multi candidates in 'our' scope`. |
+| IDNA::Punycode | `Unexpected block in infix position (missing statement control word before the expression?)`. |
+| PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
+| uniname-words | `Odd number of elements found where hash initializer expected` (load-time). |
+| Astro::Sunrise | `'Astro::Location' cannot inherit from 'export' because it is unknown` — an `is export` on a class mis-read as a parent. |
+| Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
+| Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
+| Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
+| App::pixelpick | `X::Undeclared::Symbols: Undeclared routine` (load-time). |
+| RakudoContainerfileBuilder | prints a `Usage:` block at load — a MAIN/`is export` interaction. |
+| App::fix.raku / Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
+| Testo | non-zero exit with no diagnostic captured — needs a direct run to classify. |
 
 ## missing_dep — reachable once deps are present (not mutsu bugs)
 
@@ -134,36 +160,44 @@ These fail only because a dependency dist is not on the path. Re-run with
 worth noting: a dep hit by many dists (e.g. **XML**, **Terminal::ANSI\***) is
 itself a high-value bundle/compat target.
 
-| Dist | Missing dep |
+The 44 missing_dep dists in the n=150/seed7 sample and the dep each first
+needs (via `awk -F'\t' '$3=="missing_dep"' tmp/dist-compat-sweep.tsv`):
+
+| Dep needed | Dependent dists |
 |---|---|
-| deredere | HTTP::UserAgent |
-| HTML::Parser | XML |
-| File::Temp | File::Directory::Tree |
-| DB::Xoos::MySQL | DB::MySQL |
-| cro | File::Ignore |
-| Qwiratry::Location::HTTP | HTTP::Tiny |
-| Anolis | Terminal::ANSIParser |
-| Version::Conan | Version::Semverish |
-| FastCGI::NativeCall::Async | FastCGI::NativeCall |
-| Chatnik | LLM::Functions |
-| LLM::Prompts | XDG::BaseDirectory |
-| Stomp | Concurrent::Iterator |
-| Grammar::Message | Terminal::ANSIColor |
-| XML::Query | XML |
-| Net::Ethereum | Node::Ethereum::Keccak256::Native |
-| Printing::Jdf | XML |
-| Cro::HTTP::BodyParser::JSONClass | Cro::BodyParser |
+| `LLM::DWIM` | SHAI, WAT--CLI |
+| `Date::Calendar::Strftime` | Date::Calendar::Bahai, Date::Calendar::MayaAztec |
+| `Geo::Geometry` | Geo::WellKnownBinary, Geo::WellKnownText |
+| `HTTP::UserAgent` | Geo::Coder::OpenCage |
+| `HTTP::Tiny` | WWW::MistralAI |
+| `HTTP::Status` | HTTP::Roles |
+| `Cro::HTTP::Router` | Cro::WebApp::Evaluate |
+| `XML::Fast → LibXML`, `Text::CSV`, `Digest::MD5`, `Digest::SHA1::Native`, `String::CRC32` | XML::Fast, Services::PortMapping, Trove, DB::Migration::Declare, Hash::Consistent |
+| (many DSL::* / ML::* / LLM::* / Intl::* internal deps) | DSL::English::DataQueryWorkflows, ML::AssociationRuleLearning, MCP::Client, Intl::CLDR, … |
 
-**Repeated deps** (candidate bundle / compat targets): `XML` (×3), `Terminal::*`
-(×2), `HTTP::Tiny` / `HTTP::UserAgent` (HTTP client — the known batteries gap).
+**Repeated deps** (candidate bundle / compat targets): `LLM::DWIM` (×2),
+`Date::Calendar::Strftime` (×2), `Geo::Geometry` (×2), and the HTTP-client
+family (`HTTP::Tiny` / `HTTP::UserAgent` / `HTTP::Status` — the known batteries
+gap). An HTTP client and the `Date::Calendar::*` / `Geo::*` roots each unblock a
+cluster at once.
 
-## load_ok — proven to load on mutsu (n=60, seed 42)
+## load_ok — proven to load on mutsu (n=150, seed 7)
 
-App::FIT2GPX · App::SudokuHelper · Concurrent::Progress · CSV::Parser ·
-File::Copy · File::Find · ForwardIterables · HexDump::Tiny · HTTP::HPACK ·
-List::MoreUtils · List::Util · Modf · Staticish · Test::Builder · Test::Time
+The passing-dist report: every sampled distribution whose provided modules all
+`use` cleanly on mutsu (main + #4865). **44 of 150** (57% of the 77 whose deps
+are satisfiable).
 
-(Load-only; not a claim their test suites pass.)
+Algorithm::LCS · Ask · Async::Command · Attribute::Predicate ·
+Automata::Cellular · bird · CheckSocket · CLDR::List · CodeUnit · CSV::Parser ·
+Deepgrep · English · File::Ignore · Game::Covid19 · Grid · Hash::Agnostic ·
+Hash::Restricted · HTTP::HPACK · IdClass · Math::Interval · Math::Random ·
+Metropolis · Modf · Moonphase · Net::Whois · P5opendir · P5push · P5quotemeta ·
+Point · Raku::Elements · RakupodObject · Rat::Precise · RPi::Device::DS18B20 ·
+RSV · Scalar::Util · SnowFlake · Subset::Helper · Terminal::ANSIParser ·
+Text::Tabs · Time::Duration · Time::Duration::Parser · Trap · Util::Uuencode ·
+ValueList
+
+(Load-only; not a claim their test suites pass — see Level 2 below.)
 
 ## Planned deepenings
 

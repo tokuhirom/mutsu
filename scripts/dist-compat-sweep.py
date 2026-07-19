@@ -276,6 +276,18 @@ def main():
     for k in order:
         if cat[k]:
             print(f"  {k:14} {cat[k]:3}  {100*cat[k]/len(sample):.0f}%")
+
+    # The list of dists that pass the load smoke-test, for the dashboard's
+    # "load_ok — proven to load on mutsu" section (the passing-dist report).
+    # The final row per dist is authoritative (first-failure or final load_ok).
+    final_bucket = {}
+    for name, _ver, bucket, _detail, _axis in all_rows:
+        final_bucket[name] = bucket
+    load_ok = sorted(n for n, b in final_bucket.items() if b == "load_ok")
+    if load_ok:
+        print(f"\n=== load_ok ({len(load_ok)}) — proven to load on mutsu ===")
+        print(" ".join(load_ok))
+
     print(f"\nTSV: {args.tsv}")
 
 
