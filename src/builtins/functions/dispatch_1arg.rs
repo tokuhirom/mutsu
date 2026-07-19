@@ -90,11 +90,25 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 | "cotan"
                 | "narrow"
         )
-        && let Some(coerced) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s)
-        && let Some(res) =
-            crate::builtins::methods_0arg::native_method_0arg(&coerced, Symbol::intern(name))
     {
-        return Some(res);
+        match crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
+            Some(coerced) => {
+                if let Some(res) = crate::builtins::methods_0arg::native_method_0arg(
+                    &coerced,
+                    Symbol::intern(name),
+                ) {
+                    return Some(res);
+                }
+            }
+            // A non-numeric string cannot be coerced: raise X::Str::Numeric the
+            // way `+"abc"` does, instead of falling through to a NaN/0 default
+            // (`sqrt "abc"` was NaN, `floor "abc"` was 0).
+            None => {
+                if let Err(e) = crate::runtime::utils::check_str_numeric(arg) {
+                    return Some(Err(e));
+                }
+            }
+        }
     }
     match name {
         "combinations" => {
