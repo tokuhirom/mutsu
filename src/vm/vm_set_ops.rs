@@ -22,10 +22,6 @@ impl Interpreter {
         matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
     }
 
-    fn value_matches_key(value: &Value, key: &str) -> bool {
-        value.to_string_value() == key
-    }
-
     fn range_contains(range: &Value, needle: &Value) -> bool {
         match range.view() {
             ValueView::Range(start, end) => {
@@ -147,7 +143,11 @@ impl Interpreter {
                 .as_list_items()
                 .unwrap()
                 .iter()
-                .any(|item| Self::value_matches_key(item, &key)),
+                // `∈`/`(elem)` coerces its RHS to a Set and tests membership by
+                // `===` (object identity / `.WHICH`), NOT by stringification.
+                // So `42 ∈ < 42 >` is False (Int vs the IntStr allomorph) and
+                // `"1" ∈ (1,)` is False (Str vs Int) — matching Rakudo.
+                .any(|item| crate::runtime::utils::values_identical(item, needle)),
             _ if container.is_range() => Self::range_contains(container, needle),
             _ => false,
         }
