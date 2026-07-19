@@ -74,6 +74,11 @@ pub(crate) fn is_angle_key_char(c: char) -> bool {
         || c == '@'
         || c == '%'
         || c == '&'
+        // `=` is an ordinary character inside angle-word quoting, so a subscript
+        // key may contain it: `%h<=>` is the string key `=`, `%h<=foo>` is
+        // `=foo` (Rakudo). The tightly-bound `<...>` is always a subscript here,
+        // never the `<=`/`<=>` infix operator (which needs surrounding space).
+        || c == '='
         // Parentheses are ordinary characters inside angle-word quoting, so an
         // angle *subscript* key may contain them too: `%h<(default)>` is the
         // string key `(default)` (App::Rak). The `<...>` word-list literal

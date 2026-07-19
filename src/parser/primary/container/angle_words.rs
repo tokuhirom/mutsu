@@ -33,17 +33,20 @@ fn parse_quote_word_list<'a>(
     let Some(input) = input.strip_prefix(open) else {
         return Err(PError::expected("quote-word list"));
     };
-    // For `<...>`, reject leading operator forms like <= and <=>.
-    // Allow negative words/numerics such as <-1/0> and word lists starting
-    // with a bare hyphen like <- a - b ->.
+    // For `<...>`, reject a leading `-` operator form. Allow negative
+    // words/numerics such as <-1/0> and word lists starting with a bare hyphen
+    // like <- a - b ->.
+    //
+    // A leading `=` is NOT rejected: this parser only runs in *term* position
+    // (the infix `<`/`<=`/`<=>` operators are parsed elsewhere, after a term),
+    // where `<=>`, `<==>`, `<=foo>` are ordinary quote-words (`'='`, `'=='`,
+    // `'=foo'`) — matching Rakudo. Rejecting `=` broke both the bare word-quote
+    // `<=>` and the hash subscript `%h<=>`.
     if reject_lt_operators
-        && (input.starts_with('=')
-            || (input.starts_with('-')
-                && !input.as_bytes().get(1).copied().is_some_and(|b| {
-                    b.is_ascii_alphanumeric()
-                        || b == b' '
-                        || matches!(b, b'_' | b'/' | b'.' | b'+' | b'-')
-                })))
+        && input.starts_with('-')
+        && !input.as_bytes().get(1).copied().is_some_and(|b| {
+            b.is_ascii_alphanumeric() || b == b' ' || matches!(b, b'_' | b'/' | b'.' | b'+' | b'-')
+        })
     {
         return Err(PError::expected("angle list"));
     }

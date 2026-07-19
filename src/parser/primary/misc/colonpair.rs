@@ -550,8 +550,11 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
-    // :name<value> (angle-bracket colonpair, equivalent to :name("value"))
-    if rest.starts_with('<') && !rest.starts_with("<<") && !rest.starts_with("<=") {
+    // :name<value> (angle-bracket colonpair, equivalent to :name("value")).
+    // A tightly-bound `<...>` is always the colonpair value — including `<=>` /
+    // `<=foo>` (`name => '='` / `name => '=foo'`), which Rakudo also reads this
+    // way, never as the `<=`/`<=>` infix (those need surrounding space).
+    if rest.starts_with('<') && !rest.starts_with("<<") {
         let inner = &rest[1..];
         if let Some(close) = crate::parser::primary::container::find_nested_angle_close_pub(inner) {
             let content = &inner[..close];

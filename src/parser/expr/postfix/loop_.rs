@@ -1395,11 +1395,10 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
 
         // Hash indexing with angle brackets: %hash<key>, $hash<key>, @a[0]<key>, etc.
         // Only match when content is a simple word key (alphanumeric, no operators)
-        if rest.starts_with('<')
-            && !rest.starts_with("<=")
-            && !rest.starts_with("<<")
-            && !rest.starts_with("<=>")
-        {
+        // A tightly-bound `<...>` after a term is always a subscript — including
+        // `<=>` / `<=foo>` (key `=` / `=foo`), which Rakudo also reads as a
+        // subscript, never the `<=`/`<=>` infix (those need surrounding space).
+        if rest.starts_with('<') && !rest.starts_with("<<") {
             let r = &rest[1..];
             let Some(end) = r.find('>') else {
                 return Err(PError::expected_at("closing '>'", r));
