@@ -403,6 +403,14 @@ impl Interpreter {
 
     /// Fast type check for common types.
     pub(super) fn fast_type_check(val: &Value, type_name: &str) -> bool {
+        // Allomorphs (`IntStr`/`NumStr`/`RatStr`/...) and other mixed-in values
+        // are `Mixin`s: an `IntStr` must satisfy `Int` (via its inner value) and
+        // `Str` (via its mixin), just like `~~` does. Delegate to the full
+        // `isa_check`, which already handles every allomorph/mixin case, rather
+        // than matching only the plain scalar variant below.
+        if matches!(val.view(), ValueView::Mixin(..)) {
+            return val.isa_check(type_name);
+        }
         match type_name {
             "Int" => matches!(val.view(), ValueView::Int(_) | ValueView::BigInt(_)),
             "Str" => matches!(val.view(), ValueView::Str(_)),
