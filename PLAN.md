@@ -1045,9 +1045,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 36: pointy code values `-> $x { … }` (write) — a single-param `RakuAST::PointyBlock` in
         expression position lowers to `Expr::Lambda`. `EVAL(Q{my $f = -> $x { $x*2 }; $f(9)}.AST)` → 18.
         Tests in `t/rakuast-eval-pointy.t`.
-  - [ ] Slice 37+: `sub ($x) { … }` code values, placeholder blocks (`{ $^a }`), CATCH blocks,
-        WhateverCode (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter,
-        grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 37: multi-parameter closures — `sub ($a, $b) { … }` / `-> $a, $b { … }` (both a
+        multi-param `PointyBlock`) lower to `Expr::AnonSubParams`; a default parameter composes.
+        `EVAL(Q{my $add = sub ($a, $b) { $a+$b }; $add(3, 4)}.AST)` → 7. Tests in `t/rakuast-eval-anonsub.t`.
+  - [ ] Slice 38+: placeholder blocks (`{ $^a }`), CATCH blocks, WhateverCode (`* + 1`), code-block
+        (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5
+        full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---
