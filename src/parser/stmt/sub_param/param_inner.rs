@@ -648,6 +648,16 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             let (rt, _) = ws(rt)?;
             r = rt;
         }
+        // A `where` constraint may follow a sigilless parameter, before the
+        // default value: `\N where * > 0`, `\N where BIG`.
+        let (r, sigilless_where) = if let Some(r2) = super::super::keyword("where", r) {
+            let (r2, _) = ws1(r2)?;
+            let (r2, constraint) = super::where_constraint::parse_where_constraint_expr(r2)?;
+            let (r2, _) = ws(r2)?;
+            (r2, Some(Box::new(constraint)))
+        } else {
+            (r, None)
+        };
         // Default value
         let (r, default) = if r.starts_with('=') && !r.starts_with("==") {
             let r = &r[1..];
@@ -666,6 +676,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.default = default;
         p.type_constraint = type_constraint;
         p.traits = sigilless_traits;
+        p.where_constraint = sigilless_where;
         return Ok((r, p));
     }
 
