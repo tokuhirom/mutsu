@@ -604,6 +604,11 @@ pub(crate) enum Stmt {
     MarkBind,
     /// Mark a sigilless variable as readonly via `__mutsu_sigilless_readonly::NAME` env key.
     MarkSigillessReadonly(String),
+    /// Register a sigilless variable name in the compiler's `sigilless_locals`
+    /// (so a bare-word read resolves to its local slot) WITHOUT marking it
+    /// readonly. Used for a *typed* sigilless bind (`my Int \d := 7`), which keeps
+    /// the container's mutability but must still read from the slot, not `env`.
+    MarkSigilless(String),
     Assign {
         name: String,
         expr: Expr,
