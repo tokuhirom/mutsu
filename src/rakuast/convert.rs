@@ -9,6 +9,7 @@
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{AssignOp, Expr, ForMode, ParamDef, Stmt};
 use crate::compiler::helpers_ops::token_kind_to_op_name;
+use crate::runtime::utils::is_known_type_constraint;
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn unsupported(what: &str) -> RuntimeError {
@@ -763,6 +764,9 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         Expr::Call { name, args } => Ok(call_name(name.as_str(), args, false)?),
         Expr::Var(name) => Ok(var_lexical("$", name)),
+        // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`. Only
+        // known builtin types convert; a non-type bareword stays the boundary.
+        Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {
             let semilist = RakuAstNode {

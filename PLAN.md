@@ -982,9 +982,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 25: positional subscripts `@a[EXPR]` (`ApplyPostfix` + `Postcircumfix::ArrayIndex` →
         `Expr::Index`); `EVAL(Q{my @a = 10, 20, 30; @a[1]}.AST)` → 20. Tests in
         `t/rakuast-eval-subscript.t`.
-  - [ ] Slice 26+: hash literals, associative subscripts (`%h{…}`), bareword type terms, code-block
-        (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster by cluster. (Phase 5
-        full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 26: bareword type terms `Int`/`Str` as values (both directions) — a known type name
+        (`is_known_type_constraint`) ↔ `Type::Simple`; `EVAL(Q{5 ~~ Int}.AST)` → True, `Int.^name` →
+        "Int". Tests in `t/rakuast-eval-typeterm.t`.
+  - [ ] Slice 27+: hash literals (raku models `{a => 1}` as a `Block`), associative subscripts
+        (`%h{…}`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
+        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

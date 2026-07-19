@@ -570,6 +570,15 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             };
             Ok(Expr::BracketArray(items, false))
         }
+        // A bare type name `Int` (a `Type::Simple`) in expression position -> a
+        // bareword term, which mutsu evaluates to the type object.
+        RakuAstClass::TypeSimple => {
+            let name_node = named_child_or_positional(node)?;
+            match positional_leaf(name_node)?.view() {
+                ValueView::Str(s) => Ok(Expr::BareWord(s.to_string())),
+                _ => Err(unsupported(node)),
+            }
+        }
         // `True`/`False` -> the Bool literal. Other enum identifiers are deferred.
         RakuAstClass::TermEnum => match positional_leaf(node)?.view() {
             ValueView::Str(s) if s.as_str() == "True" => Ok(Expr::Literal(Value::truth(true))),
