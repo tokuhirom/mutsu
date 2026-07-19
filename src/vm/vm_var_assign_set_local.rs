@@ -1608,6 +1608,20 @@ impl Interpreter {
         if matches!(val.view(), ValueView::LazyThunk(..)) {
             self.mark_readonly(name);
         }
+        // `(B)` per-store env-write gate (docs/lexical-scope-slot-campaign.md).
+        // Default OFF (byte-identical). Under `MUTSU_GATE_LOCAL_ENV_WRITE=1` a
+        // slot-authoritative plain lexical skips its env mirror: the slot is the
+        // single source of truth. Excludes binds/constants (env-shape carriers),
+        // captured/reflective frames (read the caller's env by name), and names
+        // still in `needs_env_sync` (a mechanism consumer). The term-symbol block
+        // and `:=` alias chain below stay unconditional.
+        let skip_env_write = crate::opcode::gate_local_env_write()
+            && !is_bind
+            && !is_constant
+            && !code.captures_env_by_name
+            && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
+            && !crate::opcode::reflective_name_access_possible()
+            && Self::term_symbol_from_name(name).is_none();
         if (is_bind || is_constant) && name.starts_with('@') {
             // For `:=` bind and `constant @x`, bypass set_shared_var's
             // List->Array normalization so the container type is preserved.
@@ -1618,8 +1632,10 @@ impl Interpreter {
             // unreachable, so take the one-Symbol-insert writer and skip the
             // per-store `Symbol::intern` + `Main::` probe (J4d; profiled at
             // ~12% of a hot Num loop). Same writer flush_local_to_env uses.
-            let sym = code.locals_sym.get(idx).copied();
-            self.set_env_plain_lexical(name, sym, val.clone());
+            if !skip_env_write {
+                let sym = code.locals_sym.get(idx).copied();
+                self.set_env_plain_lexical(name, sym, val.clone());
+            }
         } else {
             self.set_env_with_main_alias(name, val.clone());
         }
