@@ -262,13 +262,16 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // When no explicit params, collect placeholder variables from the body
     let (param, params) = if param.is_none() && params.is_empty() {
         let placeholders = collect_placeholders_shallow(&body);
-        if placeholders.is_empty() {
-            (param, params)
-        } else {
-            // Use the first placeholder as the loop param, rest as extra params
-            let first = placeholders[0].clone();
-            let rest_params = placeholders[1..].to_vec();
-            (Some(first), rest_params)
+        match placeholders.len() {
+            0 => (param, params),
+            // A single placeholder binds as the loop param (and also sets `$_`).
+            1 => (Some(placeholders[0].clone()), Vec::new()),
+            // Multiple placeholders make the block arity N, so the loop consumes
+            // N elements per iteration (`for 1..8 { $^a + $^b }` sums pairs).
+            // Bind them all as multi-params with `param = None`, matching the
+            // explicit `-> $^a, $^b` signature form; the single-`param` + extra
+            // `params` split does not correctly bind the 2nd+ placeholder.
+            _ => (None, placeholders),
         }
     } else {
         (param, params)
