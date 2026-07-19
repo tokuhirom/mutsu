@@ -103,7 +103,7 @@ pipeline.)
 
 | Root cause | Dists | Notes |
 |---|---|---|
-| `Assignment operators inside ?? !! are too loose; parenthesize them` | **Web::App** (Web::Request::Multipart), **RakuAST::Utils** | mutsu rejects an assignment inside a ternary branch that raku accepts. Related trap: memory `and-ternary-precedence-trap`. Highest-leverage single fix in this run. |
+| ~~`Assignment operators inside ?? !! are too loose; parenthesize them`~~ **FIXED (#4833)** | Web::App (Web::Request::Multipart), RakuAST::Utils | A parenthesized accessor-lvalue assignment (`cond ?? a !! ($.value = x)`) was mis-rejected: the paren parser wrapped `$`/`@`/`%`-named assignments in the transparent `Grouped` node but not a `$.foo` method/accessor LHS, so it emerged as a bare `AssignExpr` and tripped the ternary guard. Both modules load now. Pin: `t/ternary-paren-accessor-assign.t`. |
 | `expected statement: expected expected statement…` (generic parse dead-end) | **Geo::Ellipsoid**, **CSS::Grammar**, **PDF::Combiner**, **Ecosystem::Archive**, **Taurus::CLI** | Not one bug — each needs its own minimal repro. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
 
 ### Singletons
