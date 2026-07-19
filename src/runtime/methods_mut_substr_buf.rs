@@ -452,7 +452,12 @@ impl Interpreter {
                                 replacement.extend(items.iter().cloned());
                             }
                         }
-                        ValueView::Array(items, ..) => replacement.extend(items.iter().cloned()),
+                        // A plain list/array of replacement values (`<3 2 1>`,
+                        // `(3, 2, 1)`): coerce each element to a byte, matching
+                        // the scalar arm — otherwise Str elements leak into the
+                        // Buf and render as 0.
+                        ValueView::Array(items, ..) => replacement
+                            .extend(items.iter().map(|it| Value::int(resolve(it) & 0xff))),
                         _ => replacement.push(Value::int(resolve(arg) & 0xff)),
                     }
                 }
