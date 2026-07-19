@@ -480,6 +480,15 @@ pub(super) fn dispatch(
                     }
                 }
             }
+            // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
+            // `.Int`/`.Num` produce (`"foo".FatRat.^name` is `Failure`).
+            ValueView::Str(s)
+                if crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()).is_none() =>
+            {
+                Some(Ok(
+                    crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
+                ))
+            }
             ValueView::Str(s) => {
                 let rat = str_to_rat(&s);
                 match rat.view() {

@@ -155,13 +155,19 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 )))
             }
             // `"1+2i".Complex` parses the numeric string (raku: <1+2i>), not 0+0i.
+            // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
+            // that `.Int`/`.Num` produce (`"foo".Complex.^name` is `Failure`).
             ValueView::Str(s) => {
                 match crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()) {
                     Some(v) => match v.view() {
                         ValueView::Complex(..) => Some(Ok(v)),
                         _ => Some(Ok(Value::complex(v.to_f64(), 0.0))),
                     },
-                    None => Some(Ok(Value::complex(0.0, 0.0))),
+                    None => Some(Ok(
+                        crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(
+                            s.as_str(),
+                        ),
+                    )),
                 }
             }
             _ => Some(Ok(Value::complex(0.0, 0.0))),
