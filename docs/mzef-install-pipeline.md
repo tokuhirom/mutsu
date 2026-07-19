@@ -430,12 +430,41 @@ one worker *must* share with that worker.
   `project-slice-f-reverse-sync-campaign`); coordinate with it rather than
   bolting on a third mechanism.
 
+## The `mzef` shim + in-repo vendoring — DONE (2026-07-19)
+
+zef is now vendored **inside this repo** at `vendor/zef/` (version 1.1.3,
+`ugexe/zef@0aa54f5`, Artistic-2.0; lib + bin + resources + LICENSE/META6,
+upstream tests/CI/precomp excluded — see `vendor/README.md`), and a second
+cargo binary `mzef` (`src/bin/mzef.rs`) ships it:
+
+```text
+mzef install <dist>   ==>   mutsu -I vendor/zef/lib vendor/zef/bin/zef install <dist>
+```
+
+The shim resolves the vendored zef tree relative to its own executable
+(`../share/mutsu/zef`, `../lib/mutsu/zef`, `../../vendor/zef`, or the
+`$MZEF_ZEF_HOME` override) and the sibling `mutsu` interpreter
+(`$MZEF_MUTSU_BIN` override), then re-execs mutsu with `-I <zef>/lib` and the
+`bin/zef` script. Config resolves from the vendored `resources/config.json` via
+`%?RESOURCES<config.json>`; installs land in mutsu's default `$HOME` site repo.
+
+Verified E2E (fresh `$HOME`, release build): `mzef info JSON::OptIn` returns
+full fez metadata, and `mzef install JSON::OptIn` (tests ON) runs
+`Testing [OK] → Installing`, after which `mutsu -e 'use JSON::OptIn'` loads it
+from the fresh site repo. Pin: `tests/mzef_shim.rs` (offline `--version`
+resolution) + this manual install E2E. **B3 leftover:** the release packaging
+must place `vendor/zef` at `<prefix>/share/mutsu/zef` next to `bin/mutsu` and
+`bin/mzef` (the shim already probes that path first).
+
 ## How to run zef under mutsu (tooling)
 
-- **zef checkout (known-good vendoring):** `/home/tokuhirom/work/mutsu/tmp/zef-dbg`
-  (`bin/zef` = `use Zef::CLI` launcher; `lib/`; `resources/`; version 1.1.3).
-  Debian's `/usr/share/perl6/debian-sources/raku-zef/` lacks `bin/` — do not use it.
-- **Invoke:** `target/release/mutsu -I <zef-dbg>/lib <zef-dbg>/bin/zef <args>`
+- **In-repo (preferred):** `target/release/mzef <args>` — the shim above; or
+  directly `target/release/mutsu -I vendor/zef/lib vendor/zef/bin/zef <args>`.
+- **Out-of-repo debug checkout (for instrumenting a copy):**
+  `/home/tokuhirom/work/mutsu/tmp/zef-dbg` (same 1.1.3 source the in-repo copy
+  was vendored from). Debian's `/usr/share/perl6/debian-sources/raku-zef/` lacks
+  `bin/` — do not use it.
+- **Invoke a checkout directly:** `target/release/mutsu -I <zef>/lib <zef>/bin/zef <args>`
   (`--debug` adds `DBG …` traces; `DBG pop-*` = populate progress).
 - **Instrumenting the extract path:** the out-of-repo `zef-dbg` cannot be edited
   by the tool sandbox, so copy it into the scratchpad and add `note`s there, then

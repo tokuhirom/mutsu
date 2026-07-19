@@ -1,0 +1,74 @@
+{
+    "meta-version"  : "0",
+    "raku"          : "6.d",
+    "name"          : "zef",
+    "api"           : "0",
+    "version"       : "1.1.3",
+    "auth"          : "zef:ugexe",
+    "description"   : "Raku Module Management",
+    "license"       : "Artistic-2.0",
+    "build-depends" : [ ],
+    "test-depends"  : [ "Test" ],
+    "depends"       : [ "NativeCall" ],
+    "provides"      : {
+        "Zef"           : "lib/Zef.rakumod",
+        "Zef::Build"    : "lib/Zef/Build.rakumod",
+        "Zef::CLI"      : "lib/Zef/CLI.rakumod",
+        "Zef::Client"   : "lib/Zef/Client.rakumod",
+        "Zef::Config"   : "lib/Zef/Config.rakumod",
+        "Zef::Extract"  : "lib/Zef/Extract.rakumod",
+        "Zef::Identity" : "lib/Zef/Identity.rakumod",
+        "Zef::Install"  : "lib/Zef/Install.rakumod",
+        "Zef::Test"     : "lib/Zef/Test.rakumod",
+        "Zef::Fetch"    : "lib/Zef/Fetch.rakumod",
+        "Zef::Report"   : "lib/Zef/Report.rakumod",
+
+        "Zef::Repository"             : "lib/Zef/Repository.rakumod",
+        "Zef::Repository::LocalCache" : "lib/Zef/Repository/LocalCache.rakumod",
+        "Zef::Repository::Ecosystems" : "lib/Zef/Repository/Ecosystems.rakumod",
+
+        "Zef::Distribution"                          : "lib/Zef/Distribution.rakumod",
+        "Zef::Distribution::DependencySpecification" : "lib/Zef/Distribution/DependencySpecification.rakumod",
+        "Zef::Distribution::Local"                   : "lib/Zef/Distribution/Local.rakumod",
+
+        "Zef::Service::FetchPath"    : "lib/Zef/Service/FetchPath.rakumod",
+        "Zef::Service::TAP"          : "lib/Zef/Service/TAP.rakumod",
+        "Zef::Service::FileReporter" : "lib/Zef/Service/FileReporter.rakumod",
+
+        "Zef::Service::InstallRakuDistribution"    : "lib/Zef/Service/InstallRakuDistribution.rakumod",
+        "Zef::Service::Shell::DistributionBuilder" : "lib/Zef/Service/Shell/DistributionBuilder.rakumod",
+
+        "Zef::Service::Shell::LegacyBuild"  : "lib/Zef/Service/Shell/LegacyBuild.rakumod",
+        "Zef::Service::Shell::Test"         : "lib/Zef/Service/Shell/Test.rakumod",
+        "Zef::Service::Shell::unzip"        : "lib/Zef/Service/Shell/unzip.rakumod",
+        "Zef::Service::Shell::tar"          : "lib/Zef/Service/Shell/tar.rakumod",
+        "Zef::Service::Shell::curl"         : "lib/Zef/Service/Shell/curl.rakumod",
+        "Zef::Service::Shell::git"          : "lib/Zef/Service/Shell/git.rakumod",
+        "Zef::Service::Shell::wget"         : "lib/Zef/Service/Shell/wget.rakumod",
+
+        "Zef::Utils::FileSystem"  : "lib/Zef/Utils/FileSystem.rakumod",
+        "Zef::Utils::SystemQuery" : "lib/Zef/Utils/SystemQuery.rakumod",
+        "Zef::Utils::URI"         : "lib/Zef/Utils/URI.rakumod"
+    },
+    "resources" : [
+        "config.json"
+    ],
+    "authors" : [
+        "Nick Logan",
+        "Tony O'Dell"
+    ],
+    "support" : {
+        "bugtracker" : "https://github.com/ugexe/zef/issues",
+        "irc"        : "ircs://irc.libera.chat:6697/raku-zef",
+        "source"     : "https://github.com/ugexe/zef.git"
+    },
+    "tags"        : [
+        "package-manager",
+        "module-installer",
+        "meta-search",
+        "distribution",
+        "ecosystem",
+        "cpan",
+        "toolchain"
+    ]
+}
