@@ -525,17 +525,35 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // Map containers are immutable - prevent assignment and binding to keys
+        // Map containers are immutable - prevent assignment and binding to keys.
+        // A `constant %M = (a => 1)` is now a Map (declared_type "Map"), but its
+        // element assignment must die with the VALUE-level X::Assignment::RO
+        // ("Cannot modify an immutable Int (1)"), not the container-level
+        // "immutable Map" message — that is what raku reports and what the
+        // dedicated readonly-`%`-constant path further below produces. Defer to
+        // that path for a readonly, non-`:=`-bound `%`-constant hash; only a
+        // genuine bound Map value (`:=`) uses the container-level message here.
         if declared_type.as_deref().is_some_and(|t| t == "Map") {
-            if bind_mode {
-                return Err(RuntimeError::typed(
-                    "X::Bind",
-                    [("target".to_string(), Value::str(var_name.clone()))]
-                        .into_iter()
-                        .collect(),
-                ));
-            } else {
-                return Err(RuntimeError::assignment_ro_typename("Map", "Map"));
+            let is_ro_constant_hash = var_name.starts_with('%')
+                && self.is_readonly(&var_name)
+                && !self
+                    .env()
+                    .contains_key(&format!("__mutsu_bound::{}", var_name))
+                && matches!(
+                    self.env().get(&var_name).map(Value::view),
+                    Some(ValueView::Hash(_))
+                );
+            if !is_ro_constant_hash {
+                if bind_mode {
+                    return Err(RuntimeError::typed(
+                        "X::Bind",
+                        [("target".to_string(), Value::str(var_name.clone()))]
+                            .into_iter()
+                            .collect(),
+                    ));
+                } else {
+                    return Err(RuntimeError::assignment_ro_typename("Map", "Map"));
+                }
             }
         }
         // Mix/Set/Bag: prevent auto-vivification of undefined typed variables.

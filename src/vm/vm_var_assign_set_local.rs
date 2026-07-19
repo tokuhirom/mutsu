@@ -1030,7 +1030,15 @@ impl Interpreter {
         }
         // Skip typed container coercion for `:=` binding — it would create
         // a new Arc and lose container identity (e.g. Map metadata).
-        if !is_bind && (name.starts_with('@') || name.starts_with('%')) {
+        //
+        // Also skip it for a `constant` declaration: `@`/`%` constants are
+        // always untyped (a typed one is rejected as X::ParametricConstant at
+        // compile time), so `coerce_typed_container_assignment` can only ever
+        // rebuild the hash into a plain `Value::hash(...)` — dropping the
+        // `declared_type: "Map"` metadata that `coerce_constant_hash_value`
+        // just embedded. A `constant %h = <a b>` must render as `Map.new(...)`,
+        // and the coercion above already produced the final value.
+        if !is_bind && !is_constant && (name.starts_with('@') || name.starts_with('%')) {
             val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
         }
         if let Some(constraint) = loan_env!(self, var_type_constraint(name))
@@ -1493,7 +1501,14 @@ impl Interpreter {
         // (`my @a = @typed`), and an untyped declaration must not present its
         // value as typed. Skip for attribute variables (.h, !h) which get
         // typed metadata from the class definition, not var_type_constraints.
+        //
+        // Also skip for a `constant %h` / `constant @a`: its `declared_type`
+        // ("Map" for a `%`-sigil list-coerced constant, per
+        // `coerce_constant_hash_value`) is the deliberate final type of the
+        // value, not stale element/key metadata inherited from a typed source.
+        // Clearing it would demote `constant %h = <a b>` back to a plain Hash.
         if !is_bind
+            && !is_constant
             && (name.starts_with('%') || name.starts_with('@'))
             && !name.contains('.')
             && !name.contains('!')
