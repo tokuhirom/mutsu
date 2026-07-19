@@ -1523,6 +1523,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || next == '('
             || (next == '\\' && r.starts_with("\\("))
             || next.is_ascii_digit()
+            // A Unicode numeric literal (vulgar fraction `⅔`, superscript, ...)
+            // also starts a term, so `atan2 ⅔, ⅓` parses as a call rather than
+            // stranding the fraction as a separate statement.
+            || crate::builtins::unicode::unicode_rat_value(next).is_some()
+            || crate::builtins::unicode::unicode_numeric_int_value(next).is_some()
             || starts_with_term_keyword(r)
             || crate::parser::stmt::simple::match_user_declared_term_symbol(r).is_some()
             || hyphen_forward_call
