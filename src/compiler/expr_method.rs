@@ -70,6 +70,36 @@ impl Compiler {
             self.code.emit(OpCode::LoadConst(idx));
             return;
         }
+        // `.dynamic` on an array/hash variable reports whether the *variable* is
+        // a dynamic (`@*a`/`%*h`) one — the container's dynamism, exactly like
+        // `.VAR.dynamic` (which mutsu already resolves via `is_var_dynamic`).
+        // `$x.dynamic` operates on the contained value (Int/Str have no
+        // `.dynamic`), so only `@`/`%` — which pass the container itself to the
+        // method — are rerouted here; scalars fall to normal dispatch. A literal
+        // `[1,2,3].dynamic` (no variable) reaches the value-level `.dynamic`
+        // (native, always False), matching raku.
+        if name.resolve() == "dynamic"
+            && args.is_empty()
+            && modifier.is_none()
+            && !quoted
+            && matches!(target, Expr::ArrayVar(_) | Expr::HashVar(_))
+        {
+            let via_var = Expr::MethodCall {
+                target: Box::new(Expr::MethodCall {
+                    target: Box::new(target.clone()),
+                    name: Symbol::intern("VAR"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                name: Symbol::intern("dynamic"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            };
+            self.compile_expr(&via_var);
+            return;
+        }
         // Fast path: @arr.push(single_expr) with no modifiers → ArrayPush opcode
         // Only for local variables (not captured closures) to avoid COW env sync issues
         if name.resolve() == "push"

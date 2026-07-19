@@ -323,6 +323,23 @@ pub(crate) fn native_method_0arg(
         return native_method_0arg(inner, method_sym);
     }
 
+    // `.dynamic` on a container VALUE — a literal `[1,2,3]`/`{a=>1}`, or an
+    // Array/Hash flowing as a value — is always False: only a dynamic *variable*
+    // (`@*a`/`%*h`) is dynamic, and that case is rewritten to `.VAR.dynamic` at
+    // compile time (`compile_expr_method_on_var`). Array and Hash carry a
+    // container descriptor and so define `.dynamic`; List/Int/Str/... do not
+    // (raku throws "No such method" there), so restrict this to real Array kinds
+    // (not `List`) and Hash and let everything else fall through.
+    if method == "dynamic" {
+        match target.view() {
+            ValueView::Array(_, kind) if !matches!(kind, crate::value::ArrayKind::List) => {
+                return Some(Ok(Value::FALSE));
+            }
+            ValueView::Hash(_) => return Some(Ok(Value::FALSE)),
+            _ => {}
+        }
+    }
+
     // Seq consumed/cached state checks.
     // Only handle operations that are fully dispatched here in native_method_0arg.
     // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
