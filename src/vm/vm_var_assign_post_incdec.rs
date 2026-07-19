@@ -409,7 +409,18 @@ impl Interpreter {
             .as_deref()
             .is_some_and(|t| t == "SetHash");
         let idx_val = self.stack.pop().unwrap_or(Value::NIL);
-        let container = self.get_env_with_main_alias(&name);
+        // Read the base container for the `$c[i]++` / `$h<k>++` mutation. Prefer
+        // this frame's live local slot under the (B) per-store env-write gate:
+        // `my $bh = BagHash(...)` writes the slot but skips the env mirror, so an
+        // env-first read would snapshot the `my` decl seed (Any/absent) and the
+        // increment would operate on an empty base and be lost (`$bh<a>++` read
+        // back as its old weight). The writeback below already refreshes the slot
+        // (`update_local_if_exists`), so the slot is the authoritative half here.
+        // Gate OFF (default) is byte-identical: the slot equals the env mirror, so
+        // the env read is used exactly as before.
+        let container = self
+            .gate_local_slot_value(code, &name)
+            .or_else(|| self.get_env_with_main_alias(&name));
         // Resolve a WhateverCode / Whatever index (`@a[*-1]++`, `@a[*-2]--`)
         // against the container's length before using it as the key — otherwise
         // the raw closure stringifies to a bogus key and the increment is lost.
@@ -685,7 +696,24 @@ impl Interpreter {
         // Modify the container in-place in the env to preserve Arc sharing
         // (e.g. when two variables reference the same array via Arc).
         // First try to modify via env_mut().get_mut() to avoid clone.
-        let modified_in_place = if let Some(container_value) = self.env_mut().get_mut(&name) {
+        //
+        // (B) per-store env-write gate: `my $bh = BagHash(...)` writes this frame's
+        // local slot but skips the env mirror, so `env.get_mut(name)` would be a
+        // stale `Any`/absent — the in-place `$bh<a>++` would land in env (or not at
+        // all) and the slot's live container would never see the bump. Mutate the
+        // slot's container directly under the gate; the slot is the authoritative
+        // half (and its backing node is shared, so this is still in-place). Gate
+        // OFF (default) uses `env.get_mut` exactly as before (byte-identical).
+        let gate_slot = if crate::opcode::gate_local_env_write() {
+            self.find_local_slot(code, &name)
+                .filter(|&s| !self.locals[s].is_nil())
+        } else {
+            None
+        };
+        let modified_in_place = if let Some(container_value) = match gate_slot {
+            Some(s) => self.locals.get_mut(s),
+            None => self.env_mut().get_mut(&name),
+        } {
             if let Some(done) = container_value.with_hash_mut(|h| {
                 // Mirror the array arm below: when the hash Arc is shared
                 // (strong_count > 1) via a scalar-bound `ContainerRef` cell
@@ -838,8 +866,12 @@ impl Interpreter {
             false
         };
         if modified_in_place {
-            // Update local slot to match the modified env value
-            if let Some(val) = self.env().get(&name).cloned() {
+            // Update local slot to match the modified env value. Under the gate the
+            // mutation already landed in the slot (above), and `env` is the stale
+            // half, so pulling env->slot here would clobber the live slot — skip it.
+            if gate_slot.is_none()
+                && let Some(val) = self.env().get(&name).cloned()
+            {
                 self.update_local_if_exists(code, &name, &val);
             }
             // Inside a critical section, propagate the whole mutated aggregate to
@@ -884,9 +916,16 @@ impl Interpreter {
                     }
                     _ => unreachable!(),
                 };
-                self.env_mut().insert(name.clone(), new_container);
-                if let Some(val) = self.env().get(&name).cloned() {
-                    self.update_local_if_exists(code, &name, &val);
+                // Under the gate, write the autovivified container straight to the
+                // slot (the authoritative half); env stays suppressed. Otherwise
+                // insert into env and mirror to the slot as before.
+                if let Some(s) = gate_slot {
+                    self.locals[s] = new_container;
+                } else {
+                    self.env_mut().insert(name.clone(), new_container);
+                    if let Some(val) = self.env().get(&name).cloned() {
+                        self.update_local_if_exists(code, &name, &val);
+                    }
                 }
             }
         }
