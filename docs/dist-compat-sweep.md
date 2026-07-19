@@ -104,7 +104,7 @@ pipeline.)
 | Root cause | Dists | Notes |
 |---|---|---|
 | ~~`Assignment operators inside ?? !! are too loose`~~ **FIXED (#4833)** | Web::App, RakuAST::Utils | A parenthesized accessor-lvalue assignment (`cond ?? a !! ($.value = x)`) was mis-rejected. **RakuAST::Utils now `load_ok`; Web::App advances to `missing_dep` (MIME::Types).** Pin: `t/ternary-paren-accessor-assign.t`. |
-| `expected statement: expected expected statement…` (generic parse dead-end) | **Geo::Ellipsoid**, **CSS::Grammar**, **PDF::Combiner**, **Ecosystem::Archive**, **Taurus::CLI** | Not one bug — each needs its own minimal repro. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
+| `expected statement: expected expected statement…` (generic parse dead-end) | **Geo::Ellipsoid**, **CSS::Grammar**, **PDF::Combiner**, ~~**Ecosystem::Archive**~~ (fixed), ~~**Taurus::CLI**~~ (fixed) | Not one bug — each needs its own minimal repro. **Taurus::CLI**: fixed — `>>.{...}` hyper associative subscript did not parse, and hyper subscripts with a Range/list index (`>>.[0..2]`, `>>.{0..4}`) returned Nil instead of slicing each element (pin `t/hyper-assoc-subscript.t`). **Ecosystem::Archive**: fixed — a chained bind through an angle-word hash subscript (`my $id := %h<key> := VALUE`) failed to parse because `<key>` was parsed as an expression, mis-reading `%h<b> := 5` as a `b > ...` comparison (pin `t/bind-angle-subscript-chain.t`). Remaining (Geo::Ellipsoid, CSS::Grammar (grammar slang), PDF::Combiner) each need their own repro. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
 
 ### Singletons
 
