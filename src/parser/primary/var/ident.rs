@@ -95,13 +95,13 @@ pub(crate) fn parse_interpolation_qualified_ident_with_hyphens_or_empty(
     let mut full = String::new();
     let mut parsed_any = false;
     while let Some(first) = rest.chars().next() {
-        if !(first.is_ascii_alphabetic() || first == '_') {
+        if !is_raku_identifier_start(first) {
             break;
         }
         let mut end = first.len_utf8();
         let rest_bytes = rest.as_bytes();
         for c in rest[end..].chars() {
-            if c.is_ascii_alphanumeric() || c == '_' {
+            if is_raku_identifier_continue(c) {
                 end += c.len_utf8();
             } else if c == '-' {
                 // Kebab-case: hyphen is part of the identifier only when
