@@ -292,14 +292,32 @@ pub(crate) fn parse_assignment_rhs_mode(input: &str, mode: ExprMode) -> PResult<
         let (r2, _) = parse_char(cursor, ',')?;
         let (r2, _) = ws(r2)?;
         if r2.is_empty() || r2.starts_with(';') || r2.starts_with('}') || r2.starts_with(')') {
-            return Ok((r2, Expr::ArrayLiteral(items)));
+            return Ok((r2, finalize_assignment_rhs_list(items)));
         }
         let (r3, next) = ternary_mode(r2, mode)?;
         items.push(next);
         let (r3, _) = ws(r3)?;
         if !r3.starts_with(',') || r3.starts_with(",,") {
-            return Ok((r3, Expr::ArrayLiteral(items)));
+            return Ok((r3, finalize_assignment_rhs_list(items)));
         }
         cursor = r3;
     }
+}
+
+/// Build the RHS expression from a comma-separated assignment list.
+///
+/// The sequence operators (`...`/`…`/`...^`/`…^`) and list-infix meta-ops are
+/// LOOSER than comma, so `@a[^5] = 1.5, 2.5 ... 5.5` collapses the whole comma
+/// list into ONE sequence (seed `1.5, 2.5`), exactly like the declaration form
+/// `my @a = 1.5, 2.5 ... 5.5` (which routes through `parse_comma_or_expr`) and
+/// the argument-list case (#4755). `normalize_comma_list_items` folds the
+/// preceding seeds into the trailing sequence/meta-op; when it collapses to a
+/// single such expression we return it directly, otherwise keep the list.
+fn finalize_assignment_rhs_list(items: Vec<Expr>) -> Expr {
+    let original_len = items.len();
+    let normalized = crate::parser::stmt::assign::normalize_comma_list_items(items);
+    if normalized.len() == 1 && original_len > 1 {
+        return normalized.into_iter().next().unwrap();
+    }
+    Expr::ArrayLiteral(normalized)
 }
