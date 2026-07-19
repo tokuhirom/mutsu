@@ -435,6 +435,22 @@ impl Interpreter {
                 return self.multi_dim_index_read(&inner, dims);
             }
         }
+        // A Pair is associative under a further dimension: `%h{"k";"sub"}`
+        // where `%h{"k"}` is a Pair indexes it by key. Reuse the hash-read
+        // logic against a one-entry map so key / `*` / slice dims all work
+        // (without this the Pair falls into the scalar-wrap below and the next
+        // key is treated as a positional index, collapsing to Nil).
+        let pair_map = match target.view() {
+            ValueView::Pair(k, v) => Some((k.clone(), (*v).clone())),
+            ValueView::ValuePair(k, v) => Some((k.to_string_value(), (*v).clone())),
+            _ => None,
+        };
+        if let Some((key, value)) = pair_map {
+            let mut m = std::collections::HashMap::new();
+            m.insert(key, value);
+            let dim = Self::normalize_multidim_dim(&dims[0]);
+            return self.multi_dim_hash_read(&m, &dim, &dims[1..]);
+        }
         // A non-positional value behaves as a single-element list when
         // subscripted in a further dimension: in `(10,20,30)[1,2;0]` each
         // selected scalar is indexed by the trailing `0`, and `20[0]` is `20`
