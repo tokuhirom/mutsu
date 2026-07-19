@@ -207,14 +207,21 @@ impl Interpreter {
         // Snapshot the env keys present before the branch runs so that on exit
         // we can tell a *fresh* block-local `my` (no outer binding of that name)
         // apart from one that merely *shadows* an existing outer binding (which
-        // `pop_loop_local_scope` already restores). Snapshot the slots too so a
-        // removed fresh declaration's frame slot can be reset to its pre-branch
-        // value. Both are cheap relative to a full `BlockScope` env restore and
-        // are only paid when the branch actually declares a block-local.
-        // The env is Symbol-keyed, so the snapshot is a set of `Copy` u32s — no
-        // per-key String allocation.
+        // `pop_loop_local_scope` already restores). Cheap relative to a full
+        // `BlockScope` env restore and only paid when the branch declares a
+        // block-local. The env is Symbol-keyed, so the snapshot is a set of
+        // `Copy` u32s — no per-key String allocation.
+        //
+        // We do NOT snapshot the whole `locals` vec: a fresh (non-shadow) block
+        // declaration gets its own shadow slot, and that slot's pre-branch value
+        // is provably `Nil` (`locals` is initialised to `Value::NIL` and nothing
+        // but this declaration ever writes its unique slot — so the reset below
+        // that Nils it on exit keeps the pre-branch value Nil by induction across
+        // repeated runs / loop iterations). Resetting to `Nil` is therefore
+        // identical to restoring a snapshotted pre-branch value, at O(declared)
+        // instead of an O(locals) clone. This is the lexical-slot endgame's
+        // targeted-reset technique (docs/lexical-scope-slot-campaign.md §1.3).
         let env_had_before: crate::runtime::NameSet = self.env().keys().copied().collect();
-        let saved_locals = self.locals.clone();
         self.push_loop_local_scope();
         // Track `my` declarations made directly in this branch.
         self.block_declared_vars
@@ -238,7 +245,9 @@ impl Interpreter {
             self.env_mut().remove_sym(*sym);
             for idx in 0..code.locals.len().min(self.locals.len()) {
                 if code.local_sym(idx) == Some(*sym) {
-                    self.locals[idx] = saved_locals.get(idx).cloned().unwrap_or(Value::NIL);
+                    // Fresh declaration's slot is unique to it; its pre-branch
+                    // value is Nil (see the entry comment), so reset to Nil.
+                    self.locals[idx] = Value::NIL;
                 }
             }
         }
