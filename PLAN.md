@@ -259,11 +259,21 @@ sessions).
       `mise use -g github:tokuhirom/mutsu` → both commands on PATH (README "Install"). Matrix is
       `fail-fast: false`; **Linux x64/arm64 are required, macOS is `continue-on-error`** (best-effort
       — the pre-existing libffi Mach-O CFI build failure that had made *every* release since v0.3.1
-      publish nothing is thereby prevented from blocking the Linux artifacts). Verified locally: the
-      exact packaging tar reproduces a layout from which `mzef --version` and `mutsu -e` both run with
-      no env. Remaining: (a) the **macOS libffi** build (upstream Clang-17+ CFI issue; needs a
-      libffi/libffi-sys bump or a system-libffi build — unverifiable from Linux, so deferred); (b)
-      first real tag to confirm the GitHub Release + a live `mise use` end-to-end.
+      publish nothing is thereby prevented from blocking the Linux artifacts). **Confirmed live on
+      the v0.8.0 tag (2026-07-19)**: the Release run published `linux-x64`/`linux-arm64`/`macos-x64`
+      tarballs + SHA256SUMS (macos-arm64 failed on libffi, tolerated), and
+      `mise exec github:tokuhirom/mutsu@0.8.0` downloaded/verified/extracted it and ran **both**
+      `mutsu` and `mzef` from `<install>/bin/` with the bundled zef resolved at
+      `<install>/share/mutsu/zef` — no env. Remaining: the **macOS arm64 libffi** build (upstream
+      Clang-17+ CFI issue; macos-x64 builds fine, only arm64 fails; needs a libffi/libffi-sys bump or
+      a system-libffi build — unverifiable from Linux, so deferred).
+- [x] **Container image (2026-07-19)**: `Dockerfile` (two-stage — `rust:1.93-bookworm` builder →
+      `debian:bookworm-slim` runtime carrying only the `mutsu`/`mzef` binaries, the bundled zef tree
+      at `/usr/local/share/mutsu/zef`, and zef's shell-out tools curl/git/tar/unzip + libpcre2) and
+      `.github/workflows/docker.yml` publish a multi-arch (amd64+arm64, native per-arch runners +
+      manifest merge) image to `ghcr.io/tokuhirom/mutsu` on `v*` tags (`:X.Y.Z`/`:latest`) and main
+      (`:main`). Try: `docker run --rm -it ghcr.io/tokuhirom/mutsu`. `.dockerignore` keeps the build
+      context tiny (ignore-all + re-include src/Cargo/vendor).
 - [ ] REPL / Debugger / native binary output / public WASM playground.
 
 ### B4. Remaining module-compatibility blockers (the base of batteries)

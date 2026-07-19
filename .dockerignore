@@ -1,0 +1,9 @@
+# Keep the Docker build context tiny: ignore everything, then re-include only
+# what the build needs (src + manifests to compile, vendor/ for the bundled
+# zef tree copied into the runtime image). This excludes the 45G target/, the
+# vendored roast/raku-doc trees, tmp/, .git, etc.
+*
+!Cargo.toml
+!Cargo.lock
+!src/
+!vendor/
