@@ -118,8 +118,20 @@ impl Interpreter {
             Vec::new()
         };
 
-        let from = method_args.first().map(crate::runtime::to_int).unwrap_or(0) as usize;
-        let len = method_args.get(1).map(crate::runtime::to_int).unwrap_or(0) as usize;
+        let from = (method_args
+            .first()
+            .map(crate::runtime::to_int)
+            .unwrap_or(0)
+            .max(0) as usize)
+            .min(items.len());
+        // With no explicit length (or a `*` Whatever), `subbuf-rw($from)` spans
+        // from `$from` to the end of the buffer — replacing the whole tail, not
+        // inserting at `$from`.
+        let len = match method_args.get(1) {
+            Some(v) if matches!(v.view(), ValueView::Whatever) => items.len() - from,
+            Some(v) => crate::runtime::to_int(v).max(0) as usize,
+            None => items.len() - from,
+        };
 
         let new_bytes = if let ValueView::Instance { attributes, .. } = value.view()
             && let Some(ValueView::Array(new_items, ..)) =
