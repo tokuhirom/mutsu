@@ -364,6 +364,27 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
 /// lookups like `&::($expr)::name` or `&CALLER::($expr)::name`.
 pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '&')?;
+    // `.` twigil: `&.name` → the public accessor of a `has &.name` callable
+    // attribute, i.e. `self.name`, mirroring `$.attr`. Desugaring to the method
+    // call (rather than a `.`-named CodeVar) reuses the accessor dispatch, so a
+    // following `.( ... )` invokes the returned callable (`&.function.($x)`).
+    if input.starts_with('.')
+        && input.len() > 1
+        && (input.as_bytes()[1].is_ascii_alphabetic() || input.as_bytes()[1] == b'_')
+    {
+        let after_dot = &input[1..];
+        let (rest, name) = parse_qualified_ident_with_hyphens(after_dot)?;
+        return Ok((
+            rest,
+            Expr::MethodCall {
+                target: Box::new(Expr::BareWord("self".to_string())),
+                name: crate::symbol::Symbol::intern(&name),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // Dereference callable stored in a variable/expression:
     // &$x, &@x, &%x, &($expr)
     if input.starts_with('$') {
