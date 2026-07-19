@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.10.0](https://github.com/tokuhirom/mutsu/compare/v0.9.0...v0.10.0) - 2026-07-19
+
+- feat: RakuAST slice 35 — calling a term ($f(...)) in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4801
+- feat: RakuAST slice 36 — pointy code values (-> $x { ... }) under EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4803
+- feat: RakuAST slice 37 — multi-parameter closures under EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4804
+- fix: bump vendored libffi to fix macOS arm64 Release build by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4805
+
 ## [v0.9.0](https://github.com/tokuhirom/mutsu/compare/v0.8.0...v0.9.0) - 2026-07-19
 
 - feat: RakuAST slice 30 — the do statement prefix in .AST and EVAL by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4790
