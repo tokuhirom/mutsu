@@ -31,6 +31,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Rat(0, 0) => Some(Ok(Value::TRUE)),
             ValueView::FatRat(0, 0) => Some(Ok(Value::TRUE)),
             ValueView::Num(f) => Some(Ok(Value::truth(f.is_nan()))),
+            // A Complex is NaN when EITHER its real or imaginary part is NaN
+            // (`(NaN+5i).isNaN` is True) — Complex.isNaN is `re.isNaN || im.isNaN`.
+            ValueView::Complex(re, im) => Some(Ok(Value::truth(re.is_nan() || im.is_nan()))),
             _ => Some(Ok(Value::FALSE)),
         },
         "nude" => match target.view() {
