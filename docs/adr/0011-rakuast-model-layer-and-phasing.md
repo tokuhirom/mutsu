@@ -390,6 +390,12 @@ earlier ones.
     `die` inside a `try` body: `EVAL(Q{try { die "boom"; 1 }}.AST).defined` → `False`, and the message
     reaches `$!`. A conditional `die` is caught by a surrounding `try`. Tests in `t/rakuast-eval-die.t`.
     Next: `gather`/`take`, CATCH blocks, code-block interpolation.
+  - **Slice 33 (`gather`/`take`) — done, both directions.** `gather { … }` is a new
+    `StatementPrefix::Gather` node (like `do`/`try`), and `take EXPR` is a bare call (like `die`).
+    `Expr::Gather` and `Stmt::Take` convert (`take-rw` deferred) and lower back.
+    `EVAL(Q{gather { take 1; take 2; take 3 }.elems}.AST)` → `3`; `take` inside a loop gathers each
+    iteration, and a conditional `take` gathers a subset. Tests in `t/rakuast-eval-gather.t`. Next:
+    CATCH blocks, more statement prefixes (`quietly`/`lazy`/`eager`), code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

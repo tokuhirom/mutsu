@@ -82,6 +82,16 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             "fail",
             std::slice::from_ref(expr),
         )?))),
+        // `take EXPR` is a bare call too; `take-rw` stays the boundary.
+        Stmt::Take(expr, is_rw) => {
+            if *is_rw {
+                return Err(unsupported("take-rw"));
+            }
+            Ok(Some(statement_expression(control_call(
+                "take",
+                std::slice::from_ref(expr),
+            )?)))
+        }
         Stmt::VarDecl {
             name,
             expr,
@@ -799,6 +809,11 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 fields: vec![node_field(None, block_node(body)?)],
             })
         }
+        // `gather { … }` -> `StatementPrefix::Gather(Block)`.
+        Expr::Gather(body) => Ok(RakuAstNode {
+            class: RakuAstClass::StatementPrefixGather,
+            fields: vec![node_field(None, block_node(body)?)],
+        }),
         // A fat-arrow pair `a => 1` -> `FatArrow(key => "a", value => …)`. Only a
         // string-literal key is modelled (a computed key stays the boundary).
         Expr::PositionalPair(inner) => match &**inner {
