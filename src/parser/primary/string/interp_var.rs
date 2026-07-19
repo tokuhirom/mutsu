@@ -330,6 +330,19 @@ pub(crate) fn try_interpolate_var<'a>(
             }
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
+            // `$?LINE`/`$?TABSTOP` are compile-time constants substituted at their
+            // source position, exactly as the non-interpolated scalar-var parser
+            // does. Without this the interpolation produced a runtime `Var("?LINE")`
+            // that resolves to the empty string (`"line $?LINE"` -> `"line "`).
+            if var_name == "?LINE" {
+                let line = crate::parser::primary::current_line_number(rest);
+                parts.push(Expr::Literal(Value::int(line)));
+                return Some(var_rest);
+            }
+            if var_name == "?TABSTOP" {
+                parts.push(Expr::Literal(Value::int(8)));
+                return Some(var_rest);
+            }
             let (expr, var_rest) = parse_postcircumfix_index(var_rest, Expr::Var(var_name));
             // Handle postcircumfix call interpolation: "$var()" / "$var(args)"
             let (expr, var_rest) = try_parse_interp_call(var_rest, expr);
