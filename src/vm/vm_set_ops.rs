@@ -129,7 +129,12 @@ impl Interpreter {
             // Plain Hash keys are Str by default.
             return false;
         }
-        hash.contains_key(&needle.to_string_value())
+        // A Hash coerces to a Set of the keys whose values are truthy (that is
+        // how `.Set` and set membership treat it), so a key mapped to a falsy
+        // value (`0`, `Nil`, `""`) is NOT a member: `%(:a, b => 0) ∋ "b"` is
+        // False, matching `enum Foo «a b»; Foo.enums ∋ "a"` (a => 0).
+        hash.get(&needle.to_string_value())
+            .is_some_and(|v| v.truthy())
     }
 
     fn set_contains(&mut self, container: &Value, needle: &Value) -> bool {
