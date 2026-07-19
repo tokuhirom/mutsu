@@ -103,7 +103,7 @@ pipeline.)
 
 | Root cause | Dists | Notes |
 |---|---|---|
-| `Assignment operators inside ?? !! are too loose; parenthesize them` | **Web::App** (Web::Request::Multipart), **RakuAST::Utils** | mutsu rejects an assignment inside a ternary branch that raku accepts. Related trap: memory `and-ternary-precedence-trap`. Highest-leverage single fix in this run. |
+| ~~`Assignment operators inside ?? !! are too loose`~~ **FIXED (#4833)** | Web::App, RakuAST::Utils | A parenthesized accessor-lvalue assignment (`cond ?? a !! ($.value = x)`) was mis-rejected. **RakuAST::Utils now `load_ok`; Web::App advances to `missing_dep` (MIME::Types).** Pin: `t/ternary-paren-accessor-assign.t`. |
 | `expected statement: expected expected statement…` (generic parse dead-end) | **Geo::Ellipsoid**, **CSS::Grammar**, **PDF::Combiner**, **Ecosystem::Archive**, **Taurus::CLI** | Not one bug — each needs its own minimal repro. **Also a cosmetic bug in the error itself**: the message doubles "expected expected" — worth fixing in the parse-error formatter. |
 
 ### Singletons
@@ -113,7 +113,7 @@ pipeline.)
 | Code::Coverable | runtime | `Unexpected block in infix position (missing statement control word…)` |
 | Abbreviations | parse | `Confused. Two terms in a row across lines (missing semicolon or comma?)` |
 | JavaScript::Google::Charts | runtime | `Cannot declare individual multi candidates in 'our' scope` |
-| Data::Dump | parse | `Malformed double closure; WhateverCode is already a closure…` |
+| Data::Dump | parse | ~~`Malformed double closure; WhateverCode is already a closure…`~~ **FIXED (#4836)** (`where { !$_.values.grep: * !~~ Sub }` — a `*`-arg in a where-block is not a double closure; pin `t/where-constraint-whatever-arg.t`). **Still blocked** by a second bug: `X::Syntax::Confused: Two terms in a row` (same class as Abbreviations). |
 | Business::CreditCard | parse | `X::Syntax::CannotMeta: Cannot negate * because it is not iffy enough` |
 | VERS | runtime | `X::Undeclared::Symbols: Undeclared routine` (load-time) |
 | CSV-AutoClass | runtime | `Variable '$argstr' is not declared` (likely a signature/placeholder gap) |
