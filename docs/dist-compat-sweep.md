@@ -134,7 +134,7 @@ Known root causes to date:
 | CSS | inside a `grammar` ("angle index key") — grammar/regex-slang, heavier. |
 | Prime::Factor / Pod::Contents / Deps / Trie / Configuration / File-TreeBuilder / Bench / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
 
-### runtime_error (15)
+### runtime_error (14 remaining; Astro::Sunrise cleared post-snapshot)
 
 | Dist | Root cause |
 |---|---|
@@ -144,7 +144,6 @@ Known root causes to date:
 | IDNA::Punycode | `Unexpected block in infix position (missing statement control word before the expression?)`. |
 | PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
 | uniname-words | `Odd number of elements found where hash initializer expected` (load-time). |
-| Astro::Sunrise | `'Astro::Location' cannot inherit from 'export' because it is unknown` — an `is export` on a class mis-read as a parent. |
 | Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
 | Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
 | Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
@@ -184,10 +183,11 @@ cluster at once.
 ## load_ok — proven to load on mutsu (n=150, seed 7)
 
 The passing-dist report: every sampled distribution whose provided modules all
-`use` cleanly on mutsu (main + #4865). **44 of 150** (57% of the 77 whose deps
-are satisfiable).
+`use` cleanly on mutsu (main + #4865, plus post-snapshot fixes). **44 of 150**
+in the raw seed-7 run (57% of the 77 whose deps are satisfiable); Astro::Sunrise
+below was cleared after the snapshot by the `unit class … is export;` trait fix.
 
-Algorithm::LCS · Ask · Async::Command · Attribute::Predicate ·
+Algorithm::LCS · Ask · Astro::Sunrise · Async::Command · Attribute::Predicate ·
 Automata::Cellular · bird · CheckSocket · CLDR::List · CodeUnit · CSV::Parser ·
 Deepgrep · English · File::Ignore · Game::Covid19 · Grid · Hash::Agnostic ·
 Hash::Restricted · HTTP::HPACK · IdClass · Math::Interval · Math::Random ·

@@ -4,7 +4,7 @@ use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-use crate::parser::helpers::{ws, ws1};
+use crate::parser::helpers::{skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char, parse_char};
 use crate::parser::primary::var::is_pseudo_package;
 use crate::parser::stmt::sub::parse_sub_name;
@@ -172,11 +172,30 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 };
                 if parent == "rw" {
                     class_is_rw = true;
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                    continue;
                 } else if parent == "hidden" {
                     is_hidden = true;
-                } else {
-                    parents.push(parent);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                    continue;
+                } else if parent.starts_with(|c: char| c.is_ascii_uppercase())
+                    || parent.starts_with("::")
+                {
+                    // Uppercase / indirect name is a superclass (possibly
+                    // parametric, e.g. `is Foo[Int]`).
+                    let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                    parents.push(format!("{}{}", parent, bracket_suffix));
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                    continue;
                 }
+                // A lowercase `is` name on a `unit class` is a trait
+                // (`export`, `repr('CStruct')`, `DEPRECATED`, custom trait_mod,
+                // ...), NOT a parent class. Skip it and any parenthesized
+                // argument rather than mis-recording it as a superclass.
+                let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;
                 continue;
