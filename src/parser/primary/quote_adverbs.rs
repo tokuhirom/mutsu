@@ -426,6 +426,16 @@ fn process_q_escape<'a>(
 ) -> Option<&'a str> {
     let input = *rest;
 
+    // \qqw[...] / \qw[...] — embedded quote-words (checked before \qq so the
+    // trailing `w` isn't consumed as a plain \qq delimiter).
+    if let Some((after, words)) = super::string::try_embedded_qw(input) {
+        if !current.is_empty() {
+            parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+        }
+        parts.push(words);
+        return Some(after);
+    }
+
     // \qq[...] — interpolate inner content as qq
     if let Some(after_qq) = input.strip_prefix("\\qq")
         && let Some(r) = parse_inline_quote(after_qq, &QuoteFlags::qq_double())

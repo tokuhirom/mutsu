@@ -124,12 +124,61 @@ pub(crate) fn parse_braced_interpolation(input: &str) -> Option<(&str, &str)> {
     None
 }
 
+/// Try to consume an embedded `\qqw[...]` or `\qw[...]` quote-words escape at
+/// the start of `rest`. `\qqw` interpolates the body first, `\qw` keeps it
+/// literal; both then split on whitespace into a word list, which joins with
+/// single spaces in string context (matching raku). Returns the remainder and
+/// the word-list expression, or `None` when the marker does not match.
+pub(crate) fn try_embedded_qw(rest: &str) -> Option<(&str, Expr)> {
+    for &(marker, interpolate) in &[("\\qqw", true), ("\\qw", false)] {
+        let Some(after_marker) = rest.strip_prefix(marker) else {
+            continue;
+        };
+        let Some(open) = after_marker.chars().next() else {
+            continue;
+        };
+        if open.is_alphanumeric() || open.is_whitespace() {
+            continue;
+        }
+        let parsed = if let Some(close) = unicode_bracket_close(open) {
+            read_bracketed(after_marker, open, close, true).ok()
+        } else {
+            let body = &after_marker[open.len_utf8()..];
+            body.find(open)
+                .map(|end| (&body[end + open.len_utf8()..], &body[..end]))
+        };
+        let (after, inner) = parsed?;
+        let base = if interpolate {
+            interpolate_string_content(inner)
+        } else {
+            Expr::Literal(Value::str(inner.to_string()))
+        };
+        let words = Expr::MethodCall {
+            target: Box::new(base),
+            name: crate::symbol::Symbol::intern("words"),
+            args: vec![],
+            modifier: None,
+            quoted: false,
+        };
+        return Some((after, words));
+    }
+    None
+}
+
 pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
     let mut parts: Vec<Expr> = Vec::new();
     let mut current = String::new();
     let mut rest = content;
 
     while !rest.is_empty() {
+        if let Some((after, words)) = try_embedded_qw(rest) {
+            if !current.is_empty() {
+                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+            }
+            parts.push(words);
+            rest = after;
+            continue;
+        }
         if let Some(after_qq) = rest.strip_prefix("\\qq")
             && let Some(open) = after_qq.chars().next()
             && !open.is_alphanumeric()
