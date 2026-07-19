@@ -569,6 +569,16 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             is_rw: false,
             is_block: true,
         }),
+        // A pointy block `-> $x { … }` in expression position is a single-parameter
+        // closure. Multi-/zero-parameter pointy blocks stay the boundary.
+        RakuAstClass::PointyBlock => match pointy_single_param(node)? {
+            Some(param) => Ok(Expr::Lambda {
+                param,
+                body: lower_block(node)?,
+                is_whatever_code: false,
+            }),
+            None => Err(unsupported(node)),
+        },
         // `(EXPR)` -> its inner expression (parens are transparent for EVAL). The
         // node wraps a `SemiList` of `Statement::Expression`s; only the
         // single-statement form is handled.
