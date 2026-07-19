@@ -149,6 +149,58 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
                             .map(|c| Value::str(c.to_string()))
                             .collect()
                     }
+                } else if !excl_start
+                    && !excl_end
+                    && a.chars().count() == b.chars().count()
+                    && a.chars().count() > 1
+                {
+                    // Equal-length inclusive string ranges use Raku's per-position
+                    // "odometer": each character position independently ranges from
+                    // a[i] to b[i] (ascending if a[i] <= b[i], else descending), and
+                    // the positions form a mixed-radix counter with the rightmost
+                    // varying fastest. E.g. "r2".."t3" is {r,s,t} x {2,3} =
+                    // (r2 r3 s2 s3 t2 t3), NOT the string-succ sequence
+                    // (r2 r3 r4 ... t3). A range whose start sorts after its end is
+                    // empty (e.g. "ba".."ab").
+                    if a.as_str() > b.as_str() {
+                        return Vec::new();
+                    }
+                    let axes: Vec<Vec<char>> = a
+                        .chars()
+                        .zip(b.chars())
+                        .map(|(lo, hi)| {
+                            let (lo, hi) = (lo as u32, hi as u32);
+                            if lo <= hi {
+                                (lo..=hi).filter_map(char::from_u32).collect()
+                            } else {
+                                (hi..=lo).rev().filter_map(char::from_u32).collect()
+                            }
+                        })
+                        .collect();
+                    let limit = MAX_RANGE_EXPAND as usize;
+                    let mut result = Vec::new();
+                    let mut idx = vec![0usize; axes.len()];
+                    'odometer: loop {
+                        if result.len() >= limit {
+                            break;
+                        }
+                        let s: String = idx.iter().zip(axes.iter()).map(|(&i, ax)| ax[i]).collect();
+                        result.push(Value::str(s));
+                        // Increment the odometer, rightmost wheel fastest.
+                        let mut pos = axes.len();
+                        loop {
+                            if pos == 0 {
+                                break 'odometer;
+                            }
+                            pos -= 1;
+                            idx[pos] += 1;
+                            if idx[pos] < axes[pos].len() {
+                                break;
+                            }
+                            idx[pos] = 0;
+                        }
+                    }
+                    result
                 } else {
                     let split_numeric_core = |s: &str| -> Option<(String, String, String)> {
                         let mut start_byte = None;
