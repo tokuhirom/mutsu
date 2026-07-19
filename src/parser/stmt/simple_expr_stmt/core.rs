@@ -9,7 +9,7 @@ use crate::parser::parse_result::{
 use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
     CompoundAssignOp, compound_assigned_value_expr, parse_assign_expr_or_comma,
-    parse_comma_or_expr, parse_compound_assign_op,
+    parse_comma_or_expr, parse_compound_assign_op, parse_set_compound_assign_op,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -1199,6 +1199,115 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             ];
             return parse_statement_modifier(r, Stmt::Block(stmts));
         }
+    }
+
+    // Set-operator compound assignment on a non-plain-variable lvalue:
+    // `%h<k> ∪= $s`, `@a[0] (&)= $s`, `.key ⊖= $s`. These operators
+    // (`∪=`/`∩=`/`(-)=`/…) are parsed by `parse_set_compound_assign_op` and
+    // carry a raw `TokenKind`, so they are not reached by the
+    // `CompoundAssignOp` path below. Desugar `lhs OP= rhs` to
+    // `lhs = lhs OP rhs`, evaluating the index once for an `Index` lvalue.
+    if !matches!(expr, Expr::AssignExpr { .. })
+        && let Some((stripped, set_tok)) = parse_set_compound_assign_op(rest)
+    {
+        let (r, _) = ws(stripped)?;
+        let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
+            messages: merge_expected_messages(
+                "expected right-hand expression after compound assignment",
+                &err.messages,
+            ),
+            remaining_len: err.remaining_len.or(Some(r.len())),
+            exception: None,
+        })?;
+        if let Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } = &expr
+        {
+            let tmp_idx = format!(
+                "__mutsu_idx_{}",
+                TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+            );
+            let tmp_idx_expr = Expr::Var(tmp_idx.clone());
+            let lhs_expr = Expr::Index {
+                target: target.clone(),
+                index: Box::new(tmp_idx_expr.clone()),
+                is_positional: *is_positional,
+            };
+            let assigned_value = Expr::Binary {
+                left: Box::new(lhs_expr),
+                op: set_tok,
+                right: Box::new(rhs),
+            };
+            let stmt = Stmt::Expr(Expr::DoBlock {
+                body: vec![
+                    Stmt::VarDecl {
+                        name: tmp_idx.clone(),
+                        expr: (*index.clone()),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    },
+                    Stmt::Expr(Expr::IndexAssign {
+                        target: target.clone(),
+                        index: Box::new(tmp_idx_expr),
+                        value: Box::new(assigned_value),
+                        is_positional: *is_positional,
+                    }),
+                ],
+                label: None,
+            });
+            return parse_statement_modifier(r, stmt);
+        }
+        if let Expr::MethodCall {
+            ref target,
+            ref name,
+            ref args,
+            ref modifier,
+            ..
+        } = expr
+        {
+            let assigned_value = Expr::Binary {
+                left: Box::new(expr.clone()),
+                op: set_tok,
+                right: Box::new(rhs),
+            };
+            let topic_name = if let Expr::Var(ref v) = **target {
+                v.clone()
+            } else {
+                "_".to_string()
+            };
+            let method_name = if *modifier == Some('!') {
+                format!("!{}", name.resolve())
+            } else {
+                name.resolve()
+            };
+            let stmt = Stmt::Expr(Expr::Call {
+                name: Symbol::intern("__mutsu_assign_method_lvalue"),
+                args: vec![
+                    (**target).clone(),
+                    Expr::Literal(crate::value::Value::str(method_name)),
+                    Expr::ArrayLiteral(args.clone()),
+                    assigned_value,
+                    Expr::Literal(crate::value::Value::str(topic_name)),
+                ],
+            });
+            return parse_statement_modifier(r, stmt);
+        }
+        // Fallback for any other lvalue shape: `lhs = lhs OP rhs`.
+        let stmt = Stmt::Expr(Expr::Binary {
+            left: Box::new(expr),
+            op: set_tok,
+            right: Box::new(rhs),
+        });
+        return parse_statement_modifier(r, stmt);
     }
 
     // Generic compound assignment on non-variable lhs (e.g. `.key //= ++$i`).
