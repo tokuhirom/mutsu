@@ -1036,9 +1036,12 @@ so it is tracked separately from the roast backlog.
   - [x] Slice 33: `gather`/`take` (both directions) — `Expr::Gather` ↔ `StatementPrefix::Gather`, and
         `take` is a bare call (like `die`). `EVAL(Q{gather { take 1; take 2; take 3 }.elems}.AST)` → 3.
         Tests in `t/rakuast-eval-gather.t`.
-  - [ ] Slice 34+: more statement prefixes (`quietly`/`lazy`/`eager`), CATCH blocks, WhateverCode
-        (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter, grown cluster
-        by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
+  - [x] Slice 34: blocks as values — a `RakuAST::Block` in expression position lowers to a bare-block
+        closure (`Expr::AnonSub`), unblocking `.map`/`.grep`/`.first`/… block arguments.
+        `EVAL(Q{(1,2,3).map({ $_*2 }).sum}.AST)` → 12. Tests in `t/rakuast-eval-block-arg.t`.
+  - [ ] Slice 35+: placeholder blocks (`{ $^a }`), calling a code var (`$f(…)`), CATCH blocks,
+        WhateverCode (`* + 1`), code-block (`{…}`) interpolation — the inverse of the Phase-2 converter,
+        grown cluster by cluster. (Phase 5 full lowering is a large multi-slice effort mirroring Phase 2.)
 - [ ] **Phase 6** — macros / `quasi` / unquoting (built on 4+5; may defer indefinitely).
 
 ---

@@ -561,6 +561,14 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::StringInterpolation(parts))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        // A `Block` in expression position (e.g. the `{ … }` argument to `.map`) is
+        // a bare-block closure value. (raku itself EVALs a `Block` node to a
+        // Callable, so a hash-shaped `{a => 1}` also lands here as a block.)
+        RakuAstClass::Block => Ok(Expr::AnonSub {
+            body: lower_block(node)?,
+            is_rw: false,
+            is_block: true,
+        }),
         // `(EXPR)` -> its inner expression (parens are transparent for EVAL). The
         // node wraps a `SemiList` of `Statement::Expression`s; only the
         // single-statement form is handled.
