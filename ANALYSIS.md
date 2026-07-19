@@ -132,11 +132,15 @@ What remains is the endgame that motivated the campaign:
   baked slot but falls back to `find_local_slot(code, name)`
   (`vm_env_helpers.rs:1200-1214`), and several writeback callers still pass `None`
   (e.g. `vm_for_loop_dispatch.rs:307-310`, `vm_loop_writeback.rs:23-24`).
-- **`BlockScope` still clones/restores the whole `locals` vec**
-  (`vm_misc_scope.rs:178,184,376`) — the cost the campaign exists to delete. A
-  clone-removal probe was attempted and reverted on 2026-07-12
-  (lexical-scope-slot-campaign.md:396).
-- **The `needs_env_sync` blanket**: `captures_env_by_name` returns true if the frame
+- **The whole-`locals` per-block clones are gone** (slices 1-3, 2026-07-19):
+  `BlockLocalScope` (#4818), the `$OUTER::` snapshot (#4821), and the `BlockScope`
+  whole-array restore (#4827) each dropped their `locals`-vec clone for a targeted
+  Nil-reset of the block's fresh declarations — the headline cost the campaign
+  existed to delete. The compile-time `block_declared_slots` bake the 2026-07-12
+  probe anticipated proved unnecessary (the runtime `block_declared` name set plus a
+  not-in-`saved_env` test isolates fresh declarations).
+- **The `needs_env_sync` blanket** — the one remaining piece of the endgame.
+  `captures_env_by_name` returns true if the frame
   contains any `ForLoop`/`BlockScope`/`MakeGather`/`WheneverScope`, mirroring *every*
   local to env on each store. Removing it precisely requires un-name-keying block
   restore, loop shadow save/restore, and closure capture **simultaneously** — one
