@@ -596,7 +596,8 @@ fn try_interpolate_with_flags<'a>(
 
     if rest.starts_with('@') && flags.interp_array() {
         if !flags.qq_mode {
-            // In selective :a mode, require postcircumfix []
+            // In selective :a mode, a bare `@name` stays literal; it interpolates
+            // only when followed by a postcircumfix `[...]` or a `.method` call.
             let after_at = &rest[1..];
             if after_at.starts_with('*') || after_at.starts_with('!') || after_at.starts_with('?') {
                 // twigil — skip to name
@@ -608,8 +609,8 @@ fn try_interpolate_with_flags<'a>(
                     return None;
                 }
                 let after_name = &after_at[name_end..];
-                if !after_name.starts_with('[') {
-                    return None; // bare @name without postcircumfix
+                if !after_name.starts_with('[') && !after_name.starts_with('.') {
+                    return None; // bare @name without postcircumfix or method call
                 }
             }
         }
@@ -618,7 +619,8 @@ fn try_interpolate_with_flags<'a>(
 
     if rest.starts_with('%') && flags.interp_hash() {
         if !flags.qq_mode {
-            // In selective :h mode, require postcircumfix <> or {}
+            // In selective :h mode, a bare `%name` stays literal; it interpolates
+            // only with a postcircumfix `<...>` / `{...}` or a `.method` call.
             let after_pct = &rest[1..];
             let name_end = after_pct
                 .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
@@ -627,7 +629,10 @@ fn try_interpolate_with_flags<'a>(
                 return None;
             }
             let after_name = &after_pct[name_end..];
-            if !after_name.starts_with('<') && !after_name.starts_with('{') {
+            if !after_name.starts_with('<')
+                && !after_name.starts_with('{')
+                && !after_name.starts_with('.')
+            {
                 return None;
             }
         }
