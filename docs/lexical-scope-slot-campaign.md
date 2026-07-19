@@ -597,6 +597,53 @@ The 2-file sigilless cluster splits into two independent roots:
    alias resolution made slot-addressed. **ON-survey delta for this PR: 61 → 60**
    (sigilless-comma-decl only; sigilless-params stays; the two `let`/`temp` files are
    fixed separately by #4861).
+### closure-capture cluster — DONE (2026-07-19), and it collapsed the io/misc bucket
+
+This turned out to be the highest-leverage cluster: fixing its three roots dropped
+the ON survey from **61 → 24** (37 files), because most of the `io/misc` catch-all
+and `native ctor` files define top-level named subs that read a mainline `my`
+lexical — the same root as #3 below. The three roots:
+
+1. **`.map`/`.grep` closure free-var capture — `needs_env_sync` fold (gated).**
+   `sub f { my $mul=3; (1,2,3).map({ $_ * $mul }) }` returned `0,0,0` ON. A closure
+   handed to the `.map`/`.grep` slow loop is pre-inserted into `self.env` only for
+   keys *absent* there (`resolution_map_grep.rs`), so it reads a captured free var
+   back from the creating frame's env by name. Under the gate that env is the stale
+   decl seed. A structural override (prefer the closure's captured `data.env`) is
+   NOT byte-safe OFF — mutsu's compile-time mutation analysis is incomplete, so a
+   by-value capture can be stale where the live caller env is fresh (the flaky risk
+   ADR-0001/CLAUDE.md warns about). So instead fold every **nested-closure free var
+   that is one of this frame's own locals** into `needs_env_sync`, **gated on
+   `gate_local_env_write()`** (compute_needs_env_sync, opcode.rs). Gate OFF this is a
+   no-op (byte-identical AND perf-neutral — no extra `flush_local_to_env`); the cost
+   lands only with the gate and never touches a hot-arithmetic loop local (those are
+   not closure free vars).
+
+2. **`state` var in a closure — slot-read, gated.** `-> { state $s=0; $s+=10; $s }`
+   stuck at 10 ON. The frame-exit state save-back (`vm_closure_dispatch.rs`) read the
+   value from `env` by name first; under the gate that is the pre-update mirror, so
+   the state never accumulates. Read the live SLOT first (seeded from the state store
+   on entry, updated by the body). This is **NOT byte-neutral** — some state vars are
+   mutated only through `env` by name (a `state` referenced from a regex replacement
+   part updates env, not the slot — roast `S04-declarations/state.t` #16), so the
+   slot-first order is gated on `gate_local_env_write()`; OFF keeps the env-first
+   read. (Caught by CI's `make roast` after `make test` alone missed it — the #4086
+   lesson: OFF-verify leaf reordering with roast, not just `t/`.)
+
+3. **Named sub reads an enclosing lexical — `needs_env_sync` fold (gated).**
+   `my $base=100; sub f { $base+1 }` returned `1` ON. A named sub is registered from
+   `stmt_pool` via `RegisterSub` and compiled lazily, so the defining frame cannot
+   see which enclosing lexicals its body reads by name, and it reads them from the
+   frame's env at call time. Without the sub's free-var set available at
+   `compute_needs_env_sync`, conservatively keep **every local of a `RegisterSub`-
+   defining frame** env-synced, gated on the flag (OFF byte-identical/perf-neutral;
+   the top-level/main frame is never a hot loop). Making this precise (scan the
+   registered sub bodies' free vars) is a later refinement.
+
+Gate OFF byte-identical (`make test` 18916 PASS). All 6 closure-cluster files plus
+~31 io/misc/native-ctor files go green ON; no new ON regressions. Pin:
+`t/gate-b-closure-capture-cluster.t` (OFF + ON both pass, matches raku).
+**ON-survey delta: 61 → 24.**
 
 ### method-lvalue self-writeback — env_changed guard (2026-07-19)
 

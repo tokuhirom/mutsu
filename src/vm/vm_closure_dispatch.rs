@@ -730,14 +730,29 @@ impl Interpreter {
                 .or_else(|| self.env().get("__mutsu_rw_map_topic__").cloned());
         }
 
-        // Sync state variables back using scoped keys
+        // Sync state variables back using scoped keys. Under the
+        // MUTSU_GATE_LOCAL_ENV_WRITE gate a plain-lexical `state $s = $s + 10`
+        // skips its env mirror, so an env-first read would persist the pre-update
+        // value and the state would never accumulate — read the live SLOT first
+        // (seeded from the state store on entry, updated by the body's writes).
+        // The gate is NOT byte-neutral here in the default build: some state vars
+        // are mutated only through `env` by name (e.g. a `state` referenced from a
+        // regex replacement part updates env, not the slot — roast state.t #16), so
+        // OFF must keep the env-first read. Gate the slot-first order on the flag.
+        let state_slot_first = crate::opcode::gate_local_env_write();
         for (slot, key) in &cc.state_locals {
             let local_name = &cc.locals[*slot];
-            let val = self
-                .env()
-                .get(local_name)
-                .cloned()
-                .unwrap_or_else(|| self.locals[*slot].clone());
+            let val = if state_slot_first {
+                self.locals
+                    .get(*slot)
+                    .cloned()
+                    .unwrap_or_else(|| self.env().get(local_name).cloned().unwrap_or(Value::NIL))
+            } else {
+                self.env()
+                    .get(local_name)
+                    .cloned()
+                    .unwrap_or_else(|| self.locals[*slot].clone())
+            };
             let scoped_key = self.scoped_state_key(key);
             loan_env!(self, set_state_var(scoped_key, val));
         }

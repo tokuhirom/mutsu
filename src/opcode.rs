@@ -2440,6 +2440,48 @@ impl CompiledCode {
                 self.needs_env_sync[slot] = true;
             }
         }
+        // `(B)` per-store env-write gate — closure-capture cluster fold.
+        // A nested closure normally reads its free variables straight from this
+        // frame's live slot store (`capture_closure_env`), so a closure-captured
+        // local does NOT force an env flush in the default build (the J4d env
+        // decoupling). But when such a closure is handed to a by-name slow-path
+        // consumer — the `.map`/`.grep` fast loop, for instance, pre-inserts the
+        // closure's captured env into `self.env` only for keys ABSENT there, so it
+        // reads a captured free var back from THIS frame's env by name — the env
+        // mirror must be current. Under `MUTSU_GATE_LOCAL_ENV_WRITE` a plain
+        // lexical's store skips that mirror, leaving the decl-seed `Any`, so the
+        // consumer reads a stale value. Fold every nested-closure free var that is
+        // one of this frame's own locals back into `needs_env_sync` so its store
+        // keeps mirroring. Gated on the flag so the default build is byte-identical
+        // AND perf-neutral (no extra `flush_local_to_env` work when the gate is
+        // off); the cost only lands with the gate, and it never touches a
+        // hot-arithmetic loop local (those are not closure free variables).
+        if gate_local_env_write() {
+            for nested in &self.closure_compiled_codes {
+                for sym in &nested.free_var_syms {
+                    if let Some(&slot) = sym.with_str(|s| locals_map.get(s)) {
+                        self.needs_env_sync[slot] = true;
+                    }
+                }
+            }
+            // A NAMED sub (`sub f { ... }`) is not embedded in
+            // `closure_compiled_codes` — it is registered from `stmt_pool` via a
+            // `RegisterSub` op and compiled lazily, so this frame cannot see which
+            // enclosing lexicals its body reads by name. Such a sub reads an outer
+            // lexical (`my $base = 100; sub f { $base + 1 }`) from this frame's env
+            // by name at call time, which the gate would leave stale. Without the
+            // sub's free-var set available here, conservatively keep every local of
+            // a sub-defining frame env-synced. Gate-ON only, so the default build is
+            // byte-identical/perf-neutral; the top-level/main frame (the usual
+            // sub-defining frame) is never a hot arithmetic loop.
+            let defines_named_sub = self
+                .ops
+                .iter()
+                .any(|op| matches!(op, OpCode::RegisterSub(_)));
+            if defines_named_sub {
+                self.needs_env_sync.iter_mut().for_each(|b| *b = true);
+            }
+        }
     }
 
     /// Scan this code's ops for reflective by-name access to a caller frame's
