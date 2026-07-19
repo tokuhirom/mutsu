@@ -334,6 +334,15 @@ impl Interpreter {
         let end = body_end as usize;
         match self.run_range(code, body_start, end, compiled_fns) {
             Ok(()) => {}
+            // `proceed` inside a `default` falls through WITHOUT the default
+            // matching: suppress the succeed signal and continue past the block
+            // (a `default` has no further candidate), so the enclosing `given`
+            // ends normally and execution resumes after it. Mirrors the
+            // `is_proceed` handling in `exec_when_op`.
+            Err(e) if e.is_proceed() => {
+                *ip = end;
+                return Ok(());
+            }
             Err(e) if e.is_succeed() => {
                 loan_env!(self, set_when_matched(true));
                 return Err(e);
