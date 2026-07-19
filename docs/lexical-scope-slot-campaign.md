@@ -459,6 +459,52 @@ until each is freed). Only after all four are slot-authoritative can the
 unconditional per-store env write in `exec_set_local_op_inner` be gated for the
 env-COW payoff.
 
+## The `(B)` per-store env-write gate — burndown map (survey 2026-07-19, post-#4844)
+
+`exec_block_scope_op` mechanism #1 is fixed (above), but mechanisms #2-#4 have **no
+independent behavior-preserving slice** — they are consumers of the per-store env
+mirror that only break when the store `(B)` is gated. So the remaining campaign is
+the proven gated-flag methodology (as `MUTSU_SHADOW_SLOTS` was): gate `(B)` behind a
+default-OFF flag (byte-identical OFF), then burn down the ON failures by folding each
+mechanism's names into `needs_env_sync` (`compute_needs_env_sync`, opcode.rs), then
+flip and delete the flag.
+
+**The gate** (reconstruct in `exec_set_local_op_inner`, the `plain_locals` branch —
+the write is `set_env_plain_lexical`; keep the term-symbol block and `:=` alias chain
+unconditional):
+
+```rust
+let skip_env_write = gate_local_env_write()            // MUTSU_GATE_LOCAL_ENV_WRITE
+    && !is_bind && !is_constant
+    && !code.captures_env_by_name                      // keeps ForLoop/Block/gather/whenever
+    && !code.needs_env_sync.get(idx).copied().unwrap_or(true)
+    && !crate::opcode::reflective_name_access_possible()
+    && Self::term_symbol_from_name(name).is_none();
+```
+
+**ON survey (debug, `MUTSU_GATE_LOCAL_ENV_WRITE=1 prove -j4 t/`): 75 failing files**,
+clustered by the mechanism whose names must be folded into `needs_env_sync`:
+
+| Cluster | ~files | Root: a name read from env not the slot |
+|---------|-------:|-----------------------------------------|
+| native ctor / `.Set/.Bag/.Mix`/hash coerce | 14 | native constructor / coercer reads a ctor arg local by name |
+| io / json / misc (catch-all; many share the roots left) | 31 | mixed — triage per file after the named clusters shrink it |
+| cross-thread / atomic / `cas` / lock | 7 | captured `%seen` etc. loses its env seed → lost-update (gc-stress class) |
+| method-call / attr self-writeback | 6 | `drain_and_reconcile_after_cached_call` keeps caller-local coherence via env |
+| closure capture / overlay | 6 | `capture_closure_env` / `box_captured_lexicals` reads free vars by name |
+| rw-redispatch / lvalue-rw | 5 | `apply_pending_rw_writeback` / nextsame rw-arg drain is by-name |
+| `let` / `temp` restore | 2 | scope-exit saved-var restore resolves by name |
+| sigilless `\x` params | 2 | caller-alias writeback across EVAL (the §1.1 OTF-gate exclusion) |
+
+**Method:** fold one cluster at a time into `needs_env_sync` (e.g. register the
+nested-closure `free_var_syms ∩ own`, the `op_arg_sources_idx` rw-sinks, and
+`op_container_mutate_const_idx` for #2/#4; add the method-coherence names for #3),
+re-run the ON survey, confirm the cluster's files go green ON while OFF stays
+byte-identical, `make test` + gc-stress each time (the cross-thread cluster is
+gc-stress-gated and flaky-prone — validate on CI). The `io/misc` bucket (31) is a
+catch-all that should shrink substantially as the named clusters are fixed; triage
+its residue last. **A dedicated session per cluster.**
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
