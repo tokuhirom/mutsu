@@ -16,7 +16,7 @@
 # The final image contains NONE of the build toolchain or source tree.
 
 # ---- builder (build stage) --------------------------------------------------
-FROM rust:1.93-bookworm AS builder
+FROM rust:1.96-bookworm AS builder
 
 # pcre2 links the system libpcre2 (the pcre2 feature); libffi is built vendored
 # and statically linked into the binary, so it needs no runtime package.

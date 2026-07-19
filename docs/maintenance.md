@@ -98,6 +98,10 @@ Some crates raise the **minimum supported Rust version**. When a bump reports
     release/docs/version-bump builders. `tagpr.yml` is **SHA-pinned** (with a
     `# <version>` comment); resolve the new tag's commit with
     `gh api repos/dtolnay/rust-toolchain/commits/<version> --jq .sha`.
+- **`Dockerfile`** — the builder stage pins a `rust:<version>-bookworm` base
+  image (and `README.md` documents it). This is easy to forget because it is not
+  a `dtolnay/rust-toolchain` pin; grep the whole repo for the old version string
+  (`grep -rn "1\.93"`) after an MSRV bump to catch every pin.
 
 Keeping every builder on one toolchain (the version CI already validates) avoids
 a green `make test` on ci.yml while `release.yml` fails on an older pin — which

@@ -62,7 +62,7 @@ docker run --rm -v mutsu-home:/root ghcr.io/tokuhirom/mutsu \
 Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.7.0`); `:latest` tracks the
 newest release and `:main` tracks the development branch.
 
-The image is a **two-stage build**: a `rust:1.93-bookworm` **builder** stage
+The image is a **two-stage build**: a `rust:1.96-bookworm` **builder** stage
 compiles the binaries, and the shipped `debian:bookworm-slim` **runtime** stage
 carries only the `mutsu`/`mzef` binaries, the bundled zef tree, and zef's
 shell-out tools (`curl`/`git`/`tar`/`unzip`) — no Rust toolchain or source. Build
