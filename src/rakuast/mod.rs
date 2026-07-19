@@ -138,6 +138,8 @@ pub enum RakuAstClass {
     TermWhatever,
     // Phase 2 slice 35: fat-arrow pairs (`a => 1`).
     FatArrow,
+    // Phase 2 slice 36: the `do` statement prefix.
+    StatementPrefixDo,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,6 +215,7 @@ impl RakuAstClass {
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
             TermWhatever => "RakuAST::Term::Whatever",
             FatArrow => "RakuAST::FatArrow",
+            StatementPrefixDo => "RakuAST::StatementPrefix::Do",
         }
     }
 

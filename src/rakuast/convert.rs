@@ -769,6 +769,16 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::TermWhatever,
             fields: Vec::new(),
         }),
+        // `do { … }` -> `StatementPrefix::Do(Block)`. A labelled do stays the boundary.
+        Expr::DoBlock { body, label } => {
+            if label.is_some() {
+                return Err(unsupported("labelled do block"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementPrefixDo,
+                fields: vec![node_field(None, block_node(body)?)],
+            })
+        }
         // A fat-arrow pair `a => 1` -> `FatArrow(key => "a", value => …)`. Only a
         // string-literal key is modelled (a computed key stays the boundary).
         Expr::PositionalPair(inner) => match &**inner {
