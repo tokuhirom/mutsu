@@ -537,13 +537,37 @@ pub(super) fn dispatch(
                     _ => leaf_gist(v),
                 }
             }
+            // A real array's (`@`-sigiled) elements are Scalar containers, so a
+            // cell can never hold Nil: assigning Nil reverts it to the element
+            // type default (`Any` for untyped), and a shaped array fills unused
+            // cells the same way. Gist such a cell as the type object `(Any)`.
+            // Lists/Seqs keep a genuine Nil, so this only applies to real arrays.
+            fn gist_real_array_item(v: &Value) -> String {
+                match v.view() {
+                    ValueView::Nil => "(Any)".to_string(),
+                    ValueView::Array(inner, kind) if kind.is_real_array() => {
+                        let elems = inner
+                            .iter()
+                            .map(gist_real_array_item)
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        gist_array_wrap(&elems, kind)
+                    }
+                    _ => gist_item(v),
+                }
+            }
+            let elem_render: fn(&Value) -> String = if kind.is_real_array() {
+                gist_real_array_item
+            } else {
+                gist_item
+            };
             // Shaped arrays: format with newlines between rows
             if kind == crate::value::ArrayKind::Shaped
                 && items
                     .iter()
                     .any(|v| matches!(v.view(), ValueView::Array(..)))
             {
-                let rows: Vec<String> = items.iter().map(gist_item).collect();
+                let rows: Vec<String> = items.iter().map(elem_render).collect();
                 let inner = rows.join("\n ");
                 return Some(Some(Ok(Value::str(format!("[{}]", inner)))));
             }
@@ -553,13 +577,13 @@ pub(super) fn dispatch(
             let inner = if items.len() > GIST_ELEM_CAP {
                 let mut s = items[..GIST_ELEM_CAP]
                     .iter()
-                    .map(gist_item)
+                    .map(elem_render)
                     .collect::<Vec<_>>()
                     .join(" ");
                 s.push_str(" ...");
                 s
             } else {
-                items.iter().map(gist_item).collect::<Vec<_>>().join(" ")
+                items.iter().map(elem_render).collect::<Vec<_>>().join(" ")
             };
             Some(Ok(Value::str(gist_array_wrap(&inner, kind))))
         }

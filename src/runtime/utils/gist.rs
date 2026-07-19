@@ -127,7 +127,24 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     _ => "(...)".to_string(),
                 };
             }
-            let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(" ");
+            // A real array's (`@`-sigiled) elements are Scalar containers, so a
+            // cell can never hold Nil: assigning Nil reverts it to the element
+            // type default (`Any` for untyped), and a shaped array fills unused
+            // cells the same way. Gist such a cell as the type object `(Any)`.
+            // Nested real arrays recurse through this same arm, so their cells
+            // are handled too; a List/Seq keeps a genuine Nil (its own arm).
+            let is_real = kind.is_real_array();
+            let inner = items
+                .iter()
+                .map(|v| {
+                    if is_real && v.is_nil() {
+                        "(Any)".to_string()
+                    } else {
+                        gist_value(v)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             match kind {
                 crate::value::ArrayKind::Array
