@@ -1,5 +1,9 @@
 # Vendored upstream sources
 
+> For the periodic-refresh cadence and the Cargo-dependency side of maintenance,
+> see [`docs/maintenance.md`](maintenance.md). This file covers the mechanics of
+> the vendored trees.
+
 Three directories in this repository are copied verbatim from upstream Raku
 projects rather than written here:
 
