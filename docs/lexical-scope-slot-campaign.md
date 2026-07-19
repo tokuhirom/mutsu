@@ -694,17 +694,43 @@ to their pre-block value from `saved_locals`. The same shape was applied to
 `lines-words-allomorph-limit.t`, `native-tweak-construct.t` all flip green ON).
 Pin: `t/gate-b-doblock-exit-slot-authoritative.t`.
 
-**Still open (the deeper mechanism #3, dedicated session):** a residue of the
-constructor/self-writeback cluster survives via the call-return reconcile itself
-(not the block exit) — `method-call-self-writeback.t`, `virtual-call-attr.t`,
-`quanthash-immutable-ro.t`, `native-map-hash-coerce.t`,
-`sethash-baghash-mixhash-coerce-fn.t`, `nested-assoc-user-assign-key.t` still fail
-ON. This is the load-bearing `drain_and_reconcile` / `apply_pending_rw_writeback`
-env-by-name pull — the mechanism-#3 core the memory flags as flaky-prone and
-dedicated-session scale. Plus rw-redispatch (`nextsame`/`proto-method`),
-cross-thread/atomic (`atomic-ops*`, gc-stress), and a few io/misc
-(`encode-utf8-is-blob.t`, `resumable-control-signal-indirect-call.t`,
-`test-assertion-line-number.t`).
+### class/role-method captured-outer fold + indexed inc/dec container read (2026-07-20)
+
+Two follow-ups landed the same day drove the ON survey **13 → 9**:
+
+- **class/role-method captured-outer fold (#4889).** A class/role *method* body is
+  compiled lazily off its `RegisterClass`/`RegisterRole` op (exactly like a named
+  sub off `RegisterSub`), so the defining frame's `compute_needs_env_sync` cannot
+  see which enclosing lexicals the body reads by name. `my $base = 100; class T {
+  method calc($n) { $base + $n } }` reads `$base` from the defining frame's env at
+  call time — stale under the gate. Extend the named-sub fold (`RegisterSub`) to
+  also match `RegisterClass`/`RegisterRole`: keep every local of such a frame
+  env-synced under the gate (broad superset; the definer is the main frame, never a
+  hot loop). Flips `bind-self-attr-write.t`, `method-call-self-writeback.t`,
+  `native-tweak-construct.t`, `nested-assoc-user-assign-key.t`, `virtual-call-attr.t`.
+  Pin: `t/gate-b-class-method-outer-lexical.t`.
+- **indexed inc/dec container slot read (#4890).** `$c[i]++` / `$h<k>++`
+  (`exec_inc_dec_index_op`) read the base container from `env` by name and mutated
+  it via `env.get_mut(name)`. Under the gate `my $bh = BagHash(...)` writes the slot
+  but skips the env mirror, so the bump landed on the stale env seed and the slot's
+  live container never saw it (`$bh<a>` read back its old weight). Read/mutate the
+  slot's container under the gate (new `gate_local_slot_value` helper) and skip the
+  env→slot mirror-back. Flips `sethash-baghash-mixhash-coerce-fn.t`. Pin:
+  `t/gate-b-index-incdec-slot-container.t`.
+
+**Still open — ON survey residue (9 files, each a dedicated-session slice):**
+`atomic-ops-native-dispatch.t`, `atomic-ops.t` (cross-thread/atomic, gc-stress-
+gated, flaky-prone); `nextsame-rw-redispatch.t`, `proto-method-rw-redispatch.t`
+(the `is rw`/`is raw` writeback chain through `apply_pending_rw_writeback`'s
+env[source]→slot pull — needs the `env_changed` guard of #4859/#4873, the deepest
+one); `native-map-hash-coerce.t`, `quanthash-immutable-ro.t` (coerce-RO: the
+`:delete` and index-assign container reads are ALSO env-first, but a naive
+slot-first patch regressed 5 ON files — array-hole tracking / nested-delete /
+`:=`-cell / whole-container-bind all assume env, and the failing `:delete` is
+inside a `lives-ok { }` closure, so it also needs closure-capture-container
+coherence — so this cluster is a multi-site + closure entanglement, NOT a
+single-site swap like inc/dec); `encode-utf8-is-blob.t` (RO); and
+`resumable-control-signal-indirect-call.t`, `test-assertion-line-number.t` (misc).
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
