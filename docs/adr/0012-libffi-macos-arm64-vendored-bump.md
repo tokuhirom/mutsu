@@ -93,12 +93,11 @@ this ADR exists to end.
 - **Keep the in-tree vendored build.** Do **not** enable the `system` feature; hermeticity across all
   targets is worth more than avoiding a now-fixed compile error.
 - **Verify the macOS arm64 build end-to-end via `workflow_dispatch`** on the branch before trusting
-  it (the release workflow already supports a tag-less smoke run). Only once a real macOS runner
-  builds green do we tighten the safety net.
-- **Re-tighten `continue-on-error` for macOS** once verified, so a future macOS regression fails
-  loudly instead of silently dropping binaries again. (If the verification run is red for an
-  unrelated reason, leave `continue-on-error` and record the residual blocker rather than blocking
-  the Linux release.)
+  it (the release workflow already supports a tag-less smoke run). **Done:** run 29672036475 built
+  all four targets — including `aarch64-apple-darwin` — green.
+- **Re-tighten the macOS safety net now that it is verified**, so a future macOS regression fails
+  loudly instead of silently dropping binaries again. **Done in this PR:** `optional` was dropped
+  from both macOS matrix rows; all four release targets are now required.
 
 ## 5. Consequences
 
@@ -110,6 +109,6 @@ this ADR exists to end.
 - Future toolchain breakage of the vendored assembly should first be answered by bumping the crate
   (a fixed vendored release usually lands quickly), reserving Option B for the case where no fixed
   vendored release exists.
-- **Follow-up (tracked here, not yet done in this PR unless the smoke run is green):** after a green
-  `workflow_dispatch` macOS run, remove `continue-on-error`/`optional` for `aarch64-apple-darwin`
-  (and `x86_64-apple-darwin`) so the release fails loudly on a macOS regression.
+- The `workflow_dispatch` smoke run (29672036475) built all four targets green, so this PR also
+  removes `optional`/`continue-on-error` from both macOS matrix rows — the release now fails loudly
+  on a macOS regression rather than silently dropping binaries.

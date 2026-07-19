@@ -15,10 +15,8 @@ permissions:
 jobs:
   build:
     strategy:
-      # Do not let one platform's failure cancel the others: a macOS toolchain
-      # hiccup must not stop the Linux binaries from publishing. (The historical
-      # libffi Mach-O CFI failure is fixed as of the vendored-libffi bump — see
-      # ADR-0012 — so macOS arm64 is expected to build now.)
+      # Do not let one platform's failure cancel the others, so a red target
+      # still lets the healthy tarballs upload for inspection.
       fail-fast: false
       matrix:
         include:
@@ -31,19 +29,19 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             archive_name: macos-x64
-            optional: true
           - target: aarch64-apple-darwin
             os: macos-latest
             archive_name: macos-arm64
-            optional: true
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    # macOS targets remain best-effort until a workflow_dispatch smoke run
-    # confirms the vendored-libffi bump (ADR-0012) fixed the arm64 Mach-O CFI
-    # build. Once verified green, drop `optional` from the macOS matrix rows so
-    # a macOS regression fails loudly instead of silently dropping binaries.
-    # Linux is always required.
+    # All four targets are required. macOS arm64 was `continue-on-error` while
+    # the vendored libffi 3.4.x could not assemble under Apple Clang 16/17+
+    # (Mach-O CFI, upstream libffi #852). The vendored-libffi bump (ADR-0012)
+    # fixed it — verified green by workflow_dispatch run 29672036475 on all four
+    # targets — so the safety net is removed: a macOS regression now fails the
+    # release loudly instead of silently dropping binaries (which is how every
+    # Release since v0.3.1 shipped no macOS tarballs).
     continue-on-error: ${{ matrix.optional || false }}
 
     steps:
