@@ -395,6 +395,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         let (r, iterable) = {
             let mut items = vec![first];
             let mut r = r;
+            let mut trailing_comma = false;
             loop {
                 let (r2, _) = ws(r)?;
                 if !r2.starts_with(',') {
@@ -404,13 +405,17 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 let (r2, _) = ws(r2)?;
                 if r2.is_empty() || r2.starts_with('}') || r2.starts_with(';') {
                     r = r2;
+                    trailing_comma = true;
                     break;
                 }
                 let (r2, next) = expression(r2)?;
                 items.push(next);
                 r = r2;
             }
-            if items.len() == 1 {
+            // A trailing comma builds a 1-element list even with a single item:
+            // `for @a,` iterates once over `(@a,)` (the array itemized), matching
+            // the parenthesized `for (@a,)` form, rather than flattening `@a`.
+            if items.len() == 1 && !trailing_comma {
                 (r, items.into_iter().next().unwrap())
             } else {
                 (r, Expr::ArrayLiteral(items))
