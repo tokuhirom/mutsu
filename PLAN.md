@@ -251,9 +251,19 @@ sessions).
 
 ### B3. Distribution and tooling
 
-- [ ] **Binary distribution**: verify installation via the mise GitHub backend / automate GitHub
-      Releases. This is the entry point of "everything present just by installing", so design it
-      together with B1 vendoring (packaging of the binary + bundled module tree).
+- [x] **Binary distribution — release pipeline wired (2026-07-19)**: `release.yml` (on `v*` tag
+      push, or `workflow_dispatch` for a build-only smoke test) builds **both** `mutsu` and `mzef`
+      per target and packages a self-contained tarball — `bin/mutsu`, `bin/mzef`,
+      `share/mutsu/zef/...` at the archive root — so mise's github backend finds `bin/` with zero
+      config and `mzef` resolves the bundled zef via `../share/mutsu/zef`. Install:
+      `mise use -g github:tokuhirom/mutsu` → both commands on PATH (README "Install"). Matrix is
+      `fail-fast: false`; **Linux x64/arm64 are required, macOS is `continue-on-error`** (best-effort
+      — the pre-existing libffi Mach-O CFI build failure that had made *every* release since v0.3.1
+      publish nothing is thereby prevented from blocking the Linux artifacts). Verified locally: the
+      exact packaging tar reproduces a layout from which `mzef --version` and `mutsu -e` both run with
+      no env. Remaining: (a) the **macOS libffi** build (upstream Clang-17+ CFI issue; needs a
+      libffi/libffi-sys bump or a system-libffi build — unverifiable from Linux, so deferred); (b)
+      first real tag to confirm the GitHub Release + a live `mise use` end-to-end.
 - [ ] REPL / Debugger / native binary output / public WASM playground.
 
 ### B4. Remaining module-compatibility blockers (the base of batteries)

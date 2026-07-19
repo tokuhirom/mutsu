@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  # Allow a manual build+package smoke test (all matrix targets, incl. macOS)
+  # without cutting a tag. The publish job below is gated on a tag ref, so a
+  # workflow_dispatch run uploads artifacts but does NOT create a release.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,6 +15,10 @@ permissions:
 jobs:
   build:
     strategy:
+      # Do not let one platform's failure cancel the others: a broken macOS
+      # toolchain build (e.g. the known libffi Mach-O CFI issue) must not stop
+      # the Linux binaries from publishing.
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -22,12 +30,18 @@ jobs:
           - target: x86_64-apple-darwin
             os: macos-latest
             archive_name: macos-x64
+            optional: true
           - target: aarch64-apple-darwin
             os: macos-latest
             archive_name: macos-arm64
+            optional: true
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # macOS targets are best-effort for now (upstream libffi does not build
+    # cleanly under recent Xcode). A failure there is tolerated; Linux is
+    # required.
+    continue-on-error: ${{ matrix.optional || false }}
 
     steps:
       - uses: actions/checkout@v7
@@ -50,13 +64,34 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libpcre2-dev
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
+      # Build both shipped binaries: the interpreter (`mutsu`) and the package
+      # manager shim (`mzef`).
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} --bin mutsu --bin mzef
 
-      - name: Package binary
+      # Assemble the distribution tree so an unpacked release is self-contained
+      # and `mzef` finds the bundled zef with no configuration. `bin/` and
+      # `share/` sit at the archive ROOT (no wrapping version directory) so
+      # mise's github-backend autodetection finds `bin/` with zero config:
+      #
+      #   bin/mutsu
+      #   bin/mzef
+      #   share/mutsu/zef/...   <- mzef resolves this via ../share/mutsu/zef
+      #
+      # mise extracts the whole archive into the tool's install dir and exposes
+      # `bin/` on PATH, so both commands work after `mise use`.
+      - name: Package
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../mutsu-${{ github.ref_name }}-${{ matrix.archive_name }}.tar.gz mutsu
+          set -eu
+          pkg="mutsu-${{ github.ref_name }}-${{ matrix.archive_name }}"
+          stage="staging/$pkg"
+          mkdir -p "$stage/bin" "$stage/share/mutsu"
+          cp "target/${{ matrix.target }}/release/mutsu" "$stage/bin/"
+          cp "target/${{ matrix.target }}/release/mzef" "$stage/bin/"
+          cp -R vendor/zef "$stage/share/mutsu/zef"
+          tar -C "$stage" -czf "$pkg.tar.gz" bin share
+          echo "Packaged $pkg.tar.gz:"
+          tar tzf "$pkg.tar.gz" | head -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -67,6 +102,9 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    # Only publish a GitHub Release for a real tag push. workflow_dispatch runs
+    # stop after build (artifacts are available for inspection, no release).
+    if: ${{ github.ref_type == 'tag' }}
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
@@ -74,7 +112,7 @@ jobs:
           merge-multiple: true
 
       # Publish SHA256 checksums alongside the tarballs so downloaders (and the
-      # mise GitHub backend) can verify the binaries.
+      # mise github/ubi backend) can verify the binaries.
       - name: Generate checksums
         run: sha256sum mutsu-*.tar.gz > mutsu-${{ github.ref_name }}-SHA256SUMS.txt
 

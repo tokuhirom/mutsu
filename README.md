@@ -6,6 +6,36 @@ mutsu parses Raku source into an AST, compiles it to bytecode, and executes it o
 
 Try it in your browser: **https://tokuhirom.github.io/mutsu/** (WebAssembly demo)
 
+## Install
+
+### With [mise](https://mise.jdx.dev/) (recommended)
+
+Prebuilt binaries are published to GitHub Releases. mise installs them and puts
+**both** the `mutsu` interpreter and the bundled `mzef` package manager on your
+PATH:
+
+```bash
+mise use -g github:tokuhirom/mutsu       # latest release
+# or pin a version:
+mise use -g github:tokuhirom/mutsu@0.7.0
+
+mutsu -e 'say "Hello, World!"'
+mzef --version                            # the bundled Zef package manager
+```
+
+The release archive is self-contained: `bin/mutsu`, `bin/mzef`, and the
+vendored Zef tree at `share/mutsu/zef`. `mzef` is a thin shim that runs the
+bundled Zef under `mutsu`, so `mzef install <dist>` works out of the box with no
+extra setup. Linux (x64/arm64) binaries are published each release; macOS builds
+are best-effort while an upstream toolchain issue is resolved.
+
+### From source
+
+```bash
+cargo build --release
+./target/release/mutsu -e 'say "Hello, World!"'
+```
+
 ## Quick Start
 
 ```bash
