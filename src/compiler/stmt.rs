@@ -750,6 +750,13 @@ impl Compiler {
             Stmt::MarkBind => {
                 // Handled by SyntheticBlock detection; no-op when compiled standalone.
             }
+            Stmt::MarkSigilless(name) => {
+                // Track a sigilless local so BareWord compilation reads it from its
+                // slot (GetLocal), not via GetBareWord/env. Unlike
+                // MarkSigillessReadonly this does NOT set the readonly flag: a typed
+                // sigilless bind (`my Int \d := 7`) keeps container mutability.
+                self.sigilless_locals.insert(name.clone());
+            }
             Stmt::MarkSigillessReadonly(name) => {
                 // Track sigilless locals so BareWord compilation can
                 // distinguish them from `$`-sigiled variables.

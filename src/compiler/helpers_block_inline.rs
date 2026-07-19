@@ -109,7 +109,7 @@ impl Compiler {
                     // MarkSigillessReadonly at block-final position: compile
                     // the mark statement, then load the variable's value so
                     // `my \x = 42` used in expression context returns 42.
-                    Stmt::MarkSigillessReadonly(name) => {
+                    Stmt::MarkSigillessReadonly(name) | Stmt::MarkSigilless(name) => {
                         self.compile_stmt(stmt);
                         self.compile_expr(&Expr::BareWord(name.clone()));
                         self.pop_dynamic_scope_lexical(saved);

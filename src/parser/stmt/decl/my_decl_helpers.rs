@@ -40,11 +40,13 @@ pub(super) fn parse_sigilless_decl(
         };
         // Sigilless variables without type constraint are always readonly.
         // With a type constraint (e.g. `my Mu \a := $a`), the variable
-        // binds to the container, preserving mutability.
+        // binds to the container, preserving mutability — but it must still be
+        // registered as a sigilless local so a bare-word read resolves to its
+        // slot (not `env`), so wrap it with the non-readonly `MarkSigilless`.
         let stmt = if type_constraint.is_none() {
             Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
         } else {
-            decl
+            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigilless(name)])
         };
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
@@ -122,7 +124,7 @@ pub(super) fn parse_sigilless_decl(
         let stmt = if type_constraint.is_none() {
             Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
         } else {
-            decl
+            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigilless(name)])
         };
         if apply_modifier {
             return parse_statement_modifier(r, stmt);

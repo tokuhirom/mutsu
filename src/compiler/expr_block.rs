@@ -482,9 +482,9 @@ impl Compiler {
                 self.compile_do_block_expr_scoped(inner, &None);
             }
             Stmt::SyntheticBlock(inner)
-                if inner
-                    .last()
-                    .is_some_and(|s| matches!(s, Stmt::MarkSigillessReadonly(_))) =>
+                if inner.last().is_some_and(|s| {
+                    matches!(s, Stmt::MarkSigillessReadonly(_) | Stmt::MarkSigilless(_))
+                }) =>
             {
                 self.compile_block_inline(inner);
             }

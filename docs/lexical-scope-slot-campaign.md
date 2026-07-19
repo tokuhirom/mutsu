@@ -565,6 +565,39 @@ first too (the slot is always current; `env` is only a mirror). Gate OFF the slo
 equals the env mirror, so this is byte-identical (`make test` 18827 PASS). Pin:
 `t/gate-b-let-temp-slot-save.t` (OFF + ON both pass). **ON-survey delta: 61 → 59.**
 
+### `sigilless` cluster — typed-bind read fixed (2026-07-19), EVAL-rw deferred
+
+The 2-file sigilless cluster splits into two independent roots:
+
+1. **Typed sigilless bind read — DONE (structural).** `my Int \d := 7; is d, 7`
+   failed ON (`d` read as `(Int)`/`Any`). Root: a *typed* sigilless declaration
+   (`type_constraint.is_some()`) was emitted as a bare `VarDecl` with no sigilless
+   marker, so `d` never entered the compiler's `sigilless_locals` set and the
+   bare-word read compiled to `GetBareWord` (env lookup) instead of `GetLocal`
+   (slot). Under the gate the env is stale → `Any`. The untyped case
+   (`my \c := 42`) worked because it emits `MarkSigillessReadonly`. Fix: a new
+   non-readonly `Stmt::MarkSigilless(name)` marker (typed sigilless keeps container
+   mutability, so it must NOT be marked readonly), emitted by the typed `:=` and `=`
+   sigilless declaration paths and compiled to `sigilless_locals.insert` only. This
+   makes the read slot-addressed regardless of the gate. Gate OFF byte-identical
+   (`make test` 18891 PASS); `sigilless-comma-decl.t` goes green ON. (Pre-existing,
+   gate-independent: a typed sigilless bind to a container is not yet writable-through
+   — `my Mu \a := $x; a = 5` leaves `$x` unchanged in both modes; raku propagates.
+   Orthogonal to this cluster.)
+
+2. **EVAL rw caller-alias writeback — DEFERRED (the §1.1 hard case).**
+   `sub swap(\x,\y){ my $z=y; y=x; x=$z } my $a=5; my $b=3; EVAL 'swap($a,$b)'`
+   still fails ON (`sigilless-params.t` test 3). Narrowed: a *read-only* sigilless
+   sub via EVAL works ON (`two(\x,\y)` reads `5|3`); `our`-var args work ON; a
+   nested-sub (non-EVAL) swap works ON. Only a **my-lexical arg + rw sigilless param
+   + EVAL** breaks — and it breaks the initial *read* too (`x`/`y` empty on entry),
+   so the rw param binding routes the caller-lexical alias through the EVAL frame's
+   env by name (the `__mutsu_sigilless_alias::` chain), which the gate leaves stale.
+   This is the acknowledged §1.1 OTF-gate exclusion; needs the EVAL caller-frame
+   alias resolution made slot-addressed. **ON-survey delta for this PR: 61 → 60**
+   (sigilless-comma-decl only; sigilless-params stays; the two `let`/`temp` files are
+   fixed separately by #4861).
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
