@@ -274,7 +274,19 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
             // wrapper is transparent everywhere else (consumers unwrap it, incl.
             // the for-loop rw-source detection). `@`/`%` vars are NOT wrapped.
             || matches!(&result, Expr::Var(_))
-        {
+            // A parenthesized ASSIGNMENT with a non-variable lvalue (a method /
+            // attribute-accessor LHS like `$.value = x` or `$.value ~= x`) reaches
+            // this fall-through because `try_parse_assign_expr` only handles
+            // `$`/`@`/`%` names, not `$.foo`. Wrap it so it matches the scalar path
+            // (which already yields `Grouped(AssignExpr)`): the parens make the
+            // assignment tight, so `cond ?? a !! ($.value = x)` is legal and must
+            // NOT trip the ternary "assignment too loose" guard.
+            || matches!(
+                &result,
+                Expr::AssignExpr { .. }
+                    | Expr::IndexAssign { .. }
+                    | Expr::MultiDimIndexAssign { .. }
+            ) {
             Expr::Grouped(Box::new(result))
         } else {
             result
