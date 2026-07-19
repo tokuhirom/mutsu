@@ -175,7 +175,17 @@ impl Interpreter {
         let end = end as usize;
         let routine_snapshot = self.snapshot_routine_registry();
         let saved_env = self.env().clone();
-        let saved_locals = self.locals.clone();
+        // Under shadow slots (default) the block exit uses a targeted Nil-reset of
+        // just the block's own fresh declarations, so no whole-`locals` snapshot
+        // is taken (lexical-slot endgame slice 3). The `MUTSU_NO_SHADOW_SLOTS`
+        // opt-out lacks distinct shadow slots, so it still needs the full
+        // snapshot both to restore `locals` on exit and to back `$OUTER::`.
+        let shadow_slots = crate::compiler::shadow_slots_active();
+        let saved_locals = if shadow_slots {
+            None
+        } else {
+            Some(self.locals.clone())
+        };
         let once_scope = self.next_once_scope_id();
         // Track variables declared within this block scope.
         self.block_declared_vars
@@ -193,10 +203,11 @@ impl Interpreter {
         // O(locals) clone on the default build (lexical-slot endgame slice 2).
         // The `MUTSU_NO_SHADOW_SLOTS` opt-out has no baked outer slot and still
         // needs the real snapshot.
-        if crate::compiler::shadow_slots_active() {
+        if shadow_slots {
             self.outer_scope_locals.push(Vec::new());
         } else {
-            self.outer_scope_locals.push(saved_locals.clone());
+            self.outer_scope_locals
+                .push(saved_locals.as_ref().expect("opt-out snapshot").clone());
         }
         // Baseline for the ENTER-result stack: any value captured by this block's
         // ENTER section (PushEnterResult) must be cleared on exit even if the body
@@ -389,7 +400,37 @@ impl Interpreter {
                 restored_env.insert_sym(k, v);
             }
         }
-        self.locals = saved_locals;
+        // Lexical-slot endgame slice 3: under shadow slots, a targeted reset
+        // instead of restoring a whole-`locals` clone. `restored_env` already
+        // holds the correct post-block value for every enclosing name — the
+        // propagated inner value for a plain assignment-through, or the saved
+        // outer value for names that must not propagate (`$_`, `$*dyn`,
+        // block-declared `my`) — so re-seeding each such slot from it reproduces
+        // exactly what the old whole-array restore + re-seed produced. The only
+        // slots `restored_env` cannot cover are the block's own FRESH `my`
+        // declarations (a name with no outer binding): those are absent from
+        // `restored_env`, so Nil them here to stop the declaration leaking past
+        // the block / into a later iteration (their unique shadow slot's
+        // pre-block value is Nil by induction — see slice 1). A shadowing
+        // declaration keeps a live untouched outer slot and a dead-post-block
+        // inner slot, so it needs no reset.
+        //
+        // The `MUTSU_NO_SHADOW_SLOTS` opt-out has no distinct shadow slots, so it
+        // still needs the whole-array restore.
+        if let Some(saved) = saved_locals {
+            self.locals = saved;
+        } else {
+            for sym in &block_declared {
+                if saved_env.contains_key_sym(*sym) {
+                    continue;
+                }
+                for idx in 0..code.locals.len().min(self.locals.len()) {
+                    if code.local_sym(idx) == Some(*sym) {
+                        self.locals[idx] = Value::NIL;
+                    }
+                }
+            }
+        }
         for (idx, name) in code.locals.iter().enumerate() {
             if let Some(val) = restored_env.get(name).cloned() {
                 self.locals[idx] = val;
