@@ -451,8 +451,16 @@ impl Interpreter {
             ));
         }
 
-        const EAGER_LIMIT: usize = 10_000;
+        // A finite `xx` count is eager in Raku (materializes all N elements,
+        // `is-lazy` is False). We materialize any finite count up to
+        // EAGER_LIMIT so realistic repeats (e.g. `1 xx 999999`) reify fully.
+        // Above that, an astronomically large finite count (`42 xx 2**62`, up
+        // to `2⁹⁹⁹⁹⁹`) or a genuinely infinite one (`xx *`) must NOT be
+        // materialized — it keeps only a cache prefix plus the logical count.
+        const EAGER_LIMIT: usize = 1_000_000;
         const LAZY_CACHE: usize = 4_096;
+        // Callable LHS is expensive (each element calls `eval_call_on_value`),
+        // so it caches far fewer elements to avoid timeouts on `callable xx *`.
         const LAZY_CACHE_CALLABLE: usize = 256;
 
         let is_callable = matches!(
