@@ -141,7 +141,6 @@ Known root causes to date:
 | Protocol::MQTT | `Invalid typename 'DecodeBuffer' in parameter declaration.` — a sibling type in the enclosing package (same family as #4865; `DecodeBuffer` is likely nested deeper / declared via a form the prefix-walk still misses). |
 | SQL::Abstract | `No matching candidate found for the parametric role` — advanced past four typename blockers by #4865; now blocked on parametric-role resolution in its `does Constant['…']` / `does Op::Prefix['…']` chains. |
 | JavaScript::Google::Charts | `Cannot declare individual multi candidates in 'our' scope`. |
-| IDNA::Punycode | `Unexpected block in infix position (missing statement control word before the expression?)`. |
 | PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
 | uniname-words | `Odd number of elements found where hash initializer expected` (load-time). |
 | Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
@@ -151,6 +150,11 @@ Known root causes to date:
 | RakudoContainerfileBuilder | prints a `Usage:` block at load — a MAIN/`is export` interaction. |
 | App::fix.raku / Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
 | Testo | non-zero exit with no diagnostic captured — needs a direct run to classify. |
+
+**Cleared post-snapshot:** IDNA::Punycode (was `Unexpected block in infix
+position` — a statement label on a C-style `loop (init; cond; step)` that the
+labeled-loop parser did not handle) now loads; its `decode_punycode` still hits
+a separate list-assignment runtime bug, a Level-2 concern.
 
 ## missing_dep — reachable once deps are present (not mutsu bugs)
 
