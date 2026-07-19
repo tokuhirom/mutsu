@@ -1700,6 +1700,20 @@ impl Interpreter {
                 self.exec_make_slip_op()?;
                 *ip += 1;
             }
+            OpCode::DeSlip => {
+                // A `.Slip`/`slip(...)` VALUE handed to a `**@`-slurpy consumer
+                // (say/put/print/note) stays a single argument and gists as a
+                // list `(...)`. Demote it to a Seq so the consumer's Slip-flatten
+                // pass leaves it whole; `|EXPR` pipe-slips skip this op and still
+                // flatten. Non-slip values pass through untouched.
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let demoted = match val.view() {
+                    ValueView::Slip(items) => Value::seq(items.iter().cloned().collect()),
+                    _ => val,
+                };
+                self.stack.push(demoted);
+                *ip += 1;
+            }
             OpCode::Decont => {
                 self.exec_decont_op();
                 *ip += 1;

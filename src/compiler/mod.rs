@@ -762,9 +762,23 @@ impl Compiler {
         }
     }
 
-    fn compile_exprs(&mut self, exprs: &[Expr]) {
+    /// Compile arguments for a `**@`-slurpy output routine (`say`/`put`/`print`/
+    /// `note`). Such a routine keeps each argument whole: a `.Slip`/`slip(...)`
+    /// VALUE prints as a list (`say @a.Slip` → `(1 2 3)`), it does NOT flatten
+    /// into separate arguments. Only an explicit `|EXPR` pipe flattens at the
+    /// call site (`say |@a` → `123`). So every non-pipe argument gets a `DeSlip`
+    /// that demotes a top-level Slip value to a Seq, dodging the op's
+    /// Slip-flatten pass; `|EXPR` args (already a `MakeSlip`) are left to flatten.
+    fn compile_slurpy_out_args(&mut self, exprs: &[Expr]) {
         for expr in exprs {
             self.compile_expr(expr);
+            let is_pipe = matches!(
+                expr,
+                Expr::Unary { op, .. } if *op == crate::token_kind::TokenKind::Pipe
+            );
+            if !is_pipe {
+                self.code.emit(OpCode::DeSlip);
+            }
         }
     }
 
