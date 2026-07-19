@@ -136,6 +136,8 @@ pub enum RakuAstClass {
     CircumfixArrayComposer,
     // Phase 2 slice 34: the `*` whatever term.
     TermWhatever,
+    // Phase 2 slice 35: fat-arrow pairs (`a => 1`).
+    FatArrow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +212,7 @@ impl RakuAstClass {
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
             TermWhatever => "RakuAST::Term::Whatever",
+            FatArrow => "RakuAST::FatArrow",
         }
     }
 

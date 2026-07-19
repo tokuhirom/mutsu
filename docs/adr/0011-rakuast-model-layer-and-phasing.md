@@ -355,6 +355,14 @@ earlier ones.
     → `"1,2,3"`; `*` closes an infinite range and a bare `*` is a `Whatever` value. `WhateverCode`
     (`* + 1`, `*-1`), which mutsu desugars to a closure, stays the boundary. Tests in
     `t/rakuast-eval-whatever.t`. Next: hash literals, code-block interpolation, WhateverCode.
+  - **Slice 28 (fat-arrow pairs) — done, both directions.** A new `FatArrow` node class models a pair
+    `a => 1` (`key` leaf + `value` node). The read side converts a `Expr::PositionalPair` over a
+    `FatArrow` binop with a string-literal key, and the write side lowers a `FatArrow` back to that
+    positional pair. `EVAL(Q{(a => 5).value}.AST)` → `5`; `.key`/`.kv` and an expression value work.
+    (A *bare* `a => 1` statement renders as an `ApplyInfix` in mutsu — matching the call-argument form —
+    so the pin checks round-tripped values rather than the gist.) A non-string-literal key stays the
+    boundary. Tests in `t/rakuast-eval-pair.t`. Next: hash literals, code-block interpolation,
+    WhateverCode.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

@@ -572,6 +572,16 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // The `*` whatever term.
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),
+        // A fat-arrow pair `a => 1` -> a positional pair over a `FatArrow` binop.
+        RakuAstClass::FatArrow => {
+            let key = leaf_str(node, "key")?;
+            let value = lower_expr(named_child(node, "value")?)?;
+            Ok(Expr::PositionalPair(Box::new(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str(key))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(value),
+            })))
+        }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
         // bareword term, which mutsu evaluates to the type object.
         RakuAstClass::TypeSimple => {

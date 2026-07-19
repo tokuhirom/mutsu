@@ -769,6 +769,31 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::TermWhatever,
             fields: Vec::new(),
         }),
+        // A fat-arrow pair `a => 1` -> `FatArrow(key => "a", value => …)`. Only a
+        // string-literal key is modelled (a computed key stays the boundary).
+        Expr::PositionalPair(inner) => match &**inner {
+            Expr::Binary {
+                left,
+                op: crate::token_kind::TokenKind::FatArrow,
+                right,
+            } => {
+                let key = match &**left {
+                    Expr::Literal(v) | Expr::LiteralSrc(v, _) => match v.view() {
+                        ValueView::Str(s) => s.to_string(),
+                        _ => return Err(unsupported("non-string pair key")),
+                    },
+                    _ => return Err(unsupported("non-literal pair key")),
+                };
+                Ok(RakuAstNode {
+                    class: RakuAstClass::FatArrow,
+                    fields: vec![
+                        leaf_field(Some("key"), Value::str(key)),
+                        node_field(Some("value"), convert_expr(right)?),
+                    ],
+                })
+            }
+            _ => Err(unsupported("non-fat-arrow positional pair")),
+        },
         // A bare type name used as a term (`Int`, `Str`) -> `Type::Simple`. Only
         // known builtin types convert; a non-type bareword stays the boundary.
         Expr::BareWord(name) if is_known_type_constraint(name) => Ok(simple_type_node(name)),
