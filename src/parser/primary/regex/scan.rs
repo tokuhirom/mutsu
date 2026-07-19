@@ -33,7 +33,23 @@ pub(in crate::parser) fn scan_to_delim(
     close_ch: char,
     is_paired: bool,
 ) -> Option<(&str, &str)> {
-    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false)
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false, false)
+}
+
+/// Like `scan_to_delim` but for the *pattern* half of a substitution
+/// (`s/pattern/replacement/`). There the closing delimiter is a mandatory
+/// separator, so a trailing `$` is always the end-of-string anchor — never the
+/// `$/` match variable. Disables the `$/` disambiguation heuristic that
+/// `scan_to_delim` applies for match regexes, which otherwise swallows the
+/// separator in `s/foo$/.bar/` (a `$` anchor followed by a replacement starting
+/// with `.`/`[`/`<`).
+pub(in crate::parser) fn scan_to_delim_subst_pattern(
+    input: &str,
+    open_ch: char,
+    close_ch: char,
+    is_paired: bool,
+) -> Option<(&str, &str)> {
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, false, true)
 }
 
 /// Like `scan_to_delim` but with an option to skip Raku-specific handling
@@ -45,7 +61,7 @@ pub(in crate::parser) fn scan_to_delim_p5(
     close_ch: char,
     is_paired: bool,
 ) -> Option<(&str, &str)> {
-    scan_to_delim_inner(input, open_ch, close_ch, is_paired, true)
+    scan_to_delim_inner(input, open_ch, close_ch, is_paired, true, false)
 }
 
 fn scan_to_delim_inner(
@@ -54,6 +70,7 @@ fn scan_to_delim_inner(
     close_ch: char,
     is_paired: bool,
     p5_mode: bool,
+    subst_pattern: bool,
 ) -> Option<(&str, &str)> {
     let mut depth = 1u32;
     let mut chars = input.char_indices();
@@ -252,12 +269,14 @@ fn scan_to_delim_inner(
                     None => return None,
                 }
             }
-        } else if !p5_mode && c == '$' && !is_paired {
+        } else if !p5_mode && !subst_pattern && c == '$' && !is_paired {
             // In non-paired delimiters (like /), $ followed by the close
             // delimiter MIGHT be a variable reference ($/ is the match variable)
             // or it might be the end-of-string anchor followed by the closing
             // delimiter. Disambiguate: if $/ is followed by [ or . or < it's
-            // the variable; otherwise it's anchor + close.
+            // the variable; otherwise it's anchor + close. Skipped for a
+            // substitution pattern, where the delimiter always separates and a
+            // trailing `$` is unambiguously the anchor (`s/foo$/.bar/`).
             let after = &input[i + 1..];
             if after.starts_with(close_ch) {
                 let after_delim = &after[close_ch.len_utf8()..];
