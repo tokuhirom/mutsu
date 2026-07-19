@@ -73,6 +73,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         Stmt::Last(None) => Ok(Some(statement_expression(control_call("last", &[])?))),
         Stmt::Next(None) => Ok(Some(statement_expression(control_call("next", &[])?))),
         Stmt::Last(Some(_)) | Stmt::Next(Some(_)) => Err(unsupported("labelled last/next")),
+        // `die`/`fail EXPR` are also modelled as bare calls.
+        Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
+            "die",
+            std::slice::from_ref(expr),
+        )?))),
+        Stmt::Fail(expr) => Ok(Some(statement_expression(control_call(
+            "fail",
+            std::slice::from_ref(expr),
+        )?))),
         Stmt::VarDecl {
             name,
             expr,

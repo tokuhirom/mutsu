@@ -384,6 +384,12 @@ earlier ones.
     exception is trapped. A `try` with a `CATCH` block (and a bare `die` statement inside) stay the
     boundary. Tests in `t/rakuast-eval-try.t`. Next: `die` (a control call), `gather`/`take`,
     code-block interpolation.
+  - **Slice 32 (`die`/`fail`) — done, both directions.** Like `return`/`last`/`next`, raku models
+    `die`/`fail` as bare calls. `Stmt::Die`/`Stmt::Fail` convert to a `Call::Name` (via `control_call`),
+    and the write side lowers a `die`/`fail` call back to the control-flow statement. This unblocks a
+    `die` inside a `try` body: `EVAL(Q{try { die "boom"; 1 }}.AST).defined` → `False`, and the message
+    reaches `$!`. A conditional `die` is caught by a surrounding `try`. Tests in `t/rakuast-eval-die.t`.
+    Next: `gather`/`take`, CATCH blocks, code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 

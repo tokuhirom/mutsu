@@ -94,6 +94,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 )),
                 "last" => Ok(Stmt::Last(None)),
                 "next" => Ok(Stmt::Next(None)),
+                "die" => Ok(Stmt::Die(
+                    args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
+                )),
+                "fail" => Ok(Stmt::Fail(
+                    args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
+                )),
                 _ => Ok(Stmt::Expr(lower_expr(node)?)),
             }
         }
