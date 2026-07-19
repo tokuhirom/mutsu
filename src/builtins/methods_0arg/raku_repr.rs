@@ -298,6 +298,15 @@ fn raku_hash_value(v: &Value) -> String {
 }
 
 fn raku_value_as_element(v: &Value) -> String {
+    // A real array (`@`-sigiled) element is a Scalar container, so it can never
+    // actually hold Nil: assigning Nil reverts it to the element type's default,
+    // which for an untyped array is `Any`. A freshly-declared shaped array
+    // (`my @a[2,2]`) fills its cells with Nil for the same reason, so render
+    // such a cell as `Any` rather than `Nil`. (Typed arrays store the element
+    // type object in their cells, so they never reach this branch.)
+    if v.is_nil() {
+        return "Any".to_string();
+    }
     match v.view() {
         ValueView::Array(items, kind) => {
             let decontainerized = match kind {
