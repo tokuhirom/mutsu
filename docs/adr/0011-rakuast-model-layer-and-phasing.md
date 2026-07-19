@@ -341,6 +341,14 @@ earlier ones.
     `20`; a computed index, subscripting an array literal (`[10, 20, 30][2]`), and two subscripts in an
     expression work. Associative subscripts (`%h{…}`) and slices (`@a[1, 2]`) stay the boundary. Tests
     in `t/rakuast-eval-subscript.t`. Next: hash literals, bareword type terms, code-block interpolation.
+  - **Slice 26 (bareword type terms) — done, both directions.** A bare type name used as a value
+    (`Int`, `Str`) converts to a `Type::Simple` on the read side — but only when it is a *known* type
+    (`is_known_type_constraint`), so a non-type bareword (`foo`) stays the boundary — and the write side
+    lowers a `Type::Simple` in expression position back to a bareword term (which mutsu evaluates to the
+    type object). This closes the slice-18 `~~ Int` boundary: `EVAL(Q{5 ~~ Int}.AST)` → `True`,
+    `EVAL(Q{"x" ~~ Int}.AST)` → `False`; `Int.^name` → `"Int"`, and a type object can be stored in a
+    variable. User-defined types stay the boundary. Tests in `t/rakuast-eval-typeterm.t`. Next: hash
+    literals (raku models `{a => 1}` as a `Block`), code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
 
