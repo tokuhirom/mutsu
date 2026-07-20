@@ -7,7 +7,7 @@ use Test;
 # the surfacing cases -- previously they died with a `Confused` parse error
 # because the expression-level parser left the inner `=` unconsumed.
 
-plan 9;
+plan 11;
 
 class C { has $.a is rw }
 
@@ -49,6 +49,17 @@ class C { has $.a is rw }
     $o.a = $o.b = 9;
     is $o.a, 9, 'chained accessor-to-accessor (outer)';
     is $o.b, 9, 'chained accessor-to-accessor (inner)';
+}
+
+# A `.AT-KEY(k) = v` writeback through a sigilless raw binding (`\h`) as an
+# rvalue must mutate the bound container in place (regression: the writeback
+# needs the BareWord target's name, like the paren-context lowering).
+{
+    my %h = a => 42, b => 666;
+    for $%h -> \h {
+        is (h.AT-KEY("b") = 65), 65, 'AT-KEY assign as rvalue returns the value';
+        is h.AT-KEY("b"), 65, 'AT-KEY assign through \h binding persists';
+    }
 }
 
 done-testing;

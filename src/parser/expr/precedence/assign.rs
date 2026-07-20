@@ -76,10 +76,16 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                     is_positional: true,
                 }
             } else {
+                // Match the expression-context lowering in `paren.rs` (NOT the
+                // statement-level `lvalue_assign_to_expr`, which drops a
+                // `BareWord` target to `None`): a sigilless raw binding (`\h`)
+                // reaches here as a `BareWord`, and the writeback needs its name
+                // so `h.AT-KEY(k) = v` mutates the bound container in place.
                 let target_var_name = match target.as_ref() {
                     Expr::Var(v) => Some(v.clone()),
                     Expr::ArrayVar(v) => Some(format!("@{}", v)),
                     Expr::HashVar(v) => Some(format!("%{}", v)),
+                    Expr::BareWord(v) => Some(v.clone()),
                     Expr::DoStmt(s) => {
                         crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s)
                     }
