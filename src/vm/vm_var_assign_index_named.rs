@@ -2085,6 +2085,59 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Store `PROCESS::<$name> = value` as the process-level dynamic variable, so
+    /// a later `$*name` (stored in the env as `*name`) resolves to it. This is
+    /// how `Rakudo::Internals.REGISTER-DYNAMIC` installs defaults (e.g.
+    /// DBIish's `$*DBI-DEFS`). Returns the (coerced) stored value for the
+    /// expression result. Shared by the literal-key (`PROCESS::<$x>`) and
+    /// runtime-key (`PROCESS::{$k}`) assignment paths.
+    pub(super) fn store_process_dynamic(
+        &mut self,
+        raw_key: &str,
+        val: Value,
+    ) -> Result<Value, RuntimeError> {
+        // Map the sigiled stash key to the env dynamic-var key:
+        //   $name → *name, @name → @*name, %name → %*name, name → *name
+        let env_key = match raw_key.chars().next() {
+            Some('$') => format!("*{}", &raw_key[1..]),
+            Some('@') => format!("@*{}", &raw_key[1..]),
+            Some('%') => format!("%*{}", &raw_key[1..]),
+            _ => format!("*{raw_key}"),
+        };
+        // `PROCESS::<$REPO> := $repo` arrives as a bind marker; unwrap it
+        // so the bound value (not the marker Pair) becomes the dynamic.
+        let (val, _bind_source) = Self::unwrap_bind_index_value(val);
+        let val = if env_key.starts_with('@') {
+            runtime::coerce_to_array(val)
+        } else if env_key.starts_with('%') {
+            self.coerce_hash_var_value(&env_key, val)?
+        } else {
+            Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val))
+        };
+        self.env_mut().insert(env_key, val.clone());
+        Ok(val)
+    }
+
+    /// Runtime-key variant of `IndexAssignPseudoStashNamed`: the subscript key is
+    /// computed at runtime (e.g. `PROCESS::{$k} = value`, which is how a `//=` /
+    /// `||=` compound assignment desugars its index into a temp variable). Stack:
+    /// `[..., value, key]`.
+    pub(super) fn exec_index_assign_pseudo_stash_keyed_op(
+        &mut self,
+        code: &CompiledCode,
+        stash_name_idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let stash_name = Self::const_str(code, stash_name_idx);
+        // The compiler only emits this op for PROCESS:: (see compile_index_assign).
+        debug_assert_eq!(stash_name, "PROCESS::");
+        let key = self.stack.pop().unwrap_or(Value::NIL);
+        let val = self.stack.pop().unwrap_or(Value::NIL);
+        let raw_key = key.to_string_value();
+        let stored = self.store_process_dynamic(&raw_key, val)?;
+        self.stack.push(stored);
+        Ok(())
+    }
+
     pub(super) fn exec_index_assign_pseudo_stash_named_op(
         &mut self,
         code: &CompiledCode,
@@ -2098,30 +2151,12 @@ impl Interpreter {
         // DBIish's `$*DBI-DEFS`).
         if stash_name == "PROCESS::" {
             let raw_key = Self::const_str(code, key_name_idx).to_string();
-            // Map the sigiled stash key to the env dynamic-var key:
-            //   $name → *name, @name → @*name, %name → %*name, name → *name
-            let env_key = match raw_key.chars().next() {
-                Some('$') => format!("*{}", &raw_key[1..]),
-                Some('@') => format!("@*{}", &raw_key[1..]),
-                Some('%') => format!("%*{}", &raw_key[1..]),
-                _ => format!("*{raw_key}"),
-            };
             let val = self.stack.pop().unwrap_or(Value::NIL);
-            // `PROCESS::<$REPO> := $repo` arrives as a bind marker; unwrap it
-            // so the bound value (not the marker Pair) becomes the dynamic.
-            let (val, _bind_source) = Self::unwrap_bind_index_value(val);
-            let val = if env_key.starts_with('@') {
-                runtime::coerce_to_array(val)
-            } else if env_key.starts_with('%') {
-                self.coerce_hash_var_value(&env_key, val)?
-            } else {
-                Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val))
-            };
-            self.env_mut().insert(env_key, val.clone());
+            let stored = self.store_process_dynamic(&raw_key, val)?;
             // An assignment is an expression: leave the assigned value on the
             // stack so `Rakudo::Internals.REGISTER-DYNAMIC`'s block (whose body is
             // `PROCESS::<$x> = ...`) returns it.
-            self.stack.push(val);
+            self.stack.push(stored);
             return Ok(());
         }
         if stash_name != "MY::" {
