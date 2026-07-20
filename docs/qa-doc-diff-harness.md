@@ -41,6 +41,27 @@ The report groups findings by kind (`output-mismatch`, `mutsu-error`,
 `raku-drift-from-doc`), each with the exact program, raku stdout, and mutsu
 stdout/stderr — i.e. a ready-made minimal repro.
 
+The harness writes each candidate program to a per-PID scratch file
+(`tmp/ddh/prog-<pid>.raku`), so multiple invocations may run **concurrently**
+without clobbering each other.
+
+### Sweeping the whole corpus in parallel
+
+A single invocation processes its files serially, so the full ~440-file corpus
+takes hours. `scripts/doc-diff-sweep.sh` fans the corpus out across worker
+processes (one report per file) and writes an aggregate ranked by signal:
+
+```
+scripts/doc-diff-sweep.sh [-j N] [-o OUTDIR] [-m MUTSU] [ROOT ...]
+```
+
+Defaults: `-j8`, `-o tmp/sweep`, `-m target/debug/mutsu`, corpus = Type +
+Language. Outputs `OUTDIR/reports/<file>.txt` (per file), `OUTDIR/progress.txt`
+(one stats line per file), and `OUTDIR/summary.txt` (corpus totals + files
+ranked by `mismatch + crash`, high-signal first). Always re-verify a finding
+directly before treating it as a real bug — doc examples drift, and version
+drift is bucketed separately as `raku-drift-from-doc`.
+
 ## First run (2026-07-18, 8 core Type files: Str/Array/List/Hash/Num/Rat/Range/Map)
 
 525 blocks extracted → 270 raku-clean comparisons → **50 high-signal divergences
