@@ -442,8 +442,19 @@ fn parse_destructuring_with_rhs(
     };
     let (rest, _) = ws(rest)?;
     let (rest, raw_rhs) = parse_comma_or_expr(rest)?;
-    let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
+    // If the RHS is followed (after whitespace) by a `{` block, that block is a
+    // separate statement / conditional body — NOT a hash subscript of the
+    // declaration. Preserve the whitespace so the expression-context postfix
+    // parser (which only subscripts `{` when it has no leading space) leaves it
+    // alone: `if my ($a, $b) = f() { ... }` must treat `{ ... }` as the if-body,
+    // matching the scalar `if my $x = f() { ... }` path. Only consume the
+    // optional trailing `;` when there is no such block.
+    let (rest_ws, _) = ws(rest)?;
+    let rest = if rest_ws.starts_with('{') {
+        rest
+    } else {
+        opt_char(rest_ws, ';').0
+    };
 
     let has_named = vars.iter().any(|v| v.is_named);
 
