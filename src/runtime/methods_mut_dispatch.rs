@@ -1995,6 +1995,18 @@ impl Interpreter {
             } => Some((class_name, attributes.clone(), id)),
             _ => None,
         } {
+            // A metaobject method (`$metaobject.name($obj)`) on a HOW instance is a
+            // ClassHOW method, NOT an rw-accessor write. The HOW instance stores a
+            // `name` attribute, so without this the `args.len() == 1` rw-accessor
+            // setter below would treat `$mo.name(1)` as `name = 1` and return the
+            // argument. Route it to the ClassHOW dispatcher (which mirrors the
+            // non-mut `dispatch_instance_and_fallback` classhow path).
+            if Self::is_classhow_method(method)
+                && (Self::is_metamodel_how(&class_name)
+                    || self.is_metamodel_how_class(&class_name.resolve()))
+            {
+                return self.dispatch_classhow_method(method, args.to_vec());
+            }
             if crate::runtime::utils::is_buf_like_class(&class_name.resolve())
                 && matches!(method, "write-ubits" | "write-bits")
                 && args.len() == 3

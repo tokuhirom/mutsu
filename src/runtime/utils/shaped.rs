@@ -264,6 +264,18 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 let a_val = a_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
                 let b_val = b_attrs.as_map().get("WHICH").map(|v| v.to_string_value());
                 a_val == b_val
+            } else if a_name == b_name
+                && a_name.starts_with("Perl6::Metamodel::")
+                && a_name.ends_with("HOW")
+            {
+                // A metaobject (`.HOW`) is canonical per introspected type in raku:
+                // `1.HOW === 2.HOW === Int.HOW` are all True (the same ClassHOW),
+                // while `1.HOW === Num.HOW` is False. mutsu allocates a fresh HOW
+                // instance per `.HOW` call, so compare by the introspected type
+                // name (stored in the `name` attribute) rather than instance id.
+                let a_val = a_attrs.as_map().get("name").map(|v| v.to_string_value());
+                let b_val = b_attrs.as_map().get("name").map(|v| v.to_string_value());
+                a_val == b_val
             } else {
                 a_id == b_id
             }
