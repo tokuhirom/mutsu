@@ -320,7 +320,7 @@ pub(super) unsafe extern "C" fn call_method_mut(
     // JIT path unconditionally pulls `env[receiver]` into the caller's slot,
     // which is wrong when the callee env merely inherited a same-named binding
     // from its caller (a self-recursive `$tree` reverting to the caller's node)
-    // and, under the `MUTSU_GATE_LOCAL_ENV_WRITE` per-store env-write gate, when
+    // and, under the (B) per-store env-write, when
     // `env[receiver]` is a stale decl-seed while the live value lives only in
     // the slot (a hot `$io .= succ` loop frozen by a stale `env[io]` pull).
     let receiver_before: Option<Option<Value>> =

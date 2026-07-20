@@ -204,43 +204,21 @@ impl Interpreter {
             for (name, value) in new_vars {
                 self.env_mut().insert_sym(name, value);
             }
-            if crate::opcode::gate_local_env_write() {
-                // (B)-gate: the per-store env mirror is suppressed, so re-seeding
-                // every slot from the restored env (below) would clobber a
-                // propagating outer var's LIVE in-block value with its stale
-                // decl-time seed — e.g. `my $ct = CT.new(...)` whose slot never
-                // mirrored into env, so a second `$ct.x` inside one interpolation
-                // read `Any`. The live in-block `self.locals` already holds the
-                // correct value for a propagating outer name (the block body read
-                // /mutated the slot directly). Revert ONLY the block's OWN isolated
-                // declarations (reverted to their pre-block value so they don't
-                // leak) and internal/special/dynamic slots; leave every other slot
-                // at its live value. This mirrors the env-side keep/revert decision
-                // above without depending on the env mirror.
-                for (idx, name) in code.locals.iter().enumerate() {
-                    let revert =
-                        isolate_set.contains(&strip_sigil(name)) || !is_plain_user_var(name);
-                    if revert && let Some(val) = saved_locals.get(idx) {
-                        self.locals[idx] = val.clone();
-                    }
-                }
-            } else {
-                self.locals = saved_locals;
-                // Re-read every local from env: after the block's env snapshot is
-                // restored above, env is the authoritative half of the dual store for
-                // this frame's names.
-                //
-                // This used to be guarded by "skip the locals whose slot is
-                // authoritative" — a condition on the old `simple_locals` flag that
-                // the compiler set for `$`-prefixed names only, and scalars are stored
-                // sigil-less (`my $x` -> `"x"`), so it was false for every slot and the
-                // skip never happened. The guard is gone rather than revived: this
-                // unconditional pull is the behavior every test has ever exercised, and
-                // it is why the env mirror (`flush_local_to_env`) is load-bearing here.
-                for (idx, name) in code.locals.iter().enumerate() {
-                    if let Some(val) = self.env().get(name).cloned() {
-                        self.locals[idx] = val;
-                    }
+            // (B) per-store env-write: the env mirror is suppressed, so re-seeding
+            // every slot from the restored env would clobber a propagating outer
+            // var's LIVE in-block value with its stale decl-time seed — e.g.
+            // `my $ct = CT.new(...)` whose slot never mirrored into env, so a second
+            // `$ct.x` inside one interpolation read `Any`. The live in-block
+            // `self.locals` already holds the correct value for a propagating outer
+            // name (the block body read/mutated the slot directly). Revert ONLY the
+            // block's OWN isolated declarations (reverted to their pre-block value so
+            // they don't leak) and internal/special/dynamic slots; leave every other
+            // slot at its live value. This mirrors the env-side keep/revert decision
+            // above without depending on the env mirror.
+            for (idx, name) in code.locals.iter().enumerate() {
+                let revert = isolate_set.contains(&strip_sigil(name)) || !is_plain_user_var(name);
+                if revert && let Some(val) = saved_locals.get(idx) {
+                    self.locals[idx] = val.clone();
                 }
             }
             self.stack.push(block_result);
@@ -310,12 +288,11 @@ impl Interpreter {
         // §1.4/§1.5: when the compiler baked THIS frame's slot for `name`, read the
         // pre-scope value straight from the live slot rather than from `env` by
         // name. The slot is always current; `env` is only a mirror and can be stale
-        // when the per-store env write is gated (MUTSU_GATE_LOCAL_ENV_WRITE) — a
-        // plain-lexical assignment `$x = ...` before this `temp`/`let` may not have
-        // mirrored into `env`, so an env-first read would snapshot the decl-seed
-        // `Any` instead of the real value. With the gate OFF the slot equals the
-        // env mirror, so this is byte-identical to the former env-first read. The
-        // matching restore side (`restore_let_value`) already prefers the baked slot.
+        // under the (B) per-store env-write — a plain-lexical assignment
+        // `$x = ...` before this `temp`/`let` may not have mirrored into `env`, so
+        // an env-first read would snapshot the decl-seed `Any` instead of the real
+        // value. The matching restore side (`restore_let_value`) already prefers the
+        // baked slot.
         let old_val = match slot {
             Some(s) if (s as usize) < self.locals.len() => self.locals[s as usize].clone(),
             _ => self

@@ -893,12 +893,20 @@ Perf: while/loop hot paths drop the unconditional env write (−10…16% on a 5M
 loop); for/fib are unaffected (their frames `captures_env_by_name`, so every local
 is force-synced regardless).
 
-**Remaining: after the flip soaks in main, delete the gate** — the ~18
-`if gate_local_env_write()` sites become unconditional (the ON branch), and the
-OFF-side dead code (the env-mirror stores those sites guard, plus the
-`MUTSU_GATE_LOCAL_ENV_WRITE` env plumbing) is removed. That is a separate mechanical
-PR, taken only once the flip has demonstrably soaked. **Any future flip verification
-MUST include `MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`.**
+### Gate removal — `gate_local_env_write()` deleted (2026-07-21, post-soak)
+
+After the Plan A flip soaked in main (35 main commits across many green CI cycles
+with no latent flaky reports), the gate was deleted. The 9 `if gate_local_env_write()`
+sites became unconditional (their ON branch), the OFF-side dead code was removed
+(the env-mirror store in `exec_set_local_op_inner` is now always skipped for a
+slot-authoritative plain lexical; the block-restore / scope-restore OFF branches
+that re-seeded locals from env by name are gone), and the `gate_local_env_write()`
+function plus the `MUTSU_GATE_LOCAL_ENV_WRITE` env plumbing were removed. The (B)
+per-store env-write is now a permanent, unconditional behavior: the slot is the
+single source of truth for a plain lexical, and env-COW drops the mirror write.
+The `gate_local_slot`/`gate_local_slot_value` helpers keep their names but no longer
+gate on the flag (they now only check `plain_locals`). Pins: `t/gate-b-*.t` (18
+files) still cover every mechanism-consumer fold.
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 

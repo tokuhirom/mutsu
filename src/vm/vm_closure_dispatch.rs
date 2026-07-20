@@ -730,25 +730,19 @@ impl Interpreter {
                 .or_else(|| self.env().get("__mutsu_rw_map_topic__").cloned());
         }
 
-        // Sync state variables back using scoped keys. Under the
-        // MUTSU_GATE_LOCAL_ENV_WRITE gate a plain-lexical `state $s = $s + 10`
-        // skips its env mirror, so an env-first read would persist the pre-update
-        // value and the state would never accumulate — read the live SLOT first
-        // (seeded from the state store on entry, updated by the body's writes).
-        // The gate is NOT byte-neutral here in the default build: some state vars
-        // are mutated only through `env` by name (e.g. a `state` referenced from a
-        // regex replacement part updates env, not the slot — roast state.t #16), so
-        // OFF must keep the env-first read. Gate the slot-first order on the flag.
-        // A state var that IS env-synced (folded into `needs_env_sync` — e.g. this
-        // frame runs a dynamic `s///` whose replacement bumps the state by name)
-        // keeps its env mirror current, and that env value is the one the
-        // replacement actually wrote; read it env-first even under the gate so the
-        // bump is not lost (its slot stays at the pre-replacement value).
-        let state_slot_first = crate::opcode::gate_local_env_write();
+        // Sync state variables back using scoped keys. Under the (B) per-store
+        // env-write policy a plain-lexical `state $s = $s + 10` skips its env
+        // mirror, so an env-first read would persist the pre-update value and the
+        // state would never accumulate — read the live SLOT first (seeded from the
+        // state store on entry, updated by the body's writes). A state var that IS
+        // env-synced (folded into `needs_env_sync` — e.g. this frame runs a dynamic
+        // `s///` whose replacement bumps the state by name) keeps its env mirror
+        // current, and that env value is the one the replacement actually wrote;
+        // read it env-first so the bump is not lost (its slot stays at the
+        // pre-replacement value — roast state.t #16).
         for (slot, key) in &cc.state_locals {
             let local_name = &cc.locals[*slot];
-            let slot_authoritative =
-                state_slot_first && !cc.needs_env_sync.get(*slot).copied().unwrap_or(false);
+            let slot_authoritative = !cc.needs_env_sync.get(*slot).copied().unwrap_or(false);
             let val = if slot_authoritative {
                 self.locals
                     .get(*slot)

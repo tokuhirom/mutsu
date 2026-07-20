@@ -154,13 +154,11 @@ impl Interpreter {
     /// `tail_call`: if true, raise a return-control exception with the result.
     /// Read the FIRST candidate's live rw-param value during a nextsame/callsame
     /// redispatch. The first candidate's body ran `$x = ...` before deferring, and
-    /// under the (B) env-write gate that mutation lands only in its VM local slot
+    /// under the (B) env-write policy that mutation lands only in its VM local slot
     /// (the env write is skipped) — so read the slot of the currently-executing
     /// frame (`self.current_code`/`self.locals`) first and fall back to env.
-    /// Under gate OFF, env mirrors the slot, so returning env directly is
-    /// byte-identical.
     fn first_candidate_rw_value(&self, first_param: &str) -> Option<Value> {
-        if crate::opcode::gate_local_env_write() && self.current_code != 0 {
+        if self.current_code != 0 {
             // SAFETY: `self.current_code` is the CompiledCode of the frame that is
             // synchronously executing this nextsame/callsame — the first candidate.
             let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
