@@ -130,7 +130,7 @@ Known root causes to date:
 | Dist | Root cause |
 |---|---|
 | SSH::LibSSH::Tunnel | `Cannot have a 'whenever' block outside the scope of a 'supply' or 'react' block` — a `whenever` reached at load time (likely a react/supply parse gap). |
-| SBOM::CycloneDX | `unparsed input, column 5: "}\n… @*ERRORS"` — a `@*ERRORS` dynamic var / trailing brace parse dead-end. |
+| SBOM::CycloneDX | `unparsed input, column 5: "}\n… @*ERRORS"` — the reported line (the `}` closing `method ingest`) is the last-good boundary, **not** the cause: the `@*ERRORS`/`with…else`/private-method-call constructs there all parse in isolation. The real desync is a still-unisolated construct in the tail `Map`/`Hash` methods (deep `mapify` ternary, `my role ordered-list[@NAMES]`, `$map but ordered-list[@keys]`) that forces the whole-role parse to backtrack. Investigating it surfaced a *separate* general bug — interpolated `.join(", ")` (a method arg carrying the string's own quote/comma) was mis-split, fixed separately — but that was not the SBOM blocker. Needs a finer tail-method repro. |
 | CSS | inside a `grammar` ("angle index key") — grammar/regex-slang, heavier. |
 | ~~Bench~~ | **Cleared post-snapshot**: a tightly-bound `<=>` used as a quote-word / hash key / colonpair value (`:fill<=>`, `%h<=>`) was mis-parsed as the spaceship operator by three separate angle parsers. Now loads. |
 | Pod::Contents / Deps / Configuration / File-TreeBuilder / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |

@@ -132,18 +132,28 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
         chain.push((method_name.to_string(), is_quoted, method_prefix));
         // Check if followed by (...) — parse args
         if after_name.starts_with('(') {
-            // Find matching closing paren
+            // Find the matching closing paren, skipping any parens that appear
+            // inside a quoted string argument (e.g. `.join(", ")` or
+            // `.subst(")", "")`) so the delimiter-matching quote does not close
+            // the arg list early.
             let mut depth = 0usize;
             let mut paren_end = None;
+            let mut in_s = false;
+            let mut in_d = false;
             for (idx, ch) in after_name.char_indices() {
-                if ch == '(' {
-                    depth += 1;
-                } else if ch == ')' {
-                    depth -= 1;
-                    if depth == 0 {
-                        paren_end = Some(idx);
-                        break;
+                match ch {
+                    '\'' if !in_d => in_s = !in_s,
+                    '"' if !in_s => in_d = !in_d,
+                    _ if in_s || in_d => {}
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            paren_end = Some(idx);
+                            break;
+                        }
                     }
+                    _ => {}
                 }
             }
             if let Some(pe) = paren_end {
@@ -152,12 +162,18 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                 // Build the full chain
                 for (i, (name, quoted, modifier)) in chain.iter().enumerate() {
                     let args = if i == chain.len() - 1 {
-                        // Last method gets the args
+                        // Last method gets the args. Split on top-level commas
+                        // only — a comma inside a quoted arg (`.join(", ")`) or a
+                        // nested bracket must not split the argument list.
                         if args_str.trim().is_empty() {
                             vec![]
                         } else {
                             let mut args = vec![];
-                            for arg in args_str.split(',') {
+                            for arg in
+                                crate::parser::primary::string::interp_var::split_top_level_commas(
+                                    args_str,
+                                )
+                            {
                                 let arg = arg.trim();
                                 if let Ok((_, e)) = crate::parser::expr::expression(arg) {
                                     args.push(e);
