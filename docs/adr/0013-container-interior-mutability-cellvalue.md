@@ -1,6 +1,6 @@
 # ADR-0013: Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype
 
-- **Status**: Accepted (2026-07-20 — mechanism 2b greenlit by tokuhirom. Open-Question resolutions recorded in §5: cross-thread race deferred to layer 3c, element cells (2c) deferred, Array/Hash-first scope. Implementation begins at §4 phase 1.)
+- **Status**: Accepted (2026-07-20 — mechanism 2b greenlit by tokuhirom. Open-Question resolutions recorded in §5. **Implementation refined at §7: the `UnsafeCell` lives in `GcBox.value`, not a `Gc<GcCell<Data>>` Value-layer wrapper** — same 2b mechanism, but it fixes all ~51 sites at the primitive with no `Value`-representation churn, so the phase-2/3 per-container migration and the `GcCell` newtype are dropped.)
 - **Date**: 2026-07-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a — this ADR fixes 3a's *unfinished* element-cell half), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing; orthogonal — the 8B `Value` is unchanged), [docs/gc-contents-mut-inventory.md](../gc-contents-mut-inventory.md) (Step 1 inventory — the 54-site classification this ADR acts on), PLAN.md §2.1 (GC soundness tail)
@@ -221,6 +221,52 @@ narrow, lane-governed".
 
 ---
 
-*This ADR is Proposed. It records the mechanism framing for PLAN §2.1 Step 3; on approval, update the
-Status to Accepted, mark the recommended Open-Question resolutions, and begin at §4 phase 1. If the
-mechanism judgment changes later, supersede this ADR rather than rewriting it.*
+## 7. Refinement (2026-07-20): place the `UnsafeCell` in `GcBox`, not a Value-layer wrapper
+
+While starting §4 phase 1, a materially better *placement* of the same 2b mechanism surfaced. The
+decision (2b = `UnsafeCell` interior mutability, defer the cross-thread race) is unchanged; only where
+the cell lives changes — so this is a refinement recorded here, not a superseding ADR.
+
+**What changed.** Instead of wrapping each container payload as `Gc<GcCell<Data>>` at the `Value`
+layer, put the `UnsafeCell` one level down, in the primitive's node box:
+
+```rust
+struct GcBox<T: ?Sized> { header: GcHeader, value: UnsafeCell<T> }   // was: value: T
+```
+
+`Gc::as_ptr` / `gc_contents_mut` / `make_mut` / `get_mut` project through the payload with
+`UnsafeCell::raw_get` (no intermediate reference), and `Gc`'s `Deref` reads through `UnsafeCell::get`.
+That makes **every** `Gc<T>` interior-mutable at the primitive, so the ~51 `gc_contents_mut` sites
+become provenance-sound *with no change to their call sites at all* — `gc_contents_mut`'s body is
+unchanged; only the pointer it derives now carries interior-mutable provenance.
+
+**Why it is better than the Value-layer wrapper.**
+
+- **Blast radius collapses to ~one file** (`src/gc/gc_ptr.rs`). The wrapper plan had to rewrite
+  `ValueRepr` / `ValueView` / the nanbox encode/decode/peek / the 34 `Gc<ArrayData>`/`Gc<HashData>`
+  type references / the container constructors / the 51 write sites. The GcBox placement touches none
+  of them — the `Value` representation, the nanbox 8B encoding, and all 51 call sites are byte-for-byte
+  unchanged.
+- **One mechanism for all container kinds at once** (Array/Hash *and* Set/Bag/Mix/Instance/Sub/…), so
+  the per-kind phasing (Open Question §5.4) is moot — there is nothing to roll out kind-by-kind.
+- **Feasibility verified**: `UnsafeCell<T>` coerce-unsizes, so `GcBox<T>` → `GcBox<dyn Trace>` (the
+  erased `ErasedGc`) still works; `UnsafeCell` is `#[repr(transparent)]`, so box layout and `size_of`
+  are unchanged.
+
+**Consequences of the refinement.**
+
+- **The `GcCell` newtype (phase-1 PR #4956) is removed** — the GcBox placement subsumes it; keeping
+  both would violate "1 operation = 1 implementation".
+- **The phasing (§4) collapses**: there is no phase-2/3 per-container migration. The remaining work is
+  the primitive change (this PR) + the Miri gate (§4 phase 4, still deferred until a nightly matching
+  the crate's stabilized features is pinned in CI).
+- **`Sync` justification moves to `GcBox`**: `unsafe impl<T: ?Sized + Sync> Sync for GcBox<T>`, the
+  same posture the pre-UnsafeCell `GcBox<dyn Trace>` already had (its `dyn Trace: Sync`); the interior
+  mutability adds no cross-thread write that the old raw-pointer `gc_contents_mut` did not already have.
+- Everything else in this ADR (the two-unsoundness split §1.3, the lock rejection §3, the layer-3c
+  deferral) stands unchanged.
+
+---
+
+*This ADR is Accepted (mechanism 2b; placement per §7). If the mechanism judgment changes later,
+supersede this ADR rather than rewriting it.*
