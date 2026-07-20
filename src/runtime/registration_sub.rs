@@ -649,7 +649,17 @@ impl Interpreter {
         });
         if multi {
             let single_key = format!("{}::{}", self.current_package(), name);
-            if is_our_scoped && !self.registry().proto_subs.contains(&single_key) {
+            // Skip this check during the hoist pass. Sub declarations (including
+            // multi candidates) are hoisted and registered before the
+            // in-sequence `RegisterProtoSub` for an `our proto` runs, so at hoist
+            // time the proto is not yet in `proto_subs`. Each multi candidate is
+            // also re-registered in textual order, which runs *after* the proto;
+            // that in-sequence registration enforces the check with the proto
+            // present. (`is_lexical_hoist` only marks block-scope hoists; the
+            // mainline hoist uses the separate `__hoisted` marker.)
+            let is_hoisted =
+                is_lexical_hoist || custom_traits.iter().any(|(t, _)| t == "__hoisted");
+            if is_our_scoped && !is_hoisted && !self.registry().proto_subs.contains(&single_key) {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
