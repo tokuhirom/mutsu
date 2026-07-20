@@ -461,8 +461,10 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 self.code.emit(OpCode::GetBareWord(name_idx));
             }
-            Stmt::EnumDecl { name, .. } if name.resolve().is_empty() => {
-                // Anonymous enum: RegisterEnum pushes the Map result
+            Stmt::EnumDecl { .. } => {
+                // Both the anonymous (`enum <a b c>`) and named (`enum Foo <a b c>`)
+                // forms yield a Map in expression position; RegisterEnum pushes that
+                // Map as the declaration's value.
                 self.compile_stmt(stmt);
             }
             Stmt::Whenever { supply, .. } => {

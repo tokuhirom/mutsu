@@ -1573,18 +1573,18 @@ impl Interpreter {
             }
         }
 
-        // The value of an anonymous `enum <a b c>` expression is a Map in raku
-        // (`.^name`/`.WHAT` is `Map`, `.raku` is `Map.new((...))`), not a plain
-        // Hash. Embed the `Map` declared-type via `to_map` so introspection and
-        // rendering match — the same tag the `%`-constant / `.Map` paths use.
-        if is_anonymous {
-            let mut map = HashMap::new();
-            for (key, val) in &enum_variants {
-                map.insert(key.clone(), val.to_value());
-            }
-            crate::builtins::map_hash_coerce::to_map(Value::hash(map))
-        } else {
-            Ok(Value::NIL)
+        // The value of an `enum <a b c>` / `enum Foo <a b c>` expression is a Map in
+        // raku (`.^name`/`.WHAT` is `Map`, `.raku` is `Map.new((...))`), not a plain
+        // Hash — for BOTH the anonymous and named forms. Embed the `Map` declared-type
+        // via `to_map` so introspection and rendering match — the same tag the
+        // `%`-constant / `.Map` paths use. The named form also installs the type and
+        // its values above; this return value is only consumed when the declaration is
+        // used in expression position (`my $e = enum Foo <a b c>`) — a bare statement
+        // pushes it as a harmless sink (see `exec_register_enum_op`).
+        let mut map = HashMap::new();
+        for (key, val) in &enum_variants {
+            map.insert(key.clone(), val.to_value());
         }
+        crate::builtins::map_hash_coerce::to_map(Value::hash(map))
     }
 }
