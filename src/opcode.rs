@@ -2504,7 +2504,24 @@ impl CompiledCode {
                     } if control_start < body_end
                 )
             });
-            if defines_lazy_body || installs_resume_control {
+            // A frame that constructs a regex value which interpolates a lexical
+            // (`/ ... $script ... /`) may have that regex matched in a DIFFERENT
+            // frame — e.g. `like $err, / ... $script ... /` matches inside `like`,
+            // whose `interpolate_regex_scalars` resolves `$script` from the
+            // name-keyed env (the cross-frame store), not this frame's slots. Under
+            // the gate a plain `my $script = ...` skips its env mirror, so the
+            // interpolation reads a stale/empty value. Keep every local of a frame
+            // that holds an interpolating regex constant env-synced (gate-ON only;
+            // the pattern is checked with the same conservative `regex_pattern_is_
+            // static` used for the match cache, so a static regex folds nothing).
+            let holds_interpolating_regex = self.constants.iter().any(|c| {
+                matches!(
+                    c.view(),
+                    ValueView::Regex(p)
+                        if !crate::runtime::regex_parse::regex_pattern_is_static(p.as_str())
+                )
+            });
+            if defines_lazy_body || installs_resume_control || holds_interpolating_regex {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
         }

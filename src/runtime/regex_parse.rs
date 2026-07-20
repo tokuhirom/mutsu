@@ -65,7 +65,7 @@ pub(crate) static TOKEN_DEFS_GEN: std::sync::atomic::AtomicU64 =
 /// `$<name>` capture forms, or `@$var` derefs. This stays a conservative
 /// superset of what the parser substitutes; false "dynamic" only costs cache
 /// misses, never correctness.
-pub(super) fn regex_pattern_is_static(pattern: &str) -> bool {
+pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
     fn starts_variable_form(c: char) -> bool {
         c.is_alphanumeric() || matches!(c, '_' | '{' | '(' | '<' | '*' | '?' | '^' | '.' | '!')
     }
