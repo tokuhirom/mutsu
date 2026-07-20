@@ -15,18 +15,30 @@ impl Interpreter {
             // `{*}` rw-redispatch for a proto *method* (ledger §D): like the proto
             // *sub* path (`vm_call_proto_dispatch`), Rakudo redispatches with the
             // proto's CURRENT (body-mutated) parameter, and a candidate's `is rw`
-            // param needs a writable argument. The interpreter binds method params
-            // by name into env, so the current value lives in env (`code = None`).
-            // Rebuild the rw args + arg_sources so the candidate matches and its
-            // writeback chains back through the proto method param to the caller.
+            // param needs a writable argument. The proto method body runs compiled
+            // (`compile_method_def_in_place`), so its `$x = ...` mutation lands in a
+            // VM local slot; under the (B) env-write gate that write is not mirrored
+            // to env, so the live value must be read from the currently-executing
+            // proto-body frame's slot. Pass its `CompiledCode` (via `self.current_code`,
+            // which is exactly that frame at the `{*}`/`__PROTO_DISPATCH__` point) so
+            // `proto_rw_redispatch_args` reads slot-first. Gate OFF keeps `None`
+            // (env mirrors the slot, byte-identical).
             let invocant_class = match ctx.invocant.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
+            let proto_body_code: Option<&CompiledCode> =
+                if crate::opcode::gate_local_env_write() && self.current_code != 0 {
+                    // SAFETY: `self.current_code` is the CompiledCode of the compiled
+                    // proto-method body synchronously executing this `{*}` dispatch.
+                    Some(unsafe { &*(self.current_code as *const CompiledCode) })
+                } else {
+                    None
+                };
             let (args, rw_sources) = match invocant_class
                 .and_then(|cn| self.lookup_proto_method(&cn, &proto_name))
                 .and_then(|(_, proto)| {
-                    self.proto_rw_redispatch_args(&proto.param_defs, &args, None)
+                    self.proto_rw_redispatch_args(&proto.param_defs, &args, proto_body_code)
                 }) {
                 Some((rebuilt, sources)) => (rebuilt, Some(sources)),
                 None => (args, None),
