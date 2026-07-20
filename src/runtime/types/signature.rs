@@ -483,6 +483,27 @@ pub(in crate::runtime) fn sub_signature_matches_value(
 
 /// Bind a named parameter's sub-signature for renaming (e.g., `:a(:$b)`).
 /// Unlike destructuring, the value is bound directly to each inner param.
+/// Collect every caller-facing named-alias key in a (possibly nested) named
+/// alias chain. `:variety(:style(:sort($x)))` yields `["style", "sort"]` — the
+/// outermost name (`variety`) is the param's own match key and is handled by the
+/// caller; every nested `:name(...)` level adds another key the caller may use.
+pub(in crate::runtime) fn collect_nested_named_alias_keys(sub_params: &[ParamDef]) -> Vec<String> {
+    let mut keys = Vec::new();
+    let mut worklist: Vec<&ParamDef> = sub_params.iter().collect();
+    let mut idx = 0;
+    while idx < worklist.len() {
+        let sp = worklist[idx];
+        idx += 1;
+        if sp.named {
+            keys.push(sp.name.strip_prefix(':').unwrap_or(&sp.name).to_string());
+        }
+        if let Some(nested) = &sp.sub_signature {
+            worklist.extend(nested.iter());
+        }
+    }
+    keys
+}
+
 pub(in crate::runtime) fn bind_named_rename_sub_signature(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
@@ -527,6 +548,12 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         }
         interpreter.bind_param_value(bind_name, value.clone());
         interpreter.set_var_type_constraint(bind_name, sub_pd.type_constraint.clone());
+        // A named alias can chain: `:type(:class($kind))` nests a further
+        // rename under this alias. The innermost variable (`$kind`) is the one
+        // the body actually reads, so recurse to bind every level down to it.
+        if let Some(nested) = &sub_pd.sub_signature {
+            bind_named_rename_sub_signature(interpreter, nested, value)?;
+        }
     }
     Ok(())
 }

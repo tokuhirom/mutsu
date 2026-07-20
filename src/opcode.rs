@@ -4171,7 +4171,15 @@ impl CompiledFunction {
             let mut alias_keys = Vec::new();
             let mut alias_binds = Vec::new();
             if let Some(ref sub_params) = pd.sub_signature {
-                for sub_pd in sub_params {
+                // A named alias can chain: `:type(:class($kind))` nests further
+                // renames. Walk every level so all caller-facing alias keys
+                // (`class`) match and the innermost variable (`$kind`, the one
+                // the body reads) is bound. A worklist avoids recursion here.
+                let mut worklist: Vec<&crate::ast::ParamDef> = sub_params.iter().collect();
+                let mut idx = 0;
+                while idx < worklist.len() {
+                    let sub_pd = worklist[idx];
+                    idx += 1;
                     if sub_pd.named {
                         alias_keys.push(
                             sub_pd
@@ -4184,6 +4192,9 @@ impl CompiledFunction {
                     // On a match (by any key), every sub-signature name is
                     // bound to the value — e.g. `:color(:$colour)` binds both.
                     alias_binds.push((sub_pd.name.clone(), slot_of(&sub_pd.name)));
+                    if let Some(ref nested) = sub_pd.sub_signature {
+                        worklist.extend(nested.iter());
+                    }
                 }
             }
             let mut outer_alias_keys = Vec::new();
