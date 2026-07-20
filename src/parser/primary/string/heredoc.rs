@@ -43,9 +43,17 @@ fn logical_line_end(r: &str) -> Option<usize> {
 }
 
 pub(crate) fn parse_to_heredoc_delimiter(input: &str) -> PResult<'_, &'_ str> {
-    // Raku allows optional whitespace before the delimiter in q:to/Q:to
-    // forms, e.g. q:to /END/;
-    let input = input.trim_start_matches(' ');
+    // Raku allows optional whitespace — including a newline — before the
+    // delimiter in q:to/qq:to forms, e.g. `q:to /END/;` and the form where the
+    // quoted delimiter sits on the next line:
+    //     say qq:to
+    //     '====='
+    //     body
+    //     =====
+    // The delimiter itself must still be a non-alphanumeric quote/bracket char
+    // (a bareword after the whitespace is rejected below, matching rakudo's
+    // "Alphanumeric character is not allowed as a delimiter").
+    let input = input.trim_start();
     let open = input
         .chars()
         .next()
