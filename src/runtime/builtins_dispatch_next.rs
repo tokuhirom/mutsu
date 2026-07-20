@@ -152,6 +152,27 @@ impl Interpreter {
     /// Shared implementation for callsame/nextsame/callwith/nextwith.
     /// `override_args`: if Some, use these args instead of the original.
     /// `tail_call`: if true, raise a return-control exception with the result.
+    /// Read the FIRST candidate's live rw-param value during a nextsame/callsame
+    /// redispatch. The first candidate's body ran `$x = ...` before deferring, and
+    /// under the (B) env-write gate that mutation lands only in its VM local slot
+    /// (the env write is skipped) — so read the slot of the currently-executing
+    /// frame (`self.current_code`/`self.locals`) first and fall back to env.
+    /// Under gate OFF, env mirrors the slot, so returning env directly is
+    /// byte-identical.
+    fn first_candidate_rw_value(&self, first_param: &str) -> Option<Value> {
+        if crate::opcode::gate_local_env_write() && self.current_code != 0 {
+            // SAFETY: `self.current_code` is the CompiledCode of the frame that is
+            // synchronously executing this nextsame/callsame — the first candidate.
+            let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
+            if let Some(slot) = code.locals.iter().position(|n| n == first_param)
+                && let Some(val) = self.locals.get(slot)
+            {
+                return Some(val.clone());
+            }
+        }
+        self.env.get(first_param).cloned()
+    }
+
     fn dispatch_next_candidate(
         &mut self,
         func_name: &str,
@@ -343,7 +364,7 @@ impl Interpreter {
                     if *pos >= call_args.len() {
                         continue;
                     }
-                    if let Some(cur) = self.env.get(first_param).cloned() {
+                    if let Some(cur) = self.first_candidate_rw_value(first_param) {
                         call_args[*pos] = crate::runtime::types::unwrap_varref_value(cur);
                     }
                     rw_sources[*pos] = Some(first_param.clone());
@@ -514,7 +535,7 @@ impl Interpreter {
                     let caller_source =
                         crate::runtime::types::indexed_varref_from_value(&arg).map(|(n, _, _)| n);
                     // The first candidate's live (body-mutated) param value.
-                    if let Some(cur) = self.env.get(first_param).cloned() {
+                    if let Some(cur) = self.first_candidate_rw_value(first_param) {
                         call_args[*pos] =
                             match crate::runtime::types::indexed_varref_from_value(&arg) {
                                 Some((name, _, index)) => {
