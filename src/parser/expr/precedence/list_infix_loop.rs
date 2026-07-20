@@ -195,7 +195,13 @@ fn parse_list_infix_loop_impl<'a>(
             }
         }
         // Bracket infix operators: [+], [R-], [Z*], [Z[cmp]], [blue], etc.
-        if let Some(bracket_infix) = parse_bracket_infix_op(r) {
+        // But `[op]=` (immediately followed by `=`, not `==`) is a bracket
+        // meta-op *compound assignment* (`%h<k> [R//]= $v`), not an infix op —
+        // bail so the enclosing assignment handler consumes it. Without this the
+        // loop would grab `[R//]` as an infix and choke on the trailing `=`.
+        if crate::parser::stmt::assign::parse_bracket_meta_assign_op(r).is_none()
+            && let Some(bracket_infix) = parse_bracket_infix_op(r)
+        {
             match bracket_infix {
                 BracketInfix::PlainOp(op, len) => {
                     let r = &r[len..];

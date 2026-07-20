@@ -149,6 +149,26 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
     }
 
+    // Bracket meta-op compound assignment on an *indexed* lvalue: `%h<k> [R//]= $v`,
+    // `@a[$i] [+]= 1`. A bare-variable LHS is handled by the dedicated
+    // statement-level / call-argument assign paths (which need `expression()` to
+    // NOT swallow the `[op]=`, so their comma-boundary logic keeps working) — only
+    // subscripted lvalues, which reach here as the parsed `expr`, need this branch.
+    // The list-infix / arithmetic loops above bail on `[op]=` so `r` still starts
+    // with it.
+    if matches!(expr, Expr::Index { .. } | Expr::MultiDimIndex { .. })
+        && let Some((after_op, meta, op)) =
+            crate::parser::stmt::assign::parse_bracket_meta_assign_op(r)
+    {
+        let (after_ws, _) = ws(after_op)?;
+        if let Ok((r, rhs)) = parse_assignment_rhs_mode(after_ws, mode)
+            && let Ok(result) =
+                crate::parser::stmt::assign::build_meta_assign_expr(expr.clone(), meta, op, rhs)
+        {
+            return Ok((r, result));
+        }
+    }
+
     // Word-operator compound assignment (`div=`, `mod=`, `gcd=`, `x=`, and
     // user-declared operators). Handled here — not only at the statement level —
     // so it parses as the operand of a looser operator, e.g. the right side of
