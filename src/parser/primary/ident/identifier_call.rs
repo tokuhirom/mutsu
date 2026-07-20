@@ -1388,6 +1388,15 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((r2, make_call_expr(name, input, vec![expr])));
     }
 
+    // `supply whenever EXPR { ... }` shorthand for `supply { whenever EXPR { ... } }`
+    // (mirrors `react whenever ...`). Lower through the same emitter wrapper so the
+    // whenever is lexically inside a supply scope.
+    if name == "supply"
+        && let Ok((r2, whenever)) = crate::parser::stmt::control::whenever_stmt(r)
+    {
+        return Ok((r2, supply_method_call(vec![whenever])));
+    }
+
     // `supply { ... }` expression: lower to `Supply.on-demand(-> $emitter { ... })`.
     if name == "supply"
         && r.starts_with('{')
