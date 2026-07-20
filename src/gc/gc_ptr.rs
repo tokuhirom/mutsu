@@ -1207,7 +1207,11 @@ mod tests {
         let a = Gc::new(Cell(1));
         assert_eq!(Arc::strong_count(&a.inner), a.strong_count());
         let erased = a.erased();
-        assert_eq!(a.strong_count(), 1, "GC-visible count unchanged by erased()");
+        assert_eq!(
+            a.strong_count(),
+            1,
+            "GC-visible count unchanged by erased()"
+        );
         assert_eq!(Arc::strong_count(&a.inner), 2, "backing Arc bumped");
         assert_ne!(
             Arc::strong_count(&a.inner),
