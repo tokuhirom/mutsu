@@ -10,7 +10,7 @@ use crate::value::Value;
 /// `"%h{$x, $y}"` interpolation builds a slice rather than parsing only the
 /// first index. Returns the original string as a single part when there is no
 /// top-level comma.
-fn split_top_level_commas(content: &str) -> Vec<&str> {
+pub(crate) fn split_top_level_commas(content: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0i32;
     let mut start = 0usize;
