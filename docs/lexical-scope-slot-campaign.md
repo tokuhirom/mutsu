@@ -764,17 +764,32 @@ is), so the default build is byte-identical and perf-neutral; the installing
 frame is a block/main frame, never a hot loop. Pin:
 `t/gate-b-control-handler-env-sync.t` (OFF, ON, real raku).
 
-**Still open — ON survey residue (6 files, each a dedicated-session slice):**
+### interpolating regex matched cross-frame — needs_env_sync fold (2026-07-20)
+
+`test-assertion-line-number.t` cleared. A regex literal that interpolates a lexical
+(`/ ... $script ... /`) may be matched in a DIFFERENT frame: `like $err, / ...
+$script ... /` passes the regex to `like`, which runs `$err ~~ $regex` internally,
+and `interpolate_regex_scalars` resolves `$script` from the name-keyed env (the
+cross-frame store), not the constructing frame's slots. Under the gate a plain
+`my $script = ...` skips its env mirror, so the interpolation read a stale/empty
+value and the match failed (the test's caller-line regex, whose `$script` filename
+never reached the match inside `like`). Fix: extend the `compute_needs_env_sync`
+fold to also match a frame whose constant pool holds an *interpolating* regex value
+(`ValueView::Regex` with `!regex_pattern_is_static` — the same conservative check
+the match cache uses, so a static regex folds nothing) — keep every local of such a
+frame env-synced. Same gate-ON-only shape as the #4869 / #4889 / CONTROL folds; OFF
+byte-identical and perf-neutral. Pin: `t/gate-b-regex-interp-env-sync.t`.
+
+**Still open — ON survey residue (5 files, each a dedicated-session slice):**
 `atomic-ops-native-dispatch.t`, `atomic-ops.t` (cross-thread/atomic, gc-stress-
 gated, flaky-prone); `nextsame-rw-redispatch.t`, `proto-method-rw-redispatch.t`
 (the `is rw`/`is raw` writeback chain through `apply_pending_rw_writeback`'s
 env[source]→slot pull — needs the `env_changed` guard of #4859/#4873, the deepest
-one); `quanthash-immutable-ro.t` (coerce-RO: the failing `:delete` is inside a
+one); and `quanthash-immutable-ro.t` (coerce-RO: the failing `:delete` is inside a
 `lives-ok { }` closure, and a naive slot-first `:delete` patch regressed 5 ON files
 — array-hole tracking / nested-delete / `:=`-cell / whole-container-bind all assume
 env — so this one is a multi-site + closure-capture-container entanglement, NOT a
-single-site swap like inc/dec or the index-assign seed above); and
-`test-assertion-line-number.t` (CALLER line) (misc).
+single-site swap like inc/dec or the index-assign seed above).
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
