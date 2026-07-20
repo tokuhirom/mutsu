@@ -172,6 +172,12 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 .map(|k| format!("{} => {}", k, gist_value(&items[*k])))
                 .collect();
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
+            // An immutable Map gists as `Map.new((k => v, ...))`, not `{...}`
+            // (matching raku and the `.raku` renderer). `Foo.enums`, `%h.Map`,
+            // and `Map.new(...)` all carry the `Map` declared-type tag.
+            if items.declared_type.as_deref() == Some("Map") {
+                return format!("Map.new(({}))", parts.join(", "));
+            }
             format!("{{{}}}", parts.join(", "))
         }
         ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
