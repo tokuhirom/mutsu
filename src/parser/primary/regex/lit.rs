@@ -128,20 +128,35 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             ));
         }
         let (spec, _) = ws(spec)?;
-        let (open_ch, close_ch, is_paired) = if spec.starts_with('/') {
-            ('/', '/', false)
-        } else if spec.starts_with('{') {
-            ('{', '}', true)
-        } else if spec.starts_with('[') {
-            ('[', ']', true)
-        } else if spec.starts_with('(') {
-            ('(', ')', true)
-        } else if spec.starts_with('<') {
-            ('<', '>', true)
-        } else {
+        // rx allows any non-word character as its delimiter (e.g. `rx|...|`,
+        // `rx!...!`), matching the general rule used by `m//` and `s///` — not
+        // just the bracket pairs. Brackets nest; every other delimiter uses the
+        // same character to open and close.
+        let Some(open_ch) = spec.chars().next() else {
             return Err(PError::expected("regex delimiter"));
         };
-        let r = &spec[1..];
+        // `:` is never a delimiter — it starts an adverb (`rx :foo:` is an error).
+        let is_delim = !open_ch.is_alphanumeric()
+            && open_ch != '_'
+            && open_ch != ':'
+            && !open_ch.is_whitespace();
+        // Don't treat `rx.method` as a regex with a `.` delimiter when the `.`
+        // is followed by an identifier (a method call on a bare `rx`).
+        let looks_like_method = open_ch == '.'
+            && spec.len() > 2
+            && spec[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+            && spec[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-');
+        if !is_delim || looks_like_method {
+            return Err(PError::expected("regex delimiter"));
+        }
+        let (close_ch, is_paired) = match open_ch {
+            '{' => ('}', true),
+            '[' => (']', true),
+            '(' => (')', true),
+            '<' => ('>', true),
+            other => (other, false),
+        };
+        let r = &spec[open_ch.len_utf8()..];
         let scan_result = if adverbs.perl5 {
             scan_to_delim_p5(r, open_ch, close_ch, is_paired)
         } else {
