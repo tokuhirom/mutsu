@@ -2307,6 +2307,20 @@ impl Interpreter {
             OpCode::CallDefined => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap();
+                // A role-composed mixin (`but role { method defined {...} }`)
+                // keeps its `.defined` override in a role, not a class MRO, so
+                // the Instance/Package `has_user_method` path below can't see
+                // it. Route it through the shared dispatch helper (Mixin +
+                // caller reconciliation) exactly as `//` (`JumpIfNotNil`) does,
+                // so `orelse`/`andthen`/`notandthen` agree on the override.
+                if matches!(val.view(), ValueView::Mixin(..))
+                    && self.mixin_role_has_method(&val, "defined")
+                {
+                    let defined = self.value_is_defined_dispatch(&val);
+                    self.stack.push(Value::truth(defined));
+                    *ip += 1;
+                    return Ok(());
+                }
                 // Check if the value has a user-defined .defined method
                 let class_name = match val.view() {
                     ValueView::Package(name) => Some(name),
