@@ -283,9 +283,16 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
     // Infinite loop
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
-    // `loop {} while COND` is a syntax error — use `repeat while` instead
+    // `loop {} while COND` on the SAME line is a syntax error — a block-ending
+    // statement takes no `while`/`until` modifier (use `repeat while` instead).
+    // But a `while`/`until` on a NEW line begins a separate `while`-loop
+    // statement (`loop { } \n while $x { ... }`, Algorithm::Diff), so only error
+    // when no statement-ending newline separates the `}` from the keyword.
     let (check, _) = ws(rest)?;
-    if keyword("while", check).is_some() || keyword("until", check).is_some() {
+    let inter_ws = &rest[..rest.len() - check.len()];
+    if !inter_ws.contains('\n')
+        && (keyword("while", check).is_some() || keyword("until", check).is_some())
+    {
         return Err(PError::fatal(
             "X::Syntax::Confused: Strange text after block (missing semicolon or comma?)"
                 .to_string(),

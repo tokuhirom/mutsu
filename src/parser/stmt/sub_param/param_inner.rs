@@ -330,12 +330,18 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         }
     }
 
-    // — those are named aliases like :x($r), not type constraints.
+    // — those are named aliases like :x($r), not type constraints. The external
+    // name may start with an uppercase letter too (`:PRUNED($p)`, `:ASTART($a)` in
+    // Algorithm::Diff): `:Name($var)` is always a named alias, never a type — a
+    // type constraint on a named param is written before the colon (`Int :$x`).
+    // Restricting this to lowercase let an uppercase alias fall into the
+    // type-constraint/coercion path, which returned without consuming a trailing
+    // default (`:ASTART($a) = 0`).
     let skip_type_for_named_alias = named
         && rest
             .as_bytes()
             .first()
-            .is_some_and(|b| b.is_ascii_lowercase())
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
         && rest.contains('(');
     if type_constraint.is_none()
         && !skip_type_for_named_alias
