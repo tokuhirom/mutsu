@@ -56,6 +56,49 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             dimensions,
             value: Box::new(value),
         },
+        // A method-call lvalue (`$o.a = v` — an rw accessor, or `$o.AT-POS(i) = v`).
+        // Mirrors the statement-level `lvalue_assign_to_expr` so a chained assignment
+        // whose middle term is a method call (`my $c = $o.a = 42`, `say($o.a = 42)`)
+        // lowers to the `__mutsu_assign_method_lvalue` writeback instead of being
+        // left unconsumed (which surfaced as a `Confused` parse error).
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            quoted: _,
+        } => {
+            if name == "AT-POS" && args.len() == 1 {
+                Expr::IndexAssign {
+                    target,
+                    index: Box::new(args.into_iter().next().unwrap()),
+                    value: Box::new(value),
+                    is_positional: true,
+                }
+            } else {
+                let target_var_name = match target.as_ref() {
+                    Expr::Var(v) => Some(v.clone()),
+                    Expr::ArrayVar(v) => Some(format!("@{}", v)),
+                    Expr::HashVar(v) => Some(format!("%{}", v)),
+                    Expr::DoStmt(s) => {
+                        crate::parser::stmt::simple_expr_stmt::decl_target_var_name(s)
+                    }
+                    _ => None,
+                };
+                let method_name = if modifier == Some('!') {
+                    format!("!{}", name.resolve())
+                } else {
+                    name.resolve()
+                };
+                crate::parser::stmt::assign::method_lvalue_assign_expr(
+                    *target,
+                    target_var_name,
+                    method_name,
+                    args,
+                    value,
+                )
+            }
+        }
         Expr::Call { name, args } => Expr::Call {
             name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
             args: vec![
