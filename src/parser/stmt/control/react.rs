@@ -41,8 +41,27 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let (rest, param) = if let Some(stripped) = rest.strip_prefix("->") {
         let (r, _) = ws(stripped)?;
-        let (r, name) = var_name(r)?;
-        (r, Some(name))
+        // Optional type constraint before the variable name
+        // (`whenever $s -> Int $x { }`, `-> IO::Socket::Async:D $c { }`). Reuse
+        // the signature type parser so qualified names and `:D`/`:U` smileys are
+        // handled. The constraint is not enforced on the whenever binding (as in
+        // the untyped form); we only consume it so the variable name parses.
+        // Without this, a typed pointy param made `whenever_stmt` fail, so the
+        // whole `whenever ... -> Type $x { ... }` fragmented into a bare
+        // `whenever` word + a standalone pointy block, which then tripped the
+        // out-of-scope-`whenever` check (SSH::LibSSH::Tunnel).
+        let r = match crate::parser::stmt::sub_param::parse_type_constraint_expr(r) {
+            Some((r2, _tc)) => {
+                let (r2, _) = ws(r2)?;
+                r2
+            }
+            None => r,
+        };
+        match var_name(r) {
+            Ok((r, name)) => (r, Some(name)),
+            // Type-only pointy block (`-> Int { }`) binds no variable.
+            Err(_) => (r, None),
+        }
     } else {
         (rest, None)
     };
