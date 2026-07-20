@@ -539,6 +539,22 @@ impl Compiler {
                     self.code.emit(OpCode::LoadNil);
                 }
             }
+            // A list/hash destructuring declaration used in expression position:
+            // `if my ($a, $b) = f() { ... $a ... }`, `(my ($a, $b) = 1, 2)`. The
+            // synthetic block starts with the tmp collector `VarDecl
+            // {@__destructure_tmp__ = RHS}` followed by one `VarDecl` per target.
+            // As with the other declaration synthetic blocks above, the `my`
+            // targets must leak into the enclosing lexical scope (a `my` always
+            // declares in the current block regardless of expression nesting), so
+            // compile it inline rather than scope-isolated. Otherwise the targets
+            // are confined to the synthetic block and read as undeclared in the
+            // `if`/`while` body.
+            Stmt::SyntheticBlock(inner)
+                if matches!(inner.first(), Some(Stmt::VarDecl { name, .. })
+                    if name == "@__destructure_tmp__" || name == "%__destructure_tmp__") =>
+            {
+                self.compile_block_inline(inner);
+            }
             Stmt::SyntheticBlock(inner) => {
                 self.compile_do_block_expr_scoped(inner, &None);
             }
