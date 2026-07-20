@@ -61,12 +61,12 @@ impl Compiler {
     }
 
     /// Record that `var_name` reaches an atomic-op builtin (`⚛$x`, `$x ⚛= v`,
-    /// `cas($x, …)`) as the target variable, so the gated `compute_needs_env_sync`
+    /// `cas($x, …)`) as the target variable, so the `compute_needs_env_sync`
     /// fold keeps its env mirror current (the builtin resolves the target by name
     /// from env). No-op for a name that is not one of this frame's own locals
-    /// (an ancestor lexical / global / attribute is resolved differently). The
-    /// field is only consumed under `MUTSU_GATE_LOCAL_ENV_WRITE`, so the default
-    /// build is byte-identical.
+    /// (an ancestor lexical / global / attribute is resolved differently). Needed
+    /// because the (B) per-store env-write otherwise skips the mirror for a plain
+    /// lexical, leaving the builtin to read the decl-seed placeholder.
     pub(super) fn note_atomic_env_sync_target(&mut self, var_name: &str) {
         if let Some(&slot) = self.local_map.get(var_name)
             && !self.code.atomic_env_sync_locals.contains(&slot)

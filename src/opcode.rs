@@ -27,32 +27,6 @@ pub(crate) fn reflective_name_access_possible() -> bool {
     REFLECTIVE_NAME_ACCESS_SEEN.load(Ordering::Relaxed)
 }
 
-/// `(B)` per-store env-write gate (docs/lexical-scope-slot-campaign.md, "The
-/// `(B)` per-store env-write gate"). **Default ON since the Plan A flip
-/// (2026-07-20)**: `exec_set_local_op_inner` skips mirroring a slot-authoritative
-/// plain-lexical store (not captured/reflective/sync) into the name-keyed `env`,
-/// so the slot is the single source of truth and env-COW can drop the write.
-/// `MUTSU_GATE_LOCAL_ENV_WRITE=0` (or `off`) opts back out to the byte-identical
-/// pre-gate behavior (mirror every plain-lexical store). The flip landed once both
-/// the t/ and the full roast ON surveys were clean and all four env-mirror
-/// consumers (#1 block-restore, #2 cross-thread, #3 call-return reconcile, #4
-/// curry) were slot-authoritative. Once the flip soaks, the gate sites and the
-/// OFF path are deleted. Cached like `jit_enabled()`.
-#[inline]
-pub(crate) fn gate_local_env_write() -> bool {
-    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        // Plan A flip (2026-07-20): default ON now that the full t/ + roast ON
-        // survey is clean. `MUTSU_GATE_LOCAL_ENV_WRITE=0` (or `off`) opts back out
-        // to the byte-identical env-mirror-every-store behavior. Once the flip has
-        // soaked, the gate sites and the OFF path are deleted.
-        !matches!(
-            std::env::var("MUTSU_GATE_LOCAL_ENV_WRITE").ok().as_deref(),
-            Some("0") | Some("off") | Some("OFF")
-        )
-    })
-}
-
 /// Base binary operation for a fused compound-assignment opcode
 /// (`$x OP= rhs`). Each variant maps to the same `exec_*_op` the plain
 /// `Binary` path uses, so the fused op shares exact operator semantics.
@@ -1710,10 +1684,10 @@ pub(crate) struct CompiledCode {
     /// `cas($x, …)`) as the target VARIABLE. These builtins are compiled to a
     /// `__mutsu_*_var(name_str, …)` call and resolve the target by NAME from env
     /// (`atomic_current_value` falls back to `env.get(name)` for a non-`atomicint`
-    /// scalar). Under `MUTSU_GATE_LOCAL_ENV_WRITE` a plain `my Int $x = 1` skips
-    /// its env mirror, so the builtin reads the decl-seed placeholder. Consumed
-    /// ONLY by the gated `compute_needs_env_sync` fold, which marks these slots
-    /// env-synced; the default build never reads this field (byte-identical).
+    /// scalar). Under the (B) per-store env-write a plain `my Int $x = 1` skips
+    /// its env mirror, so the builtin would read the decl-seed placeholder.
+    /// Consumed by the `compute_needs_env_sync` fold, which marks these slots
+    /// env-synced so their mirror stays live for the by-name builtin.
     pub(crate) atomic_env_sync_locals: Vec<u32>,
     /// Out-of-band named-argument specs for `CallFuncNamed` sites (indexed by
     /// the op's `spec_idx`): which of the call's stack values are named-arg
@@ -2470,15 +2444,13 @@ impl CompiledCode {
         // consumer — the `.map`/`.grep` fast loop, for instance, pre-inserts the
         // closure's captured env into `self.env` only for keys ABSENT there, so it
         // reads a captured free var back from THIS frame's env by name — the env
-        // mirror must be current. Under `MUTSU_GATE_LOCAL_ENV_WRITE` a plain
+        // mirror must be current. Under the (B) per-store env-write a plain
         // lexical's store skips that mirror, leaving the decl-seed `Any`, so the
         // consumer reads a stale value. Fold every nested-closure free var that is
         // one of this frame's own locals back into `needs_env_sync` so its store
-        // keeps mirroring. Gated on the flag so the default build is byte-identical
-        // AND perf-neutral (no extra `flush_local_to_env` work when the gate is
-        // off); the cost only lands with the gate, and it never touches a
-        // hot-arithmetic loop local (those are not closure free variables).
-        if gate_local_env_write() {
+        // keeps mirroring. It never touches a hot-arithmetic loop local (those are
+        // not closure free variables).
+        {
             // Atomic-op targets (`⚛$x`, `$x ⚛= v`, `cas($x, …)`) resolve their
             // variable by NAME from env in the `__mutsu_*_var` builtin. Keep the
             // mirror current so a non-`atomicint` scalar is not read as its

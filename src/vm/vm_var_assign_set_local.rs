@@ -1623,15 +1623,13 @@ impl Interpreter {
         if matches!(val.view(), ValueView::LazyThunk(..)) {
             self.mark_readonly(name);
         }
-        // `(B)` per-store env-write gate (docs/lexical-scope-slot-campaign.md).
-        // Default OFF (byte-identical). Under `MUTSU_GATE_LOCAL_ENV_WRITE=1` a
-        // slot-authoritative plain lexical skips its env mirror: the slot is the
-        // single source of truth. Excludes binds/constants (env-shape carriers),
-        // captured/reflective frames (read the caller's env by name), and names
-        // still in `needs_env_sync` (a mechanism consumer). The term-symbol block
-        // and `:=` alias chain below stay unconditional.
-        let skip_env_write = crate::opcode::gate_local_env_write()
-            && !is_bind
+        // `(B)` per-store env-write: a slot-authoritative plain lexical skips its
+        // env mirror — the slot is the single source of truth, so env-COW drops
+        // the write (docs/lexical-scope-slot-campaign.md). Excludes binds/constants
+        // (env-shape carriers), captured/reflective frames (read the caller's env
+        // by name), and names still in `needs_env_sync` (a mechanism consumer). The
+        // term-symbol block and `:=` alias chain below stay unconditional.
+        let skip_env_write = !is_bind
             && !is_constant
             && !code.captures_env_by_name
             && !code.needs_env_sync.get(idx).copied().unwrap_or(true)

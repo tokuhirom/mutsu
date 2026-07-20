@@ -27,14 +27,13 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
                 _ => None,
             };
-            let proto_body_code: Option<&CompiledCode> =
-                if crate::opcode::gate_local_env_write() && self.current_code != 0 {
-                    // SAFETY: `self.current_code` is the CompiledCode of the compiled
-                    // proto-method body synchronously executing this `{*}` dispatch.
-                    Some(unsafe { &*(self.current_code as *const CompiledCode) })
-                } else {
-                    None
-                };
+            let proto_body_code: Option<&CompiledCode> = if self.current_code != 0 {
+                // SAFETY: `self.current_code` is the CompiledCode of the compiled
+                // proto-method body synchronously executing this `{*}` dispatch.
+                Some(unsafe { &*(self.current_code as *const CompiledCode) })
+            } else {
+                None
+            };
             let (args, rw_sources) = match invocant_class
                 .and_then(|cn| self.lookup_proto_method(&cn, &proto_name))
                 .and_then(|(_, proto)| {

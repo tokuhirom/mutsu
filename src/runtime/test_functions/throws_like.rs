@@ -78,9 +78,8 @@ impl Interpreter {
                 // `Package(Any)` and returns `Any(Any)` instead of dying with
                 // X::Undeclared (roast S32-trig/e.t). Override those entries with the
                 // caller frame's LIVE slot values so the nested scope matches Raku's
-                // "EVAL runs in the caller's lexical scope". Gate-ON only; when off,
-                // env already carries the live values (byte-identical).
-                if crate::opcode::gate_local_env_write() && self.current_code != 0 {
+                // "EVAL runs in the caller's lexical scope".
+                if self.current_code != 0 {
                     // SAFETY: `self.current_code` is the CompiledCode of the frame
                     // synchronously invoking this `throws-like` Test routine.
                     let code =
