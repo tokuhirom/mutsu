@@ -3269,14 +3269,15 @@ impl Interpreter {
             && Self::is_classhow_method(method)
         {
             let mut how_args = args.to_vec();
-            if !matches!(
-                how_args.first().map(|v| v.view()),
-                Some(ValueView::Package(_))
-                    | Some(ValueView::Instance { .. })
-                    | Some(ValueView::ParametricRole { .. })
-                    | Some(ValueView::Mixin(_, _))
-            ) && let Some(ValueView::Str(type_name)) =
-                attributes.as_map().get("name").map(|v| v.view())
+            // A HOW method takes the introspected object as its first argument
+            // (`$obj.^name` desugars to `$obj.HOW.name($obj)`). When the explicit
+            // `$obj.HOW.name(...)` form is called with NO object argument, supply
+            // the type name recorded on the HOW so `Int.HOW.name` still works.
+            // Only do this when no argument was passed — an explicitly-passed
+            // object may be any value (e.g. `1.HOW.name(1)`), not just a Package.
+            if how_args.is_empty()
+                && let Some(ValueView::Str(type_name)) =
+                    attributes.as_map().get("name").map(|v| v.view())
             {
                 how_args.insert(0, Value::package(Symbol::intern(&type_name)));
             }
