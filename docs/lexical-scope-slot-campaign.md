@@ -811,16 +811,45 @@ the match cache uses, so a static regex folds nothing) — keep every local of s
 frame env-synced. Same gate-ON-only shape as the #4869 / #4889 / CONTROL folds; OFF
 byte-identical and perf-neutral. Pin: `t/gate-b-regex-interp-env-sync.t`.
 
-**Still open — ON survey residue (5 files, each a dedicated-session slice):**
-`atomic-ops-native-dispatch.t`, `atomic-ops.t` (cross-thread/atomic, gc-stress-
-gated, flaky-prone); `nextsame-rw-redispatch.t`, `proto-method-rw-redispatch.t`
-(the `is rw`/`is raw` writeback chain through `apply_pending_rw_writeback`'s
-env[source]→slot pull — needs the `env_changed` guard of #4859/#4873, the deepest
-one); and `quanthash-immutable-ro.t` (coerce-RO: the failing `:delete` is inside a
-`lives-ok { }` closure, and a naive slot-first `:delete` patch regressed 5 ON files
-— array-hole tracking / nested-delete / `:=`-cell / whole-container-bind all assume
-env — so this one is a multi-site + closure-capture-container entanglement, NOT a
-single-site swap like inc/dec or the index-assign seed above).
+### bare-call/local collision + `@$s` deref capture — the last two (2026-07-20)
+
+The **full roast ON survey is now clean** (release, `MUTSU_FUDGE=1
+MUTSU_GATE_LOCAL_ENV_WRITE=1 prove -j6` over all 1433 whitelisted files): every
+non-`ok` file is a documented load-flaky (`return-in-tap.t`, the `gb*/shiftjis`
+encode set, `CollationTest`, `smiley.t`) or a `# TODO` file (`wacky.t`) whose
+`not ok` set is byte-identical ON vs OFF. The two remaining genuine ON-only
+regressions were burned down:
+
+- **`S32-trig/e.t` — a bare call whose name collides with a same-named lexical.**
+  A scalar `$e` is stored under the bare name `e`, so `my $e = e; e()` collides:
+  the function-call fallback (`call_function_fallback`) reads `env[e]` to decide
+  whether `e()` is a bound-generic-type-parameter coercion (`T()` → `Int(Any)`).
+  Under the gate a plain `my $e` keeps only its decl-seed `Any` in env (its
+  initializing store's mirror is skipped), so the fallback saw `Package(Any)` and
+  resolved `e()` to `Any(Any)` instead of dying with X::Undeclared. Two gate-ON-only
+  fixes: (a) `compute_needs_env_sync` folds every local whose name matches a bare
+  call callee (`op_callee_name_const_idx`) so its env mirror stays live; (b)
+  `throws-like`'s nested-interpreter string path (which reconstructs the caller
+  scope from `self.env`) additionally *refreshes* the copied env entries from the
+  caller frame's LIVE slot values — restricted to names already present in the
+  copied env, so out-of-scope child-block locals (which `code.locals` still holds)
+  do NOT leak into the EVAL'd scope and break the `our.t`/`my-6c.t` out-of-scope
+  X::Undeclared checks.
+- **`S32-list/skip.t` — a `@$s` deref inside a `throws-like { }` block.** `@$s`
+  compiles to `GetArrayVar("@s")` (array-context spelling) but reads the sigil-less
+  scalar `s` by name at runtime. The closure-capture `needs_env_sync` fold matched
+  the free var `@s` against `locals_map` verbatim and missed the scalar `s`, so the
+  block read a stale (non-consumed) `$s` from env and `throws-like { @$s },
+  X::Seq::Consumed` did not fire. Fix: when matching a nested closure's free var
+  against this frame's locals, also try the sigil-stripped name (`@x`/`%x`/`&x` →
+  `x`). Gate-ON only, OFF byte-identical.
+
+Pin for both: `t/gate-b-callee-name-collision-and-deref-capture.t`.
+
+**Result: the (B)-gate ON survey (t/ and full roast) is green. The gate is ready
+for the default flip (Plan A: `gate_local_env_write()` default true,
+`MUTSU_GATE_LOCAL_ENV_WRITE=0` opt-out), then a gc-stress/jit-stress/roast CI soak,
+then removal of the ~18 gate sites and the OFF-side dead code.**
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 

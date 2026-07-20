@@ -2481,9 +2481,42 @@ impl CompiledCode {
                     *b = true;
                 }
             }
+            // A bare call whose callee name collides with one of this frame's own
+            // declared lexicals (`my $e; e()` — `$e` is stored under the bare name
+            // `e`) reaches the function-call fallback, which reads `env[e]` to decide
+            // whether the call is a bound-generic-type-parameter coercion
+            // (`T()` -> `Int(Any)`). Under the gate a plain `my $e` keeps only its
+            // decl-seed `Any` in env (its initializing store's mirror is skipped), so
+            // the fallback sees `Package(Any)` and resolves `e()` to `Any(Any)`
+            // instead of dying with X::Undeclared (roast S32-trig/e.t). Fold every
+            // such colliding local back into `needs_env_sync` so its env mirror stays
+            // live and the fallback reads the real value. Gate-ON only, so the
+            // default build is byte-identical / perf-neutral.
+            for op in &self.ops {
+                if let Some(idx) = Self::op_callee_name_const_idx(op)
+                    && let Some(ValueView::Str(name)) =
+                        self.constants.get(idx as usize).map(Value::view)
+                    && let Some(&slot) = locals_map.get(name.as_str())
+                {
+                    self.needs_env_sync[slot] = true;
+                }
+            }
             for nested in &self.closure_compiled_codes {
                 for sym in &nested.free_var_syms {
-                    if let Some(&slot) = sym.with_str(|s| locals_map.get(s)) {
+                    let slot = sym.with_str(|s| {
+                        locals_map.get(s).copied().or_else(|| {
+                            // A `@$x` / `%$x` deref of a scalar records its free var
+                            // as `@x` / `%x` (the array/hash-context spelling), but the
+                            // underlying lexical is the sigil-less scalar `x`. Fall back
+                            // to the stripped name so the deref keeps `x`'s env mirror
+                            // live — the closure's `GetArrayVar`/`GetHashVar` reads it
+                            // by name (roast S32-list/skip.t: `throws-like { @$s }` must
+                            // see the consumed Seq bound to `$s`).
+                            s.strip_prefix(['@', '%', '&'])
+                                .and_then(|bare| locals_map.get(bare).copied())
+                        })
+                    });
+                    if let Some(slot) = slot {
                         self.needs_env_sync[slot] = true;
                     }
                 }

@@ -70,6 +70,45 @@ impl Interpreter {
                     nested.env.insert_sym(*k, v.clone());
                     shared_var_names.push(*k);
                 }
+                // Under the (B) per-store env-write gate the caller's plain lexicals
+                // keep only their decl-seed `Any` in `self.env` (their initializing
+                // store's env mirror is skipped — the slot is authoritative). The
+                // env-copy above therefore seeds the nested interpreter with a stale
+                // `Any` for `my $e = e`, so the EVAL'd `e()` resolves against a
+                // `Package(Any)` and returns `Any(Any)` instead of dying with
+                // X::Undeclared (roast S32-trig/e.t). Override those entries with the
+                // caller frame's LIVE slot values so the nested scope matches Raku's
+                // "EVAL runs in the caller's lexical scope". Gate-ON only; when off,
+                // env already carries the live values (byte-identical).
+                if crate::opcode::gate_local_env_write() && self.current_code != 0 {
+                    // SAFETY: `self.current_code` is the CompiledCode of the frame
+                    // synchronously invoking this `throws-like` Test routine.
+                    let code =
+                        unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
+                    for (slot, lname) in code.locals.iter().enumerate() {
+                        if lname.contains("::") {
+                            continue;
+                        }
+                        if !code.plain_locals.get(slot).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        let sym = Symbol::intern(lname);
+                        // Only REFRESH an entry the env-copy above already seeded —
+                        // i.e. a lexical in scope at this call site (present in
+                        // `self.env`). `code.locals` also holds slots for lexicals
+                        // declared in child blocks that have since exited; those are
+                        // out of scope and must stay invisible to the EVAL'd code
+                        // (roast S04-declarations/our.t, my-6c.t verify that an
+                        // out-of-scope `$b` is X::Undeclared). Adding them here would
+                        // leak them into the nested scope.
+                        if nested.env.get_sym(sym).is_none() {
+                            continue;
+                        }
+                        if let Some(v) = self.locals.get(slot) {
+                            nested.env.insert_sym(sym, v.clone());
+                        }
+                    }
+                }
                 // Pre-check for undeclared names (compile-time errors in Raku).
                 // Parse the code and check for undeclared type names before running.
                 // Also collect the names the code re-declares with `my`/`state` at
