@@ -85,6 +85,10 @@ pub(crate) fn is_angle_key_char(c: char) -> bool {
         // already accepts them; this aligns the subscript path.
         || c == '('
         || c == ')'
+        // `#` is likewise an ordinary character inside angle-word quoting (it is
+        // NOT a comment there), so a subscript key may contain it: `%exts<#csv>`
+        // is the string key `#csv` (App::Rak). Aligns with the `<...>` literal.
+        || c == '#'
         || is_non_breaking_space(c)
         || (!c.is_ascii() && !c.is_whitespace())
 }

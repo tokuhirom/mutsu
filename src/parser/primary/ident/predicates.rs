@@ -26,6 +26,41 @@ pub(crate) fn looks_like_binding(input: &str) -> bool {
     false
 }
 
+/// Whether `input` begins with a quote-language construct used as a term
+/// (`q/.../`, `qq/.../`, `Q/.../`, `qw<>`, `q:to/END/`, ...). An undeclared
+/// identifier followed by such a term is a no-paren listop call
+/// (`meh q:to/END/`), but the `next`-char term gate in the identifier-call
+/// parser did not recognize a `q`/`Q` opener, so the argument (notably a
+/// heredoc) was stranded and the call failed to parse. This is a *pure*
+/// predicate: it must NOT invoke the real quote parser, because parsing a
+/// `q:to/…/` heredoc registers a leaked source region as a side effect, which
+/// would then be registered a second time when the argument is really parsed.
+pub(crate) fn starts_with_quote_construct(input: &str) -> bool {
+    let word_end = input
+        .find(|c: char| !c.is_ascii_alphabetic())
+        .unwrap_or(input.len());
+    // Recognized quote openers, including the fused word-quote adverb spellings.
+    if !matches!(
+        &input[..word_end],
+        "q" | "qq" | "Q" | "qw" | "qww" | "qqw" | "qqww" | "Qw" | "Qww"
+    ) {
+        return false;
+    }
+    let after = &input[word_end..];
+    // A colon adverb (`q:to/…/`, `q:w/…/`) — but not a `q::Foo` package name.
+    if after.starts_with(':') {
+        return !after.starts_with("::");
+    }
+    // Otherwise a delimiter must follow (optionally after whitespace, as raku
+    // allows `q /.../`). Exclude `=` so the pair key `q => …` (and `q = …`) is
+    // not misread as a `q`-quote with `=` as its delimiter; a word/`_` cannot be
+    // a delimiter and means a longer identifier already excluded above.
+    match after.trim_start().chars().next() {
+        Some(c) => !c.is_alphanumeric() && c != '_' && c != '=' && c != ':',
+        None => false,
+    }
+}
+
 /// Check if input starts with a term keyword (like `i`, `e`, `pi`, etc.)
 /// that can appear as a listop argument without parentheses.
 pub(crate) fn starts_with_term_keyword(input: &str) -> bool {
