@@ -252,6 +252,10 @@ impl Interpreter {
                     is_lexical: false, ..
                 } => Some("class"),
                 Stmt::ClassDecl { .. } => None,
+                // A `my subset` inside a role is lexically scoped and private to the
+                // role body, which is allowed (like `my class`/`my role`); only an
+                // implicitly our-scoped `subset` is forbidden.
+                Stmt::SubsetDecl { is_my: true, .. } => None,
                 Stmt::SubsetDecl { .. } => Some("subset"),
                 Stmt::EnumDecl { .. } => Some("enum"),
                 // A `my role` is lexically scoped and private to the role body, which
