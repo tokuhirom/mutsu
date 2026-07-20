@@ -1573,13 +1573,16 @@ impl Interpreter {
             }
         }
 
-        // For anonymous enums, return a Map (Hash) of key => value pairs
+        // The value of an anonymous `enum <a b c>` expression is a Map in raku
+        // (`.^name`/`.WHAT` is `Map`, `.raku` is `Map.new((...))`), not a plain
+        // Hash. Embed the `Map` declared-type via `to_map` so introspection and
+        // rendering match — the same tag the `%`-constant / `.Map` paths use.
         if is_anonymous {
             let mut map = HashMap::new();
             for (key, val) in &enum_variants {
                 map.insert(key.clone(), val.to_value());
             }
-            Ok(Value::hash(map))
+            crate::builtins::map_hash_coerce::to_map(Value::hash(map))
         } else {
             Ok(Value::NIL)
         }
