@@ -159,7 +159,7 @@ Known root causes to date (one row per dist):
 | SQL::Abstract | `No matching candidate found for the parametric role` — advanced past four typename blockers by #4865; now blocked on parametric-role resolution in its `does Constant['…']` / `does Op::Prefix['…']` chains. |
 | PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
 | uniname-words | `Odd number of elements found where hash initializer expected` (load-time) — an `nqp::hash(...)` in a `BEGIN` block; guts-bound, not pursued. |
-| Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
+| ~~Repository::Precomp::Cleanup~~ | **Cleared post-snapshot**: `my str $compilation-id = Compiler.id;` failed because `Compiler.id` was not callable on the bare `Compiler` type object (only defined for an instance, where it returned an empty string). `Compiler.id` identifies the build and is a type-object method in Rakudo; mutsu now returns a stable per-build id for both forms. Loads. |
 | Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
 | Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
 | ~~RakudoContainerfileBuilder~~ | **Not a mutsu bug** (sweep false positive): the module `is export`s a `MAIN`, and the sweep's `-e 'use …'` harness imports it, so raku auto-runs `MAIN` at mainline end and prints the same `Usage:` block. mutsu matches raku exactly (both exit 2, identical output). Should be excluded from the actionable count. |
