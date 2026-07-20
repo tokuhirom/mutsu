@@ -886,7 +886,13 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                 || after_q.starts_with(')')
                 || after_q.starts_with(' ')
                 || after_q.starts_with('\t')
-                || after_q.starts_with('\n'))
+                || after_q.starts_with('\n')
+                // An anonymous optional invocant: `method m($?: |) { ... }` — the
+                // `:` (not `::`, which would be a package separator) is the
+                // invocant marker, left for the outer param-list loop. `;` is the
+                // multi-invocant separator.
+                || (after_q.starts_with(':') && !after_q.starts_with("::"))
+                || after_q.starts_with(';'))
         {
             let mut p = super::helpers::make_param(anon_name.to_string());
             p.named = named;
