@@ -1,6 +1,6 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::{skip_balanced_parens, ws, ws1};
-use super::super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
+use super::super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use super::super::{ident, keyword, qualified_ident};
 use super::take_while_opt;
 use crate::ast::{Expr, Stmt};
@@ -81,7 +81,12 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         return Err(PError::expected("anonymous enum variants"));
     };
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
+    // Do NOT consume a trailing `;` here: the statement layer's
+    // `consume_semicolons` already handles the terminator. Eating it in this
+    // parser breaks the expression-context use (`my $e = enum <a b c>; say $x`),
+    // where the swallowed `;` lets the expression parser absorb the following
+    // statement as an infix continuation. (The dynamic-enum paths above already
+    // return without consuming `;`.)
     Ok((
         rest,
         Stmt::EnumDecl {
@@ -363,7 +368,8 @@ pub(super) fn parse_enum_decl_body_with_type(
     };
 
     let (rest, _) = ws(rest)?;
-    let (rest, _) = opt_char(rest, ';');
+    // See parse_anon_enum_body: leave the trailing `;` for the statement layer
+    // so `enum` in expression context does not swallow the next statement.
     Ok((
         rest,
         Stmt::EnumDecl {
