@@ -25,10 +25,12 @@ impl Interpreter {
             if !name.resolve().is_empty() {
                 self.store_language_revision_from_version(&name.resolve(), language_version);
             }
-            // For anonymous enums, push the Map result onto the stack
-            if name.resolve().is_empty() {
-                self.stack.push(result);
-            }
+            // Push the enum's Map value. In expression position — `my $e = enum Foo
+            // <a b c>` or a bare `enum <a b c>` — this Map is the declaration's value;
+            // in statement position it is a harmless sink absorbed at the frame's stack
+            // base (the anonymous form has always pushed unconditionally this way, so
+            // the named form is symmetric).
+            self.stack.push(result);
             Ok(())
         } else {
             Err(RuntimeError::new("RegisterEnum expects EnumDecl"))
