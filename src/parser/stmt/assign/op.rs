@@ -369,6 +369,18 @@ pub(crate) fn compound_assign_op_from_name(op: &str) -> Option<CompoundAssignOp>
 }
 
 pub(crate) fn parse_compound_assign_op(input: &str) -> Option<(&str, CompoundAssignOp)> {
+    // Unicode arithmetic-operator aliases whose compound-assignment forms mirror
+    // the ASCII ops: `×=` (U+00D7) == `*=`, `÷=` (U+00F7) == `/=`. Raku accepts
+    // these; the multiplicative parser leaves `×`/`÷` before `=` alone so the
+    // lvalue reaches here (mirroring the `*=` guard).
+    for (sym, op) in [
+        ("\u{00D7}=", CompoundAssignOp::Mul),
+        ("\u{00F7}=", CompoundAssignOp::Div),
+    ] {
+        if let Some(stripped) = input.strip_prefix(sym) {
+            return Some((stripped, op));
+        }
+    }
     for op in COMPOUND_ASSIGN_OPS {
         if let Some(stripped) = input.strip_prefix(op.symbol()) {
             return Some((stripped, *op));
