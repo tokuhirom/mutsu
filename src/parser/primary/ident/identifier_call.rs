@@ -1565,6 +1565,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // subtraction, which needs term-vs-listop knowledge we lack here.)
             || starts_hyper_prefix_op(r)
             || starts_with_term_keyword(r)
+            // A quote construct (`q:to/END/`, `qw<>`, `Q/…/`, …) starts a term,
+            // so `undeclared-sub q:to/END/` is a no-paren listop call.
+            || crate::parser::primary::ident::predicates::starts_with_quote_construct(r)
             || crate::parser::stmt::simple::match_user_declared_term_symbol(r).is_some()
             || hyphen_forward_call
             || is_user_sub
