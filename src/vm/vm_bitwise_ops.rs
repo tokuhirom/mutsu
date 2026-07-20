@@ -178,64 +178,37 @@ impl Interpreter {
             .push(Value::truth(left.truthy() ^ right.truthy()));
     }
 
-    /// String bitwise AND (~&): AND corresponding bytes of two strings.
-    pub(super) fn exec_str_bit_and_op(&mut self) {
+    /// String bitwise AND (~&): AND corresponding codepoints of two strings.
+    /// Delegates to the shared `str_bitwise_op` so the opcode path (used by
+    /// `$x ~&= …`) matches the `infix:<~&>` builtin exactly: codepoint-wise
+    /// (not byte-wise), truncating to the **shorter** operand (`~&` does not
+    /// pad), with NFC normalization. Also handles `Buf` operands.
+    pub(super) fn exec_str_bit_and_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let l = left.to_string_value();
-        let r = right.to_string_value();
-        let lb = l.as_bytes();
-        let rb = r.as_bytes();
-        let len = lb.len().max(rb.len());
-        let result: Vec<u8> = (0..len)
-            .map(|i| {
-                let a = lb.get(i).copied().unwrap_or(0);
-                let b = rb.get(i).copied().unwrap_or(0);
-                a & b
-            })
-            .collect();
-        self.stack
-            .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
+        let result = Self::str_bitwise_op(&left, &right, |a, b| a & b, false)?;
+        self.stack.push(result);
+        Ok(())
     }
 
-    /// String bitwise OR (~|): OR corresponding bytes of two strings.
-    pub(super) fn exec_str_bit_or_op(&mut self) {
+    /// String bitwise OR (~|): OR corresponding codepoints; pads to the longer
+    /// operand. Delegates to the shared `str_bitwise_op` (see `~&` above).
+    pub(super) fn exec_str_bit_or_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let l = left.to_string_value();
-        let r = right.to_string_value();
-        let lb = l.as_bytes();
-        let rb = r.as_bytes();
-        let len = lb.len().max(rb.len());
-        let result: Vec<u8> = (0..len)
-            .map(|i| {
-                let a = lb.get(i).copied().unwrap_or(0);
-                let b = rb.get(i).copied().unwrap_or(0);
-                a | b
-            })
-            .collect();
-        self.stack
-            .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
+        let result = Self::str_bitwise_op(&left, &right, |a, b| a | b, true)?;
+        self.stack.push(result);
+        Ok(())
     }
 
-    /// String bitwise XOR (~^): XOR corresponding bytes of two strings.
-    pub(super) fn exec_str_bit_xor_op(&mut self) {
+    /// String bitwise XOR (~^): XOR corresponding codepoints; pads to the longer
+    /// operand. Delegates to the shared `str_bitwise_op` (see `~&` above).
+    pub(super) fn exec_str_bit_xor_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        let l = left.to_string_value();
-        let r = right.to_string_value();
-        let lb = l.as_bytes();
-        let rb = r.as_bytes();
-        let len = lb.len().max(rb.len());
-        let result: Vec<u8> = (0..len)
-            .map(|i| {
-                let a = lb.get(i).copied().unwrap_or(0);
-                let b = rb.get(i).copied().unwrap_or(0);
-                a ^ b
-            })
-            .collect();
-        self.stack
-            .push(Value::str(String::from_utf8_lossy(&result).into_owned()));
+        let result = Self::str_bitwise_op(&left, &right, |a, b| a ^ b, true)?;
+        self.stack.push(result);
+        Ok(())
     }
 
     /// String bitwise shift left (~<): treat the left string's bytes as a
