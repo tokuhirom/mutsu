@@ -1054,9 +1054,12 @@ the backlog.
       **Signal gate passed** (2026-07-18, 8 core Type files): 270 raku-clean comparisons → **50
       high-signal divergences (18.5%)**, genuine and clustering by root cause. The premise holds; the
       campaign is justified.
-- [ ] Reusable substrate for 8.2 / 8.3 / 8.4 and any future fuzz corpus — extend the corpus beyond the
-      core Type files (all of `Type/` + `Language/`, then a real-module corpus), and grow the
-      non-determinism / error-example skip heuristics as new noise shows up.
+- [x] Reusable substrate for 8.2 / 8.3 / 8.4 — the harness is parallel-safe (per-PID scratch file) and
+      `scripts/doc-diff-sweep.sh` fans the whole corpus out across worker processes. **First full-corpus
+      sweep landed (2026-07-21): 443 files, 156 with signal — 335 output-mismatch + 202 mutsu-crash +
+      134 raku-drift.** The ranked, tracked backlog is [docs/doc-diff-backlog.md](docs/doc-diff-backlog.md)
+      (the QA analogue of BLOCKERS.md; re-sweep to refresh). Still TODO: a real-module corpus, and growing
+      the non-determinism / error-example skip heuristics as new noise shows up.
 - [ ] **First backlog item from the run: sequence/lazy argument truncation** — `1, 3 ... 11` (and lazy
       `gather`/`Seq`) passed as a routine/method argument is materialised to only its first two
       elements (`@foo.prepend: 1,3...11` → `[1 3 …]`; `600.polymod(lazy …)` → `(600)`). One root cause,

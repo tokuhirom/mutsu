@@ -32,6 +32,10 @@ sub MAIN(
     note "Extracted { +@blocks } candidate code blocks.";
 
     mkdir 'tmp/ddh' unless 'tmp/ddh'.IO.d;
+    # Per-process scratch file so concurrent harness invocations (a parallel sweep
+    # over many files) never clobber each other's program between the raku run and
+    # the mutsu run — a shared path races and yields phantom "divergences".
+    my $prog-path = "tmp/ddh/prog-{$*PID}.raku";
 
     my %stat = skipped-marker => 0, skipped-nondet => 0,
                no-oracle => 0, match => 0, mismatch => 0,
@@ -53,7 +57,7 @@ sub MAIN(
         }
 
         my $program = %b<preamble> ?? %b<preamble> ~ "\n" ~ %b<code> !! %b<code>;
-        my $path = "tmp/ddh/prog.raku";
+        my $path = $prog-path;
         spurt $path, $program;
 
         my $r = run-capture('raku', $path, $timeout);
@@ -93,6 +97,7 @@ sub MAIN(
         }
     }
 
+    unlink $prog-path if $prog-path.IO.e;
     write-report($report, %stat, @findings);
     print-summary(%stat, @findings, $report);
 }
