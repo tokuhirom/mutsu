@@ -1001,8 +1001,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         }
                         let r4 = &r4[1..];
                         let (r4, _) = ws(r4)?;
-                        // Handle trailing comma before ';' or '}'
-                        if r4.starts_with(';') || r4.starts_with('}') || r4.is_empty() {
+                        // Handle a trailing comma before a statement terminator
+                        // (`;` / `}`) or the close of an enclosing group (`)` / `]`)
+                        // — Raku allows `(obj.m: 1, 2,)` and `[obj.m: 1, 2,]`; the
+                        // closer belongs to the surrounding group, not the arg list.
+                        if r4.starts_with([';', '}', ')', ']']) || r4.is_empty() {
                             r_inner = r4;
                             break;
                         }
@@ -1185,8 +1188,11 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         }
                         let r4 = &r4[1..];
                         let (r4, _) = ws(r4)?;
-                        // Handle trailing comma before ';' or '}'
-                        if r4.starts_with(';') || r4.starts_with('}') || r4.is_empty() {
+                        // Handle a trailing comma before a statement terminator
+                        // (`;` / `}`) or the close of an enclosing group (`)` / `]`)
+                        // — Raku allows `(obj.m: 1, 2,)` and `[obj.m: 1, 2,]`; the
+                        // closer belongs to the surrounding group, not the arg list.
+                        if r4.starts_with([';', '}', ')', ']']) || r4.is_empty() {
                             r_inner = r4;
                             break;
                         }
