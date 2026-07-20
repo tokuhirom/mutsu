@@ -16,8 +16,10 @@ points mutsu at the dist's own `lib`, and tries to `use` every module the dist
 not: **of the reachable ~90%, how much runs today, and what are the top blockers?**
 
 The headline finding: among the pure-Raku dists whose deps are satisfiable,
-**57%** load cleanly (n=150/seed7, up from 48% at n=60/seed42); the rest hit a
-genuine mutsu parse/runtime bug on `use` alone. So real-dist compatibility, not
+**79%** load cleanly (n=150/seed7, 2026-07-20, up from 48% at n=60/seed42 and
+57% at the 2026-07-19 seed-7 snapshot); the rest hit a genuine mutsu
+parse/runtime bug on `use` alone — now only **2 parse** (both deferred) plus a
+dozen mostly-guts/packaging runtime cases. So real-dist compatibility, not
 roast, is the productive frontier for widening the batteries base (PLAN.md §1 B4).
 The list of dists proven to load is the [load_ok section](#load_ok--proven-to-load-on-mutsu-n150-seed-7).
 
@@ -83,22 +85,26 @@ level to be added later (run the dist's `t/`/`.rakutest` with deps installed).
 | `timeout` | exceeded the per-module timeout | hang / perf bug |
 | `skip_guts` / `skip_native` | carries a guts / NativeCall signal | separate axes (guts survey / NativeCall) |
 
-## Latest run — n=150, seed 7 (2026-07-19, sandboxed via bwrap, main + #4865)
+## Latest run — n=150, seed 7 (2026-07-20, sandboxed via bwrap, main + post-#4865 parse/type slices)
 
 | Bucket | Count | % of 150 | % of executed pure (121) |
 |---|---|---|---|
-| `load_ok` | 44 | 29% | 36% |
-| `missing_dep` | 44 | 29% | 36% |
-| `parse_error` | 18 | 12% | 15% |
-| `runtime_error` | 15 | 10% | 12% |
+| `load_ok` | 54 | 36% | 45% |
+| `missing_dep` | 53 | 35% | 44% |
+| `parse_error` | 2 | 1% | 2% |
+| `runtime_error` | 12 | 8% | 10% |
 | `skip_native` | 22 | 15% | — |
 | `skip_guts` | 7 | 5% | — |
 
-**Executed pure dists = 121** (150 − 7 guts − 22 native). Of the **77** whose
-deps are satisfiable (121 − 44 missing_dep), **44 load (57%)** and **33 hit a
-real mutsu bug (43%)** — 18 parse, 15 runtime. Those 33 are the actionable
-frontier below. (The load-rate among satisfiable pure dists has climbed from
-48% at n=60/seed42 to 57% here as parse/type fixes land.)
+**Executed pure dists = 121** (150 − 7 guts − 22 native). Of the **68** whose
+deps are satisfiable (121 − 53 missing_dep), **54 load (79%)** and **14 hit a
+real mutsu bug (21%)** — only **2 parse**, 12 runtime. (The load-rate among
+satisfiable pure dists has climbed from 48% at n=60/seed42 → 57% (n=150/seed7,
+2026-07-19) → **79%** here, as the parse/type/role slices land; the two
+remaining parse_errors are CSS — grammar/regex-slang — and Deps —
+multi-feature type-capture — both deferred.) The runtime_error rows below are
+now mostly nqp-guts / CHECK-resource / packaging artifacts rather than plain
+mutsu bugs.
 
 The full passing (`load_ok`) list is in the [load_ok section](#load_ok--proven-to-load-on-mutsu-n150-seed-7)
 below — this is the "which real dists run on mutsu today" report. Regenerate
@@ -155,16 +161,16 @@ Known root causes to date (one row per dist):
 
 | Dist | Root cause |
 |---|---|
-| Protocol::MQTT | `Invalid typename 'DecodeBuffer' in parameter declaration.` — a sibling type in the enclosing package (same family as #4865; `DecodeBuffer` is likely nested deeper / declared via a form the prefix-walk still misses). |
+| ~~Protocol::MQTT~~ | **Cleared post-snapshot**: the `Invalid typename 'DecodeBuffer'` sibling-type blocker no longer reproduces (resolved by later typename-resolution fixes); `Protocol::MQTT` now loads (load_ok in the fresh seed-7 sweep). |
 | SQL::Abstract | Advanced past the `Cannot declare our-scoped subset inside of a role` blocker (a `my subset FunctionMap of Map where …` inside `role Source` — mutsu wrongly forbade *all* subsets in a role, not just our-scoped ones; fixed post-snapshot by exempting `is_my`). Now blocked deeper on a **coercion type with a package-qualified name in a parameter declaration** — `Join::Type(Str) :$type` (line 1548) reports `Invalid typename 'Join::Type(Str)'`. Multi-feature; deferred. |
-| PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
+| ~~PDF::Font::Loader::CSS~~ | **Cleared post-snapshot**: the `X::Syntax::Perl5Var: Unsupported use of $? variable` was *not* a Perl5-ism — `$?` is a valid anonymous optional invocant (`multi method find-font($?: |) { nextsame }`). mutsu recognized the anonymous `$?`/`@?`/`%?` sigil only before `,`/`)`/whitespace, so the invocant `:` after it fell through to scalar-var parsing. Fixed (accept a following invocant `:`/`;`). Advances to `missing_dep` (PDF::Font::Loader), matching raku under `-I lib`. |
 | uniname-words | `Odd number of elements found where hash initializer expected` (load-time) — an `nqp::hash(...)` in a `BEGIN` block; guts-bound, not pursued. |
 | ~~Repository::Precomp::Cleanup~~ | **Cleared post-snapshot**: `my str $compilation-id = Compiler.id;` failed because `Compiler.id` was not callable on the bare `Compiler` type object (only defined for an instance, where it returned an empty string). `Compiler.id` identifies the build and is a type-object method in Rakudo; mutsu now returns a stable per-build id for both forms. Loads. |
-| Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
-| Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
+| ~~Test::Scheduler~~ | **Cleared post-snapshot**: `class Test::Scheduler does Scheduler {...}` failed with `Scheduler is not composable` because mutsu registered `Scheduler` as a plain class and left it out of the composable-built-in list. `Scheduler` is a composable built-in role in Raku (ParametricRoleGroupHOW); added it to the list so `does Scheduler` composes. Loads. |
+| Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser) — the module is `use nqp;` throughout (`nqp::list_i`/`nqp::islt_I`/… evaluated in a `my constant` at CHECK time); guts-bound, not pursued (same axis as uniname-words). |
 | ~~RakudoContainerfileBuilder~~ | **Not a mutsu bug** (sweep false positive): the module `is export`s a `MAIN`, and the sweep's `-e 'use …'` harness imports it, so raku auto-runs `MAIN` at mainline end and prints the same `Usage:` block. mutsu matches raku exactly (both exit 2, identical output). Should be excluded from the actionable count. |
-| App::fix.raku | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
-| Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
+| ~~App::fix.raku~~ | **Not a mutsu bug** (sweep artifact, matches raku): the dist's only `provides` entry maps `App::fix` → `bin/fix.raku`, a CLI **script**, not a lib module — `use App::fix` cannot resolve it under `-I lib` on raku either (both fail identically). Needs installation via the provides map to be usable at all. |
+| ~~Lingua::NumericWordForms~~ | **Not a mutsu bug** (sweep artifact, matches raku): `provides` maps `Lingua::NumericWordForms` → the non-convention path `lib/Lingua/NumericWordForms/NumericWordForms.rakumod`, which only resolves via the installed provides map, not the file-path convention `-I lib` uses. raku fails identically under `-I lib`. |
 | ~~Testo~~ | **Not a mutsu bug** (sweep harness artifact, matches raku exactly): the `-e 'use Testo'` harness triggers Testo's `END { done-testing }`, which exits 255 with no plan on both raku and mutsu. A real bug *was* fixed here first: `Testo::Out::TAP` failed to load because a role method param used a qualified type imported by a `use` **inside** the role body (`role Testo::Out { use Testo::Test::Result; method put(Testo::Test::Result:D ...) }`); role registration validated the param before the body's `use` had loaded the module. Fixed post-snapshot (pre-scan body imports, accept a qualified type a body `use` could supply). |
 
 **Cleared post-snapshot:**
@@ -213,19 +219,20 @@ cluster at once.
 ## load_ok — proven to load on mutsu (n=150, seed 7)
 
 The passing-dist report: every sampled distribution whose provided modules all
-`use` cleanly on mutsu (main + #4865, plus post-snapshot fixes). **44 of 150**
-in the raw seed-7 run (57% of the 77 whose deps are satisfiable); Astro::Sunrise
-below was cleared after the snapshot by the `unit class … is export;` trait fix.
+`use` cleanly on mutsu. **54 of 150** in the 2026-07-20 seed-7 run (79% of the 68
+whose deps are satisfiable), up from 44 at the 2026-07-19 snapshot as the
+role/type/parse slices landed.
 
 Algorithm::LCS · Ask · Astro::Sunrise · Async::Command · Attribute::Predicate ·
-Automata::Cellular · bird · CheckSocket · CLDR::List · CodeUnit · CSV::Parser ·
-Deepgrep · English · File::Ignore · Game::Covid19 · Grid · Hash::Agnostic ·
-Hash::Restricted · HTTP::HPACK · IdClass · Math::Interval · Math::Random ·
-Metropolis · Modf · Moonphase · Net::Whois · P5opendir · P5push · P5quotemeta ·
-Point · Raku::Elements · RakupodObject · Rat::Precise · RPi::Device::DS18B20 ·
-RSV · Scalar::Util · SnowFlake · Subset::Helper · Terminal::ANSIParser ·
-Text::Tabs · Time::Duration · Time::Duration::Parser · Trap · Util::Uuencode ·
-ValueList
+Audio::Liquidsoap · Automata::Cellular · Bench · bird · CheckSocket · CLDR::List ·
+CodeUnit · Configuration · CSV::Parser · Deepgrep · English · File-TreeBuilder ·
+File::Ignore · Game::Covid19 · Grid · Hash::Agnostic · Hash::Restricted ·
+HTTP::HPACK · IDNA::Punycode · IdClass · IP::Random · Math::Interval ·
+Math::Random · Metropolis · Modf · Moonphase · Net::Whois · P5opendir · P5push ·
+P5quotemeta · Pod::Contents · Point · Prime::Factor · Protocol::MQTT ·
+Raku::Elements · RakupodObject · Rat::Precise · RPi::Device::DS18B20 · RSV ·
+Scalar::Util · SnowFlake · Subset::Helper · Terminal::ANSIParser · Text::Tabs ·
+Time::Duration · Time::Duration::Parser · Trap · Util::Uuencode · ValueList
 
 (Load-only; not a claim their test suites pass — see Level 2 below.)
 
