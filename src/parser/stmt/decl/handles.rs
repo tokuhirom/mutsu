@@ -6,6 +6,16 @@ use crate::ast::HandleSpec;
 /// Parse a single handle spec item (colon-pair, word list, regex, wildcard, etc.)
 fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> PResult<'a, ()> {
     let r = input;
+    // Quoted method name inside a parenthesized list: `handles('title', "author")`.
+    if r.starts_with('\'') || r.starts_with('"') {
+        let quote = r.as_bytes()[0] as char;
+        let after_open = &r[1..];
+        let end = after_open
+            .find(quote)
+            .ok_or_else(|| PError::expected("closing quote in handles"))?;
+        specs.push(HandleSpec::Name(after_open[..end].to_string()));
+        return Ok((&after_open[end + 1..], ()));
+    }
     // Colon-pair: :exposed<target> or :exposed('target')
     if let Some(after_colon) = r.strip_prefix(':') {
         let (after_name, name) = take_while1(after_colon, |c: char| {
@@ -71,7 +81,10 @@ fn parse_single_handle_spec<'a>(input: &'a str, specs: &mut Vec<HandleSpec>) -> 
         });
         return Ok((rest, ()));
     }
-    Err(PError::expected("handle spec"))
+    // Bare identifier with no fat-arrow inside a parenthesized list is a plain
+    // method name: `handles(title, author)`.
+    specs.push(HandleSpec::Name(name.to_string()));
+    Ok((after_name, ()))
 }
 
 /// Parse handle specifications after the `handles` keyword.
