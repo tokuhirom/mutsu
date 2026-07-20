@@ -70,8 +70,8 @@ pub(in crate::parser) use registry::{
     register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
 };
 pub(in crate::parser) use user_ops::{
-    is_circumfix_close_delimiter, is_user_declared_prefix_sub, is_user_defined_infix,
-    match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
+    is_circumfix_close_delimiter, is_user_declared_prefix_sub, is_user_declared_value_term,
+    is_user_defined_infix, match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
     match_user_declared_postcircumfix_op, match_user_declared_postfix_op,
     match_user_declared_prefix_op, match_user_declared_term_symbol,
     register_user_callable_term_symbol, register_user_term_symbol,
