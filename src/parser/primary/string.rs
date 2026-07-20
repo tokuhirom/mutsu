@@ -46,6 +46,6 @@ pub(crate) use interp_content::parse_single_quote_qq;
 pub(crate) use interp_content::try_embedded_qw;
 pub(crate) use interp_helpers::{
     has_malformed_angle_interpolation, parse_shell_words_index, try_double_sigil_interp,
-    try_parse_interp_call, try_parse_interp_method_call,
+    try_parse_interp_call, try_parse_interp_method_call, try_parse_interp_self_accessor_call,
 };
 pub(crate) use quotewords::parse_quotewords_items;

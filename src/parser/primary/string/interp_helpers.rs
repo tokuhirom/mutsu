@@ -51,6 +51,59 @@ pub(crate) fn try_parse_interp_call(input: &str, target: Expr) -> (Expr, &str) {
     )
 }
 
+/// Try to parse a call on an interpolated self-accessor: `"$.name()"` or `"$.name(args)"`.
+/// In Raku `$.name` is `self.name`, so `$.name()` is the same accessor called with explicit
+/// (empty) parens and `$.name(args)` passes arguments. Unlike `try_parse_interp_call` (which
+/// invokes the *value* of a scalar as a callable via `CallOn`), this rebuilds the accessor as a
+/// `MethodCall` on `self` — matching how `$.name(...)` parses outside a string. Only triggers when
+/// `(` immediately follows the accessor name.
+pub(crate) fn try_parse_interp_self_accessor_call<'a>(
+    input: &'a str,
+    attr_name: &str,
+) -> Option<(Expr, &'a str)> {
+    if !input.starts_with('(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut paren_end = None;
+    for (idx, ch) in input.char_indices() {
+        if ch == '(' {
+            depth += 1;
+        } else if ch == ')' {
+            depth -= 1;
+            if depth == 0 {
+                paren_end = Some(idx);
+                break;
+            }
+        }
+    }
+    let pe = paren_end?;
+    let args_str = &input[1..pe];
+    let after = &input[pe + 1..];
+    let args = if args_str.trim().is_empty() {
+        vec![]
+    } else {
+        let mut args = vec![];
+        for arg in crate::parser::primary::string::interp_var::split_top_level_commas(args_str) {
+            let arg = arg.trim();
+            if let Ok((_, e)) = crate::parser::expr::expression(arg) {
+                args.push(e);
+            }
+        }
+        args
+    };
+    Some((
+        Expr::MethodCall {
+            target: Box::new(Expr::BareWord("self".to_string())),
+            name: Symbol::intern(attr_name),
+            args,
+            modifier: None,
+            quoted: false,
+        },
+        after,
+    ))
+}
+
 /// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
 /// Only recognizes simple identifier method names followed by `()` (no args).
 /// Try to parse a method call chain on an interpolated variable: "$var.method()" or "$var.method".
