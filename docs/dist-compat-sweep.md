@@ -137,27 +137,35 @@ Known root causes to date:
 | ~~Trie~~ | **Cleared post-snapshot**: was a set-operator compound assignment on an indexed lvalue (`%!decendents{char} ∪= …`) the parser rejected. Parse error gone; now only lacks its `OrderedHash` dependency (missing_dep). |
 | ~~Prime::Factor~~ | **Cleared post-snapshot**: was a sigilless parameter (`\N`) carrying a `where` constraint (`multi divisors (Int \N where BIG, …)`) that the param parser rejected. Now loads and factors correctly. |
 
-### runtime_error (14 remaining; Astro::Sunrise cleared post-snapshot)
+### runtime_error (12 remaining; Astro::Sunrise / JavaScript::Google::Charts / App::pixelpick cleared post-snapshot)
 
 | Dist | Root cause |
 |---|---|
 | Protocol::MQTT | `Invalid typename 'DecodeBuffer' in parameter declaration.` — a sibling type in the enclosing package (same family as #4865; `DecodeBuffer` is likely nested deeper / declared via a form the prefix-walk still misses). |
 | SQL::Abstract | `No matching candidate found for the parametric role` — advanced past four typename blockers by #4865; now blocked on parametric-role resolution in its `does Constant['…']` / `does Op::Prefix['…']` chains. |
-| JavaScript::Google::Charts | `Cannot declare individual multi candidates in 'our' scope`. |
 | PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
-| uniname-words | `Odd number of elements found where hash initializer expected` (load-time). |
+| uniname-words | `Odd number of elements found where hash initializer expected` (load-time) — an `nqp::hash(...)` in a `BEGIN` block; guts-bound, not pursued. |
 | Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
 | Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
 | Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
-| App::pixelpick | `X::Undeclared::Symbols: Undeclared routine` (load-time). |
 | RakudoContainerfileBuilder | prints a `Usage:` block at load — a MAIN/`is export` interaction. |
 | App::fix.raku / Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
 | Testo | non-zero exit with no diagnostic captured — needs a direct run to classify. |
 
-**Cleared post-snapshot:** IDNA::Punycode (was `Unexpected block in infix
-position` — a statement label on a C-style `loop (init; cond; step)` that the
-labeled-loop parser did not handle) now loads; its `decode_punycode` still hits
-a separate list-assignment runtime bug, a Level-2 concern.
+**Cleared post-snapshot:**
+
+- IDNA::Punycode (was `Unexpected block in infix position` — a statement label
+  on a C-style `loop (init; cond; step)` that the labeled-loop parser did not
+  handle) now loads; its `decode_punycode` still hits a separate
+  list-assignment runtime bug, a Level-2 concern.
+- JavaScript::Google::Charts (was `Cannot declare individual multi candidates in
+  'our' scope` — mutsu hoisted the `our multi` candidates before the in-sequence
+  `our proto` registered, so the scope check fired against an empty proto table;
+  fixed in #4895) now advances to `missing_dep` (`Data::TypeSystem`).
+- App::pixelpick (was `X::Undeclared::Symbols: Undeclared routine: qq:to` — a
+  `say qq:to` heredoc whose quoted delimiter sits on the next line; mutsu's
+  delimiter scanner trimmed only spaces, not the newline) now advances to
+  `missing_dep` (`Color::Names`).
 
 ## missing_dep — reachable once deps are present (not mutsu bugs)
 
