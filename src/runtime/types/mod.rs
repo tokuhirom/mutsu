@@ -14,8 +14,9 @@ mod type_registry;
 // Re-export public items from submodules
 pub(crate) use coercion::{coerce_impossible_error, is_coercion_constraint, parse_coercion_type};
 pub(in crate::runtime) use signature::{
-    bind_named_rename_sub_signature, bind_sub_signature_from_value, encode_slurpy_rw_param,
-    flatten_into_slurpy, indexed_varref_from_value, sigilless_alias_key, sigilless_readonly_key,
+    bind_named_rename_sub_signature, bind_sub_signature_from_value,
+    collect_nested_named_alias_keys, encode_slurpy_rw_param, flatten_into_slurpy,
+    indexed_varref_from_value, sigilless_alias_key, sigilless_readonly_key,
     sub_signature_matches_value, sub_signature_target_from_remaining_args, varref_from_value,
     wrap_native_int_for_binding,
 };

@@ -271,6 +271,15 @@ impl Interpreter {
                             .insert(cf.param_defs[i].name.clone(), Value::NIL);
                     }
                 }
+                // A `:color(:$colour)` alias chain also declares its inner
+                // variable(s); when the param is unsupplied they must still be
+                // in scope (undefined), else the body's `$colour` read throws.
+                for (alias_name, alias_slot) in &npb.alias_binds {
+                    if let Some(slot) = alias_slot {
+                        self.locals[*slot] = Value::NIL;
+                    }
+                    self.env_mut().insert(alias_name.clone(), Value::NIL);
+                }
                 continue;
             };
             let v = v.clone();

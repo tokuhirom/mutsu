@@ -443,7 +443,7 @@ impl Interpreter {
         let explicit_named_keys: rustc_hash::FxHashSet<String> = param_defs
             .iter()
             .filter(|pd| (pd.named || pd.name.starts_with(':')) && !pd.slurpy)
-            .map(|pd| {
+            .flat_map(|pd| {
                 let name = if pd.name.starts_with(':') {
                     &pd.name[1..]
                 } else if let Some(rest) = pd
@@ -465,7 +465,14 @@ impl Interpreter {
                 } else {
                     &pd.name
                 };
-                name.to_string()
+                // A nested alias chain (`:variety(:style(...))`) makes every
+                // level's name a valid caller key, so exclude them all from the
+                // slurpy `*%rest` capture too.
+                let mut keys = vec![name.to_string()];
+                if let Some(sub_params) = &pd.sub_signature {
+                    keys.extend(collect_nested_named_alias_keys(sub_params));
+                }
+                keys
             })
             .collect();
         let mut positional_idx = 0usize;
@@ -995,20 +1002,16 @@ impl Interpreter {
                         break;
                     }
                 }
-                // Alias matching: for :a(:$b), also accept b => val
+                // Alias matching: for :a(:$b), also accept b => val. A nested
+                // chain (`:variety(:style(:sort($x)))`) lets the caller use any
+                // level's name, so match against every alias key down the chain.
                 if !found && let Some(sub_params) = &pd.sub_signature {
-                    for sub_pd in sub_params {
-                        if found {
-                            break;
-                        }
-                        if !sub_pd.named {
-                            continue;
-                        }
-                        let inner_key = sub_pd.name.strip_prefix(':').unwrap_or(&sub_pd.name);
+                    let alias_keys = collect_nested_named_alias_keys(sub_params);
+                    'alias: for inner_key in &alias_keys {
                         for arg in args.iter().rev() {
                             let arg = unwrap_varref_value(arg.clone());
                             if let ValueView::Pair(key, inner_val) = arg.view()
-                                && key == inner_key
+                                && key == inner_key.as_str()
                             {
                                 self.bind_param_value(&pd.name, inner_val.clone());
                                 self.bind_param_type_constraint(
@@ -1017,7 +1020,7 @@ impl Interpreter {
                                 );
                                 bind_named_rename_sub_signature(self, sub_params, inner_val)?;
                                 found = true;
-                                break;
+                                break 'alias;
                             }
                         }
                     }
@@ -1093,8 +1096,15 @@ impl Interpreter {
                     // bindings live under twigil'd keys (`$!x`/`!x`), not the bare
                     // param name — so binding the default here does not disturb them.
                     let value = Self::missing_optional_param_value(pd);
-                    self.bind_param_value(&pd.name, value);
+                    self.bind_param_value(&pd.name, value.clone());
                     self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
+                    // A `:color(:$colour)` alias chain declares its inner
+                    // variable(s); bind them to the same unsupplied default so
+                    // the body's `$colour` read finds an (undefined) value
+                    // instead of throwing "not declared".
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_named_rename_sub_signature(self, sub_params, &value)?;
+                    }
                 }
                 // Check the where constraint against the *bound* value, whether it
                 // came from the supplied argument, the parameter default, or the
@@ -1885,13 +1895,15 @@ impl Interpreter {
                         {
                             return true;
                         }
-                        // Also check inner named aliases from sub-signatures
-                        if let Some(sub_params) = &pd.sub_signature {
-                            for sp in sub_params {
-                                if sp.named && sp.name == *key {
-                                    return true;
-                                }
-                            }
+                        // Also check inner named aliases from sub-signatures,
+                        // descending a nested alias chain (`:variety(:style(...))`)
+                        // so a caller key at any level is recognized.
+                        if let Some(sub_params) = &pd.sub_signature
+                            && collect_nested_named_alias_keys(sub_params)
+                                .iter()
+                                .any(|k| k == key)
+                        {
+                            return true;
                         }
                         false
                     });
