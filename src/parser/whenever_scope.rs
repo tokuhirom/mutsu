@@ -4,28 +4,27 @@
 //! Rakudo raises a compile-time `X::Comp::WheneverOutOfScope`
 //! ("Cannot have a 'whenever' block outside the scope of a 'supply' or 'react'
 //! block") when a `whenever` is not lexically enclosed by a `react` block or a
-//! `supply` block. Crossing *any* routine boundary (a `sub`/`method`/pointy or
-//! anonymous closure) breaks that enclosure — only inline blocks (`for`, `if`,
-//! bare `{ }`, a `whenever` body, etc.) preserve it.
+//! `supply` block. The check is purely *lexical*: a `whenever` is valid as long
+//! as some `supply`/`react` block encloses it in the source, at any nesting
+//! depth — routine boundaries do NOT break the enclosure. So
+//! `supply { my sub g { whenever … } }` is valid (a `sub`/`method`/pointy/class
+//! nested inside a supply keeps the enclosure), while a `whenever` in a
+//! top-level `sub`/pointy with no supply/react ancestor is rejected.
 //!
 //! This walker mirrors that rule structurally on the AST. It tracks a single
-//! boolean `in_scope` ("are we lexically inside a react/supply block, without
-//! having crossed a routine boundary?"):
+//! boolean `in_scope` ("is there a react/supply block lexically enclosing here?"):
 //!
 //! * `react { ... }` sets it true for the body.
 //! * The emitter closure that `supply { ... }` lowers to (a `Lambda` whose
 //!   parameter name starts with `__mutsu_supply_emitter_`) sets it true.
-//! * A genuine routine boundary (named `sub`/`method` decl, `sub { }`, pointy
-//!   or parameterised closure, and any non-emitter `Lambda`) resets it to false.
-//! * Every other construct preserves it.
+//! * Every other construct — including routine/closure boundaries — preserves it,
+//!   so once inside a supply/react the enclosure holds through nested subs.
 //!
 //! When a `whenever` is reached with `in_scope == false`, we record its line.
 //!
 //! The walker is intentionally conservative: an unhandled container is simply
 //! not recursed into, which can only *miss* an out-of-scope `whenever` (a false
-//! negative). A legitimate `whenever` inside a `react`/`supply` block is never
-//! reachable behind a routine-boundary reset, so this can never produce a false
-//! positive that would reject valid concurrency code.
+//! negative), never produce a false positive that would reject valid code.
 
 use crate::ast::{Expr, Stmt};
 
@@ -63,13 +62,16 @@ fn walk_stmt(stmt: &Stmt, in_scope: bool, line: &mut i64, found: &mut Option<i64
             walk_stmts(body, true, line, found);
         }
 
-        // Routine / package boundaries: reset scope for the body.
+        // Routine / package boundaries do NOT break the enclosure: Rakudo's
+        // check is purely lexical, so a `whenever` inside a `sub`/`method`/class
+        // that is itself lexically nested in a `supply`/`react` block is valid
+        // (`supply { my sub g { whenever … } }`). Preserve the current scope.
         Stmt::SubDecl { body, .. }
         | Stmt::MethodDecl { body, .. }
         | Stmt::ClassDecl { body, .. }
         | Stmt::RoleDecl { body, .. }
         | Stmt::Package { body, .. } => {
-            walk_stmts(body, false, line, found);
+            walk_stmts(body, in_scope, line, found);
         }
 
         // Inline blocks / control flow: preserve scope.
@@ -116,17 +118,21 @@ fn walk_stmt(stmt: &Stmt, in_scope: bool, line: &mut i64, found: &mut Option<i64
 fn walk_expr(expr: &Expr, in_scope: bool, line: &mut i64, found: &mut Option<i64>) {
     match expr {
         // The `supply { }` sugar lowers to `Supply.on-demand(-> $emitter { ... })`
-        // where the emitter closure name marks a genuine supply scope.
+        // where the emitter closure name marks a genuine supply scope. A normal
+        // pointy/closure `Lambda` (`-> $x { }`) is a lexical boundary that does
+        // NOT break an existing supply/react enclosure, so preserve `in_scope`.
         Expr::Lambda { param, body, .. } => {
-            let opens_scope = param.starts_with(SUPPLY_EMITTER_PREFIX);
+            let opens_scope = in_scope || param.starts_with(SUPPLY_EMITTER_PREFIX);
             walk_stmts(body, opens_scope, line, found);
         }
-        // `sub { }` (is_block == false) is a routine boundary; a bare block
-        // `{ }` (is_block == true) is inline and preserves scope.
-        Expr::AnonSub { body, is_block, .. } => {
-            walk_stmts(body, in_scope && *is_block, line, found);
+        // A closure boundary is also purely lexical: a `whenever` inside an
+        // anonymous `sub { }` or a pointy `-> { }` nested in a `supply`/`react`
+        // block is valid, so preserve the current scope (a top-level closure
+        // still has `in_scope == false` and its `whenever` is still rejected).
+        Expr::AnonSub { body, .. } => {
+            walk_stmts(body, in_scope, line, found);
         }
-        Expr::AnonSubParams { body, .. } => walk_stmts(body, false, line, found),
+        Expr::AnonSubParams { body, .. } => walk_stmts(body, in_scope, line, found),
 
         // Inline block-valued expressions preserve scope.
         Expr::Block(body) | Expr::Gather(body) => walk_stmts(body, in_scope, line, found),

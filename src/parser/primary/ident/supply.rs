@@ -60,6 +60,15 @@ fn is_close_registration(stmt: &Stmt) -> bool {
 }
 
 fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
+    // TODO: compile to bytecode / capture. `emit`/`done` inside a nested `my sub`
+    // defined within the supply body (`supply { my sub relay($s) { whenever $s {
+    // emit … } }; relay(…) }`, e.g. IO::Notification::Recursive) should forward to
+    // this supply's emitter, but rewriting the sub body to `$emitter.emit(...)`
+    // surfaces a closure-capture gap (the nested sub does not capture the on-demand
+    // Lambda's emitter parameter), so it is left unrewritten for now — such code
+    // parses (the whenever-scope check accepts it) but its nested-sub `emit` is a
+    // runtime no-op. Direct `supply { whenever … { emit } }` and the `supply
+    // whenever …` shorthand work.
     match stmt {
         Stmt::Expr(expr) => {
             if let Expr::Call { name, args } = &expr
