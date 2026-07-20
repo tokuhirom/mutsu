@@ -372,7 +372,12 @@ the shared+identity case. So:
       that removes the UB. Deferred because it is a large architectural commitment for a *soundness*
       (not correctness/feature) payoff, while 3a already closed the leak that made GC table-stakes;
       the residue is UB-by-letter + a cross-thread data race that has passed gc-stress/S17 so far.
-      Write the Proposed ADR when this campaign is greenlit.
+      **The mechanism framing is now drafted in [ADR-0013](../docs/adr/0013-container-interior-mutability-cellvalue.md)
+      (Proposed)** — a `GcCell` = `UnsafeCell` + debug/verify borrow-flag newtype that converts the
+      51 sites from a raw-pointer cast to a sound aliased borrow (reads stay `&T`, so zero read-path
+      cost; Miri becomes the acceptance gate), rejecting the whole-container lock (read tax +
+      re-entrancy deadlock) and deferring the narrow cross-thread race to layer 3c. On greenlight,
+      flip ADR-0013 to Accepted and begin at its §4 phase 1.
 - **✅ Step 4 (independent) DONE (2026-07-20)** — hardened the buffered-clone / uniqueness
       invariant. `Gc::verify_unique_for_aliased_mut` machine-checks the `strong == 1 ⟹ unique`
       argument that `make_mut` / `get_mut` and the three (a) `gc_contents_mut` sites rely on, by

@@ -31,3 +31,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0010](0010-cross-thread-lexical-sharing-scope.md) | Cross-thread lexical sharing is scoped to a spawn lineage, not the process | Accepted |
 | [0011](0011-rakuast-model-layer-and-phasing.md) | RakuAST — a reflection/model layer over the internal AST, and its phasing | Accepted |
 | [0012](0012-libffi-macos-arm64-vendored-bump.md) | libffi on macOS arm64 — bump the vendored build, do not switch to system libffi | Accepted |
+| [0013](0013-container-interior-mutability-cellvalue.md) | Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype | Proposed |

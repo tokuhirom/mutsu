@@ -210,7 +210,11 @@ The primitive/definition/re-export layer, not production mutation sites:
    mutation is sound without a raw-pointer cast. This is fused with ADR-0001 (do not touch the
    sites twice) and is a large, high-blast-radius campaign, not a slice. **DEFERRED** (user
    decision 2026-07-20): a large architectural commitment for a soundness-only payoff, while 3a
-   already closed the GC leak. Write a Proposed ADR when greenlit.
+   already closed the GC leak. **The mechanism framing is drafted in
+   [ADR-0013](adr/0013-container-interior-mutability-cellvalue.md) (Proposed)**: a `GcCell` =
+   `UnsafeCell` + debug/verify borrow-flag newtype (reads stay `&T` via `Deref`, zero read-path cost;
+   Miri is the acceptance gate), rejecting the whole-container lock and deferring the narrow
+   cross-thread race to ADR-0001 layer 3c. Flip to Accepted on greenlight.
 4. **Buffered-clone invariant hardening — DONE (2026-07-20)**: `Gc::verify_unique_for_aliased_mut`
    machine-checks the `strong == 1 ⟹ unique` argument at `make_mut` / `get_mut` and the three (a)
    sites by asserting the backing `Arc` strong count equals the GC-visible `header.strong` (they move
