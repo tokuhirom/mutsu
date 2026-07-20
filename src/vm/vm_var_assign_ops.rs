@@ -372,6 +372,12 @@ impl Interpreter {
             // self-referential cycle requires the in-place write (a freshly
             // created Arc cannot be made cyclic via `get_mut`). See
             // `arc_contents_mut`; no borrow into the map is live across the write.
+            // Inventory bucket (a) — provably-unique (docs/gc-contents-mut-inventory.md).
+            debug_assert_eq!(
+                result_arc.strong_count(),
+                1,
+                "fixup_circular_hash: aliased &mut requires a uniquely-owned freshly-created node"
+            );
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for key in &circular_keys {
                 data.map
@@ -460,6 +466,12 @@ impl Interpreter {
                 // SAFETY: new_hash_arc was just created here; the
                 // self-reference insert and the in-place recursive fixup must
                 // alias it. See `arc_contents_mut`.
+                // Inventory bucket (a) — provably-unique (docs/gc-contents-mut-inventory.md).
+                debug_assert_eq!(
+                    new_hash_arc.strong_count(),
+                    1,
+                    "replace_array_refs_in_value: aliased &mut requires a uniquely-owned freshly-created node"
+                );
                 let data = unsafe { crate::value::gc_contents_mut(&new_hash_arc) };
                 for key in &self_ref_keys {
                     data.map
@@ -513,6 +525,12 @@ impl Interpreter {
             // SAFETY: result_arc was just created here; building a
             // self-referential cycle and the in-place recursive fixup must alias
             // it. See `arc_contents_mut`.
+            // Inventory bucket (a) — provably-unique (docs/gc-contents-mut-inventory.md).
+            debug_assert_eq!(
+                result_arc.strong_count(),
+                1,
+                "fixup_circular_array_refs: aliased &mut requires a uniquely-owned freshly-created node"
+            );
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for idx in &circular_indices {
                 data.items[*idx] = Value::array_with_kind(result_arc.clone(), *kind);
