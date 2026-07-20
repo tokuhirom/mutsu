@@ -846,47 +846,59 @@ regressions were burned down:
 
 Pin for both: `t/gate-b-callee-name-collision-and-deref-capture.t`.
 
-**Result: the (B)-gate ON survey (t/ and full roast, JIT threshold default) is
-green.**
+**Result: the (B)-gate ON survey (t/ and full roast) is green.**
 
-### Plan A flip — ATTEMPTED (#4933), blocked by mechanism #3 (2026-07-20)
+### Plan A flip — ATTEMPTED (#4933), blocked by mechanism #3, then unblocked (#4939)
 
-`gate_local_env_write()` was flipped to default **true** (one-line change:
-`!matches!(…, "0"|"off"|"OFF")`) in #4933. Local pre-check passed (`make test`
-2041 / 19338 green; roast ON survey clean), but the CI soak — exactly what the local
-`-j6` survey cannot exercise — **caught a deterministic blocker under jit-stress**
-(`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`). #4933 was closed; the flip is deferred until
-the blocker is fixed. (gc-stress and the test job also went red, but ONLY on
+`gate_local_env_write()` was first flipped to default **true** in #4933. The local
+pre-check passed (`make test` green; roast ON survey clean at the default JIT
+threshold), but the CI soak caught a deterministic blocker under **jit-stress**
+(`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`) — a blind spot the default-threshold survey
+never exercised. #4933 was closed and the flip deferred until the blocker was fixed.
+(gc-stress and the test job also went red, but ONLY on
 `S17-supply/return-in-tap.t`, a documented load-flaky unrelated to the flip — so the
-flip is blocked by a *single* mechanism, not broadly broken.)
+flip was blocked by a *single* mechanism, not broadly broken.)
 
-**The blocker — mechanism #3 (method-call caller-local coherence × JIT).** Minimal
-repro (fails only with gate ON *and* JIT hot):
+**The blocker — mechanism #3 (method-call caller-local coherence × JIT), FIXED in
+#4939.** Minimal repro (failed only with gate ON *and* JIT hot):
 ```raku
 sub w($io is copy) { my @seen;
     until @seen.elems >= 3 { @seen.push: $io.Str; $io .= succ; }
     @seen; }
 say w(1);   # flip+JIT: [1 2 2]   (expected [1 2 3])
 ```
-`apply_pending_rw_writeback` (`vm_env_helpers.rs:1106-1111`) unconditionally pulls
-`env[source] → self.locals[slot]` after a method call. Under the flip a plain
-scalar's store skips the env mirror, so `env["io"]` keeps its decl-seed `Any` while
-the JIT-fresh slot holds the live `Int`; the post-call pull then clobbers the live
-slot with the stale env value, freezing `$io` once the loop JIT-compiles (diagnostic:
-`rw-pull source="io" env=Package(Any) slot_was=Int(2)`). The trigger is a local read
-as a *method invocant* (`$io.Str`) plus a mutation of that local — pure-arithmetic
-and method-arg loops are fine.
+The root cause was NOT `apply_pending_rw_writeback`'s generic pull but the JIT'd
+`CallMethodMut` shim (`vm_jit_helpers.rs::call_method_mut`) pushing the receiver
+onto `pending_rw_writeback_sources` **unconditionally**. The interpreter's own
+`CallMethodMut` arm (`vm_exec_dispatch.rs`) already pushes only when the call
+REBOUND `env[receiver]` (`!before.same_binding(after)`); the JIT shim lacked that
+guard. Under the flip a plain scalar's store skips the env mirror, so `env["io"]`
+keeps its decl-seed while the JIT-fresh slot holds the live `Int`; the unconditional
+pull then clobbered the live slot with the stale env value every iteration, freezing
+`$io` once the loop JIT-compiled. #4939 ported the interpreter's rebind guard to the
+JIT shim (un-gated — the two paths now match; OFF byte-identical). Pin:
+`t/gate-b-jit-method-mut-writeback.t`.
 
-**Fix direction:** the `env_changed` guard of #4859 / #4873 — pull only when
-`env[source]` actually changed during the call (a genuine `is rw` writeback writes
-it; a non-mutating `.Str`/`.succ` invocant read does not). This touches a
-load-bearing rw mechanism with ~15 source-push sites and must soak under
-gc-stress/jit-stress, so it is a dedicated follow-up, not rushed onto the flip.
-Perf motivation for the flip stands (while/loop −10…16%; for/fib ±0). Gate removal
-(the ~18 `if gate_local_env_write()` sites + OFF dead code) comes only after the
-flip lands and soaks. **Any future flip verification MUST include
-`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`** — the blind spot that hid this (the ON survey
-ran at the default JIT threshold, which never compiles a short loop hot).
+### Plan A flip — `gate_local_env_write()` default ON (2026-07-20, post-#4939)
+
+With mechanism #3 fixed and **both surveys clean including
+`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`** (the whole roast whitelist under gate ON +
+JIT2 showed zero genuine regressions — the only reported files were TODO-passed
+reports and cwd-relative file-IO false positives that pass under the proper
+`run-roast-test.sh` harness), `gate_local_env_write()` is flipped to default **true**
+(one-line change: `!matches!(…, "0"|"off"|"OFF")`), with `MUTSU_GATE_LOCAL_ENV_WRITE=0`
+as the byte-identical opt-out. The flip's CI run (full roast + **gc-stress +
+jit-stress**) is the concurrency/GC soak the local `-j6` survey cannot exercise.
+Perf: while/loop hot paths drop the unconditional env write (−10…16% on a 5M while
+loop); for/fib are unaffected (their frames `captures_env_by_name`, so every local
+is force-synced regardless).
+
+**Remaining: after the flip soaks in main, delete the gate** — the ~18
+`if gate_local_env_write()` sites become unconditional (the ON branch), and the
+OFF-side dead code (the env-mirror stores those sites guard, plus the
+`MUTSU_GATE_LOCAL_ENV_WRITE` env plumbing) is removed. That is a separate mechanical
+PR, taken only once the flip has demonstrably soaked. **Any future flip verification
+MUST include `MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`.**
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
