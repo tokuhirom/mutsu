@@ -50,6 +50,28 @@ impl Interpreter {
             self.stack.push(composed);
             return Ok(());
         }
+        // A list of roles on the RHS (`1 but (R1,)` — the single-element tuple
+        // reaches here; `(R1, R2)` is split into per-element ops by the compiler).
+        // Compose every role in the list, so `.^name` renders `Int+{R1}`.
+        if let ValueView::Array(items, _) = right.view()
+            && !items.is_empty()
+            && items.iter().all(|e| match e.view() {
+                ValueView::Package(name) => self.has_role(&name.resolve()),
+                ValueView::Str(name) => self.has_role(&name),
+                _ => false,
+            })
+        {
+            if let Some(tn) = &left_type_object
+                && self.is_role_type_name(tn)
+            {
+                return Err(self.but_on_type_object_error(tn));
+            }
+            let roles: Vec<Value> = items.iter().cloned().collect();
+            let composed = loan_env!(self, eval_does_values_list(left, &roles))?;
+            self.carrier_writeback_changed_aggregates(code, &pre_env);
+            self.stack.push(composed);
+            return Ok(());
+        }
         // A type object / class (not a role) on the RHS: into a type-object
         // invocant it is X::Does::TypeObject; otherwise not composable.
         if matches!(right.view(), ValueView::Package(_)) {
@@ -68,6 +90,21 @@ impl Interpreter {
     pub(super) fn exec_but_mixin_tuple_elem_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // A role element in the tuple (`1 but (R1, R2)`) is composed as a proper
+        // role mixin, not a value mixin: the single-role `but R` path composes
+        // via `eval_does_values` so `.^name` renders `Int+{R1,R2}`. Each tuple
+        // element pops the previous element's result as `left`, so composing
+        // role-by-role accumulates the mixed-in roles onto the same value.
+        let is_role = match right.view() {
+            ValueView::Package(name) => self.has_role(&name.resolve()),
+            ValueView::Str(name) => self.has_role(&name),
+            _ => false,
+        };
+        if is_role {
+            let composed = loan_env!(self, eval_does_values(left, right))?;
+            self.stack.push(composed);
+            return Ok(());
+        }
         let mixin_type = Self::mixin_type_for_value(&right);
         // Check for duplicate type conflict
         if let ValueView::Mixin(_, existing) = left.view()
