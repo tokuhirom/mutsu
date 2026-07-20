@@ -222,12 +222,20 @@ fn word_infix_at(r: &str, kw: &str) -> bool {
 }
 
 pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usize)> {
-    // Unicode: multiply (U+00D7) -- skip if user-defined infix exists
-    if r.starts_with('\u{00D7}') && !super::super::stmt::simple::is_user_defined_infix("\u{00D7}") {
+    // Unicode: multiply (U+00D7) -- skip if user-defined infix exists, and (like
+    // the ASCII `*` below) leave `×=` for the compound-assignment parser.
+    if r.starts_with('\u{00D7}')
+        && !r.starts_with("\u{00D7}=")
+        && !super::super::stmt::simple::is_user_defined_infix("\u{00D7}")
+    {
         return Some((MultiplicativeOp::Mul, '\u{00D7}'.len_utf8()));
     }
-    // Unicode: divide (U+00F7) -- skip if user-defined infix exists
-    if r.starts_with('\u{00F7}') && !super::super::stmt::simple::is_user_defined_infix("\u{00F7}") {
+    // Unicode: divide (U+00F7) -- skip if user-defined infix exists, and leave
+    // `÷=` for the compound-assignment parser.
+    if r.starts_with('\u{00F7}')
+        && !r.starts_with("\u{00F7}=")
+        && !super::super::stmt::simple::is_user_defined_infix("\u{00F7}")
+    {
         return Some((MultiplicativeOp::Div, '\u{00F7}'.len_utf8()));
     }
     if r.starts_with("+&") {
