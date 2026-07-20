@@ -314,10 +314,13 @@ pub(super) fn dispatch(
                 }))))
             }
         }
+        // `.DEFINITE` is the concreteness primitive: True iff `target` is a
+        // concrete instance rather than a type object. It is NOT `.defined`
+        // (which Failure overrides to False) — a `Failure.new(...)` instance is
+        // still definite, so it must NOT be special-cased here.
         "DEFINITE" => Some(Some(Ok(Value::truth(match target.view() {
             ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
             ValueView::Slip(items) if items.is_empty() => false,
-            ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
             _ => true,
         })))),
         "WHICH" => {
