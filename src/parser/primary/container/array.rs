@@ -20,7 +20,7 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
     // sections move into `sections`.
     let mut sections: Vec<Vec<Expr>> = Vec::new();
     let mut saw_semicolon = false;
-    let (mut rest, first) = expression(input)?;
+    let (mut rest, first) = parse_array_element(input)?;
     items.push(first);
     loop {
         let (r, _) = ws(rest)?;
@@ -35,7 +35,7 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             // After a separator we need another element or a closing `]`.
             // Hitting unparseable/end-of-input here means the array composer
             // was never closed (e.g. `[1,`): X::Comp::FailGoal.
-            let (r, next) = expression(r).map_err(|_| array_fail_goal(r))?;
+            let (r, next) = parse_array_element(r).map_err(|_| array_fail_goal(r))?;
             items.push(next);
             rest = r;
         } else if r.starts_with(';') && !r.starts_with(";;") {
@@ -50,7 +50,7 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
                     finalize_array_sections(sections, items, saw_semicolon, false),
                 ));
             }
-            let (r, next) = expression(r).map_err(|_| array_fail_goal(r))?;
+            let (r, next) = parse_array_element(r).map_err(|_| array_fail_goal(r))?;
             items.push(next);
             rest = r;
         } else {
@@ -76,6 +76,33 @@ pub(crate) fn array_literal(input: &str) -> PResult<'_, Expr> {
             ));
         }
     }
+}
+
+/// Parse one array-composer element: an expression optionally followed by inline
+/// statement modifiers (`[ EXPR for LIST ]`, `[ EXPR if COND ]`, and `;`-sectioned
+/// forms like `[ 'a' if $x; |@b if $y ]`). This is the composer analogue of the
+/// inline modifier a parenthesized list already accepts; without it the trailing
+/// `for`/`if` reads as a second term ("Two terms in a row" / "couldn't find final ']'").
+fn parse_array_element(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = expression(input)?;
+    let (after_ws, _) = ws(rest)?;
+    if let Some(result) =
+        crate::parser::primary::container::meta_ops::try_inline_modifier(after_ws, expr.clone())
+    {
+        let (r, modified) = result?;
+        // A statement modifier consumes a trailing `;` (statement terminator) and
+        // any following whitespace. Inside an array composer that `;` is a
+        // *section separator* the caller's loop must still see
+        // (`[ 'a' if $x; |@b if $y ]`), so re-expose it from where it was eaten.
+        let consumed = &after_ws[..after_ws.len() - r.len()];
+        if let Some(semi_pos) = consumed.rfind(';')
+            && consumed[semi_pos + 1..].trim().is_empty()
+        {
+            return Ok((&after_ws[semi_pos..], modified));
+        }
+        return Ok((r, modified));
+    }
+    Ok((rest, expr))
 }
 
 /// Combine semicolon-separated sections of an array composer. With no semicolon
