@@ -17,6 +17,11 @@ jobs:
     # passed (roast printing "Result: PASS" immediately before cancellation).
     # 25 min gives headroom for a cold/partial cargo cache.
     timeout-minutes: 25
+    # Link with mold across every cargo invocation in this job — linking a
+    # binary this size dominates edit->rebuild latency, and mold is far faster
+    # than GNU ld. mold is installed in the "Install prove" step below.
+    env:
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -26,18 +31,23 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Cache cargo
-        uses: actions/cache@v6
+      # Swatinem/rust-cache keys on the lockfile + rustc + flags and caches the
+      # registry and the built dependencies (pruning the workspace crate so the
+      # cache stays small and restores fast), which is far more reliable than
+      # stuffing the whole multi-GB `target/` into actions/cache. `shared-key`
+      # is common across the three native Linux jobs (test/gc-stress/jit-stress):
+      # they compile byte-identical artifacts (GC/JIT are runtime env vars, not
+      # cargo features), so one shared dependency cache serves all three.
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
+          shared-key: "ci-linux"
+          # Only PRs restore; only main pushes save. This keeps the cache warm
+          # from main without every PR writing its own entry and evicting others.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install prove
-        run: sudo apt-get update && sudo apt-get install -y perl
+      - name: Install prove + mold
+        run: sudo apt-get update && sudo apt-get install -y perl mold
 
       - name: Format check
         run: cargo fmt --all -- --check
@@ -137,15 +147,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache cargo
-        uses: actions/cache@v6
+      # Own cache (wasm32 target artifacts differ from the native jobs). No mold
+      # here: this builds for wasm32-unknown-unknown, whose linker is wasm-ld,
+      # not the host cc — the `-fuse-ld=mold` flag would not apply.
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-wasm-${{ runner.os }}-
+          shared-key: "ci-wasm"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -204,6 +213,8 @@ jobs:
       # S17-lowlevel/thread.t sat at ~24s against the 30s GC-off budget and
       # timed out on a loaded runner the first time this step ran blocking.
       MUTSU_ROAST_TIMEOUT_SCALE: "2"
+      # Link with mold (installed below); shared with the other native jobs.
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -211,18 +222,16 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
-      - name: Cache cargo
-        uses: actions/cache@v6
+      # Shares the "ci-linux" dependency cache with the test/jit-stress jobs:
+      # identical build artifacts (MUTSU_GC is a runtime env var, not a feature).
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-gcstress-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-gcstress-${{ runner.os }}-
+          shared-key: "ci-linux"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install prove
-        run: sudo apt-get update && sudo apt-get install -y perl
+      - name: Install prove + mold
+        run: sudo apt-get update && sudo apt-get install -y perl mold
 
       - name: Unit + integration tests (GC on)
         # Single-threaded: with MUTSU_GC=on, parallel in-process test threads
@@ -316,6 +325,8 @@ jobs:
     env:
       MUTSU_JIT: "on"
       MUTSU_JIT_THRESHOLD: "2"
+      # Link with mold (installed below); shared with the other native jobs.
+      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -323,18 +334,16 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
-      - name: Cache cargo
-        uses: actions/cache@v6
+      # Shares the "ci-linux" dependency cache with the test/gc-stress jobs:
+      # identical build artifacts (MUTSU_JIT is a runtime env var, not a feature).
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-jitstress-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-jitstress-${{ runner.os }}-
+          shared-key: "ci-linux"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install prove
-        run: sudo apt-get update && sudo apt-get install -y perl
+      - name: Install prove + mold
+        run: sudo apt-get update && sudo apt-get install -y perl mold
 
       - name: Build (debug, for TAP tests)
         run: cargo build
