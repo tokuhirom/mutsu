@@ -243,6 +243,18 @@ impl Interpreter {
                     None
                 };
             }
+            RegexAtom::WordBoundary { negated } => {
+                // `<?wb>` / `<!wb>`: a boundary is a transition between a word char
+                // and a non-word char (either direction) — i.e. `<<` or `>>`.
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let at_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                let is_boundary = before_is_word != at_is_word;
+                return if is_boundary != *negated {
+                    Some(pos)
+                } else {
+                    None
+                };
+            }
             RegexAtom::StartOfLine => {
                 // The char immediately before `pos`. At slice-position 0 this is
                 // not necessarily the start of the original parse text: a subrule
@@ -682,6 +694,7 @@ impl Interpreter {
             | RegexAtom::ClosureInterpolation { .. }
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
+            | RegexAtom::WordBoundary { .. }
             | RegexAtom::StartOfLine
             | RegexAtom::TildeMarker
             | RegexAtom::EndOfLine

@@ -157,6 +157,7 @@ impl Interpreter {
             | RegexAtom::UnicodePropAssert { .. }
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
+            | RegexAtom::WordBoundary { .. }
             | RegexAtom::StartOfLine
             | RegexAtom::EndOfLine
             | RegexAtom::WsRule

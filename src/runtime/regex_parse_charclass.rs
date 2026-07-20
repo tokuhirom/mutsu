@@ -612,6 +612,7 @@ impl Interpreter {
             | RegexAtom::EndOfLine
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
+            | RegexAtom::WordBoundary { .. }
             | RegexAtom::UnicodeProp { .. }
             | RegexAtom::UnicodePropAssert { .. }
             | RegexAtom::SameAssertion { .. }
