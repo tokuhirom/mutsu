@@ -960,18 +960,31 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         }
                     }
                     // If there was space before ':', treat as adverb (colon-pair)
-                    let (r3, first_arg) = if has_space_before_colon {
-                        colonpair_expr(r2)?
+                    let mut args = Vec::new();
+                    let r3 = if has_space_before_colon {
+                        let (r3, first_arg) = colonpair_expr(r2)?;
+                        args.push(first_arg);
+                        r3
                     } else {
                         let r3 = &r2[1..];
                         let (r3, _) = ws(r3)?;
-                        // A colon-method arg list (`.m: a, b`) is a comma-list at
-                        // listop precedence, so each element stops before the loose
-                        // word-logical ops (`andthen`/`and`/`or`): `.m: $x andthen $y`
-                        // is `(.m: $x) andthen $y`, not `.m($x andthen $y)`.
-                        listop_arg_expr(r3)?
+                        // `.method:` immediately before a block-closing `}` is an
+                        // empty colon-arg call — a plain `.method()`. Raku accepts
+                        // the zero-arg colon form only here (`$w = $r.rwid:` then a
+                        // closing `}` in CSV::Table); before `;` / `)` / `]` / EOF it
+                        // still demands a colon-pair, so those keep parsing an arg.
+                        if r3.starts_with('}') {
+                            r3
+                        } else {
+                            // A colon-method arg list (`.m: a, b`) is a comma-list at
+                            // listop precedence, so each element stops before the loose
+                            // word-logical ops (`andthen`/`and`/`or`): `.m: $x andthen $y`
+                            // is `(.m: $x) andthen $y`, not `.m($x andthen $y)`.
+                            let (r3, first_arg) = listop_arg_expr(r3)?;
+                            args.push(first_arg);
+                            r3
+                        }
                     };
-                    let mut args = vec![first_arg];
                     let mut r_inner = r3;
                     loop {
                         let (r4, _) = ws(r_inner)?;
