@@ -626,6 +626,13 @@ impl Interpreter {
         if self.has_role(base) {
             return true;
         }
+        // An enum type name is a valid parameter/attribute constraint (and a valid
+        // coercion target, `Join::Type(Str)`). `is_resolvable_type` is called with
+        // the coercion already stripped to the base, so a qualified enum used as a
+        // coercion target in a role-method param resolves here.
+        if self.has_enum_type(base) {
+            return true;
+        }
         // Check if it starts with uppercase (heuristic for type names)
         // This handles cases like user-defined enum types that may not be registered as classes
         false
