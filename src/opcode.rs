@@ -2463,6 +2463,31 @@ impl CompiledCode {
                         self.needs_env_sync[slot] = true;
                     }
                 }
+                // A nested closure whose ONLY use of an outer SCALAR is an
+                // in-place container mutation (`$bh<a>:delete`, `$h<k> = v`,
+                // `$a[i]++`) never records that scalar in `free_var_syms`: those
+                // ops are classified as container mutations, and the
+                // container-write free-var set is filtered to `@`/`%` aggregates
+                // (a scalar holding a Bag/Hash/Array is neither). Under the gate
+                // the outer `my $bh = <a a b>.BagHash` skips its env mirror, so
+                // when the closure runs by-name in a carrier (`lives-ok { … }`)
+                // its `:delete` reads the decl-seed `Any` from env and the
+                // mutation vanishes. Fold such scalars into `needs_env_sync` too,
+                // so the outer store keeps mirroring the live container. Gate-ON
+                // only, so the default build is byte-identical / perf-neutral.
+                for op in &nested.ops {
+                    if let Some(idx) = nested.op_container_mutate_const_idx(op)
+                        && let Some(ValueView::Str(name)) =
+                            nested.constants.get(idx as usize).map(Value::view)
+                        && !name.starts_with('@')
+                        && !name.starts_with('%')
+                        && !name.starts_with('&')
+                        && !nested.locals.iter().any(|l| l.as_str() == name.as_str())
+                        && let Some(&slot) = locals_map.get(name.as_str())
+                    {
+                        self.needs_env_sync[slot] = true;
+                    }
+                }
             }
             // A NAMED sub (`sub f { ... }`) is not embedded in
             // `closure_compiled_codes` — it is registered from `stmt_pool` via a
