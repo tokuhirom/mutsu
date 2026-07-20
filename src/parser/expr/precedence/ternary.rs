@@ -184,6 +184,7 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             && !name.contains("::")
             && !crate::runtime::utils::is_known_type_constraint(name)
             && !crate::parser::stmt::simple::is_user_declared_type(name)
+            && !crate::parser::stmt::simple::is_user_declared_value_term(name)
         {
             // A bare identifier in then-position is usually the head of a listop
             // call (`?? is-deeply $x, $y !! ...`) whose comma args were not yet
@@ -195,6 +196,8 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             // type in `ptrsize == 4 ?? uint32 !! uint64`, or a user-declared
             // class/role/grammar/enum in `self.DEFINITE ?? Target !! Target.new`
             // -- so types are excluded from this guard above and accepted.
+            // Likewise a sigilless term (`my \foo = …`; `1 ?? foo !! bar`, from
+            // Astro::Utils) is a complete nullary term, not a listop head.
             return Err(PError::expected("expected '!!' in ternary expression"));
         }
         let (input, _) = ws(input)?;

@@ -236,6 +236,23 @@ pub(crate) fn register_user_term_symbol(name: &str) {
     });
 }
 
+/// Whether `name` is an in-scope **non-callable** term symbol (a sigilless
+/// `my \foo` / `constant \foo`, i.e. a `TermBinding::Value`). Such a symbol is a
+/// complete term that takes no arguments, so a bare occurrence of it — e.g. in a
+/// ternary then-branch (`… ?? foo !! …`) — is a full expression, not a listop
+/// head that could gobble the `!!`. Callable term symbols are excluded (they may
+/// take args). Matches on the canonical name, as stored for a `BareWord`.
+pub(crate) fn is_user_declared_value_term(name: &str) -> bool {
+    SCOPES.with(|s| {
+        s.borrow().iter().rev().any(|scope| {
+            scope
+                .term_symbols
+                .get(name)
+                .is_some_and(|b| matches!(b, TermBinding::Value(_)))
+        })
+    })
+}
+
 pub(crate) fn register_user_callable_term_symbol(name: &str) {
     let Some(symbol) = name
         .strip_prefix("term:<")
