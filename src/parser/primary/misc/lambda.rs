@@ -143,6 +143,14 @@ pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
         loop {
             let (r2, _) = parse_char(r, ',')?;
             let (r2, _) = ws(r2)?;
+            // Trailing comma before the block / return type: `-> $a, { ... }`,
+            // `-> IO() :$file, { ... }`. Raku allows a trailing comma in a
+            // signature; stop the param loop instead of trying to parse `{` /
+            // `-->` as another parameter (Configuration `&config-run` lambda).
+            if r2.starts_with('{') || r2.starts_with("-->") {
+                r = r2;
+                break;
+            }
             let (r2, next) = crate::parser::stmt::parse_pointy_param_pub(r2)?;
             param_defs.push(next);
             let (r2, _) = ws(r2)?;
