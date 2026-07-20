@@ -410,6 +410,57 @@ git worktree prune
 
 Before cleanup, check which agents are still running and exclude their worktrees. After cleanup, verify disk usage with `du -sh .claude/worktrees/`.
 
+## Build cache cleanup (reclaiming disk)
+
+`target/` grows without bound and is usually the top disk consumer — a single
+checkout can reach 100 GB+, and with several checkouts on one machine it easily
+passes 300 GB. **The dominant offender is `target/debug/incremental/`**: every
+branch switch and profile change spawns a new incremental session and cargo does
+not GC old ones aggressively, so it balloons to tens of GB per checkout. These
+caches are disposable — deleting them only costs a one-time non-incremental
+rebuild (cheap when dependencies are already cached).
+
+Reclaim disk in two passes (safe: neither touches source or built binaries in
+`target/*/deps`, only regenerable caches). **First check nothing is building
+(`pgrep -a cargo rustc`)**, then:
+
+```bash
+# 1. Time-based sweep: remove artifacts not touched in 14 days (cargo-sweep).
+#    cargo install cargo-sweep   # once
+cargo sweep --time 14                 # add --dry-run first to preview
+
+# 2. Nuke incremental caches (the big win). Regenerated on next build.
+rm -rf target/*/incremental
+```
+
+On a machine with multiple checkouts, run both in each. In one cleanup this took
+the root FS from 84% to 58% (~230 GB freed), ~199 GB of it from
+`target/debug/incremental`. Consider doing this monthly, or set
+`CARGO_INCREMENTAL=0` for checkouts you only build in occasionally so they never
+accumulate incremental sessions.
+
+### Optional: faster, shared local builds (mold + sccache)
+
+Not required, but recommended when you keep several checkouts on one machine
+(their build caches are otherwise unshared). Configure once in
+`~/.cargo/config.toml`:
+
+```toml
+[build]
+rustc-wrapper = "sccache"   # shares compiled dependencies across all checkouts
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]   # much faster linking
+```
+
+Requires `mold` (apt) and `sccache` (`cargo install sccache`; bump its cache
+with a `~/.config/sccache/config` `[cache.disk] size` line). sccache passes the
+*incremental* dev build of the local crate straight through (so edit->build
+stays incremental-fast) while caching the non-incremental dependency and release
+builds — which is exactly what is shared across checkouts. CI links with mold and
+caches dependencies via `Swatinem/rust-cache`; the release profile is
+`debug = false` (build `--profile profiling` when you need `perf` symbols).
+
 ## LXC container environment
 
 This development environment runs inside a dedicated mutsu LXC container. The container may be destroyed at any time — always commit important changes and push PRs promptly.
