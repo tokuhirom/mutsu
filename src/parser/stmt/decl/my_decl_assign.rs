@@ -198,13 +198,45 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         if let Some((op, r)) = mixin {
             let (r, _) = ws(r)?;
             if let Ok((r2, operand)) = expression(r) {
+                // `my @a does R = <a b>` — the operand parser greedily absorbs the
+                // `= <init>` as an assignment (`R = <a b>`). Split it back out: the
+                // role is the bareword LHS and the initializer assigns the declared
+                // variable AFTER the mixin (raku applies the trait, then inits).
+                let (role_operand, init_stmt) = match operand {
+                    Expr::AssignExpr {
+                        name: role_name,
+                        expr: init_expr,
+                        is_bind,
+                    } => {
+                        let assign = Stmt::Assign {
+                            name: s.name.clone(),
+                            expr: *init_expr,
+                            op: if is_bind {
+                                crate::ast::AssignOp::Bind
+                            } else {
+                                crate::ast::AssignOp::Assign
+                            },
+                        };
+                        (Expr::BareWord(role_name), Some(assign))
+                    }
+                    other => (other, None),
+                };
                 let mixin_expr = Expr::Binary {
                     left: Box::new(Expr::Var(s.name.clone())),
                     op: crate::token_kind::TokenKind::Ident(op.to_string()),
-                    right: Box::new(operand),
+                    right: Box::new(role_operand),
                 };
                 let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
-                let block = Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(mixin_expr)]);
+                // Assign the initializer BEFORE mixing the role in: the `does`
+                // desugar mixes the role into the value currently held by the
+                // variable and writes it back, so a later assignment would drop
+                // the mixin. Filling first, then mixing, keeps `Array+{R}`.
+                let mut block_stmts = vec![stmt];
+                if let Some(init_stmt) = init_stmt {
+                    block_stmts.push(init_stmt);
+                }
+                block_stmts.push(Stmt::Expr(mixin_expr));
+                let block = Stmt::SyntheticBlock(block_stmts);
                 if s.apply_modifier {
                     return parse_statement_modifier(r2, block);
                 }
