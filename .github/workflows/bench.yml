@@ -33,17 +33,15 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.96.0
 
-      - name: Cache cargo
-        uses: actions/cache@v6
+      # rust-cache restores the registry + built dependencies (small, reliable)
+      # instead of the whole multi-GB target/. Deliberately NOT mold-linked: this
+      # job produces the numbers recorded in the perf trend, and switching the
+      # linker would shift the binary layout, injecting a one-time step into that
+      # trend. Keep the default linker so the recorded series stays continuous.
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-bench-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            cargo-bench-${{ runner.os }}-
-            cargo-${{ runner.os }}-
+          shared-key: "ci-bench"
 
       - name: Install rakudo (for the ratio baseline)
         # Best-effort: if the package is unavailable the script records NA

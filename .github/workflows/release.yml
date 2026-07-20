@@ -51,15 +51,15 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo
-        uses: actions/cache@v6
+      # rust-cache restores the registry + built dependencies instead of the
+      # whole multi-GB target/, which is faster and far more reliable than the
+      # raw actions/cache (which frequently overran the cache-size limit and
+      # missed). `shared-key` is the target triple so each matrix leg keeps its
+      # own cache (the four targets produce incompatible artifacts).
+      - name: Cache cargo (rust-cache)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-release-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-release-${{ matrix.target }}-
+          shared-key: ${{ matrix.target }}
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
