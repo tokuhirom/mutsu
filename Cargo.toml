@@ -55,4 +55,18 @@ cranelift-module = { version = "0.133", optional = true }
 cranelift-native = { version = "0.133", optional = true }
 
 [profile.release]
+# No debug info in release. Full debuginfo bloats the binary (~250MB vs ~27MB),
+# slows codegen/linking by ~70s, and — accumulated across the local target/
+# trees of several worktrees — costs hundreds of GB of disk. CI already forced
+# this off via CARGO_PROFILE_RELEASE_DEBUG=false; making it the default aligns
+# local `cargo build --release` (used by `make test`/`make roast`) with CI and
+# keeps the release build fast.
+debug = false
+
+# For local profiling (`perf`, flamegraphs), build with `--profile profiling`:
+# a release-optimized binary that keeps full debug symbols. This replaces the
+# old `[profile.release] debug = true`, so profiling no longer taxes every
+# ordinary release build.
+[profile.profiling]
+inherits = "release"
 debug = true
