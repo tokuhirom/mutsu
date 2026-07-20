@@ -846,10 +846,47 @@ regressions were burned down:
 
 Pin for both: `t/gate-b-callee-name-collision-and-deref-capture.t`.
 
-**Result: the (B)-gate ON survey (t/ and full roast) is green. The gate is ready
-for the default flip (Plan A: `gate_local_env_write()` default true,
-`MUTSU_GATE_LOCAL_ENV_WRITE=0` opt-out), then a gc-stress/jit-stress/roast CI soak,
-then removal of the ~18 gate sites and the OFF-side dead code.**
+**Result: the (B)-gate ON survey (t/ and full roast, JIT threshold default) is
+green.**
+
+### Plan A flip — ATTEMPTED (#4933), blocked by mechanism #3 (2026-07-20)
+
+`gate_local_env_write()` was flipped to default **true** (one-line change:
+`!matches!(…, "0"|"off"|"OFF")`) in #4933. Local pre-check passed (`make test`
+2041 / 19338 green; roast ON survey clean), but the CI soak — exactly what the local
+`-j6` survey cannot exercise — **caught a deterministic blocker under jit-stress**
+(`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`). #4933 was closed; the flip is deferred until
+the blocker is fixed. (gc-stress and the test job also went red, but ONLY on
+`S17-supply/return-in-tap.t`, a documented load-flaky unrelated to the flip — so the
+flip is blocked by a *single* mechanism, not broadly broken.)
+
+**The blocker — mechanism #3 (method-call caller-local coherence × JIT).** Minimal
+repro (fails only with gate ON *and* JIT hot):
+```raku
+sub w($io is copy) { my @seen;
+    until @seen.elems >= 3 { @seen.push: $io.Str; $io .= succ; }
+    @seen; }
+say w(1);   # flip+JIT: [1 2 2]   (expected [1 2 3])
+```
+`apply_pending_rw_writeback` (`vm_env_helpers.rs:1106-1111`) unconditionally pulls
+`env[source] → self.locals[slot]` after a method call. Under the flip a plain
+scalar's store skips the env mirror, so `env["io"]` keeps its decl-seed `Any` while
+the JIT-fresh slot holds the live `Int`; the post-call pull then clobbers the live
+slot with the stale env value, freezing `$io` once the loop JIT-compiles (diagnostic:
+`rw-pull source="io" env=Package(Any) slot_was=Int(2)`). The trigger is a local read
+as a *method invocant* (`$io.Str`) plus a mutation of that local — pure-arithmetic
+and method-arg loops are fine.
+
+**Fix direction:** the `env_changed` guard of #4859 / #4873 — pull only when
+`env[source]` actually changed during the call (a genuine `is rw` writeback writes
+it; a non-mutating `.Str`/`.succ` invocant read does not). This touches a
+load-bearing rw mechanism with ~15 source-push sites and must soak under
+gc-stress/jit-stress, so it is a dedicated follow-up, not rushed onto the flip.
+Perf motivation for the flip stands (while/loop −10…16%; for/fib ±0). Gate removal
+(the ~18 `if gate_local_env_write()` sites + OFF dead code) comes only after the
+flip lands and soaks. **Any future flip verification MUST include
+`MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2`** — the blind spot that hid this (the ON survey
+ran at the default JIT threshold, which never compiles a short loop hot).
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
