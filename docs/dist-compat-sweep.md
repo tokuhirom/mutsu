@@ -133,7 +133,9 @@ Known root causes to date:
 | SBOM::CycloneDX | `unparsed input, column 5: "}\n… @*ERRORS"` — the reported line (the `}` closing `method ingest`) is the last-good boundary, **not** the cause: the `@*ERRORS`/`with…else`/private-method-call constructs there all parse in isolation. The real desync is a still-unisolated construct in the tail `Map`/`Hash` methods (deep `mapify` ternary, `my role ordered-list[@NAMES]`, `$map but ordered-list[@keys]`) that forces the whole-role parse to backtrack. Investigating it surfaced a *separate* general bug — interpolated `.join(", ")` (a method arg carrying the string's own quote/comma) was mis-split, fixed separately — but that was not the SBOM blocker. Needs a finer tail-method repro. |
 | CSS | inside a `grammar` ("angle index key") — grammar/regex-slang, heavier. |
 | ~~Bench~~ | **Cleared post-snapshot**: a tightly-bound `<=>` used as a quote-word / hash key / colonpair value (`:fill<=>`, `%h<=>`) was mis-parsed as the spaceship operator by three separate angle parsers. Now loads. |
-| Pod::Contents / Deps / Configuration / File-TreeBuilder / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+| Pod::Contents / File-TreeBuilder / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+| Configuration | **Partially cleared**: `Configuration::Utils` was blocked by an interpolated-string hash key inside a block (`.duckmap({ "{ .^name }Builder" => generate-builder-class $_ })`) that the block-vs-hash disambiguator mis-parsed; fixed (topic-referencing interpolated keys now force a block, topic-free ones stay a hash). `Configuration::Utils` loads; the main `Configuration` module still has a separate parse blocker (534-line file, unisolated). |
+| Deps | Needs several type-capture features mutsu lacks: a type-capture **with** a constraint in a signature (`::Type Any` — currently the constraint is mis-read as a literal match value), type-capture loop variables (`for … -> ::T {…}` — the capture is not bound), and multi-dispatch on type captures. Multi-feature; deferred. |
 | ~~Trie~~ | **Cleared post-snapshot**: was a set-operator compound assignment on an indexed lvalue (`%!decendents{char} ∪= …`) the parser rejected. Parse error gone; now only lacks its `OrderedHash` dependency (missing_dep). |
 | ~~Prime::Factor~~ | **Cleared post-snapshot**: was a sigilless parameter (`\N`) carrying a `where` constraint (`multi divisors (Int \N where BIG, …)`) that the param parser rejected. Now loads and factors correctly. |
 
@@ -148,7 +150,7 @@ Known root causes to date:
 | Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
 | Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
 | Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
-| RakudoContainerfileBuilder | prints a `Usage:` block at load — a MAIN/`is export` interaction. |
+| ~~RakudoContainerfileBuilder~~ | **Not a mutsu bug** (sweep false positive): the module `is export`s a `MAIN`, and the sweep's `-e 'use …'` harness imports it, so raku auto-runs `MAIN` at mainline end and prints the same `Usage:` block. mutsu matches raku exactly (both exit 2, identical output). Should be excluded from the actionable count. |
 | App::fix.raku / Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
 | Testo | non-zero exit with no diagnostic captured — needs a direct run to classify. |
 

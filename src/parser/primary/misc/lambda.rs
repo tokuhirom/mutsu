@@ -261,7 +261,7 @@ pub(crate) fn block_or_hash_expr(input: &str) -> PResult<'_, Expr> {
     // Try to detect if this is a hash literal: { key => val, ... }
     // Heuristic: if after ws we see `ident =>` or `"str" =>` or `'str' =>`, it's a hash.
     // However, placeholder variables ($^x, @^x, %^x) force it to be a block.
-    if is_hash_literal_start(r) && !body_has_placeholder_vars(r) {
+    if is_hash_literal_start(r) && !body_has_placeholder_vars(r) && !body_references_topic(r) {
         return super::hash::parse_hash_literal_body(r);
     }
 
@@ -365,6 +365,85 @@ fn parse_block_body_with_sigilless<'a>(
 
 /// Scan the body (between { and matching }) for placeholder variables ($^x, @^x, %^x).
 /// If any are found, the block should be treated as a Block, not a Hash.
+/// Whether a `{ … }` body references the topic `$_` (directly as `$_`/`@_`/`%_`
+/// or via a `.^`/`.?` metamethod on the implicit topic). Such a body is a
+/// closure/block even when it otherwise looks like a hash composer (`{ "$_" =>
+/// … }`, `{ "{ .^name }X" => … }`), matching rakudo: the topic reference forces
+/// a block, while a topic-free `{ "{$v}B" => 1 }` stays a hash. `$_` inside a
+/// double-quoted string still counts (it interpolates the topic), so — unlike
+/// the placeholder scan — double quotes are NOT skipped; single quotes are.
+fn body_references_topic(input: &str) -> bool {
+    let bytes = input.as_bytes();
+    let mut i = 0usize;
+    // `depth` counts *bare* `{ … }` nesting; `depth == 1` is the immediate block
+    // body. Only an *explicit* topic variable `$_`/`@_`/`%_` at the top level of
+    // this body (in the key or the value, including inside a double-quoted
+    // string) forces a block. An implicit-topic method call such as `.^name` or
+    // `.Str` does NOT: rakudo keeps `{ "{ .^name }X" => 1 }` a Hash but makes
+    // `{ "$_" => 1 }` / `{ a => $_ }` a Block. A `$_` inside a nested bare block
+    // (`{ foo => (1,2,3).map: {$_} }`) belongs to that inner block's own topic,
+    // so `depth > 1` references never count. String-interpolation braces are not
+    // nesting, so the string stays at the current depth.
+    let mut depth = 1u32;
+    let mut in_d = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_d {
+            match c {
+                b'\\' => {
+                    i += 2;
+                    continue;
+                }
+                b'"' => in_d = false,
+                b'$' | b'@' | b'%'
+                    if depth == 1
+                        && bytes.get(i + 1) == Some(&b'_')
+                        && !bytes
+                            .get(i + 2)
+                            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_') =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => in_d = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            // Single-quoted strings do not interpolate: skip their contents.
+            b'\'' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    i += 1;
+                }
+            }
+            // `$_` / `@_` / `%_` topic variable at the top level of this body,
+            // with a trailing word boundary (so `$_x` — an ordinary name — does
+            // not match). Never inside a nested bare block.
+            b'$' | b'@' | b'%'
+                if depth == 1
+                    && bytes.get(i + 1) == Some(&b'_')
+                    && !bytes
+                        .get(i + 2)
+                        .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_') =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 fn body_has_placeholder_vars(input: &str) -> bool {
     let mut depth = 1u32;
     let mut chars = input.chars().peekable();
