@@ -233,11 +233,29 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             if !current.is_empty() {
                 parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
             }
-            // Find matching close brace (tracking nesting)
+            // Find matching close brace (tracking nesting). Braces inside a
+            // quoted string within the block must NOT count — e.g.
+            // `"{ $x.subst(/'{' .+? $/, '') }"` carries a literal `{` inside a
+            // single-quoted string (here nested in a regex), and `"{ '}' }"`
+            // a literal `}`. Skip over `'...'` and `"..."` (honoring `\`
+            // escapes) so their braces don't unbalance the scan.
             let mut depth = 0;
             let mut end = 0;
+            let mut in_quote: Option<char> = None;
+            let mut escaped = false;
             for (i, c) in rest.char_indices() {
+                if let Some(q) = in_quote {
+                    if escaped {
+                        escaped = false;
+                    } else if c == '\\' {
+                        escaped = true;
+                    } else if c == q {
+                        in_quote = None;
+                    }
+                    continue;
+                }
                 match c {
+                    '\'' | '"' => in_quote = Some(c),
                     '{' => depth += 1,
                     '}' => {
                         depth -= 1;
