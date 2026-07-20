@@ -142,9 +142,23 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent_name) = qualified_ident(r2)?;
-        parents.push(parent_name);
-        let (r2, _) = ws(r2)?;
-        r = r2;
+        // A lowercase `is` name (`export`, `rw`, `repr('...')`, a custom trait)
+        // is a trait, NOT a parent grammar — only an uppercase/indirect name is
+        // a superclass. Without this, `grammar Foo is export { }` would try to
+        // inherit from a nonexistent `export`. Mirrors the class-decl loop.
+        if parent_name.starts_with(|c: char| c.is_ascii_uppercase())
+            || parent_name.starts_with("::")
+        {
+            let (r2, bracket_suffix) =
+                crate::parser::stmt::class::parse_optional_bracket_suffix(r2)?;
+            parents.push(format!("{}{}", parent_name, bracket_suffix));
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        } else {
+            let r2 = crate::parser::helpers::skip_balanced_parens(r2);
+            let (r2, _) = ws(r2)?;
+            r = r2;
+        }
     }
     let mut does_parents = Vec::new();
     while let Some(r2) = keyword("does", r) {

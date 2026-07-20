@@ -92,8 +92,12 @@ fn try_bracket_op_at_level(input: &str, level: &OpPrecedence) -> Option<(String,
             return Some((meta, op, len));
         }
     }
-    // Try [op] bracket infix
-    if let Some(bracket_infix) = parse_bracket_infix_op(input) {
+    // Try [op] bracket infix — but `[op]=` (a bracket meta-op compound
+    // assignment like `@a[$i] [+]= 1`) is not an infix operator; leave it for
+    // the assignment handler so the trailing `=` is not stranded.
+    if crate::parser::stmt::assign::parse_bracket_meta_assign_op(input).is_none()
+        && let Some(bracket_infix) = parse_bracket_infix_op(input)
+    {
         match &bracket_infix {
             BracketInfix::PlainOp(op, len) => {
                 if std::mem::discriminant(&classify_base_op(op)) == std::mem::discriminant(level) {
