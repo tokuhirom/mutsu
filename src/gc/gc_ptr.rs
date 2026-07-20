@@ -36,6 +36,7 @@
 //!   disarms safepoints and leaves the candidate buffer empty, so a run pays
 //!   just an atomic refcount op per container clone/drop.
 
+use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -145,9 +146,57 @@ impl GcHeader {
 
 /// Heap allocation backing a [`Gc<T>`]: the node header plus the value. `T` is
 /// `?Sized` so `GcBox<dyn Trace>` (the erased form) is nameable.
+///
+/// The payload lives in an [`UnsafeCell`] so the aliased, identity-preserving
+/// in-place container write ([`gc_contents_mut`]) can hand out a `&mut` with
+/// **valid provenance** even while shared `&` reads (via [`Gc`]'s [`Deref`]) into
+/// the same node are live — the one thing the pre-ADR-0013 `Gc::as_ptr as *mut`
+/// cast could not give (a Stacked/Tree Borrows violation). This is the
+/// UnsafeCell-at-GcBox realization of ADR-0013's mechanism 2b: it makes **every**
+/// `Gc<T>` interior-mutable at the primitive, so the ~51 `gc_contents_mut` sites
+/// become sound with no change to the `Value` representation. `UnsafeCell` is
+/// `#[repr(transparent)]`, so the box layout and `size_of` are unchanged, and it
+/// coerce-unsizes (`GcBox<T>` → `GcBox<dyn Trace>`) exactly as the bare `T` did.
+///
+/// The residual cross-thread data race (a genuinely-shared node mutated from two
+/// OS threads) is unchanged — still governed by the `__mutsu_atomic_arr::` /
+/// `shared_vars` lane discipline and deferred to ADR-0001 layer 3c.
 pub(crate) struct GcBox<T: ?Sized> {
     header: GcHeader,
-    value: T,
+    value: UnsafeCell<T>,
+}
+
+// `UnsafeCell<T>` is `!Sync`, which would strip `GcBox` (and thus `ErasedGc =
+// Arc<GcBox<dyn Trace>>`) of the `Sync` the cross-thread `Value` model needs.
+// SAFETY: this restores the exact `Sync` posture the pre-UnsafeCell `GcBox<T>`
+// (with a bare `T: Trace: Sync` payload) already had; the interior mutability
+// does not add any cross-thread mutation that was not already reachable through
+// the old raw-pointer `gc_contents_mut`, whose cross-thread writes remain routed
+// through the synchronized shared-store lanes (ADR-0013 §1.3-2). `Send` is left
+// to auto-derive (`UnsafeCell<T>: Send` when `T: Send`).
+unsafe impl<T: ?Sized + Sync> Sync for GcBox<T> {}
+
+impl<T: ?Sized> GcBox<T> {
+    /// Shared read of the payload. For read/trace/finalize access; the returned
+    /// `&T` shares provenance with the `UnsafeCell`, compatible with a concurrent
+    /// aliased `&mut` from [`raw_value_ptr`](GcBox::raw_value_ptr) (Raku container
+    /// identity) under the UnsafeCell contract.
+    #[inline]
+    fn val(&self) -> &T {
+        // SAFETY: a shared borrow of the cell's contents; see the type docs.
+        unsafe { &*self.value.get() }
+    }
+
+    /// Raw `*mut T` to the payload, provenance-valid for an aliased in-place
+    /// write (via `UnsafeCell::raw_get`, no intermediate reference). Backs
+    /// `Gc::as_ptr` / `gc_contents_mut` and the collector's `&mut` paths.
+    #[inline]
+    fn raw_value_ptr(this: *const GcBox<T>) -> *mut T {
+        // SAFETY: `this` points at a live `GcBox`; projecting to `value` and
+        // calling `raw_get` forms no reference, so it composes with the
+        // aliased `*mut` write without a Stacked-Borrows conflict.
+        unsafe { UnsafeCell::raw_get(std::ptr::addr_of!((*this).value)) }
+    }
 }
 
 /// Type-erased managed node, as handled by the collector.
@@ -210,7 +259,9 @@ impl<T: Trace + 'static> WeakGc<T> {
         if box_ptr.is_null() {
             std::ptr::null()
         } else {
-            unsafe { std::ptr::addr_of!((*box_ptr).value) }
+            // Identity address of the payload (through the `UnsafeCell`, which is
+            // `repr(transparent)`, so the address is the value's).
+            GcBox::raw_value_ptr(box_ptr)
         }
     }
 
@@ -273,7 +324,7 @@ impl<T: Trace + 'static> Gc<T> {
         Gc {
             inner: Arc::new(GcBox {
                 header: GcHeader::fresh(),
-                value,
+                value: UnsafeCell::new(value),
             }),
         }
     }
@@ -325,13 +376,10 @@ impl<T: Trace + 'static> Gc<T> {
             // The uniqueness claim — machine-check the backing `Arc` agrees (Step 4).
             self.verify_unique_for_aliased_mut("Gc::get_mut");
             // SAFETY: sole live handle, so no other live-handle borrow into the
-            // value exists. A buffered node's retained `Arc` never dereferences
-            // the value except at a collect safepoint (same contract as
-            // `gc_contents_mut`), so this aliased `&mut` is sound. The pointer
-            // comes from `Arc::as_ptr` (not a `&`-to-`&mut` cast), dodging the
-            // `invalid_reference_casting` lint.
-            let boxed = Arc::as_ptr(&self.inner) as *mut GcBox<T>;
-            Some(unsafe { &mut (*boxed).value })
+            // value exists. The `&mut` is derived from the payload's `UnsafeCell`
+            // (`raw_value_ptr`), so it has valid provenance (ADR-0013).
+            let p = GcBox::raw_value_ptr(Arc::as_ptr(&self.inner));
+            Some(unsafe { &mut *p })
         } else {
             None
         }
@@ -397,11 +445,11 @@ impl<T: Trace + 'static> Gc<T> {
     /// `gc_contents_mut` (the `Gc` analogue of `arc_contents_mut`) for the
     /// deliberate aliased in-place container mutation the migration preserves.
     pub(crate) fn as_ptr(this: &Gc<T>) -> *const T {
-        // Reach the value field through the backing Arc's stable address. Uses a
-        // raw offset (no intermediate reference) so it composes with the
-        // `*mut`-write in `gc_contents_mut` without a Stacked-Borrows conflict.
-        let box_ptr = Arc::as_ptr(&this.inner);
-        unsafe { std::ptr::addr_of!((*box_ptr).value) }
+        // Reach the payload through the backing Arc's stable address and the
+        // value `UnsafeCell` (`raw_get`, no intermediate reference), so the
+        // pointer carries interior-mutable provenance and the `*mut`-write in
+        // `gc_contents_mut` is sound (ADR-0013), not a Stacked-Borrows conflict.
+        GcBox::raw_value_ptr(Arc::as_ptr(&this.inner))
     }
 
     /// This node's current [`Color`]. Production code reads colors through the
@@ -417,7 +465,7 @@ impl<T: Trace + 'static> Gc<T> {
     /// [`GcBox<dyn Trace>::gc_visit_children`]; this typed mirror is for tests.
     #[cfg(test)]
     pub(crate) fn trace_children(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        self.inner.value.trace(visit);
+        self.inner.val().trace(visit);
     }
 
     /// A type-erased [`ErasedGc`] handle to this node (a fresh `Arc` clone
@@ -543,26 +591,27 @@ impl<T: Trace + Clone + 'static> Gc<T> {
             // the books) is corruption.
             let prev = self.inner.header.strong.fetch_sub(1, Ordering::Relaxed);
             debug_assert!(prev >= 1, "Gc::make_mut strong-count underflow");
-            let cloned = self.inner.value.clone();
+            let cloned = self.inner.val().clone();
             self.inner = Arc::new(GcBox {
                 header: GcHeader::fresh(),
-                value: cloned,
+                value: UnsafeCell::new(cloned),
             });
         } else {
             // Fast path: reusing the existing node IS the `strong == 1 ⟹ unique`
             // claim — machine-check the backing `Arc` agrees (Step 4).
             self.verify_unique_for_aliased_mut("Gc::make_mut");
         }
-        // Sole live handle. SAFETY / lint: see `Gc::get_mut`.
-        let boxed = Arc::as_ptr(&self.inner) as *mut GcBox<T>;
-        unsafe { &mut (*boxed).value }
+        // Sole live handle. SAFETY: `&mut` from the payload `UnsafeCell` (valid
+        // provenance, ADR-0013); see `Gc::get_mut`.
+        let p = GcBox::raw_value_ptr(Arc::as_ptr(&self.inner));
+        unsafe { &mut *p }
     }
 }
 
 impl<T: Trace + 'static> std::ops::Deref for Gc<T> {
     type Target = T;
     fn deref(&self) -> &T {
-        &self.inner.value
+        self.inner.val()
     }
 }
 
@@ -574,7 +623,7 @@ impl<T: Trace + Eq + 'static> Eq for Gc<T> {}
 
 impl<T: Trace + std::hash::Hash + 'static> std::hash::Hash for Gc<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.inner.value.hash(state);
+        self.inner.val().hash(state);
     }
 }
 
@@ -642,7 +691,7 @@ impl<T: Trace + 'static> Drop for Gc<T> {
                 // `Drop`-coupled work would run inert under `CollectGuard`).
                 // Run the value-level finalizer NOW, on the dropping
                 // (interpreter) thread, exactly when refcount death occurs.
-                self.inner.value.finalize();
+                self.inner.val().finalize();
             }
         }
     }
@@ -656,7 +705,7 @@ impl<T: Trace + 'static> From<T> for Gc<T> {
 
 impl<T: Trace + 'static> AsRef<T> for Gc<T> {
     fn as_ref(&self) -> &T {
-        &self.inner.value
+        self.inner.val()
     }
 }
 
@@ -665,7 +714,7 @@ impl<T: Trace + PartialEq + 'static> PartialEq for Gc<T> {
     /// a same-node fast path) — NOT pointer identity. Use [`Gc::ptr_eq`] for
     /// identity.
     fn eq(&self, other: &Self) -> bool {
-        Gc::ptr_eq(self, other) || self.inner.value == other.inner.value
+        Gc::ptr_eq(self, other) || self.inner.val() == other.inner.val()
     }
 }
 
@@ -673,7 +722,7 @@ impl<T: Trace + std::fmt::Debug + 'static> std::fmt::Debug for Gc<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Forward to the pointee so `Value`'s derived `Debug` prints a migrated
         // `Gc<ArrayData>` exactly like the old `crate::gc::Gc<ArrayData>` did.
-        std::fmt::Debug::fmt(&self.inner.value, f)
+        std::fmt::Debug::fmt(self.inner.val(), f)
     }
 }
 
@@ -706,16 +755,26 @@ impl<T: Trace + Clone + 'static> ContainerMakeMut for Gc<T> {
 /// a container (Raku container identity — a push through one alias must be
 /// visible through every holder of the same node).
 ///
+/// Since ADR-0013 the payload lives in the [`GcBox`]'s `UnsafeCell`, so
+/// [`Gc::as_ptr`] hands back an interior-mutable pointer and this `&mut` has
+/// **valid provenance** even while shared `&` reads (via [`Gc`]'s [`Deref`]) are
+/// live — the provenance UB of the old `as_ptr as *mut` cast is gone.
+///
 /// # Safety
 ///
-/// Same contract as `arc_contents_mut`: the caller must ensure no other borrow
-/// into this value is live for the duration of the returned `&mut`, and no
-/// concurrent access from another thread. The candidate buffer's retained `Arc`
-/// adds no new hazard — a buffered node's value is read only at a collect
-/// safepoint, never concurrently with a live mutation.
+/// The caller must ensure that, on this thread, no other `&`/`&mut` into this
+/// value is *dereferenced* for the lifetime of the returned borrow (the aliasing
+/// is logical — visible through the container's other `Gc` holders — not two live
+/// Rust borrows at once), and that concurrent structural mutation from another
+/// thread remains routed through the synchronized shared-store lanes (the narrow
+/// cross-thread race deferred to ADR-0001 layer 3c). The candidate buffer's
+/// retained `Weak` adds no hazard — a buffered node's value is read only at a
+/// collect safepoint, never concurrently with a live mutation.
 #[allow(clippy::mut_from_ref)]
 pub(crate) unsafe fn gc_contents_mut<T: Trace + 'static>(gc: &Gc<T>) -> &mut T {
-    // SAFETY: delegated to the caller per the contract above.
+    // SAFETY: `Gc::as_ptr` projects through the payload `UnsafeCell` (valid
+    // interior-mutable provenance); the aliasing contract is delegated to the
+    // caller per the docs above.
     unsafe { &mut *(Gc::as_ptr(gc) as *mut T) }
 }
 
@@ -943,7 +1002,7 @@ impl GcBox<dyn Trace> {
     }
     /// Visit each direct `Gc` child (delegates to the node's [`Trace`] impl).
     pub(crate) fn gc_visit_children(&self, visit: &mut dyn FnMut(&ErasedGc)) {
-        self.value.trace(visit);
+        self.val().trace(visit);
     }
 }
 
@@ -959,13 +1018,13 @@ impl GcBox<dyn Trace> {
 pub(crate) fn gc_drop_edges(node: &ErasedGc) {
     // SAFETY: as above. `Arc::as_ptr` yields the box's genuine heap pointer.
     let boxed = Arc::as_ptr(node) as *mut GcBox<dyn Trace>;
-    unsafe { (*boxed).value.drop_gc_edges() };
+    unsafe { (*GcBox::raw_value_ptr(boxed)).drop_gc_edges() };
 }
 
 /// Run a type-erased node's value-level finalizer (see [`Trace::finalize`]).
 /// Shared-reference access — no aliasing concerns.
 pub(crate) fn gc_finalize(node: &ErasedGc) {
-    node.value.finalize();
+    node.val().finalize();
 }
 
 /// Whether GC candidate registration is active. **Default ON** since the
