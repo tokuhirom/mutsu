@@ -337,6 +337,7 @@ impl Interpreter {
                 | "Stringy"
                 | "Positional"
                 | "Associative"
+                | "Enumeration"
                 | "Failure"
                 | "Exception"
                 | "Order"

@@ -61,7 +61,8 @@ impl Value {
             ValueView::Nil => "Nil",
             ValueView::Instance { .. } | ValueView::Package(_) => owned_name.as_deref().unwrap(),
             ValueView::Enum { enum_type, .. } => {
-                return enum_type.resolve() == type_name;
+                // Every enum value does the `Enumeration` role.
+                return type_name == "Enumeration" || enum_type.resolve() == type_name;
             }
             ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
                 Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",

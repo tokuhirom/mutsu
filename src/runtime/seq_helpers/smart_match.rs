@@ -1261,6 +1261,28 @@ impl Interpreter {
                 let (base_type, smiley) =
                     super::super::types::strip_type_smiley(&type_name_resolved);
 
+                // Every enum type object and every enum value does the
+                // `Enumeration` role (`E ~~ Enumeration`, `E.pick ~~ Enumeration`).
+                if base_type == "Enumeration" {
+                    let is_enum = match left.view() {
+                        ValueView::Enum { .. } => true,
+                        ValueView::Package(n) => {
+                            self.registry().enum_types.contains_key(&*n.resolve())
+                        }
+                        _ => false,
+                    };
+                    if !is_enum {
+                        return false;
+                    }
+                    // An enum value is defined (:D); a bare enum type object is
+                    // undefined (:U).
+                    return match smiley {
+                        Some(":U") => matches!(left.view(), ValueView::Package(_)),
+                        Some(":D") => matches!(left.view(), ValueView::Enum { .. }),
+                        _ => true,
+                    };
+                }
+
                 // Enum type object smartmatch against enum values.
                 if self.registry().enum_types.contains_key(base_type) {
                     let enum_match = matches!(

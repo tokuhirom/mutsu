@@ -32,6 +32,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Mu"
             | "Any"
             | "Cool"
+            | "Enumeration"
             | "Nil"
             | "Pair"
             | "Map"
