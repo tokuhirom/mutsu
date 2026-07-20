@@ -183,6 +183,7 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             && let Expr::BareWord(name) = &then_expr
             && !name.contains("::")
             && !crate::runtime::utils::is_known_type_constraint(name)
+            && !crate::runtime::utils::is_builtin_enum_value(name)
             && !crate::parser::stmt::simple::is_user_declared_type(name)
             && !crate::parser::stmt::simple::is_user_declared_value_term(name)
         {
