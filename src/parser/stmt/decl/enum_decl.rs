@@ -1,5 +1,5 @@
 use super::super::super::expr::expression;
-use super::super::super::helpers::{ws, ws1};
+use super::super::super::helpers::{skip_balanced_parens, ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 use super::super::{ident, keyword, qualified_ident};
 use super::take_while_opt;
@@ -150,10 +150,16 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
                 variants.push((key.to_string(), Some(expr)));
                 r = after_expr;
             } else if after_key.starts_with('(') {
-                // :key(expr) — parse as expression in parens
-                let (after_expr, expr) = expression(after_key)?;
+                // :key(expr) — parse the balanced-paren content as an expression.
+                // Parse only the text INSIDE the parens (via the balanced span),
+                // not `expression(after_key)` on the raw remainder: otherwise the
+                // enum's closing `»`/`>>` delimiter right after `)` is swallowed
+                // as a hyper operator (`«:one(1)»` mis-parsed as `(1)».(...)`).
+                let after_parens = skip_balanced_parens(after_key);
+                let inner = &after_key[1..after_key.len() - after_parens.len() - 1];
+                let (_, expr) = expression(inner.trim())?;
                 variants.push((key.to_string(), Some(expr)));
-                r = after_expr;
+                r = after_parens;
             } else {
                 // :key with no value — treat as boolean true (no explicit value)
                 variants.push((key.to_string(), None));
