@@ -1,5 +1,51 @@
 # Changelog
 
+## [v0.12.0](https://github.com/tokuhirom/mutsu/compare/v0.11.1...v0.12.0) - 2026-07-20
+
+- ci: cache deps via Swatinem/rust-cache in bench and release workflows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4904
+- docs: document build-cache cleanup and shared local build setup by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4905
+- fix: parse an interpolated-string hash key inside a block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4903
+- fix: (B)-gate read the first-candidate rw value slot-first on redispatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4906
+- fix: bind nested named-parameter alias chains (`:type(:class($kind))`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4908
+- fix: indirect method call `$obj.$type` uses the type object's name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4909
+- fix: (B)-gate fold a closure's scalar-held container mutation into needs_env_sync by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4910
+- fix: `.DEFINITE` on a concrete Failure instance is True by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4911
+- fix: honour a `%` separator on an anchored `**N` repeat quantifier by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4912
+- fix: keep the ` --> ` arrow spaced in a parameterless signature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4913
+- fix: (B)-gate keep atomic-op target scalars env-synced by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4914
+- fix: parse an empty colon method-call at the end of a block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4915
+- fix: allow a trailing comma in a colon method-call before `)` / `]` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4916
+- fix: canonical `.HOW` identity and metaobject `.name($obj)` on a variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4917
+- fix: compose every role in `1 but (R1, R2)` as a proper role mixin by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4918
+- fix: parse the Unicode compound-assign operators `×=` and `÷=` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4919
+- fix: `.^parents` returns a List, not an Array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4920
+- fix: accept a parenthesized string/bare-ident list in a `handles` trait by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4921
+- docs: make the dist-compat-sweep dashboard merge-friendly (one dist per row) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4922
+- fix: (B)-gate burn down roast ON-survey regressions (5 of 7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4924
+- fix: an immutable Map gists as `Map.new((...))`, not `{...}` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4925
+- fix: `my @a does R = <init>` keeps the role trait and runs the initializer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4923
+- fix: an enum value's `.^name` is its enum type name, not "Int" by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4926
+- fix: PROCESS:: compound assignment (`//=`/`+=`) reaches the dynamic store by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4927
+- fix: an enum value's `.WHICH` is `EnumType|ordinal`, a stable ValueObjAt by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4928
+- fix: parse a parenthesized colonpair value in a `«...»` word-quote enum by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4929
+- fix: (B)-gate burn down the last two roast ON-survey regressions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4930
+- fix: parse compound assignment on an indexed lvalue for all OP= operators by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4931
+- fix: string bitwise compound assign (`~&=`/`~|=`/`~^=`) matches infix semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4932
+- fix: `//` honors a user-defined `.defined` override by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4934
+- fix: accept a sigilless term in a ternary then-branch (`cond ?? \term !! …`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4935
+- fix: `orelse`/`andthen`/`notandthen` honor a mixin role `.defined` override by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4936
+- docs: record (B)-gate flip attempt blocked by mechanism #3 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4937
+- fix: parse `*{"key"}` as a WhateverCode hash-subscript by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4938
+- fix: JIT CallMethodMut shim guards the receiver writeback on rebind (mechanism #3) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4939
+- fix: forward-ref listop heredoc arg, and `#` in an angle subscript key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4941
+- perf: (B)-gate flip — MUTSU_GATE_LOCAL_ENV_WRITE default ON (Plan A) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4942
+- feat: inline anonymous/named subset as a term by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4943
+- fix: X::TypeCheck::Assignment message drops the class-name prefix by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4944
+- fix: assign to an rw-accessor method lvalue in expression position by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4940
+- feat: enum types and values do the Enumeration role by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4945
+- docs+chore: inventory gc_contents_mut aliased-write sites; assert the 3 unique ones by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4946
+- fix: parse `if my (list) = EXPR { ... }` and scope its targets to the body by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4947
+
 ## [v0.11.1](https://github.com/tokuhirom/mutsu/compare/v0.11.0...v0.11.1) - 2026-07-20
 
 - fix: parse a lowercase `is` trait on a unit class as a trait, not a parent by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4879
