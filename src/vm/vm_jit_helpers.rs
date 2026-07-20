@@ -313,6 +313,23 @@ pub(super) unsafe extern "C" fn call_method_mut(
     };
     interp.sync_source_line(code, op_idx as usize);
     let pre = interp.array_hash_attr_env_snapshot(code, *target_name_idx);
+    // The receiver's env binding before the call, so the writeback below can
+    // tell whether this method actually rebound it. Mirrors the interpreter's
+    // `CallMethodMut` arm (vm_exec_dispatch.rs): only push the receiver for a
+    // writeback when the call REBOUND `env[receiver]`. Without this guard the
+    // JIT path unconditionally pulls `env[receiver]` into the caller's slot,
+    // which is wrong when the callee env merely inherited a same-named binding
+    // from its caller (a self-recursive `$tree` reverting to the caller's node)
+    // and, under the `MUTSU_GATE_LOCAL_ENV_WRITE` per-store env-write gate, when
+    // `env[receiver]` is a stale decl-seed while the live value lives only in
+    // the slot (a hot `$io .= succ` loop frozen by a stale `env[io]` pull).
+    let receiver_before: Option<Option<Value>> =
+        (!Interpreter::const_str(code, *target_name_idx).is_empty()).then(|| {
+            interp
+                .env()
+                .get_sym(code.const_sym(*target_name_idx))
+                .cloned()
+        });
     let r = interp.exec_call_method_mut_op(
         code,
         *name_idx,
@@ -325,12 +342,17 @@ pub(super) unsafe extern "C" fn call_method_mut(
     interp.current_code = code as *const CompiledCode as usize;
     match r {
         Ok(()) => {
-            {
-                let target_name = Interpreter::const_str(code, *target_name_idx);
-                if !target_name.is_empty() {
+            if let Some(before) = receiver_before {
+                let after = interp.env().get_sym(code.const_sym(*target_name_idx));
+                let rebound = match (&before, after) {
+                    (Some(b), Some(a)) => !b.same_binding(a),
+                    (None, None) => false,
+                    _ => true,
+                };
+                if rebound {
                     interp
                         .pending_rw_writeback_sources
-                        .push(target_name.to_string());
+                        .push(Interpreter::const_str(code, *target_name_idx).to_string());
                 }
             }
             interp.apply_pending_rw_writeback(code);
