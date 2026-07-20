@@ -477,6 +477,10 @@ impl Interpreter {
             "Proc::Async",
             "Supply",
             "Supplier",
+            // Scheduler is a composable built-in role in Raku (ParametricRoleGroupHOW);
+            // a class may `does Scheduler` and supply its own `cue` (e.g. the
+            // Test::Scheduler dist: `class Test::Scheduler does Scheduler {...}`).
+            "Scheduler",
             "Setty",
             "Baggy",
             "Mixy",
