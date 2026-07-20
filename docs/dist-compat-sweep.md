@@ -118,14 +118,17 @@ generic `expected statement: expected expected statement…` parse dead-end is
 #4845, #4847, #4858, #4865 each cleared a different construct behind that same
 message). Work them one at a time.
 
-### parse_error (18)
+### parse_error (18 in the snapshot)
 
-App::Rak · Astro::Utils · Audio::Liquidsoap · Configuration ·
-Cro::FCGI · CSS · Deps ·
-Math::Matrix · ML::SparseMatrixRecommender ·
-SBOM::CycloneDX · SSH::LibSSH::Tunnel
+> **Merge-friendly convention (keep it this way):** list **one dist per table
+> row** below — never a comma-separated run of dist names on a single line, and
+> no separate flowing name list. Clearing a dist is then a one-line edit
+> (strike the row: `~~Dist~~` + a "Cleared post-snapshot" note), so two slices
+> clearing different dists touch different lines and never conflict. The old
+> flowing `A · B · C` list and the lumped `A / B / C | generic…` row were the
+> source of the recurring rebase conflicts on this file.
 
-Known root causes to date:
+Known root causes to date (one row per dist):
 
 | Dist | Root cause |
 |---|---|
@@ -137,7 +140,12 @@ Known root causes to date:
 | ~~CSV::Table~~ | **Cleared post-snapshot**: an empty colon method-call at the end of a block (`$!rowname-width = $row.rwid:` followed by a closing `}`) failed to parse — mutsu tried to parse a first argument after the `:` and errored with "right-hand expression after '='". Raku treats `.method:` before a block-closing `}` as a zero-arg `.method()`; mutsu now matches (only before `}` — before `;`/`)`/`]`/EOF Raku still demands a colon-pair). Now advances to `missing_dep` (JSON::Fast / YAMLish). |
 | ~~File-TreeBuilder~~ | **Cleared post-snapshot**: a colon method-call argument list with a trailing comma before a group closer (`(Node::Grammar.new.parse: $line-text, :actions(...),) or die`) failed to parse — mutsu handled a trailing comma only before `;` / `}`, not before `)` / `]`, so it tried to parse another argument and errored with "right-hand expression after '='". Now allows a trailing comma before `)` / `]` too (in both the public `.m:` and private `!m:` colon-call loops). raku has no deps for this dist, so it now **loads** (load_ok). |
 | ~~Pod::Contents~~ | **Cleared post-snapshot**: the Unicode multiplicative compound-assignment operators `×=` (U+00D7) / `÷=` (U+00F7) were unrecognised — mutsu parsed the bare `×` / `÷` infix and then failed on the `=` ("expression after multiplicative operator"). Seen in `$indent_level ×= .level - 1 when Pod::Item given $pod`. Now `×=` / `÷=` parse as `*=` / `/=` (the multiplicative parser leaves `×`/`÷` before `=` for the compound-assign parser). raku has no deps for this dist, so it now **loads** (load_ok). |
-| App::Rak / Astro::Utils / Audio::Liquidsoap / Math::Matrix / ML::SparseMatrixRecommender / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+| App::Rak | generic `expected statement…` dead-end — needs its own repro. Deps: as-cli-arguments / rak / JSON::Fast::Hyper / … (→ missing_dep after a parse fix). |
+| Astro::Utils | generic `expected statement…` dead-end — needs its own repro. Deps: Math::FractionalPart / Math::Trig (→ missing_dep after a parse fix). |
+| Audio::Liquidsoap | generic `expected statement…` dead-end — needs its own repro. Dep: File::Which (→ missing_dep after a parse fix). |
+| Math::Matrix | generic `expected statement…` dead-end (reported at `method LU-decomposition …`, a last-good boundary). Dep: AttrX::Lazy (→ missing_dep after a parse fix). |
+| ML::SparseMatrixRecommender | generic `expected statement…` dead-end — needs its own repro. |
+| Cro::FCGI | generic `expected statement…` dead-end — needs its own repro. Dep: Cro::Message / the Cro stack (→ missing_dep after a parse fix). |
 | Configuration | **Partially cleared**: `Configuration::Utils` was blocked by an interpolated-string hash key inside a block (`.duckmap({ "{ .^name }Builder" => generate-builder-class $_ })`) that the block-vs-hash disambiguator mis-parsed; fixed (topic-referencing interpolated keys now force a block, topic-free ones stay a hash). `Configuration::Utils` loads; the main `Configuration` module still has a separate parse blocker (534-line file, unisolated). |
 | Deps | Needs several type-capture features mutsu lacks: a type-capture **with** a constraint in a signature (`::Type Any` — currently the constraint is mis-read as a literal match value), type-capture loop variables (`for … -> ::T {…}` — the capture is not bound), and multi-dispatch on type captures. Multi-feature; deferred. |
 | ~~Trie~~ | **Cleared post-snapshot**: was a set-operator compound assignment on an indexed lvalue (`%!decendents{char} ∪= …`) the parser rejected. Parse error gone; now only lacks its `OrderedHash` dependency (missing_dep). |
@@ -155,7 +163,8 @@ Known root causes to date:
 | Test::Scheduler | `Scheduler is not composable, so Test::Scheduler cannot compose it`. |
 | Bits | `An exception occurred while evaluating a CHECK` (load-time CHECK phaser). |
 | ~~RakudoContainerfileBuilder~~ | **Not a mutsu bug** (sweep false positive): the module `is export`s a `MAIN`, and the sweep's `-e 'use …'` harness imports it, so raku auto-runs `MAIN` at mainline end and prints the same `Usage:` block. mutsu matches raku exactly (both exit 2, identical output). Should be excluded from the actionable count. |
-| App::fix.raku / Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
+| App::fix.raku | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
+| Lingua::NumericWordForms | `self-module not found` — packaging/name-mismatch (provided module name ≠ what `use` resolves). |
 | Testo | non-zero exit with no diagnostic captured — needs a direct run to classify. |
 
 **Cleared post-snapshot:**
