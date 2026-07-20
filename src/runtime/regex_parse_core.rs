@@ -14,6 +14,77 @@ impl Interpreter {
         self.parse_regex_uncached(pattern, mode)
     }
 
+    /// Consume (and validate) a `%` / `%%` separator modifier that follows a
+    /// repeating quantifier on an interpolation placeholder or backreference in
+    /// `Validate` mode (`@oct ** 4 % \.`). The normal atom path handles this
+    /// inline while building the token's `separator`, but placeholder/backref
+    /// atoms `continue` before reaching it, so their trailing separator would
+    /// otherwise be mis-parsed as a stray `%`. Returns `Some(())` when there is
+    /// no separator or a valid one was consumed, and `None` (with the pending
+    /// regex error already set by the recursive parse) when the separator
+    /// sub-pattern is itself invalid.
+    fn consume_placeholder_quantifier_separator(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        mode: RegexParseMode,
+    ) -> Option<()> {
+        // Peek past whitespace for a `%`.
+        let mut lookahead = chars.clone();
+        while lookahead.peek().is_some_and(|c| c.is_whitespace()) {
+            lookahead.next();
+        }
+        // A `%` that begins a hash-alias capture for the FOLLOWING atom
+        // (`%<name>=...` or `%name=...`) is NOT a separator — mirror the normal
+        // path's guard so those still parse as aliases.
+        let is_hash_alias = {
+            let mut la = lookahead.clone();
+            if la.peek() == Some(&'%') {
+                la.next();
+                if la.peek() == Some(&'%') {
+                    false // `%%` is always a separator marker
+                } else if la.peek() == Some(&'<') {
+                    la.next();
+                    while la.peek().is_some_and(|&c| c != '>') {
+                        la.next();
+                    }
+                    la.next(); // '>'
+                    la.peek() == Some(&'=')
+                } else if la.peek().is_some_and(|&c| c.is_alphabetic() || c == '_') {
+                    while la.peek().is_some_and(|&c| c.is_alphanumeric() || c == '_') {
+                        la.next();
+                    }
+                    la.peek() == Some(&'=')
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if lookahead.peek() != Some(&'%') || is_hash_alias {
+            return Some(());
+        }
+        // Commit: consume whitespace + `%` / `%%`.
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        chars.next(); // first '%'
+        if chars.peek() == Some(&'%') {
+            chars.next(); // `%%` allows an optional trailing separator
+        }
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        // Consume and validate the single separator atom.
+        let remaining: String = chars.clone().collect();
+        let sep_atom_str = Self::split_separator_atom(&remaining);
+        for _ in 0..sep_atom_str.chars().count() {
+            chars.next();
+        }
+        self.parse_regex_with_mode(sep_atom_str.trim(), mode)?;
+        Some(())
+    }
+
     pub(super) fn parse_regex_uncached(
         &self,
         pattern: &str,
@@ -865,6 +936,16 @@ impl Interpreter {
                     }
                     if chars.peek() == Some(&'?') {
                         chars.next();
+                    }
+                    // A repeating quantifier on an interpolation placeholder /
+                    // backref may carry a `%` / `%%` separator modifier
+                    // (`@oct ** 4 % \.`, `$0+ % ','`). The normal atom path
+                    // consumes this below, but placeholders `continue` early, so
+                    // consume (and validate) it here too; otherwise the `%` is
+                    // mis-parsed as a stray hash sigil and the whole regex fails
+                    // to compile. `?` (ZeroOrOne) is non-repeating and takes none.
+                    if matches!(c, '*' | '+') {
+                        self.consume_placeholder_quantifier_separator(&mut chars, mode)?;
                     }
                     continue;
                 }
