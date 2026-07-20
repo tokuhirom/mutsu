@@ -94,16 +94,20 @@ impl Interpreter {
                 .map(|(i, def)| {
                     let rank = self.candidate_specificity_rank(def);
                     let dist = self.candidate_type_distance(args, def);
+                    let opt = Self::candidate_optional_positional_count(def);
                     let req_named = Self::candidate_required_named_count(def);
-                    (i, (rank, dist, req_named))
+                    (i, (rank, dist, opt, req_named))
                 })
                 .collect();
             ranked.sort_by(|a, b| {
-                // Higher rank first, then lower distance, then higher required named
+                // Higher rank first, then lower distance, then fewer optional
+                // positionals (a required param is narrower than an optional
+                // one), then higher required named.
                 b.1.0
                     .cmp(&a.1.0)
                     .then(a.1.1.cmp(&b.1.1))
-                    .then(b.1.2.cmp(&a.1.2))
+                    .then(a.1.2.cmp(&b.1.2))
+                    .then(b.1.3.cmp(&a.1.3))
             });
             let sorted_matches: Vec<Arc<FunctionDef>> =
                 ranked.iter().map(|(i, _)| matches[*i].clone()).collect();
@@ -113,12 +117,14 @@ impl Interpreter {
         let best_rank = self.candidate_specificity_rank(&matches[0]);
         let best_shape = self.candidate_dispatch_shape(&matches[0]);
         let best_distance = self.candidate_type_distance(args, &matches[0]);
+        let best_opt = Self::candidate_optional_positional_count(&matches[0]);
         let best_req_named = Self::candidate_required_named_count(&matches[0]);
         let tied: Vec<Arc<FunctionDef>> = matches
             .iter()
             .filter(|def| {
                 self.candidate_specificity_rank(def) == best_rank
                     && self.candidate_type_distance(args, def) == best_distance
+                    && Self::candidate_optional_positional_count(def) == best_opt
                     && Self::candidate_required_named_count(def) == best_req_named
             })
             .cloned()
@@ -220,6 +226,25 @@ impl Interpreter {
         Self::dispatch_visible_params(def)
             .iter()
             .filter(|p| p.named && p.required)
+            .count()
+    }
+
+    /// Count *optional* positional parameters — an optional, defaulted, or
+    /// slurpy positional param is one the caller may omit, which makes the
+    /// candidate accept more calls and therefore LESS specific.  Raku ranks a
+    /// candidate with a required parameter as narrower than one where that
+    /// parameter is optional (`multi f(Int:D)` beats `multi f(Int $z?)` for
+    /// `f(42)`; `f(Int $a)` beats `f(*@a)` and `f($a, $b?)`).  Fewer optionals
+    /// wins.  Used as a tiebreaker AFTER type distance (a narrower type still
+    /// wins even when it is the optional one — `f(Int $y?)` beats `f(Cool $x)`
+    /// for `f(42)`), and BEFORE required-named ranking.
+    fn candidate_optional_positional_count(def: &FunctionDef) -> usize {
+        Self::dispatch_visible_params(def)
+            .iter()
+            .filter(|p| {
+                !p.named
+                    && (p.slurpy || p.double_slurpy || p.optional_marker || p.default.is_some())
+            })
             .count()
     }
 
