@@ -607,7 +607,10 @@ fn render_signature(info: &SigInfo) -> String {
     }
     if let Some(ref ret) = info.return_type {
         if params_str.is_empty() {
-            format!(":(--> {})", ret)
+            // Raku keeps the ` --> ` arrow spaced even with no parameters, so an
+            // empty positional list renders as `:( --> Int)` (leading space),
+            // not `:(--> Int)`.
+            format!(":( --> {})", ret)
         } else {
             format!(":({} --> {})", params_str, ret)
         }
