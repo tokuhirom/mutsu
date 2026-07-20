@@ -411,11 +411,24 @@ impl Interpreter {
             body,
             is_export,
             custom_traits,
+            is_method,
             ..
         } = stmt
         {
             let name_str = name.resolve();
-            self.register_proto_decl(&name_str, params, param_defs, body)?;
+            // A `proto method`/`proto submethod` (`is_method`) is a *method*-level
+            // proto: its `{*}` dispatches over the type's multi-method candidates
+            // via the class method table, not the package-level proto-sub table.
+            // Registering it as a package proto sub is not only unnecessary but
+            // breaks role composition: the role body's `RegisterProtoSub` runs once
+            // when the role is declared and again when a class does the role, so the
+            // second registration hits the already-present `GLOBAL::<name>` proto and
+            // wrongly raises `X::Redeclaration` (lizmat's `Enumify` proto+multi
+            // pattern, SBOM::CycloneDX). Skip the package-level registration for
+            // method protos; the method-table path already handles them.
+            if !*is_method {
+                self.register_proto_decl(&name_str, params, param_defs, body)?;
+            }
             if *is_export {
                 self.register_proto_decl_as_global(&name_str, params, param_defs, body)?;
                 // Record the export so consumers/MAIN-dispatch see the whole multi
