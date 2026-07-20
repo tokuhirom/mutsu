@@ -44,7 +44,9 @@ impl Interpreter {
                 .map(|p| Value::package(Symbol::intern(&p)))
                 .collect()
         };
-        Ok(Value::real_array(parents))
+        // `.^parents` returns a List in raku (`.WHAT` is `(List)`, gists `(...)`),
+        // not an Array — matching `.^roles`/`.^mro`, which already build a List.
+        Ok(Value::array(parents))
     }
 
     fn parents_tree(&mut self, class_name: &str) -> Vec<Value> {
