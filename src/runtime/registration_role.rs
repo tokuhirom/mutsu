@@ -384,14 +384,27 @@ impl Interpreter {
                 other => vec![other],
             })
             .collect();
-        // Pre-scan: collect attribute names declared in this role body.
+        // Pre-scan: collect attribute names declared in this role body, and the
+        // names of modules `use`d / `need`ed inside the body. A `unit role X; use
+        // A::B::C; method m(A::B::C:D $p) {...}` imports the type at BEGIN time, but
+        // this registration validates method param types before the body's `use`
+        // has loaded the module, so a qualified imported type looks unresolvable.
+        // Remember the used-module names so the param check can accept a qualified
+        // type that a body import supplies (the real resolution happens at the call
+        // site regardless).
         let mut role_own_attrs: HashSet<String> = HashSet::new();
+        let mut body_used_modules: HashSet<String> = HashSet::new();
         for stmt in &flattened_body {
-            if let Stmt::HasDecl {
-                name: attr_name, ..
-            } = stmt
-            {
-                role_own_attrs.insert(attr_name.resolve());
+            match stmt {
+                Stmt::HasDecl {
+                    name: attr_name, ..
+                } => {
+                    role_own_attrs.insert(attr_name.resolve());
+                }
+                Stmt::Use { module, .. } | Stmt::Need { module } | Stmt::Import { module, .. } => {
+                    body_used_modules.insert(module.clone());
+                }
+                _ => {}
             }
         }
         let role_attr_ctx = AttrValidationCtx {
@@ -819,7 +832,18 @@ impl Interpreter {
                                 // short-name match still finds it, mirroring how the
                                 // sub pre-pass accepts any type declared in the unit.
                                 || (!tc.contains("::")
-                                    && self.type_known_by_short_name(tc_base));
+                                    && self.type_known_by_short_name(tc_base))
+                                // A qualified type supplied by a module `use`d within
+                                // this role body is not yet loaded at registration
+                                // time (the body's `use` runs after this validation),
+                                // so accept it if a body import could provide it. The
+                                // call site resolves it for real.
+                                || (tc.contains("::")
+                                    && body_used_modules.iter().any(|m| {
+                                        tc_base == m
+                                            || tc_base.starts_with(&format!("{m}::"))
+                                            || m.starts_with(&format!("{tc_base}::"))
+                                    }));
                             if !resolvable {
                                 let mut attrs = std::collections::HashMap::new();
                                 attrs.insert("type".to_string(), Value::str(tc.to_string()));
