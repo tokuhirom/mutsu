@@ -28,24 +28,27 @@ pub(crate) fn reflective_name_access_possible() -> bool {
 }
 
 /// `(B)` per-store env-write gate (docs/lexical-scope-slot-campaign.md, "The
-/// `(B)` per-store env-write gate"). Default OFF is byte-identical to the
-/// pre-gate build: `exec_set_local_op_inner` mirrors every plain-lexical store
-/// into the name-keyed `env`. Under `MUTSU_GATE_LOCAL_ENV_WRITE=1` the mirror is
-/// skipped for slot-authoritative plain lexicals (not captured/reflective/sync),
-/// so the slot is the single source of truth and env-COW can drop the write. This
-/// is the burndown gate — flip and delete once all four env-mirror consumers
-/// (#1 block-restore, #2 cross-thread, #3 call-return reconcile, #4 curry) are
-/// slot-authoritative. The t/ ON survey is clean; the roast ON survey (2026-07-20)
-/// surfaced a residual set (mixhash/sethash `%h<a>--`, state-in-regex, interpolated
-/// phasers, WHICH/skip/e) being burned down before the default flip. Cached like
-/// `jit_enabled()`.
+/// `(B)` per-store env-write gate"). **Default ON since the Plan A flip
+/// (2026-07-20)**: `exec_set_local_op_inner` skips mirroring a slot-authoritative
+/// plain-lexical store (not captured/reflective/sync) into the name-keyed `env`,
+/// so the slot is the single source of truth and env-COW can drop the write.
+/// `MUTSU_GATE_LOCAL_ENV_WRITE=0` (or `off`) opts back out to the byte-identical
+/// pre-gate behavior (mirror every plain-lexical store). The flip landed once both
+/// the t/ and the full roast ON surveys were clean and all four env-mirror
+/// consumers (#1 block-restore, #2 cross-thread, #3 call-return reconcile, #4
+/// curry) were slot-authoritative. Once the flip soaks, the gate sites and the
+/// OFF path are deleted. Cached like `jit_enabled()`.
 #[inline]
 pub(crate) fn gate_local_env_write() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {
-        matches!(
+        // Plan A flip (2026-07-20): default ON now that the full t/ + roast ON
+        // survey is clean. `MUTSU_GATE_LOCAL_ENV_WRITE=0` (or `off`) opts back out
+        // to the byte-identical env-mirror-every-store behavior. Once the flip has
+        // soaked, the gate sites and the OFF path are deleted.
+        !matches!(
             std::env::var("MUTSU_GATE_LOCAL_ENV_WRITE").ok().as_deref(),
-            Some("1") | Some("on") | Some("ON")
+            Some("0") | Some("off") | Some("OFF")
         )
     })
 }
