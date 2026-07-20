@@ -378,6 +378,7 @@ impl Interpreter {
                 1,
                 "fixup_circular_hash: aliased &mut requires a uniquely-owned freshly-created node"
             );
+            result_arc.verify_unique_for_aliased_mut("fixup_circular_hash");
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for key in &circular_keys {
                 data.map
@@ -472,6 +473,7 @@ impl Interpreter {
                     1,
                     "replace_array_refs_in_value: aliased &mut requires a uniquely-owned freshly-created node"
                 );
+                new_hash_arc.verify_unique_for_aliased_mut("replace_array_refs_in_value");
                 let data = unsafe { crate::value::gc_contents_mut(&new_hash_arc) };
                 for key in &self_ref_keys {
                     data.map
@@ -531,6 +533,7 @@ impl Interpreter {
                 1,
                 "fixup_circular_array_refs: aliased &mut requires a uniquely-owned freshly-created node"
             );
+            result_arc.verify_unique_for_aliased_mut("fixup_circular_array_refs");
             let data = unsafe { crate::value::gc_contents_mut(&result_arc) };
             for idx in &circular_indices {
                 data.items[*idx] = Value::array_with_kind(result_arc.clone(), *kind);

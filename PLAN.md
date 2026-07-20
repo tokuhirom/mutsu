@@ -373,8 +373,18 @@ the shared+identity case. So:
       (not correctness/feature) payoff, while 3a already closed the leak that made GC table-stakes;
       the residue is UB-by-letter + a cross-thread data race that has passed gc-stress/S17 so far.
       Write the Proposed ADR when this campaign is greenlit.
-- [ ] **Step 4 (independent, optional) — harden the buffered-clone / uniqueness invariant**:
-      machine-check the `strong == 1 ⟹ unique` argument beyond `MUTSU_GC_VERIFY` (ANALYSIS §2.1).
+- **✅ Step 4 (independent) DONE (2026-07-20)** — hardened the buffered-clone / uniqueness
+      invariant. `Gc::verify_unique_for_aliased_mut` machine-checks the `strong == 1 ⟹ unique`
+      argument that `make_mut` / `get_mut` and the three (a) `gc_contents_mut` sites rely on, by
+      asserting the backing `Arc`'s strong count equals the GC-visible `header.strong` at the moment
+      an aliased `&mut` is taken (they move in lockstep for every live handle; the candidate buffer
+      holds only `Weak`, so a divergence means a live reference the `strong == 1` fast path assumes
+      away). Reports via the same non-fatal `VERIFY FAIL` stderr line the collector uses (gc-stress
+      CI greps for it). Compiled out in release; verify-gated (`MUTSU_GC_VERIFY=1`), and skipped when
+      `collecting()` or `other_mutators_active()` so it is a hard signal only under the single-threaded
+      gc-stress CI and never trips a benign transient collector clone in a multithreaded verify run.
+      Pins: `gc_ptr` unit tests `arc_and_gc_strong_counts_stay_in_lockstep` /
+      `erased_clone_makes_arc_exceed_gc_strong`.
 
 ### 2.2 Lower-priority GC follow-ups (profile-driven; defer under 2.1)
 
