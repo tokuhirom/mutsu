@@ -208,8 +208,8 @@ pub(super) unsafe extern "C" fn jump_if_true_cond(interp: *mut Interpreter) -> u
 pub(super) unsafe extern "C" fn jump_if_not_nil_cond(interp: *mut Interpreter) -> u32 {
     let interp = unsafe { &mut *interp };
     Interpreter::mark_failure_handled_on_stack(&mut interp.stack);
-    let val = interp.stack.last().unwrap();
-    if crate::runtime::types::value_is_defined(val) {
+    let val = interp.stack.last().unwrap().clone();
+    if interp.value_is_defined_dispatch(&val) {
         1
     } else {
         0

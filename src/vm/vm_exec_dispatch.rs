@@ -2296,8 +2296,8 @@ impl Interpreter {
             }
             OpCode::JumpIfNotNil(target) => {
                 Self::mark_failure_handled_on_stack(&mut self.stack);
-                let val = self.stack.last().unwrap();
-                if runtime::types::value_is_defined(val) {
+                let val = self.stack.last().unwrap().clone();
+                if self.value_is_defined_dispatch(&val) {
                     *ip = *target as usize;
                 } else {
                     *ip += 1;
