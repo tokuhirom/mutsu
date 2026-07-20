@@ -131,6 +131,16 @@ impl Interpreter {
         left: &Value,
         right: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
+        // Fast bail when no `sub infix:<op>` is in scope. Without this, every
+        // arithmetic op that falls off the Int/Num fast paths (Rat, mixed-type,
+        // etc.) pays a full `resolve_function_with_types` -- which builds ~30
+        // `format!` lookup keys and probes the registry -- only to get `None`.
+        // `user_declared_infix_ops` is populated for every registered/imported
+        // `infix:<...>` sub, so an op absent from it can never resolve to a user
+        // infix; the set is empty in the overwhelming common case.
+        if !self.user_infix_override(op_name) {
+            return Ok(None);
+        }
         let args = vec![left.clone(), right.clone()];
         if let Some(def) = loan_env!(self, resolve_function_with_types(op_name, &args)) {
             let empty_fns = CompiledFns::default();
