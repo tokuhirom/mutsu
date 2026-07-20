@@ -227,8 +227,21 @@ impl Interpreter {
 
     // --- Perl ---
 
+    /// A stable identifier for this compiler build. Rakudo's `Compiler.id`
+    /// returns the git SHA of the build; mutsu has no per-build SHA, so use the
+    /// crate version, which is stable across a build and distinct across
+    /// releases — enough for consumers that key precomp directories on it
+    /// (e.g. Repository::Precomp::Cleanup).
+    pub(in crate::runtime) fn compiler_id() -> String {
+        format!("mutsu-{}", env!("CARGO_PKG_VERSION"))
+    }
+
     pub(in crate::runtime) fn native_perl(&self, attributes: &AttrMap, method: &str) -> Value {
         match method {
+            // `Compiler.id` works on the type object (empty attributes) as well as
+            // on an instance, so answer it directly rather than reading the `id`
+            // attribute (which is absent on the bare type object).
+            "id" => Value::str(Self::compiler_id()),
             "compiler" => {
                 let mut compiler_attrs = HashMap::new();
                 compiler_attrs.insert("name".to_string(), Value::str_from("mutsu"));
@@ -259,7 +272,7 @@ impl Interpreter {
                 );
                 compiler_attrs.insert("release".to_string(), Value::str_from("0.1.0"));
                 compiler_attrs.insert("codename".to_string(), Value::str_from("mutsu"));
-                compiler_attrs.insert("id".to_string(), Value::str(String::new()));
+                compiler_attrs.insert("id".to_string(), Value::str(Self::compiler_id()));
                 Value::make_instance(Symbol::intern("Compiler"), compiler_attrs)
             }
             "backend" => Value::str_from("mutsu"),

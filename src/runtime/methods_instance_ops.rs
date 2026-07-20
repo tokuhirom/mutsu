@@ -1299,6 +1299,12 @@ impl Interpreter {
                 // Shared with the VM's native class-method fast path.
                 return result;
             }
+            // `Compiler.id` is callable on the bare type object (it identifies the
+            // build, not an instance), matching Rakudo. Other Compiler methods are
+            // attribute accessors that legitimately need an instance.
+            if name == "Compiler" && method == "id" {
+                return Ok(Value::str(Self::compiler_id()));
+            }
             if name == "Supply" && method == "interval" {
                 let seconds = args.first().map_or(1.0, |value| {
                     if let Some(i) = value.as_int() {
