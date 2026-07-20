@@ -211,5 +211,11 @@ The primitive/definition/re-export layer, not production mutation sites:
    sites twice) and is a large, high-blast-radius campaign, not a slice. **DEFERRED** (user
    decision 2026-07-20): a large architectural commitment for a soundness-only payoff, while 3a
    already closed the GC leak. Write a Proposed ADR when greenlit.
-4. **Buffered-clone invariant hardening** is independent of the above and can proceed in
-   parallel (PLAN §2.1 Step 4).
+4. **Buffered-clone invariant hardening — DONE (2026-07-20)**: `Gc::verify_unique_for_aliased_mut`
+   machine-checks the `strong == 1 ⟹ unique` argument at `make_mut` / `get_mut` and the three (a)
+   sites by asserting the backing `Arc` strong count equals the GC-visible `header.strong` (they move
+   in lockstep for every live handle; the candidate buffer holds only `Weak`). Verify-gated
+   (`MUTSU_GC_VERIFY=1`), compiled out in release, and skipped when `collecting()` /
+   `other_mutators_active()` so it is a hard signal only under the single-threaded gc-stress CI and
+   cannot false-positive on a transient collector clone in a multithreaded verify run. Reports via the
+   collector's non-fatal `VERIFY FAIL` stderr line (PLAN §2.1 Step 4).

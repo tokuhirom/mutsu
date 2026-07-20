@@ -322,6 +322,8 @@ impl<T: Trace + 'static> Gc<T> {
         // and only its own `drop_gc_edges` runs under `CollectGuard`.
         debug_assert!(!collecting(), "Gc::get_mut during a collect reclaim window");
         if self.inner.header.strong.load(Ordering::Relaxed) == 1 {
+            // The uniqueness claim — machine-check the backing `Arc` agrees (Step 4).
+            self.verify_unique_for_aliased_mut("Gc::get_mut");
             // SAFETY: sole live handle, so no other live-handle borrow into the
             // value exists. A buffered node's retained `Arc` never dereferences
             // the value except at a collect safepoint (same contract as
@@ -338,6 +340,57 @@ impl<T: Trace + 'static> Gc<T> {
     /// The GC-visible strong count (live `Gc` handles to this node).
     pub(crate) fn strong_count(&self) -> usize {
         self.inner.header.strong.load(Ordering::Relaxed)
+    }
+
+    /// Machine-check (GC-soundness-tail Step 4, PLAN §2.1) the
+    /// `strong == 1 ⟹ unique` argument that [`Gc::make_mut`] / [`Gc::get_mut`]
+    /// and the three bucket-(a) [`gc_contents_mut`] sites
+    /// (`docs/gc-contents-mut-inventory.md`) rely on before handing out an
+    /// aliased `&mut` into the node.
+    ///
+    /// Every *live* `Gc` handle bumps the backing `Arc`'s strong count and the
+    /// GC-visible `header.strong` in lockstep (`clone` / `Drop` / `make_mut`-COW
+    /// keep them paired), and the candidate buffer holds only `Weak` entries — so
+    /// outside a collect the two counts are exactly equal, and
+    /// `header.strong == 1` then genuinely implies a unique `Arc`. The one benign
+    /// way `Arc::strong_count` can exceed `header.strong` is a transient
+    /// [`Gc::erased`] strong clone the collector holds while it drains/scans.
+    /// That transient can only be observed by a mutator running on a DIFFERENT
+    /// thread than the collector (a collect and an aliased `&mut` never overlap
+    /// on one call stack), and the collector's pre-STW drain window
+    /// (`collect_cycles_at` holds the drained strong handles before the STW
+    /// engages) sits outside `collecting()`. So the check is a sound hard signal
+    /// only when NO other mutator thread is active — exactly the SINGLE-threaded
+    /// gc-stress CI (`MUTSU_GC_VERIFY=1`). It therefore skips both when
+    /// `collecting()` and when [`other_mutators_active`](crate::gc::stw::other_mutators_active),
+    /// so a multithreaded verify run (`threaded_cycle_churn`, S17) never trips it
+    /// on a benign transient.
+    ///
+    /// Compiled out in release (`cfg!(debug_assertions)`), verify-gated, and
+    /// skipped whenever a concurrent collector could hold a transient clone, so
+    /// the default `test` / roast / bench builds pay nothing and cannot go flaky.
+    /// A violation reports via the same non-fatal `VERIFY FAIL` stderr line the
+    /// collector uses (gc-stress CI greps for it); it never panics.
+    #[inline]
+    pub(crate) fn verify_unique_for_aliased_mut(&self, site: &str) {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        if !crate::gc::collect::verify_enabled()
+            || collecting()
+            || crate::gc::stw::other_mutators_active()
+        {
+            return;
+        }
+        let header = self.inner.header.strong.load(Ordering::Relaxed);
+        let arc = Arc::strong_count(&self.inner);
+        if arc != header {
+            eprintln!(
+                "[mutsu gc] VERIFY FAIL site={site} Gc uniqueness: Arc strong={arc} \
+                 != GC-visible strong={header} (a live handle desynced the two counts; \
+                 the strong==1 => unique argument is unsound at this aliased &mut)"
+            );
+        }
     }
 
     /// Raw `*const T` to the pointee, mirroring `Arc::as_ptr`. Used by
@@ -495,6 +548,10 @@ impl<T: Trace + Clone + 'static> Gc<T> {
                 header: GcHeader::fresh(),
                 value: cloned,
             });
+        } else {
+            // Fast path: reusing the existing node IS the `strong == 1 ⟹ unique`
+            // claim — machine-check the backing `Arc` agrees (Step 4).
+            self.verify_unique_for_aliased_mut("Gc::make_mut");
         }
         // Sole live handle. SAFETY / lint: see `Gc::get_mut`.
         let boxed = Arc::as_ptr(&self.inner) as *mut GcBox<T>;
@@ -1095,6 +1152,73 @@ mod tests {
             *alias,
             Cell(7),
             "the shared write is visible through the alias"
+        );
+    }
+
+    #[test]
+    fn arc_and_gc_strong_counts_stay_in_lockstep() {
+        // The invariant that `verify_unique_for_aliased_mut` (Step 4) machine-
+        // checks: every live `Gc` handle moves the backing `Arc`'s strong count
+        // and the GC-visible `header.strong` together, so `header.strong == 1`
+        // genuinely implies a unique `Arc`. Observed between operations, with no
+        // transient `erased()`/buffer clone outstanding, they are always equal.
+        let a = Gc::new(Cell(1));
+        assert_eq!(Arc::strong_count(&a.inner), a.strong_count());
+        assert_eq!(a.strong_count(), 1);
+
+        let alias = a.clone();
+        assert_eq!(Arc::strong_count(&a.inner), a.strong_count());
+        assert_eq!(a.strong_count(), 2, "clone bumps both counts in lockstep");
+
+        // COW on the aliased handle: `a` retargets to a fresh unique node, and
+        // the old node (held by `alias`) drops back to a paired (Arc, header).
+        let mut a = a;
+        *Gc::make_mut(&mut a) = Cell(3);
+        assert_eq!(
+            Arc::strong_count(&a.inner),
+            a.strong_count(),
+            "the fresh post-COW node is paired"
+        );
+        assert_eq!(a.strong_count(), 1);
+        assert_eq!(
+            Arc::strong_count(&alias.inner),
+            alias.strong_count(),
+            "the old shared node stays paired after the COW retarget"
+        );
+        assert_eq!(alias.strong_count(), 1);
+
+        drop(alias);
+        assert_eq!(Arc::strong_count(&a.inner), a.strong_count());
+
+        // The verify hook itself never panics on a genuinely-unique node (it is
+        // a no-op unless `MUTSU_GC_VERIFY=1`, but calling it must always be safe).
+        a.verify_unique_for_aliased_mut("unit-test");
+    }
+
+    #[test]
+    fn erased_clone_makes_arc_exceed_gc_strong() {
+        // The exact divergence `verify_unique_for_aliased_mut` flags: an
+        // `erased()` strong clone bumps the backing `Arc` but NOT the GC-visible
+        // `header.strong`, so while it is held Arc > GC-visible. In production
+        // this only happens transiently inside the collector (drain/scan), which
+        // is why the verify hook skips when a collector could be active; here we
+        // exhibit the divergence directly so the check's comparison is proven
+        // meaningful (not a dead no-op).
+        let a = Gc::new(Cell(1));
+        assert_eq!(Arc::strong_count(&a.inner), a.strong_count());
+        let erased = a.erased();
+        assert_eq!(a.strong_count(), 1, "GC-visible count unchanged by erased()");
+        assert_eq!(Arc::strong_count(&a.inner), 2, "backing Arc bumped");
+        assert_ne!(
+            Arc::strong_count(&a.inner),
+            a.strong_count(),
+            "this is the desync the verify hook detects"
+        );
+        drop(erased);
+        assert_eq!(
+            Arc::strong_count(&a.inner),
+            a.strong_count(),
+            "paired again once the transient clone drops"
         );
     }
 
