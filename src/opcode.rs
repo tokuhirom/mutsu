@@ -1694,6 +1694,15 @@ pub(crate) struct CompiledCode {
     pub(crate) lex_scopes: Vec<Arc<crate::compiler::lex_scope::LexScopeChain>>,
     /// Pre-compiled closure bodies embedded in this code chunk.
     pub(crate) closure_compiled_codes: Vec<Arc<CompiledCode>>,
+    /// Own local slots that reach an atomic-op builtin (`⚛$x`, `$x ⚛= v`,
+    /// `cas($x, …)`) as the target VARIABLE. These builtins are compiled to a
+    /// `__mutsu_*_var(name_str, …)` call and resolve the target by NAME from env
+    /// (`atomic_current_value` falls back to `env.get(name)` for a non-`atomicint`
+    /// scalar). Under `MUTSU_GATE_LOCAL_ENV_WRITE` a plain `my Int $x = 1` skips
+    /// its env mirror, so the builtin reads the decl-seed placeholder. Consumed
+    /// ONLY by the gated `compute_needs_env_sync` fold, which marks these slots
+    /// env-synced; the default build never reads this field (byte-identical).
+    pub(crate) atomic_env_sync_locals: Vec<u32>,
     /// Out-of-band named-argument specs for `CallFuncNamed` sites (indexed by
     /// the op's `spec_idx`): which of the call's stack values are named-arg
     /// VALUES and under which keys. Lets a literal `:key(val)` call site skip
@@ -2088,6 +2097,7 @@ impl CompiledCode {
             param_local_slots: Vec::new(),
             lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
+            atomic_env_sync_locals: Vec::new(),
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
@@ -2457,6 +2467,17 @@ impl CompiledCode {
         // off); the cost only lands with the gate, and it never touches a
         // hot-arithmetic loop local (those are not closure free variables).
         if gate_local_env_write() {
+            // Atomic-op targets (`⚛$x`, `$x ⚛= v`, `cas($x, …)`) resolve their
+            // variable by NAME from env in the `__mutsu_*_var` builtin. Keep the
+            // mirror current so a non-`atomicint` scalar is not read as its
+            // decl-seed placeholder under the gate. (Recorded at emit time in
+            // `atomic_env_sync_locals`; an `atomicint` reads the shared store
+            // first, so folding it here is harmless.)
+            for &slot in &self.atomic_env_sync_locals {
+                if let Some(b) = self.needs_env_sync.get_mut(slot as usize) {
+                    *b = true;
+                }
+            }
             for nested in &self.closure_compiled_codes {
                 for sym in &nested.free_var_syms {
                     if let Some(&slot) = sym.with_str(|s| locals_map.get(s)) {
