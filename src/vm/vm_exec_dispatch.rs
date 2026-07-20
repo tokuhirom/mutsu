@@ -2154,15 +2154,15 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::StrBitAnd => {
-                self.exec_str_bit_and_op();
+                self.exec_str_bit_and_op()?;
                 *ip += 1;
             }
             OpCode::StrBitOr => {
-                self.exec_str_bit_or_op();
+                self.exec_str_bit_or_op()?;
                 *ip += 1;
             }
             OpCode::StrBitXor => {
-                self.exec_str_bit_xor_op();
+                self.exec_str_bit_xor_op()?;
                 *ip += 1;
             }
             OpCode::StrShiftLeft => {
