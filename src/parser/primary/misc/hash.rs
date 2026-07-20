@@ -214,20 +214,24 @@ fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
-        } => Ok(Some((
-            hash_key_from_expr((**left).clone())?,
-            (**right).clone(),
-        ))),
+        } => match hash_key_from_expr((**left).clone()) {
+            Ok(key) => Ok(Some((key, (**right).clone()))),
+            // A key that is not a compile-time literal (e.g. an interpolated
+            // string `"{ $_ }B" => …`) cannot be stored as a static key; return
+            // `None` so the caller routes the whole `=>` pair through the
+            // runtime `hash()` builder, which evaluates the key when it runs.
+            Err(_) => Ok(None),
+        },
         // R=> (reverse fat arrow): `1 R=> "a"` → key="a", value=1
         Expr::MetaOp {
             meta,
             op,
             left,
             right,
-        } if meta == "R" && op == "=>" => Ok(Some((
-            hash_key_from_expr((**right).clone())?,
-            (**left).clone(),
-        ))),
+        } if meta == "R" && op == "=>" => match hash_key_from_expr((**right).clone()) {
+            Ok(key) => Ok(Some((key, (**left).clone()))),
+            Err(_) => Ok(None),
+        },
         Expr::PositionalPair(inner) => hash_pair_from_expr(inner),
         _ => Ok(None),
     }
