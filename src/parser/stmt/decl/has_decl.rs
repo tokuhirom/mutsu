@@ -312,267 +312,336 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut deprecated_message: Option<String> = None;
     let mut is_built: Option<bool> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
-    while let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, trait_name) = ident(r)?;
-        if trait_name == "rw" {
-            is_rw = true;
-        } else if trait_name == "readonly" {
-            is_readonly = true;
-        } else if trait_name == "default" {
-            // `is default(expr)` — set the attribute's default value
-            let (r_ws, _) = ws(r)?;
-            if let Some(inner) = r_ws.strip_prefix('(') {
-                let (inner, _) = ws(inner)?;
-                let (inner, default_expr) = expression(inner)?;
-                let (inner, _) = ws(inner)?;
-                let inner = inner
-                    .strip_prefix(')')
-                    .ok_or_else(|| PError::expected("closing paren in is default"))?;
-                is_default_trait = Some(default_expr);
-                let (r2, _) = ws(inner)?;
-                rest = r2;
-                continue;
-            }
-            // `is default` without parens — just ignore (no-op)
-        } else if trait_name == "required" {
-            // Check for optional reason: `is required("reason")`
-            let (r_ws, _) = ws(r)?;
-            if let Some(inner) = r_ws.strip_prefix('(') {
-                let (inner, _) = ws(inner)?;
-                // Parse string literal for the reason
-                if let Some(double_quoted) = inner.strip_prefix('"') {
-                    let end = double_quoted
-                        .find('"')
-                        .ok_or_else(|| PError::expected("closing quote in is required reason"))?;
-                    let reason = double_quoted[..end].to_string();
-                    let after = &double_quoted[end + 1..];
-                    let (after, _) = ws(after)?;
-                    let after = after
+    let mut handles = Vec::new();
+    // Attribute traits (`is`, `will`, `does`, `handles`) may appear in any order
+    // and any number, e.g. `has $.x handles <a b> is required` (TAP). Loop over
+    // all four trait kinds until a full pass consumes nothing more.
+    loop {
+        let trait_pass_start = rest.as_ptr();
+        while let Some(r) = keyword("is", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, trait_name) = ident(r)?;
+            if trait_name == "rw" {
+                is_rw = true;
+            } else if trait_name == "readonly" {
+                is_readonly = true;
+            } else if trait_name == "default" {
+                // `is default(expr)` — set the attribute's default value
+                let (r_ws, _) = ws(r)?;
+                if let Some(inner) = r_ws.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    let (inner, default_expr) = expression(inner)?;
+                    let (inner, _) = ws(inner)?;
+                    let inner = inner
                         .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is required"))?;
-                    is_required = Some(Some(reason));
-                    rest = after;
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                } else if let Some(single_quoted) = inner.strip_prefix('\'') {
-                    let end = single_quoted
-                        .find('\'')
-                        .ok_or_else(|| PError::expected("closing quote in is required reason"))?;
-                    let reason = single_quoted[..end].to_string();
-                    let after = &single_quoted[end + 1..];
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is required"))?;
-                    is_required = Some(Some(reason));
-                    rest = after;
-                    let (r2, _) = ws(rest)?;
+                        .ok_or_else(|| PError::expected("closing paren in is default"))?;
+                    is_default_trait = Some(default_expr);
+                    let (r2, _) = ws(inner)?;
                     rest = r2;
                     continue;
                 }
-            }
-            is_required = Some(None);
-        } else if trait_name == "DEPRECATED" {
-            // `is DEPRECATED` or `is DEPRECATED("message")`
-            let (r_ws, _) = ws(r)?;
-            if let Some(inner) = r_ws.strip_prefix('(') {
-                let (inner, _) = ws(inner)?;
-                // Parse the message string
-                if let Some(double_quoted) = inner.strip_prefix('"') {
-                    let end = double_quoted.find('"').ok_or_else(|| {
-                        PError::expected("closing quote in is DEPRECATED message")
-                    })?;
-                    let msg = double_quoted[..end].to_string();
-                    let after = &double_quoted[end + 1..];
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
-                    deprecated_message = Some(msg);
-                    rest = after;
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                } else if let Some(single_quoted) = inner.strip_prefix('\'') {
-                    let end = single_quoted.find('\'').ok_or_else(|| {
-                        PError::expected("closing quote in is DEPRECATED message")
-                    })?;
-                    let msg = single_quoted[..end].to_string();
-                    let after = &single_quoted[end + 1..];
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
-                    deprecated_message = Some(msg);
-                    rest = after;
-                    let (r2, _) = ws(rest)?;
-                    rest = r2;
-                    continue;
-                }
-                // Non-string expression in parens — find closing paren
-                let mut depth = 1u32;
-                let mut idx = 0;
-                for (i, ch) in inner.char_indices() {
-                    match ch {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                idx = i;
-                                break;
-                            }
-                        }
-                        _ => {}
+                // `is default` without parens — just ignore (no-op)
+            } else if trait_name == "required" {
+                // Check for optional reason: `is required("reason")`
+                let (r_ws, _) = ws(r)?;
+                if let Some(inner) = r_ws.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    // Parse string literal for the reason
+                    if let Some(double_quoted) = inner.strip_prefix('"') {
+                        let end = double_quoted.find('"').ok_or_else(|| {
+                            PError::expected("closing quote in is required reason")
+                        })?;
+                        let reason = double_quoted[..end].to_string();
+                        let after = &double_quoted[end + 1..];
+                        let (after, _) = ws(after)?;
+                        let after = after
+                            .strip_prefix(')')
+                            .ok_or_else(|| PError::expected("closing paren in is required"))?;
+                        is_required = Some(Some(reason));
+                        rest = after;
+                        let (r2, _) = ws(rest)?;
+                        rest = r2;
+                        continue;
+                    } else if let Some(single_quoted) = inner.strip_prefix('\'') {
+                        let end = single_quoted.find('\'').ok_or_else(|| {
+                            PError::expected("closing quote in is required reason")
+                        })?;
+                        let reason = single_quoted[..end].to_string();
+                        let after = &single_quoted[end + 1..];
+                        let (after, _) = ws(after)?;
+                        let after = after
+                            .strip_prefix(')')
+                            .ok_or_else(|| PError::expected("closing paren in is required"))?;
+                        is_required = Some(Some(reason));
+                        rest = after;
+                        let (r2, _) = ws(rest)?;
+                        rest = r2;
+                        continue;
                     }
                 }
-                let after = &inner[idx + 1..];
-                deprecated_message = Some(String::new());
-                rest = after;
-                let (r2, _) = ws(rest)?;
-                rest = r2;
-                continue;
-            }
-            deprecated_message = Some(String::new());
-        } else if trait_name == "built" {
-            // `is built` or `is built(False)`
-            let (r_ws, _) = ws(r)?;
-            if let Some(inner) = r_ws.strip_prefix('(') {
-                let (inner, _) = ws(inner)?;
-                if let Some(after) = inner.strip_prefix("False") {
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is built"))?;
-                    is_built = Some(false);
-                    let (r2, _) = ws(after)?;
+                is_required = Some(None);
+            } else if trait_name == "DEPRECATED" {
+                // `is DEPRECATED` or `is DEPRECATED("message")`
+                let (r_ws, _) = ws(r)?;
+                if let Some(inner) = r_ws.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    // Parse the message string
+                    if let Some(double_quoted) = inner.strip_prefix('"') {
+                        let end = double_quoted.find('"').ok_or_else(|| {
+                            PError::expected("closing quote in is DEPRECATED message")
+                        })?;
+                        let msg = double_quoted[..end].to_string();
+                        let after = &double_quoted[end + 1..];
+                        let (after, _) = ws(after)?;
+                        let after = after
+                            .strip_prefix(')')
+                            .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
+                        deprecated_message = Some(msg);
+                        rest = after;
+                        let (r2, _) = ws(rest)?;
+                        rest = r2;
+                        continue;
+                    } else if let Some(single_quoted) = inner.strip_prefix('\'') {
+                        let end = single_quoted.find('\'').ok_or_else(|| {
+                            PError::expected("closing quote in is DEPRECATED message")
+                        })?;
+                        let msg = single_quoted[..end].to_string();
+                        let after = &single_quoted[end + 1..];
+                        let (after, _) = ws(after)?;
+                        let after = after
+                            .strip_prefix(')')
+                            .ok_or_else(|| PError::expected("closing paren in is DEPRECATED"))?;
+                        deprecated_message = Some(msg);
+                        rest = after;
+                        let (r2, _) = ws(rest)?;
+                        rest = r2;
+                        continue;
+                    }
+                    // Non-string expression in parens — find closing paren
+                    let mut depth = 1u32;
+                    let mut idx = 0;
+                    for (i, ch) in inner.char_indices() {
+                        match ch {
+                            '(' => depth += 1,
+                            ')' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    idx = i;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let after = &inner[idx + 1..];
+                    deprecated_message = Some(String::new());
+                    rest = after;
+                    let (r2, _) = ws(rest)?;
                     rest = r2;
                     continue;
-                } else if let Some(after) = inner.strip_prefix("True") {
-                    let (after, _) = ws(after)?;
-                    let after = after
-                        .strip_prefix(')')
-                        .ok_or_else(|| PError::expected("closing paren in is built"))?;
+                }
+                deprecated_message = Some(String::new());
+            } else if trait_name == "built" {
+                // `is built` or `is built(False)`
+                let (r_ws, _) = ws(r)?;
+                if let Some(inner) = r_ws.strip_prefix('(') {
+                    let (inner, _) = ws(inner)?;
+                    if let Some(after) = inner.strip_prefix("False") {
+                        let (after, _) = ws(after)?;
+                        let after = after
+                            .strip_prefix(')')
+                            .ok_or_else(|| PError::expected("closing paren in is built"))?;
+                        is_built = Some(false);
+                        let (r2, _) = ws(after)?;
+                        rest = r2;
+                        continue;
+                    } else if let Some(after) = inner.strip_prefix("True") {
+                        let (after, _) = ws(after)?;
+                        let after = after
+                            .strip_prefix(')')
+                            .ok_or_else(|| PError::expected("closing paren in is built"))?;
+                        is_built = Some(true);
+                        let (r2, _) = ws(after)?;
+                        rest = r2;
+                        continue;
+                    }
+                    // Skip unknown content in parens
+                    let mut depth = 1u32;
+                    let mut idx = 0;
+                    for (i, ch) in inner.char_indices() {
+                        match ch {
+                            '(' => depth += 1,
+                            ')' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    idx = i;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let after = &inner[idx + 1..];
                     is_built = Some(true);
                     let (r2, _) = ws(after)?;
                     rest = r2;
                     continue;
                 }
-                // Skip unknown content in parens
-                let mut depth = 1u32;
-                let mut idx = 0;
-                for (i, ch) in inner.char_indices() {
-                    match ch {
-                        '(' => depth += 1,
-                        ')' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                idx = i;
-                                break;
-                            }
+                is_built = Some(true);
+            } else if trait_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_uppercase())
+            {
+                // Uppercase-starting trait name: `is Buf`, `is BagHash`,
+                // `is Array[Int]`, `is G::A`, etc. This is a container type trait
+                // for `@`/`%` attributes. `ident` only captured the first segment,
+                // so pull in any `::`-qualified segments and a `[...]`
+                // parameterization to keep the full type name (`Array[Int]` /
+                // `R::G::A`); otherwise the trailing `[Int]` is misparsed as a
+                // separate statement.
+                let mut full = trait_name.to_string();
+                let mut tr = r;
+                while let Some(after) = tr.strip_prefix("::") {
+                    match ident(after) {
+                        Ok((r2, seg)) => {
+                            full.push_str("::");
+                            full.push_str(&seg);
+                            tr = r2;
                         }
-                        _ => {}
+                        Err(_) => break,
                     }
                 }
-                let after = &inner[idx + 1..];
-                is_built = Some(true);
-                let (r2, _) = ws(after)?;
+                if tr.starts_with('[') {
+                    let mut depth = 0u32;
+                    let mut end = None;
+                    for (i, ch) in tr.char_indices() {
+                        match ch {
+                            '[' => depth += 1,
+                            ']' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    end = Some(i);
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if let Some(end) = end {
+                        let inner = tr[1..end].trim();
+                        full.push('[');
+                        full.push_str(inner);
+                        full.push(']');
+                        tr = &tr[end + 1..];
+                    }
+                }
+                is_type = Some(full);
+                let (r2, _) = ws(tr)?;
                 rest = r2;
                 continue;
-            }
-            is_built = Some(true);
-        } else if trait_name
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_uppercase())
-        {
-            // Uppercase-starting trait name: `is Buf`, `is BagHash`,
-            // `is Array[Int]`, `is G::A`, etc. This is a container type trait
-            // for `@`/`%` attributes. `ident` only captured the first segment,
-            // so pull in any `::`-qualified segments and a `[...]`
-            // parameterization to keep the full type name (`Array[Int]` /
-            // `R::G::A`); otherwise the trailing `[Int]` is misparsed as a
-            // separate statement.
-            let mut full = trait_name.to_string();
-            let mut tr = r;
-            while let Some(after) = tr.strip_prefix("::") {
-                match ident(after) {
-                    Ok((r2, seg)) => {
-                        full.push_str("::");
-                        full.push_str(&seg);
-                        tr = r2;
-                    }
-                    Err(_) => break,
-                }
-            }
-            if tr.starts_with('[') {
-                let mut depth = 0u32;
-                let mut end = None;
-                for (i, ch) in tr.char_indices() {
-                    match ch {
-                        '[' => depth += 1,
-                        ']' => {
-                            depth -= 1;
-                            if depth == 0 {
-                                end = Some(i);
-                                break;
+            } else {
+                // Unknown lowercase trait — dispatched to a custom `trait_mod:<is>`
+                // at class registration, or X::Comp::Trait::Unknown if none exists.
+                // Capture optional argument in parens: `is doc('barks')` -> `'barks'`.
+                let (r_ws, _) = ws(r)?;
+                if let Some(stripped) = r_ws.strip_prefix('(') {
+                    let mut depth = 1u32;
+                    let mut idx = 0;
+                    for (i, ch) in stripped.char_indices() {
+                        match ch {
+                            '(' => depth += 1,
+                            ')' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    idx = i;
+                                    break;
+                                }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
+                    let inner = stripped[..idx].trim();
+                    let mut trait_arg: Option<Expr> = None;
+                    if !inner.is_empty()
+                        && let Ok((leftover, arg_expr)) = expression(inner)
+                        && leftover.trim().is_empty()
+                    {
+                        trait_arg = Some(arg_expr);
+                    }
+                    unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
+                    rest = &stripped[idx + 1..];
+                    let (r2, _) = ws(rest)?;
+                    rest = r2;
+                    continue;
                 }
-                if let Some(end) = end {
-                    let inner = tr[1..end].trim();
-                    full.push('[');
-                    full.push_str(inner);
-                    full.push(']');
-                    tr = &tr[end + 1..];
-                }
+                unknown_traits.push(("is".to_string(), trait_name.to_string(), None));
             }
-            is_type = Some(full);
-            let (r2, _) = ws(tr)?;
-            rest = r2;
-            continue;
-        } else {
-            // Unknown lowercase trait — dispatched to a custom `trait_mod:<is>`
-            // at class registration, or X::Comp::Trait::Unknown if none exists.
-            // Capture optional argument in parens: `is doc('barks')` -> `'barks'`.
+            let (r, _) = ws(r)?;
+            rest = r;
+        }
+
+        // Parse `will` traits on has declarations
+        while let Some(r) = keyword("will", rest) {
+            let Ok((r, _)) = ws1(r) else { break };
+            let Ok((r, trait_name)) = ident(r) else { break };
+            // `will` traits are not supported on attributes, record for X::Comp::Trait::Unknown
+            unknown_traits.push(("will".to_string(), trait_name.to_string(), None));
+            // Skip optional block: `will bar { ... }` -> skip the block
             let (r_ws, _) = ws(r)?;
-            if let Some(stripped) = r_ws.strip_prefix('(') {
+            if let Some(stripped_block) = r_ws.strip_prefix('{') {
                 let mut depth = 1u32;
                 let mut idx = 0;
-                for (i, ch) in stripped.char_indices() {
+                for (i, ch) in stripped_block.char_indices() {
                     match ch {
-                        '(' => depth += 1,
-                        ')' => {
+                        '{' => depth += 1,
+                        '}' => {
                             depth -= 1;
                             if depth == 0 {
-                                idx = i;
+                                idx = i + 1;
                                 break;
                             }
                         }
                         _ => {}
                     }
                 }
-                let inner = stripped[..idx].trim();
-                let mut trait_arg: Option<Expr> = None;
-                if !inner.is_empty()
-                    && let Ok((leftover, arg_expr)) = expression(inner)
-                    && leftover.trim().is_empty()
-                {
-                    trait_arg = Some(arg_expr);
-                }
-                unknown_traits.push(("is".to_string(), trait_name.to_string(), trait_arg));
-                rest = &stripped[idx + 1..];
+                rest = &stripped_block[idx..];
                 let (r2, _) = ws(rest)?;
                 rest = r2;
-                continue;
+            } else {
+                let (r2, _) = ws(r)?;
+                rest = r2;
             }
-            unknown_traits.push(("is".to_string(), trait_name.to_string(), None));
         }
-        let (r, _) = ws(r)?;
-        rest = r;
+
+        // `does Role` trait on an attribute, e.g. `has $.x does Foo` — mixes the role
+        // into the attribute's container. Parsed here as an attribute trait (recorded
+        // in `unknown_traits` as `("does", role, None)`); without this it is left for
+        // the statement parser, which mis-reads it as a class-level `does Foo`
+        // composition. Applied to the attribute's value at construction.
+        while let Some(r) = keyword("does", rest) {
+            let Ok((r, _)) = ws1(r) else { break };
+            let Ok((r, role_name)) = ident(r) else { break };
+            unknown_traits.push(("does".to_string(), role_name.to_string(), None));
+            let (r, _) = ws(r)?;
+            rest = r;
+        }
+
+        // `handles` trait, e.g. `has $.x handles <a b>` or `has $.x handles<a b>`
+        // (no space before the angle-word list is legal, so only optional
+        // whitespace is required after the keyword — `keyword` already guards the
+        // word boundary, so `handlesfoo` never matches here).
+        while let Some(r) = keyword("handles", rest) {
+            let (r, _) = ws(r)?;
+            parse_handle_specs(r, &mut handles, &mut rest)?;
+            let (r, _) = ws(rest)?;
+            rest = r;
+        }
+
+        // A full pass over all four trait kinds consumed nothing more: done.
+        if std::ptr::eq(rest.as_ptr(), trait_pass_start) {
+            break;
+        }
     }
 
     // `is rw` on a private attribute generates no accessor, so the trait does
@@ -585,64 +654,6 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             "Potential difficulties:\n    useless use of 'is rw' on {}!{}\n    at {}:{}",
             sigil as char, name, file, line
         ));
-    }
-
-    // Parse `will` traits on has declarations
-    while let Some(r) = keyword("will", rest) {
-        let Ok((r, _)) = ws1(r) else { break };
-        let Ok((r, trait_name)) = ident(r) else { break };
-        // `will` traits are not supported on attributes, record for X::Comp::Trait::Unknown
-        unknown_traits.push(("will".to_string(), trait_name.to_string(), None));
-        // Skip optional block: `will bar { ... }` -> skip the block
-        let (r_ws, _) = ws(r)?;
-        if let Some(stripped_block) = r_ws.strip_prefix('{') {
-            let mut depth = 1u32;
-            let mut idx = 0;
-            for (i, ch) in stripped_block.char_indices() {
-                match ch {
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            idx = i + 1;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            rest = &stripped_block[idx..];
-            let (r2, _) = ws(rest)?;
-            rest = r2;
-        } else {
-            let (r2, _) = ws(r)?;
-            rest = r2;
-        }
-    }
-
-    // `does Role` trait on an attribute, e.g. `has $.x does Foo` — mixes the role
-    // into the attribute's container. Parsed here as an attribute trait (recorded
-    // in `unknown_traits` as `("does", role, None)`); without this it is left for
-    // the statement parser, which mis-reads it as a class-level `does Foo`
-    // composition. Applied to the attribute's value at construction.
-    while let Some(r) = keyword("does", rest) {
-        let Ok((r, _)) = ws1(r) else { break };
-        let Ok((r, role_name)) = ident(r) else { break };
-        unknown_traits.push(("does".to_string(), role_name.to_string(), None));
-        let (r, _) = ws(r)?;
-        rest = r;
-    }
-
-    // `handles` trait, e.g. `has $.x handles <a b>` or `has $.x handles<a b>`
-    // (no space before the angle-word list is legal, so only optional
-    // whitespace is required after the keyword — `keyword` already guards the
-    // word boundary, so `handlesfoo` never matches here).
-    let mut handles = Vec::new();
-    while let Some(r) = keyword("handles", rest) {
-        let (r, _) = ws(r)?;
-        parse_handle_specs(r, &mut handles, &mut rest)?;
-        let (r, _) = ws(rest)?;
-        rest = r;
     }
 
     // Postfix container typing: has $.a of Int; has @.a of Int; has %.h of Str;
