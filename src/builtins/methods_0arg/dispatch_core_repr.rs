@@ -502,7 +502,12 @@ pub(super) fn dispatch(
                             .iter()
                             .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
                             .collect();
-                        format!("{{{}}}", parts.join(", "))
+                        // A nested immutable Map gists as `Map.new((...))`, not `{...}`.
+                        if map.declared_type.as_deref() == Some("Map") {
+                            format!("Map.new(({}))", parts.join(", "))
+                        } else {
+                            format!("{{{}}}", parts.join(", "))
+                        }
                     }
                     ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
                     ValueView::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
@@ -614,7 +619,12 @@ pub(super) fn dispatch(
                             .iter()
                             .map(|k| format!("{} => {}", k, gist_item(&map[*k])))
                             .collect();
-                        format!("{{{}}}", parts.join(", "))
+                        // A nested immutable Map gists as `Map.new((...))`, not `{...}`.
+                        if map.declared_type.as_deref() == Some("Map") {
+                            format!("Map.new(({}))", parts.join(", "))
+                        } else {
+                            format!("{{{}}}", parts.join(", "))
+                        }
                     }
                     ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
                     ValueView::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
