@@ -98,7 +98,7 @@ per_file_timeout() {
 mkdir -p "$OUTDIR"
 
 # Build first
-echo "Building mutsu (release with debug symbols)..."
+echo "Building mutsu (release)..."
 cargo build --release 2>&1 | tail -1
 
 # Collect test files (exclude 6.c, 6.d, integration, 3rdparty, APPENDICES, t/ tooling)
