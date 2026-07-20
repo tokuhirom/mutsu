@@ -1645,6 +1645,13 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     // unguarded.) Whitespace before `{` still parses as a block,
                     // since this check requires `{` at the start of `rest`.
                     | Expr::Hash(_)
+                    // `*{"key"}` is a WhateverCode hash-subscript (`*.{"key"}`),
+                    // just like `*<key>` / `*[0]`; the resulting `Index{Whatever}`
+                    // is wrapped into a closure by `contains_whatever`. Without
+                    // this the `{...}` was left as a separate block, so
+                    // `.classify(*{$col})` (ML::SparseMatrixRecommender) failed to
+                    // parse as a call argument.
+                    | Expr::Whatever
             )
             // An inline `my`/`our`/`state` declaration must not be hash-
             // subscripted: the declaration parser consumes the whitespace after
