@@ -475,7 +475,12 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                 continue;
             }
         }
-        if let Some(stripped) = r.strip_prefix("**") {
+        // Leave the compound-assignment form `**=` for the assignment parser so
+        // an indexed lvalue (`@a[0] **= 2`) reaches it as the bare operand
+        // instead of the `**` here eating the base op and stranding the `=`.
+        if !r.starts_with("**=")
+            && let Some(stripped) = r.strip_prefix("**")
+        {
             let (r, _) = ws(stripped)?;
             let (r, exp) = prefix_expr(r).map_err(|err| {
                 enrich_expected_error(err, "expected exponent expression after '**'", r.len())
