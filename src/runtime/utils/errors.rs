@@ -59,12 +59,12 @@ pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &
     let repr = value_short_repr(val);
     if repr.is_empty() {
         format!(
-            "X::TypeCheck::Assignment: Type check failed in assignment to {}; expected {} but got {}",
+            "Type check failed in assignment to {}; expected {} but got {}",
             display_name, expected, got_type
         )
     } else {
         format!(
-            "X::TypeCheck::Assignment: Type check failed in assignment to {}; expected {} but got {} {}",
+            "Type check failed in assignment to {}; expected {} but got {} {}",
             display_name, expected, got_type, repr
         )
     }
@@ -157,12 +157,12 @@ pub(crate) fn type_check_element_error(var_name: &str, expected: &str, val: &Val
     let repr = value_short_repr(val);
     if repr.is_empty() {
         format!(
-            "X::TypeCheck::Assignment: Type check failed for an element of {}; expected {} but got {}",
+            "Type check failed for an element of {}; expected {} but got {}",
             display_name, expected, got_type
         )
     } else {
         format!(
-            "X::TypeCheck::Assignment: Type check failed for an element of {}; expected {} but got {} {}",
+            "Type check failed for an element of {}; expected {} but got {} {}",
             display_name, expected, got_type, repr
         )
     }

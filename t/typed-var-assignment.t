@@ -65,5 +65,5 @@ plan 17;
 # Error message format
 {
     my Int $x = 42;
-    try { $x = "hello"; CATCH { default { is .message, "X::TypeCheck::Assignment: Type check failed in assignment to \$x; expected Int but got Str (\"hello\")", "error message matches expected format" } } }
+    try { $x = "hello"; CATCH { default { is .message, "Type check failed in assignment to \$x; expected Int but got Str (\"hello\")", "error message matches expected format" } } }
 }
