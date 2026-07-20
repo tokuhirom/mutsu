@@ -439,7 +439,7 @@ fn skip_embedded_comment(input: &str) -> Option<&str> {
 }
 
 /// Return the matching closing bracket for an opening bracket.
-fn matching_bracket(c: char) -> Option<char> {
+pub(crate) fn matching_bracket(c: char) -> Option<char> {
     match c {
         '(' => Some(')'),
         '[' => Some(']'),

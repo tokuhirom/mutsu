@@ -94,13 +94,10 @@ fn scan_to_delim_inner(
             if let Some((_, '`')) = chars.clone().next() {
                 chars.next(); // skip `
                 if let Some((_, bracket)) = chars.next() {
-                    let close = match bracket {
-                        '[' => ']',
-                        '(' => ')',
-                        '{' => '}',
-                        '<' => '>',
-                        _ => bracket,
-                    };
+                    // `#`«...»`, `#`[...]`, etc. — any bracket pair Raku accepts.
+                    // Falls back to the same char for a non-bracket delimiter.
+                    let close =
+                        crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
                     let mut embed_depth = 1u32;
                     for (_, ch) in chars.by_ref() {
                         if ch == bracket && bracket != close {
