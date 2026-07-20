@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.11.1](https://github.com/tokuhirom/mutsu/compare/v0.11.0...v0.11.1) - 2026-07-20
+
+- fix: parse a lowercase `is` trait on a unit class as a trait, not a parent by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4879
+- fix: sequence operator (...) is looser than comma on an assignment RHS by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4880
+- fix: allow a statement label on a C-style `loop (init; cond; step)` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4881
+- fix: allow a `where` constraint on a sigilless parameter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4884
+- fix: $?LINE / $?TABSTOP substitute inside string interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4885
+- fix: anon class/role/grammar as an expression evaluates to the type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4887
+- fix: (B)-gate block-exit slot-authoritative — stop stale env re-seed clobbering a live outer slot by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4886
+- fix: parse a set-operator compound assignment on an indexed lvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4888
+- fix: (B)-gate fold class/role-method captured-outer lexicals into needs_env_sync by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4889
+- fix: (B)-gate read/mutate a scalar-held container from the slot for indexed inc/dec by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4890
+- fix: .clone on immutable value types returns a copy by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4882
+- docs: refresh (B)-gate burndown status — ON survey 19 → 9 by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4892
+- fix: parse a tightly-bound `<=>` as a quote-word / key / colonpair value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4891
+- fix: a %-sigiled constant coerces a non-Associative RHS to a Map by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4893
+- fix: (B)-gate seed a scalar-held container from the slot for indexed assignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4894
+
 ## [v0.11.0](https://github.com/tokuhirom/mutsu/compare/v0.10.0...v0.11.0) - 2026-07-19
 
 - docs: consolidate RakuAST Phase 5 status at the 37-slice milestone by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4806
