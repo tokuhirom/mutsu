@@ -35,7 +35,10 @@ pub(crate) fn reflective_name_access_possible() -> bool {
 /// so the slot is the single source of truth and env-COW can drop the write. This
 /// is the burndown gate — flip and delete once all four env-mirror consumers
 /// (#1 block-restore, #2 cross-thread, #3 call-return reconcile, #4 curry) are
-/// slot-authoritative. Cached like `jit_enabled()`.
+/// slot-authoritative. The t/ ON survey is clean; the roast ON survey (2026-07-20)
+/// surfaced a residual set (mixhash/sethash `%h<a>--`, state-in-regex, interpolated
+/// phasers, WHICH/skip/e) being burned down before the default flip. Cached like
+/// `jit_enabled()`.
 #[inline]
 pub(crate) fn gate_local_env_write() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -2527,7 +2530,19 @@ impl CompiledCode {
             let defines_lazy_body = self.ops.iter().any(|op| {
                 matches!(
                     op,
-                    OpCode::RegisterSub(_) | OpCode::RegisterClass(_) | OpCode::RegisterRole(_)
+                    OpCode::RegisterSub(_)
+                        | OpCode::RegisterClass(_)
+                        | OpCode::RegisterRole(_)
+                        // A deferred END body (`PhaserEnd`, run after the frame
+                        // exits) and a compile-time BEGIN/CHECK body (`CheckPhaser`)
+                        // reconstruct the installing frame's lexicals BY NAME from
+                        // env, not from `self.locals` — exactly like a lazy sub
+                        // body. Under the gate a top-level `my $hist` mutated only
+                        // through these phasers skips its env mirror, so each phaser
+                        // reads a stale value and the accumulation is lost (roast
+                        // S04-phasers/interpolate.t: END sees `E`, not `BCIE`).
+                        | OpCode::PhaserEnd { .. }
+                        | OpCode::CheckPhaser { .. }
                 )
             });
             // A frame that installs a *resume-safe* CONTROL handler
@@ -2567,7 +2582,41 @@ impl CompiledCode {
                         if !crate::runtime::regex_parse::regex_pattern_is_static(p.as_str())
                 )
             });
-            if defines_lazy_body || installs_resume_control || holds_interpolating_regex {
+            // A frame that runs a substitution with a DYNAMIC replacement
+            // (`s/^(.)/{ $a++ }/`, `s/x/$a/`) re-entrantly evaluates that
+            // replacement, which reads/writes the referenced lexicals BY NAME from
+            // the env (the closure-carried cross-frame store), not this frame's
+            // slots. `holds_interpolating_regex` only catches a dynamic *pattern*;
+            // a static pattern with a code/interpolated replacement slips past it.
+            // Under the gate a `state $a = 0` (or plain `my`) in this frame skips
+            // its env mirror, so the replacement reads a stale value and the
+            // closure's state save-back stores it back (roast S04-declarations/
+            // state.t: `state $a` bumped inside `s///` stays 0). Keep every local
+            // of such a frame env-synced (gate-ON only; a substitution frame is not
+            // a hot arithmetic loop). A purely literal replacement folds nothing.
+            let holds_dynamic_substitution = self.ops.iter().any(|op| {
+                let repl_idx = match op {
+                    OpCode::Subst {
+                        replacement_idx, ..
+                    }
+                    | OpCode::NonDestructiveSubst {
+                        replacement_idx, ..
+                    } => *replacement_idx,
+                    _ => return false,
+                };
+                self.constants
+                    .get(repl_idx as usize)
+                    .map(|c| match c.view() {
+                        ValueView::Str(s) => s.contains(['$', '@', '%', '&', '{']),
+                        _ => true,
+                    })
+                    .unwrap_or(false)
+            });
+            if defines_lazy_body
+                || installs_resume_control
+                || holds_interpolating_regex
+                || holds_dynamic_substitution
+            {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
         }

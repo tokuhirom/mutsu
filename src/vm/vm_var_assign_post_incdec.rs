@@ -704,12 +704,9 @@ impl Interpreter {
         // slot's container directly under the gate; the slot is the authoritative
         // half (and its backing node is shared, so this is still in-place). Gate
         // OFF (default) uses `env.get_mut` exactly as before (byte-identical).
-        let gate_slot = if crate::opcode::gate_local_env_write() {
-            self.find_local_slot(code, &name)
-                .filter(|&s| !self.locals[s].is_nil())
-        } else {
-            None
-        };
+        let gate_slot = self
+            .gate_local_slot(code, &name)
+            .filter(|&s| !self.locals[s].is_nil());
         let modified_in_place = if let Some(container_value) = match gate_slot {
             Some(s) => self.locals.get_mut(s),
             None => self.env_mut().get_mut(&name),

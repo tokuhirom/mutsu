@@ -461,6 +461,37 @@ env-COW payoff.
 
 ## The `(B)` per-store env-write gate — burndown map (survey 2026-07-19, post-#4844)
 
+**STATUS 2026-07-20: t/ ON survey clean; roast ON survey found a residual set.**
+The t/ ON survey reached zero regressions (2026 files / 19216 tests pass with
+`MUTSU_GATE_LOCAL_ENV_WRITE=1`), folded by #4859/#4861/#4863/#4869/#4873/#4886/#4889/
+#4890/#4894/#4896/#4897/#4906/#4910/#4914. But the **first full roast whitelist ON
+survey** (1433 files, release) surfaced 7 genuine ON-only regressions that t/ never
+exercised (t/ omits roast's container/cycle edges):
+
+| roast file | symptom | class |
+|-----------|---------|-------|
+| S02-types/mixhash.t, sethash.t | `%h is MixHash; %h<a>--` reads a stale slot | #4890 fired slot-first for `%h`/`@a`, but only `plain_locals` scalars have a gated (slot-authoritative) store; aggregates keep the unconditional env writer, so slot-first read/mutate lost the update. Fixed by `gate_local_slot` (plain-locals guard). |
+| S04-declarations/state.t | `s/^(.)/{ $a++ }/` state var stale | state-in-interpolating-regex reads env by name (#4897/#4869 class) |
+| S04-phasers/interpolate.t | interpolated `END{$hist~=…}` reads stale top-level `my` | phaser block captured-outer fold (RegisterSub-fold #4869/#4889 extended to phasers) |
+| S02-types/WHICH.t | `%seen is SetHash; %seen{…}++` count | same SetHash inc/dec root — fixed by `gate_local_slot`. |
+| S32-trig/e.t | `throws-like 'e()'` with a caller `my $e` no longer dies | throws-like's fresh nested interpreter reconstructs caller scope from `self.env`; a `my $foo` scalar (env skipped under the gate) makes the string EVAL diverge. Direct `EVAL` is consistent ON/OFF — only the nested-interp path differs. NOT an env-by-name fold. **Deferred.** |
+| S32-list/skip.t | block-form `throws-like { @$s }, X::Seq::Consumed` not thrown | `my $s := (1..3).Seq; $s.skip` loses the Seq consumed-state across the `:=` bind under the gate. Distinct root (Seq consumption), block form. **Deferred.** |
+
+Fixed here (gate-ON-only folds, OFF byte-identical): **mixhash.t, sethash.t, WHICH.t**
+(`gate_local_slot` plain-locals guard on the index inc/dec read/mutate),
+**state.t** (`holds_dynamic_substitution` fold + per-slot env-first state save-back),
+**interpolate.t** (`PhaserEnd`/`CheckPhaser` added to `defines_lazy_body`). Still open:
+**e.t, skip.t** — both are throws-like caller-scope-under-gate corners, not env-by-name
+folds; each needs dedicated throws-like/Seq-consumption work.
+
+Release perf where the gate fires: `while`/`loop` bodies ~10-16% faster (JIT-off
+5.02→4.53s, JIT-on 3.37→2.84s on a 5M-iter while loop); `for` bodies are unaffected
+because a `ForLoop`-carrying frame sets `captures_env_by_name` and force-syncs all its
+locals (a separate future refinement: fold only the captured free vars). **Sequence:
+burn down the roast regressions as gate-ON-only folds (OFF byte-identical), re-run the
+roast ON survey to zero, then flip the default and finally delete the gate.** The map
+below is the t/ burndown record.
+
 `exec_block_scope_op` mechanism #1 is fixed (above), but mechanisms #2-#4 have **no
 independent behavior-preserving slice** — they are consumers of the per-store env
 mirror that only break when the store `(B)` is gated. So the remaining campaign is

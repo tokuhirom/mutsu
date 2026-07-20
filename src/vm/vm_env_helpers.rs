@@ -1320,16 +1320,33 @@ impl Interpreter {
     /// autovivification it drives — is the right source). §1.5 helper — see
     /// docs/lexical-scope-slot-campaign.md.
     pub(super) fn gate_local_slot_value(&self, code: &CompiledCode, name: &str) -> Option<Value> {
-        if !crate::opcode::gate_local_env_write() {
-            return None;
-        }
-        let slot = self.find_local_slot(code, name)?;
+        let slot = self.gate_local_slot(code, name)?;
         let val = self.locals.get(slot)?;
         if val.is_nil() {
             None
         } else {
             Some(val.clone())
         }
+    }
+
+    /// Slot index of a `(B)`-gate-authoritative local, or `None`.
+    ///
+    /// Returns the slot only when the per-store env-write gate is ON **and** the
+    /// name is a `plain_locals` scalar — the only variables whose env mirror the
+    /// gate actually skips, making the slot the authoritative half. Aggregates
+    /// (`@a`/`%h`) always take the unconditional `set_env_with_main_alias` writer
+    /// (vm_var_assign_set_local.rs), so their env stays fresh while their slot may
+    /// hold a stale early snapshot — reading/mutating slot-first there would lose a
+    /// `%h is MixHash; %h<a>--` update (roast S02-types/mixhash.t, sethash.t).
+    pub(super) fn gate_local_slot(&self, code: &CompiledCode, name: &str) -> Option<usize> {
+        if !crate::opcode::gate_local_env_write() {
+            return None;
+        }
+        let slot = self.find_local_slot(code, name)?;
+        if !code.plain_locals.get(slot).copied().unwrap_or(false) {
+            return None;
+        }
+        Some(slot)
     }
 
     /// Resolve a local slot for `name`, preferring the compile-time-baked `slot`
