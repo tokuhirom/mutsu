@@ -568,6 +568,10 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 crate::value::user_facing_type_name(&class_name.resolve()).to_string()
             }
+            // An enum VALUE names its enum type (`Bob.^name` is `Names`), not the
+            // underlying storage type — `value_type_name` reports "Int" for the
+            // int-backed representation, which is only the `.WHICH`/`.Int` view.
+            ValueView::Enum { enum_type, .. } => enum_type.resolve(),
             ValueView::Mixin(inner, _) => match inner.as_ref().view() {
                 ValueView::Instance { class_name, .. } => {
                     crate::value::user_facing_type_name(&class_name.resolve()).to_string()
