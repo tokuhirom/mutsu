@@ -179,6 +179,19 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
     )
 }
 
+/// Check if a bare identifier names a value of a built-in enum (`Order`,
+/// `Endian`, `Bool`). These are nullary value terms, not type names, so they are
+/// complete expressions on their own (e.g. the then-branch of `1 ?? More !! Less`).
+pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
+    matches!(
+        name,
+        // Order
+        "Less" | "Same" | "More"
+        // Endian
+        | "LittleEndian" | "BigEndian" | "NativeEndian"
+    )
+}
+
 /// Check if a compound (`::`-separated) name is a known Raku standard type.
 pub(crate) fn is_known_compound_type(name: &str) -> bool {
     matches!(
