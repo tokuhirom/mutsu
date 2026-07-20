@@ -241,7 +241,11 @@ pub(crate) fn try_interpolate_var<'a>(
                 index: Box::new(Expr::Literal(Value::int(index_val))),
                 is_positional: true,
             };
-            let (expr, var_rest) = try_parse_interp_method_call(&var_rest[end..], expr);
+            // A trailing subscript indexes into the capture: `$0[0]` is `$/[0][0]`
+            // (first positional subcapture), `$0<k>` / `$0{k}` a named one. Without
+            // this the `[0]` was left as a literal string fragment.
+            let (expr, var_rest) = parse_postcircumfix_index(&var_rest[end..], expr);
+            let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);
             return Some(var_rest);
         }
