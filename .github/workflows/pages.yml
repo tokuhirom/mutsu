@@ -32,6 +32,23 @@ jobs:
           wasm-pack build --target web --no-default-features --features wasm
           mv pkg wasm-demo/pkg
 
+      - name: Render bench-trend dashboard
+        # Pull the perf history from the bench-data branch and render it into the
+        # deployed site as bench-trend.html, so the trend is viewable at
+        # <pages-url>/bench-trend.html with no download. The data is up to the
+        # PREVIOUS main commit — bench.yml appends the current commit's row
+        # concurrently, so this page catches up on the next push (a ~1-commit
+        # lag, fine for a trend view). Best-effort: if bench-data has no history
+        # yet, skip without failing the deploy.
+        run: |
+          git fetch --depth 1 origin bench-data 2>/dev/null || true
+          if git show FETCH_HEAD:bench-history.tsv > /tmp/bench-history.tsv 2>/dev/null; then
+            python3 scripts/bench-visualize.py --standalone \
+              /tmp/bench-history.tsv -o wasm-demo/bench-trend.html
+          else
+            echo "no bench-history.tsv on bench-data yet; skipping bench-trend"
+          fi
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
