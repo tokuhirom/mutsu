@@ -846,10 +846,24 @@ regressions were burned down:
 
 Pin for both: `t/gate-b-callee-name-collision-and-deref-capture.t`.
 
-**Result: the (B)-gate ON survey (t/ and full roast) is green. The gate is ready
-for the default flip (Plan A: `gate_local_env_write()` default true,
-`MUTSU_GATE_LOCAL_ENV_WRITE=0` opt-out), then a gc-stress/jit-stress/roast CI soak,
-then removal of the ~18 gate sites and the OFF-side dead code.**
+**Result: the (B)-gate ON survey (t/ and full roast) is green.**
+
+### Plan A flip — `gate_local_env_write()` default ON (2026-07-20)
+
+With both surveys clean, `gate_local_env_write()` was flipped to default **true**
+(one-line change: `!matches!(…, "0"|"off"|"OFF")`), with `MUTSU_GATE_LOCAL_ENV_WRITE=0`
+as the byte-identical opt-out. Local pre-check: `make test` (2041 files / 19338
+tests) green with the flip; the roast ON survey was already clean. The flip's CI run
+(full roast + **gc-stress + jit-stress**) is the concurrency/GC soak that the local
+`-j6` survey cannot exercise. Perf: while/loop hot paths drop the unconditional
+env write (memory recorded −10…16% on a 5M while loop); for/fib are unaffected
+(their frames `captures_env_by_name`, so every local is force-synced regardless).
+
+**Remaining: after the flip soaks in main, delete the gate** — the ~18
+`if gate_local_env_write()` sites become unconditional (the ON branch), and the
+OFF-side dead code (the env-mirror stores those sites guard, plus the
+`MUTSU_GATE_LOCAL_ENV_WRITE` env plumbing) is removed. That is a separate mechanical
+PR, taken only once the flip has demonstrably soaked.
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
