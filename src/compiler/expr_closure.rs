@@ -462,6 +462,21 @@ impl Compiler {
             });
             return;
         }
+        // Runtime-key PROCESS:: assignment (`PROCESS::{$k} = v`), notably how a
+        // `//=` / `||=` compound assignment desugars its subscript into a temp
+        // variable. Without this it would fall through to the generic path, which
+        // writes into a throwaway `build_pseudo_stash` hash and silently drops the
+        // store. Route it to the same env dynamic-var write as the literal-key op.
+        if let Expr::PseudoStash(stash_name) = target
+            && stash_name == "PROCESS::"
+        {
+            self.compile_expr(value);
+            self.compile_expr(index);
+            let stash_name_idx = self.code.add_constant(Value::str(stash_name.clone()));
+            self.code
+                .emit(OpCode::IndexAssignPseudoStashKeyed { stash_name_idx });
+            return;
+        }
         if let Some(name) = Self::index_assign_target_name(target) {
             let target_slot = self.local_map.get(&name).copied();
             if Self::index_assign_target_requires_eval(target) {

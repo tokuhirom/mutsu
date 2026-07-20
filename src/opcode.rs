@@ -981,6 +981,12 @@ pub(crate) enum OpCode {
         stash_name_idx: u32,
         key_name_idx: u32,
     },
+    /// Runtime-key variant of `IndexAssignPseudoStashNamed` (e.g.
+    /// `PROCESS::{$k} = v`, how a `//=`/`||=` compound assign desugars the
+    /// subscript into a temp). Stack: `[..., value, key]`.
+    IndexAssignPseudoStashKeyed {
+        stash_name_idx: u32,
+    },
     /// Element-for-mutation load for `@a[i].push(...)` / `%h<k>.pop` etc.:
     /// read the element like a plain subscript; with `autoviv` set (push/
     /// append/unshift/prepend), a missing element (Nil / Any / Mu hole) is
@@ -2776,6 +2782,7 @@ impl CompiledCode {
             | OpCode::PreDecrementIndex(name_idx) => Some(*name_idx),
             OpCode::DeleteIndexNamed(name_idx, _) => Some(*name_idx),
             OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. } => Some(*stash_name_idx),
+            OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => Some(*stash_name_idx),
             OpCode::ArrayPush {
                 target_name_idx, ..
             } => Some(*target_name_idx),
@@ -3648,6 +3655,7 @@ impl CompiledCode {
                     | OpCode::IndexAssignDeepNested { .. }
                     | OpCode::IndexAssignGeneric
                     | OpCode::IndexAssignPseudoStashNamed { .. }
+                    | OpCode::IndexAssignPseudoStashKeyed { .. }
                     | OpCode::IndexElemAutoviv { .. }
                     | OpCode::PostIncrement(..)
                     | OpCode::PostDecrement(..)

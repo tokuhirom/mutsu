@@ -3368,6 +3368,10 @@ impl Interpreter {
                 self.exec_index_assign_pseudo_stash_named_op(code, *stash_name_idx, *key_name_idx)?;
                 *ip += 1;
             }
+            OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => {
+                self.exec_index_assign_pseudo_stash_keyed_op(code, *stash_name_idx)?;
+                *ip += 1;
+            }
             OpCode::IndexAssignExprNested {
                 name_idx,
                 outer_positional,
