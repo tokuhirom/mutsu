@@ -362,9 +362,18 @@ pub(crate) fn try_interpolate_var<'a>(
                     let end = after_dot
                         .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                         .unwrap_or(after_dot.len());
-                    let var_name = format!(".{}", &after_dot[..end]);
-                    let (expr, remainder) =
-                        parse_postcircumfix_index(&after_dot[end..], Expr::Var(var_name));
+                    let attr_name = &after_dot[..end];
+                    let var_name = format!(".{}", attr_name);
+                    let after_name = &after_dot[end..];
+                    // `$.name()` / `$.name(args)`: the accessor called with explicit parens.
+                    // Rebuild as `self.name(args)` (matching the non-interpolated parse) instead
+                    // of leaving the `()` as a literal string fragment.
+                    let (expr, after_name) =
+                        match try_parse_interp_self_accessor_call(after_name, attr_name) {
+                            Some((e, r)) => (e, r),
+                            None => (Expr::Var(var_name), after_name),
+                        };
+                    let (expr, remainder) = parse_postcircumfix_index(after_name, expr);
                     let (expr, remainder) = try_parse_interp_method_call(remainder, expr);
                     parts.push(expr);
                     return Some(remainder);
