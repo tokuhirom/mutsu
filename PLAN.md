@@ -614,14 +614,35 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
          structure each call (intern the param names, bind by `Symbol`/slot). Because the JIT bails at
          calls, this is interpreter-path work that no amount of JIT progress will subsume. Pins:
          `roast/S04-declarations/state.t`, `roast/S06-signature/named-parameters.t`; micro-repro in the
-         re-baseline note.
+         re-baseline note. **Update 2026-07-21:** the light-call path
+         (`call_compiled_function_light_spec`, `vm_call_light_typed.rs`) is *already* heavily J4d-tuned
+         — pooled callee locals (`take_locals_from_pool`, no per-call `Vec` alloc), `std::mem::take` of
+         caller locals, and **frame reuse** that skips the env clone when the caller's overlay is still
+         the shared-empty singleton. So the remaining churn is concentrated in the **named / slow**
+         path (`call_compiled_function_named` — `args.to_vec()` + the `String`-keyed named-args
+         structure), not the positional light path; target that path specifically. **This whole item is
+         §5 polish and de-prioritized per the priority reset at the top of this file** — before picking
+         it up, confirm it unblocks a goal item (it does not unblock mzef).
       0. **★Removing the `needs_env_sync` blanket (a dedicated-session fused campaign; NOT a
          standalone change — see the four-mechanism breakage below)** — currently `captures_env_by_name`
          (true if the frame contains even one
-         `ForLoop`/`BlockScope`/`MakeGather`/`WheneverScope`) **makes every local in the frame an env
-         mirror target**, so locals never read by name — like a loop body's `my $ts` — are written to
-         env on every store. **Update 2026-07-15 (probed, then clean-reverted):** the actual per-store
-         cost is the *unconditional* env write at the tail of `exec_set_local_op_inner`
+         `ForLoop`/`BlockScope`/`BlockLocalScope`/`MakeGather`/`WheneverScope`) **makes every local in
+         the frame an env mirror target**, so locals never read by name — like a loop body's `my $ts` —
+         are written to env on every store. **Update 2026-07-21:** the *per-store* half of this — the
+         `exec_set_local_op_inner` tail env write for plain lexicals — was gated permanently by the
+         `(B)` gate (#4942 flip → #4980 removal, now unconditional for `!captures_env_by_name` frames),
+         so `while`/`loop` bodies already benefit (-10–16% on a JIT-bailed while-5M loop). **What
+         remains is precisely the `captures_env_by_name` blanket**, and its immediate perf payoff for
+         the common case is small: the loop body compiles **inline into the same frame as the `ForLoop`
+         op** (`stmt.rs` emits body ops right after `ForLoop`, `body_end` marks the range), so a `for`
+         body's accumulator slots get blanket-synced — yet dropping `ForLoop` from
+         `captures_env_by_name` measured **±0%** (memory), because the loop mechanism writes the loop
+         var to *both* slot and env (`vm_for_loop_body.rs:243/251`) and a pure arithmetic body reads its
+         accumulators from slots, not env. The lever is really the fused precise-ification (per-slot,
+         not per-frame) of the block-restore / loop / gather / whenever / closure-capture consumers, not
+         a `ForLoop`-only drop. Given PLAN's priority reset (perf is de-prioritized §5 polish), this is
+         **not a near-term item**. **Update 2026-07-15 (probed, then clean-reverted):** the actual
+         per-store cost is the *unconditional* env write at the tail of `exec_set_local_op_inner`
          (`vm_var_assign_set_local.rs`, `set_env_plain_lexical`/`set_env_with_main_alias`) — NOT
          `flush_local_to_env`, which is already gated on `needs_env_sync` (so the `env_flushes`
          counter reads 0 and does not surface this; measure by wall-clock). Gating that tail write on
@@ -657,14 +678,35 @@ unification / the malloc clusters from `Value` clone/drop and attribute material
          method-dispatch env-based caller-local reconcile** (memory: a standalone change has a track
          record of breaking 5 mechanisms). Note scalar locals are stored **sigil-less** (`"c"`, not
          `"$c"`) — relevant when instrumenting. See memory `project_needs_env_sync_blanket_removal`.
-      1. **Remove SipHash from `compiled_fns`** (scouting §2.1 — the function table is still a
-         `HashMap<String, CompiledFunction>` (`vm.rs:280`), so **even calls that hit the light-call
-         cache SipHash + memcmp the function name every time**). Order: FxHashMap → `Symbol` keys →
-         store the callee itself in the cache to eliminate the lookup. Mechanical; effect
-         predictable.
+      1. ~~**Remove SipHash from `compiled_fns`**~~ **— DONE (verified stale 2026-07-21).** The
+         function table is already `pub(crate) type CompiledFns = rustc_hash::FxHashMap<Symbol,
+         CompiledFunction>` (`opcode.rs:4057`) — **the FxHashMap + `Symbol`-key migration has
+         landed**, so the light-call cache no longer pays SipHash + a name `memcmp`. The only residual
+         from the original three-step plan is "store the callee itself in the cache to eliminate the
+         second lookup": the light path does two FxHash lookups per call
+         (`light_call_cache.get(name_sym)` then `compiled_fns.get(cached_key)` +
+         fingerprint check — `vm_call_func_ops.rs:146-148`). FxHash is cheap (proven by #4976: "FxHash
+         is instruction-neutral, ~8% only via cache"), so caching the callee directly is **low-value**
+         and would need `compiled_fns` to hold `Arc<CompiledFunction>` (a borrow-checker workaround) —
+         not worth it. Consider this item closed.
       2. **Remove the callsite-line marker** (scouting §2.3 — `peek_callsite_line`
-         (`runtime/call_helpers.rs:194`) scans args on every call. With the #4489 line table in
-         place, deriving it from the call op's ip makes it unnecessary).
+         (`runtime/call_helpers.rs:194`) scans args on every call). **Investigated 2026-07-21:
+         lower ROI / higher risk than it looks.** The `__mutsu_test_callsite_line => N` marker is a Pair
+         attached by the parser (`attach_test_callsite_line`, `listop.rs`) **only** to
+         `is_test_assertion_callable` names (`is`/`ok`/`throws-like`/…). Those calls — with or without
+         parens — always compile to `ExecCallPairs` (verified via `--dump-bytecode`), which keeps the
+         marker in-band and does **not** run the `peek_callsite_line` on the CallFunc/CallFuncNamed
+         light paths. So the `peek_callsite_line(&args)` calls in `vm_call_func_ops.rs` (:173/425/473/
+         610/1095) effectively never find a marker on a *regular* sub call — the scan is dead work
+         there. BUT removing it is **not** a clean win: (i) the `expr_call.rs:1161-1162` comment
+         explicitly designs the CallFuncNamed path to carry the marker in-band ("must remain an in-band
+         pair for `peek_callsite_line`"), so a flag-free removal needs certainty the CallFuncNamed path
+         is never marker-carrying — gating instead means threading a `has_callsite_marker` bool through
+         CallFunc/CallFuncNamed (+ their many match sites), high churn for a few-ns/call win; (ii)
+         deriving the line from the op's ip via the `op_lines` table (`CompiledCode::line_at`, #4489)
+         is unsafe for **line-exactness** — the marker captures the *parse-time* line, which differs
+         from the op's recorded line on multi-line assertions, and `test-assertion-line-number.t` pins
+         the exact number. **Deferred as not worth the churn/risk.**
       3. **Lexical-scope slot campaign** (scouting §2.2; §6's "remove the full locals clone/restore
          in `BlockScope`") — the core fix that eliminates per-call env materialization itself.
          Suited to a dedicated session.
