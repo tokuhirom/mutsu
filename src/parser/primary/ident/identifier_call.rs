@@ -1535,7 +1535,21 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             name.clone()
         };
         let next = r.chars().next().unwrap();
-        let hyphen_forward_call = !is_user_sub && name.contains('-');
+        // A hyphenated bareword that is NOT a declared sub is speculatively
+        // treated as a forward-referenced sub (`do-thing { ... }` where
+        // `do-thing` is defined later), so its listop arguments — including a
+        // block — are gobbled. But when the name is a declared *type* (class,
+        // role, grammar, enum), raku does NOT gobble a following block: it
+        // belongs to the enclosing construct (e.g. `$x ~~ Sub-Test { ... }`
+        // where `{ ... }` is the `if`/`when` body). Exclude declared types so
+        // the block is not consumed as an argument. A qualified reference
+        // (`TAP::Sub-Test`) registers under its short name, so also check the
+        // final `::` component.
+        let name_is_declared_type = crate::parser::stmt::simple::is_user_declared_type(&name)
+            || name
+                .rsplit_once("::")
+                .is_some_and(|(_, tail)| crate::parser::stmt::simple::is_user_declared_type(tail));
+        let hyphen_forward_call = !is_user_sub && !name_is_declared_type && name.contains('-');
         if is_user_prefix_sub {
             if let Ok((r2, arg)) = expression_no_sequence(r) {
                 return Ok((r2, make_call_expr(call_name.clone(), input, vec![arg])));
