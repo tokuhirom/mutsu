@@ -328,32 +328,61 @@ sessions).
 
 ---
 
-## 2. ★ Phase B: GC → NaN-boxing → JIT (layers 3a, 3b, and layer-4 JIT all complete)
+## 2. ★ Phase B: GC → NaN-boxing → JIT — the headline layers are DONE; a soundness tail remains
 
-**GC (cycle collector on Arc, layer 3a) is done and default on** (2026-07-05 ADR-0003).
-**NaN-boxing (layer 3b, = §5 Lever 2) is also done** (2026-07-12 #4467 B-guards / #4469 B-flip;
-`size_of::<Value>()` 48→8B; GC counters match main; all benches 5–9% faster = gate met).
-History and details in [news/2026-07.md](news/2026-07.md). Remaining:
+**All four headline layers landed.** What is left is *not* another layer — it is the GC
+**soundness tail** (unsafe raw-pointer writes) plus minor perf/hardening. Do not restart a
+"GC campaign" from scratch; work the tail below in order.
 
-- **Layer 4 JIT (Cranelift, = §5 Lever 4) = done**: following J1–J5 (default on, 2026-07-13),
-      **all 6 J4d slices are complete, the gate was re-judged, and ADR-0004 is closed** (2026-07-15 —
-      #4527/#4528/#4529/#4534/#4537/#4540; bench CI: fib+jit ratio 0.34→0.28;
-      history = [news/2026-07.md](news/2026-07.md); judgment =
-      [ADR-0004](docs/adr/0004-jit-strategy.md) 2026-07-15 addendum).
-      The root fix for the remaining interpreter/JIT shared fixed costs (SetLocal env-mirror etc.)
-      belongs to the §6 lexical-slot campaign. The canonical source of bench numbers is the bench CI
-      (`bench-data` branch; the `+jit` series starts at #4480; from J5 onward the plain series pins
-      `MUTSU_JIT=off` explicitly as the interpreter baseline).
-- [ ] **3b-2 traffic pruning** ([docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md) §3.3):
-      now that clone/drop is an 8B copy, reduce needless clones themselves (overlaps with the
-      inventory of the 9022 `.clone()` calls). Lower priority than the JIT; profile-driven.
-- [ ] Layer 3a hardening (H1 continuous measurement through the H5 background-collect start trigger) =
-      see [docs/gc-post-3a-roadmap.md](docs/gc-post-3a-roadmap.md). Suppressing the candidate pushes
-      from grammar parsing themselves (~510k/200-parse) is not started (the real harm — memory
-      retention — was already fixed via `Weak`).
-- Layer 3c biased refcount = frozen (start trigger in gc-post-3a-roadmap §4).
-  Layer 4 JIT = [ADR-0004 (Accepted 2026-07-06)](docs/adr/0004-jit-strategy.md);
-  start condition = layer 3b gate met (§5 Lever 4).
+| Layer | Status |
+|-------|--------|
+| 3a — cycle collector on `Arc`, type-filtered | ✅ done, default on (2026-07-05, ADR-0003) |
+| 3b — NaN-boxing (`size_of::<Value>()` 48→8B) | ✅ done (2026-07-12, #4467 B-guards / #4469 B-flip; benches 5–9% faster = gate met) |
+| 4 — JIT (Cranelift) | ✅ done, default on (2026-07-15, all 6 J4d slices, ADR-0004 closed) |
+| 3c — biased refcount | 🧊 frozen (measured-trigger only; gc-post-3a-roadmap §4) |
+
+History/details in [news/2026-07.md](news/2026-07.md). JIT bench numbers come from the bench CI
+(`bench-data` branch; `+jit` series from #4480). The remaining interpreter/JIT shared fixed cost
+(SetLocal env-mirror) is the §6 lexical-slot campaign, not a GC item.
+
+### 2.1 GC soundness tail — the real remaining GC work
+
+The `gc::gc_contents_mut` / `Gc::{get,make}_mut` primitive writes through `Arc::as_ptr as
+*mut` — a provenance violation (Rust UB) + a data race when the target is genuinely shared.
+This is the only GC work with real payoff left; it is **soundness**, medium impact.
+
+**✅ Step 1 (inventory) DONE (2026-07-20)** — [docs/gc-contents-mut-inventory.md](docs/gc-contents-mut-inventory.md).
+Every production site was read and classified. Decisive result — **54 sites / 20 files**:
+**(a) provably-unique = 3** (cyclic-structure construction on freshly-created nodes),
+**(b) make_mut-COW-coverable = 0**, **(c) needs first-class cell = 51**, (?) = 0. Every guarded
+site *already* routes the unique case to `make_mut` and reserves `gc_contents_mut` strictly for
+the shared+identity case. So:
+
+- **`make_mut`-COW is a dead end** — it can retire zero sites. The earlier "route easy clusters
+  through COW" idea is empty; do not pursue it.
+- **✅ Step 2 (the 3 (a) sites) DONE (2026-07-20)**: `debug_assert_eq!(strong_count(), 1)` added
+  before each aliased `&mut` in `vm_var_assign_ops.rs` (fixup_circular_hash / replace_array_refs_in_value /
+  fixup_circular_array_refs) to document provable uniqueness. Zero behavior change (debug-only assert);
+  the truly-unaudited surface is now just the 51 (c) core.
+- [ ] **Step 3 — the 51 (c) sites = a `CellValue` / interior-mutability campaign** (large,
+      high-blast-radius, **not** a slice) — **DEFERRED (user decision 2026-07-20)**. A first-class
+      element cell (`UnsafeCell`/lock inside the container) makes identity-preserving in-place
+      mutation sound without the raw-pointer cast. **Fused with ADR-0001** (Track B / element cells +
+      GC — do not touch the sites twice); needs a Proposed ADR before starting. This is the only path
+      that removes the UB. Deferred because it is a large architectural commitment for a *soundness*
+      (not correctness/feature) payoff, while 3a already closed the leak that made GC table-stakes;
+      the residue is UB-by-letter + a cross-thread data race that has passed gc-stress/S17 so far.
+      Write the Proposed ADR when this campaign is greenlit.
+- [ ] **Step 4 (independent, optional) — harden the buffered-clone / uniqueness invariant**:
+      machine-check the `strong == 1 ⟹ unique` argument beyond `MUTSU_GC_VERIFY` (ANALYSIS §2.1).
+
+### 2.2 Lower-priority GC follow-ups (profile-driven; defer under 2.1)
+
+- [ ] **3b-2 clone-traffic pruning** (`gc-post-3a-roadmap` §3.3): clone/drop is now an 8B copy,
+      so reduce needless clones themselves (overlaps the ~9k `.clone()` inventory). Profile-driven.
+- [ ] **Layer 3a hardening H1–H5** (`gc-post-3a-roadmap`): suppressing grammar-parse candidate
+      pushes (~510k/200-parse) is unstarted — the real harm (memory retention) was already fixed
+      via `Weak`, so this is optimization, not a leak fix.
 
 ---
 
