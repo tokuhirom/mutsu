@@ -1,6 +1,6 @@
 # ADR-0013: Container interior mutability — kill the `gc_contents_mut` provenance UB with a `GcCell` newtype
 
-- **Status**: Proposed (awaiting approval — this is the greenlight ADR for PLAN §2.1 Step 3)
+- **Status**: Accepted (2026-07-20 — mechanism 2b greenlit by tokuhirom. Open-Question resolutions recorded in §5: cross-thread race deferred to layer 3c, element cells (2c) deferred, Array/Hash-first scope. Implementation begins at §4 phase 1.)
 - **Date**: 2026-07-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a — this ADR fixes 3a's *unfinished* element-cell half), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing; orthogonal — the 8B `Value` is unchanged), [docs/gc-contents-mut-inventory.md](../gc-contents-mut-inventory.md) (Step 1 inventory — the 54-site classification this ADR acts on), PLAN.md §2.1 (GC soundness tail)
@@ -172,7 +172,10 @@ narrow, lane-governed".
    `gc::gc_contents_mut` and the `aliased_mut` shadow once the last site is gone.
 4. **Miri gate** — a `cargo miri test` pass over the container/GC test subset must be clean (no
    Stacked/Tree Borrows violation). This is the definition of done; add it to CI as a non-blocking
-   informational job first, then blocking once green.
+   informational job first, then blocking once green. **Toolchain note:** Miri needs a nightly whose
+   feature set matches the crate's stabilized-feature usage (e.g. `if_let_guard`); pin a recent
+   nightly in the CI job. Deferred until phase 3 makes GcCell live on a real execution path (Miri over
+   the phase-1 unit tests only re-proves std's `UnsafeCell` guarantee).
 5. **Keep gc-stress + S17 green** throughout; the Step 4 `verify_unique_for_aliased_mut` accounting
    invariant extends to the migrated sites.
 
@@ -180,22 +183,21 @@ narrow, lane-governed".
 
 ## 5. Open questions (the real forks for the deciders)
 
-1. **Mechanism: confirm 2b.** Recommended, but 2a (lock) is the conventional choice and must be
-   explicitly rejected on the record, not by omission.
-2. **Cross-thread race: defer to layer 3c, or lock the genuinely-shared nodes now?** Recommendation:
-   defer — the race is narrow and lane-governed, and a per-node lock re-introduces the exact
+1. **Mechanism: confirm 2b.** ✅ **RESOLVED (2026-07-20): 2b.** `GcCell` = `UnsafeCell` + debug
+   borrow-flag. 2a (whole-container lock) rejected on the record for the read-tax + the ADR-0001
+   §3-6 re-entrancy deadlock.
+2. **Cross-thread race: defer to layer 3c, or lock the genuinely-shared nodes now?** ✅ **RESOLVED:
+   defer to layer 3c.** The race is narrow and lane-governed; a per-node lock re-introduces the exact
    read-tax + deadlock this ADR avoids. Revisit only if gc-stress/S17 surfaces an actual race.
-3. **Element cells (2c / Track B proper): fold into this campaign or defer?** ADR-0001 said "one
-   campaign", but that premise is already spent (the collector half shipped alone). Recommendation:
-   land 2b first (it retires the UB), then pursue 2c incrementally where it measurably reduces
+3. **Element cells (2c / Track B proper): fold into this campaign or defer?** ✅ **RESOLVED: defer.**
+   Land 2b first (it retires the UB), then pursue 2c incrementally where it measurably reduces
    container-level structural sites.
-4. **Scope: all 9 container kinds at once, or Array/Hash first?** Array + Hash cover the large
-   majority of the 51 sites; the setbagmix/instance/sub tail is smaller. A slice-by-kind rollout
-   keeps each PR reviewable and each Miri run bisectable. Recommendation: Array/Hash first as a proof,
-   then the tail.
-5. **`GcCell` vs reusing an existing crate.** rust-gc's `GcCell` is the closest prior art but is
-   `!Send` (ADR-0001 §6 rejected the rust-gc family for exactly this). We need our own `Send + Sync`
-   cell; confirm we do not adopt a crate here.
+4. **Scope: all 9 container kinds at once, or Array/Hash first?** ✅ **RESOLVED: Array/Hash first.**
+   They cover the large majority of the 51 sites; a slice-by-kind rollout keeps each PR reviewable and
+   each Miri run bisectable. The setbagmix/instance/sub tail follows.
+5. **`GcCell` vs reusing an existing crate.** ✅ **RESOLVED: own `Send + Sync` cell.** rust-gc's
+   `GcCell` is `!Send` (ADR-0001 §6 rejected the rust-gc family for exactly this); we do not adopt a
+   crate.
 
 ---
 

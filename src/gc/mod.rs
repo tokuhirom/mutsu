@@ -19,6 +19,7 @@
 //!   future tracing infra — the candidate-buffer collector does not consume it).
 
 mod collect;
+mod gc_cell;
 mod gc_ptr;
 mod root_visitor;
 mod safepoint;
@@ -27,6 +28,8 @@ mod stw;
 pub(crate) use collect::collect_at_program_end;
 #[cfg(test)]
 pub(crate) use collect::collect_cycles;
+#[allow(unused_imports)] // consumed by the phase-2 container migration (ADR-0013 §4)
+pub(crate) use gc_cell::GcCell;
 #[cfg(test)]
 pub(crate) use gc_ptr::drain_candidates;
 pub(crate) use gc_ptr::{
