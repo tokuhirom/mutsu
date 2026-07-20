@@ -1094,6 +1094,33 @@ the backlog.
       fails. Corpus = `Type/X*.rakudoc` + `throws-like`-style assertions. Good QA is "fails
       correctly", not only "works".
 
+### 8.5 Nil-vs-Any identity knot (deferred deep item — fully mapped 2026-07-20)
+
+- [ ] **Separate the `Nil` value from the `Any` type object.** Surfaced repeatedly by the §8.1 doc-diff
+      campaign (phasers `END say my $x` → mutsu `Nil` / raku `(Any)`; statement-prefixes `sink for`;
+      objects `.new` uninit attr). The user-visible divergences (all masked today by one crutch):
+      `Nil.^name` = `Any` (want `Nil`); `Nil === Any` / `Any === Nil` = True (want False);
+      uninitialized untyped `my $x` — `$x === Nil` = True and `$x.raku` = `Nil` (want `$x === Any`,
+      `.raku` = `Any`, `say $x` gist `(Any)`).
+- **Investigated + fully reverted 2026-07-20 — there is NO clean safe subset.** The sole reason
+      `Nil === Any` is True is one explicit arm in `src/value/types_eqv.rs`
+      (`(Nil, Package("Any")) => true`), which **masks dozens of "mutsu stored `Nil` where `Any` was
+      meant"** sites (attribute defaults, container/`.List` holes, `$_` topic, some special-var defaults).
+      Removing it cascades to **5 t/ files**; making an uninitialized `my $x` hold `Any` cascades to **6
+      t/ files + an index-underflow panic** (both the store-reset and the parser-`BareWord("Any")`
+      approaches), because **`my $x`-defaults-to-`Nil` is load-bearing across the compiler** (shadow-slot
+      capture, block-inline, do-expr value, redeclaration no-op — 6+ `Expr::Literal(nil)` special-cases)
+      **and the VM closure-cell machinery**. The three couplings are proven; `Nil.^name`="Nil" alone even
+      regresses uninit `.^name`. This is genuinely a dedicated multi-session campaign (same hard territory
+      as the §6 lexical-slot / dual-store work; #4822 was closed twice on it).
+- **The full cascade map, the dependency-ordered campaign steps, and the guardrails** (esp.
+      `roast/S02-types/nil.t` — 67 tests, whitelisted, the authoritative spec; **always run it with
+      `MUTSU_FUDGE=1`** or its `#?rakudo todo` tests false-fail) are recorded in the memory note
+      `project-nil-any-identity-knot`. Read it before any re-attempt; do **not** re-attempt as a small slice.
+- **Cost/benefit: LOW-value, HIGH-cost.** The doc-diff payoff is only niche uninitialized-value
+      rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
+      slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
+
 ---
 
 ## Metrics
