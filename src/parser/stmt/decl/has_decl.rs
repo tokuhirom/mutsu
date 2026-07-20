@@ -659,7 +659,11 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // Optional `where` constraint
     let (rest, where_constraint) = if let Some(r) = keyword("where", rest) {
         let (r, _) = ws1(r)?;
-        let (r, pred) = expression(r)?;
+        // Use the no-assign parser so a trailing `= DEFAULT` introduces the
+        // attribute default rather than being consumed as an assignment to the
+        // constraint expression (`has $.b where *.so = $!a + 1`). Mirrors the
+        // signature `where` constraint (`expression_no_assign`).
+        let (r, pred) = crate::parser::expr::expression_no_assign(r)?;
         let (r, _) = ws(r)?;
         (r, Some(Box::new(pred)))
     } else {

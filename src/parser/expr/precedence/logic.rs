@@ -349,6 +349,23 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 }
             },
         )),
+        // A method-call lvalue (`$o.a = v`) in expression position, e.g. the
+        // middle term of a chained assignment (`my $c = $o.a = 42`). The shared
+        // `assign_to_target_expr` lowers it to the rw-accessor writeback; without
+        // this arm the `=` was left unconsumed and surfaced as a `Confused` error.
+        //
+        // The `$(EXPR)` item contextualizer lowers to a bare `.item` method call
+        // whose assignment has ITEM (comma-tight) semantics enforced by the
+        // statement-level `$(EXPR) = ...` handler; leave its `=` unconsumed (as
+        // before) so that handler still runs.
+        mc @ Expr::MethodCall { .. } => {
+            if matches!(&mc, Expr::MethodCall { name, args, .. } if name == "item" && args.is_empty())
+            {
+                Ok((rest, mc))
+            } else {
+                Ok((r, assign_to_target_expr(mc, rhs)))
+            }
+        }
         _ => Ok((rest, expr)),
     }
 }

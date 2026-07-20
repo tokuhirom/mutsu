@@ -201,6 +201,28 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 Stmt::SyntheticBlock(vec![save_stmt, Stmt::Expr(expr)]),
             );
         }
+        // temp on lvalue method call: `temp $obj.method = value`, where the
+        // expression parser has already lowered `$obj.method = value` to the
+        // `__mutsu_assign_method_lvalue` writeback call (an rw-accessor assignment
+        // is a full expression). Recover the pieces to save/restore the target.
+        if let Expr::Call { name, args } = &expr
+            && name == "__mutsu_assign_method_lvalue"
+            && args.len() == 5
+            && let Expr::Var(var_name) = &args[0]
+            && let Expr::Literal(mlit) = &args[1]
+            && let Some(method_name) = mlit.as_str()
+            && let Expr::ArrayLiteral(method_args) = &args[2]
+        {
+            return parse_statement_modifier(
+                expr_rest,
+                Stmt::TempMethodAssign {
+                    var_name: var_name.clone(),
+                    method_name: method_name.to_string(),
+                    method_args: method_args.clone(),
+                    value: args[3].clone(),
+                },
+            );
+        }
         // temp on lvalue method call: `temp $obj.method = value`
         let (expr_rest_ws, _) = ws(expr_rest)?;
         if expr_rest_ws.starts_with('=')
