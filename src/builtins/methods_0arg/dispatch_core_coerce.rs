@@ -341,6 +341,7 @@ pub(super) fn dispatch(
                     | ValueView::Mix(_, _)
                     | ValueView::Junction { .. }
                     | ValueView::Nil
+                    | ValueView::Enum { .. }
             );
             let which_str = match target.view() {
                 ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
@@ -355,6 +356,14 @@ pub(super) fn dispatch(
                 ValueView::Rat(n, d) => format!("Rat|{}/{}", n, d),
                 ValueView::FatRat(n, d) => format!("FatRat|{}/{}", n, d),
                 ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+                // An enum value's identity is `{EnumType}|{ordinal}` (raku:
+                // `Bob.WHICH` is `Names|0`, using the position in the enum, not
+                // the underlying value). Without this arm an enum fell to the
+                // global-counter fallback, giving a non-deterministic `Int|N`
+                // that broke `Bob.WHICH eqv Bob.WHICH`.
+                ValueView::Enum {
+                    enum_type, index, ..
+                } => format!("{}|{}", enum_type.resolve(), index),
                 ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
                 ValueView::Set(set, _) => {
                     let mut keys: Vec<&String> = set.iter().collect();
