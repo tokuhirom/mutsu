@@ -324,6 +324,16 @@ impl Interpreter {
         {
             return true;
         }
+        if constraint == "Enumeration" {
+            // Every enum value and every enum type object does `Enumeration`.
+            return match value.view() {
+                ValueView::Enum { .. } => true,
+                ValueView::Package(name) => {
+                    self.registry().enum_types.contains_key(&*name.resolve())
+                }
+                _ => false,
+            };
+        }
         if constraint == "Inf" {
             return matches!(value.view(), ValueView::Num(n) if n.is_infinite() && n.is_sign_positive());
         }
