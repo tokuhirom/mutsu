@@ -1000,6 +1000,12 @@ enum RegexAtom {
     LeftWordBoundary,
     /// `>>` or `»` — right word boundary assertion (zero-width)
     RightWordBoundary,
+    /// `<?wb>` (word boundary) / `<!wb>` (not a word boundary) — zero-width
+    /// assertion at a transition between a word char and a non-word char (either
+    /// direction), i.e. `<<` or `>>`.
+    WordBoundary {
+        negated: bool,
+    },
     /// `^^` — start of line assertion (zero-width)
     StartOfLine,
     /// `$$` — end of line assertion (zero-width)

@@ -1892,6 +1892,9 @@ impl Interpreter {
                                     } else if negated_name == "same" || negated_name == ".same" {
                                         // <!same> — zero-width assertion: next two chars are different
                                         RegexAtom::SameAssertion { negated: true }
+                                    } else if negated_name == "wb" || negated_name == ".wb" {
+                                        // <!wb> — zero-width assertion: NOT at a word boundary
+                                        RegexAtom::WordBoundary { negated: true }
                                     } else {
                                         // <!alpha>, <!digit>, etc. — zero-width negative assertion for named class
                                         let clean_name =
@@ -2157,6 +2160,9 @@ impl Interpreter {
                                 } else if trimmed == "?same" || trimmed == "?.same" {
                                     // <?same> — zero-width assertion: next two chars are the same
                                     RegexAtom::SameAssertion { negated: false }
+                                } else if trimmed == "?wb" || trimmed == "?.wb" {
+                                    // <?wb> — zero-width assertion: at a word boundary
+                                    RegexAtom::WordBoundary { negated: false }
                                 } else if trimmed.starts_with("at(") && trimmed.ends_with(')') {
                                     // <at(N)> — zero-width assertion: match at position N
                                     let inner = &trimmed[3..trimmed.len() - 1];
