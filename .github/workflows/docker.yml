@@ -4,12 +4,17 @@ name: Docker
 # `docker run`. Multi-arch (amd64 + arm64) images are built natively on
 # per-arch runners, then combined into one manifest — no slow QEMU emulation of
 # the release compile.
+#
+# Trigger: version tags only (plus manual workflow_dispatch for smoke tests). We
+# deliberately do NOT build on every `main` push — a multi-arch release compile
+# per merge is expensive, the image rarely breaks between releases, and the
+# release-tag build already produces the published `:X.Y.Z`/`:latest` images
+# that users actually pull. (The `:main` rolling tag is dropped as a result; it
+# was redundant with `:latest` for anyone tracking releases.)
 on:
   push:
     tags:
       - 'v*'
-    branches:
-      - main
   workflow_dispatch:
 
 env:
