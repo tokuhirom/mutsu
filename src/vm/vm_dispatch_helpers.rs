@@ -294,6 +294,36 @@ impl Interpreter {
         }
     }
 
+    /// Evaluate Raku definedness, honoring a user-defined `.defined` method on
+    /// role-composed (`but role {...}`) mixins and on class instances. Used by
+    /// `//` (`JumpIfNotNil`) so it agrees with `.defined` and `orelse`
+    /// (`CallDefined`); the plain structural check ([`value_is_defined`]) can't
+    /// see a role/class override, so `1 but role { method defined { False } }
+    /// // "x"` wrongly kept the `1`. Scalars, `Nil`, and type objects have no
+    /// override to look up and hit the cheap structural check with no method
+    /// dispatch, so the hot path is unaffected.
+    ///
+    /// [`value_is_defined`]: crate::runtime::types::value_is_defined
+    pub(super) fn value_is_defined_dispatch(&mut self, val: &Value) -> bool {
+        let has_override = match val.view() {
+            ValueView::Mixin(..) => self.mixin_role_has_method(val, "defined"),
+            ValueView::Instance { class_name, .. } => {
+                let cn = class_name.resolve().to_string();
+                self.has_user_method(&cn, "defined")
+            }
+            _ => false,
+        };
+        if has_override {
+            let caller_code = self.current_code;
+            let result = self.try_compiled_method_or_interpret(val.clone(), "defined", vec![]);
+            self.reconcile_caller_after_internal_dispatch(caller_code);
+            if let Ok(result) = result {
+                return result.truthy();
+            }
+        }
+        crate::runtime::types::value_is_defined(val)
+    }
+
     /// Call a plain `Sub` map block, optionally with an explicit topic
     /// (Pair elements) and/or rw-topic capture (`$_`-mutating blocks).
     ///
