@@ -99,8 +99,18 @@ pub(crate) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
         rest = r2;
     }
     if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
-        type_name.push_str(&rest[..2]);
+        let smiley = &rest[..2];
         rest = &rest[2..];
+        // A definedness smiley may precede the parametrization (`Array:D[Int]`)
+        // as well as follow it (`Array[Int]:D`). Consume any `[...]` that trails
+        // the smiley and re-append the smiley last, so downstream type handling
+        // always sees the canonical `Name[params]:D` form.
+        while rest.starts_with('[') {
+            let (r2, suffix) = parse_generic_suffix(rest).ok()?;
+            type_name.push_str(&suffix);
+            rest = r2;
+        }
+        type_name.push_str(smiley);
     } else if rest.starts_with(':')
         && rest[1..]
             .chars()
