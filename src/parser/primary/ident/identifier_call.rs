@@ -1602,6 +1602,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // so `undeclared-sub q:to/END/` is a no-paren listop call.
             || crate::parser::primary::ident::predicates::starts_with_quote_construct(r)
             || crate::parser::stmt::simple::match_user_declared_term_symbol(r).is_some()
+            // A bareword fat-arrow pair (`key => $v`) is unambiguously a Pair,
+            // so a preceding known/builtin listop takes it as an argument:
+            // `samewith key => $v` is `samewith(key => $v)`.
+            || crate::parser::primary::ident::predicates::next_is_bareword_fat_arrow_pair(r)
             || hyphen_forward_call
             || is_user_sub
             || is_imported_sub

@@ -315,6 +315,32 @@ pub(crate) fn next_word_is_builtin_term_op(input: &str) -> bool {
         )
 }
 
+/// Check if `input` begins with a bareword fat-arrow pair: `key => value`
+/// (an identifier, then optional whitespace, then `=>` but not `==>`). Such a
+/// construct is unambiguously a `Pair` literal, so a preceding bareword listop
+/// takes it as an argument: `samewith key => $v` is `samewith(key => $v)`, not
+/// `samewith` followed by a stray pair. Quoted-string keys (`"key" => ...`)
+/// already start with a term-start character and need no special handling.
+pub(crate) fn next_is_bareword_fat_arrow_pair(input: &str) -> bool {
+    let first = match input.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    let mut end = first.len_utf8();
+    for ch in input[end..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let after = input[end..].trim_start_matches([' ', '\t']);
+    after.starts_with("=>") && !after.starts_with("==>")
+}
+
 /// Check if a name is an infix word operator (should not be treated as a listop call).
 pub(crate) fn is_infix_word_op(name: &str) -> bool {
     matches!(
