@@ -375,9 +375,42 @@ fn parse_block_body_with_sigilless<'a>(
 fn body_references_topic(input: &str) -> bool {
     let bytes = input.as_bytes();
     let mut i = 0usize;
+    // `depth` counts *bare* `{ … }` nesting; `depth == 1` is the immediate block
+    // body. Only an *explicit* topic variable `$_`/`@_`/`%_` at the top level of
+    // this body (in the key or the value, including inside a double-quoted
+    // string) forces a block. An implicit-topic method call such as `.^name` or
+    // `.Str` does NOT: rakudo keeps `{ "{ .^name }X" => 1 }` a Hash but makes
+    // `{ "$_" => 1 }` / `{ a => $_ }` a Block. A `$_` inside a nested bare block
+    // (`{ foo => (1,2,3).map: {$_} }`) belongs to that inner block's own topic,
+    // so `depth > 1` references never count. String-interpolation braces are not
+    // nesting, so the string stays at the current depth.
     let mut depth = 1u32;
+    let mut in_d = false;
     while i < bytes.len() {
-        match bytes[i] {
+        let c = bytes[i];
+        if in_d {
+            match c {
+                b'\\' => {
+                    i += 2;
+                    continue;
+                }
+                b'"' => in_d = false,
+                b'$' | b'@' | b'%'
+                    if depth == 1
+                        && bytes.get(i + 1) == Some(&b'_')
+                        && !bytes
+                            .get(i + 2)
+                            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_') =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => in_d = true,
             b'{' => depth += 1,
             b'}' => {
                 depth -= 1;
@@ -392,18 +425,18 @@ fn body_references_topic(input: &str) -> bool {
                     i += 1;
                 }
             }
-            // `$_` / `@_` / `%_` topic variable, with a trailing word boundary
-            // (so `$_x` — an ordinary name — does not match).
+            // `$_` / `@_` / `%_` topic variable at the top level of this body,
+            // with a trailing word boundary (so `$_x` — an ordinary name — does
+            // not match). Never inside a nested bare block.
             b'$' | b'@' | b'%'
-                if bytes.get(i + 1) == Some(&b'_')
+                if depth == 1
+                    && bytes.get(i + 1) == Some(&b'_')
                     && !bytes
                         .get(i + 2)
                         .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_') =>
             {
                 return true;
             }
-            // `.^` / `.?` metamethod on the implicit topic.
-            b'.' if matches!(bytes.get(i + 1), Some(b'^') | Some(b'?')) => return true,
             _ => {}
         }
         i += 1;

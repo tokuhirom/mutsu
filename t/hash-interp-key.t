@@ -7,12 +7,14 @@ use Test;
 # interpolated key was neither a valid hash key nor left the block as a closure.
 #
 # rakudo's rule: `{ ... }` is a hash composer UNLESS the body references the
-# topic `$_` (directly, or via a `.^`/`.?`/`.method` on the implicit topic), in
-# which case it is a block. So a topic-free interpolated key is a hash; a
-# topic-referencing one is a block. (Real dist: Configuration::Utils writes
-# `.duckmap({ "{ .^name }Builder" => generate-builder-class $_ })`.)
+# *explicit* topic `$_`/`@_`/`%_` at its top level (in the key or the value), in
+# which case it is a block. A topic-free interpolated key is a hash; an implicit
+# `.method`/`.^name` on the topic does NOT force a block. (Real dist:
+# Configuration::Utils writes
+# `.duckmap({ "{ .^name }Builder" => generate-builder-class $_ })` — a block
+# because of the explicit `$_` in the value.)
 
-plan 9;
+plan 11;
 
 # Topic-free interpolated key → hash composer.
 my $v = 3;
@@ -32,9 +34,14 @@ my @b = (1, 2).map({ "{ $_ }B" => $_ * 10 });
 is @b.map({ .key ~ '=' ~ .value }).join(","), '1B=10,2B=20',
     'interpolated-topic key with a topic value is a block';
 
-# `.^`/`.method` on the implicit topic also forces a block.
+# An interpolated key with an implicit-topic `.method`/`.^name` but NO explicit
+# `$_` is still a HASH (rakudo does not treat an implicit-topic method as a
+# block trigger). The explicit `$_` in the value here is what makes it a block.
 my @c = (1, 2).map({ "pre{ .Str }" => $_ });
-is @c.map(*.key).join(","), 'pre1,pre2', 'implicit-topic .method in the key forces a block';
+is @c.map(*.key).join(","), 'pre1,pre2', 'explicit $_ value with an implicit-topic key is a block';
+
+isa-ok { "{ .^name }X" => 1 }, Hash,
+    'an implicit-topic .^name in the key alone stays a hash';
 
 # A leading `.5` decimal value is not mistaken for a topic method call.
 my %d = { a => .5 };
@@ -43,3 +50,8 @@ is %d<a>, 0.5, 'a decimal value after => keeps the hash a hash';
 # Plain literal-key hash still composes a Hash (not a block) even in map sink.
 my $composed = { "x" => 10 };
 isa-ok $composed, Hash, 'a literal-key { } is still a hash composer';
+
+# A `$_` inside a *nested* block belongs to that inner block, so the outer
+# braces stay a hash composer (regression guard for S32-list/map.t:250).
+is {foo => (1, 2, 3).map: { $_ }}<foo>.join(":"), '1:2:3',
+    'topic in a nested block does not force the outer braces to a block';
