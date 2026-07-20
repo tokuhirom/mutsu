@@ -572,6 +572,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
+        "subset" => {
+            // Inline anonymous/named subset used as a TERM (an expression that
+            // yields the subset's type object), e.g.
+            // `$x ~~ (subset :: where Int|Str)`. The statement dispatcher handles
+            // a leading `subset` declaration before expression parsing, so this
+            // arm is only reached in genuine term position.
+            if let Ok((r, expr)) = crate::parser::stmt::decl::inline_subset_term(rest) {
+                return Ok((r, expr));
+            }
+        }
         "anon" => {
             // anon enum < ... > in expression context
             if let Ok((r, stmt)) = crate::parser::stmt::decl::anon_enum_decl(input) {

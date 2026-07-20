@@ -284,3 +284,71 @@ pub(in crate::parser::stmt) fn subset_decl(input: &str) -> PResult<'_, Stmt> {
         },
     ))
 }
+
+/// Monotonic counter naming each anonymous inline subset uniquely.
+static ANON_SUBSET_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Parse an inline `subset` used as a TERM (an expression yielding the subset's
+/// type object), e.g. `$x ~~ (subset :: where Int|Str)` or a named
+/// `subset Foo where Int|Str`. `input` starts right after the `subset` keyword.
+///
+/// Lowered to `do { subset <name> …; <name> }`, reusing the ordinary subset
+/// declaration machinery — mutsu already evaluates a subset name in term
+/// position to its type object. `::` is the anonymous package name and gets a
+/// unique synthesized name. Requires a following `of`/`where` (a bare `subset`
+/// term is meaningless) so a stray `subset` bareword still falls through.
+pub(in crate::parser) fn inline_subset_term(input: &str) -> PResult<'_, Expr> {
+    let (rest, _) = ws1(input)?;
+    // Anonymous `::` name (standalone, followed by whitespace), or an explicit
+    // (qualified) name.
+    let (rest, name) = if let Some(r) = rest.strip_prefix("::")
+        && r.starts_with(char::is_whitespace)
+    {
+        let n = format!(
+            "__mutsu_anon_subset_{}",
+            ANON_SUBSET_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        (r, n)
+    } else {
+        qualified_ident(rest)?
+    };
+    let (rest, _) = ws(rest)?;
+    // Require `of` and/or `where` so a bare `subset` word is not misread as a term.
+    if keyword("of", rest).is_none() && keyword("where", rest).is_none() {
+        return Err(PError::expected("inline subset term"));
+    }
+    super::super::simple::register_user_type(&name);
+    let mut rest = rest;
+    let mut base: Option<String> = None;
+    if let Some(r) = keyword("of", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, b) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
+        let (r, _) = ws(r)?;
+        base = Some(b);
+        rest = r;
+    }
+    let base = base.unwrap_or_else(|| "Any".to_string());
+    let (rest, predicate) = if let Some(r) = keyword("where", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, pred) = expression(r)?;
+        (r, Some(pred))
+    } else {
+        (rest, None)
+    };
+    let decl = Stmt::SubsetDecl {
+        name: Symbol::intern(&name),
+        base,
+        predicate,
+        version: super::super::simple::current_language_version(),
+        is_export: false,
+        export_tags: Vec::new(),
+        is_my: false,
+    };
+    Ok((
+        rest,
+        Expr::DoBlock {
+            body: vec![decl, Stmt::Expr(Expr::BareWord(name))],
+            label: None,
+        },
+    ))
+}
