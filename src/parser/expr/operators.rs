@@ -164,9 +164,15 @@ pub(super) fn parse_pure_concat_op(r: &str) -> Option<(ConcatOp, usize)> {
 
 /// Parse replication operators (x, xx, o) — higher precedence than ~.
 pub(super) fn parse_replication_op(r: &str) -> Option<(ConcatOp, usize)> {
-    if r.starts_with("xx") && !is_ident_char(r.as_bytes().get(2).copied()) {
+    if r.starts_with("xx")
+        && !is_ident_char(r.as_bytes().get(2).copied())
+        && r.as_bytes().get(2).copied() != Some(b'=')
+    {
         Some((ConcatOp::ListRepeat, 2))
-    } else if r.starts_with('x') && !is_ident_char(r.as_bytes().get(1).copied()) {
+    } else if r.starts_with('x')
+        && !is_ident_char(r.as_bytes().get(1).copied())
+        && r.as_bytes().get(1).copied() != Some(b'=')
+    {
         Some((ConcatOp::Repeat, 1))
     } else if r.starts_with('o') && !is_ident_char(r.as_bytes().get(1).copied()) {
         Some((ConcatOp::Compose, 1))
@@ -182,13 +188,17 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
     if r.starts_with('\u{2212}') {
         return Some((AdditiveOp::Sub, '\u{2212}'.len_utf8()));
     }
-    if r.starts_with("+|") {
+    // Leave the compound-assignment forms (`+|=`, `+^=`, `~|=`, `~^=`) for the
+    // assignment parser, mirroring the `+=` / `*=` guards; otherwise an indexed
+    // lvalue (`@a[0] +|= 1`) reaches here as the bare operand and the operator
+    // parser would eat the base op, stranding the `=`.
+    if r.starts_with("+|") && !r.starts_with("+|=") {
         Some((AdditiveOp::BitOr, 2))
-    } else if r.starts_with("+^") {
+    } else if r.starts_with("+^") && !r.starts_with("+^=") {
         Some((AdditiveOp::BitXor, 2))
-    } else if r.starts_with("~|") {
+    } else if r.starts_with("~|") && !r.starts_with("~|=") {
         Some((AdditiveOp::StrBitOr, 2))
-    } else if r.starts_with("~^") {
+    } else if r.starts_with("~^") && !r.starts_with("~^=") {
         Some((AdditiveOp::StrBitXor, 2))
     } else if r.starts_with('+')
         && !r.starts_with("++")
@@ -196,6 +206,10 @@ pub(super) fn parse_additive_op(r: &str) -> Option<(AdditiveOp, usize)> {
         && !r.starts_with("+<")
         && !r.starts_with("+>")
         && !r.starts_with("+&")
+        // `+|=` / `+^=` are guarded above (compound assign): don't let the bare
+        // `+` fall through and eat the `+`, stranding the `|=` / `^=`.
+        && !r.starts_with("+|")
+        && !r.starts_with("+^")
     {
         Some((AdditiveOp::Add, 1))
     } else if r.starts_with('-')
@@ -238,17 +252,21 @@ pub(super) fn parse_multiplicative_op(r: &str) -> Option<(MultiplicativeOp, usiz
     {
         return Some((MultiplicativeOp::Div, '\u{00F7}'.len_utf8()));
     }
-    if r.starts_with("+&") {
+    // As with `*=`, leave every compound-assignment form (`+&=`, `~&=`, `+<=`,
+    // `+>=`, `/=`) for the assignment parser so an indexed lvalue such as
+    // `@a[0] /= 2` parses (the operator parser would otherwise eat the base op
+    // and strand the `=`).
+    if r.starts_with("+&") && !r.starts_with("+&=") {
         Some((MultiplicativeOp::BitAnd, 2))
-    } else if r.starts_with("~&") {
+    } else if r.starts_with("~&") && !r.starts_with("~&=") {
         Some((MultiplicativeOp::StrBitAnd, 2))
-    } else if r.starts_with("+<") {
+    } else if r.starts_with("+<") && !r.starts_with("+<=") {
         Some((MultiplicativeOp::BitShiftLeft, 2))
-    } else if r.starts_with("+>") {
+    } else if r.starts_with("+>") && !r.starts_with("+>=") {
         Some((MultiplicativeOp::BitShiftRight, 2))
     } else if r.starts_with('*') && !r.starts_with("**") && !r.starts_with("*=") {
         Some((MultiplicativeOp::Mul, 1))
-    } else if r.starts_with('/') && !r.starts_with("//") {
+    } else if r.starts_with('/') && !r.starts_with("//") && !r.starts_with("/=") {
         Some((MultiplicativeOp::Div, 1))
     } else if r.starts_with('%')
         && !r.starts_with("%%")
@@ -511,11 +529,13 @@ pub(super) fn parse_postfix_update_op(input: &str) -> Option<(PostfixUpdateOp, u
 }
 
 pub(super) fn parse_junctive_op(input: &str) -> Option<(JunctiveOp, usize)> {
-    if input.starts_with("?|") {
+    // Leave the boolean-bitwise compound-assignment forms (`?|=`, `?&=`, `?^=`)
+    // for the assignment parser so an indexed lvalue reaches it as the operand.
+    if input.starts_with("?|") && !input.starts_with("?|=") {
         Some((JunctiveOp::Or, 2))
-    } else if input.starts_with("?&") {
+    } else if input.starts_with("?&") && !input.starts_with("?&=") {
         Some((JunctiveOp::And, 2))
-    } else if input.starts_with("?^") {
+    } else if input.starts_with("?^") && !input.starts_with("?^=") {
         Some((JunctiveOp::Xor, 2))
     } else {
         None
