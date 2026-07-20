@@ -121,7 +121,7 @@ message). Work them one at a time.
 ### parse_error (18)
 
 App::Rak · Astro::Utils · Audio::Liquidsoap · Configuration ·
-Cro::FCGI · CSS · CSV::Table · Deps · File-TreeBuilder · IP::Random ·
+Cro::FCGI · CSS · CSV::Table · Deps · File-TreeBuilder ·
 Math::Matrix · ML::SparseMatrixRecommender · Pod::Contents ·
 SBOM::CycloneDX · SSH::LibSSH::Tunnel
 
@@ -133,7 +133,8 @@ Known root causes to date:
 | SBOM::CycloneDX | `unparsed input, column 5: "}\n… @*ERRORS"` — the reported line (the `}` closing `method ingest`) is the last-good boundary, **not** the cause: the `@*ERRORS`/`with…else`/private-method-call constructs there all parse in isolation. The real desync is a still-unisolated construct in the tail `Map`/`Hash` methods (deep `mapify` ternary, `my role ordered-list[@NAMES]`, `$map but ordered-list[@keys]`) that forces the whole-role parse to backtrack. Investigating it surfaced a *separate* general bug — interpolated `.join(", ")` (a method arg carrying the string's own quote/comma) was mis-split, fixed separately — but that was not the SBOM blocker. Needs a finer tail-method repro. |
 | CSS | inside a `grammar` ("angle index key") — grammar/regex-slang, heavier. |
 | ~~Bench~~ | **Cleared post-snapshot**: a tightly-bound `<=>` used as a quote-word / hash key / colonpair value (`:fill<=>`, `%h<=>`) was mis-parsed as the spaceship operator by three separate angle parsers. Now loads. |
-| Pod::Contents / File-TreeBuilder / App::Rak / Astro::Utils / Audio::Liquidsoap / IP::Random / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
+| ~~IP::Random~~ | **Cleared post-snapshot**: an interpolated array atom quantified with a `%` separator under an anchor (`m/^ @oct ** 4 % \. $/`) hit two bugs — the parser mis-read the `%` after the placeholder atom as a stray hash sigil (parse error), and the LTM string expansion folded the leading `^` anchor into the quantified atom (`^\d`), so the anchored `**N % sep` silently dropped the separator and matched contiguously. Both fixed; `use IP::Random` loads. (A separate `for named_exclude -> $p { $p.value… }` Hash-constant-iteration runtime bug remains, a Level-2 concern.) |
+| Pod::Contents / File-TreeBuilder / App::Rak / Astro::Utils / Audio::Liquidsoap / Math::Matrix / ML::SparseMatrixRecommender / CSV::Table / Cro::FCGI | generic `expected statement…` dead-end — each needs its own repro; several carry multiple blockers (bisect at balanced method boundaries). |
 | Configuration | **Partially cleared**: `Configuration::Utils` was blocked by an interpolated-string hash key inside a block (`.duckmap({ "{ .^name }Builder" => generate-builder-class $_ })`) that the block-vs-hash disambiguator mis-parsed; fixed (topic-referencing interpolated keys now force a block, topic-free ones stay a hash). `Configuration::Utils` loads; the main `Configuration` module still has a separate parse blocker (534-line file, unisolated). |
 | Deps | Needs several type-capture features mutsu lacks: a type-capture **with** a constraint in a signature (`::Type Any` — currently the constraint is mis-read as a literal match value), type-capture loop variables (`for … -> ::T {…}` — the capture is not bound), and multi-dispatch on type captures. Multi-feature; deferred. |
 | ~~Trie~~ | **Cleared post-snapshot**: was a set-operator compound assignment on an indexed lvalue (`%!decendents{char} ∪= …`) the parser rejected. Parse error gone; now only lacks its `OrderedHash` dependency (missing_dep). |

@@ -814,6 +814,30 @@ impl Interpreter {
                 Self::expand_ltm_pattern(rest, sigspace)
             );
         }
+        // A leading `^` / `^^` start-of-string/line anchor is not part of the
+        // quantified atom. The whole-string LTM regexes below would otherwise
+        // fold it into the atom (`^\d ** 4 % '.'` -> atom `^\d`, which is not a
+        // single atom), defeating single-atom detection and mis-expanding the
+        // pattern as a bare `%` separator (so the anchored form silently dropped
+        // the separator). Hold the anchor aside, expand the rest, re-prepend it.
+        {
+            let anchor_len = if trimmed.starts_with("^^") {
+                2
+            } else if trimmed.starts_with('^') {
+                1
+            } else {
+                0
+            };
+            if anchor_len > 0 {
+                let lead_ws = &pattern[..pattern.len() - trimmed.len()];
+                let anchor = &trimmed[..anchor_len];
+                let rest = &trimmed[anchor_len..];
+                return format!(
+                    "{lead_ws}{anchor}{}",
+                    Self::expand_ltm_pattern(rest, sigspace)
+                );
+            }
+        }
         let compact: String = Self::compact_regex_whitespace(pattern);
         if compact.is_empty() {
             return pattern.to_string();
