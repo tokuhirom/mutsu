@@ -156,7 +156,7 @@ Known root causes to date (one row per dist):
 | Dist | Root cause |
 |---|---|
 | Protocol::MQTT | `Invalid typename 'DecodeBuffer' in parameter declaration.` — a sibling type in the enclosing package (same family as #4865; `DecodeBuffer` is likely nested deeper / declared via a form the prefix-walk still misses). |
-| SQL::Abstract | `No matching candidate found for the parametric role` — advanced past four typename blockers by #4865; now blocked on parametric-role resolution in its `does Constant['…']` / `does Op::Prefix['…']` chains. |
+| SQL::Abstract | Advanced past the `Cannot declare our-scoped subset inside of a role` blocker (a `my subset FunctionMap of Map where …` inside `role Source` — mutsu wrongly forbade *all* subsets in a role, not just our-scoped ones; fixed post-snapshot by exempting `is_my`). Now blocked deeper on a **coercion type with a package-qualified name in a parameter declaration** — `Join::Type(Str) :$type` (line 1548) reports `Invalid typename 'Join::Type(Str)'`. Multi-feature; deferred. |
 | PDF::Font::Loader::CSS | `X::Syntax::Perl5Var: Unsupported use of $? variable` — a genuine `$?`-in-regex Perl5-ism (verify against raku before "fixing"). |
 | uniname-words | `Odd number of elements found where hash initializer expected` (load-time) — an `nqp::hash(...)` in a `BEGIN` block; guts-bound, not pursued. |
 | Repository::Precomp::Cleanup | `No such method 'id' for invocant of type 'Compiler'`. |
