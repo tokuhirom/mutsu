@@ -343,6 +343,8 @@ impl Interpreter {
             "keys" if args.is_empty() => self.dispatch_keys_method(target),
             "values" if args.is_empty() => Some(self.dispatch_values_method(target)),
             "AT-KEY" if args.len() == 1 => self.dispatch_at_key_method(&target, &args),
+            "EXISTS-KEY" if args.len() == 1 => self.dispatch_match_exists_key(&target, &args),
+            "EXISTS-POS" if args.len() == 1 => self.dispatch_match_exists_pos(&target, &args),
             "rotate" => {
                 if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
                 {
@@ -794,6 +796,55 @@ impl Interpreter {
             ValueView::ValuePair(_, value) => Ok(Value::seq(vec![value.clone()])),
             _ => Ok(Value::seq(Vec::new())),
         }
+    }
+
+    /// Dispatch "EXISTS-KEY" on a Match: does the match have the named capture?
+    /// Returns None for non-Match targets so they fall through to other handlers.
+    fn dispatch_match_exists_key(
+        &self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && class_name == "Match"
+        {
+            let key = args[0].to_string_value();
+            let exists = matches!(
+                attributes.as_map().get("named").map(Value::view),
+                Some(ValueView::Hash(named)) if named.contains_key(key.as_str())
+            );
+            return Some(Ok(Value::truth(exists)));
+        }
+        None
+    }
+
+    /// Dispatch "EXISTS-POS" on a Match: is the positional capture index in range?
+    /// Returns None for non-Match targets so they fall through to other handlers.
+    fn dispatch_match_exists_pos(
+        &self,
+        target: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && class_name == "Match"
+        {
+            let idx = crate::runtime::to_int(&args[0]);
+            let exists = idx >= 0
+                && matches!(
+                    attributes.as_map().get("list").map(Value::view),
+                    Some(ValueView::Array(items, ..)) if (idx as usize) < items.len()
+                );
+            return Some(Ok(Value::truth(exists)));
+        }
+        None
     }
 
     /// Dispatch "AT-KEY" method.

@@ -563,6 +563,25 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 "X::Obsolete: Perl -> is dead. Please use '.' instead.".to_string(),
             ));
         }
+        // `:exists` / `:!exists` on a bare named match capture (`$<foo>:exists`)
+        // is sugar for `$/<foo>:exists`. The `<foo>` was already consumed while
+        // parsing the `$<foo>` term, so the adverb never reached the `<...>`
+        // subscript branch — rewrite the capture to the equivalent `$/{'foo'}`
+        // index target here so the shared exists-adverb machinery applies.
+        if let Expr::CaptureVar(name) = &expr
+            && (rest.starts_with(":exists") || rest.starts_with(":!exists"))
+        {
+            let target = Expr::Index {
+                target: Box::new(Expr::Var("/".to_string())),
+                index: Box::new(Expr::Literal(Value::str(name.clone()))),
+                is_positional: false,
+            };
+            if let Some((r, exists_expr)) = try_parse_exists_adverb(rest, target) {
+                expr = exists_expr;
+                rest = r;
+                continue;
+            }
+        }
         // Superscript power in method-call syntax: `2.²` == `2²` == `2 ** 2`
         // (also `.³`, `.⁻¹`, ...). Must run before the general `.method`
         // dispatch below, which would otherwise treat `²` as a method name.
