@@ -15,6 +15,18 @@ impl Interpreter {
         }
     }
 
+    /// Derive the method name for an indirect call `$obj.$name`. A **type
+    /// object** used as the name specifier (`$string.$type` with `$type = Int`)
+    /// dispatches the method named by its short name (`.Int`), so use that name
+    /// rather than the type object's gist (`(Int)`). Any other value falls back
+    /// to its string form (mutsu treats a plain `Str` as a method name).
+    fn dynamic_method_name(name_val: &Value) -> String {
+        match name_val.view() {
+            ValueView::Package(name) => name.resolve(),
+            _ => name_val.to_string_value(),
+        }
+    }
+
     pub(super) fn exec_call_method_dynamic_op(
         &mut self,
         code: &CompiledCode,
@@ -43,7 +55,7 @@ impl Interpreter {
             RuntimeError::new("Interpreter stack underflow in CallMethodDynamic target")
         })?;
         // Force lazy IO lines for non-lazy-preserving methods
-        let method_name_str = name_val.to_string_value();
+        let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
         let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
             && !matches!(method.as_str(), "kv" | "iterator" | "lazy")
@@ -80,7 +92,7 @@ impl Interpreter {
             call_args.extend(args);
             self.vm_call_on_value(name_val, call_args, None)
         } else {
-            let method = name_val.to_string_value();
+            let method = Self::dynamic_method_name(&name_val);
             // .return method: triggers a return from the enclosing sub
             if method == "return" && args.is_empty() {
                 let mut err = RuntimeError::new("return");
@@ -277,7 +289,7 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
         })?;
-        let method_name_str = name_val.to_string_value();
+        let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
         // Handle .* and .+ modifiers
         match modifier {
