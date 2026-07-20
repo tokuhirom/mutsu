@@ -2484,7 +2484,27 @@ impl CompiledCode {
                     OpCode::RegisterSub(_) | OpCode::RegisterClass(_) | OpCode::RegisterRole(_)
                 )
             });
-            if defines_lazy_body {
+            // A frame that installs a *resume-safe* CONTROL handler
+            // (`CONTROL { default { $out ~= .Str; .resume } }`) has its handler run
+            // INLINE at a deep `warn` raise site (`try_resume_safe_control_inline`),
+            // which reconstructs the installing frame's locals FROM ENV by name (the
+            // cross-frame store) because `self.locals` is the deep raise-site frame.
+            // Under the gate a plain `my $out = ''` in this frame skips its env
+            // mirror, so the handler reconstructs a stale `$out` and its `~=` is
+            // lost. Keep every local of such a frame env-synced (gate-ON only; the
+            // installing frame is a block/main frame, never a hot loop).
+            let installs_resume_control = self.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::TryCatch {
+                        resume_safe: true,
+                        control_start,
+                        body_end,
+                        ..
+                    } if control_start < body_end
+                )
+            });
+            if defines_lazy_body || installs_resume_control {
                 self.needs_env_sync.iter_mut().for_each(|b| *b = true);
             }
         }

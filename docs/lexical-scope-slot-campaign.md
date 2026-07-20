@@ -745,7 +745,26 @@ the env-centric body runs. Two guards keep it precise:
 Gate OFF: byte-identical (skipped early via `gate_local_env_write()`; `make test`
 19092 PASS). Pin: `t/gate-b-index-assign-slot-container.t` (OFF, ON, real raku).
 
-**Still open — ON survey residue (7 files, each a dedicated-session slice):**
+### resume-safe CONTROL handler — needs_env_sync fold (2026-07-20)
+
+`resumable-control-signal-indirect-call.t` cleared. A frame that installs a
+resume-safe CONTROL handler (`CONTROL { default { $out ~= .Str; .resume } }`)
+has its handler run INLINE at a deep `warn` raise site
+(`try_resume_safe_control_inline`, builtins_control_flow.rs), which reconstructs
+the installing frame's locals FROM ENV by name — `self.locals` is the deep
+raise-site frame, and env is the cross-frame store. Under the gate a plain
+`my $out = ''` in the installing frame skips its env mirror, so the handler
+reconstructed a stale `$out` and its `~=` was lost (`out=[]` not `out=[[direct]]`).
+Fix: extend the `compute_needs_env_sync` lazy-body fold
+(`RegisterSub`/`RegisterClass`/`RegisterRole`) to also match a
+`TryCatch { resume_safe: true }` op with a control range — keep every local of
+such a frame env-synced. Same shape as the #4869 named-sub fold and the #4889
+class/role-method fold: gated on `gate_local_env_write()` (the whole fold block
+is), so the default build is byte-identical and perf-neutral; the installing
+frame is a block/main frame, never a hot loop. Pin:
+`t/gate-b-control-handler-env-sync.t` (OFF, ON, real raku).
+
+**Still open — ON survey residue (6 files, each a dedicated-session slice):**
 `atomic-ops-native-dispatch.t`, `atomic-ops.t` (cross-thread/atomic, gc-stress-
 gated, flaky-prone); `nextsame-rw-redispatch.t`, `proto-method-rw-redispatch.t`
 (the `is rw`/`is raw` writeback chain through `apply_pending_rw_writeback`'s
@@ -755,9 +774,7 @@ one); `quanthash-immutable-ro.t` (coerce-RO: the failing `:delete` is inside a
 — array-hole tracking / nested-delete / `:=`-cell / whole-container-bind all assume
 env — so this one is a multi-site + closure-capture-container entanglement, NOT a
 single-site swap like inc/dec or the index-assign seed above); and
-`resumable-control-signal-indirect-call.t` (a `CONTROL {}` block captures an
-enclosing `$out` — #4869 closure-fold-adjacent), `test-assertion-line-number.t`
-(CALLER line) (misc).
+`test-assertion-line-number.t` (CALLER line) (misc).
 
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
