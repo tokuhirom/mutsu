@@ -107,6 +107,7 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "substr",
     "substr-rw",
     "words",
+    "comb",
     "rand",
     "sprintf",
     "zprintf",
