@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_43 open tickets._
+_42 open tickets._
 
 ## Open
 
@@ -66,12 +66,6 @@ _43 open tickets._
   needs Cro (`is header` param trait) and `Array::Sorted::Util`, which raku also
   lacks in the sweep environment, so this is parse-advance only.
 - file: `src/parser/stmt/control/pointy_param.rs` (string-literal pointy param, done)
-
-### T-014 — parse_error: expected statement: expected expected statement: expected expected statement: expected use statement or import statement  [impact: 1 dist]
-- dists: Template::HAML
-- e.g. `Template::HAML`: Template::HAML: expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
 
 ### T-017 — parse_error: expected statement: expected expected statement: expected expression statement or listop argument expression after 'X' o  [impact: 1 dist]
 - dists: Test::Run
@@ -302,6 +296,11 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-014** (#5091) — a statement-level *imported*-function call that is the left
+  operand of a larger expression (`has-interp($s) ?? A !! B`, `foo($x) ~~ Bool`)
+  was truncated to a bare `Stmt::Call`, dropping the tail; the expression-prefix
+  guard only ran for the hardcoded `KNOWN_CALLS` list. Now it also runs for
+  imported functions. **Template::HAML fully loads**, matching raku.
 - **T-010** (#5086) — a no-space adverbial colonpair after a parenless method
   call (`$obj.git:so`) was read as a colon-listop positional (`so` prefix op)
   and failed to parse. Now a bareword/`!name`/sigil colonpair binds as a named
