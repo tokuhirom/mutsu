@@ -187,54 +187,48 @@ impl Interpreter {
         right_minus: bool,
     ) -> bool {
         use crate::value::VersionPart;
-        if let ValueView::Version {
+        use std::cmp::Ordering;
+        let ValueView::Version {
             parts: left_parts, ..
         } = left.view()
-        {
-            if right_plus {
-                // LHS >= RHS (base version without +)
-                crate::runtime::version_cmp_parts(left_parts, right_parts)
-                    != std::cmp::Ordering::Less
-            } else if right_minus {
-                // LHS <= RHS (base version without -)
-                crate::runtime::version_cmp_parts(left_parts, right_parts)
-                    != std::cmp::Ordering::Greater
-            } else {
-                // Compare up to the length of the RHS; extra LHS parts are ignored
-                let rhs_len = right_parts.len();
-                for i in 0..rhs_len {
-                    let l = left_parts.get(i).unwrap_or(&VersionPart::Num(0));
-                    let r = right_parts.get(i).unwrap_or(&VersionPart::Num(0));
-                    match (l, r) {
-                        (VersionPart::Whatever, _) | (_, VersionPart::Whatever) => continue,
-                        (VersionPart::Num(a), VersionPart::Num(b)) => {
-                            if a != b {
-                                return false;
-                            }
-                        }
-                        (VersionPart::Str(a), VersionPart::Str(b)) => {
-                            if a != b {
-                                return false;
-                            }
-                        }
-                        // Different types (Num vs Str) are never equal
-                        _ => return false,
-                    }
-                }
-                // If RHS is longer than LHS, extra RHS parts must be zero
-                if rhs_len > left_parts.len() {
-                    for p in &right_parts[left_parts.len()..] {
-                        match p {
-                            VersionPart::Num(n) if *n != 0 => return false,
-                            _ => {}
-                        }
-                    }
-                }
-                true
+        else {
+            return false;
+        };
+        // ACCEPTS iterates over the *matcher* (RHS) parts. A missing LHS part
+        // defaults to `0`; extra LHS parts beyond the matcher are ignored.
+        //   - `v1.*`  matches any version whose leading parts equal the concrete
+        //     matcher parts (a Whatever matcher part accepts the rest wholesale);
+        //   - `v1.0+` matches any version `>= v1.0` (at the first differing part,
+        //     the LHS part must be greater), and `v1.0-` any version `<= v1.0`.
+        for (i, r) in right_parts.iter().enumerate() {
+            if matches!(r, VersionPart::Whatever) {
+                return true;
             }
-        } else {
-            false
+            let l = left_parts.get(i).unwrap_or(&VersionPart::Num(0));
+            // A Whatever on the LHS matches whatever the matcher wants here.
+            if matches!(l, VersionPart::Whatever) {
+                continue;
+            }
+            let ord = match (l, r) {
+                (VersionPart::Num(a), VersionPart::Num(b)) => a.cmp(b),
+                (VersionPart::Str(a), VersionPart::Str(b)) => a.cmp(b),
+                // Str parts (pre-release) sort before Num parts.
+                (VersionPart::Num(_), VersionPart::Str(_)) => Ordering::Greater,
+                (VersionPart::Str(_), VersionPart::Num(_)) => Ordering::Less,
+                (VersionPart::Whatever, _) | (_, VersionPart::Whatever) => unreachable!(),
+            };
+            if ord == Ordering::Equal {
+                continue;
+            }
+            return if right_plus {
+                ord == Ordering::Greater
+            } else if right_minus {
+                ord == Ordering::Less
+            } else {
+                false
+            };
         }
+        true
     }
 
     pub(crate) fn value_is_nan(value: &Value) -> bool {

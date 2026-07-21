@@ -283,9 +283,18 @@ impl Interpreter {
                     ord => ord,
                 }
             }
-            (ValueView::Version { parts: ap, .. }, ValueView::Version { parts: bp, .. }) => {
-                runtime::version_cmp_parts(ap, bp)
-            }
+            (
+                ValueView::Version {
+                    parts: ap,
+                    plus: apl,
+                    minus: ami,
+                },
+                ValueView::Version {
+                    parts: bp,
+                    plus: bpl,
+                    minus: bmi,
+                },
+            ) => runtime::version_cmp(ap, apl, ami, bp, bpl, bmi),
             // Enum values: compare by their integer value
             (ValueView::Enum { value: av, .. }, ValueView::Enum { value: bv, .. }) => {
                 av.as_i64().cmp(&bv.as_i64())
