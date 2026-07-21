@@ -346,25 +346,32 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_unlink(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // Raku's unlink() returns a list of filenames that were requested to be
-        // removed (always truthy). Errors other than NotFound still throw.
+        // Raku's `unlink` sub returns an Array of the paths it successfully
+        // removed. A path that did not exist is deemed a success (included); a
+        // path whose removal failed for another reason (e.g. it is a directory)
+        // is silently dropped from the result, and the sub never throws. (The
+        // `.unlink` method form fails softly instead — handled separately.)
         let mut names = Vec::new();
-        for arg in args {
+        // `unlink <a b c>` passes a single list argument; flatten so each path
+        // is removed individually rather than stringifying the whole list.
+        let paths: Vec<Value> = args
+            .iter()
+            .flat_map(crate::runtime::utils::value_to_list)
+            .collect();
+        for arg in &paths {
             let path = arg.to_string_value();
             let resolved = self.resolve_path(&path);
             match fs::remove_file(&resolved) {
-                Ok(()) => {}
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-                Err(err) => {
-                    return Err(RuntimeError::new(format!(
-                        "Failed to unlink '{}': {}",
-                        path, err
-                    )));
+                Ok(()) => names.push(Value::str_arc(path.into())),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    names.push(Value::str_arc(path.into()))
                 }
+                Err(_) => {}
             }
-            names.push(Value::str_arc(path.into()));
         }
-        Ok(Value::array(names))
+        // `unlink` returns an `Array` (not a List), so `say unlink <...>` gists
+        // as `[...]` and `.WHAT` is `Array`.
+        Ok(Value::real_array(names))
     }
 
     pub(super) fn builtin_open(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

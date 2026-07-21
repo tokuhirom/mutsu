@@ -224,6 +224,7 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "gmtime"
             | "times"
             | "undefine"
+            | "unlink"
     ) || is_expr_listop(name)
 }
 

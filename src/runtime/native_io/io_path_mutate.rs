@@ -160,13 +160,38 @@ impl Interpreter {
                     ))
                 }
             },
+            // Per raku, `.unlink` returns True on success, False when the file did
+            // not exist, and fails softly (a Failure carrying X::IO::Unlink) for
+            // any other error (e.g. the path is a directory) so `without`/`try`
+            // can handle it rather than the method throwing.
             "unlink" => match fs::remove_file(&path_buf) {
                 Ok(()) => Ok(Value::TRUE),
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Value::FALSE),
-                Err(err) => Err(RuntimeError::new(format!(
-                    "Failed to unlink '{}': {}",
-                    p, err
-                ))),
+                Err(err) => {
+                    // Rakudo reports libuv's wording for a directory target
+                    // ("illegal operation on a directory"); use it for the
+                    // EISDIR case and fall back to the OS message otherwise.
+                    let reason = if err.raw_os_error() == Some(21) {
+                        "illegal operation on a directory".to_string()
+                    } else {
+                        err.to_string()
+                    };
+                    let msg = format!(
+                        "Failed to remove the file '{}': Failed to delete file: {}",
+                        Self::stringify_path(&path_buf),
+                        reason
+                    );
+                    let mut ex_attrs = HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str_from(&msg));
+                    ex_attrs.insert("path".to_string(), Value::str_from(&p));
+                    let ex = Value::make_instance(Symbol::intern("X::IO::Unlink"), ex_attrs);
+                    let mut failure_attrs = HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))
+                }
             },
             "chmod" => {
                 let mode_value = args

@@ -131,7 +131,10 @@ impl Interpreter {
                     p.clone()
                 };
                 for _ in 0..levels {
-                    if path == "." {
+                    // A bare current-directory path — with or without a trailing
+                    // separator (`.`, `./`, `.\`) — has `..` as its parent, like
+                    // raku (`'./'.IO.parent` is `".."`).
+                    if path == "." || path == "./" || path == ".\\" {
                         path = "..".to_string();
                         continue;
                     }
