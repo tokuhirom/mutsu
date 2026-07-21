@@ -1,5 +1,135 @@
 # Changelog
 
+## [v0.13.0](https://github.com/tokuhirom/mutsu/compare/v0.12.0...v0.13.0) - 2026-07-21
+
+- chore: Step 4 GC-soundness tail — machine-check the strong==1 => unique invariant by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4948
+- fix: accept a typed pointy param on a `whenever` block by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4949
+- fix: allow a trailing comma in a pointy-block signature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4951
+- docs: ADR-0013 (Proposed) — container interior mutability via a GcCell newtype by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4952
+- fix: enum declaration in expression context no longer swallows the terminating `;` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4953
+- fix: don't register a `proto method` as a package proto sub by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4954
+- feat: anonymous enum expression value is a Map, not a plain Hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4955
+- feat: GcCell<T> interior-mutability newtype (ADR-0013 §4 phase 1) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4956
+- fix: role-registration validation false positives (my subset; body-imported qualified param type) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4957
+- fix: `Compiler.id` is callable on the type object and returns a stable id by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4958
+- feat: sound aliased container writes via UnsafeCell in GcBox (ADR-0013 §7) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4959
+- fix: allow a class to `does Scheduler` (composable built-in role) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4960
+- docs: refresh dist-compat sweep (n=150/seed7, 2026-07-20) — 79% load rate by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4962
+- fix: accept `$?` as an anonymous optional invocant (`method m($?: |)`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4961
+- fix: named enum expression value is a Map, not Any by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4963
+- fix: recognize an enum type as a valid role-method param constraint by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4965
+- chore: scripts/bench-visualize.py — render bench-history.tsv as a trend dashboard by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4964
+- fix: skip quoted strings when matching a `{...}` interpolation's close brace by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4966
+- fix: accept an inline statement modifier in an array composer by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4968
+- fix: multi-dispatch ranks a required param narrower than an optional one by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4967
+- fix: whenever valid anywhere lexically inside supply/react; add `supply whenever` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4969
+- fix: parse ASCII `<<...>>` postcircumfix subscript (interpolating word-quote) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4970
+- fix: rx// arbitrary delimiters and `:D`-before-parametrization param types by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4971
+- fix: support :exists / :!exists on Match captures (`$<foo>:exists`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4972
+- fix: accept a built-in enum value as a statement-level ternary then-branch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4973
+- fix: uppercase named-param aliases with defaults, and loop{} then a new-line while by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4974
+- fix: allow attribute traits (is/does/handles/will) in any order by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4975
+- perf(vm): skip operator resolution when no user infix is declared by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4976
+- docs: record the Nil-vs-Any identity knot as a deferred deep item (PLAN §8.5) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4977
+- fix: don't gobble a block after a declared hyphenated type name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4978
+- fix: interpolate `$.name()` self-accessor call in strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4979
+- refactor: delete the (B) per-store env-write gate (now permanent) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4980
+- fix: parse a bareword fat-arrow pair as a no-paren listop argument by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4981
+- fix(doc-diff-harness): per-process scratch file so parallel scans do not race by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4982
+- fix: bracket meta-op compound assign on indexed lvalues; is export on grammars by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4983
+- feat: <?wb> / <!wb> word-boundary zero-width regex assertions by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4986
+- fix: accept self as a ternary then-branch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4985
+- feat: positive named-class / Unicode-property regex assertions (<?alpha>) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4987
+- fix: support bracketed embedded comments in the regex slang by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4989
+- refactor(runtime): extract regex + declaration types out of mod.rs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4988
+- fix: accept optional/default on a named attributive callable param (:&!writer?) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4990
+- fix: .enums works on enum values and Bool by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4991
+- fix: expose positional captures in $/ after s/// substitution by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4992
+- feat: <?@var> / <!@var> array-variable lookahead assertions in regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4994
+- fix: polymod decomposes Rat divisors exactly (no float noise) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4995
+- fix: honor the :pos(N) / :continue(N) argument in m// matches by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4996
+- docs: record regexes.rakudoc doc-diff fixes in the backlog ledger by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4997
+- fix: accept the explicit greedy marker `**!` on range quantifiers by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5001
+- fix: multi-dispatch on invocant definedness (:D:/:U: markers) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4993
+- fix: Complex.round(Rat scale) is exact (no float noise) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4999
+- fix: accept any sigil in orwith pointy-block parameter (-> &edit) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5000
+- fix: accept a bare trailing colon on a return value (return $x:) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5004
+- fix: strip the backslash from an escaped `\%` in an s/// replacement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5003
+- fix: accept parametrized type in returns/of sub traits (returns Array[Int]) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5002
+- fix: fold :ignoremark (and other inline modifiers) into rx// literals by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5006
+- fix: numeric allomorphs compare by base in ==/!= and smartmatch by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5005
+- fix: accept apostrophes in private method call names (self!foo'bar) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4998
+- docs: record the deferred $/<key>-vs-lexical-name collision bug by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5008
+- fix: accept a type smiley on a type-capture parameter (::T:U) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5009
+- fix: StrDistance numifies to its edit distance by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5007
+- fix: subscript a numbered capture ($0[0]) in string interpolation by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5010
+- fix: parse chained bind through an indexed lvalue ($c := %h<k> := v) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5011
+- fix: stop double-negating a negated char-class lookahead <![...]> by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5012
+- fix: interpolate $var.method() inside a double-quoted regex literal by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5013
+- fix: parse a compact combined char class <:Ll+:N> by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5014
+- fix: Version `+`/`*` flags drive ordering and smart-match by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5015
+- fix: implement IO::Path::Parts as a Positional/Associative/Iterable container by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5016
+- fix: parse bareword traits on unit role/module declarations (is export) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5017
+- fix: grammar .subparse yields a failed Match and honors :pos(N) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5018
+- docs: record the named-sub free-var shadow generalize-escaping-our attempt (reverted) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5019
+- fix: parse bareword `list`/`cache` with no argument as a zero-arg call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5020
+- fix: Signature ~~ Signature is False when the matcher has a where clause by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5021
+- fix: coerce a Rat/Num/allomorph count for Str.chop by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5024
+- fix: package/module .HOW reports PackageHOW/ModuleHOW, not ClassHOW by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5022
+- fix: Str.contains accepts a Regex needle by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5026
+- fix: lines/Str.lines accept :count and a leading named arg by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5028
+- fix: Str.trans replacement cycling, Seq keys, and :squash overflow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5025
+- fix: don't gobble a block after an uppercase hyphenated type name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5023
+- fix: Str.contains honors :ignoremark by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5029
+- fix: register comb as a builtin sub by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5030
+- fix: Capture .keys/.values/.kv/.pairs interleave positional and named parts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5031
+- fix: preserve a container's is-default across whole-container reassignment by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5032
+- fix: parse space-separated sigil-shorthand colonpairs in parens by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5033
+- fix: parse undeclared bareword listop with a bareword argument (`color White`) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5027
+- fix: IO::Path .raku SPEC, '.'.parent, and unlink list/soft-fail semantics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5034
+- fix: parse constant term:<NAME> operator-name declarations by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5036
+- fix: Test isa-ok/can-ok/does-ok default messages and todo `is` diagnostics by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5037
+- fix: (temp $x)++ mutates the live variable by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5035
+- fix: correct .^parents(:tree) shape for multi-parent and top-level nodes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5038
+- fix: exception message fidelity for CannotConvert, NotComposable, Binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5040
+- fix: complete the Signal enum to match Rakudo by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5041
+- fix: parse ::?CLASS / ::?ROLE as a method return type by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5039
+- fix: Date.new Whatever day and Date.new-from-daycount by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5042
+- fix: consume a trailing `::` on a qualified name (package Stash) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5043
+- fix: a modifier condition ending in a block self-terminates the statement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5044
+- fix: quoted MOP pseudo-method dispatch and anonymous enum .^name by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5045
+- fix: Signature ~~ Signature honours built-in parametric roles by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5047
+- fix: anonymous enum value .WHAT is the empty type object by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5048
+- fix: enum value lookup matches rational and cross-type numeric values by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5046
+- fix: DateTime.new accepts a date-only string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5049
+- fix: a Pair answers <key>:exists for its own key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5050
+- fix: sum of a huge i64-endpoint Range no longer overflows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5051
+- fix: bind a placeholder variable inside parentheses by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5053
+- fix: numeric coercion of an enum member acts on its underlying value by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5054
+- fix: handle an indexed-element bind (`%h<k> := v`) in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5052
+- fix: add missing Dateish methods (DateTime ordered formatters, days-in-year, formatter) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5055
+- fix: balance nested `<...>` in an angle-bracket subscript key by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5056
+- fix: .match honours the ordinal adverb shortcuts (:1st/:2nd/:Nth) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5057
+- feat: add a test-suite-execution axis to the dist-compat sweep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5058
+- fix: Attribute.required reports the is-required trait state by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5059
+- fix: typed-array .push reports "for an element of @a" on a type error by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5061
+- fix: .match coerces a defined non-Regex/non-Str matcher to a literal string by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5060
+- feat: generate a deduped, impact-ordered dist-compat ticket queue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5062
+- fix: accept a qualified parent name in `also is <parent>` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5064
+- feat: seed the dist-compat two-ended ticket queue (TODO_dist/TICKETS.md) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5065
+- fix: Rat.Str rounds to a fixed digit budget instead of the full expansion by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5063
+- feat: implement Pair.freeze by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5066
+- fix: parse a named `anon sub` in expression context by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5069
+- fix: scan an s/// replacement as a qq-string, not a regex by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5068
+- fix: role public and private same-name methods no longer collide by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5070
+- docs: move dist-compat tickets T-001/T-002/T-002b to Done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5071
+- fix: interpolate twigilled attribute arrays/hashes in strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5073
+- fix: for-slice inside `do given` no longer corrupts the topic array by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5074
+- fix: a mutated dynamic var in a start block honours its live dynamic binding by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5072
+- docs: re-sweep doc-diff backlog after the Str fixes by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5067
+- fix: interpolate twigilled attribute arrays/hashes in strings by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5075
+- fix: user/list `skip` no longer loses to Test's `skip` after `plan` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5076
+
 ## [v0.12.0](https://github.com/tokuhirom/mutsu/compare/v0.11.1...v0.12.0) - 2026-07-20
 
 - ci: cache deps via Swatinem/rust-cache in bench and release workflows by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4904
