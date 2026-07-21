@@ -200,10 +200,13 @@ impl Interpreter {
             };
             for item in items_to_check {
                 if !self.type_matches_value(&type_name, item) {
-                    return Err(RuntimeError::typecheck_assignment(
+                    // A rejected element push reports "for an element of @a"
+                    // (matching rakudo and the interpreter's other array-mutator
+                    // paths), not the scalar "in assignment to @a" wording.
+                    return Err(crate::runtime::utils::type_check_element_typed_error(
+                        target_name,
                         &type_name,
                         item,
-                        Some(target_name),
                     ));
                 }
             }
