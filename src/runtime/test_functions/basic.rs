@@ -84,8 +84,9 @@ impl Interpreter {
             }
             _ => false,
         };
-        self.test_ok(ok, &desc, todo)?;
-        if !ok {
+        let detail = if ok {
+            Vec::new()
+        } else {
             let got = left
                 .as_ref()
                 .map(|v| self.value_for_diag(v))
@@ -94,10 +95,14 @@ impl Interpreter {
                 .as_ref()
                 .map(|v| self.value_for_diag(v))
                 .unwrap_or_default();
-            self.output_sink_mut()
-                .stderr_output
-                .push_str(&format!("expected: {}\n     got: {}\n", expected, got));
-        }
+            // Match raku's diagnostic: `#`-prefixed and single-quoted, routed
+            // with the `# Failed test` block (stdout for a TODO test, else stderr).
+            vec![
+                format!("# expected: '{}'", expected),
+                format!("#      got: '{}'", got),
+            ]
+        };
+        self.test_ok_with_diag(ok, &desc, todo, &detail)?;
         Ok(Value::truth(ok))
     }
 
