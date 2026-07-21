@@ -252,6 +252,8 @@ impl Interpreter {
             // `HashEntryRef` so an in-loop `%h{$p.key} = X` is observable through
             // a later `$p.value` read (raku's live hash-iteration pairs).
             Self::hash_live_pairs(&gc, iterable.hash_is_itemized())
+        } else if let Some(items) = self.try_iterable_instance_items(&iterable)? {
+            items
         } else {
             runtime::value_to_list(&iterable)
         };
@@ -362,5 +364,66 @@ impl Interpreter {
         }
         *ip = loop_end;
         Ok(())
+    }
+
+    /// `for $obj` where `$obj` is an instance of a class that `does Iterable`
+    /// with its own `iterator` method (a "tied" hash/list like Hash::Agnostic):
+    /// iterate via that method's `Iterator` (`pull-one` until `IterationEnd`)
+    /// rather than treating the instance as a single opaque value. Returns
+    /// `None` for any other value so the caller falls through to `value_to_list`.
+    /// An `is Array` subclass (backed by `__mutsu_array_storage`) is left to that
+    /// path — its elements are the storage, not a user iterator.
+    fn try_iterable_instance_items(
+        &mut self,
+        iterable: &Value,
+    ) -> Result<Option<Vec<Value>>, RuntimeError> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = iterable.view()
+        else {
+            return Ok(None);
+        };
+        if attributes.contains_key("__mutsu_array_storage") {
+            return Ok(None);
+        }
+        let cn = class_name.as_str().to_string();
+        if !(self.class_does_role(&cn, "Iterable") && self.has_user_method(&cn, "iterator")) {
+            return Ok(None);
+        }
+        let iterator =
+            self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?;
+        // Drive `pull-one` through a temp *variable*, not a bare value: a user
+        // `Iterator` instance keeps its cursor in its own attributes, and an
+        // Instance value clone deep-copies those, so calling `pull-one` on a
+        // fresh clone each step would restart from the first element forever.
+        // The by-name mut path writes the advanced iterator back to the temp
+        // slot so the next `pull-one` sees the moved cursor.
+        let tmp = "$__mutsu_for_iterable_iter";
+        let saved = self.get_env_with_main_alias(tmp);
+        self.set_env_with_main_alias(tmp, iterator);
+        let mut items = Vec::new();
+        let result = loop {
+            let cur = self.get_env_with_main_alias(tmp).unwrap_or(Value::NIL);
+            let val = match self.call_method_mut_with_values(tmp, cur, "pull-one", vec![]) {
+                Ok(v) => v,
+                Err(e) => break Err(e),
+            };
+            if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                || matches!(val.view(), ValueView::Package(n) if n == crate::symbol::Symbol::intern("IterationEnd"))
+            {
+                break Ok(());
+            }
+            items.push(val);
+        };
+        match saved {
+            Some(v) => self.set_env_with_main_alias(tmp, v),
+            None => {
+                self.env_mut().remove(tmp);
+            }
+        }
+        result?;
+        Ok(Some(items))
     }
 }
