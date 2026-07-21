@@ -30,6 +30,7 @@ impl Value {
             ValueView::Seq(_) => "Seq",
             ValueView::HyperSeq(_) => "HyperSeq",
             ValueView::RaceSeq(_) => "RaceSeq",
+            ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Map") => "Map",
             ValueView::Hash(..) => "Hash",
             ValueView::Set(_, is_mutable) => {
                 if is_mutable {

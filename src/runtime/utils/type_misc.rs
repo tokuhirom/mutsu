@@ -17,6 +17,7 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // (`lazy for`, arithmetic/closure sequences) present as `Array`/`List`.
         ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
         ValueView::LazyList(_) => "Array",
+        ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Map") => "Map",
         ValueView::Hash(_) => "Hash",
         ValueView::Range(_, _)
         | ValueView::RangeExcl(_, _)
