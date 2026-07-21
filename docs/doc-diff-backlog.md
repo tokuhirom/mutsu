@@ -45,6 +45,12 @@ doc) are version skew, not mutsu bugs — lowest priority.
 - `$.name()` self-accessor interpolation left `()` literal — **#4979**.
 - Harness scratch-file race producing phantom findings — **#4982** (this is why the
   survey below supersedes every earlier scan).
+- `regexes.rakudoc` [20] — positional captures (`$0`/`$1`/`$/[0]`) empty in `$/`
+  after `s///` — **#4992**.
+- `regexes.rakudoc` [13] — `<?@var>` / `<!@var>` array-variable lookahead assertions
+  never matched — **#4994**.
+- `regexes.rakudoc` [28] — `m:pos(N)` / `m:continue(N)` discarded the `(N)` argument
+  and matched from the start — **#4996**.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
