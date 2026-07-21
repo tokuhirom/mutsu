@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_41 open tickets._
+_40 open tickets._
 
 ## Open
 
@@ -70,12 +70,6 @@ _41 open tickets._
 ### T-018 — runtime_error: Cannot call private method X permission  [impact: 1 dist]
 - dists: Cookie::Jar
 - e.g. `Cookie::Jar`: Cookie::Jar: Cannot call private method without permission
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-019 — runtime_error: Cannot declare our-scoped enum inside of a role  [impact: 1 dist]
-- dists: Algorithm::Treap
-- e.g. `Algorithm::Treap`: Algorithm::Treap: Cannot declare our-scoped enum inside of a role
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -290,6 +284,12 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-019** (#5097) — three role-declaration gaps blocked Algorithm::Treap: a
+  `my enum` inside a role was rejected as our-scoped; a body-declared type used as
+  a param constraint raised a false "Invalid typename" (signature validation runs
+  before the body registers the type); and a role type parameter after the
+  `:ver`/`:auth` adverbs (`unit role Foo:ver<..>:auth<..>[::KeyT]`) was dropped.
+  All three fixed — **Algorithm::Treap fully loads**, matching raku.
 - **T-017** (#5094) — `&[R[~~]]`, a code reference to a metaop whose operand is
   itself bracketed (`R[~~]`, reverse of the reduce `[~~]`), was cut at the first
   `]`. The `&[op]` parser now balances nested brackets. **Test::Run fully loads**,
