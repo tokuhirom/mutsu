@@ -231,7 +231,22 @@ impl Interpreter {
         // don't-overwrite default would otherwise hide this closure's own cell.
         for (k, v) in data.env.iter() {
             if matches!(v.view(), ValueView::ContainerRef(_)) {
-                self.env_mut().insert_sym(*k, v.clone());
+                // A captured `ContainerRef` cell normally OVERWRITES the caller's
+                // stale value (it is the single source of truth for that lexical).
+                // But a *dynamic* variable (`$*x`) is dynamic-scope: its live value
+                // is whatever the current dynamic frame set (e.g. `indir` binds
+                // `$*CWD` for its block), NOT the cell the escaping closure captured
+                // from its creator. Overwriting here clobbers that dynamic binding
+                // (indir.t: `start indir :!d, $p, { ...; $*CWD = 42 }` read the
+                // creator's `my $*CWD` instead of the indir-set path). Dynamics are
+                // already excluded from `authoritative_free_vars` below for the same
+                // reason; do the same for the box-on-capture cell — don't overwrite,
+                // so the live dynamic binding stands.
+                if k.with_str(|s| s.trim_start_matches(['$', '@', '%', '&']).starts_with('*')) {
+                    self.env_mut().entry_or_insert_sym(*k, v.clone());
+                } else {
+                    self.env_mut().insert_sym(*k, v.clone());
+                }
             } else {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
