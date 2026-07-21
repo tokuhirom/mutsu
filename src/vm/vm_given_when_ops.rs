@@ -188,6 +188,27 @@ impl Interpreter {
 
         let saved_topic = self.env().get("_").cloned();
         let saved_when = self.when_matched();
+        // Consume the topic's `TagContainerRef` signal (emitted right before this
+        // op by `do given @c`). It must NOT survive into the body: a nested
+        // `for @c[$slice] { }` — whose slice iterable emits no source tag of its
+        // own — would otherwise pick up this stale `container_ref_var` and write
+        // its loop values back into `@c` at the wrong (0-based) indices, shifting
+        // the array (`do given @l { for @l[1..2] -> $e {} }` corrupted `@l`).
+        // Whole-container topic writeback is not done by the expression form
+        // (in-place `$_[0]=…`/`.push` propagate through the shared container), so
+        // dropping the signal is sufficient; it only scopes topic-source tags to
+        // the body and is restored afterwards.
+        let saved_container_ref = self.container_ref_var.take();
+        let saved_topic_source = self.topic_source_var.take();
+        let saved_container_source = self.topic_container_source.take();
+        if let Some((src, _)) = &saved_container_ref
+            && self.element_source.is_none()
+        {
+            self.topic_source_var = Some(src.clone());
+            if src.starts_with('@') || src.starts_with('%') {
+                self.topic_container_source = Some(src.clone());
+            }
+        }
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
 
@@ -218,6 +239,8 @@ impl Interpreter {
                 } else {
                     self.env_mut().remove("_");
                 }
+                self.topic_source_var = saved_topic_source;
+                self.topic_container_source = saved_container_source;
                 return Err(e);
             }
         }
@@ -228,6 +251,8 @@ impl Interpreter {
         } else {
             self.env_mut().remove("_");
         }
+        self.topic_source_var = saved_topic_source;
+        self.topic_container_source = saved_container_source;
         self.stack.push(last);
         *ip = end;
         Ok(())
