@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_38 open tickets._
+_37 open tickets._
 
 ## Open
 
@@ -41,13 +41,6 @@ _38 open tickets._
 - dists: REPL, mv2d
 - e.g. `mv2d`: App::MoarVM::Debug: Runtime error: Failed to parse module 'App::MoarVM::Debug': Unexpected block in infix position (missing statement control word before the ex
 - e.g. `REPL`: REPL: Runtime error: Failed to parse module 'REPL': Unexpected block in infix position (missing statement control word before the expression?)
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-007 — runtime_error: Runtime error: Failed to parse module 'X': X::Undeclared::Symbols: Undeclared routine:  [impact: 2 dists]
-- dists: Acme::Cow, lemmatize
-- e.g. `lemmatize`: lemmatize: Runtime error: Failed to parse module 'lemmatize': X::Undeclared::Symbols: Undeclared routine:
-- e.g. `Acme::Cow`: Acme::Cow::Example: Runtime error: Failed to parse module 'Acme::Cow::Example': X::Undeclared::Symbols: Undeclared routine:
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -279,6 +272,13 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-007** (#5108) — `S:g /.../ ` — the non-destructive substitution `S///`
+  with whitespace between its adverbs and the delimiter — was mis-parsed as a
+  call to an undeclared routine `S:g`; the uppercase-`S` parser never skipped
+  that whitespace (the lowercase `s` already did). **lemmatize fully loads** now
+  (`S:g /<:punct>//`), matching raku. (The other dist, Acme::Cow::Example, uses a
+  version+auth-qualified `use` that raku can't resolve under `-I lib` either;
+  mutsu already loads it.)
 - **T-021** (#5104) — a postfix modifier whose *condition* ends with a `{ ... }`
   block (`return if @a.first: {...}`) is terminated by that block, so the next
   line's `if`/`for` starts a new statement. mutsu treated it as an illegal second
