@@ -116,6 +116,14 @@ intentionally deferred; see PLAN.md §8.5 and the ADRs:
   (NB: `regexes.rakudoc` [3] `<same>` is a *separate* missing builtin subrule, not this root.)
 - **WHICH-keyed QuantHash storage** — `QuantHash.rakudoc`, `Baggy`, `setbagmix` (Set/Bag key by stringification).
 - **Custom `does Iterable`/`does Iterator` protocol** — `iterating.rakudoc`, `Iterator.rakudoc`.
+- **CallFrame frame modeling** — `CallFrame.rakudoc` (4 findings). The accessors
+  (`.line`/`.file`/`.annotations`) already work; the gaps are frame *modeling*:
+  `.code` is `Nil` for block/phaser/mainline frames (raku: `Block`/`Code`/`Mu`),
+  there is no bootstrap "setting" frame so `callframe(1)` at top level is `Nil`
+  (raku: line 1, code `Mu`), and `.annotations` returns `Hash` not `Map`. Medium
+  feature, not a shallow accessor fix — full investigation and a sequenced plan (G1–G4,
+  with G4 `.annotations→Map` a small standalone win) are in
+  [docs/callframe-introspection-plan.md](callframe-introspection-plan.md).
 
 ### Untriaged
 Everything in the survey below not listed above. The per-file minimal repros live in
