@@ -274,8 +274,10 @@ _40 open tickets._
      (pin `t/tied-hash-associative.t`). Re-assignment `%h = @pairs` now routes through
      `.STORE` (#5103), tied iteration `for %h` through the class's iterator (#5107), and the
      `:delete`/`:exists` adverbs + `:=` BIND-KEY through DELETE-KEY/EXISTS-KEY/BIND-KEY
-     (pin `t/tied-hash-bind.t`). **Remaining for a full pass:** value/whatever slices
-     (`%h{@keys}` / `%h{*}`) are not yet routed to the class's methods.
+     (pin `t/tied-hash-bind.t`). Value/list slices (`%h<a b>` / `%h{'a','c'}`) route
+     through the existing `(Instance, Array)` read arm, and the `{*}` whatever slice
+     enumerates the class's `keys` + AT-KEY. **All gap-1 sub-items now landed; a full
+     dist run is the remaining confirmation.**
   2. **public/private same-name role methods** — Hash::Agnostic's `method STORE {...self!STORE(...)}`
      + `method !STORE` collided (private overwrote public in role composition; two-role
      public+private also mis-flagged X::Role::Composition::Conflict). **Fixed** — see the
