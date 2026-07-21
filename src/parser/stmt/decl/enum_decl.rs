@@ -31,7 +31,7 @@ pub(crate) fn enum_decl(input: &str) -> PResult<'_, Stmt> {
             return parse_anon_enum_body(r);
         }
     }
-    parse_enum_decl_body(rest)
+    parse_enum_decl_body(rest, false)
 }
 
 /// Parse anonymous enum body (after `enum` keyword with no name).
@@ -93,6 +93,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             name: Symbol::intern(""),
             variants,
             is_export: false,
+            is_my: false,
             base_type: None,
             language_version: super::super::simple::current_language_version(),
         },
@@ -254,13 +255,14 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
     }
 }
 
-pub(in crate::parser::stmt) fn parse_enum_decl_body(input: &str) -> PResult<'_, Stmt> {
-    parse_enum_decl_body_with_type(input, None)
+pub(in crate::parser::stmt) fn parse_enum_decl_body(input: &str, is_my: bool) -> PResult<'_, Stmt> {
+    parse_enum_decl_body_with_type(input, None, is_my)
 }
 
 pub(super) fn parse_enum_decl_body_with_type(
     input: &str,
     base_type: Option<String>,
+    is_my: bool,
 ) -> PResult<'_, Stmt> {
     let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
@@ -344,6 +346,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                         name,
                         variants: vec![("__DYNAMIC__".to_string(), Some(combined))],
                         is_export,
+                        is_my,
                         base_type: base_type.clone(),
                         language_version: super::super::simple::current_language_version(),
                     },
@@ -358,6 +361,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                     name,
                     variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
                     is_export,
+                    is_my,
                     base_type: base_type.clone(),
                     language_version: super::super::simple::current_language_version(),
                 },
@@ -376,6 +380,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             name,
             variants,
             is_export,
+            is_my,
             base_type,
             language_version: super::super::simple::current_language_version(),
         },

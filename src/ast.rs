@@ -793,6 +793,10 @@ pub(crate) enum Stmt {
         name: Symbol,
         variants: Vec<(String, Option<Expr>)>,
         is_export: bool,
+        /// Whether declared with an explicit `my` scope (lexical). A `my enum`
+        /// is private to its enclosing scope and, unlike a default our-scoped
+        /// enum, is allowed inside a role body.
+        is_my: bool,
         /// Base type constraint (e.g., `my Str enum ...` has base_type = Some("Str"))
         base_type: Option<String>,
         /// Language version active when this enum was declared (e.g., "6.c", "6.d", "6.e")

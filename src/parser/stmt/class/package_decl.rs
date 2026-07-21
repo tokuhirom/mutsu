@@ -247,12 +247,21 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         check_pseudo_package_in_decl(&name)?;
-        let (mut r, (type_params, type_param_defs)) =
+        let (mut r, (mut type_params, mut type_param_defs)) =
             super::role_decl::parse_optional_role_type_params(r)?;
         // Optional type adverbs (:ver<...>, :auth<...>, :api<...>).
         let (r2, _adverbs) = parse_declarator_traits(r)?;
         let (r2, _) = ws(r2)?;
         r = r2;
+        // The signature may also FOLLOW the adverbs — the order Raku itself uses:
+        // `unit role Algorithm::Treap:ver<0.10.3>:auth<zef:titsuki>[::KeyT];`.
+        if type_params.is_empty() && r.starts_with('[') {
+            let (r2, (tp, tpd)) = super::role_decl::parse_optional_role_type_params(r)?;
+            let (r2, _) = ws(r2)?;
+            type_params = tp;
+            type_param_defs = tpd;
+            r = r2;
+        }
         // Optional parent/trait clauses in any order (mirrors block-form roles).
         let mut parent_roles: Vec<String> = Vec::new();
         let mut is_export = false;

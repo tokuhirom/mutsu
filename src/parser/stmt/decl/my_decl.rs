@@ -107,7 +107,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
     // my Array enum Foo <...>  (typed enum — base type is accepted but currently ignored)
     if let Some(r) = keyword("enum", rest) {
         let (r, _) = ws1(r)?;
-        return super::enum_decl::parse_enum_decl_body(r);
+        return super::enum_decl::parse_enum_decl_body(r, !is_our);
     }
     // Check for `my <Type> enum <Name> ...` (e.g., `my Array enum PageSizes «...»`)
     {
@@ -117,7 +117,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
             && let Some(r) = keyword("enum", after_ws)
             && let Ok((r, _)) = ws1(r)
         {
-            return super::enum_decl::parse_enum_decl_body_with_type(r, Some(_type_name));
+            return super::enum_decl::parse_enum_decl_body_with_type(r, Some(_type_name), !is_our);
         }
         rest = saved;
     }

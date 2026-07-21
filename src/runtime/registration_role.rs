@@ -257,6 +257,10 @@ impl Interpreter {
                 // implicitly our-scoped `subset` is forbidden.
                 Stmt::SubsetDecl { is_my: true, .. } => None,
                 Stmt::SubsetDecl { .. } => Some("subset"),
+                // A `my enum` is lexically scoped and private to the role body,
+                // which is allowed (like `my class`/`my subset`/`my role`); only
+                // an implicitly our-scoped `enum` is forbidden.
+                Stmt::EnumDecl { is_my: true, .. } => None,
                 Stmt::EnumDecl { .. } => Some("enum"),
                 // A `my role` is lexically scoped and private to the role body, which
                 // is allowed (like `my class`); only an implicitly our-scoped `role` is
@@ -394,6 +398,12 @@ impl Interpreter {
         // site regardless).
         let mut role_own_attrs: HashSet<String> = HashSet::new();
         let mut body_used_modules: HashSet<String> = HashSet::new();
+        // Types declared inside the role body itself (`my enum`, `my subset`,
+        // `my class`, ...) are not yet in the registry while the role's method
+        // signatures are validated, so collect their names to accept them as
+        // parameter/attribute constraints. The real registration happens when the
+        // role body runs.
+        let mut body_declared_types: HashSet<String> = HashSet::new();
         for stmt in &flattened_body {
             match stmt {
                 Stmt::HasDecl {
@@ -403,6 +413,12 @@ impl Interpreter {
                 }
                 Stmt::Use { module, .. } | Stmt::Need { module } | Stmt::Import { module, .. } => {
                     body_used_modules.insert(module.clone());
+                }
+                Stmt::EnumDecl { name, .. }
+                | Stmt::SubsetDecl { name, .. }
+                | Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. } => {
+                    body_declared_types.insert(name.resolve());
                 }
                 _ => {}
             }
@@ -818,6 +834,10 @@ impl Interpreter {
                             let self_short = name.rsplit_once("::").map(|(_, s)| s).unwrap_or(name);
                             let resolvable = tc_base == name
                                 || tc_base == self_short
+                                // A type declared in this role's own body (`my enum`,
+                                // `my subset`, ...) is not registered until the body
+                                // runs; accept its name here.
+                                || body_declared_types.contains(tc_base)
                                 || self.is_resolvable_type(tc)
                                 || (!tc.contains("::")
                                     && enclosing_prefixes.iter().any(|pfx| {
