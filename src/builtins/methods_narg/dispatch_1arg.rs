@@ -554,6 +554,18 @@ pub(crate) fn native_method_1arg(
                             .collect();
                     return Some(Ok(Value::seq(lines)));
                 }
+                // `.lines(:count)` returns the number of lines instead of the list.
+                if key == "count" {
+                    if value.truthy() {
+                        let n = crate::builtins::split_lines_chomped(&s).len();
+                        return Some(Ok(Value::int(n as i64)));
+                    }
+                    let lines: Vec<Value> = crate::builtins::split_lines_chomped(&s)
+                        .into_iter()
+                        .map(Value::str)
+                        .collect();
+                    return Some(Ok(Value::seq(lines)));
+                }
                 return None;
             }
 
