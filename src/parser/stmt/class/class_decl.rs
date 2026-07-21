@@ -9,7 +9,7 @@ use crate::parser::expr::expression;
 use crate::parser::helpers::{skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char, take_while1};
 use crate::parser::stmt::sub::parse_indirect_decl_name;
-use crate::parser::stmt::{block, ident, keyword, qualified_ident};
+use crate::parser::stmt::{block, keyword, qualified_ident};
 
 pub(crate) fn parse_declarator_traits(input: &str) -> PResult<'_, Vec<(String, Value)>> {
     let mut traits = Vec::new();
@@ -454,7 +454,11 @@ pub(crate) fn also_trait_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let rest = keyword("is", rest).ok_or_else(|| PError::expected("is or does after also"))?;
     let (rest, _) = ws1(rest)?;
-    let (rest, trait_name) = ident(rest)?;
+    // The parent may be a qualified name (`also is X::Config::TOML::DuplicateKeys`),
+    // so read a full `::`-qualified identifier — a bare `ident` would stop at the
+    // first `::`, taking only the first segment as the parent and leaving the rest
+    // as a stray term (Config::TOML / Crane / Node::Ethereum::RLP exception trees).
+    let (rest, trait_name) = qualified_ident(rest)?;
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
     Ok((
