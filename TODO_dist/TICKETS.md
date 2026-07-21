@@ -31,8 +31,24 @@ _51 open tickets._
 - dists: Needle::Compile, Test::Selector
 - e.g. `Needle::Compile`: Needle::Compile: expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement
 - e.g. `Test::Selector`: Test::Selector: expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `my $s='a'; $s ~~ s:g/ (.) /<[/; say $s` — raku: `<[`, mutsu (before): parse error
+- file: `src/parser/primary/regex/scan.rs` (replacement half scanned as a regex, so `<[` read as a `<[...]>` char class)
+- NOTE: two distinct root causes clustered under one message.
+  - **Test::Selector** (fixed by fix-subst-replacement-literal-angle): the `s///`
+    *replacement* half is a qq-like string, not a regex — `<[`/`]>`/`#`/`'` are
+    literal. `scan_to_delim` (regex mode) mis-scanned them; added
+    `scan_to_delim_replacement`.
+  - **Needle::Compile** is a **separate** case: `anon sub <name>(...)` inside a
+    parenthesized expression (`(&jp = anon sub jp(...) {...})($x)`) fails to parse,
+    while the same without parens / without a name parses. Still open — split out
+    below as T-002b.
+
+### T-002b — parse_error: named `anon sub` inside a parenthesized expression  [impact: 1 dist]
+- dists: Needle::Compile
+- repro: `(anon sub jp($p) { say $p })("hi")` — raku: `Syntax OK`, mutsu: SORRY.
+  `my $x = anon sub jp($p) {...}` (no parens) and `(anon sub ($p) {...})(...)`
+  (no name) both parse; only a *named* `anon sub` in expression context fails.
+- file: _(suspected: `anon sub` term parsing in expression/primary context)_
 
 ### T-003 — runtime_error: No such method X for invocant of type 'X'  [impact: 2 dists]
 - dists: Injector, hyperize
