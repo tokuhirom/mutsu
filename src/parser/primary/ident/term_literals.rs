@@ -182,6 +182,14 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
     if let Some(dyn_expr) = dynamic_expr {
         return Ok((r, Expr::IndirectTypeLookup(Box::new(dyn_expr))));
     }
+    // A trailing `::` on a qualified name denotes the package Stash
+    // (`::EXPORT::DEFAULT::`). The loop above stops at a `::` not followed by a
+    // name segment or `::(...)`, leaving a stray `::` that breaks the enclosing
+    // expression (e.g. `(|::EXPORT::DEFAULT::, ...)` inside parens). Consume it so
+    // the name parses as a single term.
+    if let Some(after) = r.strip_prefix("::") {
+        r = after;
+    }
     // Type smileys: ::Foo:U, ::Foo:D, ::Foo:_
     if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
         && !r[2..].starts_with('<')
