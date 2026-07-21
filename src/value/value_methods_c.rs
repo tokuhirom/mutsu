@@ -423,6 +423,8 @@ impl Value {
                 .get("str")
                 .map(|v| v.to_string_value().trim().parse::<f64>().unwrap_or(0.0))
                 .unwrap_or(0.0),
+            // A numeric allomorph (IntStr/NumStr/RatStr) numifies to its inner value.
+            ValueView::Mixin(inner, _) => inner.to_f64(),
             _ => 0.0,
         }
     }
