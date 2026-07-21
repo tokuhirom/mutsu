@@ -99,6 +99,20 @@ pub(in crate::parser) fn scan_to_delim_replacement(
                     None => return None,
                 }
             }
+        } else if c == '$' && !is_paired && input[i + 1..].starts_with(close_ch) {
+            // `$/` — the match variable — followed by the close delimiter. When
+            // it is immediately followed by a postfix `.`/`[`/`<` the delimiter
+            // is part of `$/` (e.g. `$/.chars()`, `$/[0]`, `$/<k>`), not the end
+            // of the replacement, so skip it. Mirrors the same disambiguation in
+            // `scan_to_delim`.
+            let after = &input[i + 1..];
+            let after_delim = &after[close_ch.len_utf8()..];
+            if after_delim.starts_with('[')
+                || after_delim.starts_with('.')
+                || after_delim.starts_with('<')
+            {
+                chars.next(); // skip the delimiter char (it is part of $/)
+            }
         } else if c == '\\' {
             chars.next();
         }
