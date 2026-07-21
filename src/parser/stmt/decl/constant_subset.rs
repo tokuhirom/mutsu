@@ -38,6 +38,19 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         let name = format!("{prefix}{n}");
         register_term_symbol_from_decl_name(&name);
         (r, name)
+    } else if rest.starts_with("term:<") || rest.starts_with("term:\u{ab}") {
+        // `constant term:<♥> = "♥"` defines a term named `♥`, resolvable as a
+        // bareword. Parse the operator name (`term:<♥>`) and use its inner
+        // symbol (`♥`) as the constant's name, exactly as `constant ♥ = ...`
+        // would if `♥` were a legal identifier.
+        let (r, full) = parse_sigilless_decl_name(rest)?;
+        let inner = full
+            .strip_prefix("term:<")
+            .and_then(|s| s.strip_suffix('>'))
+            .unwrap_or(&full)
+            .to_string();
+        register_term_symbol_from_decl_name(&inner);
+        (r, inner)
     } else {
         let (r, n) = ident(rest)?;
         register_term_symbol_from_decl_name(&n);
