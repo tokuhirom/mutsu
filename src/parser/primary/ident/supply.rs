@@ -23,6 +23,7 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
             param: emitter_name,
             body: lowered_body,
             is_whatever_code: false,
+            param_sigilless: false,
         }],
         modifier: None,
         quoted: false,

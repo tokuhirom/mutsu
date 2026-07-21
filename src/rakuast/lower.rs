@@ -582,6 +582,7 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     param: params.into_iter().next().unwrap(),
                     body,
                     is_whatever_code: false,
+                    param_sigilless: param_defs.first().is_some_and(|pd| pd.sigilless),
                 }),
                 _ => Ok(Expr::AnonSubParams {
                     params,

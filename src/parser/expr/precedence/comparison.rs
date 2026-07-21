@@ -324,6 +324,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                             param: "_".to_string(),
                             body: vec![crate::ast::Stmt::Expr(sm_expr)],
                             is_whatever_code: true,
+                            param_sigilless: false,
                         },
                     ));
                 }
@@ -349,6 +350,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                             param: "_".to_string(),
                             body: vec![crate::ast::Stmt::Expr(sm_expr)],
                             is_whatever_code: true,
+                            param_sigilless: false,
                         },
                     ));
                 }

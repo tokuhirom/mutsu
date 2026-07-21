@@ -72,6 +72,7 @@ pub(crate) fn build_compound_assign_expr(
                 param: "_".to_string(),
                 body: vec![crate::ast::Stmt::Expr(body)],
                 is_whatever_code: true,
+                param_sigilless: false,
             }
         }
         Expr::AssignExpr {

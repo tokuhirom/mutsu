@@ -176,6 +176,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             param: "_".to_string(),
             body: vec![crate::ast::Stmt::Expr(body)],
             is_whatever_code: true,
+            param_sigilless: false,
         };
     }
     match target {

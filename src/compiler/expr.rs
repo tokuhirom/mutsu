@@ -795,8 +795,9 @@ impl Compiler {
                 param,
                 body,
                 is_whatever_code,
+                param_sigilless,
             } => {
-                self.compile_expr_lambda(param, body, *is_whatever_code);
+                self.compile_expr_lambda(param, body, *is_whatever_code, *param_sigilless);
             }
             Expr::IndexAssign {
                 target,

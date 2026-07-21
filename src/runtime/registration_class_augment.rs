@@ -349,6 +349,7 @@ impl Interpreter {
                         right: right.clone(),
                     })],
                     is_whatever_code: true,
+                    param_sigilless: false,
                 };
             }
             pred.clone()

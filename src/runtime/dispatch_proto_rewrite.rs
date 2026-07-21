@@ -274,10 +274,12 @@ impl Interpreter {
                 param,
                 body,
                 is_whatever_code,
+                param_sigilless,
             } => Expr::Lambda {
                 param: param.clone(),
                 body: Self::rewrite_proto_dispatch_stmts(body),
                 is_whatever_code: *is_whatever_code,
+                param_sigilless: *param_sigilless,
             },
             Expr::AnonSub {
                 body,

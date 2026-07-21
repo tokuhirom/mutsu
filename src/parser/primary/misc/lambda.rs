@@ -225,6 +225,7 @@ pub(crate) fn arrow_lambda(input: &str) -> PResult<'_, Expr> {
                     param: lambda_name,
                     body,
                     is_whatever_code: false,
+                    param_sigilless: first.sigilless,
                 },
             ))
         } else {
