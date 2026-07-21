@@ -32,7 +32,37 @@ impl Compiler {
         }
     }
 
+    /// True when `expr` is a `key => value` named argument whose key is the
+    /// literal string `key`.
+    fn is_named_arg_key(expr: &Expr, key: &str) -> bool {
+        matches!(expr, Expr::Binary { left, op, .. }
+            if *op == crate::token_kind::TokenKind::FatArrow
+                && matches!(left.as_ref(), Expr::Literal(l)
+                    if matches!(l.view(), crate::value::ValueView::Str(s) if s.as_str() == key)))
+    }
+
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
+        // `callframe`/`caller` inside N enclosing `for` blocks must report the
+        // frames those blocks introduce. The block nesting is a compile-time
+        // property of the call site, so capture it as a hidden `__callframe_blocks`
+        // named arg for the runtime to offset the requested level (see
+        // `Compiler::callframe_block_depth`). Guarded against re-injection so the
+        // recursive re-dispatch terminates.
+        if self.callframe_block_depth > 0
+            && name == "callframe"
+            && !args
+                .iter()
+                .any(|a| Self::is_named_arg_key(a, "__callframe_blocks"))
+        {
+            let mut new_args = args.to_vec();
+            new_args.push(Expr::Binary {
+                left: Box::new(Expr::Literal(Value::str("__callframe_blocks".to_string()))),
+                op: crate::token_kind::TokenKind::FatArrow,
+                right: Box::new(Expr::Literal(Value::int(self.callframe_block_depth as i64))),
+            });
+            self.compile_expr_call(name, &new_args);
+            return;
+        }
         // Parser-rewritten atomic-op forms (`⚛$x`, `$x ⚛= v`, `$x⚛++`) arrive
         // here already lowered to `__mutsu_atomic_*_var(<var-name-literal>, …)`
         // (the explicit `atomic-fetch($x)` / `cas($x, …)` named forms are handled

@@ -1993,7 +1993,12 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
                 self.hoist_sub_decls(&loop_body, true);
+                // A `for` body is its own Raku call frame; count it so a
+                // `callframe`/`caller` inside sees the enclosing routine one
+                // level further up (see `callframe_block_depth`).
+                self.callframe_block_depth += 1;
                 self.compile_body_with_implicit_try(&loop_body);
+                self.callframe_block_depth -= 1;
                 for n in &newly_registered {
                     self.sigilless_locals.remove(n);
                 }

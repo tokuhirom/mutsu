@@ -24,6 +24,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut depth = default_depth;
         let mut callsite_line: Option<i64> = None;
+        let mut nblocks: usize = 0;
         for arg in args {
             match arg.view() {
                 ValueView::Int(i) if i >= 0 => depth = i as usize,
@@ -33,10 +34,15 @@ impl Interpreter {
                         callsite_line = Some(line);
                     }
                 }
+                ValueView::Pair(k, v) if k == "__callframe_blocks" => {
+                    if let ValueView::Int(n) = v.view() {
+                        nblocks = n.max(0) as usize;
+                    }
+                }
                 _ => {}
             }
         }
-        if let Some(frame) = self.callframe_value(depth, callsite_line) {
+        if let Some(frame) = self.callframe_value(depth, callsite_line, nblocks) {
             return Ok(frame);
         }
         Ok(Value::NIL)
@@ -95,7 +101,7 @@ impl Interpreter {
 
         // If no caller found in routine_stack, fall back to callframe
         if caller_start_idx.is_none() && type_filter.is_none() && skip == 0 {
-            if let Some(frame) = self.callframe_value(1, callsite_line) {
+            if let Some(frame) = self.callframe_value(1, callsite_line, 0) {
                 return Ok(frame);
             }
             return Ok(Value::package(Symbol::intern("Mu")));
