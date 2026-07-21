@@ -88,6 +88,14 @@ doc) are version skew, not mutsu bugs — lowest priority.
   `$!.^name` mismatch (`Any` vs `Nil`) because the *cleared* `$!` is `Value::NIL`,
   which reports `Any` — that is the deferred Nil-vs-Any identity knot below, not this
   fix.
+- `hashmap.rakudoc` [1] — a Junction used as a hash-initializer key
+  (`%( "a"|"b" => 1 )`) was stored under its stringification (`any(a, b)`) as a
+  single literal key instead of threading. Per Rakudo a Junction key stores the
+  value under each of its members (`%h<a> == %h<b> == 1`). Added `hash_pair_keys`
+  (expands a Junction key to its members, else the key itself) and routed every
+  hash-initializer `ValuePair` arm through it (`build_hash_from_items`,
+  `coerce_to_hash`, `MakeHashFromPairs`), covering `%( )`, plain list assignment,
+  and single-pair assignment. Pin: `t/hash-junction-key.t`.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are

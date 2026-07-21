@@ -1,5 +1,16 @@
 use super::*;
 
+/// The concrete key(s) a hash-initializer pair stores its value under. A Junction
+/// key threads over its members (`"a"|"b" => 1` stores 1 under both `a` and `b`,
+/// per Rakudo); every other key is itself.
+pub(crate) fn hash_pair_keys(key: &Value) -> Vec<Value> {
+    if let ValueView::Junction { values, .. } = key.view() {
+        values.iter().cloned().collect()
+    } else {
+        vec![key.clone()]
+    }
+}
+
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
     let value = value.into_descalarized();
@@ -32,11 +43,14 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     map.insert(k.clone(), v.deref_container());
                     i += 1;
                 } else if let ValueView::ValuePair(k, v) = flat[i].view() {
-                    let str_key = k.to_string_value();
-                    if !matches!(k.view(), ValueView::Str(_)) {
-                        original_keys.insert(str_key.clone(), k.clone());
+                    let dv = v.deref_container();
+                    for kk in hash_pair_keys(k) {
+                        let str_key = kk.to_string_value();
+                        if !matches!(kk.view(), ValueView::Str(_)) {
+                            original_keys.insert(str_key.clone(), kk.clone());
+                        }
+                        map.insert(str_key, dv.clone());
                     }
-                    map.insert(str_key, v.deref_container());
                     i += 1;
                 } else {
                     let key_val = &flat[i];
@@ -66,7 +80,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     map.insert(k.clone(), v.deref_container());
                     i += 1;
                 } else if let ValueView::ValuePair(k, v) = items[i].view() {
-                    map.insert(k.to_string_value(), v.deref_container());
+                    let dv = v.deref_container();
+                    for kk in hash_pair_keys(k) {
+                        map.insert(kk.to_string_value(), dv.clone());
+                    }
                     i += 1;
                 } else {
                     let key = items[i].to_string_value();
@@ -88,7 +105,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         ValueView::ValuePair(k, v) => {
             let mut map = HashMap::new();
-            map.insert(k.to_string_value(), v.deref_container());
+            let dv = v.deref_container();
+            for kk in hash_pair_keys(k) {
+                map.insert(kk.to_string_value(), dv.clone());
+            }
             Value::hash(map)
         }
         ValueView::Set(items, _) => {
@@ -230,12 +250,17 @@ pub(crate) fn build_hash_from_items(items: Vec<Value>) -> Result<Value, RuntimeE
                     map.insert(k.clone(), v.clone());
                 }
             }
+            // A Junction key (`"a"|"b" => 1`) is not itself a key: it threads,
+            // storing the value under each of its members (`%h<a> == %h<b> == 1`),
+            // matching Rakudo. Every other non-Str key stringifies as usual.
             ValueView::ValuePair(key, boxed_val) => {
-                let str_key = Value::hash_key_encode(key);
-                if !matches!(key.view(), ValueView::Str(_)) {
-                    original_keys.insert(str_key.clone(), key.clone());
+                for kk in hash_pair_keys(key) {
+                    let str_key = Value::hash_key_encode(&kk);
+                    if !matches!(kk.view(), ValueView::Str(_)) {
+                        original_keys.insert(str_key.clone(), kk.clone());
+                    }
+                    map.insert(str_key, boxed_val.clone());
                 }
-                map.insert(str_key, boxed_val.clone());
             }
             _ => {
                 let Some(value) = iter.next() else {
