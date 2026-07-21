@@ -192,6 +192,16 @@ pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
     )
 }
 
+/// Well-known nullary value terms that resolve as a bareword — e.g.
+/// `IterationEnd`, the `Mu`-typed iterator sentinel. Unlike a type object or an
+/// enum value, these are neither types nor enums, so they need a separate list.
+/// A parser that must decide whether a bareword is a *complete* nullary term or
+/// the head of a listop call (e.g. the `?? then !!` ternary guard) treats these
+/// as complete terms.
+pub(crate) fn is_builtin_constant_term(name: &str) -> bool {
+    matches!(name, "IterationEnd")
+}
+
 /// Check if a compound (`::`-separated) name is a known Raku standard type.
 pub(crate) fn is_known_compound_type(name: &str) -> bool {
     matches!(
