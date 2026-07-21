@@ -4,6 +4,21 @@ use super::*;
 /// parenthesized source: `Str`, `Str()`, `Int(Str)`. Without this, `returns Str()`
 /// stopped at the `(` and the trailing `()` was left to be parsed as a sub body.
 fn parse_trait_type_name(input: &str) -> PResult<'_, String> {
+    // `::?CLASS` / `::?ROLE` pseudo-types (the current class/role) may appear as a
+    // return type (`method m() of ::?CLASS`). The generic identifier scan below
+    // stops at `?`, leaving a stray `?CLASS`, so handle them up front. An optional
+    // definedness smiley (`::?CLASS:D`) is folded in.
+    for pseudo in ["::?CLASS", "::?ROLE"] {
+        if let Some(after) = input.strip_prefix(pseudo) {
+            let (rest, name) =
+                if after.starts_with(":D") || after.starts_with(":U") || after.starts_with(":_") {
+                    (&after[2..], format!("{}{}", pseudo, &after[..2]))
+                } else {
+                    (after, pseudo.to_string())
+                };
+            return Ok((rest, name));
+        }
+    }
     let (rest, base) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
     let mut base = base.to_string();
     let mut rest = rest;
