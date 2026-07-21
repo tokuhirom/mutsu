@@ -6,6 +6,10 @@ enum TransRule {
     CharMap {
         from_chars: Vec<char>,
         to_chars: Vec<char>,
+        /// When the replacement is shorter than the key: `true` cycles the
+        /// replacement (the Str=>Str first-multi form, `'123' => 'þð'` gives
+        /// `þðþ`), `false` repeats the last replacement char (the list form).
+        cycle: bool,
     },
     /// Multi-character token mapping (from array pairs).
     TokenMap {
@@ -36,6 +40,19 @@ enum TransRule {
 enum TokenReplacement {
     Static(String),
     Closure(Value),
+}
+
+/// A Seq/Slip key or value in a `.trans` pair is list-like; materialize it to
+/// an Array so the list-form dispatch recognizes it (`"abc".comb => 1..2`).
+/// Any other value is returned unchanged (Arc-cheap clone).
+fn normalize_trans_operand(v: &Value) -> Value {
+    match v.view() {
+        ValueView::Seq(items)
+        | ValueView::HyperSeq(items)
+        | ValueView::RaceSeq(items)
+        | ValueView::Slip(items) => Value::array(items.to_vec()),
+        _ => v.clone(),
+    }
 }
 
 /// Expand a tr-style spec string: `a..z` becomes all chars from 'a' to 'z'.
@@ -216,6 +233,13 @@ impl Interpreter {
                     rules.push(self.parse_trans_pair(key, value));
                 }
             } else if let ValueView::ValuePair(key, value) = arg.view() {
+                // A Seq/Slip key or value (e.g. from `"abc".comb`) is list-like;
+                // materialize it to an Array so the list-form dispatch below
+                // recognizes it instead of stringifying the whole sequence.
+                let key_norm = normalize_trans_operand(key);
+                let value_norm = normalize_trans_operand(value);
+                let key = &key_norm;
+                let value = &value_norm;
                 // For ValuePair, the key preserves its original type
                 if let ValueView::Regex(pattern) = key.view() {
                     if is_closure(value) {
@@ -308,6 +332,7 @@ impl Interpreter {
                                         rules.push(TransRule::CharMap {
                                             from_chars,
                                             to_chars,
+                                            cycle: false,
                                         });
                                     }
                                 }
@@ -332,6 +357,7 @@ impl Interpreter {
                             rules.push(TransRule::CharMap {
                                 from_chars,
                                 to_chars,
+                                cycle: false,
                             });
                         }
                     }
@@ -433,9 +459,14 @@ impl Interpreter {
         } else {
             let from_chars: Vec<char> = from_list.iter().filter_map(|s| s.chars().next()).collect();
             let to_chars: Vec<char> = to_list.iter().filter_map(|s| s.chars().next()).collect();
+            // The Str=>Str first-multi form cycles a short replacement to the
+            // key length (`'123' => 'þð'` gives `þðþ`); a Str=>list/range target
+            // is dispatched to the list form, which repeats the last char.
+            let cycle = matches!(value.view(), ValueView::Str(_));
             TransRule::CharMap {
                 from_chars,
                 to_chars,
+                cycle,
             }
         }
     }
@@ -469,6 +500,7 @@ impl Interpreter {
                     TransRule::CharMap {
                         from_chars,
                         to_chars,
+                        cycle,
                     } => {
                         if let Some(pos) = from_chars.iter().position(|&fc| fc == chars[i])
                             && 1 >= best_len
@@ -476,12 +508,19 @@ impl Interpreter {
                             best_len = 1;
                             best_replacement = if pos < to_chars.len() {
                                 to_chars[pos].to_string()
-                            } else if delete {
+                            } else if delete || to_chars.is_empty() {
                                 String::new()
-                            } else if !to_chars.is_empty() {
-                                to_chars.last().unwrap().to_string()
+                            } else if *cycle && !squash {
+                                // Str=>Str form: cycle the replacement to the key
+                                // length. Under `:squash` the form falls back to
+                                // repeat-last so the squash collapse below reduces
+                                // the run (`'123' => 'þð', :squash` => `þð`),
+                                // matching `:delete`.
+                                to_chars[pos % to_chars.len()].to_string()
                             } else {
-                                String::new()
+                                // List form (or squashed Str=>Str): repeat the
+                                // last replacement char.
+                                to_chars.last().unwrap().to_string()
                             };
                             best_closure = None;
                             found = true;
