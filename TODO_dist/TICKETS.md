@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_40 open tickets._
+_38 open tickets._
 
 ## Open
 
@@ -70,18 +70,6 @@ _40 open tickets._
 ### T-018 — runtime_error: Cannot call private method X permission  [impact: 1 dist]
 - dists: Cookie::Jar
 - e.g. `Cookie::Jar`: Cookie::Jar: Cannot call private method without permission
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-020 — runtime_error: No such private method X for invocant of type 'X'  [impact: 1 dist]
-- dists: Menu::Simple
-- e.g. `Menu::Simple`: Menu::HashToMenu: No such private method 'counter-init' for invocant of type 'Simple::Menu'
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-021 — runtime_error: Runtime error: Failed to parse module 'X': Missing semicolon  [impact: 1 dist]
-- dists: CSS::Writer
-- e.g. `CSS::Writer`: CSS::Writer: Runtime error: Failed to parse module 'CSS::Writer': Missing semicolon
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -291,6 +279,18 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-021** (#5104) — a postfix modifier whose *condition* ends with a `{ ... }`
+  block (`return if @a.first: {...}`) is terminated by that block, so the next
+  line's `if`/`for` starts a new statement. mutsu treated it as an illegal second
+  modifier and raised a bogus "Missing semicolon". Fixed; CSS::Writer now parses
+  and reaches the same missing-dep point raku does (`CSS::Grammar::Defs`, absent
+  in the sweep env) — parse-advance only, matching raku.
+- **T-020** (#5101) — `@a>>.b{$k}` (a `{...}` subscript directly on a hyper method
+  call) was parsed as a *separate block statement* because `HyperMethodCall` was
+  missing from the postfix `{...}` allow-list. Inside a role body this truncated
+  every method after such a call, dropping a later private method from composition
+  (`self!counter-init` → "No such private method"). Now parses as `(@a>>.b){$k}`.
+  **Menu::Simple fully loads**, matching raku.
 - **T-019** (#5097) — three role-declaration gaps blocked Algorithm::Treap: a
   `my enum` inside a role was rejected as our-scoped; a body-declared type used as
   a param constraint raised a false "Invalid typename" (signature validation runs
