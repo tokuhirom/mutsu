@@ -221,8 +221,18 @@ pub(crate) fn native_method_1arg(
                     use num_traits::ToPrimitive;
                     bi.to_usize().unwrap_or(usize::MAX)
                 }
-                ValueView::Num(f) => (f as i64).max(0) as usize,
-                _ => arg.to_string_value().parse::<usize>().unwrap_or(1),
+                // A plain string coerces like `.Int` (parse an integer literal).
+                ValueView::Str(_) => arg.to_string_value().parse::<usize>().unwrap_or(1),
+                // Any other numeric (Num/Rat/FatRat/allomorph) coerces like `.Int`,
+                // truncating toward zero: `.chop(3.6)` chops 3.
+                _ => {
+                    let f = arg.to_f64();
+                    if f.is_finite() && f > 0.0 {
+                        f.trunc() as usize
+                    } else {
+                        0
+                    }
+                }
             };
             let char_count = s.chars().count();
             let keep = char_count.saturating_sub(n);
