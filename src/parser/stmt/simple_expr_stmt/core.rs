@@ -595,7 +595,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         let rest = &rest[2..];
         let (rest, _) = ws(rest)?;
-        let (rest, value) = parse_comma_or_expr(rest).map_err(|err| PError {
+        // Assign-aware RHS parser so a chained bind whose next lvalue is also
+        // indexed — `%h<a> := %h<b> := 7` — parses (the trailing `%h<b> := 7`
+        // indexed bind is recognized instead of being left behind).
+        let (rest, value) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected assigned expression after index bind",
                 &err.messages,
