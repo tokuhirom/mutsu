@@ -84,6 +84,15 @@ impl Value {
                 if class_name == "Failure" {
                     return false;
                 }
+                // A failed `.subparse` Match is falsy (but still defined).
+                if class_name == "Match"
+                    && attributes
+                        .as_map()
+                        .get("__failed_match__")
+                        .is_some_and(|v| v.truthy())
+                {
+                    return false;
+                }
                 // Buf/Blob: truthy when non-empty
                 let cn = class_name.resolve();
                 if cn == "Buf"

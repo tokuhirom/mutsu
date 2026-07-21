@@ -191,10 +191,18 @@ impl Interpreter {
         let mut start_rule = "TOP".to_string();
         let mut rule_args: Vec<Value> = Vec::new();
         let mut actions_obj: Option<Value> = None;
+        // `:pos(N)` anchors the (sub)parse to start exactly at position N;
+        // `:c(N)`/`:continue(N)` starts searching from N. Both default to 0.
+        let mut start_pos: Option<usize> = None;
+        let mut continue_pos: Option<usize> = None;
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
                 if key == "rule" || key == "token" {
                     start_rule = value.to_string_value();
+                } else if key == "pos" {
+                    start_pos = value.as_int().and_then(|n| usize::try_from(n).ok());
+                } else if key == "c" || key == "continue" {
+                    continue_pos = value.as_int().and_then(|n| usize::try_from(n).ok());
                 } else if key == "args" {
                     // :args(\(42)) passes a Capture; :args(42,) passes an Array
                     match value.view() {
@@ -278,27 +286,35 @@ impl Interpreter {
         // Establish any `:my $*/%*/@*… = …;` dynamic variables the grammar's rules
         // declare, so action methods run during the match share them (`%*PLAYED`).
         let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
+        let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
-            let pattern = match self.eval_token_call_values(&start_rule, &rule_args) {
-                Ok(Some(pattern)) => pattern,
-                Ok(None) => {
-                    // Check for pending regex error (e.g., <sym> used outside proto regex)
-                    if let Some(err) = Self::take_pending_regex_error() {
-                        return Err(err);
+            let pattern =
+                match self.eval_token_call_values_at(&start_rule, &rule_args, candidate_from) {
+                    Ok(Some(pattern)) => pattern,
+                    Ok(None) => {
+                        // Check for pending regex error (e.g., <sym> used outside proto regex)
+                        if let Some(err) = Self::take_pending_regex_error() {
+                            return Err(err);
+                        }
+                        self.env.insert("/".to_string(), Value::NIL);
+                        if is_full_parse {
+                            return Ok(self.parse_failure_for_pattern(&text, None));
+                        }
+                        return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
                     }
-                    self.env.insert("/".to_string(), Value::NIL);
-                    return Ok(self.parse_failure_for_pattern(&text, None));
-                }
-                Err(err)
-                    if err
-                        .message
-                        .contains("No matching candidates for proto token") =>
-                {
-                    self.env.insert("/".to_string(), Value::NIL);
-                    return Ok(self.parse_failure_for_pattern(&text, None));
-                }
-                Err(err) => return Err(err),
-            };
+                    Err(err)
+                        if err
+                            .message
+                            .contains("No matching candidates for proto token") =>
+                    {
+                        self.env.insert("/".to_string(), Value::NIL);
+                        if is_full_parse {
+                            return Ok(self.parse_failure_for_pattern(&text, None));
+                        }
+                        return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
+                    }
+                    Err(err) => return Err(err),
+                };
 
             // Bind rule args to the env so code assertions { ... } can access them
             if !rule_args.is_empty()
@@ -327,6 +343,12 @@ impl Interpreter {
             }
             let captures = if method == "parse" || method == "parsefile" {
                 self.regex_match_with_captures_full_from_start(&pattern, &text)
+            } else if let Some(pos) = start_pos {
+                // `:pos(N)` — subparse anchored to begin exactly at N.
+                self.regex_match_with_captures_at(&pattern, &text, pos)
+            } else if let Some(cpos) = continue_pos {
+                // `:c(N)`/`:continue(N)` — search for a match from N onwards.
+                self.regex_match_with_captures_from(&pattern, &text, cpos)
             } else {
                 self.regex_match_with_captures(&pattern, &text)
             };
@@ -369,12 +391,28 @@ impl Interpreter {
                     return Ok(self.make_goal_failure_value(&goal, pos));
                 }
                 self.env.insert("/".to_string(), Value::NIL);
-                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
+                if is_full_parse {
+                    return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
+                }
+                // A failed `.subparse` yields a failed Match, not a Failure.
+                return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             };
             self.execute_regex_code_blocks(&captures.code_blocks);
-            if captures.from != 0 {
+            // A subparse must begin at the requested offset (0, or `:pos(N)`);
+            // `:c(N)` allows any start >= N, so it is exempt from the check.
+            let required_from = start_pos.or(if continue_pos.is_some() {
+                None
+            } else {
+                Some(0)
+            });
+            if let Some(want) = required_from
+                && captures.from != want
+            {
                 self.env.insert("/".to_string(), Value::NIL);
-                return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
+                if is_full_parse {
+                    return Ok(self.parse_failure_for_pattern(&text, Some(&pattern)));
+                }
+                return Ok(self.make_failed_match_value(&text, start_pos.unwrap_or(0)));
             }
             if (method == "parse" || method == "parsefile") && captures.to != text.chars().count() {
                 self.env.insert("/".to_string(), Value::NIL);
@@ -863,6 +901,23 @@ impl Interpreter {
             .map(|(end, _)| end)
             .max()
             .unwrap_or(0)
+    }
+
+    /// A failed `.subparse` yields a *failed* `Match` (gists as `#<failed match>`,
+    /// `.Bool` is `False` but `.defined` is `True`), NOT the `Failure` that a
+    /// full `.parse` returns. The `__failed_match__` marker drives both the gist
+    /// (see `match_gist`) and truthiness.
+    pub(super) fn make_failed_match_value(&self, text: &str, from: usize) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("str".to_string(), Value::str_from(""));
+        attrs.insert("from".to_string(), Value::int(from as i64));
+        attrs.insert("to".to_string(), Value::int(-1));
+        attrs.insert("pos".to_string(), Value::int(-1));
+        attrs.insert("orig".to_string(), Value::str(text.to_string()));
+        attrs.insert("list".to_string(), Value::array(Vec::new()));
+        attrs.insert("named".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("__failed_match__".to_string(), Value::TRUE);
+        Value::make_instance(Symbol::intern("Match"), attrs)
     }
 
     pub(super) fn make_parse_failure_value(&self, text: &str, best_end: usize) -> Value {

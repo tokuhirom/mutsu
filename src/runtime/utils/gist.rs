@@ -279,6 +279,13 @@ pub(crate) fn gist_value(value: &Value) -> String {
 /// A quantified capture (`(\w)+`) is a list of Match values, each emitted under
 /// the same index. `depth` controls indentation (one leading space per level).
 pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
+    // A failed `.subparse` Match renders as `#<failed match>` (Rakudo).
+    if attributes
+        .get("__failed_match__")
+        .is_some_and(|v| v.truthy())
+    {
+        return "#<failed match>".to_string();
+    }
     let matched = attributes
         .get("str")
         .map(|s| s.to_string_value())

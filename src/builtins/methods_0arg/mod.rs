@@ -1726,7 +1726,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                     .cloned()
                     .unwrap_or(Value::str(String::new()))));
             }
-            "Bool" => return Some(Ok(Value::TRUE)),
+            "Bool" => {
+                // A failed `.subparse` Match is falsy; every other Match is truthy.
+                let ok = !attributes
+                    .as_map()
+                    .get("__failed_match__")
+                    .is_some_and(|v| v.truthy());
+                return Some(Ok(Value::truth(ok)));
+            }
             "orig" => {
                 return Some(Ok(attributes
                     .as_map()
