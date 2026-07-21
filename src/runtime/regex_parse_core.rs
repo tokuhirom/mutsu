@@ -2,6 +2,41 @@ use super::regex_parse::*;
 use super::*;
 
 impl Interpreter {
+    /// Build the alternation atom for a `<@var>` array-variable subrule: look up
+    /// the array variable named by `env_key` (including its `@` sigil) and
+    /// compile each element as a regex pattern, collapsing to a character class
+    /// when possible. Returns `None` (caller should `continue`) when the array
+    /// is empty / unset. Shared by `<@var>` and its `<?@var>` / `<!@var>`
+    /// lookahead forms.
+    fn array_var_alternation_atom(&self, env_key: &str, mode: RegexParseMode) -> Option<RegexAtom> {
+        let value = self.env.get(env_key).cloned().unwrap_or(Value::NIL);
+        let elements = match value.view() {
+            ValueView::Array(arr, _) => arr.as_ref().clone(),
+            ValueView::Seq(items) | ValueView::Slip(items) => {
+                crate::value::ArrayData::new((**items).clone())
+            }
+            _ => crate::value::ArrayData::new(vec![value.clone()]),
+        };
+        let mut alt_patterns = Vec::new();
+        for elt in &elements {
+            let pat_str = match elt.view() {
+                ValueView::Regex(pat) => pat.to_string(),
+                ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
+                _ => elt.to_string_value(),
+            };
+            if let Some(parsed) = self.parse_regex_with_mode(&pat_str, mode) {
+                alt_patterns.push(parsed);
+            }
+        }
+        if alt_patterns.is_empty() {
+            return None;
+        }
+        Some(
+            try_collapse_alternation_to_charclass(&alt_patterns)
+                .unwrap_or(RegexAtom::Alternation(alt_patterns)),
+        )
+    }
+
     /// Owned-`RegexPattern` parse used by the parser's own recursion (sub-pattern
     /// parsing while building the token tree) and by non-`Match` (`Validate`)
     /// callers. Sub-patterns live inside their parent's tree, so they are not
@@ -1906,6 +1941,46 @@ impl Interpreter {
                                         name: prop_name.to_string(),
                                         negated: true,
                                     }
+                                } else if (trimmed.starts_with("?@") || trimmed.starts_with("!@"))
+                                    && mode == RegexParseMode::Validate
+                                {
+                                    // <?@var> / <!@var> lookahead — opaque at parse time.
+                                    RegexAtom::Named(name.clone())
+                                } else if trimmed.starts_with("?@") || trimmed.starts_with("!@") {
+                                    // <?@var> / <!@var> — zero-width lookahead asserting the
+                                    // position matches (or, negated, does not match) any
+                                    // element of the array variable: a lookahead wrapping
+                                    // `<@var>`. Placed before the generic `<!...>` handler so
+                                    // `!@` is not mistaken for a negated named-class assertion.
+                                    let negated = trimmed.starts_with('!');
+                                    let env_key = &trimmed[1..]; // drop '?'/'!', keep '@var'
+                                    let Some(inner_atom) =
+                                        self.array_var_alternation_atom(env_key, mode)
+                                    else {
+                                        continue;
+                                    };
+                                    let inner_pattern = RegexPattern {
+                                        tokens: vec![RegexToken {
+                                            atom: inner_atom,
+                                            quant: RegexQuant::One,
+                                            named_capture: None,
+                                            hash_capture: None,
+                                            secondary_named_capture: None,
+                                            force_list_capture: false,
+                                            ratchet: false,
+                                            frugal: false,
+                                            separator: None,
+                                        }],
+                                        anchor_start: false,
+                                        anchor_end: false,
+                                        ignore_case,
+                                        ignore_mark,
+                                    };
+                                    RegexAtom::Lookaround {
+                                        pattern: inner_pattern,
+                                        negated,
+                                        is_behind: false,
+                                    }
                                 } else if let Some(negated_name) = trimmed.strip_prefix('!') {
                                     if negated_name.is_empty() {
                                         // <!> — always-fail (handled as Named("!") downstream)
@@ -2150,34 +2225,10 @@ impl Interpreter {
                                 } else if trimmed.starts_with('@') {
                                     // <@var> — look up array variable and compile
                                     // each element as a regex pattern (alternation)
-                                    let env_key = trimmed.to_string(); // includes @
-                                    let value =
-                                        self.env.get(&env_key).cloned().unwrap_or(Value::NIL);
-                                    let elements = match value.view() {
-                                        ValueView::Array(arr, _) => arr.as_ref().clone(),
-                                        ValueView::Seq(items) | ValueView::Slip(items) => {
-                                            crate::value::ArrayData::new((**items).clone())
-                                        }
-                                        _ => crate::value::ArrayData::new(vec![value.clone()]),
-                                    };
-                                    let mut alt_patterns = Vec::new();
-                                    for elt in &elements {
-                                        let pat_str = match elt.view() {
-                                            ValueView::Regex(pat) => pat.to_string(),
-                                            ValueView::RegexWithAdverbs(a) => a.pattern.to_string(),
-                                            _ => elt.to_string_value(),
-                                        };
-                                        if let Some(parsed) =
-                                            self.parse_regex_with_mode(&pat_str, mode)
-                                        {
-                                            alt_patterns.push(parsed);
-                                        }
+                                    match self.array_var_alternation_atom(trimmed, mode) {
+                                        Some(atom) => atom,
+                                        None => continue,
                                     }
-                                    if alt_patterns.is_empty() {
-                                        continue;
-                                    }
-                                    try_collapse_alternation_to_charclass(&alt_patterns)
-                                        .unwrap_or(RegexAtom::Alternation(alt_patterns))
                                 } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
                                     // <?:PropName> — zero-width positive Unicode property assertion
                                     // (the positive twin of `<!:PropName>` above).
