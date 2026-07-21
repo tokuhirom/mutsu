@@ -489,9 +489,14 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     // Test assertion calls (e.g. `is [1], [1], 'desc'`) can start with bracketed
     // arguments and be mistaken for an expression prefix. Keep them as calls.
     if !is_test_assertion_callable(&name)
-        && KNOWN_CALLS.contains(&name.as_str())
+        && (KNOWN_CALLS.contains(&name.as_str()) || is_imported_function(&name))
         && known_call_is_expression_prefix(input, rest)
     {
+        // A known/imported call that is the left operand of a larger expression
+        // (`has-interp($s) ?? A !! B`, `foo($x) ~~ Bool`, `bar() && baz`) must be
+        // parsed by the expression-statement parser, not truncated to a bare
+        // statement call here. Imported functions were previously excluded, so a
+        // trailing ternary/`~~`/`&&` after an imported call was dropped.
         return Err(PError::expected("known function call"));
     }
     if is_test_assertion_callable(&name) {
