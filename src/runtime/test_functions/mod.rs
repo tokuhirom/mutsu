@@ -219,6 +219,14 @@ impl Interpreter {
             "isnt" => self.test_fn_isnt(args).map(Some),
             "plan" => self.test_fn_plan(args).map(Some),
             "done-testing" => self.test_fn_done_testing().map(Some),
+            // `skip` collides with the core list routine `skip(Int $n, *@list)`.
+            // When the call looks like list-skip (see `skip_call_is_list_skip`),
+            // dispatch the list-skip builtin instead of the TAP skip directive.
+            // This path (interpreter `exec_call`) runs before user-sub resolution,
+            // so it must apply the same disambiguation the other skip sites do —
+            // otherwise a module exporting its own `&skip` (head-skip-tail) is
+            // shadowed by Test's skip once `plan` activates test mode.
+            "skip" if Self::skip_call_is_list_skip(args) => self.builtin_skip(args).map(Some),
             "skip" => self.test_fn_skip(args).map(Some),
             "skip-rest" => self.test_fn_skip_rest(args).map(Some),
             "bail-out" => self.test_fn_bail_out(args).map(Some),
