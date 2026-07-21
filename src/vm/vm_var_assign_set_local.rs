@@ -1041,6 +1041,24 @@ impl Interpreter {
         if !is_bind && !is_constant && (name.starts_with('@') || name.starts_with('%')) {
             val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
         }
+        // Raku `@array = ...` / `%hash = ...` assigns INTO the existing container,
+        // so its `is default(...)` element default survives the reassignment
+        // (`my @a is default('N/A'); @a = Nil; @a[4]` still reads 'N/A'). The
+        // freshly-built container carries no default of its own, and the Nil /
+        // hole rebuilds above discard any grafted onto an intermediate value, so
+        // regraft here — after all coercion/rebuilding — from the old container
+        // (or the variable's registered default).
+        if !is_bind
+            && !is_vardecl
+            && !is_constant
+            && (name.starts_with('@') || name.starts_with('%'))
+            && self.container_default(&val).is_none()
+            && let Some(def) = self
+                .container_default(&self.locals[idx])
+                .or_else(|| self.var_default(name).cloned())
+        {
+            val = self.tag_container_default(val, def);
+        }
         if let Some(constraint) = loan_env!(self, var_type_constraint(name))
             && !name.starts_with('%')
             && !name.starts_with('@')
