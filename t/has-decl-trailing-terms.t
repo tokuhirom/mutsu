@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 6;
 
 # An attribute declaration is a complete statement. A bare term after the
 # attribute (with no `;`/`}` between) is "two terms in a row", exactly as raku
@@ -22,3 +22,10 @@ lives-ok { EVAL 'my class D { has Int $.a where * > 0 = 3 }' },
 
 lives-ok { EVAL 'my class E { has $.a of Int = 3 }' },
     'of / default chain still parses';
+
+# A block/closure default ends in `}`, which implicitly terminates the
+# statement in Raku, so a following declaration on the next line (no `;`) is a
+# new statement — NOT a second term. This must not be rejected as Confused.
+lives-ok { EVAL 'my class F { has $.cl = { self.foo }
+        method foo { 42 } }' },
+    'a block-terminated default allows a following declaration without a semicolon';

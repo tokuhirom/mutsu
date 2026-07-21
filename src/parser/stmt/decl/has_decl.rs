@@ -928,6 +928,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             });
         }
     }
+    let pre_ws_rest = rest;
     let (rest, _) = ws(rest)?;
 
     // An attribute declaration is a complete statement: after the name, its
@@ -937,7 +938,16 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // `has $.a\nhas $.b` with no `;`) is "two terms in a row", exactly as raku
     // reports it — not a fresh statement. Without this guard mutsu silently
     // starts a new statement, so `has $.a garbage` parses instead of failing.
-    if let Some(first) = rest.chars().next()
+    //
+    // Exception: a statement whose last consumed token is a block-closing `}`
+    // (e.g. a block/closure default `has $.cl = { self.foo }`) is implicitly
+    // terminated in Raku, so a following declaration on the next line is a new
+    // statement, not a second term. Only fire when the preceding token is NOT `}`.
+    let consumed = input.len().saturating_sub(pre_ws_rest.len());
+    let block_terminated =
+        consumed > 0 && input.as_bytes().get(consumed - 1).copied() == Some(b'}');
+    if !block_terminated
+        && let Some(first) = rest.chars().next()
         && (first.is_alphabetic() || first == '_' || matches!(first, '$' | '@' | '%' | '&'))
     {
         let mut attrs = std::collections::HashMap::new();
