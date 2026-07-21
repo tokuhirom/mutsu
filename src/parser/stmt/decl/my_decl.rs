@@ -198,6 +198,17 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         return parse_sigilless_decl(r, is_state, is_our, type_constraint, apply_modifier);
     }
 
+    // Signature-literal destructuring bind: `my :($a, $b) := expr`. The `:(...)`
+    // is a Signature literal; for positional targets it binds exactly like
+    // `my ($a, $b) := expr`, so strip the leading `:` and reuse the
+    // destructuring parser. (Raku rejects the `=` assignment form for signature
+    // binding, but every real use is `:=`.)
+    if let Some(after_colon) = rest.strip_prefix(':')
+        && after_colon.starts_with('(')
+    {
+        return parse_destructuring_decl(after_colon, is_state, is_our, type_constraint);
+    }
+
     // Destructuring: my ($a, $b) = expr  or  my Int:D ($x = 5)
     if rest.starts_with('(') {
         return parse_destructuring_decl(rest, is_state, is_our, type_constraint);
