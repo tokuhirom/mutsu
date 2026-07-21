@@ -13,6 +13,7 @@ impl Interpreter {
             name,
             variants,
             is_export,
+            is_my: _,
             base_type,
             language_version,
         } = stmt
