@@ -2113,12 +2113,28 @@ impl Interpreter {
                                         args: pargs.map(|s| s.to_string()),
                                     }
                                 } else if let Some(prop_name) = trimmed.strip_prefix(':') {
-                                    // <:PropName> — Unicode property assertion
-                                    let (pname, pargs) = split_prop_args(prop_name);
-                                    RegexAtom::UnicodeProp {
-                                        name: pname.to_string(),
-                                        negated: false,
-                                        args: pargs.map(|s| s.to_string()),
+                                    // `<:Ll+:N>` / `<:Ll-:Lu>` — a compact combined
+                                    // class joins property (and named-class) atoms
+                                    // with top-level `+`/`-` set operators. Route it
+                                    // to the combined-class parser (which also handles
+                                    // the spaced `<+:Ll +:N>` form) by treating the
+                                    // leading atom as an implicit positive item.
+                                    if has_top_level_combine_op(prop_name) {
+                                        if let Some(atom) =
+                                            self.parse_combined_class(&format!("+{trimmed}"), mode)
+                                        {
+                                            atom
+                                        } else {
+                                            continue;
+                                        }
+                                    } else {
+                                        // <:PropName> — single Unicode property assertion
+                                        let (pname, pargs) = split_prop_args(prop_name);
+                                        RegexAtom::UnicodeProp {
+                                            name: pname.to_string(),
+                                            negated: false,
+                                            args: pargs.map(|s| s.to_string()),
+                                        }
                                     }
                                 } else if trimmed.starts_with('+') || trimmed.starts_with('-') {
                                     // Combined character class: <+ xdigit - lower>

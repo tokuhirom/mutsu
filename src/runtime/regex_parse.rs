@@ -1101,6 +1101,36 @@ pub(super) fn split_prop_args(s: &str) -> (&str, Option<&str>) {
     (s, None)
 }
 
+/// Whether a compact combined-class body (the text after the leading `:` in
+/// `<:Ll+:N>`) contains a top-level `+`/`-` set operator joining another atom,
+/// rather than being a single property. Operators inside a property's argument
+/// parens (`<:Nv(0+1)>`) and kebab-case hyphens (`Grapheme_Base` style names)
+/// are ignored.
+pub(super) fn has_top_level_combine_op(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    for i in 0..bytes.len() {
+        match bytes[i] {
+            b'(' | b'<' => depth += 1,
+            b')' | b'>' => depth -= 1,
+            b'+' if depth == 0 => return true,
+            b'-' if depth == 0 => {
+                // A hyphen between word chars is a kebab name separator, not a
+                // set-difference operator.
+                let prev_word =
+                    i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+                let next_word = i + 1 < bytes.len()
+                    && (bytes[i + 1].is_ascii_alphanumeric() || bytes[i + 1] == b'_');
+                if !(prev_word && next_word) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Skip `<[...]>` character class content where quotes are literal.
 pub(super) fn skip_char_class_content(
     chars: &mut std::iter::Peekable<std::str::Chars>,
