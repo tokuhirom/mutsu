@@ -179,6 +179,33 @@ pub(crate) fn match_user_declared_infix_symbol_op(input: &str) -> Option<(String
                     continue;
                 }
                 let consumed = op.len();
+                // A single-character symbol op must not be matched when it is
+                // actually the prefix of a longer *reserved* token: the pointy /
+                // return arrow (`->`, `-->`), auto-increment/decrement (`++`,
+                // `--`), or a compound assignment (`-=`, `+=`, ...). The core
+                // operator parsers (e.g. `parse_additive_op`) apply the same
+                // guards; without them here a user `infix:<->` would make the `-`
+                // in a `for @a -> $x { }` pointy block parse as subtraction and
+                // then choke on the stray `>`.
+                if op.len() == 1 {
+                    let after = &input[consumed..];
+                    let c0 = op.as_bytes()[0];
+                    // pointy / return arrow: `->` / `-->`
+                    if c0 == b'-' && after.starts_with('>') {
+                        continue;
+                    }
+                    // doubled auto-increment / decrement: `++` / `--`
+                    if (c0 == b'+' || c0 == b'-') && after.as_bytes().first() == Some(&c0) {
+                        continue;
+                    }
+                    // compound assignment `op=` (but not `op==` / `op=>`)
+                    if after.starts_with('=')
+                        && !after.starts_with("==")
+                        && !after.starts_with("=>")
+                    {
+                        continue;
+                    }
+                }
                 // For word-like operators, require identifier boundary.
                 if op
                     .as_bytes()
