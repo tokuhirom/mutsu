@@ -51,6 +51,12 @@ doc) are version skew, not mutsu bugs — lowest priority.
   never matched — **#4994**.
 - `regexes.rakudoc` [28] — `m:pos(N)` / `m:continue(N)` discarded the `(N)` argument
   and matched from the start — **#4996**.
+- `typesystem.rakudoc` [1] — a quoted MOP pseudo-method call (`$obj."WHAT"()`) invoked
+  the reflection macro instead of a user-defined `method WHAT`. `dispatch_method_by_name_1`
+  intercepted `WHAT`/`HOW`/`WHO`/`WHY` before user-method resolution; now the quoted-call
+  flag (`skip_pseudo_method_native`) makes those arms fall through to the user method.
+- `typesystem.rakudoc` [10] — an anonymous enum value's `.^name` returned the internal
+  marker `__ANON_ENUM__` instead of raku's empty string.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
