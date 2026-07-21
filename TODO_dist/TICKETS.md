@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_35 open tickets._
+_34 open tickets._
 
 ## Open
 
@@ -105,12 +105,6 @@ _35 open tickets._
 ### T-029 — test_die [POFile]  [impact: 1 dist]
 - dists: POFile
 - e.g. `POFile`: base=4 pass=1 fail=1 die=2 | t/02-deletion.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-030 — test_die [Sys::Hostname]  [impact: 1 dist]
-- dists: Sys::Hostname
-- e.g. `Sys::Hostname`: base=1 pass=0 fail=0 die=1 | t/01-basic.t: 
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -278,7 +272,13 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
-- **T-035** (#PENDING) — Text::Diff::Sift4 died on `nqp::ordat` and hit two more
+- **T-030** (#PENDING) — Sys::Hostname's `hostname` sub is
+  `nqp::gethostname.subst(...)`, but mutsu had no `nqp::gethostname` op, so it
+  died with "Could not find symbol '&gethostname' in 'nqp'". Added the op (via the
+  existing `Interpreter::hostname()` helper) and routed the no-paren 0-arg
+  `nqp::gethostname` term through the builtin nqp dispatch. **Sys::Hostname passes
+  3/3**, matching raku. Pin: t/nqp-gethostname.t.
+- **T-035** (#5121) — Text::Diff::Sift4 died on `nqp::ordat` and hit two more
   gaps once it was added. Three general fixes: (1) implemented `nqp::ordat($s,
   $pos)` (codepoint at a position, -1 past end); (2) a typed scalar `:=`-bound to
   an array element (`my Offset $o := @a[$i]`) type-checked the `ContainerRef`
