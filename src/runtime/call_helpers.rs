@@ -64,6 +64,21 @@ impl Interpreter {
         desc: &str,
         todo: bool,
     ) -> Result<(), RuntimeError> {
+        self.test_ok_with_diag(success, desc, todo, &[])
+    }
+
+    /// Like [`test_ok`](Self::test_ok) but appends extra `#`-prefixed diagnostic
+    /// lines (e.g. `# expected: '4'` / `#      got: '3'`) to the failure block so
+    /// they are routed the same way as `# Failed test` — to stdout for a TODO
+    /// test (a TAP comment) and to stderr otherwise. Callers pass each line
+    /// already `#`-prefixed and without a trailing newline.
+    pub(crate) fn test_ok_with_diag(
+        &mut self,
+        success: bool,
+        desc: &str,
+        todo: bool,
+        detail: &[String],
+    ) -> Result<(), RuntimeError> {
         let mut line = String::new();
         let (record_failure, effective_todo) = {
             let state = self.tap.ensure_state();
@@ -119,7 +134,7 @@ impl Interpreter {
         self.emit_output(&line);
         if record_failure {
             let to_stderr = !effective_todo && self.tap.subtest_depth() == 0;
-            self.emit_test_failure_diag(desc, to_stderr);
+            self.emit_test_failure_diag(desc, to_stderr, detail);
             if !effective_todo
                 && self.tap.subtest_depth() == 0
                 && self.raku_test_die_on_fail_enabled()
@@ -154,7 +169,7 @@ impl Interpreter {
         ));
     }
 
-    fn emit_test_failure_diag(&mut self, desc: &str, to_stderr: bool) {
+    fn emit_test_failure_diag(&mut self, desc: &str, to_stderr: bool, detail: &[String]) {
         let line_no = self.current_test_failure_line();
         let at_line = if let Some(path) = &self.program_path {
             format!("at {} line {}", path, line_no)
@@ -174,6 +189,9 @@ impl Interpreter {
         } else {
             emit(format!("# Failed test '{}'\n", desc));
             emit(format!("# {}\n", at_line));
+        }
+        for line in detail {
+            emit(format!("{}\n", line));
         }
     }
 

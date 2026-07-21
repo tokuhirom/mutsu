@@ -12,8 +12,8 @@ plan 6;
 
 {
     my %r = get_out('use Test; plan 2; does-ok 42, Int; can-ok 42, "Str";');
-    ok %r<out>.contains("ok 1 - The object does 'Int'"), 'does-ok default description is emitted';
-    ok %r<out>.contains("ok 2 - The object can 'Str'"), 'can-ok default description is emitted';
+    ok %r<out>.contains("ok 1 - The object does role 'Int'"), 'does-ok default description is emitted';
+    ok %r<out>.contains("ok 2 - An object of type 'Int' can do the method 'Str'"), 'can-ok default description is emitted';
 }
 
 {

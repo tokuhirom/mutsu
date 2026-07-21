@@ -192,11 +192,18 @@ impl Interpreter {
             },
             None => String::new(),
         };
+        // The default description renders the expected type via its `.raku`: a
+        // type object is its bare name (`Int`), but a Str type-name is quoted
+        // (`isa-ok $x, 'Womble'` => «is-a '"Womble"'»), matching raku.
+        let type_display = match positionals.get(1).map(|v| v.view()) {
+            Some(ValueView::Str(s)) => format!("\"{}\"", s.as_str()),
+            _ => type_name.clone(),
+        };
         let desc = positionals
             .get(2)
             .map(|v| v.to_string_value())
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| format!("The object is-a '{}'", type_name));
+            .unwrap_or_else(|| format!("The object is-a '{}'", type_display));
         (value, type_name, desc)
     }
 
@@ -519,7 +526,7 @@ impl Interpreter {
         let desc = {
             let explicit = Self::positional_string(args, 2);
             if explicit.is_empty() {
-                format!("The object does '{}'", role_name)
+                format!("The object does role '{}'", role_name)
             } else {
                 explicit
             }
@@ -538,7 +545,11 @@ impl Interpreter {
         let desc = {
             let explicit = Self::positional_string(args, 2);
             if explicit.is_empty() {
-                format!("The object can '{}'", method_name)
+                let obj_type = crate::value::types::what_type_name(&value);
+                format!(
+                    "An object of type '{}' can do the method '{}'",
+                    obj_type, method_name
+                )
             } else {
                 explicit
             }
