@@ -2157,6 +2157,110 @@ impl Interpreter {
                                     }
                                     try_collapse_alternation_to_charclass(&alt_patterns)
                                         .unwrap_or(RegexAtom::Alternation(alt_patterns))
+                                } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
+                                    // <?:PropName> — zero-width positive Unicode property assertion
+                                    // (the positive twin of `<!:PropName>` above).
+                                    RegexAtom::UnicodePropAssert {
+                                        name: prop_name.to_string(),
+                                        negated: false,
+                                    }
+                                } else if trimmed
+                                    .strip_prefix('?')
+                                    .map(|n| n.strip_prefix('.').unwrap_or(n))
+                                    .is_some_and(|n| {
+                                        matches!(
+                                            n,
+                                            "alpha"
+                                                | "upper"
+                                                | "lower"
+                                                | "digit"
+                                                | "xdigit"
+                                                | "space"
+                                                | "alnum"
+                                                | "blank"
+                                                | "cntrl"
+                                                | "punct"
+                                                | "graph"
+                                                | "print"
+                                                | "ws"
+                                                | "ident"
+                                        )
+                                    })
+                                {
+                                    // <?alpha>, <?digit>, <?alnum>, ... — zero-width positive
+                                    // assertion for a named class (the positive twin of `<!alpha>`).
+                                    let pos_name = trimmed.strip_prefix('?').unwrap();
+                                    let clean_name = pos_name.strip_prefix('.').unwrap_or(pos_name);
+                                    let inner_atom = if clean_name == "ident" {
+                                        RegexAtom::Group(RegexPattern {
+                                            tokens: vec![
+                                                RegexToken {
+                                                    atom: RegexAtom::CharClass(CharClass {
+                                                        items: vec![ClassItem::NamedBuiltin(
+                                                            "alpha".to_string(),
+                                                        )],
+                                                        negated: false,
+                                                    }),
+                                                    quant: RegexQuant::One,
+                                                    named_capture: None,
+                                                    hash_capture: None,
+                                                    secondary_named_capture: None,
+                                                    force_list_capture: false,
+                                                    ratchet: false,
+                                                    frugal: false,
+                                                    separator: None,
+                                                },
+                                                RegexToken {
+                                                    atom: RegexAtom::CharClass(CharClass {
+                                                        items: vec![ClassItem::NamedBuiltin(
+                                                            "alnum".to_string(),
+                                                        )],
+                                                        negated: false,
+                                                    }),
+                                                    quant: RegexQuant::ZeroOrMore,
+                                                    named_capture: None,
+                                                    hash_capture: None,
+                                                    secondary_named_capture: None,
+                                                    force_list_capture: false,
+                                                    ratchet: false,
+                                                    frugal: false,
+                                                    separator: None,
+                                                },
+                                            ],
+                                            anchor_start: false,
+                                            anchor_end: false,
+                                            ignore_case,
+                                            ignore_mark,
+                                        })
+                                    } else {
+                                        RegexAtom::CharClass(CharClass {
+                                            items: vec![ClassItem::NamedBuiltin(
+                                                clean_name.to_string(),
+                                            )],
+                                            negated: false,
+                                        })
+                                    };
+                                    RegexAtom::Lookaround {
+                                        pattern: RegexPattern {
+                                            tokens: vec![RegexToken {
+                                                atom: inner_atom,
+                                                quant: RegexQuant::One,
+                                                named_capture: None,
+                                                hash_capture: None,
+                                                secondary_named_capture: None,
+                                                force_list_capture: false,
+                                                ratchet: false,
+                                                frugal: false,
+                                                separator: None,
+                                            }],
+                                            anchor_start: false,
+                                            anchor_end: false,
+                                            ignore_case,
+                                            ignore_mark,
+                                        },
+                                        negated: false,
+                                        is_behind: false,
+                                    }
                                 } else if trimmed == "?same" || trimmed == "?.same" {
                                     // <?same> — zero-width assertion: next two chars are the same
                                     RegexAtom::SameAssertion { negated: false }
