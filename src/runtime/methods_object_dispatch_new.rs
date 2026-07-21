@@ -425,6 +425,13 @@ impl Interpreter {
             } else {
                 (cn_resolved.as_str(), None)
             };
+            // `IO::Path::Parts` is a parts container, not an `IO::Path` subclass —
+            // build it directly before the `IO::Path::`-prefix rule below would
+            // register it with an `IO::Path` parent and route `.new` through path
+            // assembly (which mis-derives volume/dirname/basename).
+            if cn_resolved == "IO::Path::Parts" {
+                return Ok(Self::build_io_path_parts_instance(&args));
+            }
             if cn_resolved.starts_with("IO::Path::")
                 && !self.registry().classes.contains_key(&cn_resolved)
             {

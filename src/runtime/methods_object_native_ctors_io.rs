@@ -178,6 +178,38 @@ impl Interpreter {
         Ok(Value::make_instance(class_name, attrs))
     }
 
+    /// `IO::Path::Parts.new(\volume, \dirname, \basename)` — a small container for
+    /// the three parts of a path (also produced by `IO::Path.parts`). It is NOT an
+    /// `IO::Path` (unlike the auto-registered `IO::Path::*` spec subclasses), so it
+    /// must be constructed before `dispatch_new`'s `IO::Path::`-prefix rule routes
+    /// it into `build_io_path_instance`. The three parts are accepted positionally
+    /// (as the doc's signature) or by `:volume`/`:dirname`/`:basename` name.
+    pub(crate) fn build_io_path_parts_instance(args: &[Value]) -> Value {
+        let mut positional: Vec<Value> = Vec::new();
+        let (mut volume, mut dirname, mut basename) = (None, None, None);
+        for arg in args {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "volume" => volume = Some(value.clone()),
+                ValueView::Pair(key, value) if key == "dirname" => dirname = Some(value.clone()),
+                ValueView::Pair(key, value) if key == "basename" => basename = Some(value.clone()),
+                ValueView::Pair(_, _) => {}
+                _ => positional.push(arg.clone()),
+            }
+        }
+        let mut take = positional.into_iter();
+        let pick = |slot: Option<Value>, next: Option<Value>| {
+            slot.or(next).unwrap_or_else(|| Value::str_from(""))
+        };
+        let volume = pick(volume, take.next());
+        let dirname = pick(dirname, take.next());
+        let basename = pick(basename, take.next());
+        let mut attrs = HashMap::new();
+        attrs.insert("volume".to_string(), volume);
+        attrs.insert("dirname".to_string(), dirname);
+        attrs.insert("basename".to_string(), basename);
+        Value::make_instance(Symbol::intern("IO::Path::Parts"), attrs)
+    }
+
     /// VM-native construction for a built-in type whose `.new(...)` is pure data
     /// assembly (no env / registry / user code): `Buf`/`Blob` (byte overlay),
     /// `utf8`/`utf16` (code units), `Uni` (codepoints), `Version`, `Duration`

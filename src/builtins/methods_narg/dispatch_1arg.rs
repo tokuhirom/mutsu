@@ -486,6 +486,22 @@ pub(crate) fn native_method_1arg(
                         }
                         Some(Ok(Value::int(0)))
                     }
+                    // IO::Path::Parts does Positional: `$parts[0]` is `volume => C:`,
+                    // `[1]` the dirname pair, `[2]` the basename pair (fixed order).
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "IO::Path::Parts" => {
+                        Some(Ok(crate::runtime::io_path_parts_keys()
+                            .get(idx)
+                            .map(|key| {
+                                let v =
+                                    attributes.as_map().get(*key).cloned().unwrap_or(Value::NIL);
+                                Value::pair((*key).to_string(), v)
+                            })
+                            .unwrap_or(Value::NIL)))
+                    }
                     _ => None,
                 }
             }
@@ -1888,6 +1904,19 @@ pub(crate) fn native_method_1arg(
                 let key = arg.to_string_value();
                 let weight = data.weights.get(&key).copied().unwrap_or(0.0);
                 Some(Ok(crate::value::mix_weight_to_value(weight)))
+            }
+            // IO::Path::Parts does Associative: `$parts<volume>` returns the part.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "IO::Path::Parts" => {
+                let key = arg.to_string_value();
+                Some(Ok(attributes
+                    .as_map()
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or(Value::NIL)))
             }
             ValueView::Nil => Some(Ok(Value::package(Symbol::intern("Any")))),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {

@@ -106,7 +106,10 @@ impl Interpreter {
                 parts.insert("volume".to_string(), Value::str(volume));
                 parts.insert("dirname".to_string(), Value::str(dirname));
                 parts.insert("basename".to_string(), Value::str(basename));
-                Ok(Value::hash(parts))
+                Ok(Value::make_instance(
+                    Symbol::intern("IO::Path::Parts"),
+                    parts,
+                ))
             }
             "parent" => {
                 let mut levels = 1i64;

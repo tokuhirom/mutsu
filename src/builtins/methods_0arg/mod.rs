@@ -1633,21 +1633,61 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // IO::Path::Parts — .hash returns attributes as a Hash
+    // IO::Path::Parts does Associative, Positional and Iterable: `.hash`/`.Hash`
+    // give the parts as a Map, while `.list`/`.List`/`.flat`/`.pairs`/`.kv`/
+    // iteration expose them as an ordered list of `key => part` Pairs; `.keys`/
+    // `.values`/`.elems` follow the same fixed volume/dirname/basename order.
     if let ValueView::Instance {
         class_name,
         attributes,
         ..
     } = target.view()
         && class_name.resolve() == "IO::Path::Parts"
-        && (method == "hash" || method == "Hash")
     {
-        let map: HashMap<String, Value> = attributes
-            .as_map()
-            .iter()
-            .map(|(k, v)| (k.resolve(), v.clone()))
-            .collect();
-        return Some(Ok(Value::hash(map)));
+        let attrs = attributes.as_map();
+        let keys = crate::runtime::io_path_parts_keys();
+        let part = |key: &str| attrs.get(key).cloned().unwrap_or(Value::NIL);
+        let make_list = |items: Vec<Value>| {
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            )
+        };
+        let pairs = || -> Vec<Value> {
+            keys.iter()
+                .map(|k| Value::pair((*k).to_string(), part(k)))
+                .collect()
+        };
+        match method {
+            "hash" | "Hash" | "Map" => {
+                let map: HashMap<String, Value> =
+                    keys.iter().map(|k| (k.to_string(), part(k))).collect();
+                return Some(Ok(Value::hash(map)));
+            }
+            "list" | "List" | "flat" | "pairs" | "Slip" | "cache" | "eager" | "Array" => {
+                return Some(Ok(make_list(pairs())));
+            }
+            "keys" => {
+                return Some(Ok(make_list(
+                    keys.iter().map(|k| Value::str_from(k)).collect(),
+                )));
+            }
+            "values" => {
+                return Some(Ok(make_list(keys.iter().map(|k| part(k)).collect())));
+            }
+            "kv" => {
+                let mut kv = Vec::with_capacity(keys.len() * 2);
+                for k in keys {
+                    kv.push(Value::str_from(k));
+                    kv.push(part(k));
+                }
+                return Some(Ok(make_list(kv)));
+            }
+            "elems" => {
+                return Some(Ok(Value::int(keys.len() as i64)));
+            }
+            _ => {}
+        }
     }
 
     // Match object methods

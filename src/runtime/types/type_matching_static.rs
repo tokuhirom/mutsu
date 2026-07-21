@@ -226,10 +226,15 @@ impl Interpreter {
                     | "Blob"
                     | "Capture"
                     | "array"
+                    | "IO::Path::Parts"
             )
         {
             // The bare native `array` type (and its parameterized form
             // `array[int]`, whose base name is `array`) does Positional.
+            return true;
+        }
+        // IO::Path::Parts does Positional, Associative and Iterable.
+        if constraint == "Iterable" && value_type == "IO::Path::Parts" {
             return true;
         }
         // Array is-a List in Raku type hierarchy (and Slip is-a List)
@@ -244,7 +249,15 @@ impl Interpreter {
         if constraint == "Associative"
             && matches!(
                 value_type,
-                "Hash" | "Map" | "Pair" | "Bag" | "Set" | "Mix" | "QuantHash" | "Capture"
+                "Hash"
+                    | "Map"
+                    | "Pair"
+                    | "Bag"
+                    | "Set"
+                    | "Mix"
+                    | "QuantHash"
+                    | "Capture"
+                    | "IO::Path::Parts"
             )
         {
             return true;
