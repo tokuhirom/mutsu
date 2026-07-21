@@ -97,7 +97,7 @@ impl Interpreter {
     /// is_private)`. Excludes special vars (`!`, `.`) and internal names. The
     /// cell stores attributes under the bare name, so all six twigil forms of an
     /// attribute resolve to the same cell slot.
-    pub(super) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
+    pub(crate) fn attr_twigil_base(name: &str) -> Option<(&str, bool)> {
         crate::value::attr_twigil_base(name)
     }
 
@@ -174,7 +174,7 @@ impl Interpreter {
     /// Read a scalar attribute straight from `self`'s shared cell. `Some` only
     /// when `name` is a scalar attr-twigil, `self` is a concrete instance (or a
     /// Mixin wrapping one), and the attribute exists in the cell.
-    pub(super) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
+    pub(crate) fn read_self_attr_cell(&self, name: &str) -> Option<Value> {
         let twigil = self.canonical_attr_twigil(name)?;
         let (bare, is_private) = Self::attr_twigil_base(&twigil)?;
         self.read_attr_cell_by_key(crate::symbol::Symbol::intern(bare), is_private)
@@ -327,7 +327,7 @@ impl Interpreter {
     /// `name` (`!x`/`.x`), resolving the qualified private key when present.
     /// No-op when `name` is not a scalar attr-twigil, `self` is not a concrete
     /// instance, or the attribute does not exist on `self`.
-    pub(super) fn write_self_attr_cell(&self, name: &str, val: Value) {
+    pub(crate) fn write_self_attr_cell(&self, name: &str, val: Value) {
         let Some((bare, is_private)) = Self::attr_twigil_base(name) else {
             return;
         };

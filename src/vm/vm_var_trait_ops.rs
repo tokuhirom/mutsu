@@ -371,6 +371,64 @@ impl Interpreter {
             }
         }
 
+        // `my %h is CustomClass` where CustomClass composes `Associative` (e.g.
+        // `does Hash::Agnostic`): back the variable with a blessed instance, so
+        // subscripting (AT-KEY/ASSIGN-KEY/DELETE-KEY), iteration and coercion
+        // methods (.Str/.raku/.List/.Slip/.gist/...) all dispatch to the class's
+        // (possibly role-provided) methods — a "tied hash". The instance keeps
+        // its identity across `%h = ...` (STORE) reassignments.
+        if name.starts_with('%')
+            && self.registry().classes.contains_key(&trait_name)
+            && self.class_does_role(&trait_name, "Associative")
+        {
+            if has_arg {
+                self.stack.pop();
+            }
+            let name_str = name.to_string();
+            // Gather any initializer values (`my %h is Foo = @pairs` assigns the
+            // initializer before this trait op runs) as Pairs / a flat kv list.
+            let init_source = self
+                .read_local_slot_or_name(code, slot, &name_str)
+                .or_else(|| self.get_env_with_main_alias(&name_str));
+            let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
+                Some(ValueView::Hash(h)) if !h.is_empty() => h
+                    .iter()
+                    .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                    .collect(),
+                Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
+                Some(ValueView::Seq(s) | ValueView::Slip(s)) if !s.is_empty() => {
+                    s.iter().cloned().collect()
+                }
+                _ => Vec::new(),
+            };
+            let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
+            let instance = self.try_compiled_method_or_interpret(type_obj, "new", vec![])?;
+            // Bind the instance to the variable first, then STORE the initializer
+            // through the bound variable so the mutating dispatch resolves `self`
+            // to the same instance the variable now holds.
+            self.write_local_slot_or_name(code, eff_slot, &name_str, instance.clone());
+            self.set_env_with_main_alias(&name_str, instance.clone());
+            if !init_values.is_empty() {
+                // Pass the initializer as a single positional list (not as
+                // separate Pair args, which STORE's signature would bind as
+                // *named* arguments); STORE's slurpy `*@values` flattens it.
+                let list_arg = Value::array(init_values);
+                let stored = self.try_compiled_method_or_interpret(
+                    instance.clone(),
+                    "STORE",
+                    vec![list_arg],
+                )?;
+                let bound = if matches!(stored.view(), ValueView::Instance { .. }) {
+                    stored
+                } else {
+                    instance
+                };
+                self.write_local_slot_or_name(code, eff_slot, &name_str, bound.clone());
+                self.set_env_with_main_alias(&name_str, bound);
+            }
+            return Ok(());
+        }
+
         if !(self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>")) {
             // For uppercase type-like traits (e.g. `is Map`, `is Set`), silently
             // accept them even if trait_mod:<is> is not defined. These are type
