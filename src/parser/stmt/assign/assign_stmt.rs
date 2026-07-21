@@ -565,7 +565,12 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
     // Binding (:= or ::=)
     if let Some(stripped) = rest.strip_prefix("::=").or_else(|| rest.strip_prefix(":=")) {
         let (rest, _) = ws(stripped)?;
-        let (rest, expr) = parse_comma_or_expr(rest).map_err(|err| PError {
+        // Use the assign-aware RHS parser (like every other branch here) so a
+        // chained bind whose next lvalue is indexed — `$c := %h<k> := 5` — parses:
+        // `try_parse_assign_expr` recognizes the trailing `%h<k> := 5` indexed
+        // bind, which a plain expression parser would leave behind. (Fasta binds
+        // `$current := %labels{.substr(1)} := my str @`.)
+        let (rest, expr) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected right-hand expression after ':='",
                 &err.messages,
