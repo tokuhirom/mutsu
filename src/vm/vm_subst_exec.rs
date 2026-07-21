@@ -53,7 +53,7 @@ impl Interpreter {
                     let result = Value::str(out);
                     self.write_subst_topic_checked(code, result)?;
                     // Create Match object and set $/
-                    let match_obj = Self::make_subst_match(&text, start, end);
+                    let match_obj = Self::make_subst_match(&text, start, end, &[]);
                     self.env_mut().insert("/".to_string(), match_obj.clone());
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
@@ -95,7 +95,7 @@ impl Interpreter {
                     let result = Value::str(out);
                     self.write_subst_topic_checked(code, result)?;
                     // Create Match object and set $/
-                    let match_obj = Self::make_subst_match(&text, start, end);
+                    let match_obj = Self::make_subst_match(&text, start, end, &captures);
                     self.env_mut().insert("/".to_string(), match_obj.clone());
                     self.substitution_in_smartmatch = self.in_smartmatch_rhs;
                     self.stack.push(match_obj);
@@ -220,7 +220,11 @@ impl Interpreter {
         if result_is_list {
             let matches: Vec<Value> = ranges
                 .iter()
-                .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
+                .enumerate()
+                .map(|(i, (s, e))| {
+                    let caps = per_match_captures.get(i).map_or(&[][..], |c| c.as_slice());
+                    Self::make_subst_match(&text, *s, *e, caps)
+                })
                 .collect();
             let list = Value::array(matches);
             self.env_mut().insert("/".to_string(), list.clone());
@@ -230,7 +234,8 @@ impl Interpreter {
         }
         // Create Match object from first match range and set $/
         let (first_start, first_end) = ranges[0];
-        let match_obj = Self::make_subst_match(&text, first_start, first_end);
+        let first_caps = per_match_captures.first().map_or(&[][..], |c| c.as_slice());
+        let match_obj = Self::make_subst_match(&text, first_start, first_end, first_caps);
         self.env_mut().insert("/".to_string(), match_obj.clone());
         self.substitution_in_smartmatch = self.in_smartmatch_rhs;
         self.stack.push(match_obj);
@@ -329,7 +334,7 @@ impl Interpreter {
                         samespace,
                     );
                     // S/// sets $/ to the match (without mutating $_).
-                    let match_obj = Self::make_subst_match(&text, start, end);
+                    let match_obj = Self::make_subst_match(&text, start, end, &[]);
                     self.env_mut().insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
@@ -365,7 +370,7 @@ impl Interpreter {
                             samespace,
                         )
                     };
-                    let match_obj = Self::make_subst_match(&text, start, end);
+                    let match_obj = Self::make_subst_match(&text, start, end, &captures);
                     self.env_mut().insert("/".to_string(), match_obj);
                     self.stack.push(Value::str(out));
                 } else {
@@ -472,13 +477,18 @@ impl Interpreter {
         if result_is_list {
             let matches: Vec<Value> = ranges
                 .iter()
-                .map(|(s, e)| Self::make_subst_match(&text, *s, *e))
+                .enumerate()
+                .map(|(i, (s, e))| {
+                    let caps = per_match_captures.get(i).map_or(&[][..], |c| c.as_slice());
+                    Self::make_subst_match(&text, *s, *e, caps)
+                })
                 .collect();
             self.env_mut()
                 .insert("/".to_string(), Value::array(matches));
         } else {
             let (s, e) = ranges[0];
-            let match_obj = Self::make_subst_match(&text, s, e);
+            let first_caps = per_match_captures.first().map_or(&[][..], |c| c.as_slice());
+            let match_obj = Self::make_subst_match(&text, s, e, first_caps);
             self.env_mut().insert("/".to_string(), match_obj);
         }
         self.stack.push(Value::str(out));
