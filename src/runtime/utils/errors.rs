@@ -76,14 +76,16 @@ pub(crate) fn type_check_assignment_error(var_name: &str, expected: &str, val: &
 pub(crate) fn type_check_binding_typed_error(expected: &str, val: &Value) -> RuntimeError {
     let got_type = value_type_name(val);
     let repr = value_short_repr(val);
+    // `.message` / `.Str` carry no class-name prefix (that is `.gist`'s job);
+    // Rakudo's message is exactly `Type check failed in binding; expected ...`.
     let msg = if repr.is_empty() {
         format!(
-            "X::TypeCheck::Binding: Type check failed in binding; expected {} but got {}",
+            "Type check failed in binding; expected {} but got {}",
             expected, got_type
         )
     } else {
         format!(
-            "X::TypeCheck::Binding: Type check failed in binding; expected {} but got {} {}",
+            "Type check failed in binding; expected {} but got {} {}",
             expected, got_type, repr
         )
     };

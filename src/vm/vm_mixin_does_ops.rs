@@ -261,7 +261,12 @@ impl Interpreter {
     /// concrete value) into an object is illegal (`5 does Int`, `obj does NC`).
     /// `target` is the object being mixed into, `rolish` the offending type.
     fn mixin_not_composable_error(target: &Value, rolish: &Value) -> RuntimeError {
-        let mixin_type = rolish.to_string_value();
+        // Raku names the offending type by its bare name (`B`), not the type
+        // object's gist (`(B)`), so use the type name for a Package/type object.
+        let mixin_type = match rolish.view() {
+            ValueView::Package(name) => name.resolve(),
+            _ => rolish.to_string_value(),
+        };
         let into_type = crate::runtime::utils::value_type_name(target);
         let msg = format!(
             "Cannot mix in non-composable type {} into object of type {}",

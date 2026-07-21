@@ -63,7 +63,7 @@ fn cannot_convert_to_int_failure(source: &Value, f: f64) -> Value {
     } else {
         "-Inf"
     };
-    let msg = format!("Cannot convert {label} to Int: not a finite number");
+    let msg = format!("Cannot convert {label} to Int");
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg));
     attrs.insert("source".to_string(), source.clone());
@@ -543,7 +543,7 @@ pub(super) fn dispatch(
                 ValueView::Num(f) => {
                     if f.is_nan() || f.is_infinite() {
                         let msg = format!(
-                            "Cannot convert {} to Int: not a finite number",
+                            "Cannot convert {} to Int",
                             if f.is_nan() {
                                 "NaN".to_string()
                             } else if f.is_sign_positive() {
