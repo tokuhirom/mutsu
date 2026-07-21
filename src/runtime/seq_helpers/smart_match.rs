@@ -1501,7 +1501,16 @@ impl Interpreter {
                 if let (Some(info_a), Some(info_b)) =
                     (extract_sig_info(left), extract_sig_info(right))
                 {
-                    signature_smartmatch(&info_b, &info_a)
+                    // A `where` clause on the *matcher* (RHS) signature carries
+                    // arbitrary runtime code, so Rakudo cannot statically prove a
+                    // candidate signature satisfies it: `Signature ~~ Signature`
+                    // is always False when the RHS has any `where` constraint
+                    // (even against an identical LHS).
+                    if info_b.params.iter().any(|p| p.where_constraint.is_some()) {
+                        false
+                    } else {
+                        signature_smartmatch(&info_b, &info_a)
+                    }
                 } else {
                     id_a == id_b
                 }
