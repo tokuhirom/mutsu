@@ -727,17 +727,54 @@ fn dispatch_capture(
         }
         "list" => Some(Ok(Value::array(positional.to_vec()))),
         "elems" => Some(Ok(Value::int(positional.len() as i64))),
+        "Numeric" | "Int" => Some(Ok(Value::int(positional.len() as i64))),
         "is-lazy" => Some(Ok(Value::FALSE)),
-        "keys" => Some(Ok(Value::array(
-            named.keys().map(|k| Value::str(k.clone())).collect(),
-        ))),
-        "values" => Some(Ok(Value::array(named.values().cloned().collect()))),
-        "pairs" => Some(Ok(Value::array(
-            named
+        // Capture `.keys`/`.values`/`.kv`/`.pairs` interleave the positional
+        // part (indexed 0..n) with the named part (raku Capture semantics).
+        "keys" => {
+            let mut keys: Vec<Value> = (0..positional.len() as i64).map(Value::int).collect();
+            keys.extend(named.keys().map(|k| Value::str(k.clone())));
+            Some(Ok(Value::seq(keys)))
+        }
+        "values" => {
+            let mut vals = positional.to_vec();
+            vals.extend(named.values().cloned());
+            Some(Ok(Value::seq(vals)))
+        }
+        "kv" => {
+            let mut kv = Vec::with_capacity(positional.len() * 2 + named.len() * 2);
+            for (idx, v) in positional.iter().enumerate() {
+                kv.push(Value::int(idx as i64));
+                kv.push(v.clone());
+            }
+            for (k, v) in named.iter() {
+                kv.push(Value::str(k.clone()));
+                kv.push(v.clone());
+            }
+            Some(Ok(Value::seq(kv)))
+        }
+        "pairs" => {
+            let mut pairs: Vec<Value> = positional
                 .iter()
-                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
-                .collect(),
-        ))),
+                .enumerate()
+                .map(|(idx, v)| Value::value_pair(Value::int(idx as i64), v.clone()))
+                .collect();
+            pairs.extend(named.iter().map(|(k, v)| Value::pair(k.clone(), v.clone())));
+            Some(Ok(Value::seq(pairs)))
+        }
+        "antipairs" => {
+            let mut pairs: Vec<Value> = positional
+                .iter()
+                .enumerate()
+                .map(|(idx, v)| Value::value_pair(v.clone(), Value::int(idx as i64)))
+                .collect();
+            pairs.extend(
+                named
+                    .iter()
+                    .map(|(k, v)| Value::value_pair(v.clone(), Value::str(k.clone()))),
+            );
+            Some(Ok(Value::seq(pairs)))
+        }
         "raku" | "perl" => {
             let mut parts = Vec::new();
             for v in positional {

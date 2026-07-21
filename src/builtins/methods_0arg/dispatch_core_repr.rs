@@ -510,7 +510,16 @@ pub(super) fn dispatch(
                         }
                     }
                     ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
-                    ValueView::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
+                    ValueView::ValuePair(k, v) => {
+                        // Parenthesize a Pair-valued key: `(red => 2) => apples`.
+                        let key = match k.view() {
+                            ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                                format!("({})", gist_item(k))
+                            }
+                            _ => gist_item(k),
+                        };
+                        format!("{} => {}", key, gist_item(v))
+                    }
                     ValueView::Junction { kind, values } => {
                         let kind_str = match kind {
                             crate::value::JunctionKind::Any => "any",
@@ -627,7 +636,16 @@ pub(super) fn dispatch(
                         }
                     }
                     ValueView::Pair(k, v) => format!("{} => {}", k, gist_item(v)),
-                    ValueView::ValuePair(k, v) => format!("{} => {}", gist_item(k), gist_item(v)),
+                    ValueView::ValuePair(k, v) => {
+                        // Parenthesize a Pair-valued key: `(red => 2) => apples`.
+                        let key = match k.view() {
+                            ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                                format!("({})", gist_item(k))
+                            }
+                            _ => gist_item(k),
+                        };
+                        format!("{} => {}", key, gist_item(v))
+                    }
                     ValueView::Junction { kind, values } => {
                         let kind_str = match kind {
                             crate::value::JunctionKind::Any => "any",
@@ -713,10 +731,18 @@ pub(super) fn dispatch(
             if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(raku_value(target))))
             } else {
-                // gist: use " => " separator
+                // gist: use " => " separator. A Pair-valued key is parenthesized
+                // so the outer arrow is unambiguous (`(red => 2) => apples`),
+                // matching raku's gist and the `gist_value` fast path.
+                let key_gist = match k.view() {
+                    ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                        format!("({})", runtime::gist_value(k))
+                    }
+                    _ => runtime::gist_value(k),
+                };
                 Some(Ok(Value::str(format!(
                     "{} => {}",
-                    runtime::gist_value(k),
+                    key_gist,
                     runtime::gist_value(v)
                 ))))
             }
