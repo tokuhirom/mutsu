@@ -128,7 +128,10 @@ impl Interpreter {
         if let Some(line) = attrs.get("line") {
             map.insert("line".to_string(), line.clone());
         }
-        Value::hash(map)
+        // raku's CallFrame.annotations is an immutable Map, not a mutable Hash.
+        let mut data = crate::value::HashData::new(map);
+        data.declared_type = Some("Map".to_string());
+        Value::hash_with_data(crate::gc::Gc::new(data))
     }
 
     pub(super) fn seconds_from_value(val: Option<Value>) -> Option<f64> {
