@@ -79,6 +79,15 @@ doc) are version skew, not mutsu bugs — lowest priority.
   `split_quotish_words` via `angle_words_subscript_index_expr`, so quoted words and
   full sigil interpolation work and the single-word-scalar / multi-word-slice
   distinction is preserved. Pin: `t/angle-subscript-interpolation.t`.
+- `perl-var.rakudoc` [2] (partial) — a CATCH that *handled* an exception (matching
+  `when`/`default`, or `.resume`) wrongly left the handled exception in `$!` outside
+  the `try`. Per Raku, `$!` is only updated when the exception propagates out
+  unhandled; a handled `try` keeps `$!`'s pre-`try` value. Fixed in the try/catch VM
+  op (restore the prior `$!` on the handled paths). Pin:
+  `t/dollar-bang-handled-exception.t`. NB: the doc line still shows a residual
+  `$!.^name` mismatch (`Any` vs `Nil`) because the *cleared* `$!` is `Value::NIL`,
+  which reports `Any` — that is the deferred Nil-vs-Any identity knot below, not this
+  fix.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are

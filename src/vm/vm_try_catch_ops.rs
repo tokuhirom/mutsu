@@ -357,6 +357,13 @@ impl Interpreter {
                     Value::make_instance(Symbol::intern("X::AdHoc"), exc_attrs)
                 };
                 let saved_topic = self.env().get("_").cloned();
+                // Per Raku semantics `$!` is only *updated* to the exception when it
+                // propagates out of the `try` unhandled (swallowed by the implicit
+                // trap). A CATCH that handles the exception (a matching
+                // `when`/`default`, or `.resume`) leaves `$!` at whatever it held
+                // before the `try`. Remember that prior value so the handled paths
+                // below can restore it.
+                let prior_bang = self.env().get("!").cloned();
                 self.env_mut().insert("!".to_string(), err_val.clone());
                 self.env_mut().insert("_".to_string(), err_val);
                 let saved_when = self.when_matched();
@@ -382,6 +389,11 @@ impl Interpreter {
                             } else {
                                 self.env_mut().remove("_");
                             }
+                            // A resumed exception is handled: restore `$!` to its
+                            // pre-`try` value so the resumed body and the code after
+                            // the `try` see the prior `$!`, not the handled exception.
+                            self.env_mut()
+                                .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
                             // Resume from the instruction after die
                             if let Some(resume_point) = self.take_resume_ip_for(code) {
                                 // Run from the resume point to the end of the try body
@@ -404,6 +416,14 @@ impl Interpreter {
                     self.env_mut().insert("_".to_string(), v);
                 } else {
                     self.env_mut().remove("_");
+                }
+                // A handled exception (a matching `when`/`default`) leaves `$!` at
+                // its pre-`try` value. When nothing matched, `$!` keeps the
+                // exception: an explicit CATCH re-throws (below), and an implicit
+                // `try` trap swallows it with the exception left in `$!`.
+                if when_handled {
+                    self.env_mut()
+                        .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
                 }
                 // If there's an explicit CATCH block but no `when`/`default`
                 // matched, re-throw the exception (Raku semantics).
