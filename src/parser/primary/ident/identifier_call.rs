@@ -1536,7 +1536,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // Raku requires whitespace between an identifier and listop arguments.
     // `foo'bar'` is a syntax error (two terms in a row), not `foo('bar')`.
     // `foo:bar` is a package-qualified name, not `foo(:bar)`.
+    // Declarator keywords (`method foo {}`, `multi bar {}`) are routine/method
+    // declarations parsed by their own declarator path — never a listop head.
+    // They are not in `is_keyword`, so exclude them here so a following bareword
+    // (`method foo {}`) is not gobbled as a listop argument.
+    let is_declarator_head = matches!(
+        name.as_str(),
+        "method" | "submethod" | "multi" | "proto" | "macro" | "regex" | "token" | "rule"
+    );
     if !is_keyword(&name)
+        && !is_declarator_head
         && !is_infix_word_op(&name)
         && !r.is_empty()
         && !r.starts_with(';')
@@ -1647,6 +1656,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // so a preceding known/builtin listop takes it as an argument:
             // `samewith key => $v` is `samewith(key => $v)`.
             || crate::parser::primary::ident::predicates::next_is_bareword_fat_arrow_pair(r)
+            // A plain bareword term (`color White`) is a listop argument too:
+            // an undeclared identifier followed by another bareword is a no-paren
+            // call `color(White)`, matching raku (both then undeclared at runtime).
+            // mutsu already gobbles `$`/digit/quoted args here — this closes the
+            // bareword gap so `:fill-color(color White)` parses structurally.
+            || crate::parser::primary::ident::predicates::next_word_is_listop_bareword_arg(r)
             || hyphen_forward_call
             || is_user_sub
             || is_imported_sub

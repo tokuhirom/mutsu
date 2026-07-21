@@ -341,6 +341,93 @@ pub(crate) fn next_is_bareword_fat_arrow_pair(input: &str) -> bool {
     after.starts_with("=>") && !after.starts_with("==>")
 }
 
+/// Check if `input` begins with a plain bareword identifier that a preceding
+/// undeclared bareword listop candidate should gobble as an argument. In Raku,
+/// an undeclared identifier followed by whitespace and another bareword term is
+/// a list-op call: `color White` parses as `color(White)` (both are then
+/// reported as undeclared at the semantic stage, exactly as raku does). mutsu
+/// already gobbles `$`/`@`/`%`/digit/quoted arguments after such a head; this
+/// closes the plain-bareword gap so the call parses structurally instead of
+/// failing with "Confused" inside parens / colonpairs (`:fill-color(color White)`).
+///
+/// The following word is only a term argument when it is not itself an infix
+/// operator or a statement keyword — `foo eqv bar`, `foo and bar`, `foo x 3`
+/// must keep their infix reading, so those words are excluded.
+pub(crate) fn next_word_is_listop_bareword_arg(input: &str) -> bool {
+    let first = match input.chars().next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !(first.is_alphabetic() || first == '_') {
+        return false;
+    }
+    let mut end = first.len_utf8();
+    for ch in input[end..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    let word = &input[..end];
+    // A word that can act as an infix operator or a statement keyword must be
+    // left for the surrounding parser rather than gobbled as an argument.
+    if is_infix_word_op(word) || is_keyword(word) {
+        return false;
+    }
+    // Additional lowercase word infixes / declarators / control words not
+    // covered by `is_infix_word_op` / `is_keyword` (see `custom_infix.rs`).
+    !matches!(
+        word,
+        "eqv" | "o"
+            | "xor"
+            | "as"
+            | "of"
+            | "where"
+            | "is"
+            | "temp"
+            | "state"
+            | "unicmp"
+            | "coll"
+            | "leg"
+            | "andthen"
+            | "orelse"
+            | "notandthen"
+            | "method"
+            | "grammar"
+            | "package"
+            | "token"
+            | "rule"
+            | "multi"
+            | "proto"
+            | "constant"
+            | "enum"
+            | "subset"
+            | "unit"
+            | "fail"
+            | "start"
+            // Phasers (`DOC INIT { ... }`, `BEGIN { ... }`): the following
+            // phaser keyword introduces a block, not a listop argument.
+            | "BEGIN"
+            | "CHECK"
+            | "INIT"
+            | "END"
+            | "ENTER"
+            | "LEAVE"
+            | "KEEP"
+            | "UNDO"
+            | "FIRST"
+            | "NEXT"
+            | "LAST"
+            | "PRE"
+            | "POST"
+            | "QUIT"
+            | "CLOSE"
+            | "DOC"
+            | "COMPOSE"
+    )
+}
+
 /// Check if a name is an infix word operator (should not be treated as a listop call).
 pub(crate) fn is_infix_word_op(name: &str) -> bool {
     matches!(

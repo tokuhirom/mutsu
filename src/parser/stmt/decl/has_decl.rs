@@ -928,7 +928,47 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             });
         }
     }
+    let pre_ws_rest = rest;
     let (rest, _) = ws(rest)?;
+
+    // An attribute declaration is a complete statement: after the name, its
+    // optional type / traits / `of` / `where` / default, the only things that may
+    // follow are a statement terminator (`;`), the end of the enclosing block
+    // (`}`), or end of input. A bare term here (`has $.a syntax error`,
+    // `has $.a\nhas $.b` with no `;`) is "two terms in a row", exactly as raku
+    // reports it — not a fresh statement. Without this guard mutsu silently
+    // starts a new statement, so `has $.a garbage` parses instead of failing.
+    //
+    // Exception: a statement whose last consumed token is a block-closing `}`
+    // (e.g. a block/closure default `has $.cl = { self.foo }`) is implicitly
+    // terminated in Raku, so a following declaration on the next line is a new
+    // statement, not a second term. Only fire when the preceding token is NOT `}`.
+    let consumed = input.len().saturating_sub(pre_ws_rest.len());
+    let block_terminated =
+        consumed > 0 && input.as_bytes().get(consumed - 1).copied() == Some(b'}');
+    if !block_terminated
+        && let Some(first) = rest.chars().next()
+        && (first.is_alphabetic() || first == '_' || matches!(first, '$' | '@' | '%' | '&'))
+    {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str("Two terms in a row".to_string()),
+        );
+        attrs.insert(
+            "reason".to_string(),
+            Value::str("Two terms in a row".to_string()),
+        );
+        if let Some((pre, post)) = crate::parser::primary::source_span_at(rest) {
+            attrs.insert("pre".to_string(), Value::str(pre));
+            attrs.insert("post".to_string(), Value::str(post));
+        }
+        let ex = Value::make_instance(Symbol::intern("X::Syntax::Confused"), attrs);
+        return Err(PError::fatal_with_exception(
+            "Confused. Two terms in a row".to_string(),
+            Box::new(ex),
+        ));
+    }
 
     let (rest, _) = opt_char(rest, ';');
     Ok((
