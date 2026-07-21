@@ -38,11 +38,21 @@ use Test;
     is C.new.WHO.Str, 'C', 'bare .WHO still the macro';
 }
 
-# An anonymous enum value has no type name: raku reports "".
+# An anonymous enum value has no type name: raku reports "" and its `.WHAT`
+# is the empty type object `()`.
 {
     my $e = enum <one two three>;
     is one.^name, '', 'anonymous enum value .^name is the empty string';
+    is one.WHAT.gist, '()', 'anonymous enum value .WHAT is the empty type object';
+    is one.WHAT.^name, '', 'anonymous enum value .WHAT.^name is the empty string';
     is $e.^name, 'Map', 'the anon enum itself is a Map';
+}
+
+# A named enum value keeps its type name through both .^name and .WHAT.
+{
+    enum E2 <a b>;
+    is a.^name, 'E2', 'named enum value .^name is the enum type';
+    is a.WHAT.gist, '(E2)', 'named enum value .WHAT is the enum type object';
 }
 
 done-testing;

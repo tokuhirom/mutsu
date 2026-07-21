@@ -69,7 +69,15 @@ impl Interpreter {
             ValueView::Mix(_, true) => "MixHash",
             ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => "Pair",
             ValueView::Enum { enum_type, .. } => {
-                return Ok(Value::package(Symbol::intern(&enum_type.resolve())));
+                let resolved = enum_type.resolve();
+                // An anonymous enum (`enum <one two>`) has no type name: raku's
+                // `.WHAT` is the empty type object `()`.
+                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                    ""
+                } else {
+                    &resolved
+                };
+                return Ok(Value::package(Symbol::intern(visible)));
             }
             ValueView::Nil => "Any",
             ValueView::Package(name) => {
@@ -583,7 +591,7 @@ impl Interpreter {
             // An anonymous enum (`enum <one two>`) has no name: raku reports "".
             ValueView::Enum { enum_type, .. } => {
                 let n = enum_type.resolve();
-                if n == "__ANON_ENUM__" {
+                if crate::value::is_internal_anon_type_name(&n) {
                     String::new()
                 } else {
                     n
