@@ -2,15 +2,22 @@ use super::vm_string_regex_ops::*;
 use super::*;
 
 impl Interpreter {
-    /// Create a Match object for a substitution match.
-    pub(super) fn make_subst_match(text: &str, start: usize, end: usize) -> Value {
+    /// Create a Match object for a substitution match, including any
+    /// positional captures (`$0`, `$1`, ...) so the post-`s///` `$/` exposes
+    /// them like a plain `m//` match does.
+    pub(super) fn make_subst_match(
+        text: &str,
+        start: usize,
+        end: usize,
+        positional: &[String],
+    ) -> Value {
         let chars: Vec<char> = text.chars().collect();
         let matched: String = chars[start..end].iter().collect();
         Value::make_match_object_full(
             matched,
             start as i64,
             end as i64,
-            &[],
+            positional,
             &std::collections::HashMap::new(),
             &std::collections::HashMap::new(),
             &[],
