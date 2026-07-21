@@ -266,8 +266,20 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         && let Ok((r, capture_name)) = super::super::ident(after_capture)
     {
         type_constraint = Some(format!("::{}", capture_name));
-        let (r, _) = ws(r)?;
-        rest = r;
+        // A type smiley may follow the capture: `::T:U`, `::T:D`, `::T:_`
+        // constrains the argument to a type object / instance while still binding
+        // the capture. Consume it before the `:`-named-marker check below, which
+        // would otherwise misread `:U` as a named-parameter marker. (YAMLish uses
+        // `::GrammarType:U :$schema`.)
+        if r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_") {
+            let smiley = &r[..2];
+            type_constraint = Some(format!("::{}{}", capture_name, smiley));
+            let (r, _) = ws(&r[2..])?;
+            rest = r;
+        } else {
+            let (r, _) = ws(r)?;
+            rest = r;
+        }
         if rest.starts_with('=') && !rest.starts_with("==") {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
