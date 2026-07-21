@@ -51,6 +51,91 @@ impl Interpreter {
         Some(Err(make_private_unqualified_error(private_rest)))
     }
 
+    /// `Mu`/`Any`/`Cool` are the implicit roots of every type's MRO but carry no
+    /// user-defined methods of their own, so a qualified coercion call to one of
+    /// them (`self.Mu::Str`, `self.Any::gist`) must reach the BUILT-IN default
+    /// coercion, bypassing any user/role override on the receiver. Hash::Agnostic
+    /// and friends rely on this: `multi method Str(::?ROLE:U:) { self.Mu::Str }`.
+    ///
+    /// Without this, the type-object path re-dispatches the receiver's own
+    /// overriding `.Str`/`.gist` (via `dispatch_qualified_non_instance_method`,
+    /// which loses the class name and re-enters unqualified dispatch) and recurses
+    /// until the stack overflows; the instance path is wrongly rejected as
+    /// "not inherited".
+    ///
+    /// The qualifier must actually sit in the receiver's MRO (so `self.Cool::Str`
+    /// on a non-Cool class still errors, matching Rakudo), and only the base
+    /// coercion/introspection methods that Mu/Any/Cool provide as defaults are
+    /// intercepted — anything else falls through to normal dispatch.
+    pub(super) fn dispatch_universal_base_coercion(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method.starts_with('!') || !args.is_empty() {
+            return None;
+        }
+        let (qualifier, actual_method) = method.rsplit_once("::")?;
+        if !matches!(qualifier, "Mu" | "Any" | "Cool") {
+            return None;
+        }
+        let cn = match target.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => return None,
+        };
+        // `Mu` and `Any` are the implicit roots of every type, so a qualified
+        // coercion to them is always valid — and `class_mro` does not always
+        // materialize them (a role-only class `C does R` linearizes to `[C, R]`).
+        // `Cool` is only reachable from Cool-derived types, so it must actually
+        // appear in the MRO (matching Rakudo's "not inherited" rejection otherwise).
+        if qualifier == "Cool" && !self.class_mro(&cn).iter().any(|c| c.as_str() == "Cool") {
+            return None;
+        }
+        match target.view() {
+            // Type object (`C.Mu::Str`): the built-in coercion of an undefined value.
+            ValueView::Package(name) => {
+                let n = name.resolve();
+                let v = match actual_method {
+                    // A type object stringifies to the empty string (Rakudo also
+                    // emits an "uninitialized value in string context" warning; the
+                    // existing bare-class `.Str` fallback is silent, so match it).
+                    "Str" | "Stringy" => Value::str(String::new()),
+                    "gist" => {
+                        if crate::value::is_internal_anon_type_name(&n) {
+                            Value::str_from("()")
+                        } else {
+                            let short = n.rsplit("::").next().unwrap_or(&n);
+                            Value::str(format!("({})", short))
+                        }
+                    }
+                    "raku" | "perl" => Value::str(n),
+                    "Bool" | "defined" => Value::truth(false),
+                    _ => return None,
+                };
+                Some(Ok(v))
+            }
+            // Defined instance (`$o.Mu::gist`): the generic `Class.new(attrs)` repr,
+            // ignoring the receiver's own `gist`/`raku` override.
+            ValueView::Instance { attributes, .. } => match actual_method {
+                "gist" | "raku" | "perl" => {
+                    let display_name = crate::value::user_facing_type_name(&cn);
+                    let public_attrs = self.collect_public_raku_attrs(&cn, &attributes.to_map());
+                    let rendered = if public_attrs.is_empty() {
+                        format!("{}.new", display_name)
+                    } else {
+                        format!("{}.new({})", display_name, public_attrs.join(", "))
+                    };
+                    Some(Ok(Value::str(rendered)))
+                }
+                "Bool" | "defined" => Some(Ok(Value::truth(true))),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// Handle qualified method names: Class::method (e.g., $o.Parent::x).
     /// Returns Some(result) if handled, None to continue.
     pub(super) fn dispatch_qualified_instance_method(
