@@ -224,6 +224,15 @@ impl Interpreter {
                 _ => divisors.push(arg.clone()),
             }
         }
+        // Exact path: when the invocant and every divisor are non-negative
+        // Int/Rat and the list is finite, do the decomposition in exact rational
+        // arithmetic so results like `5.Rat.polymod(.3, .2)` stay `(0.2 0 80)`
+        // instead of accreting float noise. Any operand outside that domain (Num,
+        // BigRat, negatives, a zero divisor, an infinite source, or an i128
+        // overflow) falls through to the float loop below unchanged.
+        if !has_infinite && let Some(exact) = polymod_exact(target, &divisors) {
+            return Ok(Value::seq(exact));
+        }
         let mut result = Vec::new();
         let mut stopped = false;
         for d in &divisors {
@@ -349,4 +358,74 @@ impl Interpreter {
             Ok(Value::array(processed))
         }
     }
+}
+
+/// A non-negative Int/Rat as an exact rational `(num, den)` with `den > 0`.
+/// Returns `None` for any other value (Num, BigInt/BigRat, negatives), which
+/// signals `polymod_exact` to bail to the float path.
+fn polymod_rat(v: &Value) -> Option<(i128, i128)> {
+    match v.view() {
+        ValueView::Int(n) if n >= 0 => Some((n as i128, 1)),
+        ValueView::Rat(n, d) if n >= 0 && d > 0 => Some((n as i128, d as i128)),
+        ValueView::Bool(b) => Some((if b { 1 } else { 0 }, 1)),
+        _ => None,
+    }
+}
+
+/// Build an exact `Value` from a rational, reducing to lowest terms and
+/// preferring `Int` when the denominator is 1. Returns `None` if the reduced
+/// numerator/denominator do not fit `i64` (mutsu's `Rat` payload width), so the
+/// caller can fall back to the float path rather than truncating.
+fn polymod_rat_value(num: i128, den: i128) -> Option<Value> {
+    debug_assert!(den > 0);
+    let g = gcd_i128(num.abs(), den);
+    let g = if g == 0 { 1 } else { g };
+    let n = num / g;
+    let d = den / g;
+    if d == 1 {
+        i64::try_from(n).ok().map(Value::int)
+    } else {
+        let n = i64::try_from(n).ok()?;
+        let d = i64::try_from(d).ok()?;
+        Some(crate::value::make_rat(n, d))
+    }
+}
+
+fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a.abs()
+}
+
+/// Exact rational `polymod`: `n.polymod(d1, d2, ...)` yields
+/// `(n mod d1, (n div d1) mod d2, ..., final quotient)`, all computed without
+/// floating point. Returns `None` (bail to float) when any operand is out of
+/// the non-negative Int/Rat domain, a divisor is zero, or an intermediate
+/// value overflows `i128` / does not fit back into a `Rat`.
+fn polymod_exact(target: &Value, divisors: &[Value]) -> Option<Vec<Value>> {
+    let (mut nn, mut nd) = polymod_rat(target)?;
+    let mut result = Vec::with_capacity(divisors.len() + 1);
+    for d in divisors {
+        let (dn, dd) = polymod_rat(d)?;
+        if dn == 0 {
+            return None; // zero divisor: leave to the float path's own handling
+        }
+        // q = floor( (nn/nd) / (dn/dd) ) = floor( (nn*dd) / (nd*dn) ); all terms
+        // are non-negative here, so truncating division already floors.
+        let p = nn.checked_mul(dd)?;
+        let qden = nd.checked_mul(dn)?;
+        let q = p / qden;
+        // r = n - q*d = (nn*dd - q*dn*nd) / (nd*dd)
+        let r_num = nn
+            .checked_mul(dd)?
+            .checked_sub(q.checked_mul(dn)?.checked_mul(nd)?)?;
+        let r_den = nd.checked_mul(dd)?;
+        result.push(polymod_rat_value(r_num, r_den)?);
+        // The carried quotient is always an integer.
+        nn = q;
+        nd = 1;
+    }
+    result.push(polymod_rat_value(nn, nd)?);
+    Some(result)
 }
