@@ -938,9 +938,18 @@ impl Interpreter {
                                 .or_default()
                                 .push(def);
                         } else {
-                            role_def
+                            // A public `method STORE` and a private `method !STORE`
+                            // share the base name but are distinct methods (dispatch
+                            // filters by is_private). Preserve any existing entry of
+                            // the opposite privacy instead of overwriting it; only a
+                            // genuine same-privacy redeclaration replaces the prior
+                            // non-multi def.
+                            let entry = role_def
                                 .methods
-                                .insert(resolved_method_name.clone(), vec![def]);
+                                .entry(resolved_method_name.clone())
+                                .or_default();
+                            entry.retain(|d| d.is_private != def.is_private || d.is_multi);
+                            entry.push(def);
                         }
                     }
                     // `handles` on a role method: synthesize forwarder methods.

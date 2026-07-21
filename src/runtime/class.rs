@@ -177,38 +177,47 @@ impl Interpreter {
             if defs.iter().all(|d| d.is_submethod) {
                 continue;
             }
-            // Check non-multi methods
-            let non_multi: Vec<&MethodDef> = defs
-                .iter()
-                .filter(|d| !d.is_multi && !Self::is_stub_routine_body(&d.body))
-                .collect();
-            let class_defined_non_multi = non_multi.iter().any(|d| d.role_origin.is_none());
-            if !class_defined_non_multi {
-                let mut conflicting_roles = Vec::new();
-                let mut seen_origins = Vec::new();
-                for def in &non_multi {
-                    let Some(role_name) = &def.role_origin else {
-                        continue;
-                    };
-                    // Use original_role for diamond detection: if two methods
-                    // trace back to the same original role, they are not in conflict.
-                    let origin = def.original_role.as_ref().unwrap_or(role_name);
-                    if seen_origins.contains(origin) {
-                        continue;
+            // Check non-multi methods. Public and private methods that share a
+            // base name live in separate namespaces (dispatch filters on privacy),
+            // so a public `foo` from one role and a private `!foo` from another do
+            // NOT conflict — check each privacy class independently.
+            for is_private in [false, true] {
+                let non_multi: Vec<&MethodDef> = defs
+                    .iter()
+                    .filter(|d| {
+                        !d.is_multi
+                            && d.is_private == is_private
+                            && !Self::is_stub_routine_body(&d.body)
+                    })
+                    .collect();
+                let class_defined_non_multi = non_multi.iter().any(|d| d.role_origin.is_none());
+                if !class_defined_non_multi {
+                    let mut conflicting_roles = Vec::new();
+                    let mut seen_origins = Vec::new();
+                    for def in &non_multi {
+                        let Some(role_name) = &def.role_origin else {
+                            continue;
+                        };
+                        // Use original_role for diamond detection: if two methods
+                        // trace back to the same original role, they are not in conflict.
+                        let origin = def.original_role.as_ref().unwrap_or(role_name);
+                        if seen_origins.contains(origin) {
+                            continue;
+                        }
+                        seen_origins.push(origin.clone());
+                        if !conflicting_roles.contains(role_name) {
+                            conflicting_roles.push(role_name.clone());
+                        }
                     }
-                    seen_origins.push(origin.clone());
-                    if !conflicting_roles.contains(role_name) {
-                        conflicting_roles.push(role_name.clone());
+                    if conflicting_roles.len() > 1 {
+                        conflicting_roles.reverse();
+                        return Err(RuntimeError::new(format!(
+                            "X::Role::Composition::Conflict: Method '{}' must be resolved by class {} because it exists in multiple roles ({})",
+                            method_name,
+                            class_name,
+                            conflicting_roles.join(", "),
+                        )));
                     }
-                }
-                if conflicting_roles.len() > 1 {
-                    conflicting_roles.reverse();
-                    return Err(RuntimeError::new(format!(
-                        "X::Role::Composition::Conflict: Method '{}' must be resolved by class {} because it exists in multiple roles ({})",
-                        method_name,
-                        class_name,
-                        conflicting_roles.join(", "),
-                    )));
                 }
             }
 
