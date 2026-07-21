@@ -5,6 +5,37 @@ use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
 
+/// Gauss sum of the inclusive integer range `lo..hi` (empty when `lo > hi`),
+/// computed in i128 so the product never overflows for i64 endpoints — the
+/// sum of `1 .. 10_000_000_000_000` is ~5e25, far past i64.
+fn int_series_sum_i128(lo: i64, hi: i64) -> i128 {
+    if lo > hi {
+        return 0;
+    }
+    let n = (hi as i128) - (lo as i128) + 1;
+    n * ((lo as i128) + (hi as i128)) / 2
+}
+
+/// Fold an i128 arithmetic-series sum into the running `sum` accumulator.
+/// Returns `Some(value)` when the total no longer fits in `i64` and the whole
+/// `sum` must be returned early as a BigInt (mirrors the `GenericRange` arm),
+/// otherwise `None` after updating `total`/`total_f` in place.
+fn fold_series_sum(total: &mut i64, total_f: &mut f64, has_num: bool, s: i128) -> Option<Value> {
+    if has_num {
+        *total_f += s as f64;
+        return None;
+    }
+    if let Ok(v) = i64::try_from(s)
+        && let Some(nt) = total.checked_add(v)
+    {
+        *total = nt;
+        return None;
+    }
+    Some(Value::bigint_arc(std::sync::Arc::new(
+        NumBigInt::from(*total) + NumBigInt::from(s),
+    )))
+}
+
 pub(crate) fn native_function_variadic(
     name: &str,
     args: &[Value],
@@ -200,51 +231,27 @@ pub(crate) fn native_function_variadic(
                         total_f += f;
                     }
                     ValueView::Range(a, b) => {
-                        let n = b - a + 1;
-                        if n > 0 {
-                            let s = n * (a + b) / 2;
-                            if has_num {
-                                total_f += s as f64;
-                            } else {
-                                total += s;
-                            }
+                        let s = int_series_sum_i128(a, b);
+                        if let Some(v) = fold_series_sum(&mut total, &mut total_f, has_num, s) {
+                            return Some(Ok(v));
                         }
                     }
                     ValueView::RangeExcl(a, b) => {
-                        let n = b - a;
-                        if n > 0 {
-                            let b_adj = b - 1;
-                            let s = n * (a + b_adj) / 2;
-                            if has_num {
-                                total_f += s as f64;
-                            } else {
-                                total += s;
-                            }
+                        let s = int_series_sum_i128(a, b - 1);
+                        if let Some(v) = fold_series_sum(&mut total, &mut total_f, has_num, s) {
+                            return Some(Ok(v));
                         }
                     }
                     ValueView::RangeExclStart(a, b) => {
-                        let start = a + 1;
-                        if start <= b {
-                            let n = b - start + 1;
-                            let s = n * (start + b) / 2;
-                            if has_num {
-                                total_f += s as f64;
-                            } else {
-                                total += s;
-                            }
+                        let s = int_series_sum_i128(a + 1, b);
+                        if let Some(v) = fold_series_sum(&mut total, &mut total_f, has_num, s) {
+                            return Some(Ok(v));
                         }
                     }
                     ValueView::RangeExclBoth(a, b) => {
-                        let start = a + 1;
-                        let end = b - 1;
-                        if start <= end {
-                            let n = end - start + 1;
-                            let s = n * (start + end) / 2;
-                            if has_num {
-                                total_f += s as f64;
-                            } else {
-                                total += s;
-                            }
+                        let s = int_series_sum_i128(a + 1, b - 1);
+                        if let Some(v) = fold_series_sum(&mut total, &mut total_f, has_num, s) {
+                            return Some(Ok(v));
                         }
                     }
                     ValueView::GenericRange {
