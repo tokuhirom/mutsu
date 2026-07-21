@@ -240,32 +240,47 @@ impl Interpreter {
                         .and_then(|(idx, _)| by_index(idx)),
                 )
             }
+            // A numeric value matches by numeric equality: an exact `Int` variant,
+            // or (for a rational-valued enum like `enum Mass (g => 1/1, ...)`) a
+            // `Generic` variant whose value equals it numerically (`Mass(1)` -> g).
             ValueView::Int(int_value) => Some(
                 variants
                     .iter()
                     .enumerate()
-                    .find(|(_, (_, v))| *v == EnumValue::Int(int_value))
+                    .find(|(_, (_, v))| {
+                        *v == EnumValue::Int(int_value)
+                            || crate::runtime::to_float_value(&v.to_value())
+                                == Some(int_value as f64)
+                    })
                     .and_then(|(idx, _)| by_index(idx)),
             ),
-            ValueView::Num(num_value) => {
-                if num_value.fract() == 0.0 {
-                    let int_value = num_value as i64;
-                    Some(
-                        variants
-                            .iter()
-                            .enumerate()
-                            .find(|(_, (_, v))| *v == EnumValue::Int(int_value))
-                            .and_then(|(idx, _)| by_index(idx)),
-                    )
-                } else {
-                    Some(None)
-                }
-            }
+            ValueView::Num(num_value) => Some(
+                variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (_, v))| {
+                        crate::runtime::to_float_value(&v.to_value()) == Some(num_value)
+                    })
+                    .and_then(|(idx, _)| by_index(idx)),
+            ),
             ValueView::Str(name) => Some(
                 variants
                     .iter()
                     .enumerate()
                     .find(|(_, (key, _))| key.as_str() == name.as_str())
+                    .and_then(|(idx, _)| by_index(idx)),
+            ),
+            // A rational/complex value (e.g. `Mass(1/1000)` for `enum Mass (mg =>
+            // 1/1000, ...)`) is stored as an `EnumValue::Generic`; match it by
+            // value equality against each variant's value.
+            ValueView::Rat(..)
+            | ValueView::BigRat(..)
+            | ValueView::FatRat(..)
+            | ValueView::Complex(..) => Some(
+                variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (_, v))| v.to_value() == value)
                     .and_then(|(idx, _)| by_index(idx)),
             ),
             _ => None,
