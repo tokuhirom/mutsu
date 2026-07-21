@@ -5,6 +5,36 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
 
+/// Does the input (which starts at a `:`) begin a bareword/variable colonpair
+/// adverb — as opposed to a block/typed-hash/array/angle listop argument?
+///
+/// A no-space `:` right after a parenless method name is Raku's adverbial
+/// colonpair (`$obj.git:so`, `.grep:Str`, `.foo:bar(3)`, `.m:$x`) and binds as a
+/// named argument. But `.map:{...}` / `.method:[...]` / `.method:<...>` are
+/// colon-listop calls taking a block / array / angle-word argument, so those
+/// must NOT be diverted. This distinguishes the two by the character right after
+/// the colon: an identifier start, `!name`, or a sigil is an adverb; a brace,
+/// bracket, angle, digit, or anything else is left for the listop reading.
+pub(crate) fn colonpair_adverb_follows(input: &str) -> bool {
+    let Some(rest) = input.strip_prefix(':') else {
+        return false;
+    };
+    // `::` is a package separator, never a colonpair here.
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => true,
+        // `:!name` — a negated boolean colonpair. Require an identifier char to
+        // follow so a stray `:!` (prefix `!`) is not mistaken for an adverb.
+        Some('!') => chars.next().is_some_and(|c| c.is_alphabetic() || c == '_'),
+        // `:$var` / `:@var` / `:%var` / `:&var` — a variable colonpair. Require a
+        // name char after the sigil so bare sigils are not swallowed.
+        Some('$') | Some('@') | Some('%') | Some('&') => {
+            chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+        }
+        _ => false,
+    }
+}
+
 /// Check if an expression is a negative integer literal (e.g., `-(1)` from `-1`).
 /// Returns the negative value string (e.g., "-1") if so.
 pub(crate) fn extract_negative_literal(expr: &Expr) -> Option<String> {

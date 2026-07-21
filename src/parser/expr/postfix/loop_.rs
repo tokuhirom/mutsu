@@ -13,8 +13,8 @@ use super::call_method::{
 };
 use super::dot_assign::{atomic_var_name, parse_dot_assign};
 use super::helpers::{
-    compose_prefix_into_whatevercode, extract_negative_literal, extract_range_negative_end,
-    is_angle_key_char, make_negative_subscript_error,
+    colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
+    extract_range_negative_end, is_angle_key_char, make_negative_subscript_error,
 };
 use crate::ast::{ExistsAdverb, Expr, HyperSliceAdverb, Stmt};
 use crate::parser::expr::operators::{
@@ -984,6 +984,18 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                         let (r3, first_arg) = colonpair_expr(r2)?;
                         args.push(first_arg);
                         r3
+                    } else if colonpair_adverb_follows(r2) {
+                        // A bareword/variable colonpair immediately after the
+                        // method name (no space) is an adverbial named argument,
+                        // e.g. `$obj.git:so`, `.grep:Str`, `.foo:bar(3)`, `.m:$x`.
+                        // Raku parses `.method:adverb` as a colonpair, not a
+                        // colon-listop positional. Block/typed-hash/array forms
+                        // (`.map:{...}`, `.method:[...]`, `.method:<...>`) are
+                        // excluded by `colonpair_adverb_follows`, so they keep the
+                        // listop reading below.
+                        let (r_cp, cp) = colonpair_expr(r2)?;
+                        args.push(cp);
+                        r_cp
                     } else {
                         let r3 = &r2[1..];
                         let (r3, _) = ws(r3)?;
