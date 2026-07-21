@@ -685,6 +685,37 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         })?;
                     return Ok((r, params_body));
                 }
+                // `anon sub NAME(...) { ... }` / `anon sub NAME { ... }` — a named
+                // anonymous sub in expression context (e.g. `(&f = anon sub g($x)
+                // {...})($y)`). The name allows self-reference; `anon` means it is
+                // not installed in the enclosing namespace. Mirrors the named-sub
+                // handling in the plain `"sub"` case below.
+                if let Ok((r_named, _name)) = crate::parser::stmt::parse_sub_name_pub(r_sub) {
+                    let (r_named, _) = ws(r_named)?;
+                    if r_named.starts_with('(') {
+                        let (r, params_body) =
+                            parse_anon_sub_with_params(r_named).map_err(|err| PError {
+                                messages: merge_expected_messages(
+                                    "expected anonymous sub parameter list/body",
+                                    &err.messages,
+                                ),
+                                remaining_len: err.remaining_len.or(Some(r_named.len())),
+                                exception: None,
+                            })?;
+                        return Ok((r, params_body));
+                    }
+                    if r_named.starts_with('{') {
+                        let (r, body) = parse_block_body(r_named)?;
+                        return Ok((
+                            r,
+                            Expr::AnonSub {
+                                body,
+                                is_rw: false,
+                                is_block: false,
+                            },
+                        ));
+                    }
+                }
             } else if let Ok((r_type, type_name)) =
                 crate::parser::parse_result::take_while1(r_ws, |c: char| {
                     c.is_alphanumeric() || c == ':' || c == '_'
