@@ -92,6 +92,16 @@ impl Interpreter {
             }
             if let Some(map) = match target.view() {
                 ValueView::Hash(map) => Some(map.clone()),
+                // A Pair answers `<key>:exists` for its own key: treat it as a
+                // single-entry map (`(a => 5)<a>:exists` is True, `<b>` False).
+                ValueView::Pair(key, value) => {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert((*key).clone(), (*value).clone());
+                    match Value::hash(m).view() {
+                        ValueView::Hash(map) => Some(map.clone()),
+                        _ => None,
+                    }
+                }
                 ValueView::Instance {
                     class_name,
                     attributes,
