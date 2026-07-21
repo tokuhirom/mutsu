@@ -167,7 +167,7 @@ impl Compiler {
     /// If `expr` is `temp $var` parsed as a `Call("temp", [Var])` (i.e. `temp`
     /// used as an lvalue expression rather than a statement, such as the operand
     /// of `++`/`--`), return the underlying simple variable name.
-    fn temp_call_var(expr: &Expr) -> Option<String> {
+    pub(super) fn temp_call_var(expr: &Expr) -> Option<String> {
         if let Expr::Call { name, args } = expr
             && name.resolve() == "temp"
             && args.len() == 1
@@ -175,12 +175,24 @@ impl Compiler {
         {
             return Some(var.clone());
         }
+        // Parenthesized `(temp $x)` parses to a `Let { is_temp: true }` wrapped in
+        // a `DoStmt` rather than a `temp` call, so `(temp $x)++` reaches here too.
+        if let Expr::DoStmt(stmt) = expr
+            && let Stmt::Let {
+                name,
+                index: None,
+                is_temp: true,
+                ..
+            } = stmt.as_ref()
+        {
+            return Some(name.clone());
+        }
         None
     }
 
     /// Emit a `temp` save for the named scalar variable: its current value is
     /// pushed onto the let-saves stack and restored at the enclosing scope's exit.
-    fn emit_temp_save(&mut self, var: &str) {
+    pub(super) fn emit_temp_save(&mut self, var: &str) {
         let slot = self.local_map.get(var).copied();
         let name_idx = self.code.add_constant(Value::str(var.to_string()));
         self.code.emit(OpCode::LetSave {

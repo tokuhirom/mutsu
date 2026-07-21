@@ -4,7 +4,15 @@ use crate::symbol::Symbol;
 impl Compiler {
     /// Compile postfix ++ on variable/index/method target.
     pub(super) fn compile_expr_postfix_inc(&mut self, expr: &Expr) {
-        if let Expr::Var(name) = expr {
+        if let Some(var) = Self::temp_call_var(expr) {
+            // `(temp $c)++`: `temp $c` temporizes `$c` (saved for restoration at
+            // scope exit) and yields it as an lvalue, so `++` post-increments the
+            // live variable — mirrors the prefix `++temp $c` handling.
+            self.emit_temp_save(&var);
+            let slot = self.local_map.get(&var).copied();
+            let name_idx = self.code.add_constant(Value::str(var));
+            self.code.emit(OpCode::PostIncrement(name_idx, slot));
+        } else if let Expr::Var(name) = expr {
             if name.starts_with('!') && name.len() > 1 {
                 self.alloc_local(name);
             }
@@ -97,7 +105,14 @@ impl Compiler {
 
     /// Compile postfix -- on variable/index/method target.
     pub(super) fn compile_expr_postfix_dec(&mut self, expr: &Expr) {
-        if let Expr::Var(name) = expr {
+        if let Some(var) = Self::temp_call_var(expr) {
+            // `(temp $c)--`: temporize `$c` then post-decrement it (see the
+            // `(temp $c)++` case above).
+            self.emit_temp_save(&var);
+            let slot = self.local_map.get(&var).copied();
+            let name_idx = self.code.add_constant(Value::str(var));
+            self.code.emit(OpCode::PostDecrement(name_idx, slot));
+        } else if let Expr::Var(name) = expr {
             if name.starts_with('!') && name.len() > 1 {
                 self.alloc_local(name);
             }
