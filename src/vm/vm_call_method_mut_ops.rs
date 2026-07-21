@@ -477,6 +477,19 @@ impl Interpreter {
         } else {
             target
         };
+        // `Pair.freeze`: decontainerize the value (severing any Scalar-container
+        // alias), make it read-only, and return the value (Pair.rakudoc).
+        if method == "freeze"
+            && args.is_empty()
+            && matches!(
+                target.view(),
+                ValueView::Pair(..) | ValueView::ValuePair(..)
+            )
+        {
+            let frozen = self.pair_freeze(&target, &target_name);
+            self.stack.push(frozen);
+            return Ok(());
+        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, &method, &args) {
             let v = result?;
