@@ -1256,7 +1256,7 @@ fn collect_assign_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_assign_ph_expr(left, out);
             collect_assign_ph_expr(right, out);
         }
-        Expr::Unary { expr, .. } => collect_assign_ph_expr(expr, out),
+        Expr::Unary { expr, .. } | Expr::Grouped(expr) => collect_assign_ph_expr(expr, out),
         Expr::Block(body) | Expr::AnonSub { body, .. } => {
             for s in body {
                 collect_assign_ph_stmt(s, out);
@@ -1363,9 +1363,10 @@ fn collect_unattached_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_unattached_ph_expr(then_expr, out);
             collect_unattached_ph_expr(else_expr, out);
         }
-        Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
-            collect_unattached_ph_expr(expr, out)
-        }
+        Expr::AssignExpr { expr, .. }
+        | Expr::PositionalPair(expr)
+        | Expr::ZenSlice(expr)
+        | Expr::Grouped(expr) => collect_unattached_ph_expr(expr, out),
         Expr::ArrayLiteral(es)
         | Expr::BracketArray(es, _)
         | Expr::StringInterpolation(es)
@@ -1842,6 +1843,7 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::Reduction { expr, .. }
         | Expr::Eager(expr)
         | Expr::Itemize(expr)
+        | Expr::Grouped(expr)
         | Expr::DeitemizeForBind(expr) => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
@@ -2140,6 +2142,7 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         Expr::Reduction { expr, .. }
         | Expr::Eager(expr)
         | Expr::Itemize(expr)
+        | Expr::Grouped(expr)
         | Expr::DeitemizeForBind(expr) => collect_ph_expr_shallow(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
