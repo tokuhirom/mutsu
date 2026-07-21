@@ -100,6 +100,10 @@ impl Interpreter {
         let saved = std::mem::replace(&mut self.pending_dist_selectors, dist_selectors);
         let result = self.use_module_with_tags_inner(module, tags);
         self.pending_dist_selectors = saved;
+        // `load_module` consumes `pending_use_export_args`; clear any residue
+        // here so a native/pragma/already-loaded path (which never reaches
+        // `load_module`) cannot leak this `use`'s args into a later one.
+        self.pending_use_export_args = None;
         result
     }
 

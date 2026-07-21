@@ -325,6 +325,7 @@ mod runtime_container;
 mod runtime_encoding;
 mod runtime_init;
 mod runtime_module;
+mod runtime_module_export_sub;
 mod runtime_module_exports;
 mod runtime_output;
 mod runtime_shared_vars;
@@ -869,6 +870,12 @@ pub struct Interpreter {
     /// provide the same short name. Saved/restored around each load so a
     /// transitive `use` resolves with its own (usually absent) selectors.
     pending_dist_selectors: Vec<(String, String)>,
+    /// Arguments passed to the `use` currently being loaded (`use Foo "a", "b"`
+    /// / `use Foo <a b c>`), evaluated by the caller and pushed for the
+    /// `UseModule` op. Consumed once by `load_module`, which snapshots them into
+    /// a local before running the module body (so a transitive `use` inside the
+    /// body cannot see them) and hands them to the module's `sub EXPORT`.
+    pub(crate) pending_use_export_args: Option<Vec<Value>>,
     end_phasers: Vec<(Vec<Stmt>, Env)>,
     /// Tracks END phaser site_ids to ensure each is registered only once.
     end_phaser_sites: HashSet<u64>,

@@ -180,7 +180,7 @@ impl Interpreter {
         cf
     }
 
-    pub(super) fn compile_and_call_function_def(
+    pub(crate) fn compile_and_call_function_def(
         &mut self,
         def: &crate::ast::FunctionDef,
         args: Vec<Value>,

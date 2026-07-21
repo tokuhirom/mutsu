@@ -4242,9 +4242,13 @@ impl Interpreter {
                 self.exec_register_proto_token_op(code, *idx)?;
                 *ip += 1;
             }
-            OpCode::UseModule { name_idx, tags_idx } => {
+            OpCode::UseModule {
+                name_idx,
+                tags_idx,
+                arg_count,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_use_module_op(code, *name_idx, *tags_idx)?;
+                self.exec_use_module_op(code, *name_idx, *tags_idx, *arg_count)?;
                 *ip += 1;
             }
             OpCode::ImportModule { name_idx, tags_idx } => {
