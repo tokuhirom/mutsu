@@ -134,17 +134,26 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(first) = args.first()
+        // Named args (`:chomp`, `:count`) may appear before or after the string
+        // argument (`lines(:!chomp, "a\nb")`), so partition them out first and
+        // treat the first *positional* argument as the string/handle.
+        let mut chomp = true;
+        let mut count_only = false;
+        let mut positional: Vec<&Value> = Vec::new();
+        for arg in args {
+            match arg.view() {
+                ValueView::Pair(key, value) if key == "chomp" => chomp = value.truthy(),
+                ValueView::Pair(key, value) if key == "count" => count_only = value.truthy(),
+                _ => positional.push(arg),
+            }
+        }
+        if let Some(first) = positional.first()
             && Self::handle_id_from_value(first).is_none()
         {
             let text = first.to_string_value();
             let mut limit: Option<usize> = None;
-            let mut chomp = true;
-            for arg in &args[1..] {
+            for arg in &positional[1..] {
                 match arg.view() {
-                    ValueView::Pair(key, value) if key == "chomp" => {
-                        chomp = value.truthy();
-                    }
                     ValueView::Int(i) => {
                         limit = Some(i.max(0) as usize);
                     }
@@ -167,6 +176,10 @@ impl Interpreter {
             let mut lines = crate::builtins::split_lines_with_chomp(&text, chomp);
             if let Some(n) = limit {
                 lines.truncate(n);
+            }
+            // `lines(:count)` returns the number of lines instead of the list.
+            if count_only {
+                return Ok(Value::int(lines.len() as i64));
             }
             let values: Vec<Value> = lines.into_iter().map(Value::str).collect();
             // `lines` returns a Seq (so `.^name` is Seq), matching Rakudo and
