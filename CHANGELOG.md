@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.15.0](https://github.com/tokuhirom/mutsu/compare/v0.14.0...v0.15.0) - 2026-07-21
+
+- feat: iterate a tied Iterable instance (`for %h is Foo`) via its own iterator by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5107
+- docs(dist-tickets): T-020, T-021 done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5105
+- fix: allow whitespace between S/// adverbs and the delimiter by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5108
+- chore: remove scratch files accidentally committed by the doc-diff sweep by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5109
+- docs(dist-tickets): T-007 done (lemmatize fully loads) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5111
+- fix: a sigilless binding shadows the imaginary-unit term constant `i` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5113
+- feat: tied Associative subscript protocol — `:=` BIND-KEY and `{*}` whatever slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5112
+- fix: prompt returns the Any type object at end of input by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5115
+
 ## [v0.14.0](https://github.com/tokuhirom/mutsu/compare/v0.13.0...v0.14.0) - 2026-07-21
 
 - fix: user `infix:<->` must not swallow the `-` of a pointy arrow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5079
