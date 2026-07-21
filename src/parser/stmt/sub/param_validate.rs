@@ -154,6 +154,15 @@ pub(crate) fn default_type_matches_constraint(
     default_value: Option<&Value>,
 ) -> Option<bool> {
     let base = constraint_base_type(constraint);
+    // Coercion type `Target(From)`: raku performs no compile-time default check
+    // for coercion-typed parameters (`IO::Path(Str) $p = 42` compiles fine and
+    // only fails at runtime binding), because the default is coerced through the
+    // `From` type dynamically. So never raise the compile-time
+    // X::Parameter::Default::TypeCheck for a coercion constraint -- defer to the
+    // runtime binding check like raku does.
+    if base.len() < constraint.len() && constraint.as_bytes()[base.len()] == b'(' {
+        return Some(true);
+    }
     if matches!(base, "Any" | "Mu" | "Cool") {
         return Some(true);
     }

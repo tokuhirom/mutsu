@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_37 open tickets._
+_36 open tickets._
 
 ## Open
 
@@ -63,12 +63,6 @@ _37 open tickets._
 ### T-018 — runtime_error: Cannot call private method X permission  [impact: 1 dist]
 - dists: Cookie::Jar
 - e.g. `Cookie::Jar`: Cookie::Jar: Cannot call private method without permission
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-022 — runtime_error: Runtime error: Failed to parse module 'X': X::Parameter::Default::TypeCheck: Default value type 'X' does not satisfy 'X'  [impact: 1 dist]
-- dists: Devel::ExecRunnerGenerator
-- e.g. `Devel::ExecRunnerGenerator`: Devel::ExecRunnerGenerator: Runtime error: Failed to parse module 'Devel::ExecRunnerGenerator': X::Parameter::Default::TypeCheck: Default value type 'Str' does 
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -290,6 +284,15 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-022** (#5114) — a coercion-typed parameter default
+  (`IO::Path(Str) $p = "x"`, `IO::Path(Str) :$out-path = "."`) wrongly raised the
+  compile-time `X::Parameter::Default::TypeCheck`: `default_type_matches_constraint`
+  cut the constraint at `(` to `IO::Path`, saw the `::`, and returned `Some(false)`.
+  raku performs *no* compile-time default check for coercion types (`raku -c`
+  reports "Syntax OK" even for a default that will never bind — it defers to the
+  runtime binding check), so mutsu now skips the compile-time check for any
+  coercion constraint. Plain (non-coercion) `::`-qualified bad defaults are still
+  rejected. **Devel::ExecRunnerGenerator fully loads**, matching raku.
 - **T-007** (#5108) — `S:g /.../ ` — the non-destructive substitution `S///`
   with whitespace between its adverbs and the delimiter — was mis-parsed as a
   call to an undeclared routine `S:g`; the uppercase-`S` parser never skipped
