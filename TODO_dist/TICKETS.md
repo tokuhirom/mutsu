@@ -347,8 +347,21 @@ _51 open tickets._
 ### T-051 — test_fail: test basic stuff after initialization  [impact: 1 dist]
 - dists: Hash::Agnostic
 - e.g. `Hash::Agnostic`: base=2 pass=0 fail=2 die=0 | t/01-basic.rakutest: test basic stuff after initialization
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `class MyHash does Hash::Agnostic {...}; my %h is MyHash = @pairs; say %h.^name` — raku: `MyHash`, mutsu: `Hash`
+- NOTE: a "tied hash" feature (`my %h is CustomAssociativeClass`). Decomposes into three
+  independent gaps, each fixable on its own:
+  1. **tied-hash backing** — `my %h is Foo` (Foo `does Associative`) must back the variable
+     with a blessed instance so `.^name`, subscripting (AT-KEY/ASSIGN-KEY), iteration and
+     coercion dispatch to the class. (WIP on branch `tied-hash-associative`: ApplyVarTrait
+     branch in `src/vm/vm_var_trait_ops.rs`; `:=`-bound instances already work.)
+  2. **public/private same-name role methods** — Hash::Agnostic's `method STORE {...self!STORE(...)}`
+     + `method !STORE` collided (private overwrote public in role composition; two-role
+     public+private also mis-flagged X::Role::Composition::Conflict). **Fixed** — see the
+     `fix-public-private-method-name-collision` PR.
+  3. **`:U:`/`:D:` proto+multi role methods** — `.Str`/`.raku` use `multi method Str(::?ROLE:U:)`
+     / `(::?ROLE:D:)`; mutsu renders both signatures identically and reports an ambiguous call.
+- file: `src/vm/vm_var_trait_ops.rs` (backing), `src/runtime/registration_role.rs` +
+  `src/runtime/class.rs` (public/private methods, gap 2), multi-dispatch (gap 3)
 
 ## Claimed
 
