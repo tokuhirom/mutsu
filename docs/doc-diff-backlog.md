@@ -71,6 +71,14 @@ doc) are version skew, not mutsu bugs — lowest priority.
   (`'FF.DD'.parse-base(16)` → `255.86328125`); it now rounds to Rakudo's digit budget
   (`255.863281`) — **#5063**. Big Rats/FatRats are left on the old exact-expansion path
   pending a `BigFatRat` variant (see "FatRat-vs-Rat repr tag" under Deferred).
+- `hashmap.rakudoc` [2] — the postcircumfix guillemet/double-angle subscript
+  (`%h«oranges "$fruit"»`, `%h<<oranges "$fruit">>`) did not interpolate: it kept
+  `"$fruit"` (quotes and all) as a literal key. The subscript path used a naive
+  whitespace splitter (`angle_words_index_expr`, bare-`$name`-only) instead of the
+  qqww word-splitter that a standalone `«...»` term uses; it now shares
+  `split_quotish_words` via `angle_words_subscript_index_expr`, so quoted words and
+  full sigil interpolation work and the single-word-scalar / multi-word-slice
+  distinction is preserved. Pin: `t/angle-subscript-interpolation.t`.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are

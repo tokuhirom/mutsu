@@ -20,6 +20,7 @@ mod paren;
 mod sigil_context;
 
 // pub(super) re-exports — visible within crate::parser::primary and its submodules
+pub(crate) use angle_words::angle_words_subscript_index_expr;
 pub(super) use angle_words::{
     angle_list, double_angle_list, find_nested_angle_close_pub, french_quote_list,
 };
