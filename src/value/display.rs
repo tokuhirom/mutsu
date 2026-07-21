@@ -194,42 +194,76 @@ pub fn format_complex(r: f64, i: f64) -> String {
     }
 }
 
-fn format_terminating_ratio_exact(
-    numer: i64,
-    denom: i64,
-    append_dot_zero_for_integer: bool,
-) -> String {
-    if denom == 0 {
-        if numer == 0 {
-            return "NaN".to_string();
-        }
-        return if numer > 0 { "Inf" } else { "-Inf" }.to_string();
+/// Format a rational as its decimal string exactly as Rakudo's `Rational.Str`.
+///
+/// Rakudo does NOT print the full exact expansion of a terminating decimal:
+/// it rounds *every* Rat to a fixed number of fractional digits and strips the
+/// trailing zeros. There is no terminating/non-terminating split. The digit
+/// count is (see rakudo `src/core.c/Rational.rakumod`):
+///   Rat:    |denom| < 100_000 ? 6 : chars(|denom|) + 1
+///   FatRat: |denom| < 100_000 ? 6 : chars(|denom|) + chars(whole) + 5
+/// then `round(fract * 10^digits)`, left-zero-padded to `digits`, trailing
+/// zeros stripped.
+fn format_rat_str_bigint(numer: &NumBigInt, denom: &NumBigInt, is_fatrat: bool) -> String {
+    // Callers guarantee denom != 0.
+    let sign = numer.is_negative() ^ denom.is_negative();
+    let n = numer.abs();
+    let d = denom.abs();
+    let whole = &n / &d;
+    let rem = &n % &d; // fract = rem / d, with 0 <= rem < d
+    let sign_str = if sign { "-" } else { "" };
+
+    if rem.is_zero() {
+        return format!("{}{}", sign_str, whole);
     }
 
-    let sign = (numer < 0) ^ (denom < 0);
-    let n = (numer as i128).abs();
-    let d = (denom as i128).abs();
-    let int_part = n / d;
-    let mut rem = n % d;
-
-    if rem == 0 {
-        if append_dot_zero_for_integer {
-            return format!("{}{}.0", if sign { "-" } else { "" }, int_part);
-        }
-        return format!("{}{}", if sign { "-" } else { "" }, int_part);
+    // Rakudo guards floating-point noise for Rats near an integer: when the
+    // exact fractional part coerces to exactly 1.0 as a Num, emit the next Int.
+    if !is_fatrat && crate::value::bigrat_to_f64(&rem, &d) == 1.0 {
+        return format!("{}{}", sign_str, &whole + 1u8);
     }
 
-    let mut frac = String::new();
-    while rem != 0 {
-        rem *= 10;
-        let digit = rem / d;
-        rem %= d;
-        frac.push(char::from(b'0' + (digit as u8)));
-    }
+    let hundred_k = NumBigInt::from(100_000u32);
+    let digits: usize = if d < hundred_k {
+        6
+    } else if is_fatrat {
+        d.to_string().len() + whole.to_string().len() + 5
+    } else {
+        d.to_string().len() + 1
+    };
 
-    format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
+    // s = round(fract * 10^digits) = round(rem * 10^digits / d), rounding half
+    // up (Rakudo `.round` = floor(x + 1/2); rem/d is non-negative).
+    let scale = NumBigInt::from(10u8).pow(digits as u32);
+    let scaled = &rem * &scale;
+    let rounded = (&scaled * 2u8 + &d) / (&d * 2u8);
+
+    let mut s = rounded.to_string();
+    // Defensive carry guard: if rounding rolled fract over to 10^digits, the
+    // value became the next integer. (Rakudo's digit formula makes this
+    // unreachable, but keep the whole part correct if it ever happens.)
+    if s.len() > digits {
+        return format!("{}{}", sign_str, &whole + 1u8);
+    }
+    if s.len() < digits {
+        s = format!("{}{}", "0".repeat(digits - s.len()), s);
+    }
+    let trimmed = s.trim_end_matches('0');
+    if trimmed.is_empty() {
+        format!("{}{}", sign_str, whole)
+    } else {
+        format!("{}{}.{}", sign_str, whole, trimmed)
+    }
 }
 
+// BigRat stringification helpers. mutsu stores a Rat or FatRat whose numerator
+// or denominator overflows i64 as a single `BigRat` variant, so it cannot tell a
+// (raku) Rat from a (raku) FatRat once either component is big. The two use
+// different Str digit budgets in Rakudo, so we keep the historical
+// exact-expansion behaviour for BigRat rather than guess wrong; the faithful
+// `format_rat_str_bigint` above is used only for the i64-backed Rat/FatRat
+// variants. Distinguishing big Rats from big FatRats needs a dedicated
+// `BigFatRat` representation (TODO).
 fn format_ratio_bigint_decimal(
     numer: &NumBigInt,
     denom: &NumBigInt,
@@ -275,31 +309,13 @@ fn format_ratio_bigint_decimal(
     format!("{}{}.{}", if sign { "-" } else { "" }, int_part, frac)
 }
 
-/// Compute the number of decimal digits for non-terminating Rat Str/gist.
-/// Raku uses max(6, ceil(log10(abs(denom)))) and then strips trailing zeros.
-fn rat_nonterminating_digits(denom: i64) -> usize {
-    let d = (denom as i128).abs();
-    if d <= 1 {
-        return 6;
-    }
-    let log10 = (d as f64).log10().ceil() as usize;
-    log10.max(6)
-}
-
-/// Compute digits for BigInt denominator
+/// Compute digits for BigInt denominator (non-terminating): max(6, chars).
 fn rat_nonterminating_digits_bigint(denom: &NumBigInt) -> usize {
     if denom.is_zero() {
         return 6;
     }
     let digits = denom.abs().to_string().len();
     digits.max(6)
-}
-
-/// Format a non-terminating rational as decimal with proper digit count and trailing zero stripping.
-fn format_nonterminating_ratio(numer: i64, denom: i64) -> String {
-    let digits = rat_nonterminating_digits(denom);
-    let s = format!("{:.*}", digits, numer as f64 / denom as f64);
-    strip_trailing_zeros(&s)
 }
 
 /// Format a non-terminating BigRat as decimal with proper digit count and trailing zero stripping.
@@ -320,20 +336,6 @@ fn strip_trailing_zeros(s: &str) -> String {
     } else {
         s.to_string()
     }
-}
-
-fn has_terminating_decimal(denom: i64) -> bool {
-    if denom == 0 {
-        return false;
-    }
-    let mut dd = (denom as i128).abs();
-    while dd % 2 == 0 {
-        dd /= 2;
-    }
-    while dd % 5 == 0 {
-        dd /= 5;
-    }
-    dd == 1
 }
 
 fn has_terminating_decimal_bigint(denom: &NumBigInt) -> bool {
@@ -562,14 +564,8 @@ impl Value {
                     } else {
                         "-Inf".to_string()
                     }
-                } else if n % d == 0 {
-                    // Exact integer: Rat(10, 2) => "5"
-                    format!("{}", n / d)
-                } else if has_terminating_decimal(d) {
-                    // Exact decimal representation without f64 rounding.
-                    format_terminating_ratio_exact(n, d, false)
                 } else {
-                    format_nonterminating_ratio(n, d)
+                    format_rat_str_bigint(&NumBigInt::from(n), &NumBigInt::from(d), false)
                 }
             }
             ValueView::FatRat(a, b) => {
@@ -581,12 +577,8 @@ impl Value {
                     } else {
                         "-Inf".to_string()
                     }
-                } else if a % b == 0 {
-                    format!("{}", a / b)
-                } else if has_terminating_decimal(b) {
-                    format_terminating_ratio_exact(a, b, false)
                 } else {
-                    format_nonterminating_ratio(a, b)
+                    format_rat_str_bigint(&NumBigInt::from(a), &NumBigInt::from(b), true)
                 }
             }
             ValueView::BigRat(n, d) => {
