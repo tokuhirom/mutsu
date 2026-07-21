@@ -95,6 +95,18 @@ impl Interpreter {
         Value::real_array(entry)
     }
 
+    /// Whether the registered class `class_name` composes `role` (transitively,
+    /// including roles reached through composed roles). The role name is matched
+    /// on its base (parameterization stripped), so `Hash[Int]` matches `Hash`.
+    pub(crate) fn class_does_role(&self, class_name: &str, role: &str) -> bool {
+        if class_name == role {
+            return true;
+        }
+        self.collect_roles_for_class(class_name, false, false, false)
+            .iter()
+            .any(|r| r.split_once('[').map(|(b, _)| b).unwrap_or(r) == role)
+    }
+
     pub(crate) fn dispatch_classhow_roles(&self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Detect whether the invocant is an instance (Mixin or Instance) vs a
         // type object (Package). For punned role instances, the role itself
