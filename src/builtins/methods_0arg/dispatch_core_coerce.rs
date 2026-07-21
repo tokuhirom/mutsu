@@ -651,6 +651,14 @@ pub(super) fn dispatch(
                         Value::int(0)
                     }
                 }
+                // A StrDistance's `.Int` is the edit distance between its
+                // before/after strings, matching `+$str-dist` / `.Numeric`.
+                ValueView::Instance { class_name, .. } if class_name == "StrDistance" => {
+                    Value::int(
+                        super::dispatch_core_math::cool_instance_numeric(target).unwrap_or(0.0)
+                            as i64,
+                    )
+                }
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))
@@ -975,6 +983,16 @@ pub(super) fn dispatch(
                         _ => 0,
                     };
                     Value::int(count)
+                }
+                // A StrDistance (`$str ~~ tr/a/b/`) numifies to the edit distance
+                // between its before/after strings, so `+($str ~~ tr/old/new/)`
+                // is the number of changes, not 0.
+                ValueView::Instance { class_name, .. } if class_name == "StrDistance" => {
+                    match super::dispatch_core_math::cool_instance_numeric(target) {
+                        Some(n) if n.fract() == 0.0 && n.is_finite() => Value::int(n as i64),
+                        Some(n) => Value::num(n),
+                        None => Value::int(0),
+                    }
                 }
                 _ => return Some(None),
             };

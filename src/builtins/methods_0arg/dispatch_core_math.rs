@@ -114,7 +114,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
 /// coercers: an `IO::Path` numifies via its path string, a `Match` via its
 /// matched substring, and a `StrDistance` via the edit distance between its
 /// `before`/`after` strings.
-fn cool_instance_numeric(target: &Value) -> Option<f64> {
+pub(super) fn cool_instance_numeric(target: &Value) -> Option<f64> {
     let ValueView::Instance {
         class_name,
         attributes,
