@@ -113,10 +113,20 @@ impl Interpreter {
                 // (class_name is part of Instance equality). An explicitly
                 // subclassed instance (`IO::Path::Win32.new(...)`) already has
                 // that name as its `class_name`, so this is a no-op for it.
+                // A plain `IO::Path` renders its `:SPEC` explicitly
+                // (`IO::Spec::Unix` on POSIX); a SPEC-variant subclass
+                // (`IO::Path::Win32`) omits it — the subclass already implies
+                // its spec, matching Rakudo's `.raku`.
+                let spec = if class_name == "IO::Path" {
+                    ":SPEC(IO::Spec::Unix), "
+                } else {
+                    ""
+                };
                 Ok(Value::str(format!(
-                    "{}.new(\"{}\", :CWD(\"{}\"))",
+                    "{}.new(\"{}\", {}:CWD(\"{}\"))",
                     class_name,
                     escape(&p),
+                    spec,
                     escape(&cwd)
                 )))
             }
