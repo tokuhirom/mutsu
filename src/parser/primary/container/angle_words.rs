@@ -206,6 +206,19 @@ fn find_nested_angle_close(input: &str) -> Option<usize> {
     None
 }
 
+/// Build the index expression for an interpolating angle subscript (`%h«...»` /
+/// `%h<<...>>`), reusing the qqww word-splitter so quoted words (`"$x"`, `'lit'`)
+/// and sigil interpolation (`$x`, `@a[]`, `%h{}`) behave exactly as in a standalone
+/// `«...»` term. A single word yields a scalar key; multiple words yield a slice
+/// (matching Rakudo's `%h«a b»` semantics). Falls back to a plain literal key if the
+/// content cannot be tokenised as quote-words.
+pub(crate) fn angle_words_subscript_index_expr(content: &str) -> Expr {
+    match split_quotish_words(content) {
+        Ok(exprs) => crate::parser::primary::string::make_word_result_expr(exprs),
+        Err(_) => Expr::Literal(crate::value::Value::str(content.to_string())),
+    }
+}
+
 fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
     let mut words = Vec::new();
     let mut rest = content;

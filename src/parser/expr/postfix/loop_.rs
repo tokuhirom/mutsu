@@ -496,31 +496,6 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
     postfix_expr_loop(rest, expr, allow_ws_dot)
 }
 
-/// Build the index expression for an interpolating angle subscript (`«...»` / `<<...>>`).
-/// Each whitespace-separated word is interpolated: a bare `$name` reads that variable,
-/// anything else is a literal string key. A single word yields a scalar key; multiple
-/// words yield a slice (matching Rakudo's `%h<<$a b>>` semantics).
-fn angle_words_index_expr(content: &str) -> Expr {
-    fn word_expr(word: &str) -> Expr {
-        if let Some(name) = word.strip_prefix('$')
-            && !name.is_empty()
-            && name
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
-        {
-            Expr::Var(name.to_string())
-        } else {
-            Expr::Literal(Value::str(word.to_string()))
-        }
-    }
-    let words = split_angle_words(content);
-    if words.len() == 1 {
-        word_expr(words[0])
-    } else {
-        Expr::ArrayLiteral(words.iter().map(|w| word_expr(w)).collect())
-    }
-}
-
 fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
     loop {
         // Allow whitespace before dotty postfix call in expression context:
@@ -1562,7 +1537,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let r = &r[end + '\u{00BB}'.len_utf8()..];
                 expr = Expr::Index {
                     target: Box::new(expr),
-                    index: Box::new(angle_words_index_expr(content)),
+                    index: Box::new(crate::parser::primary::angle_words_subscript_index_expr(
+                        content,
+                    )),
                     is_positional: false,
                 };
                 rest = r;
@@ -1581,7 +1558,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 let r = &r[end + 2..];
                 expr = Expr::Index {
                     target: Box::new(expr),
-                    index: Box::new(angle_words_index_expr(content)),
+                    index: Box::new(crate::parser::primary::angle_words_subscript_index_expr(
+                        content,
+                    )),
                     is_positional: false,
                 };
                 rest = r;
