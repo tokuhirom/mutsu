@@ -908,6 +908,60 @@ The `gate_local_slot`/`gate_local_slot_value` helpers keep their names but no lo
 gate on the flag (they now only check `plain_locals`). Pins: `t/gate-b-*.t` (18
 files) still cover every mechanism-consumer fold.
 
+## Named-sub free-var SHADOW bug (variables.rakudoc [1]) — generalize-escaping-our ATTEMPTED, REVERTED (2026-07-21)
+
+The still-open user-visible symptom (see [[project-named-sub-freevar-shadow]]):
+`my $x=1; sub f(){$x}; { my $x=2; f() }` prints **2** (raku **1**) — a named sub
+resolves its free lexical by NAME through the caller env chain, and an inner block's
+shadowing `my $x` steals the binding (dynamic, not lexical, scoping). Both `sub` and
+`my sub` are affected; `our sub` is CORRECT because it uses the escaping-our persisted
+cell (`escaping_our_read` / `escaped_our_lexical_cells`), which is shadow-proof.
+
+**Attempt (branch `fix-named-sub-freevar-lexical-capture`): generalize the proven
+escaping-our cell mechanism from `our sub` to ALL named subs** — 4 small edits:
+`compiling_our_sub` → `compiling_named_sub` set for every named-sub body
+(compiler/stmt.rs, helpers_sub_body.rs pushes `escaping_our_sub_captures`), and
+`exec_register_sub_op` persists the cells for every named sub (not just `__our_scoped`).
+This made the three canonical repros (read `{my $x=2}`→1, write→11/11, `++`→1) and
+`my sub` all match raku. **But it is NOT landable as a single PR — reverted.**
+
+**Why it cascades (exactly the memo's warning "generalize → destabilizes the DEFAULT
+build"):** three independent, load-bearing mechanisms break, each a real regression,
+because the escaping-our machinery was designed for the narrow `our sub` case:
+
+1. **Aggregate-holding captured scalar reads Nil** (regressed `t/element-bind-cell.t`
+   t20/51-54, `my sub getit() is raw { $inner }` where `$inner = {hash}`).
+   `box_decl_local_cell` deliberately does NOT box a `$`-scalar holding a
+   Hash/Array/Instance/Sub (it only boxes primitives + `@`/`%` containers), so no cell
+   is persisted; `escaping_our_read`'s `unwrap_or(Value::NIL)` short-circuit then
+   returns **Nil** instead of the live env value. Partial fix (fall through to env when
+   `env.get(name)` is a live non-Nil value) fixes getit but see #2.
+2. **Hoisted-capture accumulation depends on the Nil short-circuit** (regressed
+   `t/hoisted-sub-captures-later-my.t` t5/6, the `my $a = 3` variant). The Nil
+   short-circuit in #1 is *load-bearing* for a hoisted sub called BEFORE its
+   declaration runs — removing/relaxing it drops the write accumulation
+   (`0,0,1` instead of `0,1,2`). So #1 (needs fall-through) and #2 (needs Nil
+   short-circuit) are in direct tension; an `env`-liveness check reconciles them only
+   until #3.
+3. **★ROOT — the persist map is GLOBAL and name-keyed.** `escaped_our_lexical_cells:
+   HashMap<String, Value>` keys purely by variable name. When two named subs in one
+   compilation unit capture same-named lexicals (`{ my $a; sub foo{$a++} }` then
+   `{ my $a=3; sub bar{$a++} }` — the exact shape of `t/hoisted-sub-captures-later-my.t`),
+   foo's persisted `"a"` cell and bar's collide. It stays hidden for `our sub` (rare,
+   usually one package-global) but is COMMON for plain subs. Manifests specifically for
+   a hoisted sub called before its decl (a block-live call reads env and is unaffected).
+
+**Conclusion:** the sound fix is **per-sub (not global-name) keyed capture** — i.e. give
+named subs real upvalue cells captured at their `RegisterSub`, resolved through the
+current sub's own cell, not a shared `HashMap<name, cell>`. That is the upvalue-capture
+rework [[project-named-sub-freevar-shadow]] flagged, coupled with boxing aggregate-holding
+scalars (or a non-cell capture for them) and preserving the hoisted-before-decl
+accumulation. It touches `escaped_our_lexical_cells` keying, `escaping_our_read`/`_write_cell`,
+`in_escaped_our_sub`, and the RegisterSub persist — a dedicated multi-session slice whose
+blast radius reaches g–z of `make test` (the release `make test` did not even complete in
+15 min during the attempt, so the full regression set past `element-bind-cell`/`hoisted-sub`
+is unmeasured). Do NOT retry the global-name-keyed generalization; start from per-sub keying.
+
 ## §1.4 flip blast-radius measurement (2026-07-02, debug + release `prove t/`)
 
 A naive flip was implemented and measured, then reverted (branch
