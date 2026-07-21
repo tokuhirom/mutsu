@@ -47,6 +47,13 @@ pub fn date_method_0arg(attributes: &AttrMap, method: &str) -> Option<Result<Val
         "day-of-year" => Some(Ok(Value::int(day_of_year(year, month, day)))),
         "is-leap-year" => Some(Ok(Value::truth(is_leap_year(year)))),
         "days-in-month" => Some(Ok(Value::int(days_in_month(year, month)))),
+        "days-in-year" => Some(Ok(Value::int(if is_leap_year(year) { 366 } else { 365 }))),
+        // The stored formatter Callable, or the `Callable` default when none was
+        // supplied (`Date.new(...).formatter.^name` -> `Callable`).
+        "formatter" => Some(Ok(attributes
+            .get("formatter")
+            .cloned()
+            .unwrap_or_else(|| Value::package(Symbol::intern("Callable"))))),
         "daycount" => Some(Ok(Value::int(daycount(year, month, day)))),
         "Str" | "gist" => {
             // If a formatter was applied and rendered, use that
@@ -185,6 +192,14 @@ pub fn datetime_method_0arg(
         "day-of-year" => Some(Ok(Value::int(day_of_year(year, month, day)))),
         "is-leap-year" => Some(Ok(Value::truth(is_leap_year(year)))),
         "days-in-month" => Some(Ok(Value::int(days_in_month(year, month)))),
+        "days-in-year" => Some(Ok(Value::int(if is_leap_year(year) { 366 } else { 365 }))),
+        "formatter" => Some(Ok(attributes
+            .get("formatter")
+            .cloned()
+            .unwrap_or_else(|| Value::package(Symbol::intern("Callable"))))),
+        "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => Some(Ok(Value::str(format_date_ordered(
+            method, year, month, day, "-",
+        )))),
         "daycount" => Some(Ok(Value::int(daycount(year, month, day)))),
         "whole-second" => Some(Ok(Value::int(second.floor() as i64))),
         "hh-mm-ss" => Some(Ok(Value::str(format!(

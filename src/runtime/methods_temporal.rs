@@ -171,6 +171,16 @@ pub(super) fn dispatch_temporal_method(
                     )
                     .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                 ),
+                // `.yyyy-mm-dd($sep)` etc. with an optional separator (default `-`).
+                "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => {
+                    let sep = args
+                        .first()
+                        .map(|v| v.to_string_value())
+                        .unwrap_or_else(|| "-".to_string());
+                    Some(Ok(Value::str(temporal::format_date_ordered(
+                        method, year, month, day, &sep,
+                    ))))
+                }
                 "clone" => Some(
                     datetime_clone(year, month, day, hour, minute, second, timezone, args)
                         .map(|v| rebless_datetime_result(v, class_name, &attributes)),
