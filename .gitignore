@@ -41,3 +41,24 @@ target-local/
 
 # Raku precompilation cache dirs left by running `raku` on a test fixture lib
 .precomp/
+
+# Scratch files created in the repo root by running raku-doc examples
+# (doc-diff sweeps execute snippets that spurt/open files with these names).
+/--my
+/--my arbitrary filename
+/arbitrary
+/bar/
+/file1
+/file2
+/file3
+/filename
+/foo
+/foo bar
+/hello
+/ls-lR.gz
+/ls.err
+/ls.out
+/my-file.txt
+/test
+/test-file
+/testfile
