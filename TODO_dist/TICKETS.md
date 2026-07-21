@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_45 open tickets._
+_43 open tickets._
 
 ## Open
 
@@ -57,23 +57,15 @@ _45 open tickets._
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-010 — parse_error: expected statement: expected expected statement: expected expected statement: expected condition expression after 'X' or  [impact: 1 dist]
-- dists: Overwatch
-- e.g. `Overwatch`: overwatch: expected statement: expected expected statement: expected expected statement: expected condition expression after 'if' or expression after '&&' or '.
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-011 — parse_error: expected statement: expected expected statement: expected expected statement: expected expected statement: expected expe  [impact: 1 dist]
-- dists: P5tie
-- e.g. `P5tie`: P5tie: expected statement: expected expected statement: expected expected statement: expected expected statement: expected expected statement: expected expected
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-012 — parse_error: expected statement: expected expected statement: expected expected statement: expected expected statement: expected use   [impact: 1 dist]
 - dists: App::IRC::Log
 - e.g. `App::IRC::Log`: App::IRC::Log: expected statement: expected expected statement: expected expected statement: expected expected statement: expected use statement or import state
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `get -> 'home.html' { ... }` — a pointy block with a *string-literal*
+  parameter. Fixed in #5088 (parse now accepts string literals in pointy
+  signatures, like the numeric `-> 42 { }` form). The dist still cannot load: it
+  needs Cro (`is header` param trait) and `Array::Sorted::Util`, which raku also
+  lacks in the sweep environment, so this is parse-advance only.
+- file: `src/parser/stmt/control/pointy_param.rs` (string-literal pointy param, done)
 
 ### T-014 — parse_error: expected statement: expected expected statement: expected expected statement: expected use statement or import statement  [impact: 1 dist]
 - dists: Template::HAML
@@ -310,6 +302,15 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-010** (#5086) — a no-space adverbial colonpair after a parenless method
+  call (`$obj.git:so`) was read as a colon-listop positional (`so` prefix op)
+  and failed to parse. Now a bareword/`!name`/sigil colonpair binds as a named
+  argument. Unblocks Overwatch's parse (reaches its missing dep Shell::Command,
+  matching raku).
+- **T-011** (#5087) — `IterationEnd` in a `?? then !!` ternary then-branch was
+  mis-rejected as a listop head that gobbled the `!!`. Added
+  `is_builtin_constant_term` so the sentinel is treated as a complete nullary
+  term. Unblocks P5tie's parse+load.
 - **T-001** (#5064) — `also is X::Qualified` truncated the parent at `::`
   (Config::TOML, Crane). Node::Ethereum::RLP was a separate root cause → T-052.
 - **T-002** (#5068) — `s///` *replacement* half scanned as a regex, so a literal
