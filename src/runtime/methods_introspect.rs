@@ -675,6 +675,10 @@ impl Interpreter {
         let type_name_owned = match target.view() {
             ValueView::Package(name) => Some(name.resolve()),
             ValueView::Str(name) => Some(name.to_string()),
+            // An enum value (e.g. `red` of `enum Color`) carries its enum type.
+            ValueView::Enum { enum_type, .. } => Some(enum_type.resolve()),
+            // A Bool value (True/False) is a member of the built-in Bool enum.
+            ValueView::Bool(_) => Some("Bool".to_string()),
             _ => None,
         };
         let type_name = type_name_owned.as_deref();
