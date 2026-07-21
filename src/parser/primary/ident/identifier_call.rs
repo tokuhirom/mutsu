@@ -972,17 +972,28 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "list" | "cache" if !rest.starts_with('(') => {
             let (r, _) = ws(rest)?;
             // list/cache take a comma expression as a single argument
-            // e.g. `list 1,2,4...16` → `list((1,2,4)...16)`
-            let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
-            let args = match expr {
-                Expr::ArrayLiteral(items) => items,
-                other => vec![other],
-            };
+            // e.g. `list 1,2,4...16` → `list((1,2,4)...16)`.
+            // With no argument (`list;`, or `list` at statement end), they are a
+            // zero-arg call yielding the empty list; without this fallback the
+            // mandatory comma-expression parse aborted the whole statement.
+            if let Ok((r, expr)) = crate::parser::stmt::assign::parse_comma_or_expr(r) {
+                let args = match expr {
+                    Expr::ArrayLiteral(items) => items,
+                    other => vec![other],
+                };
+                return Ok((
+                    r,
+                    Expr::Call {
+                        name: Symbol::intern(&name),
+                        args,
+                    },
+                ));
+            }
             return Ok((
                 r,
                 Expr::Call {
                     name: Symbol::intern(&name),
-                    args,
+                    args: vec![],
                 },
             ));
         }
