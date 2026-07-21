@@ -59,6 +59,16 @@ intentionally deferred; see PLAN.md §8.5 and the ADRs:
 - **Lazy-list / container-repr (Track-B, fused with GC per ADR-0001)** — `List.rakudoc`, `Iterator.rakudoc`, `Iterable.rakudoc`, `Seq.rakudoc`, `list.rakudoc` (`loop`/`while`-as-lazy-list, flat-itemization depth).
 - **`and`/`or`/`not` word-logical precedence** — `operators.rakudoc`, `control.rakudoc`, `traps.rakudoc` (looser than list-prefix; needs statement-level re-association).
 - **FatRat-vs-Rat repr tag** — `Rat`/`FatRat`/`numerics` (`.^name` of a big FatRat is `Rat`).
+- **`$/<key>` postcircumfix vs. lexical-name collision inside a block** — `regexes.rakudoc` [23]
+  (`my regex line {...}; if "..." ~~ /<line> def/ { say $<line> }` → *No such method 'line' for Match*).
+  When the hash-key of a `$/<key>` / `$<key>` access **names a lexical `my regex`/`token`/sub** and the
+  access is **inside a block**, it mis-dispatches as a method call `$/.key`. Evidence it is a
+  compile-context / runtime-scope bug, not a parse bug: `--dump-ast` is identical to the working
+  top-level form (both `Index { index: Literal("key") }`); the same access works at top level, works for
+  a builtin subrule key (`<alpha>`), and works for a `$<k>=(…)` named-capture key — only a
+  block + lexical-regex-name-collision fails. Needs a focused look at how `Expr::Index` with a
+  string-literal key resolves on `$/` when the key is also a lexical slot in a nested frame.
+  (NB: `regexes.rakudoc` [3] `<same>` is a *separate* missing builtin subrule, not this root.)
 - **WHICH-keyed QuantHash storage** — `QuantHash.rakudoc`, `Baggy`, `setbagmix` (Set/Bag key by stringification).
 - **Custom `does Iterable`/`does Iterator` protocol** — `iterating.rakudoc`, `Iterator.rakudoc`.
 
