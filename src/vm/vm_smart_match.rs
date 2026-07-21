@@ -55,7 +55,42 @@ fn needs_interpreter_lhs(v: &Value) -> bool {
 /// interpreter.  Returns `Some(bool)` for type pairs that can be resolved purely
 /// from the values themselves, or `None` when the interpreter is required (regex
 /// matching, callable invocation, type-object checks with class registries, etc.).
+/// True when `v` is a numeric matcher for smart-match purposes — a bare numeric
+/// type or a numeric allomorph/mixin (`<5>`, `<5.0>`, `42 but Role`). Used to
+/// decide whether an allomorph LHS should compare by its numeric base.
+fn is_numericish_matcher(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Rat(_, _)
+        | ValueView::FatRat(_, _)
+        | ValueView::BigRat(_, _)
+        | ValueView::Complex(_, _) => true,
+        ValueView::Mixin(inner, _) => is_numericish_matcher(inner.as_ref()),
+        _ => false,
+    }
+}
+
 pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
+    // An allomorph / numeric mixin (`<5.0>` RatStr) on the LHS compares by its
+    // numeric base when the matcher is numeric: `<5.0> ~~ 5` and `<5.0> ~~ <5>`
+    // are True. Guard on a numeric RHS so a Str matcher keeps the allomorph's
+    // string half (`<5.0> ~~ "5"` stays False, `~~ "5.0"` stays True).
+    if let ValueView::Mixin(inner, _) = left.view()
+        && is_numericish_matcher(right)
+    {
+        return pure_smart_match(&inner.as_ref().clone(), right);
+    }
+    // Symmetrically, a numeric LHS against an allomorph RHS matcher compares by
+    // the RHS's numeric base (`5.0 ~~ <5>` is True). A Str LHS is excluded, so
+    // `"5.0" ~~ <5>` keeps the RHS allomorph's string-matcher semantics (False).
+    if let ValueView::Mixin(inner, _) = right.view()
+        && is_numericish_matcher(left)
+    {
+        return pure_smart_match(left, &inner.as_ref().clone());
+    }
+
     match (left.view(), right.view()) {
         // Whatever on RHS always matches
         (_, ValueView::Whatever) => Some(true),
