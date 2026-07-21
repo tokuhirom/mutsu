@@ -2552,9 +2552,11 @@ impl Interpreter {
             .skip_pseudo_method_native
             .as_ref()
             .is_some_and(|m| m == method);
-        if skip_pseudo {
-            self.skip_pseudo_method_native = None;
-        }
+        // NOTE: do NOT clear the flag here. A quoted `."WHAT"()` etc. is
+        // intercepted by the MOP-macro arms in `dispatch_method_by_name_1`
+        // *before* user-method resolution; that dispatch consults the flag to
+        // fall through to the user method and clears it there (see the
+        // `skip_pseudo_method_native` read at the top of that function).
         let is_pseudo_method = matches!(
             method,
             "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"

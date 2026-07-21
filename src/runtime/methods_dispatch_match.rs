@@ -17,6 +17,18 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // A quoted MOP pseudo-method call (`$obj."WHAT"()`) must dispatch a
+        // user-defined method of that name instead of the reflection macro. The
+        // CallMethod opcode records the quoted pseudo name in
+        // `skip_pseudo_method_native`; consume it here (once per dispatch) so the
+        // WHAT/HOW/WHO/WHY macro arms below fall through to user resolution.
+        let quoted_pseudo = self
+            .skip_pseudo_method_native
+            .as_deref()
+            .is_some_and(|m| m == method);
+        if quoted_pseudo {
+            self.skip_pseudo_method_native = None;
+        }
         match method {
             "are" => Some(self.dispatch_are(target, &args)),
             "classify" | "categorize" if matches!(target.view(), ValueView::Package(name) if name == "Supply") =>
@@ -177,10 +189,10 @@ impl Interpreter {
             "broken" => self.dispatch_promise_broken(&target, &args),
             "allof" => self.dispatch_promise_allof(&target, &args),
             "anyof" => self.dispatch_promise_anyof(&target, &args),
-            "WHAT" if args.is_empty() => Some(self.dispatch_what(&target, args)),
-            "HOW" => Some(self.dispatch_how(&target, &args)),
-            "WHO" if args.is_empty() => Some(self.dispatch_who(&target)),
-            "WHY" if args.is_empty() => Some(self.dispatch_why(&target)),
+            "WHAT" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_what(&target, args)),
+            "HOW" if !quoted_pseudo => Some(self.dispatch_how(&target, &args)),
+            "WHO" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_who(&target)),
+            "WHY" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_why(&target)),
             "^name" if args.is_empty() => Some(self.dispatch_caret_name(&target)),
             "^enum_value_list" | "enum_value_list" => self.dispatch_enum_value_list(&target),
             "enums" => self.dispatch_enums(&target),
