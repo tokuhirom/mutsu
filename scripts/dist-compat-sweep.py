@@ -109,21 +109,43 @@ def tap_verdict(out, rc):
     return "pass"
 
 
+# Generic TAP-harness death lines that mask the real cause — never a useful
+# signature on their own.
+_HARNESS_NOISE = re.compile(
+    r"test failures|you planned|you failed|looks like you|^#|^1\.\.|dubious|"
+    r"^ok\b|^not ok\b", re.I)
+
+
 def first_error_line(out):
+    """The first meaningful error line, skipping generic TAP-harness noise
+    ('Runtime error: Test failures', '# You planned N ...') that only reports
+    that the run died, not why."""
+    candidates = []
     for line in out.splitlines():
         s = line.strip()
-        if not s:
+        if not s or _HARNESS_NOISE.search(s):
             continue
+        candidates.append(s)
+    for s in candidates:
         low = s.lower()
-        if ("sorry" in low or "runtime error" in low or "panicked" in low
-                or "unhandled" in low or s.startswith("X::")
-                or "no such method" in low or "unknown method" in low
-                or "cannot" in low):
+        if ("sorry" in low or "panicked" in low or "unhandled" in low
+                or s.startswith("X::") or "::" in s and "exception" in low
+                or "no such" in low or "unknown method" in low
+                or "unknown function" in low or "cannot" in low
+                or low.startswith("runtime error")):
             return s[:200]
+    return candidates[0][:200] if candidates else ""
+
+
+def first_failing_assertion(out):
+    """The description of the first real (non-TODO) `not ok` line, e.g.
+    'not ok 3 - foo does bar' -> 'foo does bar'. Falls back to first_error_line."""
     for line in out.splitlines():
-        if line.strip():
-            return line.strip()[:200]
-    return ""
+        if NOTOK_RE.match(line) and "todo" not in line.lower():
+            m = re.match(r"not ok\s+\d+\s*-?\s*(.*)", line.strip())
+            desc = (m.group(1).strip() if m else line.strip())
+            return desc[:200] if desc else line.strip()[:200]
+    return first_error_line(out)
 
 
 def version_key(v):
@@ -249,7 +271,7 @@ def test_dist(name, version, axis, root, mutsu, libs, timeout, sandbox, sbx_home
             n_pass += 1
         elif v == "fail":
             n_fail += 1
-            first_fail = first_fail or f"{rel}: {first_error_line(mp.stdout + mp.stderr)}"
+            first_fail = first_fail or f"{rel}: {first_failing_assertion(mp.stdout + mp.stderr)}"
         else:
             n_die += 1
             first_die = first_die or f"{rel}: {first_error_line(mp.stdout + mp.stderr)}"

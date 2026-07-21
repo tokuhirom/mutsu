@@ -64,7 +64,12 @@ def build_tickets(rows):
         if bucket not in TICKET_BUCKETS:
             continue
         sig = signature(bucket, detail)
-        c = clusters[sig]
+        # A bare-bucket signature (no useful error text — e.g. a "silent" test
+        # death that emitted only TAP-harness noise) carries no shared root
+        # cause, so DON'T merge those: key them per-dist to keep them as separate
+        # investigation tickets rather than one misleading mega-cluster.
+        key = sig if ": " in sig else f"{sig} [{dist}]"
+        c = clusters[key]
         c["dists"].add(dist)
         if len(c["examples"]) < 3:
             c["examples"].append((dist, detail))
