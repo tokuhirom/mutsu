@@ -543,14 +543,21 @@ pub(crate) fn try_parse_sequence_arg_list(input: &str) -> Option<PResult<'_, Exp
 /// (`a ... limit, extra`), stopping at the natural argument boundary. Unlike
 /// [`try_parse_sequence_in_paren`] it does NOT require a closing paren.
 fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr> {
-    let (is_excl, rest) = if let Some(s) = input.strip_prefix("...^") {
-        (true, s)
+    // `is_left_excl` marks the `^...` / `^...^` forms, which produce the same
+    // series as `...` / `...^` but drop the first element (wrapped in `.skip(1)`
+    // below). Check the longer `^...^` prefix before `^...`, and `...^` before `...`.
+    let (is_excl, is_left_excl, rest) = if let Some(s) = input.strip_prefix("^...^") {
+        (true, true, s)
+    } else if input.starts_with("^...") && !input.starts_with("^....") {
+        (false, true, &input[4..])
+    } else if let Some(s) = input.strip_prefix("...^") {
+        (true, false, s)
     } else if let Some(s) = input.strip_prefix("\u{2026}^") {
-        (true, s)
+        (true, false, s)
     } else if input.starts_with("...") && !input.starts_with("....") {
-        (false, &input[3..])
+        (false, false, &input[3..])
     } else if let Some(s) = input.strip_prefix('\u{2026}') {
-        (false, s)
+        (false, false, s)
     } else {
         return Err(PError::expected("expected sequence operator"));
     };
@@ -625,14 +632,24 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
         v.extend(extra_items.into_iter().map(maybe_wrap_whatever));
         Expr::ArrayLiteral(v)
     };
-    Ok((
-        rest,
-        Expr::Binary {
-            left: Box::new(left),
-            op,
-            right: Box::new(right),
-        },
-    ))
+    let seq = Expr::Binary {
+        left: Box::new(left),
+        op,
+        right: Box::new(right),
+    };
+    // `^...` / `^...^` drop the seed element from the generated series.
+    let seq = if is_left_excl {
+        Expr::MethodCall {
+            target: Box::new(seq),
+            name: crate::symbol::Symbol::intern("skip"),
+            args: vec![Expr::Literal(crate::value::Value::int(1))],
+            modifier: None,
+            quoted: false,
+        }
+    } else {
+        seq
+    };
+    Ok((rest, seq))
 }
 
 /// Try to parse an inline statement modifier inside parenthesized expression.
