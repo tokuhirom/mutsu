@@ -211,20 +211,6 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     if let Some(seq) = try_parse_sequence_in_paren(input, std::slice::from_ref(&first)) {
         return seq;
     }
-    // Chained colonpairs in parens: (:a(2) :b(3) :c(4)) → list of pairs.
-    // In Raku, space-separated colonpairs inside parentheses form a list without commas.
-    if is_colonpair_expr(&first) && looks_like_colonpair_start(input) {
-        let mut items = vec![first];
-        let mut rest = input;
-        while looks_like_colonpair_start(rest) {
-            let (r, pair) = crate::parser::primary::misc::colonpair_expr(rest)?;
-            items.push(pair);
-            let (r, _) = ws(r)?;
-            rest = r;
-        }
-        let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, finalize_paren_list(items)));
-    }
     let before_close = input;
     if let Ok((input, _)) = parse_char(input, ')') {
         // Parenthesized pair: (:a(3)) — mark as positional so it's not treated
@@ -329,15 +315,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     }
     // Comma-separated list with sequence operator detection
     // Use expression_no_sequence so that `...` is not consumed as part of an item
-    let sep = if input.starts_with(',') {
-        ','
-    } else if input.starts_with(';') && !input.starts_with(";;") {
-        ';'
-    } else {
-        return Err(PError::expected("',' or ';' in parenthesized list"));
-    };
-    let (input, _) = parse_char(input, sep)?;
-    let (input, _) = ws(input)?;
+    //
     // A top-level `;` inside `(...)` separates the list into "sections", one per
     // semicolon-group: `(1,2;3,4)` is `((1,2),(3,4))`, not the flat `(1,2,3,4)`.
     // `items` accumulates the CURRENT section; completed sections move into
@@ -345,29 +323,18 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
     let mut sections: Vec<Vec<Expr>> = Vec::new();
     let mut items = vec![first];
     let mut saw_semicolon = false;
-    if sep == ';' {
-        saw_semicolon = true;
-        sections.push(std::mem::take(&mut items));
-    }
-    if !saw_semicolon
-        && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
-    {
-        let (rest, modified_expr) = result?;
-        let (rest, _) = ws(rest)?;
-        let (rest, _) = parse_char(rest, ')')?;
-        return Ok((rest, modified_expr));
-    }
-    // Handle trailing comma/semicolon before close paren
-    if let Ok((input, _)) = parse_char(input, ')') {
-        return Ok((
-            input,
-            finalize_paren_sections(sections, items, saw_semicolon),
-        ));
-    }
-    let (mut input_rest, second) = expression_no_sequence(input)?;
-    items.push(second);
+    let mut input_rest = input;
     loop {
         let (input, _) = ws(input_rest)?;
+        // Space-separated colonpairs form a list without commas: (:$a :$b),
+        // (:a(1) :b(2) :c(3)). A colonpair immediately followed by another
+        // colonpair (no separating comma) continues the current list.
+        if items.last().is_some_and(is_colonpair_expr) && looks_like_colonpair_start(input) {
+            let (r, pair) = crate::parser::primary::misc::colonpair_expr(input)?;
+            items.push(pair);
+            input_rest = r;
+            continue;
+        }
         if let Ok((input, _)) = parse_char(input, ')') {
             return Ok((
                 input,
@@ -474,6 +441,9 @@ fn looks_like_colonpair_start(input: &str) -> bool {
     if digit_end > 0 && r[digit_end..].starts_with('<') {
         return false;
     }
-    // Must start with identifier char or `!` (negated colonpair)
-    r.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '!')
+    // Must start with an identifier char, `!` (negated colonpair), or a sigil
+    // (`:$var`/`:@var`/`:%var`/`:&var` shorthand colonpair).
+    r.starts_with(|c: char| {
+        c.is_alphabetic() || c == '_' || c == '!' || c == '$' || c == '@' || c == '%' || c == '&'
+    })
 }
