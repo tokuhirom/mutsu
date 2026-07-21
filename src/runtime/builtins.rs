@@ -816,9 +816,7 @@ impl Interpreter {
                 // List skip signature: (Int $n, @list)
                 // Key distinction: Test::skip's first arg is always a Str.
                 if self.test_mode_active() {
-                    let is_list_skip = args.len() >= 2
-                        && matches!(args[0].view(), ValueView::Int(..) | ValueView::Num(..));
-                    if is_list_skip {
+                    if Self::skip_call_is_list_skip(&args) {
                         self.builtin_skip(&args)
                     } else {
                         self.test_fn_skip(&args)
@@ -1054,6 +1052,40 @@ impl Interpreter {
 
     /// Builtin `skip(N, list)` function — skips N elements from the list.
     /// This is only called when the args look like a list-skip (not Test::skip).
+    /// Disambiguate the `skip` name between Test's `skip($reason?, $count = 1)`
+    /// (a TAP skip directive) and the core list routine `skip(Int $n, *@list)`.
+    /// Test's skip takes a Str reason (or nothing) first and never a list
+    /// operand, so a non-Str count first arg and/or a positional list operand
+    /// means the list routine was intended — e.g. `skip(4, @a)`, `skip(*-4, @a)`
+    /// (head-skip-tail, which exports its own `&skip`). Shared by the three
+    /// `skip` dispatch sites (builtins.rs, test_functions/mod.rs,
+    /// vm_native_test.rs) so they agree.
+    pub(crate) fn skip_call_is_list_skip(args: &[Value]) -> bool {
+        if args.len() < 2 {
+            return false;
+        }
+        let numeric_or_whatever_first =
+            matches!(args[0].view(), ValueView::Int(..) | ValueView::Num(..))
+                || Self::is_whatever_code_value(&args[0]);
+        let list_operand = args[1..].iter().any(|a| {
+            matches!(
+                a.view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Slip(..)
+                    | ValueView::LazyList(..)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+            )
+        });
+        numeric_or_whatever_first || list_operand
+    }
+
     pub(crate) fn builtin_skip(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() < 2 {
             return Err(RuntimeError::new("Too few positionals passed to 'skip'"));

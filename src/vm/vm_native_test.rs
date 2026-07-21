@@ -54,19 +54,11 @@ impl Interpreter {
         // diagnostics report the right source line.
         let (clean_args, callsite_line) = self.sanitize_call_args(args);
         // `skip` collides with the core list routine `skip(Int $n, *@list)`.
-        // Test's `skip($reason?, $count = 1)` always takes a Str (or no) first
-        // arg, so a numeric first arg followed by a list operand means the core
-        // routine was intended (a file may selectively import Test without
-        // `&skip`). Decline here and let the normal `call_function` path apply
-        // the same disambiguation (builtins.rs `"skip"` arm) and dispatch the
-        // list-skip builtin.
-        if name == "skip"
-            && clean_args.len() >= 2
-            && matches!(
-                clean_args[0].view(),
-                ValueView::Int(..) | ValueView::Num(..)
-            )
-        {
+        // When the call looks like list-skip (see `skip_call_is_list_skip`),
+        // decline here and let the normal `call_function` path dispatch the
+        // list-skip builtin (a file may selectively import Test without `&skip`,
+        // or a module may export its own `&skip`).
+        if name == "skip" && Self::skip_call_is_list_skip(&clean_args) {
             return None;
         }
         loan_env!(self, set_pending_callsite_line(callsite_line));

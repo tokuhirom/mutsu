@@ -62,7 +62,7 @@ impl Interpreter {
     /// variant (`:nth(1..3)`).
     /// Is `value` a `WhateverCode` (e.g. `*-1`)? Those carry a
     /// `__mutsu_callable_type` marker in their captured environment.
-    fn is_whatever_code_value(value: &Value) -> bool {
+    pub(crate) fn is_whatever_code_value(value: &Value) -> bool {
         matches!(
             value.view(),
             ValueView::Sub(data)
