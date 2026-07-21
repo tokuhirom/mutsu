@@ -36,7 +36,10 @@ impl Interpreter {
                         return Err(Self::str_match_x_error("match", value));
                     }
                     repeat_bounds = Self::parse_match_repeat_bounds(value);
-                } else if key == "nth" {
+                } else if key == "nth" || key == "st" || key == "nd" || key == "rd" || key == "th" {
+                    // `:nth(N)` and its ordinal shortcuts `:1st`/`:2nd`/`:3rd`/`:Nth`
+                    // (which parse as `st => 1`, `nd => 2`, `rd => 3`, `th => N`) all
+                    // select the 1-based Nth match.
                     nth_arg = Some(value.clone());
                 }
                 continue;
