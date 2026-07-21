@@ -10,45 +10,18 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_51 open tickets._
+_50 open tickets._
 
 ## Open
 
-### T-001 — runtime_error: 'X' cannot inherit from 'X' because it is unknown.  [impact: 3 dists]  [claim: fix-also-is-qualified-parent → #5064]
-- dists: Config::TOML, Crane, Node::Ethereum::RLP
-- e.g. `Config::TOML`: Config::TOML: 'X::Config::TOML::AOH::DuplicateKeys' cannot inherit from 'X' because it is unknown.
-- e.g. `Crane`: Crane: 'X::Crane::AddPathOutOfRange' cannot inherit from 'X' because it is unknown.
+### T-052 — runtime_error: 'X' cannot inherit from 'X' because it is unknown.  [impact: 1 dist]
+- dists: Node::Ethereum::RLP
 - e.g. `Node::Ethereum::RLP`: Node::Ethereum::RLP: 'X::Decode' cannot inherit from 'X' because it is unknown.
-- repro: `class X::Base {}; class X::Derived { also is X::Base }; say X::Derived.new ~~ X::Base` — raku: `True`, mutsu: `cannot inherit from 'X'`
-- file: `src/parser/stmt/class/class_decl.rs` (`also_trait_stmt` read the parent with a bare `ident`, truncating at `::`)
-- NOTE: two distinct root causes clustered under one error message. #5064 fixes the
-  `also is X::Qualified` truncation (Config::TOML, Crane). Node::Ethereum::RLP is a
-  **separate** case — `class X is Exception {}` then `class X::Decode is X {}`, i.e. a
-  user class named `X` colliding with the built-in `X::` exception namespace — split
-  out as T-052 (needs namespace-resolution work, not the `also is` fix).
-
-### T-002 — parse_error: expected statement: expected expected statement: expected use statement or import statement or no statement or need stat  [impact: 2 dists]
-- dists: Needle::Compile, Test::Selector
-- e.g. `Needle::Compile`: Needle::Compile: expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement
-- e.g. `Test::Selector`: Test::Selector: expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement 
-- repro: `my $s='a'; $s ~~ s:g/ (.) /<[/; say $s` — raku: `<[`, mutsu (before): parse error
-- file: `src/parser/primary/regex/scan.rs` (replacement half scanned as a regex, so `<[` read as a `<[...]>` char class)
-- NOTE: two distinct root causes clustered under one message.
-  - **Test::Selector** (fixed by fix-subst-replacement-literal-angle): the `s///`
-    *replacement* half is a qq-like string, not a regex — `<[`/`]>`/`#`/`'` are
-    literal. `scan_to_delim` (regex mode) mis-scanned them; added
-    `scan_to_delim_replacement`.
-  - **Needle::Compile** is a **separate** case: `anon sub <name>(...)` inside a
-    parenthesized expression (`(&jp = anon sub jp(...) {...})($x)`) fails to parse,
-    while the same without parens / without a name parses. Still open — split out
-    below as T-002b.
-
-### T-002b — parse_error: named `anon sub` inside a parenthesized expression  [impact: 1 dist]
-- dists: Needle::Compile
-- repro: `(anon sub jp($p) { say $p })("hi")` — raku: `Syntax OK`, mutsu: SORRY.
-  `my $x = anon sub jp($p) {...}` (no parens) and `(anon sub ($p) {...})(...)`
-  (no name) both parse; only a *named* `anon sub` in expression context fails.
-- file: _(suspected: `anon sub` term parsing in expression/primary context)_
+- repro: `class X is Exception {}; class X::Decode is X {}` — a user class named `X`
+  collides with the built-in `X::` exception namespace, so `is X` cannot resolve the
+  user `X`. (Split out of T-001 #5064, which fixed only the `also is X::Qualified`
+  truncation for Config::TOML/Crane.)
+- file: _(needs namespace-resolution work: user `X` vs built-in `X::` exception ns)_
 
 ### T-003 — runtime_error: No such method X for invocant of type 'X'  [impact: 2 dists]
 - dists: Injector, hyperize
@@ -369,4 +342,14 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
-_(move tickets here when the PR merges; note the PR number)_
+- **T-001** (#5064) — `also is X::Qualified` truncated the parent at `::`
+  (Config::TOML, Crane). Node::Ethereum::RLP was a separate root cause → T-052.
+- **T-002** (#5068) — `s///` *replacement* half scanned as a regex, so a literal
+  `<[` was read as a `<[...]>` char class and swallowed the closing delimiter
+  (`s:g/ '[' /<[/`). Added `scan_to_delim_replacement`; unblocks Test::Selector
+  parse+load. (Two root causes clustered here; the Needle::Compile half was
+  T-002b.)
+- **T-002b** (#5069) — a *named* `anon sub` in expression context
+  (`(&jp = anon sub jp(...) {...})($x)`) failed to parse; the `anon sub` handler
+  only recognized `anon sub {...}`/`anon sub (...)`. Unblocks Needle::Compile
+  (now reaches its genuine missing dep `has-word`, matching raku).
