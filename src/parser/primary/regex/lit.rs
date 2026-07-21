@@ -587,7 +587,11 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     if let Some(after_s) = input.strip_prefix('S')
         && !crate::parser::stmt::simple::is_user_declared_type("S")
     {
+        let had_adverbs = after_s.starts_with(':');
         let (spec, adverbs) = parse_match_adverbs(after_s)?;
+        // Allow whitespace between adverbs and the delimiter (e.g.
+        // `S:g /pattern/replacement/`), mirroring the lowercase `s` parser.
+        let spec = if had_adverbs { ws(spec)?.0 } else { spec };
         if let Some(open_ch) = spec.chars().next() {
             let is_delim = !open_ch.is_alphanumeric() && open_ch != '_' && !open_ch.is_whitespace();
             let looks_like_method = open_ch == '.'
