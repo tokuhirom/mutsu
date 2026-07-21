@@ -134,6 +134,20 @@ pub(crate) fn compare_values(a: &Value, b: &Value) -> i32 {
     {
         return compare_values(&a.deref_container(), &b.deref_container());
     }
+    // A Bool numifies (False → 0, True → 1) when compared against a number or
+    // another Bool, so `0 cmp False` / `0 <=> False` is Same, matching Rakudo.
+    // Without this, a Bool falls through to the string-comparison fallback below
+    // ("0".cmp("False")), which mis-orders it and breaks `min`/`max` tie-breaking
+    // (`min False, 0` must keep the first argument). Normalize a Bool operand to
+    // its Int value; recursion terminates because neither operand is a Bool after
+    // normalization.
+    if matches!(a.view(), ValueView::Bool(_)) || matches!(b.view(), ValueView::Bool(_)) {
+        let normalize = |v: &Value| match v.view() {
+            ValueView::Bool(flag) => Value::int(if flag { 1 } else { 0 }),
+            _ => v.clone(),
+        };
+        return compare_values(&normalize(a), &normalize(b));
+    }
     match (a.view(), b.view()) {
         (
             ValueView::Version {
