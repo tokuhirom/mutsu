@@ -107,6 +107,18 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Result<Option<String>, RuntimeError> {
+        self.eval_token_call_values_at(name, arg_values, 0)
+    }
+
+    /// Like [`eval_token_call_values`], but the LTM candidate filter measures each
+    /// candidate's declarative prefix starting at character offset `start_pos`
+    /// (for a `:pos(N)`/`:c(N)` subparse) rather than at the start of the subject.
+    pub(super) fn eval_token_call_values_at(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+        start_pos: usize,
+    ) -> Result<Option<String>, RuntimeError> {
         let defs = match self.resolve_token_defs(name) {
             Some(defs) => defs,
             None => return Ok(None),
@@ -114,7 +126,17 @@ impl Interpreter {
         let subject = match self.env.get("_").map(Value::view) {
             Some(ValueView::Str(s)) => Some(s.to_string()),
             _ => None,
-        };
+        }
+        .map(|s| {
+            // Measure the candidate from the requested start position: a
+            // `:pos(N)` subparse anchors there, so a candidate that only matches
+            // later in the subject must still be considered.
+            if start_pos == 0 {
+                s
+            } else {
+                s.chars().skip(start_pos).collect::<String>()
+            }
+        });
         // Collect all matching candidates with their declarative prefix match
         // lengths. `declarative_prefix_match_len` is the ONLY trial match here:
         // it stops at the candidate's first code block/assertion and never
