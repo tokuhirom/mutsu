@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_42 open tickets._
+_41 open tickets._
 
 ## Open
 
@@ -66,12 +66,6 @@ _42 open tickets._
   needs Cro (`is header` param trait) and `Array::Sorted::Util`, which raku also
   lacks in the sweep environment, so this is parse-advance only.
 - file: `src/parser/stmt/control/pointy_param.rs` (string-literal pointy param, done)
-
-### T-017 — parse_error: expected statement: expected expected statement: expected expression statement or listop argument expression after 'X' o  [impact: 1 dist]
-- dists: Test::Run
-- e.g. `Test::Run`: Test::Run: expected statement: expected expected statement: expected expression statement or listop argument expression after ',' or expected statement: expecte
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
 
 ### T-018 — runtime_error: Cannot call private method X permission  [impact: 1 dist]
 - dists: Cookie::Jar
@@ -296,6 +290,10 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-017** (#5094) — `&[R[~~]]`, a code reference to a metaop whose operand is
+  itself bracketed (`R[~~]`, reverse of the reduce `[~~]`), was cut at the first
+  `]`. The `&[op]` parser now balances nested brackets. **Test::Run fully loads**,
+  matching raku.
 - **T-014** (#5091) — a statement-level *imported*-function call that is the left
   operand of a larger expression (`has-interp($s) ?? A !! B`, `foo($x) ~~ Bool`)
   was truncated to a bare `Stmt::Call`, dropping the tail; the expression-prefix
