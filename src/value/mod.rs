@@ -1498,7 +1498,14 @@ pub struct RegexAdverbs {
     pub nth: Option<Arc<String>>,
     pub perl5: bool,
     pub pos: bool,
+    /// Literal position argument of `:pos(N)` (anchor the match to start
+    /// exactly at character offset N). `None` means `:pos` without an explicit
+    /// argument, which anchors at the previous match's `$/.to` (or 0).
+    pub pos_value: Option<usize>,
     pub continue_: bool,
+    /// Literal position argument of `:continue(N)` / `:c(N)` (start searching
+    /// from character offset N). `None` falls back to `$/.to` (or 0).
+    pub continue_value: Option<usize>,
     pub ignore_case: bool,
     pub sigspace: bool,
     pub samecase: bool,
