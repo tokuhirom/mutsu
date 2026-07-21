@@ -358,6 +358,12 @@ impl Interpreter {
                         out.push('@');
                         i += 2;
                     }
+                    b'%' => {
+                        // `%` is a sigil (a bare `%(...)` would interpolate a
+                        // hash), so `\%` is an escaped literal percent.
+                        out.push('%');
+                        i += 2;
+                    }
                     b'{' => {
                         out.push('{');
                         i += 2;
