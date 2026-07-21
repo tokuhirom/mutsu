@@ -196,21 +196,94 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         let after = &r[2..];
         let (after, _) = ws(after)?;
         if let Ok((r2, rhs)) = ternary_mode(after, mode) {
-            let bind_name = match unwrap_grouped_lvalue(expr.clone()) {
-                Expr::Var(name) => Some(name),
-                Expr::ArrayVar(name) => Some(format!("@{name}")),
-                Expr::HashVar(name) => Some(format!("%{name}")),
-                _ => None,
-            };
-            if let Some(name) = bind_name {
-                return Ok((
-                    r2,
-                    Expr::AssignExpr {
-                        name,
-                        expr: Box::new(rhs),
-                        is_bind: true,
-                    },
-                ));
+            match unwrap_grouped_lvalue(expr.clone()) {
+                Expr::Var(name) => {
+                    return Ok((
+                        r2,
+                        Expr::AssignExpr {
+                            name,
+                            expr: Box::new(rhs),
+                            is_bind: true,
+                        },
+                    ));
+                }
+                Expr::ArrayVar(name) => {
+                    return Ok((
+                        r2,
+                        Expr::AssignExpr {
+                            name: format!("@{name}"),
+                            expr: Box::new(rhs),
+                            is_bind: true,
+                        },
+                    ));
+                }
+                Expr::HashVar(name) => {
+                    return Ok((
+                        r2,
+                        Expr::AssignExpr {
+                            name: format!("%{name}"),
+                            expr: Box::new(rhs),
+                            is_bind: true,
+                        },
+                    ));
+                }
+                // Indexed element bind: `%h<k> := v`, `@a[i] := v`. Desugar to an
+                // IndexAssign whose value carries the `__mutsu_bind_index_value`
+                // marker so the VM takes *bind* (not assign) semantics — matching
+                // the statement-level handler. This lets an indexed bind parse in
+                // expression context (`my $c = %h<k> := v`, `$c = %h<k> := X.new: ...`,
+                // `return @a[i] := v`); previously only simple sigil variables bound
+                // here and indexed lvalues were left to the statement-level handler,
+                // which is absent in expression context.
+                //
+                // Only a single-element bind on a plain sigil-variable target is
+                // handled here. Slice binds (`@a[0,1] := 4,5`), Whatever-index binds
+                // (`@a[*-1] := 42`, illegal → X::Bind::Slice), and binds into a
+                // non-variable target (`(1,2)[0] := 3`, `10[0] := 1`, → X::Bind) must
+                // keep falling through to the statement-level handler, which
+                // distributes/validates them. Guard on those so this fast path does
+                // not shadow that handling.
+                Expr::Index {
+                    target,
+                    index,
+                    is_positional,
+                } if matches!(
+                    target.as_ref(),
+                    Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Var(_)
+                ) && !matches!(
+                    index.as_ref(),
+                    Expr::ArrayLiteral(_)
+                        | Expr::Whatever
+                        | Expr::Lambda {
+                            is_whatever_code: true,
+                            ..
+                        }
+                        | Expr::AnonSubParams {
+                            is_whatever_code: true,
+                            ..
+                        }
+                ) =>
+                {
+                    let bind_value = Expr::Call {
+                        name: crate::symbol::Symbol::intern("__mutsu_bind_index_value"),
+                        args: vec![
+                            rhs.clone(),
+                            crate::parser::stmt::simple_expr_stmt::lvalue::bind_source_metadata_expr(
+                                &rhs,
+                            ),
+                        ],
+                    };
+                    return Ok((
+                        r2,
+                        Expr::IndexAssign {
+                            target,
+                            index,
+                            value: Box::new(bind_value),
+                            is_positional,
+                        },
+                    ));
+                }
+                _ => {}
             }
         }
     }
