@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_36 open tickets._
+_35 open tickets._
 
 ## Open
 
@@ -63,12 +63,6 @@ _36 open tickets._
 ### T-018 — runtime_error: Cannot call private method X permission  [impact: 1 dist]
 - dists: Cookie::Jar
 - e.g. `Cookie::Jar`: Cookie::Jar: Cannot call private method without permission
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-023 — runtime_error: multiple candidates for required method X  [impact: 1 dist]
-- dists: UpRooted
-- e.g. `UpRooted`: UpRooted::Reader::MySQL: X::Role::Composition::Conflict: multiple candidates for required method 'quote-constant'
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -284,6 +278,17 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-023** (#5117) — a role composition *diamond*: a stubbed (required) role
+  method (`method !quote-constant { !!! }` in `Quoter`, reached via `FQN`) and its
+  concrete implementation (in `DBIConnection`) both flowed through one shared
+  intermediate role (`DBISelect`) into the class, so the same `MethodDef`,
+  re-tagged with each intermediate's `role_origin`, was counted twice and wrongly
+  raised `X::Role::Composition::Conflict: multiple candidates for required method`.
+  `resolve_class_stub_requirements` now deduplicates candidates by their `body`
+  Arc pointer + positional signature, collapsing a diamond duplicate while keeping
+  genuinely-distinct candidates (two `multi method f(Int)`, `::?ROLE:U:` vs `:D:`,
+  a parametric role composed at two type args). **UpRooted::Reader::MySQL /
+  ::PostgreSQL now load**, matching raku. Pin: t/role-diamond-stub-concrete.t.
 - **T-022** (#5114) — a coercion-typed parameter default
   (`IO::Path(Str) $p = "x"`, `IO::Path(Str) :$out-path = "."`) wrongly raised the
   compile-time `X::Parameter::Default::TypeCheck`: `default_type_matches_constraint`
