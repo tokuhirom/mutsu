@@ -1463,13 +1463,37 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
         // subscript, never the `<=`/`<=>` infix (those need surrounding space).
         if rest.starts_with('<') && !rest.starts_with("<<") {
             let r = &rest[1..];
-            let Some(end) = r.find('>') else {
+            // Find the balanced closing `>`, allowing nested `<...>` inside the
+            // key: Rakudo balances angle brackets in an angle-word subscript, so
+            // `%h<a<b>>` has the key `a<b>` and `%EXPORT<&trait_mod:<is>>` the key
+            // `&trait_mod:<is>`. A plain `<foo>` closes at the first `>` as before.
+            let mut depth = 1i32;
+            let mut balanced_end = None;
+            for (i, b) in r.bytes().enumerate() {
+                match b {
+                    b'<' => depth += 1,
+                    b'>' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            balanced_end = Some(i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let Some(end) = balanced_end else {
                 return Err(PError::expected_at("closing '>'", r));
             };
             let content = &r[..end];
+            // A key with a nested (balanced) `<` is a single literal key: it is
+            // not word-split and its characters are not validated as simple key
+            // chars (angle brackets are not otherwise valid key chars).
+            let nested_angle = content.contains('<');
             let keys = split_angle_words(content);
             let is_zen_angle = keys.is_empty();
-            if !is_zen_angle
+            if !nested_angle
+                && !is_zen_angle
                 && keys
                     .iter()
                     .any(|key| key.is_empty() || !key.chars().all(is_angle_key_char))
@@ -1477,7 +1501,9 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                 return Err(PError::expected_at("angle index key", r));
             }
             let r = &r[end + 1..];
-            let index_expr = if keys.len() == 1 {
+            let index_expr = if nested_angle {
+                Expr::Literal(Value::str(content.to_string()))
+            } else if keys.len() == 1 {
                 Expr::Literal(Value::str(keys[0].to_string()))
             } else {
                 Expr::ArrayLiteral(
