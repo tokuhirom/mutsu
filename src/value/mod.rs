@@ -491,6 +491,39 @@ pub fn lookup_container_constraint(cell: &crate::gc::Gc<Mutex<Value>>) -> Option
         .cloned()
 }
 
+/// Cells that have been made read-only via `Pair.freeze`. A frozen `ContainerRef`
+/// still reads its value normally but rejects any assignment with
+/// `X::Assignment::RO`, matching `Pair.freeze`'s "removes the value from its
+/// Scalar container" semantics (the value can no longer be reassigned).
+static FROZEN_CONTAINER_CELLS: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+
+fn frozen_container_cells() -> &'static Mutex<HashSet<usize>> {
+    FROZEN_CONTAINER_CELLS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Mark a `ContainerRef` cell as frozen (read-only) — see `Pair.freeze`.
+pub fn mark_container_frozen(cell: &crate::gc::Gc<Mutex<Value>>) {
+    let ptr = crate::gc::Gc::as_ptr(cell) as usize;
+    frozen_container_cells().lock().unwrap().insert(ptr);
+}
+
+/// Whether the given `ContainerRef` cell has been frozen (read-only).
+pub fn is_container_frozen(cell: &crate::gc::Gc<Mutex<Value>>) -> bool {
+    let ptr = crate::gc::Gc::as_ptr(cell) as usize;
+    frozen_container_cells().lock().unwrap().contains(&ptr)
+}
+
+/// Build a fresh read-only (frozen) `ContainerRef` holding `value`, optionally
+/// carrying an `of`-type constraint. Backs `Pair.freeze`.
+pub fn make_frozen_container(value: Value, constraint: Option<&str>) -> Value {
+    let cell = crate::gc::Gc::new(Mutex::new(value));
+    if let Some(c) = constraint {
+        register_container_constraint(&cell, c);
+    }
+    mark_container_frozen(&cell);
+    Value::ContainerRef(cell)
+}
+
 /// Write `map` into `cell`, deferring if the current thread already holds a read
 /// guard on it.
 ///

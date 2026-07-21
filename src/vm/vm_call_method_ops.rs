@@ -474,6 +474,20 @@ impl Interpreter {
         } else {
             target
         };
+        // `Pair.freeze` on a non-variable receiver (e.g. `Pair.new(...).freeze`,
+        // or a `.freeze.foo` chain): decontainerize the value, mark it read-only,
+        // and return it. There is no variable to rebind here (empty target name).
+        if method == "freeze"
+            && args.is_empty()
+            && matches!(
+                target.view(),
+                ValueView::Pair(..) | ValueView::ValuePair(..)
+            )
+        {
+            let frozen = self.pair_freeze(&target, "");
+            self.stack.push(frozen);
+            return Ok(());
+        }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
             let v = result?;
