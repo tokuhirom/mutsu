@@ -250,6 +250,30 @@ impl Interpreter {
                 }
                 None
             }
+            "new-from-daycount" if args.len() == 1 => {
+                if let ValueView::Package(class_name) = target.view() {
+                    let cn = class_name.resolve();
+                    let is_date_like =
+                        cn == "Date" || self.class_mro(&cn).iter().any(|name| name == "Date");
+                    if is_date_like {
+                        use crate::builtins::methods_0arg::temporal;
+                        // `.daycount` is the Modified Julian Day (epoch_days + 40587);
+                        // invert it to civil y/m/d.
+                        let daycount = crate::runtime::to_int(&args[0]);
+                        let (y, m, d) = temporal::epoch_days_to_civil(daycount - 40587);
+                        if cn == "Date" {
+                            return Some(Ok(temporal::make_date(y, m, d)));
+                        }
+                        let date_args = vec![
+                            Value::pair("year".to_string(), Value::int(y)),
+                            Value::pair("month".to_string(), Value::int(m)),
+                            Value::pair("day".to_string(), Value::int(d)),
+                        ];
+                        return Some(self.dispatch_new(target.clone(), date_args));
+                    }
+                }
+                None
+            }
             "Numeric" if args.is_empty() => {
                 if let ValueView::Seq(items) = target.view() {
                     // Check for PredictiveIterator-backed Seq (stored by Seq.new)

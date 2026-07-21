@@ -99,7 +99,13 @@ impl Interpreter {
                         month = to_int(v2);
                     }
                     if let Some(v3) = positional.get(2) {
-                        day = to_int(v3);
+                        // A `*` (Whatever) day means the last day of the month:
+                        // `Date.new(2044, 2, *)` -> 2044-02-29.
+                        day = if matches!(v3.view(), ValueView::Whatever) {
+                            temporal::days_in_month(year, month)
+                        } else {
+                            to_int(v3)
+                        };
                     }
                 }
             }
