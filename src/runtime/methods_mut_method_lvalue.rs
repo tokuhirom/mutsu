@@ -142,6 +142,30 @@ impl Interpreter {
                     ));
                 }
                 let key = method_args[0].to_string_value();
+                // An attribute-backed hash (`%!h.AT-KEY($k) = $v` inside a method)
+                // has no live env binding under its twigil name — the attribute
+                // lives in `self`'s shared cell. Read the current hash from that
+                // cell, insert the element, and write it straight back, so the
+                // element write reaches the instance the same way `%!h{$k} = $v`
+                // does. Without this the AT-KEY lvalue builtin only mutated a
+                // read-copy and the write was lost.
+                if let Some(var_name) = target_var
+                    && Self::attr_twigil_base(var_name).is_some()
+                    && let Some(cell_val) = self.read_self_attr_cell(var_name)
+                    && matches!(cell_val.view(), ValueView::Hash(_) | ValueView::Nil)
+                {
+                    let mut map = match cell_val.view() {
+                        ValueView::Hash(h) => h.map.clone(),
+                        _ => std::collections::HashMap::new(),
+                    };
+                    map.insert(key, value.clone());
+                    let mut new_hash = Value::hash_with_data(Value::hash_arc(map));
+                    if let Some(m) = old_meta.clone() {
+                        new_hash = self.tag_container_metadata(new_hash, m);
+                    }
+                    self.write_self_attr_cell(var_name, new_hash);
+                    return Ok(value);
+                }
                 let mut hash = match inner.view() {
                     ValueView::Hash(map) => map.map.clone(),
                     _ => std::collections::HashMap::new(),
@@ -800,9 +824,14 @@ impl Interpreter {
             )));
         }
 
-        // Preserve existing accessor/setter assignment behavior for concrete variables.
+        // Preserve existing accessor/setter assignment behavior for concrete
+        // variables. `AT-KEY`/`AT-POS` are element accessors, never setters:
+        // `$obj.AT-KEY($k) = $v` means "set element $k", so skip this setter
+        // convention and let the raw-accessor recursion / element handling below
+        // take it (otherwise it would mis-call `AT-KEY($v)` with the value).
         if let Some(var_name) = target_var
             && !method_args.is_empty()
+            && !matches!(method, "AT-KEY" | "AT-POS")
         {
             match self.call_method_mut_with_values(
                 var_name,
@@ -1156,6 +1185,16 @@ impl Interpreter {
                 method,
             ));
         };
+        // `is raw` container-accessor return (`method AT-KEY($k) is raw {
+        // %!hash.AT-KEY($k) }`): assigning through it (`$obj.AT-KEY($k) = $v`,
+        // e.g. Hash::Agnostic's `self.AT-KEY($key) = value`) must reach the
+        // container the body yields. Bind the method's params + `self`, then
+        // recurse the lvalue assignment into the body's accessor expression.
+        if let Some(result) =
+            self.try_raw_accessor_method_lvalue(&target, &method_def, &method_args, &value)?
+        {
+            return Ok(result);
+        }
         // Delegation methods: forward assignment to the delegate
         if let Some((attr_var_name, target_method)) = &method_def.delegation
             && !attr_var_name.starts_with('&')
@@ -1363,5 +1402,114 @@ impl Interpreter {
             "X::Assignment::RO: rw method '{}' does not expose an assignable attribute",
             method
         )))
+    }
+
+    /// The variable name (with sigil) a target expression assigns through, or
+    /// `None` for a non-variable target. `%!hash` -> `Some("%!hash")`.
+    fn expr_lvalue_var_name(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(n) => Some(format!("${}", n)),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            _ => None,
+        }
+    }
+
+    /// Assign through an `is raw` container-accessor method whose body is a
+    /// single `EXPR.AT-KEY(...)` / `EXPR.AT-POS(...)` call: bind the method's
+    /// positional params and `self`, evaluate the body's receiver + index in
+    /// that scope, and recurse the lvalue assignment into it. Returns `None`
+    /// (leaving the caller to fall through) when the body is not such an
+    /// accessor. This is what makes Hash::Agnostic's role `ASSIGN-KEY`
+    /// (`self.AT-KEY($key) = value`) reach the consumer's backing store.
+    fn try_raw_accessor_method_lvalue(
+        &mut self,
+        target: &Value,
+        method_def: &MethodDef,
+        method_args: &[Value],
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let stmts: Vec<&Stmt> = method_def
+            .body
+            .iter()
+            .filter(|s| !matches!(s, Stmt::SetLine(_)))
+            .collect();
+        if stmts.len() != 1 {
+            return Ok(None);
+        }
+        let Stmt::Expr(Expr::MethodCall {
+            target: inner_target,
+            name,
+            args: inner_args,
+            ..
+        }) = stmts[0]
+        else {
+            return Ok(None);
+        };
+        let inner_method = name.as_str();
+        // Only recurse through the two positional/associative element accessors.
+        if !matches!(inner_method, "AT-KEY" | "AT-POS") {
+            return Ok(None);
+        }
+        // Save and rebind `self` + the method's positional (non-invocant,
+        // non-slurpy, non-named) params so the body's receiver/index evaluate
+        // in the method's scope, then restore afterwards.
+        let mut saved: Vec<(String, Option<Value>)> = Vec::new();
+        let mut bind = |this: &mut Self, key: String, val: Value| {
+            saved.push((key.clone(), this.env.get(&key).cloned()));
+            this.env.insert(key, val);
+        };
+        bind(self, "self".to_string(), target.clone());
+        let mut ai = 0;
+        for pd in &method_def.param_defs {
+            if pd.is_invocant || pd.named || pd.slurpy {
+                continue;
+            }
+            if let Some(a) = method_args.get(ai) {
+                // The body may read the param under its sigil'd name (`$key`) or
+                // its bare slot name (`key`); bind both so evaluation resolves it
+                // regardless of which form the reader uses.
+                let bare = pd.name.trim_start_matches(['$', '@', '%', '&']);
+                let sigil = pd
+                    .name
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '$' | '@' | '%' | '&'))
+                    .unwrap_or('$');
+                bind(self, format!("{}{}", sigil, bare), a.clone());
+                bind(self, bare.to_string(), a.clone());
+            }
+            ai += 1;
+        }
+        let restore = |this: &mut Self, saved: Vec<(String, Option<Value>)>| {
+            for (key, prev) in saved.into_iter().rev() {
+                match prev {
+                    Some(v) => {
+                        this.env.insert(key, v);
+                    }
+                    None => {
+                        this.env.remove(&key);
+                    }
+                }
+            }
+        };
+        let inner_var = Self::expr_lvalue_var_name(inner_target);
+        let recur = (|| {
+            let inner_target_val =
+                self.eval_block_value(&[Stmt::Expr((**inner_target).clone())])?;
+            let mut inner_arg_vals = Vec::with_capacity(inner_args.len());
+            for e in inner_args {
+                inner_arg_vals.push(self.eval_block_value(&[Stmt::Expr(e.clone())])?);
+            }
+            self.assign_method_lvalue_with_values(
+                inner_var.as_deref(),
+                inner_target_val,
+                inner_method,
+                inner_arg_vals,
+                value.clone(),
+            )
+        })();
+        restore(self, saved);
+        Ok(Some(recur?))
     }
 }
