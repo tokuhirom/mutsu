@@ -123,8 +123,13 @@ impl Interpreter {
                 ValueView::Pair(k, v) => {
                     map.insert(k.clone(), v.clone());
                 }
+                // A Junction key (`%( "a"|"b" => 1 )`) threads: it stores the value
+                // under each member key (`%h<a> == %h<b> == 1`), not under the
+                // junction's stringification. Matches Rakudo.
                 ValueView::ValuePair(k, v) => {
-                    map.insert(k.to_string_value(), v.clone());
+                    for kk in crate::runtime::utils::hash_pair_keys(k) {
+                        map.insert(kk.to_string_value(), v.clone());
+                    }
                 }
                 _ => {
                     // Non-pair values: use stringified value as key mapped to True
