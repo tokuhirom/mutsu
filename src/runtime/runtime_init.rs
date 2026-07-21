@@ -2042,6 +2042,7 @@ impl Interpreter {
             proto_method_skip: None,
             pending_dispatch_error: None,
             pending_dist_selectors: Vec::new(),
+            pending_use_export_args: None,
             end_phasers: Vec::new(),
             end_phaser_sites: HashSet::new(),
             chroot_root: None,

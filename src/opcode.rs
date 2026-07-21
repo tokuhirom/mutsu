@@ -1371,6 +1371,10 @@ pub(crate) enum OpCode {
     UseModule {
         name_idx: u32,
         tags_idx: Option<u32>,
+        /// Number of `use`-argument values pushed on the stack immediately
+        /// before this op (`use Foo "a", "b"` / `use Foo <a b c>`). Popped by
+        /// the VM and handed to the module's `sub EXPORT`, if any.
+        arg_count: u16,
     },
     ImportModule {
         name_idx: u32,

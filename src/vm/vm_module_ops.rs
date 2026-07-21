@@ -8,8 +8,21 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         tags_idx: Option<u32>,
+        arg_count: u16,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
+        // Pop the `use`-argument values pushed by the compiler (in source
+        // order) and stash them for the module's `sub EXPORT`. Cleared by
+        // `use_module_with_tags` even when the load takes a native/early-return
+        // path, so they can never leak into a later `use`.
+        if arg_count > 0 {
+            let n = arg_count as usize;
+            let split = self.stack.len().saturating_sub(n);
+            let args: Vec<Value> = self.stack.split_off(split);
+            self.pending_use_export_args = Some(args);
+        } else {
+            self.pending_use_export_args = None;
+        }
         let tags: Vec<String> = tags_idx
             .and_then(|idx| code.constants.get(idx as usize))
             .and_then(|v| match v.view() {

@@ -365,6 +365,7 @@ impl Compiler {
         self.code.emit(OpCode::UseModule {
             name_idx: test_name_idx,
             tags_idx: None,
+            arg_count: 0,
         });
         if let Some(plan_arg) = Self::extract_test_more_plan_arg(arg) {
             self.compile_expr(plan_arg);
@@ -3029,6 +3030,7 @@ impl Compiler {
                 self.code.emit(OpCode::UseModule {
                     name_idx,
                     tags_idx: None,
+                    arg_count: 0,
                 });
             }
             Stmt::Use { module, arg, .. } if module == "Test::More" => {
@@ -3042,7 +3044,11 @@ impl Compiler {
                     let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();
                     Some(self.code.add_constant(Value::array(entries)))
                 };
-                self.code.emit(OpCode::UseModule { name_idx, tags_idx });
+                self.code.emit(OpCode::UseModule {
+                    name_idx,
+                    tags_idx,
+                    arg_count: 0,
+                });
             }
             // `use if;` — the bare `if` pragma module itself is a no-op; it only
             // provides the `:if(...)` adverb handled below.
@@ -3083,16 +3089,40 @@ impl Compiler {
                 } else {
                     Some(self.code.add_constant(Value::array(entries)))
                 };
+                // `use`-arguments (`use Foo "a", "b"` / `use Foo <a b c>`) are
+                // evaluated here and pushed on the stack for the module's
+                // `sub EXPORT`. A `<a b c>` word list flattens into positional
+                // args, matching `sub EXPORT(*@args) { ... }` seeing three items.
+                let arg_exprs: Vec<&Expr> = match arg {
+                    Some(Expr::ArrayLiteral(items)) => items.iter().collect(),
+                    Some(other) => vec![other],
+                    None => vec![],
+                };
+                let arg_count = arg_exprs.len() as u16;
                 // `use Foo:if(EXPR)` (the `if` pragma): load the module only when
                 // EXPR is true at runtime, evaluated here so platform-conditional
                 // imports (`use Foo:if($*DISTRO.is-win)`) pick the right branch.
                 if let Some(cond) = condition {
                     self.compile_expr(cond);
                     let skip = self.code.emit(OpCode::JumpIfFalse(0));
-                    self.code.emit(OpCode::UseModule { name_idx, tags_idx });
+                    for e in &arg_exprs {
+                        self.compile_expr(e);
+                    }
+                    self.code.emit(OpCode::UseModule {
+                        name_idx,
+                        tags_idx,
+                        arg_count,
+                    });
                     self.code.patch_jump(skip);
                 } else {
-                    self.code.emit(OpCode::UseModule { name_idx, tags_idx });
+                    for e in &arg_exprs {
+                        self.compile_expr(e);
+                    }
+                    self.code.emit(OpCode::UseModule {
+                        name_idx,
+                        tags_idx,
+                        arg_count,
+                    });
                 }
             }
             Stmt::Import { module, tags } => {

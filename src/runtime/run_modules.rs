@@ -487,6 +487,10 @@ impl Interpreter {
     }
 
     pub(super) fn load_module(&mut self, module: &str) -> Result<(), RuntimeError> {
+        // Snapshot the `use` args (set by `exec_use_module_op`) before running
+        // the module body: a transitive `use` inside the body would otherwise
+        // overwrite the field. Handed to the module's `sub EXPORT`, if any.
+        let export_args = self.pending_use_export_args.take();
         let (source_path, inst_dist_json) = self
             .resolve_module_path(module)
             .ok_or_else(|| RuntimeError::unsatisfied_dependency(module))?;
@@ -609,6 +613,9 @@ impl Interpreter {
                 &before_function_keys,
                 main_exported,
             );
+            // If the module defined `sub EXPORT`, call it with the `use` args and
+            // install the symbols it returns into the caller's scope.
+            self.apply_module_export(export_args.unwrap_or_default())?;
         }
         // Record the module's distribution for every class/role it just declared,
         // so an OTF compile of one of their methods resolves `$?DISTRIBUTION`.
