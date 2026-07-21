@@ -2605,10 +2605,18 @@ impl Compiler {
                     // Register the package name so it's accessible as a value
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
+                    self.code.emit(OpCode::SetPackageKind {
+                        name_idx,
+                        kind: *kind,
+                    });
                 } else if is_stub_body {
                     // Stub package — register name but don't execute the body
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
                     self.code.emit(OpCode::RegisterPackage { name_idx });
+                    self.code.emit(OpCode::SetPackageKind {
+                        name_idx,
+                        kind: *kind,
+                    });
                     self.code.emit(OpCode::RegisterPackageStub { name_idx });
                 } else {
                     let name_idx = self.code.add_constant(Value::str(qualified_name.clone()));
@@ -2618,6 +2626,10 @@ impl Compiler {
                     } else {
                         self.code.emit(OpCode::RegisterPackage { name_idx });
                     }
+                    self.code.emit(OpCode::SetPackageKind {
+                        name_idx,
+                        kind: *kind,
+                    });
                     // Clear any previous stub status for this package
                     self.code.emit(OpCode::ClearPackageStub { name_idx });
                     let pkg_idx = self.code.emit(OpCode::PackageScope {

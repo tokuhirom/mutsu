@@ -6,6 +6,8 @@ impl Interpreter {
     pub(super) fn is_metamodel_how(class_name: &Symbol) -> bool {
         let cn = class_name.resolve();
         cn == "Perl6::Metamodel::ClassHOW"
+            || cn == "Perl6::Metamodel::ModuleHOW"
+            || cn == "Perl6::Metamodel::PackageHOW"
             || cn == "Perl6::Metamodel::SubsetHOW"
             || cn == "Perl6::Metamodel::EnumHOW"
             || cn == "Perl6::Metamodel::CurriedRoleHOW"

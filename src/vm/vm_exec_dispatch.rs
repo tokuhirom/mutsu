@@ -3849,6 +3849,11 @@ impl Interpreter {
                 self.update_local_if_exists(code, &name, &pkg_val);
                 *ip += 1;
             }
+            OpCode::SetPackageKind { name_idx, kind } => {
+                let name = Self::const_str(code, *name_idx).to_string();
+                self.registry_mut().package_kinds.insert(name, *kind);
+                *ip += 1;
+            }
             OpCode::RegisterPackageMy { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.shadow_suppressed_type_with_package(&name);

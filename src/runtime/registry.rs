@@ -68,6 +68,12 @@ pub(crate) struct Registry {
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.
     pub(crate) package_stubs: HashSet<String>,
+    /// Declarator keyword used for a bare `package`/`module`/`grammar` (a
+    /// `Stmt::Package`), so `.HOW` reports the matching metaclass
+    /// (`PackageHOW`/`ModuleHOW`/`GrammarHOW`) instead of the default
+    /// `ClassHOW`. Classes and roles are absent (they default to `ClassHOW` /
+    /// the role HOW).
+    pub(crate) package_kinds: HashMap<String, crate::ast::PackageKind>,
     /// `is hidden` parents deferred until the parent is fully declared.
     pub(crate) hidden_defer_parents: HashMap<String, HashSet<String>>,
     /// `trusts` relationships: class -> set of trusted classes.

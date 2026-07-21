@@ -1184,6 +1184,12 @@ pub(crate) enum OpCode {
     RegisterPackage {
         name_idx: u32,
     },
+    /// Record the declarator keyword (`package`/`module`/`grammar`) of a bare
+    /// `Stmt::Package` so `.HOW` reports the matching metaclass.
+    SetPackageKind {
+        name_idx: u32,
+        kind: crate::ast::PackageKind,
+    },
     /// Register a lexically-scoped (`my`) package type object.
     /// Same as RegisterPackage but marks the name as block-declared
     /// so it is cleaned up when the enclosing block scope exits.
