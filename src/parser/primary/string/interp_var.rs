@@ -38,6 +38,33 @@ pub(crate) fn split_top_level_commas(content: &str) -> Vec<&str> {
     parts
 }
 
+/// After an `@`/`%` sigil, split off the variable name, allowing an optional
+/// attribute twigil (`!` or `.`) which is kept as a name prefix — matching the
+/// non-interpolated parse where `@!attr`/`@.attr` become `ArrayVar("!attr")` /
+/// `ArrayVar(".attr")`. Returns `(twigil_prefixed_name, rest_after_name)`, or
+/// `None` when what follows the sigil is not a (possibly twigilled) identifier.
+///
+/// Without this, `"@!pre.join(".")"` failed to interpolate the private-attribute
+/// array (and, with a nested `"..."` method argument, the un-recognized
+/// interpolation let the inner quote close the outer string, crashing the parse).
+fn split_interp_var_name(var_rest: &str) -> Option<(&str, &str)> {
+    let twigil_len = if matches!(var_rest.as_bytes().first(), Some(b'!') | Some(b'.'))
+        && var_rest[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
+    {
+        1
+    } else if var_rest.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+        0
+    } else {
+        return None;
+    };
+    let body = &var_rest[twigil_len..];
+    let end = body
+        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .unwrap_or(body.len());
+    let total = twigil_len + end;
+    Some((&var_rest[..total], &var_rest[total..]))
+}
+
 /// Try to interpolate a `$var` or `@var` at the current position.
 /// Returns `Some(remaining_input)` if interpolation was performed, `None` otherwise.
 pub(crate) fn try_interpolate_var<'a>(
@@ -420,14 +447,8 @@ pub(crate) fn try_interpolate_var<'a>(
                 after_brace
             });
         }
-        if next.is_alphabetic() || next == '_' {
-            let var_rest = &rest[1..];
-            let end = var_rest
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(var_rest.len());
-            let name = &var_rest[..end];
+        if let Some((name, after_name)) = split_interp_var_name(&rest[1..]) {
             let expr = Expr::ArrayVar(name.to_string());
-            let after_name = &var_rest[end..];
             let mut remainder = after_name;
             // Zen-slice interpolation: "@arr[]" and "@arr.[]" should interpolate the array value
             let mut consumed = false;
@@ -461,14 +482,8 @@ pub(crate) fn try_interpolate_var<'a>(
         {
             return Some(result);
         }
-        if next.is_alphabetic() || next == '_' {
-            let var_rest = &rest[1..];
-            let end = var_rest
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(var_rest.len());
-            let name = &var_rest[..end];
+        if let Some((name, tail)) = split_interp_var_name(&rest[1..]) {
             let expr = Expr::HashVar(name.to_string());
-            let tail = &var_rest[end..];
             // Zen-slice: %hash{} should stringify the whole hash
             if let Some(r) = tail.strip_prefix("{}") {
                 if !current.is_empty() {
