@@ -20,8 +20,16 @@ impl Interpreter {
             _ => value_type_name(&args[0]).to_string(),
         };
         if tree {
-            let result = self.parents_tree(&class_name);
-            return Ok(Value::real_array(result));
+            // `.^parents(:tree)` returns the parent tree. A single direct parent
+            // yields that parent's subtree directly (`[X, [Any, [Mu]]]`); multiple
+            // direct parents yield a List of subtrees
+            // (`([P1, ...], [P2, ...])`). `:all` does not change the tree.
+            let parents = self.tree_effective_parents(&class_name);
+            let subtrees: Vec<Value> = parents.iter().map(|p| self.parent_node_tree(p)).collect();
+            return Ok(match subtrees.len() {
+                1 => subtrees.into_iter().next().unwrap(),
+                _ => Value::array(subtrees),
+            });
         }
         let mro = self.classhow_mro_names(&args[0]);
         let parents_iter = mro.into_iter().skip(1);
@@ -49,38 +57,42 @@ impl Interpreter {
         Ok(Value::array(parents))
     }
 
-    fn parents_tree(&mut self, class_name: &str) -> Vec<Value> {
-        let direct = self
+    /// The direct parents used to build a `:tree`, filling in the implicit
+    /// `Any`/`Mu` chain. A base class (no explicit parent) inherits `Any`;
+    /// `Any` inherits `Mu`; `Mu` is the root (no parents).
+    fn tree_effective_parents(&self, class_name: &str) -> Vec<String> {
+        let registered = self
             .registry()
             .classes
             .get(class_name)
             .map(|cd| cd.parents.clone())
             .unwrap_or_default();
-        if direct.is_empty() {
-            return Vec::new();
+        if !registered.is_empty() {
+            return registered;
         }
-        direct
-            .iter()
-            .map(|parent| {
-                let subtree = self.parents_tree(parent);
-                let mut entry = vec![Value::package(Symbol::intern(parent))];
-                if !subtree.is_empty() {
-                    entry.extend(subtree);
-                } else if parent != "Mu" {
-                    let any_subtree = self.parents_tree("Any");
-                    let mut any_entry = vec![Value::package(Symbol::intern("Any"))];
-                    if !any_subtree.is_empty() {
-                        any_entry.extend(any_subtree);
-                    } else {
-                        any_entry.push(Value::real_array(vec![Value::package(Symbol::intern(
-                            "Mu",
-                        ))]));
-                    }
-                    entry.push(Value::real_array(any_entry));
-                }
-                Value::real_array(entry)
-            })
-            .collect()
+        match class_name {
+            "Mu" => Vec::new(),
+            "Any" => vec!["Mu".to_string()],
+            _ => vec!["Any".to_string()],
+        }
+    }
+
+    /// The subtree for a single node: `[node]` for a leaf (`Mu`), `[node, sub]`
+    /// for one parent, and `[node, (sub1, sub2, ...)]` (children in a List) for
+    /// multiple parents — matching Rakudo's `.^parents(:tree)` shape.
+    fn parent_node_tree(&self, class_name: &str) -> Value {
+        let node = Value::package(Symbol::intern(class_name));
+        let parents = self.tree_effective_parents(class_name);
+        if parents.is_empty() {
+            return Value::real_array(vec![node]);
+        }
+        let children: Vec<Value> = parents.iter().map(|p| self.parent_node_tree(p)).collect();
+        let entry = if children.len() == 1 {
+            vec![node, children.into_iter().next().unwrap()]
+        } else {
+            vec![node, Value::array(children)]
+        };
+        Value::real_array(entry)
     }
 
     pub(crate) fn dispatch_classhow_roles(&self, args: &[Value]) -> Result<Value, RuntimeError> {
