@@ -30,17 +30,29 @@ impl Interpreter {
                 continue;
             }
             if let Some(constraint) = pd.type_constraint.as_deref() {
-                if let Some(captured_name) = constraint.strip_prefix("::") {
+                // `::?CLASS` / `::?ROLE` are pseudo-types (the current class), NOT
+                // type captures — `constraint.strip_prefix("::")` would otherwise
+                // read them as a capture named `?CLASS`/`?ROLE:U` and both bind a
+                // bogus capture and skip the invocant check, so a role's
+                // `multi method m(::?ROLE:U:)` / `(::?ROLE:D:)` pair became an
+                // ambiguous call once composed into a class. Only a genuine
+                // `::T` capture (not starting with `?`) binds here.
+                if let Some(captured_name) = constraint.strip_prefix("::")
+                    && !captured_name.starts_with('?')
+                {
                     self.bind_type_capture(
                         captured_name,
                         &Value::package(Symbol::intern(class_name)),
                     );
                 }
                 // Check type constraint on the invocant (including :U/:D smileys).
-                // Resolve ::?CLASS to the actual class name for matching.
-                // Pure type captures (e.g. ::T) don't constrain the invocant.
+                // Resolve the `::?CLASS`/`::?ROLE` pseudo-types to the actual
+                // class name for matching. Pure type captures (e.g. ::T) don't
+                // constrain the invocant.
                 if let Some(inv) = invocant {
-                    let resolved = constraint.replace("::?CLASS", class_name);
+                    let resolved = constraint
+                        .replace("::?CLASS", class_name)
+                        .replace("::?ROLE", class_name);
                     let is_type_capture = resolved.starts_with("::");
                     if !is_type_capture && !self.type_matches_value(&resolved, inv) {
                         self.env = saved_env;
