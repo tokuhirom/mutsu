@@ -1567,7 +1567,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         // after such a type, so `$x ~~ PB-Lottery::Ticket { ... }` keeps its
         // `{ ... }` as the enclosing `if`/`unless` body. Forward-ref subs
         // (`do-thing`, `strip-comment`) are lowercase and still gobble their args.
-        let short_name = name.rsplit_once("::").map(|(_, t)| t).unwrap_or(name.as_str());
+        let short_name = name
+            .rsplit_once("::")
+            .map(|(_, t)| t)
+            .unwrap_or(name.as_str());
         let short_name_is_type = short_name.starts_with(|c: char| c.is_ascii_uppercase());
         let hyphen_forward_call =
             !is_user_sub && !name_is_declared_type && !short_name_is_type && name.contains('-');
