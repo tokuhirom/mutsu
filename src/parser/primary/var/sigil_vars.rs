@@ -18,6 +18,29 @@ use super::scalar::scalar_var;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Find the `]` that closes the outer `[` of an `&[op]` operator reference,
+/// balancing nested brackets. `input` starts just past the outer `[`. This lets
+/// a metaop whose operand is itself bracketed parse correctly: `&[R[~~]]` has
+/// the operator `R[~~]` (reverse of the reduce `[~~]`), not `R[~~` cut at the
+/// first `]`. Returns the byte offset of the matching `]`, or `None` if
+/// unbalanced.
+fn matching_op_bracket_end(input: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                if depth == 0 {
+                    return Some(idx);
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Parse a leading-`::` qualified variable name after a sigil, i.e. the
 /// `::Pkg::name` / `::Pkg::('name')` form (`input` starts at the first `::`).
 ///
@@ -416,7 +439,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
     }
     // Handle &[op] — short form for &infix:<op>
     if let Some(after_bracket) = input.strip_prefix('[')
-        && let Some(end_pos) = after_bracket.find(']')
+        && let Some(end_pos) = matching_op_bracket_end(after_bracket)
     {
         let op_name = &after_bracket[..end_pos];
         let rest = &after_bracket[end_pos + 1..];
