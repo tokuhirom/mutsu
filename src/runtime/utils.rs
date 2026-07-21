@@ -330,12 +330,37 @@ pub(crate) fn version_cmp_parts(
             // (Str parts are pre-release, so they come before the plain version)
             (None, Some(VersionPart::Str(_))) => return std::cmp::Ordering::Greater,
             (Some(VersionPart::Str(_)), None) => return std::cmp::Ordering::Less,
-            // Whatever matches anything
-            (Some(VersionPart::Whatever), _) | (_, Some(VersionPart::Whatever)) => continue,
+            // A `*` (Whatever) part sorts *before* any concrete part (it acts as
+            // -infinity for ordering: `v1.* <=> v1.0` is `Less`). This is distinct
+            // from smart-matching, where a Whatever in the *matcher* accepts anything.
+            (Some(VersionPart::Whatever), Some(VersionPart::Whatever)) => continue,
+            (Some(VersionPart::Whatever), _) => return std::cmp::Ordering::Less,
+            (_, Some(VersionPart::Whatever)) => return std::cmp::Ordering::Greater,
             (None, None) => continue,
         }
     }
     std::cmp::Ordering::Equal
+}
+
+/// Full `Version` ordering, including the trailing `+` / `-` flag as a
+/// tie-breaker: when the parts compare equal, `v1+ <=> v1` is `More` (a `+`
+/// version sorts *after* the bare version) and `-` sorts before it.
+pub(crate) fn version_cmp(
+    a_parts: &[crate::value::VersionPart],
+    a_plus: bool,
+    a_minus: bool,
+    b_parts: &[crate::value::VersionPart],
+    b_plus: bool,
+    b_minus: bool,
+) -> std::cmp::Ordering {
+    match version_cmp_parts(a_parts, b_parts) {
+        std::cmp::Ordering::Equal => {
+            let a_rank = a_plus as i8 - a_minus as i8;
+            let b_rank = b_plus as i8 - b_minus as i8;
+            a_rank.cmp(&b_rank)
+        }
+        other => other,
+    }
 }
 
 mod coerce_containers;

@@ -561,9 +561,17 @@ impl Interpreter {
                         lf.partial_cmp(&rf).unwrap_or(std::cmp::Ordering::Equal)
                     }
                     (
-                        ValueView::Version { parts: ap, .. },
-                        ValueView::Version { parts: bp, .. },
-                    ) => super::version_cmp_parts(ap, bp),
+                        ValueView::Version {
+                            parts: ap,
+                            plus: apl,
+                            minus: ami,
+                        },
+                        ValueView::Version {
+                            parts: bp,
+                            plus: bpl,
+                            minus: bmi,
+                        },
+                    ) => super::version_cmp(ap, apl, ami, bp, bpl, bmi),
                     _ => left.to_string_value().cmp(&right.to_string_value()),
                 };
                 Ok(super::make_order(ord))

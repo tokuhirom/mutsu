@@ -90,11 +90,21 @@ impl Interpreter {
                 "Cannot resolve caller; none of the candidates match",
             ));
         }
-        // Version-vs-Version comparison: use version_cmp_parts directly
-        if let (ValueView::Version { parts: ap, .. }, ValueView::Version { parts: bp, .. }) =
-            (left.view(), right.view())
+        // Version-vs-Version comparison: order by parts, then the `+`/`-` flag.
+        if let (
+            ValueView::Version {
+                parts: ap,
+                plus: apl,
+                minus: ami,
+            },
+            ValueView::Version {
+                parts: bp,
+                plus: bpl,
+                minus: bmi,
+            },
+        ) = (left.view(), right.view())
         {
-            let ord = super::version_cmp_parts(ap, bp) as i32;
+            let ord = super::version_cmp(ap, apl, ami, bp, bpl, bmi) as i32;
             return Ok(Value::truth(f(ord)));
         }
         let (l, r) = super::coerce_numeric(left, right);
