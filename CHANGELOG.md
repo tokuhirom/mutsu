@@ -10,6 +10,8 @@
 - fix: a sigilless binding shadows the imaginary-unit term constant `i` by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5113
 - feat: tied Associative subscript protocol — `:=` BIND-KEY and `{*}` whatever slice by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5112
 - fix: prompt returns the Any type object at end of input by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5115
+- fix: parse left-exclusive sequence ops (`^...`/`^...^`) as unparenthesized listop args by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5116
+- fix: skip compile-time default type-check for coercion-typed params (T-022) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5114
 
 ## [v0.14.0](https://github.com/tokuhirom/mutsu/compare/v0.13.0...v0.14.0) - 2026-07-21
 
