@@ -2947,12 +2947,19 @@ impl Interpreter {
                         if chars.peek() == Some(&'*') {
                             // `**` quantifier: parse count or range
                             chars.next();
-                            // Handle frugal modifier: **? means non-greedy
-                            starstar_frugal = if chars.peek() == Some(&'?') {
-                                chars.next();
-                                true
-                            } else {
-                                false
+                            // Handle the greediness modifier: `**?` is frugal
+                            // (non-greedy); `**!` is the explicit greedy marker
+                            // (the same as a bare `**`, but written out).
+                            starstar_frugal = match chars.peek() {
+                                Some(&'?') => {
+                                    chars.next();
+                                    true
+                                }
+                                Some(&'!') => {
+                                    chars.next();
+                                    false
+                                }
+                                _ => false,
                             };
                             // Skip whitespace after ** or **?
                             while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
