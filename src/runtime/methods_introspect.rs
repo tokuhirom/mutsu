@@ -281,7 +281,15 @@ impl Interpreter {
             }
         };
         // Use appropriate HOW metaclass for each type kind
-        let how_name = if self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
+        let how_name = if let Some(kind) = self.registry().package_kinds.get(&type_name) {
+            // A bare `package`/`module`/`grammar` reports its own metaclass
+            // rather than the default `ClassHOW`.
+            match kind {
+                crate::ast::PackageKind::Package => "Perl6::Metamodel::PackageHOW",
+                crate::ast::PackageKind::Module => "Perl6::Metamodel::ModuleHOW",
+                crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
+            }
+        } else if self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
             || matches!(
                 type_name.as_str(),
                 "Numeric"
@@ -298,7 +306,8 @@ impl Interpreter {
                     | "Iterable"
                     | "Iterator"
                     | "PositionalBindFailover"
-            ) {
+            )
+        {
             "Perl6::Metamodel::ParametricRoleGroupHOW"
         } else if self.registry().enum_types.contains_key(&type_name) {
             "Perl6::Metamodel::EnumHOW"
