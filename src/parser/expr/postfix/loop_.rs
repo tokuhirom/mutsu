@@ -1705,6 +1705,14 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     | Expr::BareWord(_)
                     | Expr::Index { .. }
                     | Expr::MethodCall { .. }
+                    // A hyper method call may be directly subscripted, just like a
+                    // plain method call: `@a>>.b{$k}` is `(@a>>.b){$k}` (raku applies
+                    // `postcircumfix:<{ }>` to the hyper-dispatch result). Without
+                    // this the `{$k}` was left as a separate block statement, which
+                    // silently truncated the enclosing declaration list (e.g. a role
+                    // body would drop every method after such a call).
+                    | Expr::HyperMethodCall { .. }
+                    | Expr::HyperMethodCallDynamic { .. }
                     | Expr::Call { .. }
                     | Expr::Literal(_)
                     | Expr::DoStmt(_)
