@@ -108,6 +108,17 @@ impl Interpreter {
             .collect()
     }
 
+    /// Map an attribute's `is required` state to the value `.required` reports:
+    /// `Mu` (not required), `1` (bare `is required`), or the reason string
+    /// (`is required("reason")`).
+    fn required_meta_value(is_required: &Option<Option<String>>) -> Value {
+        match is_required {
+            None => Value::package(Symbol::intern("Mu")),
+            Some(None) => Value::int(1),
+            Some(Some(reason)) => Value::str(reason.clone()),
+        }
+    }
+
     /// Build an Attribute introspection object for a modelled built-in type
     /// attribute (private `$!name`, no accessor, read-only).
     fn make_builtin_attribute_object(attr_name: &str, type_name: &str, owner: &str) -> Value {
@@ -131,11 +142,12 @@ impl Interpreter {
             Value::package(Symbol::intern(type_name)),
         );
         meta.insert("has_accessor".to_string(), Value::truth(has_accessor));
+        meta.insert("required".to_string(), Value::package(Symbol::intern("Mu")));
         Value::make_instance(Symbol::intern("Attribute"), meta)
     }
 
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
-        let (ref attr_name, is_public, ref default, is_rw, _, sigil, _) = *attr;
+        let (ref attr_name, is_public, ref default, is_rw, ref is_required, sigil, _) = *attr;
         // A custom trait_mod:<is> was applied to this attribute at class
         // registration: serve the SAME meta-object it mutated (role mixins,
         // values like JSON::Name's `$.json-name`), topped up below with the
@@ -206,6 +218,13 @@ impl Interpreter {
             .and_then(|cd| cd.attribute_built.get(attr_name).copied())
             .unwrap_or(is_public);
         meta.insert("is_built".to_string(), Value::truth(is_built));
+        // `is required` introspection: `.required` returns the type object `Mu`
+        // when not required, `1` for a bare `is required`, and the reason string
+        // for `is required("reason")` (rakudo).
+        meta.insert(
+            "required".to_string(),
+            Self::required_meta_value(is_required),
+        );
         if let Some(default_expr) = default {
             meta.insert("__mutsu_has_build".to_string(), Value::TRUE);
             if let crate::ast::Expr::Literal(v) = default_expr {
@@ -301,6 +320,7 @@ impl Interpreter {
         meta.insert("is_public".to_string(), Value::truth(is_public));
         meta.insert("has_accessor".to_string(), Value::truth(is_public));
         meta.insert("is_built".to_string(), Value::truth(is_public));
+        meta.insert("required".to_string(), Value::package(Symbol::intern("Mu")));
         meta.insert("sigil".to_string(), Value::str(sigil.to_string()));
         meta.insert(
             "type".to_string(),

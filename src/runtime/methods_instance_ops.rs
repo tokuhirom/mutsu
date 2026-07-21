@@ -337,6 +337,13 @@ impl Interpreter {
                             .unwrap_or(false);
                         return Ok(Value::truth(!is_rw));
                     }
+                    "required" => {
+                        // `Mu` (not required), `1` (bare `is required`), or the
+                        // reason string (`is required("reason")`).
+                        return Ok(attributes.as_map().get("required").cloned().unwrap_or_else(
+                            || Value::package(crate::symbol::Symbol::intern("Mu")),
+                        ));
+                    }
                     "build" => {
                         if let Some(build_val) = attributes.as_map().get("build") {
                             return Ok(build_val.clone());
