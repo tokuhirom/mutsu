@@ -2,7 +2,7 @@ use super::*;
 
 impl Interpreter {
     pub(super) fn dispatch_contains(
-        &self,
+        &mut self,
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
@@ -51,6 +51,12 @@ impl Interpreter {
             ));
         }
         let hay: String = text.chars().skip(start as usize).collect();
+        // A Regex needle means "does the pattern match anywhere from `start`?"
+        // (`"abc".contains(/b/)`), not a literal search for the regex's gist.
+        if let ValueView::Regex(pattern) = needle.view() {
+            let found = self.regex_find_first(&pattern, &hay).is_some();
+            return Ok(Value::truth(found));
+        }
         Ok(Self::contains_value(&hay, &needle, ignore_case))
     }
 

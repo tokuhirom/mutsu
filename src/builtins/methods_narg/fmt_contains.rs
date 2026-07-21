@@ -104,6 +104,11 @@ pub(crate) fn native_contains_with_options(
     if let ValueView::Package(_) = needle.view() {
         return None;
     }
+    // A Regex needle needs the regex engine (&mut self); let the interpreter's
+    // dispatch_contains own it rather than searching for the regex's gist.
+    if let ValueView::Regex(..) = needle.view() {
+        return None;
+    }
     let start = match positional.get(1).copied().map(Value::view) {
         Some(ValueView::Int(i)) => i,
         Some(ValueView::Num(f)) => f as i64,

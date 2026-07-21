@@ -319,6 +319,11 @@ pub(crate) fn native_method_1arg(
                     type_name,
                 ))));
             }
+            // A Regex needle needs the regex engine (&mut self); fall through to
+            // the slow path (dispatch_contains) instead of matching its gist.
+            if let ValueView::Regex(..) = arg.view() {
+                return None;
+            }
             let s = target.to_string_value();
             Some(Ok(contains_value_recursive(&s, arg)))
         }
