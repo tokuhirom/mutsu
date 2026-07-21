@@ -246,16 +246,25 @@ pub(crate) fn parse_elsif_chain(
             let (r, orwith_cond_expr) = condition_expr(r)?;
             let (r, _) = ws(r)?;
             // Check for optional pointy block: orwith EXPR -> $param { ... }
+            // The bound variable may use any sigil (e.g. `-> &edit { ... }`),
+            // not just `$`. VarDecl names strip a leading `$` but keep `&`/`@`/`%`.
             let (r, orwith_param_name) = if let Some(r2) = r.strip_prefix("->") {
                 let (r2, _) = ws(r2)?;
-                if let Some(r_after_sigil) = r2.strip_prefix('$') {
+                let sigil = r2.chars().next();
+                if let Some(sig) = sigil.filter(|&c| c == '$' || c == '&' || c == '@' || c == '%') {
+                    let r_after_sigil = &r2[sig.len_utf8()..];
                     let end = r_after_sigil
                         .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                         .unwrap_or(r_after_sigil.len());
                     let name = &r_after_sigil[..end];
                     let r2 = &r_after_sigil[end..];
                     let (r2, _) = ws(r2)?;
-                    (r2, Some(name.to_string()))
+                    let decl_name = if sig == '$' {
+                        name.to_string()
+                    } else {
+                        format!("{sig}{name}")
+                    };
+                    (r2, Some(decl_name))
                 } else {
                     (r, None)
                 }
