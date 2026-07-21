@@ -86,12 +86,14 @@ impl Interpreter {
             .get_dynamic_handle("$*IN")
             .or_else(|| self.default_input_handle());
         if let Some(handle) = handle {
-            let line = self
-                .read_line_from_handle_value(&handle)?
-                .unwrap_or_default();
-            return Ok(Value::str(line));
+            // At end of input `prompt` returns the `Any` type object (like
+            // `get`), not an empty string: `prompt(...).defined` is False.
+            return Ok(match self.read_line_from_handle_value(&handle)? {
+                Some(line) => Value::str(line),
+                None => Value::package(crate::symbol::Symbol::intern("Any")),
+            });
         }
-        Ok(Value::str(String::new()))
+        Ok(Value::package(crate::symbol::Symbol::intern("Any")))
     }
 
     pub(super) fn builtin_get(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
