@@ -603,12 +603,11 @@ impl Interpreter {
                         }
                     })
                     .unwrap_or_else(|| {
-                        // Anonymous @-sigil variables default to empty Array
-                        if name.contains("__ANON_ARRAY_") || name == "@__ANON_ARRAY__" {
-                            Value::real_array(vec![])
-                        } else {
-                            Value::NIL
-                        }
+                        // An undeclared `@`-sigil variable defaults to an empty
+                        // Array (raku auto-declares it as Array under `no strict`):
+                        // `@x[2]` is `(Any)`, `@x.end` is `-1`, `@x.raku` is `[]`.
+                        // Anonymous `@`-sigil variables share this default.
+                        Value::real_array(vec![])
                     });
                 // A whole-container `:=` bind (`my @b := @a`) stores a shared
                 // `ContainerRef` cell in the slot so both aliases observe
@@ -710,13 +709,12 @@ impl Interpreter {
                         if name == "%ENV" {
                             return Err(RuntimeError::undeclared("name", "%ENV"));
                         }
-                        // Anonymous %-sigil variables default to empty Hash
-                        if name == "%__ANON_HASH__" {
-                            self.stack
-                                .push(Value::hash(std::collections::HashMap::new()));
-                        } else {
-                            self.stack.push(Value::NIL);
-                        }
+                        // An undeclared `%`-sigil variable defaults to an empty
+                        // Hash (raku auto-declares it as Hash under `no strict`):
+                        // `%h<k>` is `(Any)`, `%h.raku` is `{}`. Anonymous
+                        // `%`-sigil variables share this default.
+                        self.stack
+                            .push(Value::hash(std::collections::HashMap::new()));
                     }
                 }
                 *ip += 1;
