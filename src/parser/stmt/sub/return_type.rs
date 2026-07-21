@@ -181,9 +181,19 @@ pub(crate) fn parse_param_list_with_return_inner(
         }
         rest = r;
     }
-    if let Some((r, _invocant_type)) = parse_implicit_invocant_marker(rest) {
+    if let Some((r, invocant_type)) = parse_implicit_invocant_marker(rest) {
         let (r, _) = ws(r)?;
         rest = r;
+        // A definedness smiley (`Foo:D:` / `Foo:U:`) on an anonymous invocant
+        // constrains dispatch and must survive as an invocant param so that
+        // `multi method g(Foo:U:)` and `multi method g(Foo:D:)` are distinct
+        // candidates rather than collapsing into an ambiguous pair. Other
+        // anonymous typed markers (`Foo:`) are still discarded as before.
+        if invocant_type.ends_with(":D") || invocant_type.ends_with(":U") {
+            let mut inv = super::param_list::make_smiley_invocant_param(invocant_type);
+            inv.multi_invocant = multi_invocant;
+            params.push(inv);
+        }
         if rest.starts_with(')') {
             return Ok((rest, (params, return_type)));
         }
