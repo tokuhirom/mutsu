@@ -354,6 +354,21 @@ impl Interpreter {
                         i += 1;
                         continue;
                     }
+                    // Inside a double-quoted regex literal, a `$var.method(...)`
+                    // chain is a qq-string method-call interpolation (Raku
+                    // interpolates `"$x.uc()"`), not a scalar followed by a
+                    // match-any `.`. A bare `/ $x.foo() /` is a Raku syntax
+                    // error, so this only applies within `"..."`. Evaluate the
+                    // whole chain and match its result literally.
+                    if let Some(chain_end) = scan_interp_method_chain(&chars, j)
+                        && is_inside_double_quoted_regex_literal(&chars, i)
+                    {
+                        let expr_str: String = chars[i..chain_end].iter().collect();
+                        let val = self.eval_string_as_source(&expr_str);
+                        out.push_str(&Self::escape_regex_scalar_literal(&val.to_string_value()));
+                        i = chain_end;
+                        continue;
+                    }
                     let name: String = chars[name_start..j].iter().collect();
                     // Reduce-time dyn-var overlay: a `$*` var written by a grammar
                     // action mid-parse takes precedence over `self.env` so the next
@@ -783,4 +798,47 @@ impl Interpreter {
         err.exception = Some(Box::new(ex));
         err
     }
+}
+
+/// Starting at `start` (just past a scanned `$var` name), scan a chain of
+/// `.method(...)` calls (`.flip()`, `.flip().uc()`, `.substr(0,3)`), respecting
+/// nested parens in the argument lists. Returns the end index of the chain when
+/// it contains at least one parenthesized method call, else `None` (a bare
+/// `.method` without parens does not interpolate). Used to interpolate a
+/// `$var.method(...)` term inside a double-quoted regex literal.
+fn scan_interp_method_chain(chars: &[char], start: usize) -> Option<usize> {
+    let mut i = start;
+    let mut saw_call = false;
+    while i < chars.len() && chars[i] == '.' {
+        let mut k = i + 1;
+        let id_start = k;
+        while k < chars.len() && (chars[k].is_alphanumeric() || chars[k] == '_' || chars[k] == '-')
+        {
+            k += 1;
+        }
+        if k == id_start || k >= chars.len() || chars[k] != '(' {
+            break;
+        }
+        let mut depth = 0usize;
+        while k < chars.len() {
+            match chars[k] {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        k += 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            k += 1;
+        }
+        if depth != 0 {
+            break;
+        }
+        i = k;
+        saw_call = true;
+    }
+    saw_call.then_some(i)
 }

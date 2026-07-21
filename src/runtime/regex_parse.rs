@@ -1013,6 +1013,46 @@ pub(super) fn is_inside_single_quoted_regex_literal(chars: &[char], pos: usize) 
     open.is_some()
 }
 
+/// Whether byte position `pos` sits inside a double-quoted regex literal
+/// (`"..."`). Tracks both quote families so a `"` inside a `'...'` region (or
+/// vice versa) is not mistaken for an opener. Used to decide when a
+/// `$var.method(...)` chain is a qq-string interpolation rather than a bare
+/// scalar followed by a match-any `.`.
+pub(super) fn is_inside_double_quoted_regex_literal(chars: &[char], pos: usize) -> bool {
+    let mut open: Option<char> = None;
+    let mut escaped = false;
+    for &ch in chars.iter().take(pos) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        match open {
+            Some(o) => {
+                let closes = if matches!(o, '"' | '\u{201C}' | '\u{201E}') {
+                    matches!(ch, '"' | '\u{201D}')
+                } else {
+                    regex_single_quote_closes(o, ch)
+                };
+                if closes {
+                    open = None;
+                }
+            }
+            None => {
+                if matches!(ch, '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}')
+                    || matches!(ch, '"' | '\u{201C}' | '\u{201E}')
+                {
+                    open = Some(ch);
+                }
+            }
+        }
+    }
+    matches!(open, Some('"' | '\u{201C}' | '\u{201E}'))
+}
+
 pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
     let lit_chars: Vec<char> = literal.chars().collect();
     if lit_chars.is_empty() {
