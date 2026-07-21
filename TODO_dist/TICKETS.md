@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_36 open tickets._
+_35 open tickets._
 
 ## Open
 
@@ -135,12 +135,6 @@ _36 open tickets._
 ### T-034 — test_die: No such private method X for invocant of type 'X'  [impact: 1 dist]
 - dists: IdClass
 - e.g. `IdClass`: base=6 pass=0 fail=0 die=6 | t/01-basic.rakutest: No such private method 'gen-rest' for invocant of type 'UserId'
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-035 — test_die: Unknown function: ordat  [impact: 1 dist]
-- dists: Text::Diff::Sift4
-- e.g. `Text::Diff::Sift4`: base=1 pass=0 fail=0 die=1 | t/01-sift4.t: Unknown function: ordat
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -284,6 +278,14 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-035** (#PENDING) — Text::Diff::Sift4 died on `nqp::ordat` and hit two more
+  gaps once it was added. Three general fixes: (1) implemented `nqp::ordat($s,
+  $pos)` (codepoint at a position, -1 past end); (2) a typed scalar `:=`-bound to
+  an array element (`my Offset $o := @a[$i]`) type-checked the `ContainerRef`
+  cell instead of its contents ("expected Offset but got Any") — deref before the
+  bind-time constraint check; (3) a Bool assigned to a native `int` (`my int $x =
+  3 >= 2`) is now accepted and unboxed to 1/0 (Bool `does Int`). **Sift4's suite
+  passes 32/32**, matching raku. Pin: t/nqp-ordat-and-native-int-coerce.t.
 - **T-022** (#5114) — a coercion-typed parameter default
   (`IO::Path(Str) $p = "x"`, `IO::Path(Str) :$out-path = "."`) wrongly raised the
   compile-time `X::Parameter::Default::TypeCheck`: `default_type_matches_constraint`

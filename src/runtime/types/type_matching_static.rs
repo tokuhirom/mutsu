@@ -83,8 +83,11 @@ impl Interpreter {
         {
             return true;
         }
-        // Native integer types match Int values
-        if crate::runtime::native_types::is_native_int_type(constraint) && value_type == "Int" {
+        // Native integer types match Int values -- and Bool, which `does Int`
+        // (`enum Bool does Int`), so `my int $x = 3 >= 2` stores 1 like raku.
+        if crate::runtime::native_types::is_native_int_type(constraint)
+            && matches!(value_type, "Int" | "Bool")
+        {
             return true;
         }
         // Native float types (num32, num64) are subtypes of Num
