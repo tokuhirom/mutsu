@@ -12,6 +12,18 @@ pub(crate) fn invalid_param_smiley_error(smiley: &str) -> PError {
     PError::fatal_with_exception(msg, Box::new(ex))
 }
 
+/// Build an anonymous invocant `ParamDef` for a definedness-smiley invocant
+/// marker (`Foo:D:` / `Foo:U:`). The param is named `self` (the implicit
+/// invocant name) and carries the full type constraint including the smiley so
+/// multi-dispatch can select on the invocant's definedness.
+pub(crate) fn make_smiley_invocant_param(invocant_type: String) -> ParamDef {
+    let mut p = crate::parser::stmt::sub_param::make_param("self".to_string());
+    p.type_constraint = Some(invocant_type);
+    p.is_invocant = true;
+    p.traits.push("invocant".to_string());
+    p
+}
+
 /// Strip sigil prefix from a parameter name, returning the bare name.
 pub(crate) fn strip_param_sigil(name: &str) -> &str {
     name.strip_prefix('@')

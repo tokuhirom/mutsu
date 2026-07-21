@@ -81,6 +81,11 @@ impl Interpreter {
     pub(super) fn method_positional_signature(def: &MethodDef) -> Vec<String> {
         def.param_defs
             .iter()
+            // The invocant is implicit and not part of the positional signature
+            // for role/stub conformance: a method whose only difference from a
+            // stub is a typed invocant marker (`method !foo(A:D:)` vs the stub
+            // `method !foo`) still satisfies it.
+            .filter(|pd| !(pd.is_invocant || pd.traits.iter().any(|t| t == "invocant")))
             .filter(|pd| !(pd.named || (pd.slurpy && pd.name.starts_with('%'))))
             .map(|pd| {
                 if pd.slurpy {

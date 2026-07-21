@@ -114,12 +114,18 @@ fn parse_method_decl_with_match_var_param() {
 
 #[test]
 fn parse_method_decl_with_typed_invocant_marker() {
+    // A definedness-smiley invocant marker (`A:D:`) is preserved as an anonymous
+    // invocant param carrying the `A:D` constraint, so multi-dispatch can select
+    // on invocant definedness. The following `$key` is the sole positional.
     let (rest, stmts) = program("class A { method AT-KEY(A:D: $key) { 1 } }").unwrap();
     assert_eq!(rest, "");
     if let Stmt::ClassDecl { body, .. } = &stmts[0] {
         if let Stmt::MethodDecl { param_defs, .. } = &body[0] {
-            assert_eq!(param_defs.len(), 1);
-            assert_eq!(param_defs[0].name, "key");
+            assert_eq!(param_defs.len(), 2);
+            assert_eq!(param_defs[0].name, "self");
+            assert!(param_defs[0].is_invocant);
+            assert_eq!(param_defs[0].type_constraint.as_deref(), Some("A:D"));
+            assert_eq!(param_defs[1].name, "key");
         } else {
             panic!("expected MethodDecl");
         }
@@ -141,8 +147,19 @@ fn parse_method_decl_with_operator_name() {
 }
 
 #[test]
-fn parse_sub_decl_with_typed_invocant_marker() {
-    let (rest, stmts) = program("sub f(A:D: $key) { $key }").unwrap();
+fn parse_sub_decl_with_smiley_invocant_marker_is_rejected() {
+    // A definedness-smiley invocant marker (`A:D:`) in a *sub* signature is an
+    // invocant, which subs do not allow — raku rejects `sub f(A:D: $key)` at
+    // compile time, and so does mutsu now that the smiley invocant is preserved
+    // rather than silently discarded.
+    assert!(program("sub f(A:D: $key) { $key }").is_err());
+}
+
+#[test]
+fn parse_sub_decl_with_plain_typed_marker_discarded() {
+    // A plain (non-smiley) anonymous typed marker carries no dispatch-relevant
+    // constraint and is still discarded, leaving only the real params.
+    let (rest, stmts) = program("sub f(A: $key) { $key }").unwrap();
     assert_eq!(rest, "");
     if let Stmt::SubDecl { param_defs, .. } = &stmts[0] {
         assert_eq!(param_defs.len(), 1);
