@@ -129,6 +129,29 @@ intentionally deferred; see PLAN.md §8.5 and the ADRs:
   remaining `.my<$the-answer>` example is raku-drift (`LoweredAwayLexical`). See
   [docs/callframe-introspection-plan.md](callframe-introspection-plan.md).
 
+- **Sigilless-parameter scoping (`py-nutshell.rakudoc`)** — a sigilless binding
+  shadowing the `i` term constant is fixed for `my \i` reads and single
+  `-> \i { }` pointy params (#5113), but three sub-cases remain, each on a
+  distinct binding path:
+  - `-> (\i, \j) { i + j }` — the **destructuring** sub-signature path
+    (`__subsig__` + nested `sub_signature` param defs) does not emit the
+    `MarkSigillessReadonly` marker, so `i` still resolves to the imaginary
+    unit. Symmetric fix = inject the marker for each `pd.sigilless` sub-param
+    when compiling the destructuring body.
+  - `for 1,2,3 -> \x { }; say x` — the for-loop sigilless **param leaks** to the
+    outer `\x` binding (gives `3`, not the outer `10`): the single-param
+    save/restore in `vm_for_loop_body.rs` does not restore a sigilless outer
+    binding of the same bare name.
+  - `for ^5 -> \x { block-capturing x }` — a for-loop sigilless param is **not
+    visible** in a nested closure (`Cannot convert string to number '⏏x'`); the
+    nested block does not capture the sigilless loop param.
+  - Also (`py-nutshell` [5] line 1): `{ $_[0] + $_[1] }` over `X`-crossed list
+    topics returns blank — `$_[N]` indexing a list topic is a separate bug.
+  - Minor pre-existing parser-scope leak surfaced while pinning: a source-level
+    `my \i` registers `i` as a user term symbol whose registration leaks past
+    its block, so a later bare `i` in the same unit mis-parses (`-> \i` does not
+    leak; only the `my \i` VarDecl form).
+
 ### Untriaged
 Everything in the survey below not listed above. The per-file minimal repros live in
 `tmp/sweep/reports/<file>.txt` after a sweep — start from the highest-signal file and

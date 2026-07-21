@@ -225,11 +225,26 @@ impl Compiler {
         param: &str,
         body: &[Stmt],
         is_whatever_code: bool,
+        param_sigilless: bool,
     ) {
         let params: Vec<String> = if param.is_empty() {
             Vec::new()
         } else {
             vec![param.to_string()]
+        };
+        // A sigilless pointy parameter (`-> \x { }`) shadows a same-named term
+        // constant (e.g. the imaginary unit `i`) inside the body. Mark it with
+        // the same `__mutsu_sigilless_readonly::<name>` marker that `my \x = ...`
+        // uses, so a bareword read resolves the parameter, not the constant.
+        let sigilless_body: Vec<Stmt>;
+        let body: &[Stmt] = if param_sigilless && !param.is_empty() {
+            let mut v = Vec::with_capacity(body.len() + 1);
+            v.push(Stmt::MarkSigillessReadonly(param.to_string()));
+            v.extend_from_slice(body);
+            sigilless_body = v;
+            &sigilless_body
+        } else {
+            body
         };
         // A single-`*` WhateverCode whose body *mutates* the `_` placeholder
         // (`*++`, `*--`, `++*`, `* =:= $x`, `*.=foo`) binds `_` `is raw`, so the

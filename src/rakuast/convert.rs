@@ -1074,6 +1074,7 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             param,
             body,
             is_whatever_code,
+            ..
         } => {
             if *is_whatever_code {
                 return Err(unsupported("Whatever-code closure"));

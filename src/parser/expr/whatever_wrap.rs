@@ -50,6 +50,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                             param: params[0].clone(),
                             body: vec![Stmt::Expr(body_expr)],
                             is_whatever_code: false,
+                            param_sigilless: false,
                         };
                     }
                     return Expr::AnonSubParams {
@@ -221,6 +222,7 @@ pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
             param: "_".to_string(),
             body: vec![Stmt::Expr(body_expr)],
             is_whatever_code: true,
+            param_sigilless: false,
         }
     } else if wc_count <= 1 {
         // Single-arg, but expression already contains $_ — use a numbered param

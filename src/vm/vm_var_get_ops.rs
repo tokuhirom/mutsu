@@ -80,10 +80,12 @@ impl Interpreter {
             } else {
                 Value::str(name.to_string())
             }
-        } else if name == "i" {
+        } else if name == "i" && !self.has_sigilless_binding("i") {
             // Raku term constant `i` (imaginary unit) — must be resolved before
             // the env lookup because `$i` is stored under key "i" (no sigil) and
-            // would shadow the term.  Sigilless `my \i` goes through GetLocal.
+            // would shadow the term.  A sigilless binding (`my \i`, `-> \i { }`)
+            // *does* shadow the term, so when one is present we fall through to
+            // the general env lookup below (which derefs the sigilless value).
             Value::complex(0.0, 1.0)
         } else if name == "NaN" {
             Value::num(f64::NAN)
@@ -369,6 +371,19 @@ impl Interpreter {
         };
         self.stack.push(val);
         Ok(())
+    }
+
+    /// Whether `name` currently has a sigilless binding in scope (`my \x`,
+    /// `-> \x { }`, `x := $y`). Such a binding shadows a same-named term
+    /// constant (e.g. the imaginary unit `i`), unlike a same-named `$`-scalar.
+    /// Detected via the `__mutsu_sigilless_readonly::`/`__mutsu_sigilless_alias::`
+    /// markers the binding emits.
+    fn has_sigilless_binding(&self, name: &str) -> bool {
+        self.env()
+            .contains_key(&crate::runtime::utils::sigilless_readonly_key(name))
+            || self
+                .env()
+                .contains_key(&crate::runtime::utils::sigilless_alias_key(name))
     }
 
     /// Resolve a qualified name `Prefix::variant` where `Prefix` is a symbol
