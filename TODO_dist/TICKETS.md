@@ -276,8 +276,24 @@ _40 open tickets._
      `:delete`/`:exists` adverbs + `:=` BIND-KEY through DELETE-KEY/EXISTS-KEY/BIND-KEY
      (pin `t/tied-hash-bind.t`). Value/list slices (`%h<a b>` / `%h{'a','c'}`) route
      through the existing `(Instance, Array)` read arm, and the `{*}` whatever slice
-     enumerates the class's `keys` + AT-KEY. **All gap-1 sub-items now landed; a full
-     dist run is the remaining confirmation.**
+     enumerates the class's `keys` + AT-KEY. **The tied-variable subscript protocol is
+     now complete.** A full `Hash::Agnostic` dist run (2026-07-22, `t/01-basic.rakutest`)
+     still `test_die`s on TWO remaining, unrelated-to-subscript blockers:
+     - **(1) `self.Mu::Str` / `self.Mu::gist` stack overflow** — Hash::Agnostic's
+       type-object coercions are `multi method Str(::?ROLE:U:) { self.Mu::Str }`
+       (likewise gist). A qualified call to a *universal base* (`Mu`/`Any`/`Cool`) is
+       not routed to the built-in default coercion: `Mu` is absent from the instance
+       MRO, so the qualified dispatch falls back to re-dispatching the receiver's own
+       role multi, which calls `self.Mu::Str` again → infinite recursion / stack
+       overflow (repro: `role R { multi method Str(::?ROLE:U:) { self.Mu::Str } }; class C does R {}; C.Str`).
+       Fix needs `self.{Mu,Any,Cool}::<coercion>` to reach the interpreter's *default*
+       Str/gist/raku (bypassing the user/role override). `native_method_0arg` alone is
+       insufficient — a generic instance's gist/raku need interpreter-level attribute
+       rendering (`gist_needs_method_dispatch`). Type-object defaults are already
+       correct (`C.Str`=="", `C.gist`=="(C)", `C.raku`=="C").
+     - **(2) `.Slip` coercion** — `%h.Slip.are(Pair)` fails while `.list`/`.List` pass;
+       Hash::Agnostic's `method Slip { Slip.from-iterator(self.iterator) }` — `Slip.from-iterator`
+       does not yield the Pairs the role's iterator produces.
   2. **public/private same-name role methods** — Hash::Agnostic's `method STORE {...self!STORE(...)}`
      + `method !STORE` collided (private overwrote public in role composition; two-role
      public+private also mis-flagged X::Role::Composition::Conflict). **Fixed** — see the
