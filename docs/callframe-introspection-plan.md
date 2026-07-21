@@ -1,8 +1,29 @@
 # CallFrame introspection — implementation plan
 
-Status: **Planned** (investigated 2026-07-21, not yet started). Target: the four
-`Type/CallFrame.rakudoc` doc-diff findings, plus the related `.annotations`/`.code`
-accessors. This is a **medium feature** (frame modeling), not a quick accessor fix —
+Status: **Mostly implemented** (2026-07-21). Landed:
+
+- **G4** `.annotations` returns a `Map` (and a `Map` is no longer `~~ Hash`) — PR #5095.
+- **G2** the synthetic "setting" frame: `callframe(1)` at the top level is now
+  line 1 / code `Mu`, one level above the mainline. Deeper levels yield `Mu`.
+- **G1/G3** the `for`-block frame: a `for` body is a distinct Raku call frame, so
+  `callframe(0)` inside a `for` body is a `Block` and the enclosing routine is one
+  level up. This makes the documented `calling-frame` walk reach `(GLOBAL)`. The
+  block nesting is counted at compile time (`Compiler::callframe_block_depth`) and
+  passed as the hidden `__callframe_blocks` arg, so there is **zero runtime cost** —
+  no per-iteration frame push. Only `for` blocks are counted; `while`/`loop`/`if`
+  bodies are elided frames in Rakudo (optimizer-dependent, not a clean syntactic
+  property) and are deliberately not modeled. Pins: `t/callframe-for-block-frame.t`,
+  `t/callframe-setting-frame.t`, `t/callframe-annotations-map.t`.
+
+**Deferred (1 finding):** the statement-form `FIRST` phaser example
+(`FIRST $frame = callframe; ... say $frame.code()` → `Code.new`). Rakudo models a
+*statement-form* phaser as a `Code` frame but a *block-form* phaser (`FIRST { }`) as
+a `Block` frame; mutsu's AST desugars both to `Phaser { body }` and does not
+preserve the distinction, and there is no roast coverage. The `.my<$the-answer>`
+example is raku-drift (`LoweredAwayLexical`), not a mutsu bug.
+
+Original investigation (target: the four `Type/CallFrame.rakudoc` doc-diff findings)
+follows. This was a **medium feature** (frame modeling), not a quick accessor fix —
 see "Why it is not a clean slice" below.
 
 Source of truth for expected behavior is reference `raku` (Rakudo v2026.06). Every

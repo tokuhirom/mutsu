@@ -8,12 +8,22 @@ impl Interpreter {
         &self,
         depth: usize,
         callsite_line: Option<i64>,
+        nblocks: usize,
     ) -> Option<Value> {
         let file = self
             .env
             .get("?FILE")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
+
+        // Each enclosing `for` block introduces a Raku call frame between the
+        // call site and its routine. The compiler counted them (`nblocks`); the
+        // first `nblocks` levels are those block frames, and the routine/caller
+        // stack begins at `depth - nblocks`.
+        if depth < nblocks {
+            return Some(self.block_frame_value(&file, callsite_line));
+        }
+        let depth = depth - nblocks;
 
         if depth == 0 {
             // Current frame: use current env, current file/line, current code
@@ -35,6 +45,14 @@ impl Interpreter {
         // depth >= 1: walk up the caller env stack
         let stack_len = self.callframe_stack.len();
         if depth > stack_len {
+            // One level past the outermost real frame is the synthetic "setting"
+            // frame: raku always has an outer setting/bootstrap frame above the
+            // unit's mainline. It reports line 1 (where control entered the
+            // compilation unit) and a `Mu` code object. Anything deeper has no
+            // call information and yields Mu (`None` here -> Nil at the caller).
+            if depth == stack_len + 1 {
+                return Some(self.setting_frame_value(&file));
+            }
             return None;
         }
         let entry = &self.callframe_stack[stack_len - depth];
@@ -50,6 +68,42 @@ impl Interpreter {
         attrs.insert("__depth".to_string(), Value::int(depth as i64));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
+    }
+
+    /// Build a synthetic CallFrame for an enclosing `for` block. Its `code` is
+    /// the `Block` type object (`.^name` -> `Block`, `~~ Routine` -> False), its
+    /// line is the call site, and its lexicals come from the current env (the
+    /// block body is inlined into the enclosing routine's scope in mutsu).
+    fn block_frame_value(&self, file: &str, callsite_line: Option<i64>) -> Value {
+        let code = Value::package(Symbol::intern("Block"));
+        let my_hash = self.build_lexical_hash(&self.env, None);
+        let mut attrs = HashMap::new();
+        attrs.insert("line".to_string(), Value::int(callsite_line.unwrap_or(0)));
+        attrs.insert("file".to_string(), Value::str(file.to_string()));
+        Self::insert_callframe_code_attrs(&mut attrs, &code);
+        attrs.insert("code".to_string(), code);
+        attrs.insert("my".to_string(), my_hash);
+        attrs.insert("inline".to_string(), Value::FALSE);
+        attrs.insert("__depth".to_string(), Value::int(0));
+        attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
+        Value::make_instance(Symbol::intern("CallFrame"), attrs)
+    }
+
+    /// Build the synthetic "setting" CallFrame that sits above the mainline.
+    /// Its `line` is 1 (the unit entry point), its `code` is the `Mu` type
+    /// object, and its annotations mirror `line`/`file`.
+    fn setting_frame_value(&self, file: &str) -> Value {
+        let code = Value::package(Symbol::intern("Mu"));
+        let mut attrs = HashMap::new();
+        attrs.insert("line".to_string(), Value::int(1));
+        attrs.insert("file".to_string(), Value::str(file.to_string()));
+        Self::insert_callframe_code_attrs(&mut attrs, &code);
+        attrs.insert("code".to_string(), code);
+        attrs.insert("my".to_string(), Value::hash(HashMap::new()));
+        attrs.insert("inline".to_string(), Value::FALSE);
+        attrs.insert("__depth".to_string(), Value::int(1));
+        attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
+        Value::make_instance(Symbol::intern("CallFrame"), attrs)
     }
 
     /// Extract subname, package, subtype, and sub attributes from a code value

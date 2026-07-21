@@ -114,6 +114,15 @@ pub(crate) struct Compiler {
     dynamic_scope_names: Option<std::collections::HashSet<String>>,
     /// Track dynamic variable accesses (names starting with '*') for postdeclaration check
     accessed_dynamic_vars: std::collections::HashSet<String>,
+    /// Number of enclosing `for`-loop blocks between the code currently being
+    /// compiled and the enclosing routine. A `for` block is a distinct call
+    /// frame in Raku (`callframe(0)` inside a `for` body is the block, the
+    /// routine is one level up), so `callframe`/`caller` call sites capture this
+    /// depth (as the hidden `__callframe_blocks` arg) and the runtime offsets the
+    /// requested level by it. Reset to 0 for each nested routine (nested subs get
+    /// a fresh `Compiler`). Only `for` blocks are counted: `while`/`loop`/`if`
+    /// bodies are elided frames in Rakudo and unreliable to model.
+    pub(crate) callframe_block_depth: u32,
     /// Whether we are compiling inside a routine (sub/method). `return` outside
     /// a routine must throw X::ControlFlow::Return instead of normal return.
     pub(crate) is_routine: bool,
@@ -286,6 +295,7 @@ impl Compiler {
             dynamic_scope_all: false,
             dynamic_scope_names: None,
             accessed_dynamic_vars: std::collections::HashSet::new(),
+            callframe_block_depth: 0,
             is_routine: false,
             lexically_in_routine: false,
             lexically_in_method: false,

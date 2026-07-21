@@ -258,7 +258,10 @@ impl Compiler {
                 body_declares_routines: Self::stmts_declare_routines(&loop_body),
             })));
         self.hoist_sub_decls(&loop_body, true);
+        // A `for` body is its own Raku call frame (see `callframe_block_depth`).
+        self.callframe_block_depth += 1;
         self.compile_collected_loop_body(&loop_body);
+        self.callframe_block_depth -= 1;
         self.code.patch_loop_end(loop_idx);
         // Balance the ForLoop opcode's deferred param-restore push (see the
         // Stmt::For compile path). Required even though this collected form has
