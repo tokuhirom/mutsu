@@ -23,6 +23,24 @@ pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
         remaining_len: err.remaining_len.or(Some(rest.len())),
         exception: None,
     })?;
+    // `return $x:` is the indirect-method-call spelling `$x.return`, which
+    // returns `$x` from the enclosing routine — identical to `return $x`. Accept
+    // a bare trailing colon (no colon-args), i.e. a `:` immediately followed by a
+    // statement terminator, and consume it. A `:` that starts an adverb/pair
+    // (`:foo`, `:$x`) is left alone. (Geo::Ellipsoid::Utils writes `return $x:`.)
+    let rest = {
+        let (after_ws, _) = ws(rest)?;
+        if let Some(after_colon) = after_ws.strip_prefix(':').filter(|r| !r.starts_with(':')) {
+            let (probe, _) = ws(after_colon)?;
+            if probe.is_empty() || probe.starts_with(';') || probe.starts_with('}') {
+                after_colon
+            } else {
+                rest
+            }
+        } else {
+            rest
+        }
+    };
     let stmt = Stmt::Return(expr);
     parse_statement_modifier(rest, stmt)
 }
