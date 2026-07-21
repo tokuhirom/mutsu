@@ -49,6 +49,14 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A tied `%h`/`@a` (`my %h is Foo` where Foo `does Associative`) routes
+        // `%h = ...` through the class's `STORE`, preserving the tied instance,
+        // instead of replacing it with a plain Hash (Raku semantics for a
+        // custom-typed container variable). Same shape as the Proxy STORE above.
+        if let Some(()) = self.maybe_tied_store_reassign(code, idx)? {
+            return Ok(());
+        }
+
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // whole-value assignment (`target = values`) element-wise through its
         // leaf cells — the raw analogue of the `@slice := @array[1,2]; @slice =
@@ -665,6 +673,66 @@ impl Interpreter {
                 };
                 self.locals[target_idx] = source_val;
             }
+        }
+    }
+
+    /// `%h = ...` / `@a = ...` where the slot currently holds a *tied* instance
+    /// (`my %h is Foo`, Foo `does Associative`/`Positional` with a user `STORE`):
+    /// route the assignment through the class's `STORE` and keep the same
+    /// instance bound, instead of replacing the slot with a plain Hash/Array.
+    /// Returns `Some(())` when it handled the assignment, `None` to fall through
+    /// to the ordinary store. The RHS assignment result (the tied instance) is
+    /// left on the stack.
+    pub(super) fn maybe_tied_store_reassign(
+        &mut self,
+        code: &CompiledCode,
+        idx: usize,
+    ) -> Result<Option<()>, RuntimeError> {
+        let name = &code.locals[idx];
+        if !(name.starts_with('%') || name.starts_with('@')) {
+            return Ok(None);
+        }
+        let ValueView::Instance { class_name, .. } = self.locals[idx].view() else {
+            return Ok(None);
+        };
+        let cn = class_name.as_str().to_string();
+        let is_tied = self.has_user_method(&cn, "STORE")
+            && (self.class_does_role(&cn, "Associative")
+                || self.class_does_role(&cn, "Positional"));
+        if !is_tied {
+            return Ok(None);
+        }
+        let rhs = self.stack.pop().unwrap_or(Value::NIL);
+        let store_values = Self::associative_store_values(&rhs);
+        let instance = self.locals[idx].clone();
+        let name = name.to_string();
+        // Pass the flattened values as a single positional list; STORE's slurpy
+        // `*@values` flattens it (separate args would bind Pairs as *named*).
+        let list_arg = Value::array(store_values);
+        let stored =
+            self.try_compiled_method_or_interpret(instance.clone(), "STORE", vec![list_arg])?;
+        let bound = if matches!(stored.view(), ValueView::Instance { .. }) {
+            stored
+        } else {
+            instance
+        };
+        self.locals[idx] = bound.clone();
+        self.set_env_with_main_alias(&name, bound.clone());
+        self.stack.push(bound);
+        Ok(Some(()))
+    }
+
+    /// Flatten an RHS value into the list `STORE` expects: a Hash becomes its
+    /// pairs, a list-like aggregate its items, anything else a single element.
+    fn associative_store_values(rhs: &Value) -> Vec<Value> {
+        match rhs.view() {
+            ValueView::Hash(h) => h
+                .iter()
+                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                .collect(),
+            ValueView::Array(a, _) => a.iter().cloned().collect(),
+            ValueView::Seq(s) | ValueView::Slip(s) => s.iter().cloned().collect(),
+            _ => vec![rhs.clone()],
         }
     }
 }

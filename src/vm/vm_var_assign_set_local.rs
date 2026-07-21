@@ -201,6 +201,16 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        // A re-assignment to a tied container (`my %h is Foo; %h = ...`, Foo
+        // `does Associative`/`Positional`) routes through the class's `STORE`,
+        // preserving the tied instance, instead of overwriting the slot with a
+        // plain Hash/Array. Gated on `!vardecl_context` so a fresh declaration
+        // (`my %h = ...`) is untouched.
+        if !self.vardecl_context
+            && let Some(()) = self.maybe_tied_store_reassign(code, idx as usize)?
+        {
+            return Ok(());
+        }
         // Named-sub declaration boxing decision: a scalar local that a
         // directly-nested *named sub* writes (`needs_cell_named_sub`) becomes a
         // shared `ContainerRef` cell so the named sub's by-name env writes and the
