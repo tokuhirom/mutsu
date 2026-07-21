@@ -99,7 +99,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 // treating the name as an import tag (which produced `no such tag
                 // 'ver'` / `'auth'`).
                 let is_dist_selector = matches!(tag_name.as_str(), "ver" | "auth" | "api");
-                if is_dist_selector && r.starts_with('<') {
+                if is_dist_selector && (r.starts_with('<') || r.starts_with(":<")) {
+                    // Accept both the plain `:ver<0.0.5>` form and the
+                    // colon-separated `:ver:<0.0.5>` form (used by some lizmat
+                    // dists, e.g. `use Acme::Cow:ver:<0.0.5>:auth<zef:lizmat>`);
+                    // the `:` between the selector key and its angle value is
+                    // optional. Normalize both to the plain `:key<value>` form.
+                    let r = r.strip_prefix(':').unwrap_or(r);
                     let (value, after) = match r[1..].find('>') {
                         Some(end) => (&r[1..end + 1], &r[end + 2..]),
                         None => return Err(PError::expected("closing '>' in version adverb")),
