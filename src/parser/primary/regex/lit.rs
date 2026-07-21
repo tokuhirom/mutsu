@@ -24,7 +24,9 @@ use super::adverbs::{
 use super::call_args::{
     has_unescaped_statement_boundary, parse_call_arg_list, parse_colon_method_arg,
 };
-use super::scan::{scan_to_delim, scan_to_delim_p5, scan_to_delim_subst_pattern};
+use super::scan::{
+    scan_to_delim, scan_to_delim_p5, scan_to_delim_replacement, scan_to_delim_subst_pattern,
+};
 use super::subst::{
     build_non_destructive_subst_expr, build_topic_subst_compound_expr, build_topic_subst_expr,
     parse_subst_replacement_expr, try_strip_subst_compound_assign,
@@ -308,8 +310,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
                         None
+                    } else if adverbs.perl5 {
+                        // A Perl5 replacement string treats `{`/`<` etc. as literal;
+                        // only `\` escapes and the close delimiter are significant.
+                        scan_to_delim_p5(r2, open_ch, close_ch, is_paired)
                     } else {
-                        scan_to_delim(r2, open_ch, close_ch, is_paired)
+                        scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
                     if let Some((replacement, rest)) = replacement_scan {
                         let pattern = if adverbs.perl5 {
@@ -423,8 +429,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
                         None
+                    } else if adverbs.perl5 {
+                        // A Perl5 replacement string treats `{`/`<` etc. as literal;
+                        // only `\` escapes and the close delimiter are significant.
+                        scan_to_delim_p5(r2, open_ch, close_ch, is_paired)
                     } else {
-                        scan_to_delim(r2, open_ch, close_ch, is_paired)
+                        scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
                     if let Some((replacement, rest)) = replacement_scan {
                         if !is_paired
@@ -612,8 +622,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     };
                     let replacement_scan = if is_paired && !r2.starts_with(open_ch) {
                         None
+                    } else if adverbs.perl5 {
+                        // A Perl5 replacement string treats `{`/`<` etc. as literal;
+                        // only `\` escapes and the close delimiter are significant.
+                        scan_to_delim_p5(r2, open_ch, close_ch, is_paired)
                     } else {
-                        scan_to_delim(r2, open_ch, close_ch, is_paired)
+                        scan_to_delim_replacement(r2, open_ch, close_ch, is_paired)
                     };
                     if let Some((replacement, rest)) = replacement_scan {
                         if !is_paired

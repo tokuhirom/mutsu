@@ -36,6 +36,112 @@ pub(in crate::parser) fn scan_to_delim(
     scan_to_delim_inner(input, open_ch, close_ch, is_paired, false, false)
 }
 
+/// Scan the *replacement* half of a substitution (`s/pat/REPL/`).
+///
+/// The replacement is a qq-like string, NOT a regex, so the regex-specific
+/// constructs that `scan_to_delim` recognizes — character classes `<[...]>`,
+/// `<...>` assertions, `<<`/`>>` word boundaries, `#` comments, and bare
+/// single/double-quoted atoms — are all literal text here. Only these affect
+/// where the closing delimiter is found:
+/// - `\` escapes the next char,
+/// - `{...}` interpolated closures skip a balanced (string-aware) brace block,
+/// - `$(...)`/`@(...)` interpolation skips a balanced paren block,
+/// - for paired delimiters, a nested open delimiter raises the depth.
+///
+/// Without this, `s:g/ '[' /<[/` (replacement is the literal text `<[`) would
+/// have `scan_to_delim` treat `<[` as the start of a `<[...]>` character class
+/// and scan past the closing `/`, breaking the whole expression.
+pub(in crate::parser) fn scan_to_delim_replacement(
+    input: &str,
+    open_ch: char,
+    close_ch: char,
+    is_paired: bool,
+) -> Option<(&str, &str)> {
+    let mut depth = 1u32;
+    let mut chars = input.char_indices();
+    while let Some((i, c)) = chars.next() {
+        if c == close_ch {
+            // Skip '.' when it's part of '..' (range operator).
+            if close_ch == '.' && input[i + 1..].starts_with('.') {
+                chars.next();
+                continue;
+            }
+            depth -= 1;
+            if depth == 0 {
+                return Some((&input[..i], &input[i + c.len_utf8()..]));
+            }
+        } else if is_paired && c == open_ch {
+            depth += 1;
+        } else if c == '{' {
+            // Interpolated closure `{ ... }`: skip a balanced brace block so a
+            // delimiter char inside it (including inside a nested string) does
+            // not end the replacement early (e.g. `s/x/{ "a/b" }/`). Only
+            // reached when '{' is not itself the paired delimiter (that case is
+            // handled by the depth bump above).
+            skip_interp_block(&mut chars)?;
+        } else if (c == '$' || c == '@') && input[i + c.len_utf8()..].starts_with('(') {
+            // `$(...)` / `@(...)` interpolation: skip the balanced paren block.
+            chars.next(); // consume '('
+            let mut paren_depth = 1u32;
+            loop {
+                match chars.next() {
+                    Some((_, '(')) => paren_depth += 1,
+                    Some((_, ')')) => {
+                        paren_depth -= 1;
+                        if paren_depth == 0 {
+                            break;
+                        }
+                    }
+                    Some((_, '\\')) => {
+                        chars.next();
+                    }
+                    Some(_) => {}
+                    None => return None,
+                }
+            }
+        } else if c == '\\' {
+            chars.next();
+        }
+    }
+    None
+}
+
+/// Skip a balanced `{ ... }` block, having already consumed the opening `{`.
+/// String literals inside are skipped whole so a `}` within a string does not
+/// close the block early. Returns None if the braces never balance.
+fn skip_interp_block(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
+    let mut brace_depth = 1u32;
+    while let Some((_, ch)) = chars.next() {
+        match ch {
+            '{' => brace_depth += 1,
+            '}' => {
+                brace_depth -= 1;
+                if brace_depth == 0 {
+                    return Some(());
+                }
+            }
+            '\\' => {
+                chars.next();
+            }
+            '\'' | '"' => {
+                let quote = ch;
+                loop {
+                    match chars.next() {
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some((_, c2)) if c2 == quote => break,
+                        Some(_) => {}
+                        None => return None,
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Like `scan_to_delim` but for the *pattern* half of a substitution
 /// (`s/pattern/replacement/`). There the closing delimiter is a mandatory
 /// separator, so a trailing `$` is always the end-of-string anchor — never the
