@@ -5,7 +5,7 @@ impl Interpreter {
     /// Dispatch methods on Enum values.
     /// Returns Some(result) if handled, None if not an enum method.
     pub(super) fn dispatch_enum_method(
-        &self,
+        &mut self,
         target: &Value,
         method: &str,
         args: &[Value],
@@ -22,24 +22,15 @@ impl Interpreter {
 
         match method {
             "key" => Some(Ok(Value::str(key.resolve()))),
-            "value" | "Int" | "Numeric" => match value {
-                EnumValue::Int(i) => Some(Ok(Value::int(*i))),
-                EnumValue::Str(s) => {
-                    if method == "value" {
-                        Some(Ok(Value::str(s.clone())))
-                    } else {
-                        // .Int / .Numeric on a string enum should try to coerce
-                        None // fall through to runtime for proper error
-                    }
-                }
-                EnumValue::Generic(v) => {
-                    if method == "value" {
-                        Some(Ok(v.as_ref().clone()))
-                    } else {
-                        None
-                    }
-                }
-            },
+            "value" => Some(Ok(value.to_value())),
+            // A numeric coercion of an enum member acts on its underlying value:
+            // `cool.Int` for `enum Numbers (cool => '42')` is `'42'.Int` == 42,
+            // and `sqrt-n-one.Real` for a `'i'` value raises the string-numeric
+            // error, exactly as raku does.
+            "Int" | "Numeric" | "Real" | "Num" | "Rat" | "Complex" => {
+                let underlying = value.to_value();
+                Some(self.call_method_with_values(underlying, method, args.to_vec()))
+            }
             "WHAT" => Some(Ok(Value::package(enum_type))),
             "raku" | "perl" => {
                 let k = key.resolve();
