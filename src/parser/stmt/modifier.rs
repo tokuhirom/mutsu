@@ -249,8 +249,20 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     let mut rest = rest;
     // The keywords of the modifiers parsed so far, in order.
     let mut parsed_kinds: Vec<&str> = Vec::new();
+    // Whether the previous modifier's *condition* ended with a `{ ... }` block
+    // (`return if @a.first: { ... }`) followed by a newline. A block that ends a
+    // statement is itself a statement terminator in Raku, so the next line's
+    // `if`/`for`/etc. begins a NEW statement rather than a second (illegal)
+    // modifier — do not raise "Missing semicolon" for it.
+    let mut prev_cond_block_terminated = false;
 
     loop {
+        // A block-terminated condition followed by a newline ends the statement;
+        // whatever comes next (including another modifier keyword) is a new one.
+        if prev_cond_block_terminated {
+            return Ok((rest, current_stmt));
+        }
+
         // If there's a semicolon, the statement is terminated — no more modifiers
         if let Some(stripped) = rest.strip_prefix(';') {
             return Ok((stripped, current_stmt));
@@ -297,12 +309,17 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
         let kw = leading_modifier_keyword(rest);
         match parse_single_modifier(rest, current_stmt.clone())? {
             Some((r, modified)) => {
+                // Did this modifier's condition end with a `{ ... }` block?
+                let cond_consumed = &rest[..rest.len() - r.len()];
+                let cond_ends_block = cond_consumed.trim_end().ends_with('}');
                 current_stmt = modified;
                 if let Some(k) = kw {
                     parsed_kinds.push(k);
                 }
-                let (r, _) = ws(r)?;
-                rest = r;
+                let (r_ws, _) = ws(r)?;
+                let gap_has_newline = r[..r.len() - r_ws.len()].contains('\n');
+                prev_cond_block_terminated = cond_ends_block && gap_has_newline;
+                rest = r_ws;
             }
             None => {
                 return Ok((rest, current_stmt));
