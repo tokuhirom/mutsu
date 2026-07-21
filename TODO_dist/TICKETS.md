@@ -10,7 +10,7 @@ add a `[claim: <branch>]` marker on its heading and push before you start.
 Move a ticket to **Done** when its PR merges. Rebase on `main` before
 editing this file; keep edits small (one ticket) to avoid conflicts.
 
-_50 open tickets._
+_45 open tickets._
 
 ## Open
 
@@ -44,24 +44,10 @@ _50 open tickets._
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-006 — runtime_error: Runtime error: Failed to parse module 'X': X::Comp::Group: Missing block  [impact: 2 dists]
-- dists: APISports::Football, PDF::Tags
-- e.g. `APISports::Football`: APISports::Football: Runtime error: Failed to parse module 'APISports::Football::HTTPClient': X::Comp::Group: Missing block
-- e.g. `PDF::Tags`: PDF::Tags: Runtime error: Failed to parse module 'PDF::Tags': X::Comp::Group: Missing block
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-007 — runtime_error: Runtime error: Failed to parse module 'X': X::Undeclared::Symbols: Undeclared routine:  [impact: 2 dists]
 - dists: Acme::Cow, lemmatize
 - e.g. `lemmatize`: lemmatize: Runtime error: Failed to parse module 'lemmatize': X::Undeclared::Symbols: Undeclared routine:
 - e.g. `Acme::Cow`: Acme::Cow::Example: Runtime error: Failed to parse module 'Acme::Cow::Example': X::Undeclared::Symbols: Undeclared routine:
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-008 — test_die: Runtime error: X::Comp::Group: Missing block  [impact: 2 dists]
-- dists: EventSource::Server, RPi::Device::DS18B20
-- e.g. `RPi::Device::DS18B20`: base=2 pass=0 fail=0 die=2 | t/00100-meta.t: Runtime error: X::Comp::Group: Missing block
-- e.g. `EventSource::Server`: base=5 pass=3 fail=1 die=1 | t/001-meta.t: Runtime error: X::Comp::Group: Missing block
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -89,27 +75,9 @@ _50 open tickets._
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-013 — parse_error: expected statement: expected expected statement: expected expected statement: expected expression statement or expressio  [impact: 1 dist]
-- dists: Version::Semver
-- e.g. `Version::Semver`: Version::Semver: expected statement: expected expected statement: expected expected statement: expected expression statement or expression after concatenation o
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-014 — parse_error: expected statement: expected expected statement: expected expected statement: expected use statement or import statement  [impact: 1 dist]
 - dists: Template::HAML
 - e.g. `Template::HAML`: Template::HAML: expected statement: expected expected statement: expected expected statement: expected use statement or import statement or no statement or need
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-015 — parse_error: expected statement: expected expected statement: expected expression after infix operator or 'X' or digits or generic ra  [impact: 1 dist]
-- dists: IP::Addr
-- e.g. `IP::Addr`: IP::Addr: expected statement: expected expected statement: expected expression after infix operator or '.' or digits or generic radix literal or unicode numeric
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-016 — parse_error: expected statement: expected expected statement: expected expression statement or angle index key  [impact: 1 dist]
-- dists: Trait::Env
-- e.g. `Trait::Env`: Trait::Env: expected statement: expected expected statement: expected expression statement or angle index key
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -353,3 +321,26 @@ _(move tickets here with `[claim: <branch>]` when you start)_
   (`(&jp = anon sub jp(...) {...})($x)`) failed to parse; the `anon sub` handler
   only recognized `anon sub {...}`/`anon sub (...)`. Unblocks Needle::Compile
   (now reaches its genuine missing dep `has-word`, matching raku).
+- **T-006 / T-008** (#5077) — `when X::<real exception type> { ... }` (e.g.
+  `X::CompUnit::UnsatisfiedDependency`, `X::IO`) wrongly raised the block-gobbling
+  `X::Comp::Group: Missing block`: the `when` guard's `is_known_compound_type`
+  allow-list was missing ~258 real exception types, so legitimate ones tripped it.
+  Regenerated the `X::` list from Rakudo's exception hierarchy (504 entries);
+  genuinely-undeclared names still raise, matching raku. RPi::Device::DS18B20
+  loads now; PDF::Tags parse passes (then dep-blocked, same as raku here);
+  APISports::Football is Cro-zone (`X::Cro::HTTP::Error` is an imported X:: type
+  the parser can't know at parse time — inherent limitation, deferred).
+- **T-013** (#5075) — twigilled attribute array/hash (`@!attr`, `%.attr`) not
+  interpolated in a qq-string; nested `"@!pre.join(".")"` crashed the parse.
+  `split_interp_var_name` keeps the leading `!`/`.` twigil as a name prefix.
+  Version::Semver parses+loads.
+- **T-015** (#5079) — a user `multi infix:<->` made `match_user_declared_infix_symbol_op`
+  match the `-` of a later `->` pointy arrow (`for @a -> $x { }`), choking on the
+  stray `>`. Added the core `parse_additive_op` guards (`->`/`--`/`op=`) to the
+  user-infix matcher. IP::Addr parse passes (then a separate cross-role
+  private-method blocker remains).
+- **T-016** (#5056) — Trait::Env angle-subscript key with nested `<>`
+  (`%EXPORT<&trait_mod:<is>>`) failed to parse; fixed by balanced-scan of the
+  angle key. Trait::Env now parses; a follow-up cross-module private-sub
+  false-redeclaration (`sub apply-trait` in two modules) and a missing JSON::Tiny
+  dep still block full load — see `bug-cross-module-private-sub-redeclaration`.
