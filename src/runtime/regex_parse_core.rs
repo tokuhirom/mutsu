@@ -1544,9 +1544,13 @@ impl Interpreter {
                                 } else {
                                     (false, cc_trimmed)
                                 };
-                            let class_negated = if negated { !cc_negated } else { cc_negated };
-                            if let Some(class) = self.parse_raku_char_class(cc_inner, class_negated)
-                            {
+                            // The outer `?`/`!` negation is carried by the
+                            // Lookaround's `negated` flag below; the char class
+                            // itself only reflects an inner `-[...]`. Folding
+                            // `negated` into the class here too (`!cc_negated`)
+                            // double-negated `<![...]>`, inverting it into a
+                            // positive lookahead.
+                            if let Some(class) = self.parse_raku_char_class(cc_inner, cc_negated) {
                                 // Build a lookahead with the char class as the inner pattern
                                 let inner_pattern = RegexPattern {
                                     tokens: vec![RegexToken {
