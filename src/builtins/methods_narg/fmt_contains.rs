@@ -85,11 +85,14 @@ pub(crate) fn native_contains_with_options(
     let mut ignore_case = false;
     for arg in args {
         if let ValueView::Pair(key, value) = arg.view() {
-            if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
-                ignore_case = value.truthy();
-            } else {
+            match key.as_str() {
+                "i" | "ignorecase" => ignore_case = value.truthy(),
+                // `:ignoremark` needs NFD mark-stripping (the interpreter's
+                // strip logic); let dispatch_contains own it.
+                "m" | "ignoremark" if value.truthy() => return None,
+                "m" | "ignoremark" => {}
                 // An unexpected named arg: let the interpreter own the semantics.
-                return None;
+                _ => return None,
             }
         } else {
             positional.push(arg);

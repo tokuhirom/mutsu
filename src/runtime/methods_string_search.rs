@@ -1,5 +1,24 @@
 use super::*;
 
+/// Fold a string for `.contains` matching: `:ignoremark` strips combining marks
+/// (NFD, drop combining code points), `:ignorecase` lowercases. Applied to both
+/// the haystack and each needle so the comparison is symmetric.
+fn fold_for_contains(s: &str, ignore_case: bool, ignore_mark: bool) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let stripped: String = if ignore_mark {
+        s.nfd()
+            .filter(|c| !unicode_normalization::char::is_combining_mark(*c))
+            .collect()
+    } else {
+        s.to_string()
+    };
+    if ignore_case {
+        stripped.to_lowercase()
+    } else {
+        stripped
+    }
+}
+
 impl Interpreter {
     pub(super) fn dispatch_contains(
         &mut self,
@@ -8,10 +27,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let mut positional: Vec<Value> = Vec::new();
         let mut ignore_case = false;
+        let mut ignore_mark = false;
         for arg in args {
             if let ValueView::Pair(key, value) = arg.view() {
-                if matches!(key.as_str(), "i" | "ignorecase" | "m" | "ignoremark") {
-                    ignore_case = value.truthy();
+                match key.as_str() {
+                    "i" | "ignorecase" => ignore_case = value.truthy(),
+                    "m" | "ignoremark" => ignore_mark = value.truthy(),
+                    _ => {}
                 }
             } else {
                 positional.push(arg.clone());
@@ -57,25 +79,29 @@ impl Interpreter {
             let found = self.regex_find_first(&pattern, &hay).is_some();
             return Ok(Value::truth(found));
         }
-        Ok(Self::contains_value(&hay, &needle, ignore_case))
+        // `:ignorecase`/`:ignoremark` fold the haystack once here; each needle is
+        // folded the same way inside contains_value.
+        let folded_hay = fold_for_contains(&hay, ignore_case, ignore_mark);
+        Ok(Self::contains_value(
+            &folded_hay,
+            &needle,
+            ignore_case,
+            ignore_mark,
+        ))
     }
 
-    fn contains_value(hay: &str, needle: &Value, ignore_case: bool) -> Value {
+    fn contains_value(hay: &str, needle: &Value, ignore_case: bool, ignore_mark: bool) -> Value {
         match needle.view() {
             ValueView::Junction { kind, values } => {
                 let mapped = values
                     .iter()
-                    .map(|v| Self::contains_value(hay, v, ignore_case))
+                    .map(|v| Self::contains_value(hay, v, ignore_case, ignore_mark))
                     .collect::<Vec<_>>();
                 Value::junction(kind, mapped)
             }
             _ => {
-                let needle = needle.to_string_value();
-                let ok = if ignore_case {
-                    hay.to_lowercase().contains(&needle.to_lowercase())
-                } else {
-                    hay.contains(&needle)
-                };
+                let needle = fold_for_contains(&needle.to_string_value(), ignore_case, ignore_mark);
+                let ok = hay.contains(&needle);
                 Value::truth(ok)
             }
         }
