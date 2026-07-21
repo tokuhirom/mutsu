@@ -301,7 +301,15 @@ pub(crate) fn stmt_list_with_mode(
                     }
                     *body = tail_stmts;
                 }
-                Stmt::RoleDecl { body, .. } => *body = tail_stmts,
+                Stmt::RoleDecl { body, .. } => {
+                    // The declarator may have already recorded `does Role`
+                    // composition as leading `DoesDecl` statements in `body`
+                    // (e.g. `unit role R does Base;`). Keep those and append the
+                    // absorbed compilation-unit statements after them, rather
+                    // than replacing the body wholesale and dropping the
+                    // parent-role composition.
+                    body.append(&mut tail_stmts);
+                }
                 _ => {}
             }
             stmts.push(decl);

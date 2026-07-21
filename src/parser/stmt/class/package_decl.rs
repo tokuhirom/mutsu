@@ -242,24 +242,91 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         ));
     }
     // unit role Name;  — declare a role at the file scope.
+    // unit role Name is export does OtherRole;  — traits and composition too.
     if let Some(r) = keyword("role", rest) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         check_pseudo_package_in_decl(&name)?;
-        let (r, _) = ws(r)?;
+        let (mut r, (type_params, type_param_defs)) =
+            super::role_decl::parse_optional_role_type_params(r)?;
+        // Optional type adverbs (:ver<...>, :auth<...>, :api<...>).
+        let (r2, _adverbs) = parse_declarator_traits(r)?;
+        let (r2, _) = ws(r2)?;
+        r = r2;
+        // Optional parent/trait clauses in any order (mirrors block-form roles).
+        let mut parent_roles: Vec<String> = Vec::new();
+        let mut is_export = false;
+        let mut export_tags: Vec<String> = Vec::new();
+        let mut role_is_rw = false;
+        let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
+        loop {
+            if let Some(r2) = keyword("does", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, role_name) = qualified_ident(r2)?;
+                let (r2, _) = ws(r2)?;
+                let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
+                let (r2, _) = ws(r2)?;
+                parent_roles.push(format!("{}{}", role_name, bracket_suffix));
+                r = r2;
+                continue;
+            }
+            if let Some(r2) = keyword("is", r) {
+                let (r2, _) = ws1(r2)?;
+                let (r2, trait_name) = crate::parser::stmt::ident(r2)?;
+                if trait_name == "rw" {
+                    role_is_rw = true;
+                    let r2 = skip_balanced_parens(r2);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                } else if trait_name == "export" {
+                    is_export = true;
+                    if !export_tags.iter().any(|t| t == "DEFAULT") {
+                        export_tags.push("DEFAULT".to_string());
+                    }
+                    let r2 = skip_balanced_parens(r2);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                } else {
+                    // Unknown lowercase trait: skip any parenthesized argument.
+                    // An uppercase bare name would be a parent role, but a
+                    // `unit role` with parents almost always spells them with
+                    // `does`, so treat everything else as a skipped trait_mod.
+                    let has_parens = r2.starts_with('(');
+                    let r2 = skip_balanced_parens(r2);
+                    if !has_parens && trait_name.starts_with(|c: char| c.is_ascii_uppercase()) {
+                        parent_roles.push(trait_name);
+                    } else {
+                        custom_traits.push((trait_name, None));
+                    }
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                }
+                continue;
+            }
+            break;
+        }
         let (r, _) = opt_char(r, ';');
+        let mut body: Vec<Stmt> = Vec::new();
+        for role_name in parent_roles.into_iter().rev() {
+            body.insert(
+                0,
+                Stmt::DoesDecl {
+                    name: Symbol::intern(&role_name),
+                },
+            );
+        }
         return Ok((
             r,
             Stmt::RoleDecl {
                 name: Symbol::intern(&name),
-                type_params: Vec::new(),
-                type_param_defs: Vec::new(),
-                is_export: false,
-                export_tags: Vec::new(),
-                body: Vec::new(),
-                is_rw: false,
+                type_params,
+                type_param_defs,
+                is_export,
+                export_tags,
+                body,
+                is_rw: role_is_rw,
                 language_version: super::super::simple::current_language_version(),
-                custom_traits: Vec::new(),
+                custom_traits,
             },
         ));
     }
@@ -344,6 +411,17 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     // unit package name, e.g. `unit module Foo:ver<0.0.12>:auth<zef:bar>;`.
     let (rest, _traits) = parse_declarator_traits(rest)?;
     let (rest, _) = ws(rest)?;
+    // Consume bareword traits such as `is export` / `is rw` / custom
+    // `is Foo(...)` before the terminating semicolon, e.g.
+    // `unit module App::Racoco::ConfigFile is export;`.
+    let mut rest = rest;
+    while let Some(r) = keyword("is", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, _trait_name) = crate::parser::stmt::ident(r)?;
+        let r = skip_balanced_parens(r);
+        let (r, _) = ws(r)?;
+        rest = r;
+    }
     let (rest, _) = opt_char(rest, ';');
     Ok((
         rest,
