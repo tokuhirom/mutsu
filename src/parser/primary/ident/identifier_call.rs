@@ -49,6 +49,22 @@ fn starts_hyper_prefix_op(s: &str) -> bool {
     rest.starts_with('\u{00AB}') || rest.starts_with("<<")
 }
 
+/// A slip prefix (`|`) directly followed by a term-starting sigil/paren is an
+/// unambiguous argument start, so `unique |$x` / `min |@a` parse as a call with
+/// a flattened argument rather than reading `|` as the infix any-junction. The
+/// no-space requirement between `|` and the term disambiguates it from a spaced
+/// junction infix (`$a | $b`).
+fn starts_slip_prefix_arg(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix('|') else {
+        return false;
+    };
+    // `||` is the short-circuit-or infix, never a slip.
+    matches!(
+        rest.as_bytes().first(),
+        Some(b'$') | Some(b'@') | Some(b'%') | Some(b'&') | Some(b'(')
+    ) || rest.starts_with("\\(")
+}
+
 /// When `do STMT` parses its inner statement via the full statement parser, a
 /// statement modifier (`do $_ for @list`) or assignment consumes the trailing
 /// `;`. In expression context the `;` belongs to the *outer* statement, so if it
@@ -1621,6 +1637,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // (A bare `+`/`-` is left out on purpose: `pi - 1` must stay a
             // subtraction, which needs term-vs-listop knowledge we lack here.)
             || starts_hyper_prefix_op(r)
+            || starts_slip_prefix_arg(r)
             || starts_with_term_keyword(r)
             // A quote construct (`q:to/END/`, `qw<>`, `Q/…/`, …) starts a term,
             // so `undeclared-sub q:to/END/` is a no-paren listop call.

@@ -186,7 +186,17 @@ pub(crate) fn gist_value(value: &Value) -> String {
             setbagmix_gist(value).unwrap_or_else(|| value.to_string_value())
         }
         ValueView::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
-        ValueView::ValuePair(k, v) => format!("{} => {}", gist_value(k), gist_value(v)),
+        ValueView::ValuePair(k, v) => {
+            // A Pair-valued key is parenthesized so the outer arrow is
+            // unambiguous: `(red => 2) => apples`, matching raku's gist.
+            let key_gist = match k.view() {
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    format!("({})", gist_value(k))
+                }
+                _ => gist_value(k),
+            };
+            format!("{} => {}", key_gist, gist_value(v))
+        }
         ValueView::Seq(items)
         | ValueView::HyperSeq(items)
         | ValueView::RaceSeq(items)
