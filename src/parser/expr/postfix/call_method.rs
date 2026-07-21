@@ -1,6 +1,6 @@
 use crate::ast::Expr;
 use crate::parser::helpers::ws;
-use crate::parser::parse_result::{PResult, parse_char, take_while1};
+use crate::parser::parse_result::{PResult, parse_char};
 use crate::symbol::Symbol;
 
 pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
@@ -276,8 +276,11 @@ pub(crate) fn parse_private_method_name(input: &str) -> Option<(&str, String)> {
     let mut name = String::new();
     let mut first = true;
     loop {
-        let (r, part) =
-            take_while1(rest, |c: char| c.is_alphanumeric() || c == '_' || c == '-').ok()?;
+        // Private method names follow standard Raku identifier rules, which
+        // allow hyphens and apostrophes between word segments (e.g.
+        // `rotate-left'right`). Use the canonical identifier parser rather than
+        // a crude char class so those separators are handled correctly.
+        let (r, part) = crate::parser::stmt::parse_raku_ident(rest).ok()?;
         if !first {
             name.push_str("::");
         }
