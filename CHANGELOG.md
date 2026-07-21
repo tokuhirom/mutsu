@@ -1,5 +1,34 @@
 # Changelog
 
+## [v0.14.0](https://github.com/tokuhirom/mutsu/compare/v0.13.0...v0.14.0) - 2026-07-21
+
+- fix: user `infix:<->` must not swallow the `-` of a pointy arrow by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5079
+- docs(dist-tickets): mark T-006/T-008/T-013/T-015/T-016 done by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5080
+- fix: interpolate quoted words in postcircumfix «»/<<>> hash subscripts by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5078
+- fix: parse the `:ver:<...>` use-selector form (colon before the angle value) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5081
+- fix: a handled exception no longer lingers in $! after the try by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5083
+- fix: parse an adverbial colonpair after a parenless method call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5086
+- fix: a Junction hash-initializer key threads over its members by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5085
+- fix: IterationEnd in a ternary then-branch is a complete term, not a listop head by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5087
+- fix: accept a string-literal parameter in a pointy-block signature by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5088
+- docs(dist-tickets): T-010/T-011 done; T-012 parse-advanced by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5090
+- feat: call `sub EXPORT` with use-args and install its returned Map by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5089
+- fix: an imported-function call left-operand of an expression is not truncated by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5091
+- docs(dist-tickets): T-014 done (Template::HAML fully loads) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5092
+- docs: plan CallFrame introspection frame modeling by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5093
+- fix: balance nested brackets in an `&[op]` operator reference by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5094
+- fix: CallFrame.annotations returns a Map, and a Map is not a Hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5095
+- docs(dist-tickets): T-017 done (Test::Run fully loads) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5096
+- fix: allow `my enum` in a role and a role type param after :ver/:auth adverbs by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5097
+- feat: tied-hash backing for `my %h is CustomAssociative` + `is raw` accessor lvalue by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5099
+- feat: model the CallFrame setting frame and for-block frames by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5100
+- docs(dist-tickets): T-019 done (Algorithm::Treap fully loads) by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5098
+- fix: allow a subscript directly on a hyper method call by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5101
+- fix: role `::?ROLE:U:`/`:D:` multi methods dispatch by invocant definedness by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5102
+- feat: route `%h = ...` on a tied Associative variable through STORE by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5103
+- fix: a block-terminated postfix modifier condition ends the statement by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5104
+- fix: undeclared @/%-sigil variable defaults to an empty Array/Hash by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/5106
+
 ## [v0.13.0](https://github.com/tokuhirom/mutsu/compare/v0.12.0...v0.13.0) - 2026-07-21
 
 - chore: Step 4 GC-soundness tail — machine-check the strong==1 => unique invariant by @tokuhirom in https://github.com/tokuhirom/mutsu/pull/4948
