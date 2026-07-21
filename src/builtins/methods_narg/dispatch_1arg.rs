@@ -1156,11 +1156,22 @@ pub(crate) fn native_method_1arg(
             fn raku_round(v: f64) -> f64 {
                 (v + 0.5).floor()
             }
-            fn round_real(x: f64, scale: f64) -> f64 {
+            fn round_real(x: f64, scale: f64, scale_val: &Value) -> f64 {
                 if scale == 0.0 {
                     raku_round(x)
                 } else {
-                    raku_round(x / scale) * scale
+                    let k = raku_round(x / scale);
+                    // Multiply back by the scale, but when the scale is an exact
+                    // rational do the final step as `k * num / den` so a scale
+                    // like 0.1 (== 1/10) yields `k / 10` (the exact nearest
+                    // double) instead of `k * 0.1`, which carries float noise
+                    // (e.g. -39 * 0.1 == -3.9000000000000004).
+                    match scale_val.view() {
+                        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
+                            k * n as f64 / d as f64
+                        }
+                        _ => k * scale,
+                    }
                 }
             }
             // Unwrap target allomorphic types too
@@ -1171,8 +1182,8 @@ pub(crate) fn native_method_1arg(
             };
             // Handle Complex target separately — always returns Complex
             if let ValueView::Complex(re, im) = unwrapped_target.view() {
-                let rr = round_real(re, scale);
-                let ri = round_real(im, scale);
+                let rr = round_real(re, scale, unwrapped_arg);
+                let ri = round_real(im, scale, unwrapped_arg);
                 return Some(Ok(Value::complex(rr, ri)));
             }
             let x = match unwrapped_target.view() {
@@ -1183,7 +1194,7 @@ pub(crate) fn native_method_1arg(
                 ValueView::FatRat(n, d) if d != 0 => n as f64 / d as f64,
                 _ => return None,
             };
-            let result = round_real(x, scale);
+            let result = round_real(x, scale, unwrapped_arg);
             // Return type depends on the scale type
             match scale_type {
                 RoundResult::Int => {
