@@ -395,8 +395,15 @@ pub fn parse_datetime_string(s: &str) -> Result<DateTimeParts, RuntimeError> {
         )
     };
 
-    // Split on T/t
-    let t_pos = s.find(['T', 't']).ok_or_else(make_err)?;
+    // Split on T/t. A date-only string (`2023-03-04`) is valid: the time
+    // defaults to midnight UTC (`DateTime.new("2023-03-04")` -> ...T00:00:00Z).
+    let Some(t_pos) = s.find(['T', 't']) else {
+        // Keep the DateTime-flavored error for a malformed date-only string
+        // rather than the `Date`-flavored one `parse_date_string` would raise.
+        let (year, month, day) = parse_date_string(s).map_err(|_| make_err())?;
+        validate_datetime(year, month, day, 0, 0, 0.0, 0)?;
+        return Ok((year, month, day, 0, 0, 0.0, 0));
+    };
     let (date_part, time_tz_with_t) = s.split_at(t_pos);
     let time_tz = &time_tz_with_t[1..];
 
