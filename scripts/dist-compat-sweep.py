@@ -55,6 +55,75 @@ DEEP = re.compile(
 )
 NATIVE = re.compile(r"\buse\s+NativeCall\b|:from<C>|\bis\s+native\b")
 SRC_RE = re.compile(r"\.(rakumod|pm6|pm|raku|rakutest|t)$")
+TEST_RE = re.compile(r"\.(t|rakutest)$")
+
+PLAN_RE = re.compile(r"^1\.\.(\d+)\s*$", re.M)
+OK_RE = re.compile(r"^ok\b", re.M)
+NOTOK_RE = re.compile(r"^not ok\b")
+
+
+def find_test_files(root):
+    """Test files under the dist's t/ (and test/, xt/) directories."""
+    files = []
+    for sub in ("t", "test", "xt"):
+        d = os.path.join(root, sub)
+        if not os.path.isdir(d):
+            continue
+        for dirpath, _, names in os.walk(d):
+            for nm in names:
+                if TEST_RE.search(nm):
+                    files.append(os.path.join(dirpath, nm))
+    return sorted(files)
+
+
+def parse_tap(out):
+    """(planned, ok_count, real_not_ok, todo_not_ok) from raw TAP output."""
+    m = PLAN_RE.search(out)
+    plan = int(m.group(1)) if m else None
+    ok = len(OK_RE.findall(out))
+    real_notok = todo = 0
+    for line in out.splitlines():
+        if NOTOK_RE.match(line):
+            if "todo" in line.lower():
+                todo += 1
+            else:
+                real_notok += 1
+    return plan, ok, real_notok, todo
+
+
+def tap_verdict(out, rc):
+    """Classify a single test run: 'pass' / 'fail' / 'die'.
+    'die' = crashed before/mid TAP (no plan, or ran fewer than planned, or a
+    non-zero exit with no failing assertion to blame). 'fail' = a real `not ok`.
+    """
+    plan, ok, notok, todo = parse_tap(out)
+    if plan is None:
+        return "die"
+    if notok > 0:
+        return "fail"
+    ran = ok + notok + todo
+    if ran < plan:
+        return "die"
+    if rc not in (0, None):
+        return "die"
+    return "pass"
+
+
+def first_error_line(out):
+    for line in out.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        low = s.lower()
+        if ("sorry" in low or "runtime error" in low or "panicked" in low
+                or "unhandled" in low or s.startswith("X::")
+                or "no such method" in low or "unknown method" in low
+                or "cannot" in low):
+            return s[:200]
+    for line in out.splitlines():
+        if line.strip():
+            return line.strip()[:200]
+    return ""
 
 
 def version_key(v):
@@ -138,8 +207,67 @@ def classify(module, dist_name, rc, out):
     return "runtime_error", first.strip()[:200]
 
 
+def test_dist(name, version, axis, root, mutsu, libs, timeout, sandbox, sbx_home,
+              max_files=25):
+    """Run the dist's own test suite, using raku as the baseline. Only files that
+    raku itself passes cleanly count (others need missing deps or are the dist's
+    own bug). For those, classify mutsu as pass/fail/die and roll up to one row:
+      test_pass  — mutsu passes every raku-clean file
+      test_fail  — at least one raku-clean file has a real `not ok` in mutsu
+      test_die   — at least one raku-clean file crashes in mutsu (die > fail)
+      test_no_baseline — no test file that raku passes cleanly (nothing to compare)
+    """
+    tests = find_test_files(root)[:max_files]
+    if not tests:
+        return (name, version, "test_notest", "no test files", axis)
+    n_base = n_pass = n_fail = n_die = 0
+    first_die = first_fail = ""
+    for tf in tests:
+        rel = os.path.relpath(tf, root)
+        rk = ["raku"] + libs + [tf]
+        rk = sandbox_wrap(rk, root, sbx_home) if sandbox else rk
+        try:
+            rp = subprocess.run(rk, capture_output=True, text=True,
+                                timeout=timeout, cwd=root)
+        except subprocess.TimeoutExpired:
+            continue
+        if tap_verdict(rp.stdout + rp.stderr, rp.returncode) != "pass":
+            continue  # not a clean raku baseline — skip
+        n_base += 1
+        mt = [mutsu] + libs + [tf]
+        mt = sandbox_wrap(mt, root, sbx_home) if sandbox else mt
+        menv = dict(os.environ, MUTSU_FUDGE="1")
+        try:
+            mp = subprocess.run(mt, capture_output=True, text=True,
+                                timeout=timeout, cwd=root, env=menv)
+        except subprocess.TimeoutExpired:
+            n_die += 1
+            first_die = first_die or f"{rel}: timeout"
+            continue
+        v = tap_verdict(mp.stdout + mp.stderr, mp.returncode)
+        if v == "pass":
+            n_pass += 1
+        elif v == "fail":
+            n_fail += 1
+            first_fail = first_fail or f"{rel}: {first_error_line(mp.stdout + mp.stderr)}"
+        else:
+            n_die += 1
+            first_die = first_die or f"{rel}: {first_error_line(mp.stdout + mp.stderr)}"
+    if n_base == 0:
+        return (name, version, "test_no_baseline",
+                f"{len(tests)} test files, none pass cleanly on raku", axis)
+    counts = f"base={n_base} pass={n_pass} fail={n_fail} die={n_die}"
+    if n_die:
+        bucket, detail = "test_die", f"{counts} | {first_die}"
+    elif n_fail:
+        bucket, detail = "test_fail", f"{counts} | {first_fail}"
+    else:
+        bucket, detail = "test_pass", counts
+    return (name, version, bucket, detail, axis)
+
+
 def sweep_dist(name, meta, mutsu, extra_libs, timeout, include_guts, include_native,
-               sandbox):
+               sandbox, run_tests=False):
     try:
         tar_path = fetch_tarball(meta)
     except Exception as e:
@@ -198,6 +326,11 @@ def sweep_dist(name, meta, mutsu, extra_libs, timeout, include_guts, include_nat
                          if detail else module, axis))
             if bucket != "load_ok":
                 break  # first failure represents the dist
+        # If every provided module loaded, optionally run the dist's own test
+        # suite (raku baseline) to measure real compatibility beyond "loads".
+        if run_tests and rows and all(r[2] == "load_ok" for r in rows):
+            rows.append(test_dist(name, m6.get("version", "?"), axis, root, mutsu,
+                                  libs, timeout, sandbox, sbx_home))
         return rows
     finally:
         subprocess.run(["rm", "-rf", tmp])
@@ -213,6 +346,9 @@ def main():
     ap.add_argument("--site-repo", help="a HOME dir whose site repo has deps installed")
     ap.add_argument("--extra-lib", action="append", default=[])
     ap.add_argument("--only", action="append", default=[], help="sweep just these dists")
+    ap.add_argument("--run-tests", action="store_true",
+                    help="for load_ok dists, also run their test suite (raku baseline) "
+                         "and bucket mutsu as test_pass/test_fail/test_die")
     ap.add_argument("--tsv", default="tmp/dist-compat-sweep.tsv")
     ap.add_argument("--sandbox", choices=["auto", "bwrap", "none"], default="auto",
                     help="confine each dist run (default auto = bwrap if present). "
@@ -257,11 +393,19 @@ def main():
     all_rows = []
     for i, n in enumerate(sample, 1):
         rows = sweep_dist(n, best[n], mutsu, extra_libs, args.timeout,
-                          args.include_guts, args.include_native, sandbox)
-        final = rows[-1]  # last row = first-failure or final load_ok
+                          args.include_guts, args.include_native, sandbox,
+                          run_tests=args.run_tests)
+        # The load verdict is the last non-test row; a test row (if any) is extra.
+        load_rows = [r for r in rows if not r[2].startswith("test_")]
+        final = load_rows[-1] if load_rows else rows[-1]
         cat[final[2]] += 1
         all_rows.extend(rows)
-        print(f"[{i}/{len(sample)}] {n:40} -> {final[2]}  {final[3][:70]}",
+        test_note = ""
+        if args.run_tests:
+            trow = next((r for r in rows if r[2].startswith("test_")), None)
+            if trow:
+                test_note = f"  [{trow[2]}]"
+        print(f"[{i}/{len(sample)}] {n:40} -> {final[2]}  {final[3][:55]}{test_note}",
               file=sys.stderr)
 
     with open(args.tsv, "w") as f:
@@ -277,11 +421,30 @@ def main():
         if cat[k]:
             print(f"  {k:14} {cat[k]:3}  {100*cat[k]/len(sample):.0f}%")
 
+    # Test-suite axis summary (only when --run-tests): of the dists that LOAD,
+    # how many actually pass their own test suite (raku baseline).
+    if args.run_tests:
+        test_rows = [r for r in all_rows if r[2].startswith("test_")]
+        tcat = collections.Counter(r[2] for r in test_rows)
+        graded = tcat["test_pass"] + tcat["test_fail"] + tcat["test_die"]
+        print(f"\n=== test-suite axis: {len(test_rows)} load_ok dists ran tests ===")
+        for k in ("test_pass", "test_fail", "test_die", "test_no_baseline", "test_notest"):
+            if tcat[k]:
+                pct = f"  {100*tcat[k]/graded:.0f}% of graded" if graded and k in (
+                    "test_pass", "test_fail", "test_die") else ""
+                print(f"  {k:16} {tcat[k]:3}{pct}")
+        if graded:
+            print(f"  -> of dists with a raku baseline, {100*tcat['test_pass']/graded:.0f}% "
+                  f"pass their suite on mutsu ({tcat['test_pass']}/{graded})")
+
     # The list of dists that pass the load smoke-test, for the dashboard's
     # "load_ok — proven to load on mutsu" section (the passing-dist report).
     # The final row per dist is authoritative (first-failure or final load_ok).
+    # Test rows carry a `test_*` bucket; exclude them so the load verdict wins.
     final_bucket = {}
     for name, _ver, bucket, _detail, _axis in all_rows:
+        if bucket.startswith("test_"):
+            continue
         final_bucket[name] = bucket
     load_ok = sorted(n for n, b in final_bucket.items() if b == "load_ok")
     if load_ok:
