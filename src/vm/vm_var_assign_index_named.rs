@@ -341,13 +341,37 @@ impl Interpreter {
         if let Some(target) = self.env().get(&var_name).cloned()
             && let ValueView::Instance { class_name, .. } = target.view()
         {
-            let method = if is_positional {
+            let cls = class_name.resolve();
+            // A `:=` element bind (`%h<c> := $x`) arrives with the RHS wrapped in
+            // a `__mutsu_bind_index_value` marker; route it to the class's
+            // BIND-KEY/BIND-POS when declared, so the class controls the bind
+            // instead of the marker being stored verbatim via ASSIGN.
+            let is_bind = matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
+            );
+            let bind_method = if is_positional {
+                "BIND-POS"
+            } else {
+                "BIND-KEY"
+            };
+            let assign_method = if is_positional {
                 "ASSIGN-POS"
             } else {
                 "ASSIGN-KEY"
             };
-            if self.has_user_method(&class_name.resolve(), method) {
-                let val = self.stack.pop().unwrap_or(Value::NIL);
+            let method = if is_bind && self.has_user_method(&cls, bind_method) {
+                Some(bind_method)
+            } else if self.has_user_method(&cls, assign_method) {
+                Some(assign_method)
+            } else {
+                None
+            };
+            if let Some(method) = method {
+                let raw_val = self.stack.pop().unwrap_or(Value::NIL);
+                // Unwrap the bind marker so neither BIND-KEY nor the ASSIGN
+                // fallback stores the internal wrapper pair as the value.
+                let (val, _bind_source) = Self::unwrap_bind_index_value(raw_val);
                 // Unwrap a single-element subscript list (`<baz>` parses as a
                 // one-element list) to the bare key/index.
                 let idx_arg = match idx.view() {

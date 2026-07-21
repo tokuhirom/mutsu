@@ -271,11 +271,11 @@ _40 open tickets._
      `src/vm/vm_var_trait_ops.rs` + `class_does_role` + the `is raw` container-accessor lvalue
      chain in `runtime/methods_mut_method_lvalue.rs`): `my %h is Foo`/`= @pairs` backs the var,
      `.^name`, element read/write, and the initializer's `STORE` all dispatch to the class now
-     (pin `t/tied-hash-associative.t`). **Remaining for a full pass:** (a) `%h = @pairs`
-     *re-assignment* on an already-tied var still replaces it with a plain Hash instead of
-     routing through `.STORE` (layer 3 — needs an intercept in the `%`-var assignment path);
-     (b) tied iteration (`for %h`), `:delete`/`:exists` adverbs, `:=` BIND-KEY, and value/whatever
-     slices are not yet routed to the class's methods.
+     (pin `t/tied-hash-associative.t`). Re-assignment `%h = @pairs` now routes through
+     `.STORE` (#5103), tied iteration `for %h` through the class's iterator (#5107), and the
+     `:delete`/`:exists` adverbs + `:=` BIND-KEY through DELETE-KEY/EXISTS-KEY/BIND-KEY
+     (pin `t/tied-hash-bind.t`). **Remaining for a full pass:** value/whatever slices
+     (`%h{@keys}` / `%h{*}`) are not yet routed to the class's methods.
   2. **public/private same-name role methods** — Hash::Agnostic's `method STORE {...self!STORE(...)}`
      + `method !STORE` collided (private overwrote public in role composition; two-role
      public+private also mis-flagged X::Role::Composition::Conflict). **Fixed** — see the
