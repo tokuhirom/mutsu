@@ -5,8 +5,36 @@ use super::*;
 /// stopped at the `(` and the trailing `()` was left to be parsed as a sub body.
 fn parse_trait_type_name(input: &str) -> PResult<'_, String> {
     let (rest, base) = take_while1(input, |c: char| c.is_alphanumeric() || c == '_' || c == ':')?;
+    let mut base = base.to_string();
+    let mut rest = rest;
+    // Parametrization: `returns Array[Int]`, `of Maybe[Array]`. Scan a balanced
+    // `[...]` (nested brackets allowed) and fold it into the type-name string,
+    // matching how the `-->` return-type annotation records `"Array[Int]"`.
+    if rest.starts_with('[') {
+        let bytes = rest.as_bytes();
+        let mut depth = 0i32;
+        let mut end = None;
+        for (i, &b) in bytes.iter().enumerate() {
+            match b {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close) = end else {
+            return Err(PError::expected("closing ']' of a parametrized type"));
+        };
+        base.push_str(&rest[..=close]);
+        rest = &rest[close + 1..];
+    }
     let Some(inner) = rest.strip_prefix('(') else {
-        return Ok((rest, base.to_string()));
+        return Ok((rest, base));
     };
     let mut depth = 1usize;
     for (idx, ch) in inner.char_indices() {
