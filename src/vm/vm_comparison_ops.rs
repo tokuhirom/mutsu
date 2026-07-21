@@ -122,6 +122,18 @@ pub(super) fn range_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
     r_excl_end.cmp(&l_excl_end)
 }
 
+/// Unwrap an allomorph / runtime mixin (`<5.0>` RatStr, `42 but Role`) to its
+/// underlying numeric base for `==`/`!=`. Without this, comparing two mixins of
+/// the same variant falls to structural `l == r`, which also compares the string
+/// halves — so `<5.0> == <5>` was `False` instead of `5.0 == 5` (`True`). The
+/// other comparison ops already unwrap via `cmp_values`.
+fn deref_allomorph_numeric(v: Value) -> Value {
+    match v.view() {
+        ValueView::Mixin(inner, _) => deref_allomorph_numeric(inner.as_ref().clone()),
+        _ => v,
+    }
+}
+
 /// Recursively apply cmp semantics to two values (for use in list element comparison).
 pub(super) fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     // Handle NaN
@@ -254,6 +266,7 @@ impl Interpreter {
         let left = self.stack.pop().unwrap();
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::FALSE);
@@ -297,6 +310,7 @@ impl Interpreter {
         // then negates the boolean-collapsed result, always returning Bool.
         let eq_result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             let (l, r) = vm.coerce_numeric_bridge_pair(l, r)?;
+            let (l, r) = (deref_allomorph_numeric(l), deref_allomorph_numeric(r));
             // NaN is unordered: NaN == anything is always False
             if is_nan_value(&l) || is_nan_value(&r) {
                 return Ok(Value::FALSE);
