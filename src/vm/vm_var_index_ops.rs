@@ -1067,6 +1067,26 @@ impl Interpreter {
                     .unwrap_or(Value::NIL);
                 if result.is_nil() { default } else { result }
             }
+            // Whatever slice on a tied Associative instance (`%h is Foo; %h{*}`):
+            // enumerate the class's own keys (via its `keys` method) and read each
+            // through AT-KEY, mirroring the plain-Hash `(Hash, Whatever)` arm above.
+            // Guarded on a user `keys` method so non-Associative instances keep the
+            // Nil fallback below.
+            (ValueView::Instance { class_name, .. }, ValueView::Whatever)
+                if self.has_user_method(&class_name.resolve(), "keys") =>
+            {
+                let keys = self
+                    .try_compiled_method_or_interpret(target.clone(), "keys", vec![])
+                    .unwrap_or(Value::NIL);
+                let results = crate::runtime::utils::value_to_list(&keys)
+                    .into_iter()
+                    .map(|k| {
+                        self.try_compiled_method_or_interpret(target.clone(), "AT-KEY", vec![k])
+                            .unwrap_or(Value::NIL)
+                    })
+                    .collect::<Vec<_>>();
+                Value::array(results)
+            }
             // Buf/Blob slice by a Range: `$buf[0..7]` / `$buf[2..^5]`. The bytes
             // live in the instance's `bytes` array; a single-Int index is served
             // by `AT-POS` above, but a Range index has no AT-POS arm and would
