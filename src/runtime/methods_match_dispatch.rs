@@ -63,14 +63,19 @@ impl Interpreter {
             }
             // An *undefined* matcher (Nil, or a bare type object like `Any`)
             // resolves to no `.match` candidate — Rakudo throws X::Multi::NoMatch
-            // rather than hanging (roast .../multi-no-match.t). A *defined*
-            // non-Regex/non-Str matcher (an Int, a list) still silently yields Nil.
+            // rather than hanging (roast .../multi-no-match.t).
             ValueView::Nil | ValueView::Package(_) => {
                 return Err(super::methods_signature_errors::make_multi_no_match_error(
                     "match",
                 ));
             }
-            _ => return Ok(Value::NIL),
+            // Any other *defined* matcher (an Int, a list, ...) is coerced to its
+            // string form and matched literally: `"1 2 3".match([1,2,3])` matches
+            // `[1,2,3].Str` (= "1 2 3"), and `"x123y".match(123)` matches "123".
+            _ => {
+                let escaped = pattern.to_string_value().replace('\'', "\\'");
+                format!("'{}'", escaped)
+            }
         };
         if global || overlap || exhaustive || repeat_bounds.is_some() || nth_arg.is_some() {
             let all = self.regex_match_all_with_captures(&pat, &text);
