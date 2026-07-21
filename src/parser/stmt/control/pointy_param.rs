@@ -325,6 +325,47 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         ));
     }
 
+    // String literal value parameter: `-> 'home.html' { ... }` / `-> "x" { }`.
+    // Cro routes literal path segments this way (`get -> 'home.html' { ... }`);
+    // the argument is matched against the literal string, exactly like the
+    // numeric `-> 42 { }` form above. Only a plain (non-interpolating) string
+    // literal is a literal parameter; an interpolating `"$foo"` is not.
+    if rest.starts_with('\'') || rest.starts_with('"') {
+        let parsed = if rest.starts_with('\'') {
+            crate::parser::primary::string::single_quoted_string(rest)
+        } else {
+            crate::parser::primary::string::double_quoted_string(rest)
+        };
+        if let Ok((r, Expr::Literal(val))) = parsed
+            && matches!(val.view(), crate::value::ValueView::Str(_))
+        {
+            return Ok((
+                r,
+                ParamDef {
+                    name: "__literal__".to_string(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy,
+                    double_slurpy,
+                    onearg: false,
+                    sigilless: false,
+                    type_constraint,
+                    literal_value: Some(val),
+                    sub_signature: None,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    is_invocant: false,
+                    shape_constraints: None,
+                },
+            ));
+        }
+    }
+
     // Named parameter prefix: :$x, :@l, :%h
     let mut named = false;
     if rest.starts_with(':')

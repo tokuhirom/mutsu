@@ -25,9 +25,12 @@ pub(super) use helpers::{
 pub(super) use interp_content::finalize_interpolation;
 pub(super) use interp_var::try_interpolate_var;
 pub(super) use q_string::{big_q_string, q_string};
-pub(super) use quoted::{
-    corner_bracket_string, double_quoted_string, parse_backslash_c_bracket, single_quoted_string,
-    smart_double_quoted_string, smart_single_quoted_string,
+pub(super) use quoted::{corner_bracket_string, parse_backslash_c_bracket};
+// Reachable from other `crate::parser` submodules (e.g. pointy-block literal
+// parameters in `stmt::control::pointy_param`), so widen past `pub(super)`.
+pub(in crate::parser) use quoted::{
+    double_quoted_string, single_quoted_string, smart_double_quoted_string,
+    smart_single_quoted_string,
 };
 pub(super) use quotewords::parse_quotewords_quoted_atom;
 pub(super) use qx::backtick_qx_string;
