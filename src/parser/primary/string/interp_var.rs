@@ -241,7 +241,11 @@ pub(crate) fn try_interpolate_var<'a>(
                 index: Box::new(Expr::Literal(Value::int(index_val))),
                 is_positional: true,
             };
-            let (expr, var_rest) = try_parse_interp_method_call(&var_rest[end..], expr);
+            // A numbered capture is a Match, so a trailing subscript accesses its
+            // nested captures: `$0[0]` (positional sub-capture) / `$0<name>` /
+            // `$0{...}`. Without this the `[0]` was left as a literal fragment.
+            let (expr, var_rest) = parse_postcircumfix_index(&var_rest[end..], expr);
+            let (expr, var_rest) = try_parse_interp_method_call(var_rest, expr);
             parts.push(expr);
             return Some(var_rest);
         }
