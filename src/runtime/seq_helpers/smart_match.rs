@@ -418,7 +418,11 @@ impl Interpreter {
                 let pat = &a.pattern;
                 let text = self.regex_match_text(left);
                 let pat = pat.to_string();
-                let start_pos = self.get_match_to_position();
+                // `:continue(N)` searches from offset N; bare `:continue` resumes
+                // at the previous match's `$/.to`.
+                let start_pos = a
+                    .continue_value
+                    .unwrap_or_else(|| self.get_match_to_position());
                 if let Some(captures) = self.regex_match_with_captures_from(&pat, &text, start_pos)
                 {
                     self.apply_single_regex_captures(&captures);
@@ -427,14 +431,15 @@ impl Interpreter {
                 self.clear_match_state();
                 false
             }
-            // :pos/:p anchored match (non-exhaustive/non-global) -- match at $/.to (or 0)
+            // :pos/:p anchored match (non-exhaustive/non-global) -- match at the
+            // `:pos(N)` offset, else at the previous match's $/.to (or 0)
             (_, ValueView::RegexWithAdverbs(a))
                 if a.pos && !a.global && !a.exhaustive && !a.overlap =>
             {
                 let pat = &a.pattern;
                 let text = self.regex_match_text(left);
                 let pat = pat.to_string();
-                let start_pos = self.get_match_to_position();
+                let start_pos = a.pos_value.unwrap_or_else(|| self.get_match_to_position());
                 if let Some(captures) = self.regex_match_with_captures_at(&pat, &text, start_pos) {
                     self.apply_single_regex_captures(&captures);
                     return true;

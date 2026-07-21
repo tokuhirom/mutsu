@@ -53,7 +53,11 @@ pub(super) struct MatchAdverbs {
     pub(super) ratchet: bool,
     pub(super) perl5: bool,
     pub(super) pos: bool,
+    /// Literal argument of `:pos(N)` (anchor position), if given.
+    pub(super) pos_value: Option<usize>,
     pub(super) continue_: bool,
+    /// Literal argument of `:continue(N)` / `:c(N)` (search-from position), if given.
+    pub(super) continue_value: Option<usize>,
     pub(super) nth: Option<String>,
     /// The first match-time adverb name as written by the user (`g`, `global`,
     /// `ov`, `ex`, ...). Used to report X::Syntax::Regex::Adverb.adverb when a
@@ -286,8 +290,12 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.ratchet = true;
         } else if name == "p" || name == "pos" {
             adverbs.pos = true;
+            // `:pos(N)` anchors the match to character offset N. A non-literal
+            // argument (`:pos($x)`) leaves the value None → falls back to $/.to.
+            adverbs.pos_value = arg.and_then(|s| s.trim().parse::<usize>().ok());
         } else if name == "c" || name == "continue" {
             adverbs.continue_ = true;
+            adverbs.continue_value = arg.and_then(|s| s.trim().parse::<usize>().ok());
         } else if name.eq_ignore_ascii_case("p5") || name.eq_ignore_ascii_case("perl5") {
             adverbs.perl5 = true;
         } else if name == "nth" {
@@ -426,7 +434,9 @@ pub(super) fn build_regex_with_adverbs(pattern: String, adverbs: &MatchAdverbs) 
         nth: adverbs.nth.as_ref().map(|s| Arc::new(s.clone())),
         perl5: adverbs.perl5,
         pos: adverbs.pos,
+        pos_value: adverbs.pos_value,
         continue_: adverbs.continue_,
+        continue_value: adverbs.continue_value,
         ignore_case: adverbs.ignore_case,
         sigspace: adverbs.sigspace,
         samecase: adverbs.samecase,
