@@ -32,7 +32,13 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
 
     // Handle subscripted lvalues: @a[1] = ..., %h{key} = ..., %h<key> = ...
     if r.starts_with('[') || r.starts_with('{') || r.starts_with('<') {
-        let (r_after, index_expr) = if let Some(inner) = r.strip_prefix('<') {
+        // `[...]` is a positional subscript; `{...}`/`<...>` are associative.
+        // The resulting IndexAssign MUST carry the right flag so the VM routes a
+        // user Associative/Positional object to BIND-KEY/ASSIGN-KEY vs
+        // BIND-POS/ASSIGN-POS (a wrong `is_positional` sent a `%h<k> := v` to the
+        // non-existent BIND-POS, dropping to the generic path that replaced the
+        // whole tied container).
+        let (r_after, index_expr, is_positional) = if let Some(inner) = r.strip_prefix('<') {
             // `<...>` is word-quoting (a literal string key), NOT an expression.
             // Parsing the inside as an expression mis-reads `%h<b> := 5` — `b>`
             // is taken as a `b > ...` comparison, so the chained bind never
@@ -61,9 +67,10 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 )
             };
             let (r_after, _) = ws(&inner[end + 1..])?;
-            (r_after, index_expr)
+            (r_after, index_expr, false)
         } else {
             let closing = if r.as_bytes()[0] == b'[' { ']' } else { '}' };
+            let is_positional = closing == ']';
             let (r_idx, _) = parse_char(r, r.as_bytes()[0] as char)?;
             let (r_idx, _) = ws(r_idx)?;
             // Parse comma-separated index expressions inside brackets
@@ -89,7 +96,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             };
             let (r_idx, _) = parse_char(r_idx, closing)?;
             let (r_after, _) = ws(r_idx)?;
-            (r_after, index_expr)
+            (r_after, index_expr, is_positional)
         };
         // Check for binding assignment (:= or ::=)
         if let Some(stripped) = r_after
@@ -125,7 +132,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(target),
                     index: Box::new(index_expr),
                     value: Box::new(bind_value),
-                    is_positional: true,
+                    is_positional,
                 },
             ));
         }
@@ -154,7 +161,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     target: Box::new(target),
                     index: Box::new(index_expr),
                     value: Box::new(rhs),
-                    is_positional: true,
+                    is_positional,
                 },
             ));
         }
