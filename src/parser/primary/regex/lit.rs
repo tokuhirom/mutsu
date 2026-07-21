@@ -173,7 +173,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                     Expr::Literal(build_regex_with_adverbs(pattern, &adverbs)),
                 ));
             }
-            return Ok((rest, Expr::Literal(Value::regex(pattern.to_string()))));
+            // Plain-Regex path: still fold in the compile-time inline modifiers
+            // (`:i`/`:m`/`:s`/`:ratchet`) as a `:m …`-style prefix. Without this,
+            // an adverb that is NOT in `adverbs_need_value` — notably
+            // `:ignoremark`/`:m` on `rx//` — was silently dropped, so
+            // `rx:ignoremark /ä/` compiled to a bare `ä` and lost its mark
+            // insensitivity (the `m:ignoremark` form already prepends `:m`).
+            let pattern = apply_inline_match_adverbs(pattern.to_string(), &adverbs);
+            return Ok((rest, Expr::Literal(Value::regex(pattern))));
         }
         return Err(PError::expected("regex closing delimiter"));
     }
