@@ -16,9 +16,19 @@ use super::{keyword, parse_comma_or_expr};
 ///   42 if 23
 ///   is 50; 1
 /// where `is` on the next line is confused with a continuation.
-fn check_two_terms_across_lines(r: &str) -> Result<(), PError> {
+fn check_two_terms_across_lines(cond_input: &str, r: &str) -> Result<(), PError> {
     // Only check if there's content after the condition
     if r.is_empty() || r.starts_with(';') || r.starts_with('}') {
+        return Ok(());
+    }
+    // A condition that ends in a `}` block is self-terminating at end of line,
+    // exactly like any block statement: `say 1 if @a.grep: { ... }` followed by a
+    // statement on the next line is legitimate, not "two terms in a row". Detect
+    // it from the consumed condition text (ends in `}`).
+    if cond_input[..cond_input.len() - r.len()]
+        .trim_end()
+        .ends_with('}')
+    {
         return Ok(());
     }
     // Check if whitespace before remaining contains a newline
@@ -313,6 +323,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     // Try statement modifiers
     if let Some(r) = keyword("if", rest) {
         let (r, _) = ws1(r)?;
+        let cond_input = r;
         let (r, cond) = expression(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected condition expression after 'if'",
@@ -328,7 +339,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
-        check_two_terms_across_lines(r)?;
+        check_two_terms_across_lines(cond_input, r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         if let Some(split) = try_split_decl_modifier(&then_stmt, &cond) {
             return Ok(Some((r, split)));
@@ -345,6 +356,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
     }
     if let Some(r) = keyword("unless", rest) {
         let (r, _) = ws1(r)?;
+        let cond_input = r;
         let (r, cond) = expression(r).map_err(|err| PError {
             messages: merge_expected_messages(
                 "expected condition expression after 'unless'",
@@ -356,7 +368,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         if modified_ends_block && block_follows_modifier_condition(r) {
             return Ok(None);
         }
-        check_two_terms_across_lines(r)?;
+        check_two_terms_across_lines(cond_input, r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
         let neg_cond = Expr::Unary {
             op: TokenKind::Bang,
