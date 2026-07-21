@@ -1,5 +1,5 @@
 mod expr;
-mod helpers;
+pub(crate) mod helpers;
 mod memo;
 mod outer_redecl;
 mod parse_result;

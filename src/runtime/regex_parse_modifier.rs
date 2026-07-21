@@ -141,13 +141,8 @@ impl Interpreter {
                     i += 1;
                     if i < chars.len() {
                         let bracket = chars[i];
-                        let close = match bracket {
-                            '[' => ']',
-                            '(' => ')',
-                            '{' => '}',
-                            '<' => '>',
-                            _ => bracket,
-                        };
+                        let close =
+                            crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
                         out.push(bracket);
                         i += 1;
                         let mut embed_depth = 1u32;
