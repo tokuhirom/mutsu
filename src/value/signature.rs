@@ -951,7 +951,57 @@ fn is_supertype_of(t1: &str, t2: &str) -> bool {
     if t1 == "Stringy" {
         return t2 == "Str";
     }
-    false
+    // Built-in parametric roles: `t1` is a role that the built-in type `t2`
+    // composes (`Pair ~~ Associative`, `Array ~~ Positional`, ...). The
+    // signature layer has no registry handle, so the standard-library role
+    // memberships are enumerated here (user roles are matched by the runtime's
+    // `isa_check`/`does_check`, not this pure-value helper). Verified against
+    // reference raku.
+    match t1 {
+        "Associative" => matches!(
+            t2,
+            "Hash"
+                | "Map"
+                | "Pair"
+                | "Stash"
+                | "QuantHash"
+                | "Set"
+                | "Bag"
+                | "Mix"
+                | "SetHash"
+                | "BagHash"
+                | "MixHash"
+        ),
+        "Positional" => matches!(t2, "Array" | "List" | "Range" | "Buf" | "Blob" | "Slip"),
+        "Iterable" => matches!(
+            t2,
+            "List"
+                | "Array"
+                | "Seq"
+                | "Range"
+                | "Hash"
+                | "Map"
+                | "Slip"
+                | "Set"
+                | "Bag"
+                | "Mix"
+                | "SetHash"
+                | "BagHash"
+                | "MixHash"
+        ),
+        "Callable" => matches!(
+            t2,
+            "Sub"
+                | "Block"
+                | "Method"
+                | "Submethod"
+                | "Routine"
+                | "WhateverCode"
+                | "Code"
+                | "Macro"
+        ),
+        _ => false,
+    }
 }
 
 /// Convert a where-constraint expression to a runtime Value.
