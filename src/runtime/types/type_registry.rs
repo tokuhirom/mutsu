@@ -115,17 +115,26 @@ impl Interpreter {
     pub(in crate::runtime) fn init_signal_enum(&mut self, base: &mut HashMap<Symbol, Value>) {
         // Use libc constants on Unix, standard POSIX numbers on other platforms
         let variants = vec![
+            // Signals that share value 0 on this platform (Rakudo lists them so
+            // `Signal.keys` is complete, e.g. `Signal.keys.sort[^3]` needs SIGBREAK).
+            ("SIGINFO".to_string(), EnumValue::Int(Self::sig_num(0))),
+            ("SIGTHR".to_string(), EnumValue::Int(Self::sig_num(0))),
+            ("SIGBREAK".to_string(), EnumValue::Int(Self::sig_num(0))),
+            ("SIGEMT".to_string(), EnumValue::Int(Self::sig_num(0))),
             ("SIGHUP".to_string(), EnumValue::Int(Self::sig_num(1))),
             ("SIGINT".to_string(), EnumValue::Int(Self::sig_num(2))),
             ("SIGQUIT".to_string(), EnumValue::Int(Self::sig_num(3))),
             ("SIGILL".to_string(), EnumValue::Int(Self::sig_num(4))),
+            ("SIGTRAP".to_string(), EnumValue::Int(Self::sig_num(5))),
             ("SIGABRT".to_string(), EnumValue::Int(Self::sig_num(6))),
+            ("SIGBUS".to_string(), EnumValue::Int(Self::sig_num(7))),
             ("SIGFPE".to_string(), EnumValue::Int(Self::sig_num(8))),
             ("SIGKILL".to_string(), EnumValue::Int(Self::sig_num(9))),
             ("SIGSEGV".to_string(), EnumValue::Int(Self::sig_num(11))),
             ("SIGPIPE".to_string(), EnumValue::Int(Self::sig_num(13))),
             ("SIGALRM".to_string(), EnumValue::Int(Self::sig_num(14))),
             ("SIGTERM".to_string(), EnumValue::Int(Self::sig_num(15))),
+            ("SIGSTKFLT".to_string(), EnumValue::Int(Self::sig_num(16))),
             ("SIGUSR1".to_string(), EnumValue::Int(Self::sig_num(10))),
             ("SIGUSR2".to_string(), EnumValue::Int(Self::sig_num(12))),
             ("SIGCHLD".to_string(), EnumValue::Int(Self::sig_num(17))),
@@ -134,6 +143,15 @@ impl Interpreter {
             ("SIGTSTP".to_string(), EnumValue::Int(Self::sig_num(20))),
             ("SIGTTIN".to_string(), EnumValue::Int(Self::sig_num(21))),
             ("SIGTTOU".to_string(), EnumValue::Int(Self::sig_num(22))),
+            ("SIGURG".to_string(), EnumValue::Int(Self::sig_num(23))),
+            ("SIGXCPU".to_string(), EnumValue::Int(Self::sig_num(24))),
+            ("SIGXFSZ".to_string(), EnumValue::Int(Self::sig_num(25))),
+            ("SIGVTALRM".to_string(), EnumValue::Int(Self::sig_num(26))),
+            ("SIGPROF".to_string(), EnumValue::Int(Self::sig_num(27))),
+            ("SIGWINCH".to_string(), EnumValue::Int(Self::sig_num(28))),
+            ("SIGIO".to_string(), EnumValue::Int(Self::sig_num(29))),
+            ("SIGPWR".to_string(), EnumValue::Int(Self::sig_num(30))),
+            ("SIGSYS".to_string(), EnumValue::Int(Self::sig_num(31))),
         ];
         self.registry_mut()
             .enum_types
