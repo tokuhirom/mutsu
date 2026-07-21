@@ -2093,9 +2093,17 @@ impl Interpreter {
             }
             _ => return None,
         };
-        let actual_end = if excl_end { end } else { end + 1 };
         let start = start.max(0) as usize;
-        let actual_end = (actual_end.max(0) as usize).min(items.len());
+        // An unbounded end (`@a[3..*]`) clamps to the array length; a bounded
+        // end reads out-of-bounds indices as the typed default (Any), mirroring
+        // the standalone `@a[8..11]` slice path (so `@a[6, 8..11]` on a short or
+        // empty array yields Anys, not a truncated empty sublist).
+        let actual_end = if Self::range_end_is_unbounded(end) {
+            items.len()
+        } else {
+            let e = if excl_end { end } else { end.saturating_add(1) };
+            e.max(0) as usize
+        };
         let default = vm.typed_container_default(&Value::array_with_kind(
             crate::value::Value::array_arc(items.clone().to_vec()),
             kind,
