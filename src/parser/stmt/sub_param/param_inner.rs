@@ -956,7 +956,17 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         return Ok((r, p));
     }
 
-    // Bare & (anonymous callable parameter)
+    // Bare & (anonymous callable parameter). The `?`/`!` after `&` mark an
+    // anonymous callable as optional/required ONLY when nothing (or a
+    // terminator) follows — `&?`, `&!`. When an identifier follows, the `?`/`!`
+    // is a *twigil* and this is a named/attributive callable param (`&?ROUTINE`,
+    // `:&!writer`), which must fall through to twigil+name parsing below.
+    let bare_amp_marker_terminates = |after: &[u8]| {
+        after
+            .first()
+            .copied()
+            .is_none_or(|c| !((c as char).is_ascii_alphanumeric() || c == b'_'))
+    };
     if rest.starts_with('&')
         && (rest.len() == 1
             || rest.as_bytes()[1] == b','
@@ -964,8 +974,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             || rest.as_bytes()[1] == b' '
             || rest.as_bytes()[1] == b'\t'
             || rest.as_bytes()[1] == b'\n'
-            || rest.as_bytes()[1] == b'?'
-            || rest.as_bytes()[1] == b'!')
+            || ((rest.as_bytes()[1] == b'?' || rest.as_bytes()[1] == b'!')
+                && bare_amp_marker_terminates(rest.as_bytes().get(2..).unwrap_or(&[]))))
     {
         let rest = &rest[1..];
         let (rest, required, opt_marker) = super::helpers::parse_required_suffix(rest);
