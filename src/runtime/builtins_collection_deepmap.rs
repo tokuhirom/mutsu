@@ -150,6 +150,15 @@ impl Interpreter {
         self.deepmap_iterate(&block, &obj)
     }
 
+    pub(super) fn builtin_nodemap(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("nodemap requires a block and an object"));
+        }
+        let block = args[0].clone();
+        let obj = args[1].clone();
+        self.nodemap_iterate(&block, &obj)
+    }
+
     /// Iterate over the elements of a value, applying duckmap to each.
     /// This is the entry point for both the method and function forms.
     pub(crate) fn duckmap_iterate(
@@ -420,6 +429,21 @@ impl Interpreter {
                     }
                 }
                 Ok(Value::array(result))
+            }
+            // On an Associative, nodemap acts on the values, keeping the keys
+            // (raku: "it will act on the values"), and returns a Hash.
+            ValueView::Hash(map) => {
+                let mut result = std::collections::HashMap::new();
+                for (k, v) in map.iter() {
+                    match self.call_sub_value(block.clone(), vec![v.clone()], false) {
+                        Ok(mapped) => {
+                            result.insert(k.clone(), mapped);
+                        }
+                        Err(e) if e.is_next() => continue,
+                        Err(e) => return Err(e),
+                    }
+                }
+                Ok(Value::hash_with_data(Value::hash_arc(result)))
             }
             // Single value: apply the block directly
             _ => self.call_sub_value(block.clone(), vec![target.clone()], false),

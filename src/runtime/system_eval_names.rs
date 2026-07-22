@@ -155,6 +155,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "nextcallee",
     "nextsame",
     "nextwith",
+    "nodemap",
     "not",
     "now",
     "open",
