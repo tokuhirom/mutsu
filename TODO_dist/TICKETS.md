@@ -443,17 +443,36 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   would need to register enum value names as term symbols — risky, deferred.
 - file: parser term resolution (enum value vs sub)
 
-### T-049 — test_fail: not ok N -  [impact: 1 dist]
+### T-049 — test_fail: not ok N -  [impact: 1 dist]  — PARTIAL (PR `fix-export-infix-operator-closure`)
 - dists: Understitch
 - e.g. `Understitch`: base=4 pass=2 fail=2 die=0 | t/10-basics.t: not ok 1 -
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- **FIXED (operator-closure stack overflow, PR `fix-export-infix-operator-closure`).**
+  Understitch installs its `_` operator via a custom `sub EXPORT` returning
+  `Map.new: '&infix:<_>' => &infix:<_>`. Calling the imported operator overflowed
+  the stack: `resolve_code_var` always returned a by-name GLOBAL routine ref for
+  operator names, so the exported value was a dangling ref (the EXPORT sub's nested
+  `infix:<_>` is dropped after EXPORT runs) that `call_infix_routine` re-dispatched
+  by name forever. Now a user operator with a single concrete def resolves to a
+  first-class Sub (via `sub_value_from_function_def`), surviving its scope.
+  `t/09-non-interference.t` and `t/20-combinations.t` pass; pin
+  `t/export-sub-infix-operator-closure.t`.
+- **REMAINING (deferred):**
+  1. `t/10-basics.t` — `use Understitch;` **inside a `subtest { ... }` block** then
+     uses `_`: the parser rejects `_` because `use` is processed at runtime, not at
+     BEGIN/compile time, so the operator symbol is unknown while parsing the block.
+     Parse-time operator import (slang) — a large, separate feature.
+  2. `t/07-properties.t` — `&infix:<_>.precedence` / `.associative` introspection on
+     an operator sub is unimplemented (separate feature).
+- file: `src/runtime/accessors_resolve.rs` (done); remaining — parser slang import,
+  operator-trait introspection
 
-### T-050 — test_fail: root: N Str elements  [impact: 1 dist]
+### T-050 — test_fail: root: N Str elements  [impact: 1 dist]  — STALE (passes on current binary)
 - dists: CLDR::List
-- e.g. `CLDR::List`: base=2 pass=1 fail=1 die=0 | t/format.rakutest: root: 4 Str elements
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- Both `t/01-load.rakutest` and `t/format.rakutest` PASS 16/16 on the current
+  binary (a later fix resolved it). Run with `MUTSULIB=$PWD/lib` (or `-I lib`) — a
+  bare `prove -e mutsu` without the lib path fails at `use CLDR::List`, which is a
+  test-harness artifact, not a mutsu bug. Safe to move to Done.
+- file: n/a (resolved)
 
 ### T-051 — test_fail: test basic stuff after initialization  [impact: 1 dist]
 - dists: Hash::Agnostic

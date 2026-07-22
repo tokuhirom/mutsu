@@ -141,6 +141,43 @@ impl Interpreter {
         }
     }
 
+    /// Build a first-class `Sub` value from a resolved `FunctionDef`, capturing
+    /// the current env so the callable outlives its defining scope. Shared by the
+    /// operator and ordinary code-var resolution paths.
+    fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
+        let mut captured_env = self.env.clone();
+        if let Some(ref return_type) = def.return_type {
+            captured_env.insert(
+                "__mutsu_return_type".to_string(),
+                Value::str(return_type.clone()),
+            );
+        }
+        if def.is_method {
+            captured_env.insert(
+                "__mutsu_callable_type".to_string(),
+                Value::str_from("Method"),
+            );
+        }
+        let empty_sig = def.empty_sig;
+        let mut sub_val = Value::make_sub(
+            def.package,
+            def.name,
+            def.params,
+            def.param_defs,
+            def.body,
+            def.is_rw,
+            captured_env,
+        );
+        // Preserve empty_sig from the FunctionDef so that arity checks
+        // (e.g. sort rejecting 0-arity callables) work correctly.
+        if empty_sig && let ValueView::Sub(data) = sub_val.view() {
+            let mut new_data = (**data).clone();
+            new_data.empty_sig = true;
+            sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
+        }
+        sub_val
+    }
+
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
         let normalized_name = Self::normalize_categorical_operator_name(name);
         if (normalized_name.starts_with("infix:<")
@@ -148,6 +185,36 @@ impl Interpreter {
             || normalized_name.starts_with("postfix:<"))
             && normalized_name.ends_with('>')
         {
+            // A concrete operator sub bound in env — a `my &infix:<op>` binding or
+            // one installed by a custom `sub EXPORT` (`Map.new: '&infix:<op>' =>
+            // &infix:<op>`) — must win over the by-name GLOBAL routine ref.
+            let var_key = format!("&{}", normalized_name);
+            if let Some(val) = self.env.get(&var_key) {
+                match val.view() {
+                    ValueView::WeakSub(weak) => {
+                        return match weak.upgrade() {
+                            Some(strong) => Value::sub_value(strong),
+                            None => Value::NIL,
+                        };
+                    }
+                    ValueView::Sub(_) | ValueView::Instance { .. } | ValueView::Mixin(..) => {
+                        return val.clone();
+                    }
+                    _ => {}
+                }
+            }
+            // A user operator sub with a single concrete def must become a
+            // first-class Sub that outlives its defining scope. The by-name GLOBAL
+            // routine ref only resolves through `call_function`, which fails once
+            // the defining scope (e.g. a custom `sub EXPORT`) is gone, and then
+            // re-dispatches the operator by name forever (infinite recursion).
+            // Proto/multi operators keep the routine ref so multi-dispatch runs.
+            if !self.has_proto(&normalized_name)
+                && !self.has_multi_candidates(&normalized_name)
+                && let Some(def) = self.resolve_function(&normalized_name).map(|a| (*a).clone())
+            {
+                return self.sub_value_from_function_def(def);
+            }
             return Value::routine_parts(
                 Symbol::intern("GLOBAL"),
                 Symbol::intern(&normalized_name),
@@ -306,37 +373,7 @@ impl Interpreter {
                 self.resolve_token_defs(lookup_name).is_some() || self.has_proto_token(lookup_name),
             )
         } else if let Some(def) = def {
-            let mut captured_env = self.env.clone();
-            if let Some(ref return_type) = def.return_type {
-                captured_env.insert(
-                    "__mutsu_return_type".to_string(),
-                    Value::str(return_type.clone()),
-                );
-            }
-            if def.is_method {
-                captured_env.insert(
-                    "__mutsu_callable_type".to_string(),
-                    Value::str_from("Method"),
-                );
-            }
-            let empty_sig = def.empty_sig;
-            let mut sub_val = Value::make_sub(
-                def.package,
-                def.name,
-                def.params,
-                def.param_defs,
-                def.body,
-                def.is_rw,
-                captured_env,
-            );
-            // Preserve empty_sig from the FunctionDef so that arity checks
-            // (e.g. sort rejecting 0-arity callables) work correctly.
-            if empty_sig && let ValueView::Sub(data) = sub_val.view() {
-                let mut new_data = (**data).clone();
-                new_data.empty_sig = true;
-                sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
-            }
-            sub_val
+            self.sub_value_from_function_def(def)
         } else if Self::is_builtin_function(lookup_name) {
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else if Self::is_mop_macro_function(lookup_name) {
