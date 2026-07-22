@@ -211,7 +211,9 @@ impl Interpreter {
             // Proto/multi operators keep the routine ref so multi-dispatch runs.
             if !self.has_proto(&normalized_name)
                 && !self.has_multi_candidates(&normalized_name)
-                && let Some(def) = self.resolve_function(&normalized_name).map(|a| (*a).clone())
+                && let Some(def) = self
+                    .resolve_function(&normalized_name)
+                    .map(|a| (*a).clone())
             {
                 return self.sub_value_from_function_def(def);
             }
