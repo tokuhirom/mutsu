@@ -13,7 +13,11 @@ ok @arr[0;0]:exists, 'cell exists after assignment';
 throws-like { @arr[0] = 'y' }, X::NotEnoughDimensions,
     operation => 'assign to', got-dimensions => 1, needed-dimensions => 2;
 
-is-deeply (try @arr[2;0]:delete), @arr.default, 'out-of-bounds delete returns default';
+# raku throws X::OutOfRange here (verified 2026-07-23); the old expectation
+# (`is-deeply (try ...), @arr.default`) compared try's Nil against Any and
+# only passed through the Nil-eqv-Any crutch.
+throws-like { @arr[2;0]:delete }, Exception, message => /'out of range'/,
+    'out-of-bounds delete on a shaped array throws';
 
 @arr[1;1] := 42;
 dies-ok { @arr[1;1] = 99 }, 'bound multidim cell is read-only';

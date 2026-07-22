@@ -496,6 +496,13 @@ impl Interpreter {
                                     &name[1..]
                                 )))
                             }
+                        } else if name == "_" {
+                            // An UNSET topic (no `$_` entry in any scope) reads
+                            // as Any, not Nil (`$_ === Any` at the top level,
+                            // S02-types/nil.t 39). Only the not-found fallback:
+                            // a topic explicitly set to Nil (e.g. `Xorelse`
+                            // topicalizing a Nil operand) must stay Nil.
+                            Ok(Value::package(Symbol::intern("Any")))
                         } else {
                             Ok(Value::NIL)
                         }

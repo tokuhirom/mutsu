@@ -143,7 +143,11 @@ impl Interpreter {
                         v.with_hash_mut(|hash| crate::value::gc_data_mut(hash).remove(&key))
                     })
                     .flatten();
-                let removed = removed.or(container_default).unwrap_or(Value::NIL);
+                // An absent key deletes to Any (typed hashes never take this
+                // fast path, so the hole type is always Any here).
+                let removed = removed
+                    .or(container_default)
+                    .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Any")));
                 if let Some(slot) = local_slot
                     && let Some(env_val) = self.env().get(var_name).cloned()
                 {
@@ -613,7 +617,9 @@ impl Interpreter {
                 for i in indices {
                     let r =
                         Self::delete_array_multidim(container, std::slice::from_ref(&i), hole_type)
-                            .unwrap_or(Value::NIL);
+                            .unwrap_or_else(|_| {
+                                Value::package(crate::symbol::Symbol::intern(hole_type))
+                            });
                     results.push(r);
                 }
                 Ok(Value::array(results))
@@ -624,7 +630,9 @@ impl Interpreter {
                 for i in indices_vec {
                     let r =
                         Self::delete_array_multidim(container, std::slice::from_ref(&i), hole_type)
-                            .unwrap_or(Value::NIL);
+                            .unwrap_or_else(|_| {
+                                Value::package(crate::symbol::Symbol::intern(hole_type))
+                            });
                     results.push(r);
                 }
                 Ok(Value::array(results))
@@ -639,7 +647,9 @@ impl Interpreter {
                 for i in expanded {
                     let r =
                         Self::delete_array_multidim(container, std::slice::from_ref(&i), hole_type)
-                            .unwrap_or(Value::NIL);
+                            .unwrap_or_else(|_| {
+                                Value::package(crate::symbol::Symbol::intern(hole_type))
+                            });
                     results.push(r);
                 }
                 Ok(Value::array(results))
@@ -653,9 +663,13 @@ impl Interpreter {
     }
 
     fn delete_from_missing_container(idx: Value) -> Value {
+        // Deleting from a container that was never vivified: every addressed
+        // slot is absent, so each deletes to the Any hole (matching raku's
+        // `my %j; (%j<x>:delete).raku` → `Any`), not Nil.
+        let missing = Value::package(crate::symbol::Symbol::intern("Any"));
         match idx.view() {
-            ValueView::Array(keys, ..) => Value::array(vec![Value::NIL; keys.len()]),
-            _ => Value::NIL,
+            ValueView::Array(keys, ..) => Value::array(vec![missing; keys.len()]),
+            _ => missing,
         }
     }
 
@@ -683,22 +697,29 @@ impl Interpreter {
                 let h = crate::value::gc_data_mut(hash);
                 let removed = keys
                     .iter()
-                    .map(|key| h.remove(&key.to_string_value()).unwrap_or(Value::NIL))
+                    .map(|key| {
+                        // An absent key deletes to the hole type object
+                        // (`Any`, or the value type of a typed hash), not Nil.
+                        h.remove(&key.to_string_value()).unwrap_or_else(|| {
+                            Value::package(crate::symbol::Symbol::intern(hole_type))
+                        })
+                    })
                     .collect();
                 Value::array(removed)
             }
             _ => crate::value::gc_data_mut(hash)
                 .remove(&idx.to_string_value())
-                .unwrap_or(Value::NIL),
+                .unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern(hole_type))),
         }) {
             return Ok(removed);
         }
         if let ValueView::Package(type_name) = container.view()
             && (type_name == "Hash" || type_name == "Hash:U")
         {
+            let missing = Value::package(crate::symbol::Symbol::intern(hole_type));
             return Ok(match idx.view() {
-                ValueView::Array(keys, ..) => Value::array(vec![Value::NIL; keys.len()]),
-                _ => Value::NIL,
+                ValueView::Array(keys, ..) => Value::array(vec![missing; keys.len()]),
+                _ => missing,
             });
         }
         if matches!(container.view(), ValueView::Array(..)) {

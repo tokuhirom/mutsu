@@ -1278,7 +1278,15 @@ impl Compiler {
                     if is_constant || self.sigilless_locals.contains(name.as_str()) {
                         self.code.emit(OpCode::MarkConstantContext);
                     }
-                    if has_explicit_initializer {
+                    // A default-trait decl suppresses the explicit-initializer
+                    // mark: its `is default(...)` is applied AFTER the store, so
+                    // SetLocal's untyped-Nil-to-Any reset would fire before the
+                    // default is registered and clobber a runtime-Nil value
+                    // (`my $foo is default(Nil) = do without ... { $_ }` must
+                    // keep Nil — S04-statements/with.t 49/56). The store keeps
+                    // Nil verbatim and the ApplyVarTrait that follows replaces a
+                    // still-Nil scalar with its default.
+                    if has_explicit_initializer && !has_default_trait {
                         self.code.emit(OpCode::MarkExplicitInitializerContext);
                     }
                     // Mark this SetLocal as coming from a VarDecl so the VM

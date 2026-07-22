@@ -231,6 +231,10 @@ impl Interpreter {
                 def.clone()
             } else if let Some(tc) = self.var_type_constraint(target_var) {
                 Value::package(Symbol::intern(&tc))
+            } else if matches!(target_var, "$/" | "$!" | "/" | "!") {
+                // The match/error special vars default to Nil, not Any
+                // (S02-types/nil.t: `$/.VAR.default === Nil`).
+                Value::NIL
             } else {
                 Value::package(Symbol::intern("Any"))
             };

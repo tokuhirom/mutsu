@@ -326,6 +326,9 @@ impl Interpreter {
                 // Native types have zero/empty defaults instead of Nil.
                 // The plan's type_constraints carry the same MRO-wide map
                 // `get_attr_type_constraint` would walk per attribute.
+                // A non-native attribute with no default seeds its nominal
+                // type object (`has $!z` reads as Any, `has Int $!x` as Int),
+                // matching raku — not Nil.
                 match plan.type_constraints.get(attr_name).map(String::as_str) {
                     Some(
                         "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
@@ -333,7 +336,11 @@ impl Interpreter {
                     ) => Value::int(0),
                     Some("num" | "num32" | "num64") => Value::num(0.0),
                     Some("str") => Value::str("".to_string()),
-                    _ => Value::NIL,
+                    Some(tc) => {
+                        let nominal = self.nominal_type_object_name_for_constraint(tc);
+                        Value::package(crate::symbol::Symbol::intern(&nominal))
+                    }
+                    None => Value::package(crate::symbol::Symbol::intern("Any")),
                 }
             };
             attributes.insert(attr_sym, val);
@@ -881,8 +888,9 @@ impl Interpreter {
 
     /// Build the attribute map for a freshly `CREATE`d instance: every declared
     /// attribute keyed by its bare name with a type-default empty value (native
-    /// numerics → 0, `str` → "", everything else → `Nil`). Unlike `bless`, this
-    /// does not evaluate `has $.x = EXPR` default expressions.
+    /// numerics → 0, `str` → "", everything else → its nominal type object —
+    /// `Any` when untyped). Unlike `bless`, this does not evaluate
+    /// `has $.x = EXPR` default expressions.
     fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
         let mut attributes = AttrMap::new();
         if self.registry().classes.contains_key(class_name) {
@@ -897,7 +905,11 @@ impl Interpreter {
                     ) => Value::int(0),
                     Some("num" | "num32" | "num64") => Value::num(0.0),
                     Some("str") => Value::str("".to_string()),
-                    _ => Value::NIL,
+                    Some(tc) => {
+                        let nominal = self.nominal_type_object_name_for_constraint(tc);
+                        Value::package(crate::symbol::Symbol::intern(&nominal))
+                    }
+                    None => Value::package(crate::symbol::Symbol::intern("Any")),
                 };
                 attributes.insert(attr_name, val);
             }

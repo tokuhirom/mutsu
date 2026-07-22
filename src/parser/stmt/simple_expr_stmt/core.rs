@@ -109,7 +109,12 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
 
-    if let Ok((rest, expr)) = crate::parser::primary::string::qx_string(input) {
+    if let Ok((rest, expr)) = crate::parser::primary::string::qx_string(input)
+        // A postfix chain on the qx result (`qx`pwd`.chomp.IO`) must parse as
+        // one expression — without this guard the shortcut consumed only the
+        // qx call and `.chomp` became a separate $_-method statement.
+        && !rest.starts_with('.')
+    {
         return parse_statement_modifier(rest, Stmt::Expr(expr));
     }
 

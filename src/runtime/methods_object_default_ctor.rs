@@ -263,15 +263,17 @@ impl Interpreter {
                 None => {
                     // Uninitialized: `@` -> empty Array, `%` -> empty Hash. For
                     // `$`: a native-typed scalar gets its native zero (`int` -> 0,
-                    // `num` -> 0e0, `str` -> ""); an untyped `$` gets Nil. A
-                    // class-typed `$` cannot reach here — it fell through above.
+                    // `num` -> 0e0, `str` -> ""); an untyped `$` gets the Any
+                    // type object (`has $!z` reads as Any, matching raku — NOT
+                    // Nil). A typed `$` keeps Nil: the accessor synthesizes the
+                    // declared type object from the stored Nil at read time.
                     let empty = match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash(HashMap::new()),
-                        _ => type_constraints
-                            .get(attr_name)
-                            .and_then(|c| Self::native_scalar_default(c))
-                            .unwrap_or(Value::NIL),
+                        _ => match type_constraints.get(attr_name) {
+                            Some(c) => Self::native_scalar_default(c).unwrap_or(Value::NIL),
+                            None => Value::package(crate::symbol::Symbol::intern("Any")),
+                        },
                     };
                     attrs.insert(attr_sym, empty);
                 }
@@ -423,9 +425,14 @@ impl Interpreter {
             // `X::Attribute::Required` with the same message and reason.
             for (attr_name, _, _, _, is_required, _, _) in class_attrs.iter() {
                 if let Some(reason) = is_required {
+                    // The pre-BUILD seed for an unset untyped attribute is
+                    // the Any type object (not Nil), so treat it as unset too.
                     let is_set = !matches!(
                         attrs.get(attr_name).map(Value::view),
                         Some(ValueView::Nil) | None
+                    ) && !matches!(
+                        attrs.get(attr_name).map(Value::view),
+                        Some(ValueView::Package(n)) if n == "Any"
                     );
                     if !is_set {
                         let attr_full_name = format!("$!{}", attr_name);
