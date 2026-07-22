@@ -347,6 +347,12 @@ impl Interpreter {
         // traits, so every param is immutable). Save the existing readonly
         // state to restore after the call.
         let saved_readonly = self.enter_readonly_frame();
+        // A routine gets a fresh, writable `$_` — clear any readonly mark leaked
+        // from the caller's topic (see vm_call_light.rs for the full rationale);
+        // the param loop below re-marks `_` for an explicit `$_` param.
+        if cf.code.is_routine && !self.no_readonly_vars() {
+            self.unmark_readonly("_");
+        }
         for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()
                 && !pd.sigilless

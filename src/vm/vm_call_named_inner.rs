@@ -34,6 +34,12 @@ impl Interpreter {
         loan_env!(self, inject_pending_callsite_line());
         self.push_call_frame();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
+        // A routine gets a fresh, writable `$_` — clear any readonly mark leaked
+        // from the caller's topic (see vm_call_light.rs for the full rationale);
+        // param binding below re-marks `_` for an explicit `$_` parameter.
+        if cf.code.is_routine && !self.no_readonly_vars() {
+            self.unmark_readonly("_");
+        }
         let return_spec = cf.return_type.clone();
 
         loan_env!(self, push_caller_env());
