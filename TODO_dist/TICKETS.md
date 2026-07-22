@@ -64,21 +64,9 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-024 — test_die [Adverb::Eject]  [impact: 1 dist]
-- dists: Adverb::Eject
-- e.g. `Adverb::Eject`: base=1 pass=0 fail=0 die=1 | t/01-basic.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-025 — test_die [Math::Root]  [impact: 1 dist]
 - dists: Math::Root
 - e.g. `Math::Root`: base=3 pass=0 fail=0 die=3 | t/01-integer.t: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
-### T-026 — test_die [Math::Trig]  [impact: 1 dist]
-- dists: Math::Trig
-- e.g. `Math::Trig`: base=6 pass=5 fail=0 die=1 | t/03-radial.t: 
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
@@ -196,11 +184,17 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-048 — test_fail: millis unit to nanos  [impact: 1 dist]  [claim: fix-nested-alias-name-leak]
+### T-048 — test_fail: TimeUnit (nested-alias FIXED #5146; blocked on enum-vs-sub)  [impact: 1 dist]
 - dists: TimeUnit
-- e.g. `TimeUnit`: base=1 pass=0 fail=1 die=0 | t/01-usage.rakutest: millis unit to nanos
-- repro: `sub g(:mil(:milli(:$millis))=0){ milli }` where `my constant milli=1000000` — mutsu binds the alias name `milli` as a body variable and shadows the outer constant. raku: only innermost `:$millis` is a body variable; alias names are caller-side only.
-- file: signature binding (runtime/param binding)
+- e.g. `TimeUnit`: base=1 pass=0 fail=1 die=0 | t/01-usage.rakutest
+- FIXED (part 1, #5146): the nested named-alias name leak — `sub nanos-from(:mil(:milli(:$millis))...)`
+  bound the alias names `min`/`milli` as body variables and shadowed the module's `constant min`/`milli`.
+  Tests 1-2 now pass.
+- REMAINING (part 2, deferred): enum-value-vs-same-named-sub name resolution. `timeunit(3, minutes)`
+  passes the enum value `minutes` as an arg, but mutsu resolves the bareword to `sub minutes` (raku
+  resolves it to the enum-value term when not followed by `(`). See the durable memory note; the parser
+  would need to register enum value names as term symbols — risky, deferred.
+- file: parser term resolution (enum value vs sub)
 
 ### T-049 — test_fail: not ok N -  [impact: 1 dist]
 - dists: Understitch
@@ -264,6 +258,33 @@ _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
 
+- **T-024** (#5149) — Adverb::Eject died before test 1 on `@a[1]:eject` /
+  `%h<a>:eject`: a subscript carrying a user-defined (non built-in) adverb was
+  not routed to a user `postcircumfix:<[ ]>`/`<{ }>` candidate. Three general
+  fixes: (1) the parser now emits `postcircumfix:<...>(target, index, :adverb)`
+  for a custom subscript adverb when such a candidate is in scope (X::Adverb
+  fallback otherwise); (2) `Iterable` was missing from the dispatch MRO, so
+  `Iterable:D` tied with a non-matching `Int()` coercion for a list arg — added
+  it to List/Array/Seq/Range/Hash; (3) hash `DELETE-KEY` rebuilt a fresh hash
+  (severing the Arc), so a `\SELF` raw param never propagated the deletion — now
+  an aliased in-place `HashMap::remove`. **Adverb::Eject passes 12/12.** Pin:
+  t/user-postcircumfix-adverb.t.
+- **T-026** (#5152) — Math::Trig died at `(my $x, my $y, $z) =
+  cylindrical-to-cartesian(...)`: an inline `my` declaration inside a
+  parenthesized list-assignment target threw "Cannot modify an immutable value".
+  The list-destructure lowering only accepted Var/ArrayVar/HashVar/Whatever/Index
+  targets, so a `my $x` (a `DoStmt(VarDecl)` element) fell through to the
+  callable-lvalue path. Now accepts `DoStmt(VarDecl)` targets — declare, then
+  assign as the sigil's plain Var — and the result read-back reads them back as
+  Vars (not re-declaring to Nil). **Math::Trig passes 6/6 files.** Pin:
+  t/inline-my-in-list-assign.t.
+- **T-048** (part 1, #5146) — TimeUnit's nested named-alias name leak:
+  `nanos-from(:mil(:milli(:$millis))...)` bound the alias names as body variables
+  and shadowed the module's `constant`s. The leaf rule (only the innermost
+  `:$leaf` is a body variable; alias/param names are caller keys) is now applied
+  across every param-binding path, and a `where` constraint reads the leaf value.
+  Tests 1-2 pass. **T-048 remains open for part 2** (enum-value-vs-sub name
+  resolution — see the Open section). Pin: t/nested-alias-name-no-leak.t.
 - **T-023** (#5117) — a role composition *diamond*: a stubbed (required) role
   method (`method !quote-constant { !!! }` in `Quoter`, reached via `FQN`) and its
   concrete implementation (in `DBIConnection`) both flowed through one shared
