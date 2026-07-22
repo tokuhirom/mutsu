@@ -114,6 +114,52 @@ impl Compiler {
         }
     }
 
+    /// Whether `name` (an internal `*`-prefixed dynamic var name, e.g. `*TOLERANCE`)
+    /// is a built-in dynamic variable provided by the runtime. Built-in dynamics are
+    /// always "declared" by the setting, so reading one and *then* shadowing it with
+    /// a `my $*X` is legal and must NOT trip X::Dynamic::Postdeclaration (which only
+    /// applies to a genuinely user-declared dynamic used before its declaration).
+    pub(super) fn is_builtin_dynamic_var(name: &str) -> bool {
+        let bare = name.trim_start_matches(['$', '@', '%', '&']);
+        let Some(bare) = bare.strip_prefix('*') else {
+            return false;
+        };
+        matches!(
+            bare,
+            "OUT"
+                | "ERR"
+                | "IN"
+                | "ARGFILES"
+                | "ARGS"
+                | "SPEC"
+                | "CWD"
+                | "TMPDIR"
+                | "HOME"
+                | "EXECUTABLE"
+                | "EXECUTABLE-NAME"
+                | "PROGRAM"
+                | "PROGRAM-NAME"
+                | "DISTRO"
+                | "PERL"
+                | "RAKU"
+                | "VM"
+                | "KERNEL"
+                | "PID"
+                | "TOLERANCE"
+                | "COLLATION"
+                | "DEFAULT-READ-ELEMS"
+                | "INIT-INSTANT"
+                | "REPO"
+                | "RAT-OVERFLOW"
+                | "SCHEDULER"
+                | "THREAD"
+                | "SAMPLER"
+                | "USER"
+                | "GROUP"
+                | "LANG"
+        )
+    }
+
     /// Emit X::Dynamic::Package error for a dynamic variable with :: in name.
     pub(super) fn emit_dynamic_package_error(&mut self, name: &str) {
         let symbol = Self::dynamic_var_symbol(name);
