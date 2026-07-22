@@ -522,6 +522,7 @@ Each slang has its own grammar rules (e.g., `+` means repetition in Regex slang 
 - **news/YYYY-MM.md** (e.g. `news/2026-05.md`) records what was accomplished each month. When completing a PLAN.md task, move its description and results to the current month's news file.
 - PLAN.md links to `news/` for historical context. Do not duplicate completed work in both files.
 - When starting a new month's work, create `news/YYYY-MM.md` if it doesn't exist.
+- **When you discover a bug or missing feature that is too large to fix in the current or the next session, record it in PLAN.md and open a PR for that record.** Do not let a hard, high-blast-radius finding evaporate at the end of a session — capture it as a concrete PLAN.md entry (root cause, affected files, why it is large) so a future session can pick it up. The record itself is worth a PR (docs-only, default patch bump, no label).
 
 ## Agent workflow
 
