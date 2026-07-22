@@ -387,6 +387,7 @@ impl Interpreter {
                 | "Semaphore"
                 | "Whatever"
                 | "Format"
+                | "Formatter"
                 | "Instant"
                 | "Buf"
                 | "Blob"

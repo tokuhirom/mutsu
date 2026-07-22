@@ -87,7 +87,7 @@ noted.
 
 | Classification | File | mutsu | raku (v2026.06/6.d) | Blocker (one line) |
 |---|---|---|---|---|
-| Awaiting infrastructure | `S32-str/format.t` | aborts at 26/49 | **49/49 full pass** (SORRY on v2022.12) | Requires `Formatter::Syntax.parse`→Match and `Formatter.AST`→`RakuAST::Node` = **no RakuAST subsystem**. The raku update provided an oracle, but stubbing is forbidden, so it stays shelved |
+| Awaiting infrastructure | `S32-str/format.t` | **48/49** (fails only 29) | **49/49 full pass** (SORRY on v2022.12) | Down to **one** blocker: test 29 (`Formatter.AST(...) ~~ RakuAST::Node`) needs a genuine `RakuAST::Node` = **no RakuAST subsystem** (stubbing forbidden). Everything else now passes: `Formatter::Syntax.parse`→Match and `Formatter.CODE`→Callable are implemented (`methods_format.rs`), the full `.fmt(Format, $sep)` matrix works, and `.lazy.List`/`.lazy.Seq` now stay lazy so `.fmt` throws `X::Cannot::Lazy`. `Formatter.AST` returns `Nil` (honest "no AST") so the file runs to the end instead of aborting. Pins: `t/format-formatter.t`, `t/format-class.t` |
 | Track B (element cells) | `S02-types/quanthash.t` | **126/129** | **129/129 full pass** | Parameterized-QuantHash subsystem now implemented: `.^parameterize` on Set/Bag/Mix, coercive types `Int()`/`Date()`, `.keyof`, per-element coercion/validation at `.new` (throws `X::Str::Numeric`/`X::Temporal::InvalidFormat`), key coercion on element access/assignment, and container-variable rebind. The remaining 3 (`97`/`112`/`127` "did all keys get removed") need `%qh.values.map({ $_ = 0 })` **write-through** — an rw `.values` that yields per-element `ContainerRef` cells map can alias. This fails for a plain `Hash` too, so it is general **Track B element-cell** work (ADR-0001, deferred/fused with GC), not QuantHash-specific. Pin: `t/quanthash-parameterized.t` |
 | No oracle | `S02-names/pseudo-6d.t` | aborts at 116/159 | SORRY (`::=` NYI) | `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
 | No oracle | `S02-names/pseudo-6e.t` | aborts at 79/202 | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Still SORRY on v2026.06 |
@@ -162,12 +162,15 @@ completed fix history lives in `news/`.
   multi-dimensional EXISTS-POS with Failure from a negative index; 64 needs a `but` mixin with a
   role implementing AT-POS + `substr-rw`. (BIND-POS/DELETE-POS and the shared-cell BIND-POS are
   done — pin: t/bind-pos-shared-cell.t.)
-- **`S32-str/format.t`** — the 6.e `Format` class itself is implemented (Format.new, ~~, .arity,
-  .Callable, CALL-ME/sprintf, `.fmt` integration across containers; pin: t/format-class.t).
-  BLOCKED at test 27 on **RakuAST**: `Formatter::Syntax.parse` (grammar → Match),
-  `Formatter.CODE` (Callable), `Formatter.AST` (`RakuAST::Node`). A mid-file runtime error
-  aborts the file, making the 23 later `.fmt` tests unreachable. Faking `RakuAST::Node` would be
-  a stub (forbidden).
+- **`S32-str/format.t`** — **48/49**, down from the old abort-at-26. The 6.e `Format` class
+  (Format.new, ~~, .arity, .Callable, CALL-ME/sprintf, `.fmt` across containers; pin:
+  t/format-class.t) plus the package-level entry points `Formatter::Syntax.parse` (→ Match) and
+  `Formatter.CODE` (→ Callable) are implemented in `methods_format.rs`; `.lazy.List`/`.lazy.Seq`
+  keep the list lazy (coercion.rs) so a later `.fmt` throws `X::Cannot::Lazy`. The **only**
+  remaining failure is test 29: `Formatter.AST("...") ~~ RakuAST::Node`, which needs a genuine
+  `RakuAST::Node` = **no RakuAST subsystem** (faking it is a forbidden stub). `Formatter.AST`
+  returns `Nil` (an honest "no AST available") so the file runs to completion instead of
+  aborting, leaving exactly one honest failing test. Pin: t/format-formatter.t.
 - **`S32-str/sprintf.t`** — tests 101-104 (`%020.2g`/`%020.2G`) expect mantissa `34.1e+30` from
   a 3.1415e30 input under zero-padding — a raku zero-pad-%g-sci quirk that shifts the decimal
   point; the algorithm is unverifiable (`zprintf` is 6.e-only, absent from the reference raku).

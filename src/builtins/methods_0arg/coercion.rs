@@ -390,9 +390,29 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array((a + 1..b).map(Value::int).collect())))
                 }
             }
+            // `.List` on an explicitly `.lazy`-marked list keeps it lazy (raku:
+            // `(1,2,3).lazy.List.is-lazy` is True), so a later `.fmt`/`.sort`/etc.
+            // still throws `X::Cannot::Lazy` instead of silently materializing.
+            ValueView::LazyList(ll)
+                if ll
+                    .env
+                    .get("__mutsu_preserve_lazy_on_array_assign")
+                    .is_some() =>
+            {
+                Some(Ok(target.clone()))
+            }
             ValueView::LazyList(_) => None, // fall through to runtime to force
             _ => Some(Ok(Value::array(vec![target.clone()]))),
         },
+        // `.Seq` on an explicitly `.lazy`-marked list likewise keeps it lazy
+        // (raku: `(1,2,3).lazy.Seq.is-lazy` is True). Only this narrow case is
+        // intercepted; every other `.Seq` target falls through to the runtime.
+        "Seq"
+            if matches!(target.view(),
+                ValueView::LazyList(ll) if ll.env.get("__mutsu_preserve_lazy_on_array_assign").is_some()) =>
+        {
+            Some(Ok(target.clone()))
+        }
         "__mutsu_zen_angle" => match target.view() {
             ValueView::Range(a, b) => {
                 if b == i64::MAX || a == i64::MIN {
