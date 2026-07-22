@@ -1166,55 +1166,17 @@ the backlog.
       rendering. Reasonable to keep deferring vs the §1/§6 frontier. Related: §6 (dual-store / lexical
       slot), [`array-hole-tracking-embedded`], [ADR-0001] container-repr.
 
-### 8.6 `>>.` sweep leftovers
+### 8.6 `.WHO`/`.HOW` render without their metamodel detail
 
-- Both halves of the original item are **done** (2026-07-22): the *nodality* fix (the coercers
-      `Str`, `gist`, `raku`, `perl`, `so`, `Bool`, `Numeric`, `Int`, `Rat`, `Real`, `defined`,
-      `item`, `sink`, `cache`, `lazy` were removed from `is_nodal_list_method`, so they descend to
-      the leaves and preserve the `Array` container), and the *metaobject introspectors*
-      (`.WHAT`/`.WHO`/`.HOW`/`.DEFINITE`/`.WHERE` are no longer hyper-dispatched at all — they
-      apply to the target, like Rakudo's special forms). Pin: `t/hyper-nodality.t` (24 tests).
-      See `news/2026-07.md`.
-- The `.reverse`/`.rotate` leftovers are also **done** (2026-07-22): `Any.reverse` is
-      `self.list.reverse`, so a non-Iterable reverses to a one-element Seq (`"abc".reverse` is
-      `("abc",).Seq`, not the `.flip`ped `"cba"` mutsu used to return, and `42.reverse` no longer
-      errors), while `.rotate` — which Rakudo does *not* define on `Any` — throws
-      `X::Method::NotFound` instead of returning a silent `Nil`. (`.batch` was already correct.)
-      Pin: `t/any-reverse-rotate.t`.
-- `.tree` is **done** (2026-07-22): it itemizes every node it descends into, so `(1, 2).tree`
-      is `$((1, 2).Seq)` and `.tree(n)` itemizes exactly the `n` levels it treed — which is what
-      makes `.tree(*)` identical to `.tree` (roast `S02-lists/tree.t` test 12, previously passing
-      only because *both* sides were un-itemized). Pin: `t/tree-itemization.t`.
-- **§8.6 is closed** (2026-07-22). The last rendering leftover was the one-element Slip
-      (`slip(3)` → `slip(3,)`, pin `t/slip-raku-repr.t`). A full re-run of the sweep over every
-      name in `is_nodal_list_method` (both the flat and the nested shape) now shows **no
-      remaining nodality divergence**; what it still prints is (a) the inherently random
-      `pick`/`roll`, (b) QuantHash key *ordering* (unordered by definition), (c) rows where
-      both sides error with different wording, and (d) two independent findings now tracked
-      separately: §8.10 (nested-instance `.raku`) and `.WHO`/`.HOW` *content* (mutsu renders a
-      Stash as a plain `Hash` and its `ClassHOW` without the mixin roles — a metamodel-fidelity
-      gap, unrelated to hypers).
-- The sweep script is worth keeping: `tmp/nodal-sweep.sh` (uncommitted, regenerate from the
-      recipe — enumerate the names in `is_nodal_list_method`, run each through a flat and a
-      nested shape under both `mutsu -e` and `raku -e`, print only differing rows).
+- [ ] **A Stash renders as a plain `Hash`, and a `ClassHOW` without its mixin roles.**
+      `(@a>>.WHO).WHAT` is `(Hash)` where raku gives `(Stash)`, `Array.WHO` is `{}` where raku
+      lists `{:Element(Array::Element), :Shaped(Array::Shaped), ...}`, and `Array.HOW.raku` is
+      `Perl6::Metamodel::ClassHOW.new` where raku has `ClassHOW+{<anon>}+{<anon>}.new`. A
+      metamodel-fidelity gap, not a dispatch bug — surfaced by the `>>.` sweep only because the
+      introspectors happened to be in it. Low user impact; sized as its own slice.
 
-### 8.7 Bound-element immutability (mostly LANDED 2026-07-22; only `.kv` remains)
+### 8.7 `.kv` on a Hash::Agnostic role returns `()`
 
-- [x] **A hash/array element bound to an immutable value is now read-only.**
-      `%h<i> := 137; %h<i> = 666` throws (`X::AdHoc` "Cannot assign to an immutable value" for a
-      plain hash/array; `X::Assignment::RO` "Cannot modify an immutable Int (137)" for a tied
-      hash) and leaves the value `137`. Implemented via **option (b): a per-variable
-      `__mutsu_ro_index::{var}` side set** (parallel to `__mutsu_bound_index`,
-      `src/vm/vm_var_index_tracking.rs`; gated by `elem_index_meta_possible()`). A `:=` bind to an
-      immutable scalar literal (Int/BigInt/Num/Str/Bool/Rat/Complex, no named source) marks the
-      element; the element-assign chokepoints consult it and throw. Covers the plain path
-      (`exec_index_assign_expr_named_op_inner` + the `try_fast_hash_element_assign` fast path) and
-      the tied path (the instance-dispatch that routes through `ASSIGN-KEY`/`BIND-KEY`, plus the
-      tied delegation where the literal-ness is otherwise lost). Whole-container reassign and
-      `:delete` clear the markers so the element becomes writable again. Also fixed: tied
-      multi-element slice `:delete` (`%h<d e f>:delete`) now deletes each key instead of passing
-      the whole slice array as one key. Pins: `t/bound-element-readonly.t`,
-      `t/tied-hash-bound-element.t`. Clears Hash::Agnostic dist subtests 4/5/6 (dist now 21/22).
 - [ ] **`.kv` on a Hash::Agnostic role returns `()`** (raku yields the flattened k/v list) — the
       last Hash::Agnostic dist gap (subtest 13). Separate pre-existing issue: the role's
       `method kv { Seq.new(KV.new(:backend(self), :iterator(self.keys.iterator))) }` uses a custom
