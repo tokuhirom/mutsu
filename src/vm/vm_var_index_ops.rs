@@ -161,6 +161,24 @@ impl Interpreter {
         items.iter().map(Self::index_to_usize).collect()
     }
 
+    /// Whether a `[...]` subscript on a type object is a type *parameterization*
+    /// (`Any[Int]`, `Any[Int, Str]`) rather than a positional *index*
+    /// (`$any[0]`). A single type object, or a list whose every element is a
+    /// type object, is a parameterization; any plain value (or a list
+    /// containing one) is an index.
+    fn index_is_type_parameterization(idx: &ValueView) -> bool {
+        match idx {
+            ValueView::Package(_) => true,
+            ValueView::Array(items, ..) => {
+                !items.is_empty()
+                    && items
+                        .iter()
+                        .all(|v| matches!(v.view(), ValueView::Package(_)))
+            }
+            _ => false,
+        }
+    }
+
     /// Lazy variant of IndexAutovivify: returns a HashEntryRef without creating
     /// the hash entry if it doesn't exist. Used for `:=` bind expressions
     /// so that `my $b := %h<a><b>` doesn't autovivify until assignment.
@@ -1867,6 +1885,28 @@ impl Interpreter {
             // from Any so that `%h<missing><b> === Any` holds.
             (ValueView::Package(name), _) if !is_positional && name.resolve() == "Any" => {
                 Value::package(Symbol::intern("Any"))
+            }
+            // Postcircumfix POSITIONAL index (`[idx]`) on the bare Any type object —
+            // a runtime Any value (e.g. from a missing hash key: `my %h; %h<k>[0]`)
+            // indexed positionally — returns Any per Raku, rather than being
+            // mis-read as a type parameterization. A type-object index (`Any[Int]`,
+            // a genuine parameterization attempt) still falls through to
+            // X::NotParametric below, so only a plain value index is intercepted.
+            // A slice (`$any[0, 1]`) yields a matching-length list of Any.
+            (ValueView::Package(name), idx)
+                if is_positional
+                    && name.resolve() == "Any"
+                    && !Self::index_is_type_parameterization(&idx) =>
+            {
+                match idx {
+                    ValueView::Array(items, ..) => Value::array(
+                        items
+                            .iter()
+                            .map(|_| Value::package(Symbol::intern("Any")))
+                            .collect(),
+                    ),
+                    _ => Value::package(Symbol::intern("Any")),
+                }
             }
             // Parameterizing a user-declared class / package / module that is NOT
             // parametric throws X::NotParametric. Roles (handled above), built-in

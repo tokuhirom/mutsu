@@ -283,16 +283,23 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   backtracking (`regex`) separator matchers; interior/trailing empties already worked.
   Fix: accept a zero-width first atom (bounded by the extension loop's `atom_end <= cur`
   no-progress guard) in `regex_match_sep.rs`. Pin: `t/regex-separator-leading-empty.t`.
-- **Status:** 02-grammar 0 → **23/23**; 01-basic 1/1. **Remaining (separate, deeper —
-  not this ticket):** (a) **03-actions** dies on `%parameter<value>[0]` where
-  `%parameter<value>` is `Any` — a postcircumfix `[idx]` on a runtime-`Any` value is
-  mis-dispatched as type parameterization ("Any cannot be parameterized") instead of
-  returning `Any` (repro: `my %h; %h<k>[0]`; `vm/vm_var_index_ops.rs` ~1868 handles the
-  non-positional Any subscript but not the positional one); (b) `parsefile` of a full
-  multi-vcard file (test-card1/2) fails while test-card4 passes.
+- **FOURTH ROOT CAUSE FIXED (PR `fix-positional-index-on-any`).** 03-actions dies on
+  `%parameter<value>[0]` where `%parameter<value>` is `Any`: a postcircumfix POSITIONAL
+  `[idx]` on a runtime-`Any` value was mis-dispatched as a type parameterization
+  ("Any cannot be parameterized") instead of returning `Any` (repro: `my %h; %h<k>[0]`).
+  `vm/vm_var_index_ops.rs` already returned Any for the non-positional Any subscript;
+  now the positional case does too, intercepted before the non-parametric-type check
+  when the index is a plain value (a type-object index — `Any[Int]` — still throws).
+  A slice `$any[0,1]` yields a matching-length list of Any. Pin:
+  `t/positional-index-on-any.t`. (03-actions now runs its content-line `.made` action
+  path; tests 3–4 pass.)
+- **Status:** 02-grammar **23/23**; 01-basic 1/1; 03-actions 4/9. **Remaining (separate,
+  deeper — not this ticket):** `parsefile` of a full multi-vcard file (test-card1/2,
+  and 03-actions test 5, 04-from-vCard) fails while test-card4 passes — a multi-`<vcard>`
+  `parsefile` / `.made` action-tree bug, unrelated to the four fixed root causes.
 - file: DONE — src/runtime/methods_dispatch_match.rs, runtime_class_query.rs,
-  regex_parse_core.rs, regex/regex_match_sep.rs; remaining — positional Any postcircumfix
-  index (vm_var_index_ops.rs), multi-vcard parsefile.
+  regex_parse_core.rs, regex/regex_match_sep.rs, vm/vm_var_index_ops.rs; remaining —
+  multi-vcard parsefile.
 
 ### T-036 — test_die: plan expects Int (plan * fixed; deeper cardinal bugs remain)  [impact: 1 dist]
 - dists: Lingua::EN::Numbers
