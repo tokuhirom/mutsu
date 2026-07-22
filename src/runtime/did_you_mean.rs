@@ -278,6 +278,8 @@ pub(crate) fn known_methods_for_type(type_name: &str) -> &'static [&'static str]
             "succ", "pred", "pick", "roll", "WHAT", "WHICH",
         ],
         "Range" => &[
+            "AT-POS",
+            "EXISTS-POS",
             "bounds",
             "elems",
             "excludes-max",
@@ -288,6 +290,7 @@ pub(crate) fn known_methods_for_type(type_name: &str) -> &'static [&'static str]
             "gist",
             "grep",
             "head",
+            "in-range",
             "infinite",
             "int-bounds",
             "is-int",

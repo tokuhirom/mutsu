@@ -349,6 +349,11 @@ pub(super) fn dispatch(
                     | ValueView::Junction { .. }
                     | ValueView::Nil
                     | ValueView::Enum { .. }
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
             );
             let which_str = match target.view() {
                 ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
@@ -453,6 +458,16 @@ pub(super) fn dispatch(
                 }
                 ValueView::Channel(c) => {
                     format!("Channel|{:p}", c.arc_ptr())
+                }
+                ValueView::Range(..)
+                | ValueView::RangeExcl(..)
+                | ValueView::RangeExclStart(..)
+                | ValueView::RangeExclBoth(..)
+                | ValueView::GenericRange { .. } => {
+                    // A Range is a value type: its identity is its notation
+                    // (`Range|1..2`, `Range|1^..^5`, `Range|"a".."z"`), which is
+                    // exactly the range's `.raku` representation.
+                    format!("Range|{}", super::raku_repr::raku_value(target))
                 }
                 ValueView::Whatever => {
                     use std::sync::atomic::{AtomicU64, Ordering};

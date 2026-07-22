@@ -3,7 +3,7 @@ mod dispatch_1arg;
 mod dispatch_2arg;
 mod dispatch_3arg;
 mod dispatch_variadic;
-mod flat;
+pub(crate) mod flat;
 mod junction;
 mod math;
 mod sprintf_fmt;
