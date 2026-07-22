@@ -213,11 +213,23 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-040 — test_fail: Can't encode A  [impact: 1 dist]
+### T-040 — test_fail: Can't encode A  [impact: 1 dist]  — FIXED (PR `fix-bitwise-failure-operand`)
 - dists: Gray::Code::RBC
 - e.g. `Gray::Code::RBC`: base=1 pass=0 fail=1 die=0 | t/01-basic.rakutest: Can't encode A
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- repro: `my $f = "A".Int; $f +^ 1` — raku/fix: dies (Str→Int Failure thrown);
+  mutsu was: returned 1 (Failure silently coerced to 0).
+- **Root cause:** `gray-encode($n where Int|Str)` does `$n.=Int` (a *Failure*
+  for non-numeric strings like `"A"`) then `$n +^ ($n +> 1)`. The numeric
+  bitwise / shift ops (`+&`/`+|`/`+^`/`+<`/`+>`) coerced a non-Int operand via
+  the non-throwing `runtime::coerce_numeric`, whose `_ => Value::int(0)` arm
+  silently swallowed the Failure to 0 — so `gray-encode("A")` returned 0 instead
+  of dying, and the dist's `dies-ok` assertions failed. (Arithmetic `+`/`-`/...
+  already threw Failures via the strict coercion path.)
+- **Fix:** the five int bitwise/shift ops now call `throw_if_failure` on each
+  operand before coercing (`src/vm/vm_bitwise_ops.rs`), matching `+`. All 112
+  Gray::Code::RBC subtests pass. Pin: `t/bitwise-failure-operand-throws.t`.
+- file: `src/vm/vm_bitwise_ops.rs`, `src/vm/vm_exec_dispatch.rs`,
+  `src/vm/vm_var_assign_post_incdec.rs`
 
 ### T-041 — test_fail: Int  [impact: 1 dist]  — FIXED (PR `fix-module-infix-const-fold`)
 - dists: Rat::Power
