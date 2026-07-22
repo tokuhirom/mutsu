@@ -1517,16 +1517,33 @@ fn postfix_expr_loop(mut rest: &str, mut expr: Expr, allow_ws_dot: bool) -> PRes
                     is_positional: false,
                 }
             };
-            if is_zen_angle && r.starts_with(":v") && !is_ident_char(r.as_bytes().get(2).copied()) {
-                let r = &r[2..];
+            // Zen-slice `:k`/`:v`/`:kv`/`:p` adverbs map to the keys/values/kv/pairs
+            // method (`%h<>:k` is `%h.keys`, `%h<>:v` is `%h.values`). Probe the
+            // two-letter `:kv` before the one-letter `:k`/`:v` so `:kv` is not read
+            // as `:k` + a stray `v`.
+            let zen_adverb = is_zen_angle
+                .then(|| {
+                    [
+                        (":kv", "kv"),
+                        (":k", "keys"),
+                        (":v", "values"),
+                        (":p", "pairs"),
+                    ]
+                    .into_iter()
+                    .find(|(adv, _)| {
+                        r.starts_with(adv) && !is_ident_char(r.as_bytes().get(adv.len()).copied())
+                    })
+                })
+                .flatten();
+            if let Some((adv, method)) = zen_adverb {
                 expr = Expr::MethodCall {
                     target: Box::new(indexed_expr),
-                    name: Symbol::intern("values"),
+                    name: Symbol::intern(method),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
                 };
-                rest = r;
+                rest = &r[adv.len()..];
                 continue;
             }
             // Check for :exists / :!exists / :delete adverbs
