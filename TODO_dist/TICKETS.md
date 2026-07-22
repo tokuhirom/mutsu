@@ -293,13 +293,22 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   A slice `$any[0,1]` yields a matching-length list of Any. Pin:
   `t/positional-index-on-any.t`. (03-actions now runs its content-line `.made` action
   path; tests 3–4 pass.)
-- **Status:** 02-grammar **23/23**; 01-basic 1/1; 03-actions 4/9. **Remaining (separate,
-  deeper — not this ticket):** `parsefile` of a full multi-vcard file (test-card1/2,
-  and 03-actions test 5, 04-from-vCard) fails while test-card4 passes — a multi-`<vcard>`
-  `parsefile` / `.made` action-tree bug, unrelated to the four fixed root causes.
+- **FIFTH ROOT CAUSE FIXED (PR `fix-given-with-topic-shadows-local`).** `from-vCard`
+  (04-from-vCard) died at `with $vcard { return $_.made }` with "No such method 'made'
+  for invocant of type 'Str'": inside a `sub from-vCard ($_) {...}`, `$_` occupies a
+  local slot (the parameter), and `given`/`with` wrote the topic only to the env mirror
+  — the body read the stale outer `$_` (the input Str, slot-authoritative under the (B)
+  env-write gate). Fix: `exec_given_op` mirrors the topic into the `_` local slot on
+  entry and restores it on exit (`vm/vm_given_when_ops.rs`). Pin:
+  `t/given-with-topic-shadows-local.t`. **04-from-vCard now passes 1/1.**
+- **Status:** 01-basic 1/1; 02-grammar **23/23**; 04-from-vCard **1/1**; 03-actions 4/9.
+  **Remaining (separate, deeper — not this ticket):** 03-actions test 5
+  (`is-deeply parsefile(...).made, from-json(test-card3.jcard)`) — the `.made` action
+  tree of a full multi-`<vcard>` parse is produced correctly, so the failure is in the
+  `is-deeply`/`from-json` reference comparison, a separate deeper issue.
 - file: DONE — src/runtime/methods_dispatch_match.rs, runtime_class_query.rs,
-  regex_parse_core.rs, regex/regex_match_sep.rs, vm/vm_var_index_ops.rs; remaining —
-  multi-vcard parsefile.
+  regex_parse_core.rs, regex/regex_match_sep.rs, vm/vm_var_index_ops.rs,
+  vm/vm_given_when_ops.rs; remaining — 03-actions test 5 is-deeply/from-json comparison.
 
 ### T-036 — test_die: plan expects Int (plan * fixed; deeper cardinal bugs remain)  [impact: 1 dist]
 - dists: Lingua::EN::Numbers
