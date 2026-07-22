@@ -1181,9 +1181,12 @@ the backlog.
       errors), while `.rotate` — which Rakudo does *not* define on `Any` — throws
       `X::Method::NotFound` instead of returning a silent `Nil`. (`.batch` was already correct.)
       Pin: `t/any-reverse-rotate.t`.
-- [ ] Remaining leftovers, each small and independent: `.tree` does not itemize its per-node
-      result (`$((1,2).Seq)` in raku, mutsu `(1, 2)`), and `Supply`/`Slip`/`QuantHash` `.raku`
-      rendering differs cosmetically (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
+- `.tree` is **done** (2026-07-22): it itemizes every node it descends into, so `(1, 2).tree`
+      is `$((1, 2).Seq)` and `.tree(n)` itemizes exactly the `n` levels it treed — which is what
+      makes `.tree(*)` identical to `.tree` (roast `S02-lists/tree.t` test 12, previously passing
+      only because *both* sides were un-itemized). Pin: `t/tree-itemization.t`.
+- [ ] Last leftover: `Supply`/`Slip`/`QuantHash` `.raku` rendering differs cosmetically
+      (`Supply()` vs `Supply.new`, `slip(3)` vs `slip(3,)`).
 
 ### 8.7 Bound-element immutability (mostly LANDED 2026-07-22; only `.kv` remains)
 
