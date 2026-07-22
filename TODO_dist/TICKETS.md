@@ -74,12 +74,6 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
   lacks in the sweep environment, so this is parse-advance only.
 - file: `src/parser/stmt/control/pointy_param.rs` (string-literal pointy param, done)
 
-### T-018 — runtime_error: Cannot call private method X permission  [impact: 1 dist]
-- dists: Cookie::Jar
-- e.g. `Cookie::Jar`: Cookie::Jar: Cannot call private method without permission
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
-
 ### T-025 — test_die [Math::Root] (01-integer.t DONE; 02/03 blocked on BigFatRat)  [impact: 1 dist]
 - dists: Math::Root
 - e.g. `Math::Root`: base=3 pass=0 fail=0 die=3 | t/01-integer.t
@@ -402,6 +396,21 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 _(move tickets here with `[claim: <branch>]` when you start)_
 
 ## Done
+
+- **T-018** (#PENDING) — Cookie::Jar died with "Cannot call private method without
+  permission". It calls a private method whose OWNER class has a *nested* name:
+  `$cookie!Cookie::Jar::Cookie::match` (owner `Cookie::Jar::Cookie`, method `match`)
+  across a `trusts Cookie::Jar` boundary. Four dispatch/validation sites split the
+  qualified name at the FIRST `::` (`split_once`), so the owner was mis-read as
+  `Cookie::Jar` and the method as `Cookie::match` → permission/no-such-method error.
+  Changed them to `rsplit_once` (owner = everything before the last `::`):
+  registration.rs (compile-time private-access validation — the one the dist hit),
+  methods_instance_ops.rs (two instance sites), methods_qualified.rs (non-instance).
+  Cookie::Jar now LOADS. Pin: t/qualified-private-method-nested-owner.t. Note:
+  the dist's tests still need `IDNA::Punycode` (missing dep, raku lacks it too), so
+  they cannot run — but the module load, the ticket's blocker, is fixed. A separate
+  pre-existing gap remains: `self!Nested::Owner::method` (self-qualified, nested
+  owner) goes through a different self-private path and is still rejected.
 
 - **T-047** (#PENDING) — head-skip-tail failed to load (not merely the "skip(4)"
   test): its `EXPORT` sub calls `CORE::.EXISTS-KEY('&head')` to detect a symbol
