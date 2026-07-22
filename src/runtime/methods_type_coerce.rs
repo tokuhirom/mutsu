@@ -161,9 +161,11 @@ impl Interpreter {
         // preserving hash flavor for *Hash type objects.
         let source_type = match target.view() {
             ValueView::Package(name) => Some(name.resolve()),
-            ValueView::Set(..) => Some("Set".to_string()),
-            ValueView::Bag(..) => Some("Bag".to_string()),
-            ValueView::Mix(..) => Some("Mix".to_string()),
+            // The mutable flag distinguishes the `*Hash` flavor from its
+            // immutable sibling, so `.Setty` preserves hashiness.
+            ValueView::Set(_, is_mut) => Some(if is_mut { "SetHash" } else { "Set" }.to_string()),
+            ValueView::Bag(_, is_mut) => Some(if is_mut { "BagHash" } else { "Bag" }.to_string()),
+            ValueView::Mix(_, is_mut) => Some(if is_mut { "MixHash" } else { "Mix" }.to_string()),
             _ => None,
         };
         if let Some(source_type) = source_type
@@ -196,7 +198,31 @@ impl Interpreter {
                     }
                 }
             };
-            return Some(Ok(Value::package(Symbol::intern(mapped))));
+            // On a type object, `.Setty`/`.Baggy`/`.Mixy` yield the mapped type
+            // object; on a concrete quant-hash they coerce to the mapped flavor
+            // (dropping non-positive weights for a Mix source, per Raku).
+            if matches!(target.view(), ValueView::Package(_)) {
+                return Some(Ok(Value::package(Symbol::intern(mapped))));
+            }
+            let coerced = match mapped {
+                "Set" => self.dispatch_to_set_with_what(target.clone(), "Set"),
+                "SetHash" => self
+                    .dispatch_to_set_with_what(target.clone(), "SetHash")
+                    .map(|mut r| {
+                        r.with_set_mut(|_, is_mut| *is_mut = true);
+                        r
+                    }),
+                "Bag" => self.dispatch_to_bag_with_what(target.clone(), "Bag"),
+                "BagHash" => self
+                    .dispatch_to_bag_with_what(target.clone(), "BagHash")
+                    .map(|mut r| {
+                        r.with_bag_mut(|_, is_mut| *is_mut = true);
+                        r
+                    }),
+                "Mix" => self.dispatch_to_mix_with_what(target.clone(), "Mix"),
+                _ => crate::builtins::quanthash_coerce::to_mixhash(target.clone()),
+            };
+            return Some(coerced);
         }
         None
     }

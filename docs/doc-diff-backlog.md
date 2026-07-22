@@ -88,6 +88,13 @@ doc) are version skew, not mutsu bugs — lowest priority.
   `$!.^name` mismatch (`Any` vs `Nil`) because the *cleared* `$!` is `Value::NIL`,
   which reports `Any` — that is the deferred Nil-vs-Any identity knot below, not this
   fix.
+- `Type/QuantHash.rakudoc` [1]/[2]/[3] — `.Setty`/`.Baggy`/`.Mixy` on a
+  `Set`/`Bag`/`Mix` (or `*Hash`) returned the bare mapped type object (`(Set)`,
+  `(Bag)`, `(Mix)`) instead of coercing the receiver. `dispatch_setty_baggy_mixy`
+  now delegates to the existing `.Set`/`.Bag`/`.Mix` (and `*Hash`) coercion
+  helpers, preserving hashiness via the container's mutable flag. Also fixed
+  `Mix.Set`/`Mix.Setty` dropping non-positive weights (`to_set` `Mix` arm kept
+  every key) — **#5228**. Pin: `t/setty-baggy-mixy-coerce.t`.
 - `hashmap.rakudoc` [1] — a Junction used as a hash-initializer key
   (`%( "a"|"b" => 1 )`) was stored under its stringification (`any(a, b)`) as a
   single literal key instead of threading. Per Rakudo a Junction key stores the
