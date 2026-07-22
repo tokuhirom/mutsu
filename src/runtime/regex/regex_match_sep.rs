@@ -149,9 +149,14 @@ impl Interpreter {
         // singular matcher's Named-atom path spawns a scratch sub-interpreter
         // (plus a tail-text copy) per candidate per call, which is ~300x
         // slower on nested grammar rules like `rule arraylist { <value> * %
-        // [\,] }` over `[[1,2,3],[4,5,6],[7,8,9]]`. A zero-width first atom
-        // means zero iterations (same zero-progress guard as the general
-        // path).
+        // [\,] }` over `[[1,2,3],[4,5,6],[7,8,9]]`.
+        //
+        // A zero-width FIRST atom is a genuine empty element (Rakudo:
+        // `<-[;]>* % ';'` on ";b" is `("", "b")`, not zero iterations), so it
+        // is accepted here. The infinite-loop risk lives only in the extension
+        // loop below, which is bounded by its own `atom_end <= cur`
+        // no-progress guard: after a zero-width atom, the separator must
+        // advance `cur` or the loop breaks.
         if can_extend(0)
             && let Some((end, caps)) = self
                 .regex_match_atom_all_with_capture_in_pkg(
@@ -163,7 +168,6 @@ impl Interpreter {
                     pattern.ignore_case,
                 )
                 .pop()
-            && end > start
         {
             atom_caps.push(caps);
             cur = end;
@@ -268,10 +272,15 @@ impl Interpreter {
         // `regex_match_atom_all_with_capture_in_pkg` returns lowest-priority
         // first; iterate highest-priority first so the chains come out in
         // highest-priority order for the engine.
+        //
+        // A zero-width first atom (`end == start`) is a genuine empty leading
+        // element (Rakudo: `<-[;]>* % ';'` on ";b" is `("", "b")`). It is the
+        // LOWEST-priority first match, so `.rev()` places it last — the greedy
+        // longest chain is still found first, and the empty-first chains are
+        // only lower-priority backtracking options. The recursion is bounded by
+        // `extend_separated_chain`'s `atom_end <= cur` no-progress guard (and
+        // the 20_000 chain cap), so a zero-width atom cannot loop forever.
         for (end, caps) in first_matches.into_iter().rev() {
-            if end == start {
-                continue;
-            }
             let mut atom_caps = vec![caps];
             let mut sep_caps: Vec<RegexCaptures> = Vec::new();
             self.extend_separated_chain(
