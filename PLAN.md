@@ -1243,6 +1243,43 @@ the backlog.
       [ADR-0001] Value representation; `src/value/nanbox/`, `src/value/display.rs`,
       `src/runtime/methods_object_native_ctors_buf_num.rs` (`build_native_fatrat_value`).
 
+### 8.9 The word-logical operators `and`/`or`/`andthen`/`orelse`/`xor` bind too tightly (deferred deep item — found 2026-07-22 by the traps.rakudoc doc-diff sweep)
+
+- [ ] **`and`/`or` (and the other loose word-logicals) must be the *loosest* operators —
+      looser than `=` (assignment), `,` (comma), and the `return`/statement level.** mutsu
+      parses them *tighter* than `=`/`return`, so their result is wrong:
+  - `my $a = 2; say join ",", ($a, ++$a)` → raku `3,3`, mutsu `2,3` (list-element aliasing
+    aside, the sweep case is the precedence family).
+  - `sub f { return True and False }; say f` → raku **`True`** (`(return True) and False` —
+    `return` fires first, `and False` is dead), mutsu **`False`** (parses `return (True and False)`).
+  - `sub g { return 1 and die "no" }; say g` → raku `1`, mutsu **dies** (runs the `die`).
+  - `my $x = 1 and 2; say $x` → raku `1` (`(my $x = 1) and 2`, with a "useless use" warning),
+    mutsu `2` (parses `my $x = (1 and 2)`).
+- **Root.** `and`/`or` are handled *inside* `expression()`'s `ternary` precedence chain
+  (`src/parser/expr/precedence/logic.rs`), which is tighter than the statement-level assignment
+  parser (`src/parser/stmt/assign.rs`) and `return`-argument parsing. So when the assignment/return
+  parser calls `expression()` for its RHS, that call greedily consumes the trailing `... and ...`.
+  Raku's grammar puts `and`/`or`/`andthen`/`orelse`/`notandthen`/`xor` **below** `=` and `,`
+  (see `raku-doc/doc/Language/operators.rakudoc` precedence table: "loose and" / "loose or" are the
+  last two rows). mutsu already treats them as loose vs *listop args* (the comments in
+  `src/parser/expr/operators.rs` around `parse_word_logical_op`), but not vs `=`/`return`/`,`.
+- **Fix shape (structural, high blast radius).** The RHS of an assignment and the argument of
+  `return`/`take`/etc. must be parsed *without* the word-logicals, and a **statement-level**
+  word-logical layer must wrap the whole statement (`(my $x = 1) and 2`). Because `and`/`or` also
+  compose inside expressions (`say (1 and 2)` is correct today), the clean model is a dedicated
+  top-of-precedence `word_logical` layer *above* the current `expression()` entry, with assignment
+  and `return` parsing their operand at the sub-`word_logical` level. This changes how a large
+  fraction of statements parse, so it needs a full `make test` + `make roast` pass and will likely
+  flip several local `t/` tests that currently encode the wrong (tight) precedence — those must be
+  corrected to the Raku semantics, not worked around.
+- **Verified 2026-07-22** against reference `raku` (all four cases above). Pin candidate on landing:
+  `t/word-logical-loosest-precedence.t`.
+- Entry: `git checkout -b fix-word-logical-precedence origin/main`. Files: `src/parser/expr/mod.rs`
+  (`expression`), `src/parser/expr/precedence/logic.rs`, `src/parser/stmt/assign.rs`, and the
+  `return`/`take` statement parsers. Cross-ref: the related `traps.rakudoc` list-element **container
+  aliasing** cases ([5]/[6]/[7]/[9]: `($a, ++$a)` / `@arr.push: ($a,$b)` / `Pair.new('a',$v)` reflect
+  later mutations) are a *separate* deferred item (container-repr, §8.5-adjacent), NOT this precedence bug.
+
 ---
 
 ## Metrics
