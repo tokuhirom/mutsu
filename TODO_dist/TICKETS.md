@@ -123,11 +123,18 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-032 — test_die [ValueTypeCache]  [impact: 1 dist]
+### T-032 — test_die [ValueTypeCache] (same nqp cluster as T-027)  [impact: 1 dist]
 - dists: ValueTypeCache
 - e.g. `ValueTypeCache`: base=1 pass=0 fail=0 die=1 | t/01-basic.rakutest: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- SAME ROOT as T-027 (ObjectCache): both are lizmat cache roles written in raw
+  `nqp::` ops (`nqp::hash`, `nqp::atkey`, `nqp::bindkey`, `nqp::ifnull`,
+  `nqp::box_s`, `ObjAt`/`ValueObjAt`, …) that mutsu does not implement. The
+  block-callable role type parameter they use (`role R[&args2str]`,
+  `class A does R[{ ... }]`) is fixed (#5172); the remaining nqp op batch is not.
+- file: nqp op support (large, shared with T-027); some ops exist at
+  src/runtime/builtins.rs:594 (nqp::atkey/atpos/bindattr). The control-flow ops
+  (`nqp::if`/`stmts`/`ifnull`) need lazy evaluation = compiler work, not just
+  eager builtins.
 
 ### T-033 — test_die [vCard::Parser]  [impact: 1 dist]
 - dists: vCard::Parser
@@ -141,11 +148,18 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-036 — test_die: plan expects Int  [impact: 1 dist]
+### T-036 — test_die: plan expects Int (plan * fixed; deeper cardinal bugs remain)  [impact: 1 dist]
 - dists: Lingua::EN::Numbers
 - e.g. `Lingua::EN::Numbers`: base=9 pass=0 fail=1 die=8 | t/00-cardinal.t: plan expects Int
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- FIXED (#5174): `t/00-cardinal.t` opens with `plan *;` (a Whatever plan), which
+  mutsu rejected with "plan expects Int", aborting before any test. `plan *` is
+  now accepted as a no-op (no `1..N` header; `done-testing` emits `1..ran`).
+- REMAINING (module logic, deeper): the cardinal-to-words routine drops the
+  numerator word for fractions — `cardinal(7/8)` yields `' eighths'` instead of
+  `'seven eighths'`. Separate root cause in Lingua::EN::Numbers' own logic; not a
+  plan/Test issue. Investigate the fraction/`cardinal` path if this dist is revisited.
+- file: DONE — runtime/test_functions/basic.rs (plan *); remaining — a
+  Lingua::EN::Numbers cardinal-fraction bug (module logic).
 
 ### T-037 — test_die: timeout  [impact: 1 dist]
 - dists: Test::Scheduler
