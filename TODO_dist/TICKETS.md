@@ -64,11 +64,24 @@ editing this file; keep edits small (one ticket) to avoid conflicts.
 - repro: _(fill in a minimal repro + raku baseline before fixing)_
 - file: _(suspected parser/runtime file)_
 
-### T-025 — test_die [Math::Root]  [impact: 1 dist]
+### T-025 — test_die [Math::Root] (partial: 2 of ≥4 fixed)  [impact: 1 dist]
 - dists: Math::Root
-- e.g. `Math::Root`: base=3 pass=0 fail=0 die=3 | t/01-integer.t: 
-- repro: _(fill in a minimal repro + raku baseline before fixing)_
-- file: _(suspected parser/runtime file)_
+- e.g. `Math::Root`: base=3 pass=0 fail=0 die=3 | t/01-integer.t
+- FIXED (#5160): (a) multi-dispatch with a `where` on an optional param —
+  `multi iroot(Int() $i where * < 1e12, Int $n where * >= 2 = 2)` failed to match
+  `iroot(5)` (the `where` was checked against the type object for the unsupplied
+  `$n`); (b) `exp(Int, Int)` now exact (`exp(72,10)` = `10**72` Int, not `1e72` Num).
+  Tests 1-18 of t/01-integer.t now pass.
+- REMAINING (≥2 more bugs, dies at test 19 = `iroot(5**18)` → the `newton` path):
+  1. `min`/`max` over a single **lazy Seq** returns the Seq instead of reducing
+     (`min((5,3,8).Seq)` → `(5 3 8)`; a `Slip`/`List`/`Array` reduces fine, so
+     `extrema_from_values_generic`'s `as_list_items()` flatten misses a lazy Seq —
+     `.tail(2)` produces one). raku: 3.
+  2. The `…` sequence operator with **block endpoints**
+     (`{ ... } … { ... }`, the generator/limit-block form) in `newton`.
+  Repro for (1): `say min((5,3,8).Seq)` — raku 3, mutsu `(5 3 8)`.
+- file: runtime/builtins_collection_extrema.rs (min/max lazy-Seq flatten);
+  sequence-operator with block endpoints
 
 ### T-027 — test_die [ObjectCache]  [impact: 1 dist]
 - dists: ObjectCache
